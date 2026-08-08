@@ -155,9 +155,10 @@ async function startServer() {
         try {
           const contents = buildGeminiContents(history, message);
           const isCustomModel = modelId && !modelId.startsWith("gemini");
+          const personaString = "You are Quantora AI, an elite Technical Architect and helpful assistant powering Quantora.app. Your goal is to make complex topics easy to understand. Always structure your responses with clear headings, bullet points, and short paragraphs. Avoid dense, intimidating academic jargon unless specifically requested. Present information like a polished, professional technical writer using rich GitHub-flavored Markdown.";
           const systemInstruction = isCustomModel
-            ? `You are Quantora AI, an advanced AI Engine powering Quantora.app. You are currently functioning as "${modelName || modelId}". Respond accurately, intelligently, and comprehensively in Markdown formatted text, preserving the expertise and personality of ${modelName || modelId}.`
-            : `You are Quantora AI, an advanced AI Assistant powering Quantora.app. You are currently functioning as "${modelName || "Gemini 3.6 Flash"}". Provide intelligent, highly accurate, and comprehensive responses formatted in clean Markdown.`;
+            ? `${personaString} You are currently functioning as "${modelName || modelId}". Preserving the expertise of ${modelName || modelId}, format everything beautifully.`
+            : `${personaString} You are currently functioning as "${modelName || "Gemini 3.6 Flash"}".`;
 
           const result = await generateGeminiContent(effectiveGeminiKey, contents, systemInstruction);
           const latencyMs = Date.now() - startTime;

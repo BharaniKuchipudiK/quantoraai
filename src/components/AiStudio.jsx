@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 // Interactive iOS Calculator Sub-Component
 function LiveIosCalculator() {
   const [display, setDisplay] = useState('0');
@@ -1093,7 +1096,25 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                               ⚡ {msg.modelA.latencyMs}ms
                             </span>
                           </div>
-                          <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>{msg.modelA.text}</div>
+                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code({node, inline, className, children, ...props}) {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  return !inline && match ? (
+                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                      {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                  ) : (
+                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+                                  )
+                                }
+                              }}
+                            >
+                              {msg.modelA.text}
+                            </ReactMarkdown>
+                          </div>
                         </div>
                         <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
@@ -1128,7 +1149,25 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                               ⚡ {msg.modelB.latencyMs}ms
                             </span>
                           </div>
-                          <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>{msg.modelB.text}</div>
+                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code({node, inline, className, children, ...props}) {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  return !inline && match ? (
+                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                      {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                  ) : (
+                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+                                  )
+                                }
+                              }}
+                            >
+                              {msg.modelB.text}
+                            </ReactMarkdown>
+                          </div>
                         </div>
                         <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
@@ -1174,7 +1213,25 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                         </div>
                       )}
 
-                      <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+                      <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code({node, inline, className, children, ...props}) {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return !inline && match ? (
+                                <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+                              )
+                            }
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      </div>
 
                       {/* Standard Message Action Buttons */}
                       {msg.sender === 'ai' && msg.text?.includes('```') && (
