@@ -45,7 +45,30 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "10mb" }));
+  // Security: In-memory Rate Limiter
+  const rateLimitMap = new Map<string, { count: number, resetTime: number }>();
+  app.use((req, res, next) => {
+    if (req.path === '/api/chat') {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const now = Date.now();
+      let record = rateLimitMap.get(ip);
+      
+      if (!record || record.resetTime < now) {
+        record = { count: 1, resetTime: now + 60000 }; // 60 seconds
+      } else {
+        record.count++;
+      }
+      
+      rateLimitMap.set(ip, record);
+      
+      if (record.count > 25) {
+        return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+      }
+    }
+    next();
+  });
+
+  app.use(express.json({ limit: "500kb" }));
 
   // Helper function to execute Gemini with multi-model fallback chain
   async function generateGeminiContent(apiKey: string, contents: any[], systemInstruction: string) {
