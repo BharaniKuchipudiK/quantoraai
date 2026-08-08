@@ -7,6 +7,8 @@ import QuantumPlayground from './components/QuantumPlayground';
 import PrivacyVault from './components/PrivacyVault';
 import BeeSwarmCanvas from './components/BeeSwarmCanvas';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -62,38 +64,29 @@ export default function App() {
     }
   }, [effectiveTheme, isLight]);
 
-  const handleGoogleLogin = (name = 'Creator', email = 'user@quantora.app') => {
-    const validName = (name && typeof name === 'string' && name.trim()) ? name.trim() : 'Creator';
-    const validEmail = (email && typeof email === 'string' && email.trim()) ? email.trim() : 'user@quantora.app';
-
-    const newUser = {
-      name: validName,
-      email: validEmail,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(validName)}&background=f97316&color=ffffff&bold=true`,
-      authProvider: "Google OAuth 2.0",
-      tier: "Indie Creator ($0 / mo)",
-      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    };
-
-    setUser(newUser);
+  const handleGoogleSuccess = (credentialResponse) => {
     try {
-      localStorage.setItem('quantora_user', JSON.stringify(newUser));
-    } catch (e) {
-      console.error(e);
-    }
+      const decoded = jwtDecode(credentialResponse.credential);
+      const newUser = {
+        name: decoded.name || 'Creator',
+        email: decoded.email || 'user@quantora.app',
+        avatar: decoded.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(decoded.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
+        authProvider: "Google OAuth 2.0",
+        tier: "Indie Creator ($0 / mo)",
+        joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      };
 
-    setShowAuthModal(false);
-    setShowCustomAccountInput(false);
-    setCustomName('');
-    setCustomEmail('');
-    setActiveTab('studio');
+      setUser(newUser);
+      localStorage.setItem('quantora_user', JSON.stringify(newUser));
+      setShowAuthModal(false);
+      setActiveTab('studio');
+    } catch (error) {
+      console.error("Error decoding JWT:", error);
+    }
   };
 
-  const handleCustomAccountSubmit = (e) => {
-    e.preventDefault();
-    if (!customEmail || !customEmail.trim()) return;
-    const formattedName = (customName && customName.trim()) ? customName.trim() : customEmail.split('@')[0];
-    handleGoogleLogin(formattedName, customEmail.trim());
+  const handleGoogleError = () => {
+    console.log('Google Login Failed');
   };
 
   const handleTabChange = (tabName) => {
@@ -123,6 +116,7 @@ export default function App() {
   };
 
   return (
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
     <div style={{
       minHeight: '100vh',
       display: 'flex',
@@ -272,133 +266,20 @@ export default function App() {
               to access the <strong style={{ color: '#111827' }}>Quantora AI Platform</strong>
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left', marginBottom: '20px' }}>
-              {/* If user is already logged in, allow 1-click continuation */}
-              {user && (
-                <div
-                  onClick={() => handleGoogleLogin(user.name, user.email)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    border: '1.5px solid #2563eb',
-                    cursor: 'pointer',
-                    background: '#eff6ff',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <div style={{
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)',
-                    color: '#ffffff',
-                    fontWeight: '700',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.1rem'
-                  }}>
-                    {user.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.94rem', fontWeight: '700', color: '#1e3a8a' }}>Continue as {user.name}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#3b82f6' }}>{user.email}</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Form to enter custom Google Account */}
-              <form onSubmit={handleCustomAccountSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
-                    Google Account / Email *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={customEmail}
-                    onChange={(e) => setCustomEmail(e.target.value)}
-                    placeholder="Enter your Gmail or Workspace email"
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '4px' }}>
-                    Full Name (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="Enter your name"
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  style={{
-                    background: '#2563eb',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    fontWeight: '700',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    marginTop: '4px',
-                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
-                  }}
-                >
-                  <span>Continue with Google</span>
-                  <ArrowRight size={16} />
-                </button>
-              </form>
-
-              {/* Divider */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0' }}>
-                <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600' }}>OR</span>
-                <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
-              </div>
-
-              {/* Quick Guest Creator option */}
-              <button
-                type="button"
-                onClick={() => handleGoogleLogin('Creator Guest', 'guest@quantora.app')}
-                style={{
-                  background: '#f8fafc',
-                  color: '#475569',
-                  border: '1px dashed #cbd5e1',
-                  padding: '10px',
-                  borderRadius: '10px',
-                  fontWeight: '600',
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  transition: 'background 0.2s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#f8fafc'}
-              >
-                <UserPlus size={16} />
-                <span>Instant Demo Sign In (Guest Creator)</span>
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={handleGoogleError}
+                useOneTap
+                shape="pill"
+                theme="filled_blue"
+                text="continue_with"
+                size="large"
+              />
             </div>
 
             <div style={{ fontSize: '0.78rem', color: '#9ca3af', lineHeight: 1.5 }}>
-              To continue, Google will share your name, email address, and profile picture with Quantora.
+              By continuing, Google will share your name, email address, and profile picture with Quantora securely.
             </div>
           </div>
         </div>
@@ -430,5 +311,6 @@ export default function App() {
         </div>
       </footer>
     </div>
+    </GoogleOAuthProvider>
   );
 }
