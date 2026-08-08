@@ -12,12 +12,27 @@ export default function App() {
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('quantora_user');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) return JSON.parse(saved);
     } catch (e) {
-      return null;
+      console.error(e);
+    }
+    return {
+      name: "Creator",
+      email: "creator@quantora.app",
+      avatar: "https://ui-avatars.com/api/?name=Creator&background=f97316&color=ffffff&bold=true",
+      authProvider: "Quantora Guest",
+      tier: "Free Tier",
+      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    };
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem('quantora_user');
+      return saved ? 'studio' : 'studio';
+    } catch (e) {
+      return 'studio';
     }
   });
-  const [activeTab, setActiveTab] = useState('studio');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [themeMode, setThemeMode] = useState('light'); // 'light' | 'dark' | 'system'
 
@@ -91,11 +106,12 @@ export default function App() {
 
   const availableModels = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google AI' },
-    { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B', specialty: 'Fast Reasoning & Spec Planning', badge: 'Google Open', provider: 'OpenRouter' },
-    { id: 'poolside/laguna-s-2.1:free', name: 'Poolside Laguna 2.1', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'OpenRouter' },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'OpenRouter' },
+    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B (Google)', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'OpenRouter' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'OpenRouter' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Open Source King', provider: 'OpenRouter' },
     { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra', specialty: 'High-Fidelity Reward & Alignment', badge: 'Nvidia SOTA', provider: 'OpenRouter' },
-    { id: 'openai/gpt-oss-20b:free', name: 'OpenAI OSS 20B', specialty: 'General Assistant & Fast Queries', badge: 'OpenAI Baseline', provider: 'OpenRouter' },
-    { id: 'cohere/north-mini-code:free', name: 'Cohere North Mini', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'OpenRouter' }
+    { id: 'openai/gpt-4o-mini', name: 'ChatGPT 4o-Mini', specialty: 'General Assistant & Fast Queries', badge: 'OpenAI Baseline', provider: 'OpenRouter' }
   ];
 
   const [selectedModel, setSelectedModel] = useState(availableModels[0]);

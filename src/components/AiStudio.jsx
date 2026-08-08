@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2 } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Interactive iOS Calculator Sub-Component
@@ -347,96 +347,120 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
 }
 
 export default function AiStudio({ selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight }) {
+  // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
+  const defaultGreetingMsg = {
+    id: 1,
+    sender: 'ai',
+    modelUsed: selectedModel ? selectedModel.name : 'Gemini 3 Flash',
+    text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! What would you like to create or ask today?`,
+    type: 'greeting'
+  };
+
   const [chatSessions, setChatSessions] = useState(() => {
     try {
       const saved = localStorage.getItem('quantora_chat_sessions');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [{
-      id: Date.now(),
-      title: 'New Workspace',
-      messages: [{
-        id: 1,
-        sender: 'ai',
-        modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
-        text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
-        type: 'greeting'
-      }]
-    }];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+      {
+        id: 'session-1',
+        title: 'New Chat',
+        createdAt: Date.now(),
+        messages: [defaultGreetingMsg]
+      }
+    ];
   });
 
-  const [activeSessionId, setActiveSessionId] = useState(chatSessions[0]?.id);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    return chatSessions[0]?.id || 'session-1';
+  });
 
-  useEffect(() => {
-    localStorage.setItem('quantora_chat_sessions', JSON.stringify(chatSessions));
-  }, [chatSessions]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const activeSessionIndex = chatSessions.findIndex(s => s.id === activeSessionId);
-  const activeSession = activeSessionIndex !== -1 ? chatSessions[activeSessionIndex] : chatSessions[0];
-  const messages = activeSession ? activeSession.messages : [];
+  // Derive current session and messages
+  const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0] || {
+    id: 'session-1',
+    title: 'New Chat',
+    messages: [defaultGreetingMsg]
+  };
+  const messages = activeSession.messages || [defaultGreetingMsg];
 
-  const setMessages = (updater) => {
+  // Function to update current active session's messages
+  const updateActiveMessages = (updater) => {
     setChatSessions(prevSessions => {
-      const idx = prevSessions.findIndex(s => s.id === activeSessionId);
-      if (idx === -1) return prevSessions;
-      const session = prevSessions[idx];
-      const newMessages = typeof updater === 'function' ? updater(session.messages) : updater;
-      
-      let newTitle = session.title;
-      if (session.title === 'New Workspace' && newMessages.length > 1) {
-        const firstUserMsg = newMessages.find(m => m.sender === 'user');
-        if (firstUserMsg) {
-          newTitle = firstUserMsg.text.slice(0, 25) + (firstUserMsg.text.length > 25 ? '...' : '');
+      const updated = prevSessions.map(session => {
+        if (session.id === activeSessionId) {
+          const newMsgs = typeof updater === 'function' ? updater(session.messages) : updater;
+
+          let newTitle = session.title;
+          const firstUserMsg = newMsgs.find(m => m.sender === 'user');
+          if (firstUserMsg && (session.title === 'New Chat' || session.title === 'Welcome to Quantora')) {
+            newTitle = firstUserMsg.text.slice(0, 32) + (firstUserMsg.text.length > 32 ? '...' : '');
+          }
+
+          return {
+            ...session,
+            title: newTitle,
+            messages: newMsgs
+          };
         }
+        return session;
+      });
+
+      try {
+        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
       }
-      
-      const updatedSession = { ...session, title: newTitle, messages: newMessages };
-      const newSessions = [...prevSessions];
-      newSessions[idx] = updatedSession;
-      return newSessions;
+      return updated;
     });
   };
 
-  const handleNewSession = () => {
+  const handleCreateNewChat = () => {
+    const newId = 'session-' + Date.now();
     const newSession = {
-      id: Date.now(),
-      title: 'New Workspace',
-      messages: [{
-        id: 1,
-        sender: 'ai',
-        modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
-        text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
-        type: 'greeting'
-      }]
+      id: newId,
+      title: 'New Chat',
+      createdAt: Date.now(),
+      messages: [defaultGreetingMsg]
     };
-    setChatSessions(prev => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
+
+    setChatSessions(prev => {
+      const updated = [newSession, ...prev];
+      try {
+        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+    setActiveSessionId(newId);
   };
 
-  const handleDeleteSession = (id, e) => {
+  const handleDeleteChat = (e, sessionId) => {
     e.stopPropagation();
     setChatSessions(prev => {
-      const filtered = prev.filter(s => s.id !== id);
-      if (filtered.length === 0) {
-        const newSession = {
-          id: Date.now(),
-          title: 'New Workspace',
-          messages: [{
-            id: 1,
-            sender: 'ai',
-            modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
-            text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
-            type: 'greeting'
-          }]
-        };
-        setActiveSessionId(newSession.id);
-        return [newSession];
+      const filtered = prev.filter(s => s.id !== sessionId);
+      const fallback = filtered.length > 0 ? filtered : [{
+        id: 'session-' + Date.now(),
+        title: 'New Chat',
+        createdAt: Date.now(),
+        messages: [defaultGreetingMsg]
+      }];
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(fallback[0].id);
       }
-      if (activeSessionId === id) {
-        setActiveSessionId(filtered[0].id);
+      try {
+        localStorage.setItem('quantora_chat_sessions', JSON.stringify(fallback));
+      } catch (err) {
+        console.error(err);
       }
-      return filtered;
+      return fallback;
     });
   };
 
@@ -476,11 +500,6 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
   const bubbleUserBorder = isLight ? '#ffedd5' : 'rgba(249, 115, 22, 0.3)';
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
   const bubbleAiBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
-  const inputBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.07)';
-  const inputBorder = isLight ? '#cbd5e1' : 'rgba(249, 115, 22, 0.4)';
-  const chipBg = isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)';
-  const chipBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
-  const chipText = isLight ? '#334155' : '#e2e8f0';
 
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
@@ -518,17 +537,6 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
     }, 400);
   };
 
-  const quickPrompts = [
-    { label: 'SGD to INR Currency', iconType: 'currency', prompt: 'Build a SGD to INR currency exchange calculator with live rates' },
-    { label: 'Calculator App', iconType: 'calc', prompt: 'Build an interactive iOS style calculator app' },
-    { label: 'AI Beat Synthesizer', iconType: 'music', prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
-    { label: 'Explain Quantum (5yo)', iconType: 'quantum', prompt: 'Explain quantum computing simply like I am 5 years old' },
-    { label: 'Singapore Weather', iconType: 'weather', prompt: 'Build a Singapore weather forecast widget' },
-    { label: 'Joke Generator', iconType: 'joke', prompt: 'Build a full-stack AI joke generator app with custom categories' },
-    { label: 'Recipe Maker', iconType: 'recipe', prompt: 'Build an interactive recipe maker web app with ingredient search' },
-    { label: 'Expense Tracker', iconType: 'expense', prompt: 'Build a modern expense tracker app with budget analytics' }
-  ];
-
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
 
@@ -540,7 +548,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
       localStorage.setItem('openRouterApiKey', keyInputValue.trim());
     }
     setKeyInputValue('');
-    setMessages(prev => prev.filter(m => !m.isKeyPrompt));
+    updateActiveMessages(prev => prev.filter(m => !m.isKeyPrompt));
     if (lastPrompt) {
       handleSendMessage(lastPrompt);
     }
@@ -560,12 +568,12 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
       attachments: [...attachments]
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    updateActiveMessages(prev => [...prev, userMsg]);
     if (!textToSend) setInputText('');
     setAttachments([]);
     setIsGenerating(true);
 
-    const targetModel = selectedModel || { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' };
+    const targetModel = selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
@@ -624,7 +632,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           modelA: resA,
           modelB: resB
         };
-        setMessages(prev => [...prev, dualMsg]);
+        updateActiveMessages(prev => [...prev, dualMsg]);
       } catch (err) {
         console.error('Arena Execution Error:', err);
       } finally {
@@ -635,7 +643,6 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
 
     // 2. Standard Single Model Execution Mode
     try {
-      // Call server /api/chat endpoint for real model inference
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -665,7 +672,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
             provider: data.provider || targetModel.name,
             liveConnected: data.liveConnected !== false
           };
-          setMessages(prev => [...prev, aiMsg]);
+          updateActiveMessages(prev => [...prev, aiMsg]);
         }
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -682,7 +689,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           componentType: 'formatted_text',
           thoughtProcess: `Live API Key required for ${targetModel.name}`
         };
-        setMessages(prev => [...prev, aiMsg]);
+        updateActiveMessages(prev => [...prev, aiMsg]);
       }
     } catch (error) {
       console.error('Chat error:', error);
@@ -696,7 +703,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         componentType: 'formatted_text',
         thoughtProcess: `Network connection error for ${targetModel.name}`
       };
-      setMessages(prev => [...prev, aiMsg]);
+      updateActiveMessages(prev => [...prev, aiMsg]);
     } finally {
       setIsGenerating(false);
     }
@@ -705,43 +712,85 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
   return (
     <div style={{
       display: 'flex',
+      gap: '20px',
+      maxWidth: '1400px',
+      margin: '0 auto',
       minHeight: 'calc(100vh - 120px)',
-      width: '100%',
+      alignItems: 'stretch',
       position: 'relative'
     }}>
-      {/* Sidebar */}
-      {isSidebarOpen && (
-        <div style={{
-          width: '260px',
-          background: isLight ? '#f8fafc' : '#0d1127',
-          borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '16px 12px',
-          flexShrink: 0
-        }}>
+      {/* Left Navigation Sidebar - Chat History (ChatGPT / Claude / Gemini style) */}
+      <div style={{
+        width: sidebarOpen ? '260px' : '0px',
+        opacity: sidebarOpen ? 1 : 0,
+        pointerEvents: sidebarOpen ? 'auto' : 'none',
+        transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        display: 'flex',
+        flexDirection: 'column',
+        background: isLight ? '#ffffff' : '#0a0e24',
+        border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '20px',
+        padding: sidebarOpen ? '16px' : '0px',
+        overflow: 'hidden',
+        flexShrink: 0,
+        boxShadow: isLight ? '0 4px 16px rgba(0,0,0,0.03)' : '0 10px 30px rgba(0,0,0,0.3)'
+      }}>
+        {/* Sidebar Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <button
-            onClick={handleNewSession}
+            onClick={handleCreateNewChat}
             style={{
-              background: 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)',
-              color: '#fff',
-              border: 'none',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              fontWeight: '600',
-              cursor: 'pointer',
+              flex: 1,
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '8px',
-              marginBottom: '16px',
-              fontSize: '0.9rem'
+              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+              color: '#ffffff',
+              border: 'none',
+              padding: '10px 14px',
+              borderRadius: '12px',
+              fontWeight: '700',
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(249, 115, 22, 0.25)',
+              transition: 'all 0.2s ease'
             }}
           >
-            <Plus size={16} /> New Chat
+            <Plus size={16} />
+            <span>New Chat</span>
           </button>
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: subtextColor, marginBottom: '8px', paddingLeft: '4px', textTransform: 'uppercase' }}>Recent Sessions</div>
-            {chatSessions.map(session => (
+
+          <button
+            onClick={() => setSidebarOpen(false)}
+            title="Collapse sidebar"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: subtextColor,
+              padding: '8px',
+              cursor: 'pointer',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginLeft: '6px'
+            }}
+          >
+            <PanelLeftClose size={18} />
+          </button>
+        </div>
+
+        {/* History Section Title */}
+        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
+          Chat History
+        </div>
+
+        {/* Sessions List */}
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '2px' }}>
+          {chatSessions.map((session) => {
+            const isActive = session.id === activeSessionId;
+            return (
               <div
                 key={session.id}
                 onClick={() => setActiveSessionId(session.id)}
@@ -749,104 +798,127 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '10px',
-                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
                   cursor: 'pointer',
-                  background: activeSessionId === session.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
-                  color: activeSessionId === session.id ? '#f97316' : textColor,
-                  border: activeSessionId === session.id ? '1px solid rgba(249, 115, 22, 0.3)' : '1px solid transparent',
-                  transition: 'background 0.2s'
+                  background: isActive ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
+                  border: isActive ? (isLight ? '1px solid #ffedd5' : '1px solid rgba(249, 115, 22, 0.3)') : '1px solid transparent',
+                  color: isActive ? '#f97316' : textColor,
+                  fontSize: '0.85rem',
+                  fontWeight: isActive ? '700' : '500',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                  <MessageSquare size={14} color={activeSessionId === session.id ? '#f97316' : subtextColor} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: activeSessionId === session.id ? '600' : '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {session.title}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
+                  <MessageSquare size={15} color={isActive ? '#f97316' : subtextColor} style={{ flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {session.title || 'New Chat'}
                   </span>
                 </div>
+
                 <button
-                  onClick={(e) => handleDeleteSession(session.id, e)}
-                  style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+                  onClick={(e) => handleDeleteChat(e, session.id)}
+                  title="Delete chat"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: subtextColor,
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    opacity: isActive ? 1 : 0.6,
+                    transition: 'opacity 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = subtextColor}
                 >
-                  <X size={14} />
+                  <Trash2 size={13} />
                 </button>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* Main Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        {/* Toggle Sidebar Button */}
-        <button
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          style={{
-            position: 'absolute',
-            left: '0px',
-            top: '24px',
-            background: isLight ? '#ffffff' : '#1e293b',
-            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.1)',
-            borderLeft: 'none',
-            borderRadius: '0 8px 8px 0',
-            padding: '6px',
-            cursor: 'pointer',
-            zIndex: 10,
-            display: 'flex',
-            alignItems: 'center',
-            color: subtextColor
-          }}
-        >
-          <ChevronDown size={14} style={{ transform: isSidebarOpen ? 'rotate(90deg)' : 'rotate(-90deg)' }} />
-        </button>
-
-        <div style={{
-          maxWidth: '960px',
-          width: '100%',
-          margin: '0 auto',
-          padding: '24px 40px',
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          justifyContent: 'space-between'
-        }}>
-      {/* Top Header Bar */}
       <div style={{
+        flex: 1,
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
         justifyContent: 'space-between',
-        marginBottom: '20px',
-        paddingBottom: '16px',
-        borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)'
+        maxWidth: '1000px',
+        margin: '0 auto',
+        width: '100%',
+        position: 'relative'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Sparkles size={20} color="#f97316" />
-          </div>
-          <div>
-            <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor }}>Quantora Open AI Studio</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-              <span style={{ fontSize: '0.78rem', color: subtextColor }}>
-                Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B'}</strong>
-              </span>
-              <span style={{
-                fontSize: '0.7rem',
-                padding: '2px 8px',
-                borderRadius: '12px',
-                background: 'rgba(16, 185, 129, 0.12)',
-                color: '#10b981',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                fontWeight: '600',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-                Live API Engine Active
-              </span>
+        {/* Top Header Bar */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '20px',
+          paddingBottom: '16px',
+          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                title="Open Chat History Sidebar"
+                style={{
+                  background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
+                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)',
+                  color: textColor,
+                  padding: '8px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: '4px'
+                }}
+              >
+                <PanelLeft size={18} />
+              </button>
+            )}
+
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={20} color="#f97316" />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor }}>
+                {activeSession ? activeSession.title : 'Quantora Open AI Studio'}
+              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                <span style={{ fontSize: '0.78rem', color: subtextColor }}>
+                  Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong>
+                </span>
+                <span style={{
+                  fontSize: '0.7rem',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  color: '#10b981',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  fontWeight: '600',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                  Live API Engine Active
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Dual Model Arena Toggle Button */}
@@ -948,301 +1020,319 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         </div>
       </div>
 
-      {/* Messages Stream */}
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
-        {messages.map(msg => (
-          <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-            {/* Avatar */}
+      {/* Messages Stream / Initial Hero State */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px' }}>
+        {messages.length <= 1 ? (
+          /* Clean Hero Empty State */
+          <div style={{ textAlign: 'center', padding: '40px 20px 24px 20px', maxWidth: '720px', margin: '0 auto', width: '100%' }}>
             <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              background: msg.sender === 'user' ? 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)' : (isLight ? '#f1f5f9' : '#1e293b'),
-              border: isLight ? '1px solid #e2e8f0' : 'none',
+              width: '56px',
+              height: '56px',
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%)',
+              border: '1px solid rgba(249, 115, 22, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '0.9rem',
-              fontWeight: 'bold',
-              color: '#ffffff',
-              flexShrink: 0
+              margin: '0 auto 20px auto',
+              boxShadow: '0 8px 24px rgba(249, 115, 22, 0.15)'
             }}>
-              {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} color="#f97316" />}
+              <Sparkles size={28} color="#f97316" />
             </div>
 
-            {/* Content Bubble */}
-            <div style={{ flex: 1 }}>
-              {msg.isDual ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
-                  {/* Model A Card */}
-                  <div style={{
-                    background: isLight ? '#ffffff' : '#0d1127',
-                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
-                  }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Cpu size={14} /> {msg.modelA.modelName}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
-                          ⚡ {msg.modelA.latencyMs}ms
-                        </span>
-                      </div>
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>{msg.modelA.text}</div>
-                    </div>
-                    <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
-                      {msg.modelA.text?.includes('```') && (
-                        <button
-                          onClick={() => setActiveSandboxCode(msg.modelA.text)}
-                          style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          <Play size={10} /> Live Sandbox
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Model B Card */}
-                  <div style={{
-                    background: isLight ? '#ffffff' : '#0d1127',
-                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
-                  }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Cpu size={14} /> {msg.modelB.modelName}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
-                          ⚡ {msg.modelB.latencyMs}ms
-                        </span>
-                      </div>
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>{msg.modelB.text}</div>
-                    </div>
-                    <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
-                      {msg.modelB.text?.includes('```') && (
-                        <button
-                          onClick={() => setActiveSandboxCode(msg.modelB.text)}
-                          style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          <Play size={10} /> Live Sandbox
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : (
+            <h1 style={{ fontSize: '2.6rem', fontWeight: '800', margin: '0 0 8px 0', color: textColor, letterSpacing: '-0.03em' }}>
+              Hello, {user?.name ? user.name.split(' ')[0] : 'Bharani'}
+            </h1>
+            <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 32px 0', color: subtextColor }}>
+              What would you like to build today?
+            </p>
+          </div>
+        ) : (
+          /* Active Chat Thread */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {messages.slice(1).map(msg => (
+              <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                {/* Avatar */}
                 <div style={{
-                  background: msg.sender === 'user' ? bubbleUserBg : bubbleAiBg,
-                  border: msg.sender === 'user' ? `1px solid ${bubbleUserBorder}` : `1px solid ${bubbleAiBorder}`,
-                  padding: '18px 22px',
-                  borderRadius: '18px',
-                  color: textColor,
-                  fontSize: '0.95rem',
-                  lineHeight: 1.65,
-                  boxShadow: isLight ? '0 4px 14px rgba(0, 0, 0, 0.04)' : '0 4px 14px rgba(0, 0, 0, 0.2)'
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: msg.sender === 'user' ? 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)' : (isLight ? '#f1f5f9' : '#1e293b'),
+                  border: isLight ? '1px solid #e2e8f0' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  flexShrink: 0
                 }}>
-                  {/* Render Attachments if present on user message */}
-                  {msg.attachments && msg.attachments.length > 0 && (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                      {msg.attachments.map((att, i) => (
-                        <span key={i} style={{ fontSize: '0.75rem', background: isLight ? '#fff' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#f97316', fontWeight: '600' }}>
-                          <Paperclip size={12} /> {att.name} ({att.size})
-                        </span>
-                      ))}
+                  {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} color="#f97316" />}
+                </div>
+
+                {/* Content Bubble */}
+                <div style={{ flex: 1 }}>
+                  {msg.isDual ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
+                      {/* Model A Card */}
+                      <div style={{
+                        background: isLight ? '#ffffff' : '#0d1127',
+                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Cpu size={14} /> {msg.modelA.modelName}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
+                              ⚡ {msg.modelA.latencyMs}ms
+                            </span>
+                          </div>
+                          <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>{msg.modelA.text}</div>
+                        </div>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
+                          {msg.modelA.text?.includes('```') && (
+                            <button
+                              onClick={() => setActiveSandboxCode(msg.modelA.text)}
+                              style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Play size={10} /> Live Sandbox
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Model B Card */}
+                      <div style={{
+                        background: isLight ? '#ffffff' : '#0d1127',
+                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Cpu size={14} /> {msg.modelB.modelName}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
+                              ⚡ {msg.modelB.latencyMs}ms
+                            </span>
+                          </div>
+                          <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>{msg.modelB.text}</div>
+                        </div>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
+                          {msg.modelB.text?.includes('```') && (
+                            <button
+                              onClick={() => setActiveSandboxCode(msg.modelB.text)}
+                              style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Play size={10} /> Live Sandbox
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: msg.sender === 'user' ? bubbleUserBg : bubbleAiBg,
+                      border: msg.sender === 'user' ? `1px solid ${bubbleUserBorder}` : `1px solid ${bubbleAiBorder}`,
+                      padding: '18px 22px',
+                      borderRadius: '18px',
+                      color: textColor,
+                      fontSize: '0.95rem',
+                      lineHeight: 1.65,
+                      boxShadow: isLight ? '0 4px 14px rgba(0, 0, 0, 0.04)' : '0 4px 14px rgba(0, 0, 0, 0.2)'
+                    }}>
+                      {/* Render Attachments if present on user message */}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                          {msg.attachments.map((att, i) => (
+                            <span key={i} style={{ fontSize: '0.75rem', background: isLight ? '#fff' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#f97316', fontWeight: '600' }}>
+                              <Paperclip size={12} /> {att.name} ({att.size})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Render Ollama Style "Thought for a moment" Header */}
+                      {msg.thoughtProcess && (
+                        <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                          <Lightbulb size={14} color="#f97316" />
+                          <span>Thought for a moment ({msg.thoughtProcess})</span>
+                        </div>
+                      )}
+
+                      <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+
+                      {/* Standard Message Action Buttons */}
+                      {msg.sender === 'ai' && msg.text?.includes('```') && (
+                        <div style={{ marginTop: '12px' }}>
+                          <button
+                            onClick={() => setActiveSandboxCode(msg.text)}
+                            style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <Play size={13} /> Run Live Interactive Code Sandbox
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Render Ollama Style "Thought for a moment" Header */}
-                  {msg.thoughtProcess && (
-                    <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                      <Lightbulb size={14} color="#f97316" />
-                      <span>Thought for a moment ({msg.thoughtProcess})</span>
+                  {/* Live Model Connection Diagnostic Footer */}
+                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.provider && (
+                    <div style={{
+                      marginTop: '14px',
+                      paddingTop: '10px',
+                      borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      fontSize: '0.75rem',
+                      color: subtextColor,
+                      flexWrap: 'wrap'
+                    }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        color: '#10b981',
+                        fontWeight: '700',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(16, 185, 129, 0.25)'
+                      }}>
+                        <Activity size={12} color="#10b981" /> Live AI Verified
+                      </span>
+                      <span>Engine: <strong style={{ color: textColor }}>{msg.provider}</strong></span>
+                      {msg.latencyMs && (
+                        <>
+                          <span>•</span>
+                          <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
+                        </>
+                      )}
+                      <span>•</span>
+                      <span style={{ opacity: 0.8 }}>No Mock / Pre-set SOP Data</span>
                     </div>
                   )}
 
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+                  {/* Inline API Key Input Prompt */}
+                  {msg.isKeyPrompt && (
+                    <div style={{
+                      marginTop: '14px',
+                      padding: '16px',
+                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
+                      borderRadius: '12px',
+                      border: '1px solid #f97316',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={16} color="#f97316" /> Save {msg.keyType === 'gemini' ? 'Google Gemini' : 'OpenRouter'} API Key to chat live:
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="password"
+                          placeholder={msg.keyType === 'gemini' ? 'Paste Gemini Key (AIzaSy...)' : 'Paste OpenRouter Key (sk-or-v1...)'}
+                          value={keyInputValue}
+                          onChange={(e) => setKeyInputValue(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
+                            background: isLight ? '#ffffff' : '#1e293b',
+                            color: textColor,
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                        <button
+                          onClick={() => saveKeyAndRetry(msg.keyType)}
+                          style={{
+                            background: '#f97316',
+                            color: '#ffffff',
+                            border: 'none',
+                            padding: '10px 18px',
+                            borderRadius: '8px',
+                            fontWeight: 'bold',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Save Key & Retry
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: subtextColor }}>
+                        {msg.keyType === 'gemini' ? (
+                          <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
+                        ) : (
+                          <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Standard Message Action Buttons */}
-                  {msg.sender === 'ai' && msg.text?.includes('```') && (
-                    <div style={{ marginTop: '12px' }}>
+                  {/* Render Interactive Live Component Sandboxes Directly in Chat */}
+                  {msg.componentType === 'calculator' && <LiveIosCalculator />}
+                  {msg.componentType === 'beat' && <LiveBeatMaker />}
+                  {msg.componentType === 'quantum' && <LiveQuantumSimulator />}
+
+                  {/* Source Code Toggle Button */}
+                  {msg.codeSnippet && (
+                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <button
-                        onClick={() => setActiveSandboxCode(msg.text)}
-                        style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
+                        style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                       >
-                        <Play size={13} /> Run Live Interactive Code Sandbox
+                        <Code2 size={14} /> {showCodeMap[msg.id] ? 'Hide Source Code' : 'Inspect Source Code'}
                       </button>
+
+                      <button
+                        onClick={() => onPushToCanvas && onPushToCanvas(msg.codeSnippet)}
+                        style={{ background: isLight ? '#f3e8ff' : 'rgba(139, 92, 246, 0.2)', border: isLight ? '1px solid #d8b4fe' : '1px solid rgba(139, 92, 246, 0.4)', color: isLight ? '#7c3aed' : '#a78bfa', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Workflow size={12} /> Push to Canvas
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Optional Source Code Panel */}
+                  {showCodeMap[msg.id] && msg.codeSnippet && (
+                    <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                      <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                        {msg.codeSnippet}
+                      </pre>
                     </div>
                   )}
                 </div>
-              )}
-
-                {/* Live Model Connection Diagnostic Footer */}
-                {msg.sender === 'ai' && !msg.isKeyPrompt && msg.provider && (
-                  <div style={{
-                    marginTop: '14px',
-                    paddingTop: '10px',
-                    borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    fontSize: '0.75rem',
-                    color: subtextColor,
-                    flexWrap: 'wrap'
-                  }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      color: '#10b981',
-                      fontWeight: '700',
-                      background: 'rgba(16, 185, 129, 0.1)',
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      border: '1px solid rgba(16, 185, 129, 0.25)'
-                    }}>
-                      <Activity size={12} color="#10b981" /> Live AI Verified
-                    </span>
-                    <span>Engine: <strong style={{ color: textColor }}>{msg.provider}</strong></span>
-                    {msg.latencyMs && (
-                      <>
-                        <span>•</span>
-                        <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
-                      </>
-                    )}
-                    <span>•</span>
-                    <span style={{ opacity: 0.8 }}>No Mock / Pre-set SOP Data</span>
-                  </div>
-                )}
-
-                {/* Inline API Key Input Prompt */}
-                {msg.isKeyPrompt && (
-                  <div style={{
-                    marginTop: '14px',
-                    padding: '16px',
-                    background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
-                    borderRadius: '12px',
-                    border: '1px solid #f97316',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px'
-                  }}>
-                    <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Sparkles size={16} color="#f97316" /> Save {msg.keyType === 'gemini' ? 'Google Gemini' : 'OpenRouter'} API Key to chat live:
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="password"
-                        placeholder={msg.keyType === 'gemini' ? 'Paste Gemini Key (AIzaSy...)' : 'Paste OpenRouter Key (sk-or-v1...)'}
-                        value={keyInputValue}
-                        onChange={(e) => setKeyInputValue(e.target.value)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 14px',
-                          borderRadius: '8px',
-                          border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                          background: isLight ? '#ffffff' : '#1e293b',
-                          color: textColor,
-                          fontSize: '0.85rem'
-                        }}
-                      />
-                      <button
-                        onClick={() => saveKeyAndRetry(msg.keyType)}
-                        style={{
-                          background: '#f97316',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '10px 18px',
-                          borderRadius: '8px',
-                          fontWeight: 'bold',
-                          fontSize: '0.85rem',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        Save Key & Retry
-                      </button>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: subtextColor }}>
-                      {msg.keyType === 'gemini' ? (
-                        <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
-                      ) : (
-                        <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Render Interactive Live Component Sandboxes Directly in Chat */}
-                {msg.componentType === 'calculator' && <LiveIosCalculator />}
-                {msg.componentType === 'beat' && <LiveBeatMaker />}
-                {msg.componentType === 'quantum' && <LiveQuantumSimulator />}
-
-                {/* Source Code Toggle Button */}
-                {msg.codeSnippet && (
-                  <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <button
-                      onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
-                      style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <Code2 size={14} /> {showCodeMap[msg.id] ? 'Hide Source Code' : 'Inspect Source Code'}
-                    </button>
-
-                    <button
-                      onClick={() => onPushToCanvas && onPushToCanvas(msg.codeSnippet)}
-                      style={{ background: isLight ? '#f3e8ff' : 'rgba(139, 92, 246, 0.2)', border: isLight ? '1px solid #d8b4fe' : '1px solid rgba(139, 92, 246, 0.4)', color: isLight ? '#7c3aed' : '#a78bfa', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <Workflow size={12} /> Push to Canvas
-                    </button>
-                  </div>
-                )}
-
-                {/* Optional Source Code Panel */}
-                {showCodeMap[msg.id] && msg.codeSnippet && (
-                  <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-                      {msg.codeSnippet}
-                    </pre>
-                  </div>
-                )}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        )}
 
         {isGenerating && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f97316', fontSize: '0.88rem', paddingLeft: '50px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f97316', fontSize: '0.88rem', paddingLeft: '50px', marginTop: '16px' }}>
             <Sparkles size={16} className="animate-spin" /> {selectedModel ? selectedModel.name : 'Qwen 2.5 Coder'} is thinking...
           </div>
         )}
       </div>
 
-      {/* Ollama & Gemini Hybrid Input Console - Google Firebase Studio Style */}
-      <div style={{ position: 'relative' }}>
-        {/* Welcome Greeting Header (Firebase Studio Style) */}
-        {messages.length <= 1 && (
-          <div style={{ marginBottom: '28px' }}>
-            <h1 style={{ fontSize: '2.5rem', fontWeight: '800', margin: '0 0 6px 0', color: textColor, letterSpacing: '-0.025em' }}>
-              Hello, {user?.name ? user.name.split(' ')[0] : 'Creator'}
-            </h1>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: '500', margin: 0, color: subtextColor }}>
-              What do you want to build?
-            </h2>
-          </div>
-        )}
-
+      {/* Clean Prompt Console Input Area */}
+      <div style={{ position: 'relative', width: '100%', maxWidth: '820px', margin: '0 auto' }}>
         {/* Attachment Files Badge Bar */}
         {attachments.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', paddingLeft: '4px' }}>
@@ -1275,44 +1365,29 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           </div>
         )}
 
-        {/* Section Label */}
-        {messages.length <= 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', padding: '0 4px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '600', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Sparkles size={14} color="#f97316" /> Prototype an app with AI
-            </span>
-            <span style={{ fontSize: '0.72rem', color: subtextColor, opacity: 0.8 }}>
-              Press <kbd style={{ padding: '2px 5px', background: isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)', borderRadius: '4px', fontSize: '0.68rem', fontFamily: 'monospace' }}>TAB</kbd> to autocomplete
-            </span>
-          </div>
-        )}
-
-        {/* Firebase Studio Style Prompt Container Card */}
+        {/* Prompt Card Container */}
         <div style={{
           background: isLight ? '#ffffff' : '#0d1127',
           border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)',
-          borderRadius: '16px',
-          boxShadow: isLight ? '0 10px 30px rgba(0, 0, 0, 0.05)' : '0 16px 40px rgba(0, 0, 0, 0.5)',
-          overflow: 'hidden',
+          borderRadius: '18px',
+          boxShadow: isLight ? '0 8px 30px rgba(0, 0, 0, 0.06)' : '0 16px 40px rgba(0, 0, 0, 0.4)',
+          overflow: 'visible',
           transition: 'all 0.2s ease',
           position: 'relative'
         }}>
-          {/* Multi-line Text Area Input */}
-          <div style={{ position: 'relative', padding: '16px 16px 8px 16px' }}>
+          {/* Text Area Input */}
+          <div style={{ position: 'relative', padding: '16px 18px 8px 18px' }}>
             <textarea
               rows={3}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Tab' && !inputText) {
-                  e.preventDefault();
-                  setInputText('An app that helps users manage and share their tasks');
-                } else if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
                 }
               }}
-              placeholder="An app that helps users manage and share their tasks..."
+              placeholder="Ask Quantora to code an app, analyze data, or generate ideas..."
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -1325,30 +1400,9 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                 lineHeight: '1.5'
               }}
             />
-
-            {!inputText && (
-              <span
-                onClick={() => setInputText('An app that helps users manage and share their tasks')}
-                style={{
-                  position: 'absolute',
-                  top: '18px',
-                  right: '20px',
-                  fontSize: '0.7rem',
-                  fontWeight: '700',
-                  color: subtextColor,
-                  background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.15)',
-                  cursor: 'pointer'
-                }}
-              >
-                TAB
-              </span>
-            )}
           </div>
 
-          {/* Embedded Bottom Action Toolbar */}
+          {/* Bottom Action Toolbar */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -1361,7 +1415,6 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           }}>
             {/* Left Toolbar Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* Hidden File Input */}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -1370,7 +1423,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                 multiple
               />
 
-              {/* Attach File Button */}
+              {/* Attach File */}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach file or code"
@@ -1383,14 +1436,13 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'color 0.2s ease'
+                  justifyContent: 'center'
                 }}
               >
                 <Paperclip size={18} />
               </button>
 
-              {/* AI Magic Wand Prompt Enhancer Button */}
+              {/* Magic Wand Enhancer */}
               <button
                 onClick={handleMagicWandEnhance}
                 title="AI Magic Wand - Enhance & Expand Prompt"
@@ -1398,23 +1450,21 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
                   border: isLight ? '1px solid rgba(249, 115, 22, 0.3)' : '1px solid rgba(249, 115, 22, 0.4)',
                   color: '#f97316',
-                  padding: '5px 11px',
+                  padding: '5px 12px',
                   borderRadius: '20px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  fontSize: '0.76rem',
-                  fontWeight: '700',
-                  transition: 'all 0.22s ease',
-                  boxShadow: '0 2px 8px rgba(249, 115, 22, 0.15)'
+                  fontSize: '0.78rem',
+                  fontWeight: '600'
                 }}
               >
                 <Wand2 size={14} color="#f97316" className={isEnhancingPrompt ? "animate-spin" : ""} />
                 <span>Magic Wand</span>
               </button>
 
-              {/* Model Selector Pill inside toolbar */}
+              {/* Model Selector Pill */}
               <div ref={inBarModelRef} style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowInBarModelDropdown(!showInBarModelDropdown)}
@@ -1427,7 +1477,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                     color: textColor,
                     padding: '5px 12px',
                     borderRadius: '20px',
-                    fontSize: '0.76rem',
+                    fontSize: '0.78rem',
                     fontWeight: '600',
                     cursor: 'pointer'
                   }}
@@ -1437,21 +1487,22 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   <ChevronDown size={12} color={subtextColor} />
                 </button>
 
-                {/* Dropdown Popup */}
                 {showInBarModelDropdown && (
                   <div style={{
                     position: 'absolute',
-                    bottom: '130%',
+                    bottom: 'calc(100% + 10px)',
                     left: 0,
-                    width: '260px',
+                    width: '280px',
+                    maxHeight: '340px',
+                    overflowY: 'auto',
                     background: isLight ? '#ffffff' : '#0d1127',
                     border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
-                    borderRadius: '14px',
+                    borderRadius: '16px',
                     padding: '8px',
-                    boxShadow: isLight ? '0 10px 30px rgba(0,0,0,0.15)' : '0 15px 40px rgba(0,0,0,0.6)',
-                    zIndex: 250
+                    boxShadow: isLight ? '0 -10px 30px rgba(0,0,0,0.15)' : '0 -15px 40px rgba(0,0,0,0.6)',
+                    zIndex: 900
                   }}>
-                    <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '4px 8px', fontWeight: '700', textTransform: 'uppercase' }}>
+                    <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '6px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Select Live AI Engine
                     </div>
                     {availableModels && availableModels.map(model => (
@@ -1462,20 +1513,25 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                           setShowInBarModelDropdown(false);
                         }}
                         style={{
-                          padding: '8px 10px',
-                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
                           cursor: 'pointer',
                           background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          fontSize: '0.8rem',
+                          gap: '10px',
+                          fontSize: '0.82rem',
                           color: selectedModel?.id === model.id ? '#f97316' : textColor,
-                          fontWeight: selectedModel?.id === model.id ? '700' : '500'
+                          fontWeight: selectedModel?.id === model.id ? '700' : '500',
+                          transition: 'background 0.15s ease'
                         }}
                       >
-                        <span>{model.name}</span>
-                        <span style={{ fontSize: '0.62rem', background: 'rgba(16, 185, 129, 0.15)', color: '#059669', padding: '1px 5px', borderRadius: '4px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.name}</span>
+                          <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider}</span>
+                        </div>
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.15)', color: '#059669', padding: '2px 6px', borderRadius: '6px', fontWeight: '700', flexShrink: 0 }}>
                           Active
                         </span>
                       </div>
@@ -1484,7 +1540,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                 )}
               </div>
 
-              {/* Grounding Toggle */}
+              {/* Web Grounding Toggle */}
               <button
                 onClick={() => setWebSearchEnabled(!webSearchEnabled)}
                 title={webSearchEnabled ? "Live Web Search Enabled" : "Enable Web Search Grounding"}
@@ -1497,7 +1553,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   color: webSearchEnabled ? '#0284c7' : subtextColor,
                   padding: '5px 10px',
                   borderRadius: '20px',
-                  fontSize: '0.76rem',
+                  fontSize: '0.78rem',
                   fontWeight: '600',
                   cursor: 'pointer'
                 }}
@@ -1507,113 +1563,80 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
               </button>
             </div>
 
-            {/* Right Toolbar Controls: Quick Idea Chips + Send Button */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {/* Quick Suggestion Chips (Icons only, text on hover) */}
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {quickPrompts.map((chip, i) => (
-                  <QuickPromptChip
-                    key={i}
-                    chip={chip}
-                    isLight={isLight}
-                    onSelect={handleSendMessage}
-                  />
-                ))}
-              </div>
-
-              {/* Up Arrow Send Button */}
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={(!inputText.trim() && !attachments.length) || isGenerating}
-                style={{
-                  background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
-                  border: 'none',
-                  color: '#ffffff',
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '10px',
-                  cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease',
-                  fontWeight: 'bold',
-                  boxShadow: (inputText.trim() || attachments.length) ? '0 4px 12px rgba(249, 115, 22, 0.3)' : 'none'
-                }}
-              >
-                <Send size={15} />
-              </button>
-            </div>
+            {/* Right Control: Send Button */}
+            <button
+              onClick={() => handleSendMessage()}
+              disabled={(!inputText.trim() && !attachments.length) || isGenerating}
+              style={{
+                background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
+                border: 'none',
+                color: '#ffffff',
+                width: '38px',
+                height: '38px',
+                borderRadius: '12px',
+                cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                fontWeight: 'bold',
+                boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
+              }}
+            >
+              <Send size={16} />
+            </button>
           </div>
         </div>
 
-        {/* "Start coding an app" Section (Firebase Studio / Project IDX Style) */}
+        {/* 4 Clean Starter Cards Grid on Initial Empty View */}
         {messages.length <= 1 && (
-          <div style={{ marginTop: '28px' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: '600', color: subtextColor, marginBottom: '10px' }}>
-              Start coding or choose a technology stack
-            </div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              flexWrap: 'wrap',
-              background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.5)',
-              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '16px',
-              padding: '12px 18px'
-            }}>
-              <button
-                onClick={() => handleSendMessage("Create a new full-stack app workspace")}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '12px',
+            marginTop: '20px'
+          }}>
+            {[
+              { title: 'Task Manager App', desc: 'Build a task tracker with status filters & categories', icon: <FileText size={18} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
+              { title: 'iOS Calculator', desc: 'Build an interactive calculator with conversion history', icon: <Calculator size={18} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
+              { title: 'AI Beat Synthesizer', desc: 'Create a drum machine with multi-track BPM controls', icon: <Music size={18} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
+              { title: 'Quantum Simulator', desc: 'Simulate Bell state entanglement & Hadamard gates', icon: <Atom size={18} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
+            ].map((card, idx) => (
+              <div
+                key={idx}
+                onClick={() => handleSendMessage(card.prompt)}
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: textColor,
-                  fontSize: '0.85rem',
-                  fontWeight: '600',
+                  background: isLight ? '#ffffff' : 'rgba(13, 17, 39, 0.6)',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '14px',
+                  padding: '14px 16px',
                   cursor: 'pointer',
+                  transition: 'all 0.2s ease',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#f97316';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = isLight ? '0 6px 16px rgba(249, 115, 22, 0.12)' : '0 6px 20px rgba(0,0,0,0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = 'none';
                 }}
               >
-                <Plus size={16} color="#f97316" /> New Workspace
-              </button>
-              <span style={{ color: isLight ? '#cbd5e1' : 'rgba(255,255,255,0.15)' }}>|</span>
-              <button
-                onClick={() => handleSendMessage("Help me import a Git repository into Quantora Studio")}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: textColor,
-                  fontSize: '0.85rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <FolderPlus size={16} color="#3b82f6" /> Import Repo
-              </button>
-
-              <span style={{ color: isLight ? '#cbd5e1' : 'rgba(255,255,255,0.15)' }}>|</span>
-
-              {/* Tech Stack Badges with Graphic Logos (Icons only, text on hover) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', flex: 1, paddingBottom: '2px' }}>
-                {['Next.js', 'React', 'Go', 'Python', 'Flutter', 'Gemini AI', 'Angular', 'Node.js', 'Java', '.NET'].map((tech, idx) => (
-                  <TechBadge
-                    key={idx}
-                    tech={tech}
-                    isLight={isLight}
-                    textColor={textColor}
-                    onSelect={handleSendMessage}
-                  />
-                ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {card.icon}
+                  <span style={{ fontSize: '0.88rem', fontWeight: '700', color: textColor }}>{card.title}</span>
+                </div>
+                <span style={{ fontSize: '0.78rem', color: subtextColor, lineHeight: '1.4' }}>{card.desc}</span>
               </div>
-            </div>
+            ))}
           </div>
         )}
+      </div>
       </div>
 
       {/* Interactive Code Sandbox Overlay Modal */}
@@ -1676,8 +1699,6 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           </div>
         </div>
       )}
-        </div>
-      </div>
     </div>
   );
 }

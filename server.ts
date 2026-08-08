@@ -81,6 +81,19 @@ async function startServer() {
     throw lastError || new Error("All Gemini fallback models failed.");
   }
 
+  // Endpoint to download full codebase zip archive directly
+  app.get("/api/download-zip", (req, res) => {
+    const zipPath = path.join(process.cwd(), "public", "quantora-codebase.zip");
+    res.download(zipPath, "quantora-codebase.zip", (err) => {
+      if (err) {
+        console.error("Download failed:", err);
+        if (!res.headersSent) {
+          res.status(500).send("Error downloading file");
+        }
+      }
+    });
+  });
+
   // API route for real AI chat using Gemini API or OpenRouter API
   app.post("/api/chat", async (req, res) => {
     const startTime = Date.now();

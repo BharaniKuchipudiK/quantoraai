@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
-import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop } from 'lucide-react';
+import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download } from 'lucide-react';
 
 export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -165,9 +165,36 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
         {/* Right Section: Model Selector & Combined Profile & Privacy Dropdown */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Active Model Selector */}
+          {/* Active Model Selector & Direct Code Download */}
           {user && (
-            <div ref={modelRef} style={{ position: 'relative' }}>
+            <>
+              {/* Direct Codebase Download Button */}
+              <a
+                href="/quantora-codebase.zip"
+                download="quantora-codebase.zip"
+                title="Download full project source code as ZIP"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '7px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.82rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  textDecoration: 'none',
+                  boxShadow: '0 2px 10px rgba(249, 115, 22, 0.3)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Download size={15} color="#ffffff" />
+                <span>Download Code (.zip)</span>
+              </a>
+
+              <div ref={modelRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => {
                   setShowModelDropdown(!showModelDropdown);
@@ -237,7 +264,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                 </div>
               )}
             </div>
-          )}
+          </>
+        )}
 
           {/* Integrated Profile & Privacy Control Dropdown */}
           {user ? (
@@ -368,6 +396,34 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       </button>
                     </div>
                   </div>
+
+                  {/* Developer & Source Export Section */}
+                  <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, letterSpacing: '0.05em', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    Developer & Code Export
+                  </div>
+
+                  <a
+                    href="/quantora-codebase.zip"
+                    download="quantora-codebase.zip"
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(234, 88, 12, 0.15) 100%)',
+                      border: '1px solid rgba(249, 115, 22, 0.3)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '12px',
+                      fontSize: '0.85rem',
+                      color: textColor,
+                      fontWeight: '600',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    <Download size={16} color="#f97316" />
+                    <span>Download Complete Project (.zip)</span>
+                  </a>
 
                   {/* Privacy & Security Section */}
                   <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, letterSpacing: '0.05em', marginBottom: '8px', textTransform: 'uppercase' }}>
