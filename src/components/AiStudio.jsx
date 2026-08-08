@@ -904,8 +904,8 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sparkles size={20} color="#f97316" />
             </div>
-            <div>
-              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {activeSession ? activeSession.title : 'Quantora Open AI Studio'}
               </h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
@@ -1247,9 +1247,15 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                         <div style={{ marginTop: '12px' }}>
                           <button
                             onClick={() => {
-                              const cleanCode = msg.text.includes('<!DOCTYPE html>') || msg.text.includes('<html')
-                                ? msg.text.replace(/```html|```javascript|```js|```css|```/gi, '')
-                                : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
+                              let cleanCode = '';
+                              const htmlMatch = msg.text.match(/```html\n([\s\S]*?)```/i) || msg.text.match(/```\n([\s\S]*?<html[\s\S]*?)```/i);
+                              if (htmlMatch && htmlMatch[1]) {
+                                cleanCode = htmlMatch[1];
+                              } else {
+                                cleanCode = msg.text.includes('<!DOCTYPE html>') || msg.text.includes('<html')
+                                  ? msg.text.replace(/```html|```javascript|```js|```css|```/gi, '')
+                                  : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
+                              }
                               setPreviewCode(cleanCode);
                               setCanvasOpen(true);
                             }}
