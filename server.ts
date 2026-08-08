@@ -117,7 +117,7 @@ async function startServer() {
     });
   });
 
-  // API route for real AI chat using Gemini API or OpenRouter API
+  // API route for real AI chat using Gemini API or OpenRouter API with SSE Streaming
   app.post("/api/chat", async (req, res) => {
     const startTime = Date.now();
     try {
@@ -148,22 +148,41 @@ async function startServer() {
             body: JSON.stringify({
               model: modelId,
               messages: formattedHistory,
+              stream: true,
             }),
           });
 
-          if (response.ok) {
-            const data = await response.json();
-            const reply = data.choices?.[0]?.message?.content;
-            if (reply) {
-              const latencyMs = Date.now() - startTime;
-              return res.json({
-                text: reply,
-                provider: `OpenRouter (${modelName || modelId})`,
-                latencyMs,
-                modelId: modelId,
-                liveConnected: true
-              });
+          if (response.ok && response.body) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split("\n");
+              for (const line of lines) {
+                if (line.startsWith("data: ") && !line.includes("[DONE]")) {
+                  try {
+                    const parsed = JSON.parse(line.slice(6));
+                    const content = parsed.choices?.[0]?.delta?.content;
+                    if (content) {
+                      res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
+                    }
+                  } catch (e) {}
+                }
+              }
             }
+            
+            const latencyMs = Date.now() - startTime;
+            const payload = { done: true, provider: `OpenRouter ${modelName || modelId}`, latencyMs };
+            res.write(`data: ${JSON.stringify(payload)}\n\n`);
+            return res.end();
           } else {
             const errText = await response.text();
             console.warn("OpenRouter API returned error:", response.status, errText);
@@ -183,19 +202,60 @@ async function startServer() {
             ? `${personaString} You are currently functioning as "${modelName || modelId}". Preserving the expertise of ${modelName || modelId}, format everything beautifully.`
             : `${personaString} You are currently functioning as "${modelName || "Gemini 3.6 Flash"}".`;
 
-          const result = await generateGeminiContent(effectiveGeminiKey, contents, systemInstruction);
-          const latencyMs = Date.now() - startTime;
+          const client = new GoogleGenAI({ apiKey: effectiveGeminiKey });
+          const fallbackModels = [
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3-flash-preview",
+            "gemini-flash-latest",
+            "gemma-4-26b-a4b-it",
+            "gemma-4-31b-it"
+          ];
+          
+          let responseStream;
+          let usedModel;
+          let lastError;
+          
+          for (const m of fallbackModels) {
+            try {
+              responseStream = await client.models.generateContentStream({
+                model: m,
+                contents: contents,
+                config: {
+                  systemInstruction: systemInstruction,
+                  temperature: 0.7,
+                },
+              });
+              usedModel = m;
+              break;
+            } catch (err: any) {
+              console.warn(`Gemini model ${m} failed to connect stream:`, err.message || err);
+              lastError = err;
+            }
+          }
+          
+          if (!responseStream) {
+            throw lastError || new Error("All Gemini fallback models failed.");
+          }
 
-          return res.json({
-            text: result.text,
-            provider: isCustomModel ? `Quantora AI Engine (${modelName || modelId})` : `Google Gemini (${modelName || "Gemini 3.6 Flash"})`,
-            latencyMs,
-            modelId: result.usedModel,
-            liveConnected: true
-          });
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('Connection', 'keep-alive');
+
+          for await (const chunk of responseStream) {
+            if (chunk.text) {
+              res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+            }
+          }
+
+          const latencyMs = Date.now() - startTime;
+          const payload = { done: true, provider: isCustomModel ? `Quantora AI Engine (${modelName || modelId})` : `Google Gemini (${usedModel})`, latencyMs };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+          return res.end();
+          
         } catch (geminiErr: any) {
           console.error("All Gemini API calls failed:", geminiErr);
-          throw geminiErr;
+          return res.status(500).json({ error: geminiErr.message || "Failed to communicate with AI model." });
         }
       }
 
@@ -206,10 +266,14 @@ async function startServer() {
 
     } catch (err: any) {
       console.error("Error in /api/chat:", err);
-      return res.status(500).json({
-        error: err.message || "Failed to communicate with AI model.",
-        modelName: req.body.modelName || req.body.modelId
-      });
+      if (!res.headersSent) {
+        return res.status(500).json({
+          error: err.message || "Failed to communicate with AI model.",
+          modelName: req.body.modelName || req.body.modelId
+        });
+      } else {
+        res.end();
+      }
     }
   });
 
