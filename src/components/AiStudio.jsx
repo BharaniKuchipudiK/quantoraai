@@ -707,7 +707,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: `⚠️ **API Key Required**: ${errText}\\n\\nPlease enter your API Key below to start chatting directly with **${targetModel.name}**.`,
+          text: `⚠️ **API Key Required**: ${errText}\n\nPlease enter your API Key below to start chatting directly with **${targetModel.name}**.`,
           isKeyPrompt: true,
           keyType: reqKey,
           thoughtProcess: `Live API Key required for ${targetModel.name}`
