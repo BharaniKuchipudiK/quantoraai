@@ -67,6 +67,33 @@ async function generateGeminiContent(apiKey: string, contents: any[], systemInst
   throw lastError || new Error("All Gemini fallback models failed.");
 }
 
+
+// Background telemetry logging to Supabase
+function logTelemetry(modelId: string, latencyMs: number, textLength: number, provider: string) {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) return;
+  
+  // Estimate tokens (roughly 4 chars per token)
+  const tokens = Math.ceil(textLength / 4);
+  
+  fetch(`${supabaseUrl}/rest/v1/telemetry`, {
+    method: 'POST',
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify({
+      model_id: modelId,
+      latency_ms: latencyMs,
+      tokens_generated: tokens,
+      provider: provider
+    })
+  }).catch(err => console.error("Telemetry error:", err));
+}
+
 export default async function handler(req: any, res: any) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -123,6 +150,7 @@ export default async function handler(req: any, res: any) {
           const reply = data.choices?.[0]?.message?.content;
           if (reply) {
             const latencyMs = Date.now() - startTime;
+            logTelemetry(modelId, latencyMs, reply.length, "OpenRouter");
             return res.status(200).json({
               text: reply,
               provider: `OpenRouter (${modelName || modelId})`,
@@ -148,6 +176,7 @@ export default async function handler(req: any, res: any) {
 
         const result = await generateGeminiContent(effectiveGeminiKey, contents, systemInstruction);
         const latencyMs = Date.now() - startTime;
+        logTelemetry(result.usedModel, latencyMs, result.text.length, "Gemini");
 
         return res.status(200).json({
           text: result.text,
