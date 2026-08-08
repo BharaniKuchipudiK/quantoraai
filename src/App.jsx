@@ -6,6 +6,7 @@ import DreamActionCanvas from './components/DreamActionCanvas';
 import QuantumPlayground from './components/QuantumPlayground';
 import PrivacyVault from './components/PrivacyVault';
 import BeeSwarmCanvas from './components/BeeSwarmCanvas';
+import AdminDashboard from './components/AdminDashboard';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
@@ -194,6 +195,12 @@ export default function App() {
                 isLight={isLight}
               />
             )}
+
+            {activeTab === 'dashboard' && (
+              <AdminDashboard
+                onBack={() => handleTabChange('studio')}
+              />
+            )}
           </main>
         </>
       )}
@@ -307,6 +314,7 @@ export default function App() {
             <span onClick={() => handleTabChange('studio')} style={{ cursor: 'pointer', color: activeTab === 'studio' ? '#f97316' : 'currentColor' }}>AI Studio</span>
             <span onClick={() => handleTabChange('canvas')} style={{ cursor: 'pointer', color: activeTab === 'canvas' ? '#f97316' : 'currentColor' }}>Dream-to-Action</span>
             <span onClick={() => handleTabChange('quantum')} style={{ cursor: 'pointer', color: activeTab === 'quantum' ? '#f97316' : 'currentColor' }}>Quantum Playground</span>
+            <span onClick={() => handleTabChange('dashboard')} style={{ cursor: 'pointer', color: activeTab === 'dashboard' ? '#f97316' : 'currentColor' }}>Analytics</span>
           </div>
         </div>
       </footer>

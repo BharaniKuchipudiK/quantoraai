@@ -117,9 +117,70 @@ async function startServer() {
     });
   });
 
+  // Global In-Memory Metrics Store
+  const globalMetrics = {
+    totalRequests: 0,
+    activeConnections: 0,
+    peakConcurrentConnections: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    totalLatencyMs: 0,
+    latencyHistory: [] as number[],
+    modelUsage: {} as Record<string, number>,
+    hourlyTraffic: new Array(24).fill(0)
+  };
+
+  // Helper to record metrics
+  const recordMetric = (latency: number, model: string, success: boolean) => {
+    if (success) {
+      globalMetrics.successfulRequests++;
+      globalMetrics.totalLatencyMs += latency;
+      globalMetrics.latencyHistory.push(latency);
+      if (globalMetrics.latencyHistory.length > 100) globalMetrics.latencyHistory.shift();
+    } else {
+      globalMetrics.failedRequests++;
+    }
+    
+    globalMetrics.modelUsage[model] = (globalMetrics.modelUsage[model] || 0) + 1;
+    const hour = new Date().getHours();
+    globalMetrics.hourlyTraffic[hour]++;
+  };
+
+  // Admin Analytics Endpoint
+  app.get("/api/admin/metrics", (req, res) => {
+    // Basic Auth Check (simple hardcoded param for demo)
+    if (req.query.admin !== "quantora2026") {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    const avgLatency = globalMetrics.successfulRequests > 0 
+      ? Math.round(globalMetrics.totalLatencyMs / globalMetrics.successfulRequests) 
+      : 0;
+      
+    res.json({
+      ...globalMetrics,
+      avgLatency,
+      timestamp: new Date().toISOString()
+    });
+  });
   // API route for real AI chat using Gemini API or OpenRouter API with SSE Streaming
   app.post("/api/chat", async (req, res) => {
+    globalMetrics.totalRequests++;
+    globalMetrics.activeConnections++;
+    if (globalMetrics.activeConnections > globalMetrics.peakConcurrentConnections) {
+      globalMetrics.peakConcurrentConnections = globalMetrics.activeConnections;
+    }
+    
     const startTime = Date.now();
+    let isTracked = false;
+    
+    res.on('close', () => {
+      globalMetrics.activeConnections = Math.max(0, globalMetrics.activeConnections - 1);
+      if (!isTracked) {
+        recordMetric(Date.now() - startTime, req.body.modelName || req.body.modelId || "unknown", false);
+      }
+    });
+
     try {
       const { message, modelId, modelName, history, userKey, openRouterKey } = req.body;
 
@@ -182,6 +243,8 @@ async function startServer() {
             const latencyMs = Date.now() - startTime;
             const payload = { done: true, provider: `OpenRouter ${modelName || modelId}`, latencyMs };
             res.write(`data: ${JSON.stringify(payload)}\n\n`);
+            recordMetric(latencyMs, modelName || modelId, true);
+            isTracked = true;
             return res.end();
           } else {
             const errText = await response.text();
@@ -251,6 +314,8 @@ async function startServer() {
           const latencyMs = Date.now() - startTime;
           const payload = { done: true, provider: isCustomModel ? `Quantora AI Engine (${modelName || modelId})` : `Google Gemini (${usedModel})`, latencyMs };
           res.write(`data: ${JSON.stringify(payload)}\n\n`);
+          recordMetric(latencyMs, modelName || modelId, true);
+          isTracked = true;
           return res.end();
           
         } catch (geminiErr: any) {
