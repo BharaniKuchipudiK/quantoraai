@@ -266,7 +266,7 @@ function TechLogo({ name }) {
   }
 }
 
-// Hover-only Interactive Tech Stack Badge Component
+// Interactive Tech Stack Badge Component (Fixed width, no shaking)
 function TechBadge({ tech, isLight, textColor, onSelect }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -278,7 +278,7 @@ function TechBadge({ tech, isLight, textColor, onSelect }) {
       style={{
         fontSize: '0.76rem',
         fontWeight: '600',
-        padding: hovered ? '6px 14px' : '8px 10px',
+        padding: '6px 12px',
         borderRadius: '10px',
         background: hovered
           ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.22)')
@@ -289,22 +289,20 @@ function TechBadge({ tech, isLight, textColor, onSelect }) {
           ? '1px solid #f97316'
           : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)'),
         whiteSpace: 'nowrap',
-        transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
         display: 'inline-flex',
         alignItems: 'center',
         gap: '6px',
-        boxShadow: hovered ? '0 4px 14px rgba(249, 115, 22, 0.25)' : 'none'
+        boxShadow: hovered ? '0 4px 12px rgba(249, 115, 22, 0.2)' : 'none'
       }}
     >
       <TechLogo name={tech} />
-      {hovered && (
-        <span style={{ transition: 'opacity 0.2s ease', opacity: 1, fontWeight: '700' }}>{tech}</span>
-      )}
+      <span style={{ fontWeight: '600' }}>{tech}</span>
     </span>
   );
 }
 
-// Hover-only Interactive Quick Suggestion Chip Component
+// Interactive Quick Suggestion Chip Component (Fixed width, no shaking)
 function QuickPromptChip({ chip, isLight, onSelect }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -321,17 +319,17 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
           ? '1px solid #f97316'
           : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)'),
         color: hovered ? '#f97316' : (isLight ? '#475569' : '#94a3b8'),
-        padding: hovered ? '6px 14px' : '8px 10px',
+        padding: '6px 14px',
         borderRadius: '20px',
         fontSize: '0.78rem',
         fontWeight: '600',
         cursor: 'pointer',
         whiteSpace: 'nowrap',
-        transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
         display: 'inline-flex',
         alignItems: 'center',
         gap: '6px',
-        boxShadow: hovered ? '0 4px 14px rgba(249, 115, 22, 0.25)' : 'none'
+        boxShadow: hovered ? '0 4px 12px rgba(249, 115, 22, 0.2)' : 'none'
       }}
     >
       {chip.iconType === 'currency' && <Globe size={15} color="#10b981" />}
@@ -343,9 +341,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
       {chip.iconType === 'recipe' && <Utensils size={15} color="#10b981" />}
       {chip.iconType === 'expense' && <PieChart size={15} color="#8b5cf6" />}
 
-      {hovered && (
-        <span style={{ transition: 'opacity 0.2s ease', opacity: 1, fontWeight: '700' }}>{chip.label}</span>
-      )}
+      <span style={{ fontWeight: '600' }}>{chip.label}</span>
     </button>
   );
 }
