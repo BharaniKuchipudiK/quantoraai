@@ -297,33 +297,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     </div>
                   </div>
 
-                  {/* Developer & Source Export Section */}
-                  <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, letterSpacing: '0.05em', marginBottom: '8px', textTransform: 'uppercase' }}>
-                    Developer & Code Export
-                  </div>
 
-                  <a
-                    href="/quantora-codebase.zip"
-                    download="quantora-codebase.zip"
-                    style={{
-                      padding: '10px',
-                      borderRadius: '10px',
-                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(234, 88, 12, 0.15) 100%)',
-                      border: '1px solid rgba(249, 115, 22, 0.3)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      marginBottom: '12px',
-                      fontSize: '0.85rem',
-                      color: textColor,
-                      fontWeight: '600',
-                      textDecoration: 'none'
-                    }}
-                  >
-                    <Download size={16} color="#f97316" />
-                    <span>Download Complete Project (.zip)</span>
-                  </a>
 
                   {/* Privacy & Security Section */}
                   <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, letterSpacing: '0.05em', marginBottom: '8px', textTransform: 'uppercase' }}>
