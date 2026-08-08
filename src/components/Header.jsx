@@ -352,6 +352,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <span>Privacy Vault & Encryption Status</span>
                   </div>
 
+
+
                   {user?.email === 'bharanik.h@gmail.com' && (
                     <div
                       onClick={() => {
