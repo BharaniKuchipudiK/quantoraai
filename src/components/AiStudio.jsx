@@ -624,36 +624,25 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           
           if (!res.ok) throw new Error('API Error');
           
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let accumulated = '';
-          let lastUpdate = 0;
-          let finalLatency = 0;
-          let finalProvider = mod.name;
+          const data = await res.json();
           
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\\n');
-            let updated = false;
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  if (data.text) { accumulated += data.text; updated = true; }
-                  if (data.done) { finalLatency = data.latencyMs; finalProvider = data.provider; updated = true; }
-                } catch (e) {}
-              }
+          updateActiveMessages(prev => prev.map(m => {
+            if (m.id === dualMsgId) {
+              const updatedModelInfo = { 
+                modelName: mod.name, 
+                text: data.text || "No response received.", 
+                provider: data.provider || mod.name, 
+                latencyMs: data.latencyMs || 0 
+              };
+              return {
+                ...m,
+                modelA: isModelA ? updatedModelInfo : m.modelA,
+                modelB: !isModelA ? updatedModelInfo : m.modelB
+              };
             }
-            if (updated && Date.now() - lastUpdate > 100) {
-              updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: accumulated, latencyMs: finalLatency, provider: finalProvider } } : m));
-              lastUpdate = Date.now();
-            }
-          }
-          // Final sync
-          updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: accumulated, latencyMs: finalLatency, provider: finalProvider } } : m));
+            return m;
+          }));
+          
         } catch (e) {
           updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
         }
@@ -695,56 +684,20 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           modelId: targetModel.id,
           modelName: targetModel.name,
           history: cleanMessages,
-          userKey: geminiApiKey,
           openRouterKey: openRouterApiKey
         })
       });
 
       if (res.ok) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let accumulatedText = '';
-        let lastUpdate = 0;
-        let finalProvider = targetModel.name;
-        let finalLatency = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\\n');
-          let updated = false;
-
-          for (const line of lines) {
-            if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.text) {
-                  accumulatedText += data.text;
-                  updated = true;
-                }
-                if (data.done) {
-                  finalProvider = data.provider;
-                  finalLatency = data.latencyMs;
-                  updated = true;
-                }
-              } catch (e) {}
-            }
-          }
-
-          if (updated && Date.now() - lastUpdate > 50) {
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: accumulatedText } : m));
-            lastUpdate = Date.now();
-          }
-        }
-
+        const data = await res.json();
+        
         // Final sync
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: accumulatedText,
-          latencyMs: finalLatency,
-          provider: finalProvider,
-          thoughtProcess: `Processed live via ${finalProvider} (${finalLatency}ms)`
+          text: data.text || "No response received.",
+          latencyMs: data.latencyMs || 0,
+          provider: data.provider || targetModel.name,
+          thoughtProcess: `Processed live via ${data.provider || targetModel.name} (${data.latencyMs || 0}ms)`
         } : m));
 
       } else {
