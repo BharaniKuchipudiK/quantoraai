@@ -34,30 +34,8 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('quantora_user');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error(e);
-    }
-    return {
-      name: "Creator",
-      email: "creator@quantora.app",
-      avatar: "https://ui-avatars.com/api/?name=Creator&background=f97316&color=ffffff&bold=true",
-      authProvider: "Quantora Guest",
-      tier: "Free Tier",
-      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    };
-  });
-  const [activeTab, setActiveTab] = useState(() => {
-    try {
-      const saved = localStorage.getItem('quantora_user');
-      return saved ? 'studio' : 'studio';
-    } catch (e) {
-      return 'studio';
-    }
-  });
+  const [user, setUser] = useState(null);
+  const [activeTab, setActiveTab] = useState('landing');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [themeMode, setThemeMode] = useState('light'); // 'light' | 'dark' | 'system'
 
