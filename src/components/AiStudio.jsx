@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import LivePreviewCanvas from './LivePreviewCanvas';
 // Interactive iOS Calculator Sub-Component
 function LiveIosCalculator() {
   const [display, setDisplay] = useState('0');
@@ -478,6 +479,8 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
   const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [activeSandboxCode, setActiveSandboxCode] = useState(null);
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [previewCode, setPreviewCode] = useState('');
 
   const fileInputRef = useRef(null);
   const inBarModelRef = useRef(null);
@@ -850,22 +853,28 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         </div>
       </div>
 
+      {/* Main Content Split View */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+
       {/* Main Chat Area */}
       <div style={{
-        flex: 1,
+        flex: canvasOpen ? 'none' : 1,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        maxWidth: '850px',
-        margin: '0 auto',
-        width: '100%',
-        position: 'relative'
+        maxWidth: canvasOpen ? '50%' : '850px',
+        margin: canvasOpen ? '0' : '0 auto',
+        width: canvasOpen ? '50%' : '100%',
+        position: 'relative',
+        borderRight: (canvasOpen && isLight) ? '1px solid #e2e8f0' : (canvasOpen ? '1px solid rgba(255,255,255,0.1)' : 'none')
       }}>
         {/* Top Header Bar */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
           marginBottom: '20px',
           paddingBottom: '16px',
           borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)'
@@ -922,7 +931,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
             </div>
           </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {/* Dual Model Arena Toggle Button */}
           <button
             onClick={() => setArenaMode(!arenaMode)}
@@ -1237,10 +1246,16 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                       {msg.sender === 'ai' && msg.text?.includes('```') && (
                         <div style={{ marginTop: '12px' }}>
                           <button
-                            onClick={() => setActiveSandboxCode(msg.text)}
+                            onClick={() => {
+                              const cleanCode = msg.text.includes('<!DOCTYPE html>') || msg.text.includes('<html')
+                                ? msg.text.replace(/```html|```javascript|```js|```css|```/gi, '')
+                                : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
+                              setPreviewCode(cleanCode);
+                              setCanvasOpen(true);
+                            }}
                             style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
-                            <Play size={13} /> Run Live Interactive Code Sandbox
+                            <Play size={13} /> Open Live Canvas Mode
                           </button>
                         </div>
                       )}
