@@ -478,9 +478,23 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
   const [arenaMode, setArenaMode] = useState(false);
   const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
-  const [activeSandboxCode, setActiveSandboxCode] = useState(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [previewCode, setPreviewCode] = useState('');
+
+  const openCanvasWithCode = (rawText) => {
+    let cleanCode = '';
+    const htmlMatch = rawText.match(/```html\n([\s\S]*?)```/i) || rawText.match(/```\n([\s\S]*?<html[\s\S]*?)```/i);
+    if (htmlMatch && htmlMatch[1]) {
+      cleanCode = htmlMatch[1];
+    } else {
+      cleanCode = rawText.includes('<!DOCTYPE html>') || rawText.includes('<html')
+        ? rawText.replace(/```(?:html|javascript|js|css)?\n([\s\S]*?)```/gi, '$1')
+        : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
+    }
+    setPreviewCode(cleanCode);
+    setCanvasOpen(true);
+  };
+
 
   const fileInputRef = useRef(null);
   const inBarModelRef = useRef(null);
@@ -1129,7 +1143,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
                           {msg.modelA.text?.includes('```') && (
                             <button
-                              onClick={() => setActiveSandboxCode(msg.modelA.text)}
+                              onClick={() => openCanvasWithCode(msg.modelA.text)}
                               style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
                               <Play size={10} /> Live Sandbox
@@ -1182,7 +1196,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
                           {msg.modelB.text?.includes('```') && (
                             <button
-                              onClick={() => setActiveSandboxCode(msg.modelB.text)}
+                              onClick={() => openCanvasWithCode(msg.modelB.text)}
                               style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
                             >
                               <Play size={10} /> Live Sandbox
@@ -1246,19 +1260,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                       {msg.sender === 'ai' && msg.text?.includes('```') && (
                         <div style={{ marginTop: '12px' }}>
                           <button
-                            onClick={() => {
-                              let cleanCode = '';
-                              const htmlMatch = msg.text.match(/```html\n([\s\S]*?)```/i) || msg.text.match(/```\n([\s\S]*?<html[\s\S]*?)```/i);
-                              if (htmlMatch && htmlMatch[1]) {
-                                cleanCode = htmlMatch[1];
-                              } else {
-                                cleanCode = msg.text.includes('<!DOCTYPE html>') || msg.text.includes('<html')
-                                  ? msg.text.replace(/```html|```javascript|```js|```css|```/gi, '')
-                                  : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
-                              }
-                              setPreviewCode(cleanCode);
-                              setCanvasOpen(true);
-                            }}
+                            onClick={() => openCanvasWithCode(msg.text)}
                             style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
                             <Play size={13} /> Open Live Canvas Mode
@@ -1720,66 +1722,17 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
       </div>
       </div>
 
-      {/* Interactive Code Sandbox Overlay Modal */}
-      {activeSandboxCode && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: 'blur(8px)',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px'
-        }}>
-          <div style={{
-            width: '100%',
-            maxWidth: '920px',
-            height: '82vh',
-            background: isLight ? '#ffffff' : '#0d1127',
-            borderRadius: '20px',
-            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              padding: '14px 20px',
-              background: isLight ? '#f8fafc' : '#1e293b',
-              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: textColor, fontSize: '0.95rem' }}>
-                <Play size={18} color="#f97316" /> Interactive Code Sandbox Preview
-              </div>
-              <button
-                onClick={() => setActiveSandboxCode(null)}
-                style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '50%' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div style={{ flex: 1, position: 'relative' }}>
-              <iframe
-                title="Sandbox Preview"
-                srcDoc={
-                  activeSandboxCode.includes('<!DOCTYPE html>') || activeSandboxCode.includes('<html')
-                    ? activeSandboxCode.replace(/```html|```js|```/g, '')
-                    : `<!DOCTYPE html><html><head><style>body{font-family:sans-serif;padding:24px;background:#0f172a;color:#fff;line-height:1.6;}</style></head><body><h2>Code Execution Preview</h2><pre style="background:#1e293b;padding:16px;border-radius:12px;overflow:auto;">${activeSandboxCode.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`
-                }
-                style={{ width: '100%', height: '100%', border: 'none' }}
-              />
-            </div>
-          </div>
+      {/* Live Preview Canvas Pane */}
+      {canvasOpen && (
+        <div style={{ flex: 1, height: '100%' }}>
+          <LivePreviewCanvas 
+            code={previewCode} 
+            isLight={isLight} 
+            onClose={() => setCanvasOpen(false)} 
+          />
         </div>
       )}
+      </div> {/* End Main Content Split View */}
     </div>
   );
 }
