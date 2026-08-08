@@ -63,11 +63,7 @@ export function QuantoraEmblemSvg({ size = 140, isDark = false }) {
           fontWeight: '900',
           fontFamily: 'var(--font-heading)',
           letterSpacing: '0.12em',
-          background: isDark 
-            ? 'linear-gradient(135deg, #ffffff 0%, #f97316 100%)' 
-            : 'linear-gradient(135deg, #0f172a 0%, #ea580c 50%, #f97316 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
+          color: isDark ? '#ffffff' : '#0f172a',
           lineHeight: 1
         }}>
           QUANTORA

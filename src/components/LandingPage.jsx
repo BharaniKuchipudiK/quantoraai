@@ -143,7 +143,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
       }}>
         {/* Emblem Node with PROMPT TO ACTION Caption */}
         <div style={{ marginBottom: '32px', display: 'inline-block' }}>
-          <QuantoraEmblemSvg size={140} />
+          <QuantoraEmblemSvg size={140} isDark={!isLight} />
         </div>
 
         {/* Hero Title */}
