@@ -727,13 +727,12 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         display: 'flex',
         flexDirection: 'column',
-        background: isLight ? '#ffffff' : '#0a0e24',
-        border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: '20px',
-        padding: sidebarOpen ? '16px' : '0px',
+        background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
+        border: 'none',
+        borderRadius: '0 24px 24px 0',
+        padding: sidebarOpen ? '20px 16px' : '0px',
         overflow: 'hidden',
-        flexShrink: 0,
-        boxShadow: isLight ? '0 4px 16px rgba(0,0,0,0.03)' : '0 10px 30px rgba(0,0,0,0.3)'
+        flexShrink: 0
       }}>
         {/* Sidebar Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
@@ -854,7 +853,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        maxWidth: '1000px',
+        maxWidth: '850px',
         margin: '0 auto',
         width: '100%',
         position: 'relative'
@@ -1057,17 +1056,17 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   width: '36px',
                   height: '36px',
                   borderRadius: '50%',
-                  background: msg.sender === 'user' ? 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)' : (isLight ? '#f1f5f9' : '#1e293b'),
-                  border: isLight ? '1px solid #e2e8f0' : 'none',
+                  background: msg.sender === 'user' ? '#3b82f6' : (isLight ? '#ffffff' : 'transparent'),
+                  border: msg.sender === 'ai' && isLight ? '1px solid var(--border-color)' : 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '0.9rem',
                   fontWeight: 'bold',
-                  color: '#ffffff',
+                  color: msg.sender === 'user' ? '#ffffff' : 'var(--text-primary)',
                   flexShrink: 0
                 }}>
-                  {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} color="#f97316" />}
+                  {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} />}
                 </div>
 
                 {/* Content Bubble */}
@@ -1145,15 +1144,16 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                       </div>
                     </div>
                   ) : (
-                    <div style={{
-                      background: msg.sender === 'user' ? bubbleUserBg : bubbleAiBg,
-                      border: msg.sender === 'user' ? `1px solid ${bubbleUserBorder}` : `1px solid ${bubbleAiBorder}`,
-                      padding: '18px 22px',
-                      borderRadius: '18px',
+                    <div className="prose" style={{
+                      background: msg.sender === 'user' ? (isLight ? '#f0f4f9' : '#1e1f20') : 'transparent',
+                      border: 'none',
+                      padding: msg.sender === 'user' ? '12px 18px' : '4px 0',
+                      borderRadius: '20px',
                       color: textColor,
-                      fontSize: '0.95rem',
+                      fontSize: '1rem',
                       lineHeight: 1.65,
-                      boxShadow: isLight ? '0 4px 14px rgba(0, 0, 0, 0.04)' : '0 4px 14px rgba(0, 0, 0, 0.2)'
+                      boxShadow: 'none',
+                      width: '100%'
                     }}>
                       {/* Render Attachments if present on user message */}
                       {msg.attachments && msg.attachments.length > 0 && (
@@ -1366,25 +1366,26 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         )}
 
         {/* Prompt Card Container */}
-        <div style={{
-          background: isLight ? '#ffffff' : '#0d1127',
-          border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)',
-          borderRadius: '18px',
-          boxShadow: isLight ? '0 8px 30px rgba(0, 0, 0, 0.06)' : '0 16px 40px rgba(0, 0, 0, 0.4)',
+        <div className="floating-input-pill" style={{
           overflow: 'visible',
-          transition: 'all 0.2s ease',
-          position: 'relative'
+          position: 'relative',
+          padding: '4px'
         }}>
           {/* Text Area Input */}
-          <div style={{ position: 'relative', padding: '16px 18px 8px 18px' }}>
+          <div style={{ position: 'relative', padding: '12px 18px' }}>
             <textarea
-              rows={3}
+              rows={1}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
+                  e.target.style.height = 'auto';
                 }
               }}
               placeholder="Ask Quantora to code an app, analyze data, or generate ideas..."
@@ -1393,11 +1394,14 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                 background: 'transparent',
                 border: 'none',
                 color: textColor,
-                fontSize: '0.98rem',
+                fontSize: '1rem',
                 outline: 'none',
                 resize: 'none',
                 fontFamily: 'inherit',
-                lineHeight: '1.5'
+                lineHeight: '1.5',
+                minHeight: '24px',
+                maxHeight: '150px',
+                overflowY: 'auto'
               }}
             />
           </div>
@@ -1407,9 +1411,8 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '10px 14px',
-            borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)',
-            background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.02)',
+            padding: '4px 14px 10px 14px',
+            background: 'transparent',
             gap: '10px',
             flexWrap: 'wrap'
           }}>
