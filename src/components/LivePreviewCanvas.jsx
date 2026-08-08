@@ -108,7 +108,7 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
           <iframe
             srcDoc={code}
             style={{ width: '100%', height: '100%', border: 'none' }}
-            sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
+            sandbox="allow-scripts allow-forms allow-popups"
             title="Live Preview Canvas"
           />
         </div>
