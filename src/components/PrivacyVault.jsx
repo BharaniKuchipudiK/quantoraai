@@ -29,7 +29,7 @@ export default function PrivacyVault({ user, isLight }) {
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <span style={{ fontSize: '0.75rem', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.4)', color: '#db2777', padding: '6px 12px', borderRadius: '8px', fontWeight: '600' }}>
-              🔒 Zero Knowledge Encryption
+              🔒 Keys Stored Only On Your Device
             </span>
           </div>
         </div>
@@ -68,7 +68,7 @@ export default function PrivacyVault({ user, isLight }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Session Storage</span>
-                  <strong style={{ color: '#059669' }}>Encrypted Local Vault</strong>
+                  <strong style={{ color: '#059669' }}>Browser Local Storage</strong>
                 </div>
               </div>
             </div>
@@ -128,118 +128,7 @@ export default function PrivacyVault({ user, isLight }) {
         </div>
       </div>
 
-      {/* API Key Manager Card */}
-      <div className="glass-card" style={{ padding: '24px', marginTop: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', borderBottom: `1px solid ${borderSubtle}`, paddingBottom: '12px' }}>
-          <KeySquare size={20} color="#f97316" />
-          <h3 style={{ fontSize: '1.1rem', margin: 0, color: textColor }}>API Key Vault</h3>
-        </div>
-        <p style={{ fontSize: '0.88rem', color: subtextColor, marginBottom: '16px' }}>
-          <strong>BYOK (Bring Your Own Key) is optional.</strong> Quantora includes built-in managed compute for all open models by default. You may optionally connect your personal Gemini or OpenRouter API keys below if you want to use custom rate limits. Keys are stored locally in your browser.
-        </p>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Gemini API Key */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <input 
-              id="gemini-api-key-input"
-              type="password"
-              placeholder="Paste your Gemini API Key here (starts with AIza...)"
-              defaultValue={localStorage.getItem('geminiApiKey') || ''}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                if (val) localStorage.setItem('geminiApiKey', val);
-                else localStorage.removeItem('geminiApiKey');
-              }}
-              style={{
-                flex: 1,
-                background: itemBg,
-                border: `1px solid ${borderSubtle}`,
-                padding: '12px 16px',
-                borderRadius: '12px',
-                color: textColor,
-                fontSize: '0.95rem',
-                outline: 'none'
-              }}
-            />
-            <button 
-              style={{
-                background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                color: '#fff',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '12px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-              onClick={(e) => {
-                const input = document.getElementById('gemini-api-key-input');
-                if (input) {
-                  const val = input.value.trim();
-                  if (val) localStorage.setItem('geminiApiKey', val);
-                  else localStorage.removeItem('geminiApiKey');
-                }
-                const btn = e.currentTarget;
-                btn.innerText = 'Saved!';
-                setTimeout(() => btn.innerText = 'Update Key', 2000);
-              }}
-            >
-              Update Key
-            </button>
-          </div>
 
-          {/* OpenRouter API Key */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <input 
-              id="openrouter-api-key-input"
-              type="password"
-              placeholder="Paste your OpenRouter API Key here (starts with sk-or...)"
-              defaultValue={localStorage.getItem('openRouterApiKey') || ''}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                if (val) localStorage.setItem('openRouterApiKey', val);
-                else localStorage.removeItem('openRouterApiKey');
-              }}
-              style={{
-                flex: 1,
-                background: itemBg,
-                border: `1px solid ${borderSubtle}`,
-                padding: '12px 16px',
-                borderRadius: '12px',
-                color: textColor,
-                fontSize: '0.95rem',
-                outline: 'none'
-              }}
-            />
-            <button 
-              style={{
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                color: '#fff',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '12px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-              onClick={(e) => {
-                const input = document.getElementById('openrouter-api-key-input');
-                if (input) {
-                  const val = input.value.trim();
-                  if (val) localStorage.setItem('openRouterApiKey', val);
-                  else localStorage.removeItem('openRouterApiKey');
-                }
-                const btn = e.currentTarget;
-                btn.innerText = 'Saved!';
-                setTimeout(() => btn.innerText = 'Update Key', 2000);
-              }}
-            >
-              Update Key
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
