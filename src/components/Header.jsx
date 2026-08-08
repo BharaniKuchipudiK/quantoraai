@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
-import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download } from 'lucide-react';
+import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
 
 export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -351,6 +351,32 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <ShieldCheck size={16} color="#0284c7" />
                     <span>Privacy Vault & Encryption Status</span>
                   </div>
+
+                  {user?.email === 'bharanik.h@gmail.com' && (
+                    <div
+                      onClick={() => {
+                        setActiveTab('dashboard');
+                        setShowProfileMenu(false);
+                      }}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        marginBottom: '8px',
+                        fontSize: '0.85rem',
+                        color: textColor,
+                        fontWeight: '600'
+                      }}
+                    >
+                      <Activity size={16} color="#10b981" />
+                      <span>Admin Analytics Dashboard</span>
+                    </div>
+                  )}
 
                   {/* Account Controls */}
                   <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, letterSpacing: '0.05em', margin: '12px 0 8px 0', textTransform: 'uppercase' }}>
