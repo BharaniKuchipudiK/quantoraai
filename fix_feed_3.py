@@ -1,0 +1,54 @@
+import sys
+
+file_path = '/Users/bharanik/.gemini/antigravity/scratch/quantrora/src/components/AiStudio.jsx'
+
+with open(file_path, 'r') as f:
+    lines = f.readlines()
+
+start_idx = -1
+end_idx = -1
+
+for i, line in enumerate(lines):
+    if 'const renderedChatFeed = React.useMemo(() => {' in line:
+        start_idx = i
+        break
+
+if start_idx != -1:
+    for i in range(start_idx, len(lines)):
+        if '}, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel]);' in lines[i]:
+            end_idx = i
+            break
+
+if start_idx == -1 or end_idx == -1:
+    print("Could not find renderedChatFeed block")
+    sys.exit(1)
+
+block = lines[start_idx:end_idx+1]
+del lines[start_idx:end_idx+1]
+
+ai_studio_idx = -1
+for i, line in enumerate(lines):
+    if 'export default function AiStudio' in line:
+        ai_studio_idx = i
+        break
+
+if ai_studio_idx == -1:
+    print("Could not find AiStudio function")
+    sys.exit(1)
+
+insert_idx = -1
+for i in range(ai_studio_idx, len(lines)):
+    if lines[i].rstrip() == '  return (':
+        insert_idx = i
+        break
+
+if insert_idx == -1:
+    print("Could not find insert point")
+    sys.exit(1)
+
+lines = lines[:insert_idx] + block + lines[insert_idx:]
+
+with open(file_path, 'w') as f:
+    f.writelines(lines)
+
+print("Success")

@@ -42,334 +42,6 @@ function LiveIosCalculator() {
   };
 
 
-  const renderedChatFeed = React.useMemo(() => {
-    return messages.slice(1).map(msg => (
-              <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-                {/* Avatar */}
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: msg.sender === 'user' ? '#3b82f6' : (isLight ? '#ffffff' : 'transparent'),
-                  border: msg.sender === 'ai' && isLight ? '1px solid var(--border-color)' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.9rem',
-                  fontWeight: 'bold',
-                  color: msg.sender === 'user' ? '#ffffff' : 'var(--text-primary)',
-                  flexShrink: 0
-                }}>
-                  {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} />}
-                </div>
-
-                {/* Content Bubble */}
-                <div style={{ flex: 1 }}>
-                  {msg.isDual ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
-                      {/* Model A Card */}
-                      <div style={{
-                        background: isLight ? '#ffffff' : '#0d1127',
-                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
-                      }}>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Cpu size={14} /> {msg.modelA.modelName}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
-                              ⚡ {msg.modelA.latencyMs}ms
-                            </span>
-                          </div>
-                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                code({node, inline, className, children, ...props}) {
-                                  const match = /language-(\w+)/.exec(className || '')
-                                  return !inline && match ? (
-                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  ) : (
-                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                                  )
-                                }
-                              }}
-                            >
-                              {msg.modelA.text}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
-                          {msg.modelA.text?.includes('```') && (
-                            <button
-                              onClick={() => openCanvasWithCode(msg.modelA.text)}
-                              style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Play size={10} /> Live Sandbox
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Model B Card */}
-                      <div style={{
-                        background: isLight ? '#ffffff' : '#0d1127',
-                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
-                      }}>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Cpu size={14} /> {msg.modelB.modelName}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
-                              ⚡ {msg.modelB.latencyMs}ms
-                            </span>
-                          </div>
-                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                code({node, inline, className, children, ...props}) {
-                                  const match = /language-(\w+)/.exec(className || '')
-                                  return !inline && match ? (
-                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  ) : (
-                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                                  )
-                                }
-                              }}
-                            >
-                              {msg.modelB.text}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
-                          {msg.modelB.text?.includes('```') && (
-                            <button
-                              onClick={() => openCanvasWithCode(msg.modelB.text)}
-                              style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Play size={10} /> Live Sandbox
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="prose" style={{
-                      background: msg.sender === 'user' ? (isLight ? '#f0f4f9' : '#1e1f20') : 'transparent',
-                      border: 'none',
-                      padding: msg.sender === 'user' ? '12px 18px' : '4px 0',
-                      borderRadius: '20px',
-                      color: textColor,
-                      fontSize: '1rem',
-                      lineHeight: 1.65,
-                      boxShadow: 'none',
-                      width: '100%'
-                    }}>
-                      {/* Render Attachments if present on user message */}
-                      {msg.attachments && msg.attachments.length > 0 && (
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                          {msg.attachments.map((att, i) => (
-                            <span key={i} style={{ fontSize: '0.75rem', background: isLight ? '#fff' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#f97316', fontWeight: '600' }}>
-                              <Paperclip size={12} /> {att.name} ({att.size})
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Render Ollama Style "Thought for a moment" Header */}
-                      {msg.thoughtProcess && (
-                        <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                          <Lightbulb size={14} color="#f97316" />
-                          <span>Thought for a moment ({msg.thoughtProcess})</span>
-                        </div>
-                      )}
-
-                      <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code({node, inline, className, children, ...props}) {
-                              const match = /language-(\w+)/.exec(className || '')
-                              return !inline && match ? (
-                                <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                  {String(children).replace(/\n$/, '')}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                              )
-                            }
-                          }}
-                        >
-                          {msg.text}
-                        </ReactMarkdown>
-                      </div>
-
-                      {/* Standard Message Action Buttons */}
-                      {msg.sender === 'ai' && msg.text?.includes('```') && (
-                        <div style={{ marginTop: '12px' }}>
-                          <button
-                            onClick={() => openCanvasWithCode(msg.text)}
-                            style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                          >
-                            <Play size={13} /> Open Live Canvas Mode
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Live Model Connection Diagnostic Footer */}
-                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.provider && (
-                    <div style={{
-                      marginTop: '14px',
-                      paddingTop: '10px',
-                      borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      fontSize: '0.75rem',
-                      color: subtextColor,
-                      flexWrap: 'wrap'
-                    }}>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        color: '#10b981',
-                        fontWeight: '700',
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(16, 185, 129, 0.25)'
-                      }}>
-                        <Activity size={12} color="#10b981" /> Live AI Verified
-                      </span>
-                      <span>Engine: <strong style={{ color: textColor }}>{msg.provider}</strong></span>
-                      {msg.latencyMs && (
-                        <>
-                          <span>•</span>
-                          <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
-                        </>
-                      )}
-                      <span>•</span>
-                      <span style={{ opacity: 0.8 }}>No Mock / Pre-set SOP Data</span>
-                    </div>
-                  )}
-
-                  {/* Inline API Key Input Prompt */}
-                  {msg.isKeyPrompt && (
-                    <div style={{
-                      marginTop: '14px',
-                      padding: '16px',
-                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
-                      borderRadius: '12px',
-                      border: '1px solid #f97316',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '10px'
-                    }}>
-                      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Sparkles size={16} color="#f97316" /> Save {msg.keyType === 'gemini' ? 'Google Gemini' : 'OpenRouter'} API Key to chat live:
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input
-                          type="password"
-                          placeholder={msg.keyType === 'gemini' ? 'Paste Gemini Key (AIzaSy...)' : 'Paste OpenRouter Key (sk-or-v1...)'}
-                          value={keyInputValue}
-                          onChange={(e) => setKeyInputValue(e.target.value)}
-                          style={{
-                            flex: 1,
-                            padding: '10px 14px',
-                            borderRadius: '8px',
-                            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                            background: isLight ? '#ffffff' : '#1e293b',
-                            color: textColor,
-                            fontSize: '0.85rem'
-                          }}
-                        />
-                        <button
-                          onClick={() => saveKeyAndRetry(msg.keyType)}
-                          style={{
-                            background: '#f97316',
-                            color: '#ffffff',
-                            border: 'none',
-                            padding: '10px 18px',
-                            borderRadius: '8px',
-                            fontWeight: 'bold',
-                            fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          Save Key & Retry
-                        </button>
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: subtextColor }}>
-                        {msg.keyType === 'gemini' ? (
-                          <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
-                        ) : (
-                          <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Render Interactive Live Component Sandboxes Directly in Chat */}
-                  {msg.componentType === 'calculator' && <LiveIosCalculator />}
-                  {msg.componentType === 'beat' && <LiveBeatMaker />}
-                  {msg.componentType === 'quantum' && <LiveQuantumSimulator />}
-
-                  {/* Source Code Toggle Button */}
-                  {msg.codeSnippet && (
-                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <button
-                        onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
-                        style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Code2 size={14} /> {showCodeMap[msg.id] ? 'Hide Source Code' : 'Inspect Source Code'}
-                      </button>
-
-                      <button
-                        onClick={() => onPushToCanvas && onPushToCanvas(msg.codeSnippet)}
-                        style={{ background: isLight ? '#f3e8ff' : 'rgba(139, 92, 246, 0.2)', border: isLight ? '1px solid #d8b4fe' : '1px solid rgba(139, 92, 246, 0.4)', color: isLight ? '#7c3aed' : '#a78bfa', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Workflow size={12} /> Push to Canvas
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Optional Source Code Panel */}
-                  {showCodeMap[msg.id] && msg.codeSnippet && (
-                    <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                      <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-                        {msg.codeSnippet}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ));
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel]);
   return (
     <div style={{ maxWidth: '280px', background: '#000000', borderRadius: '32px', padding: '20px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', border: '4px solid #1c1c1e', margin: '14px 0' }}>
       <div style={{ fontSize: '2.4rem', textAlign: 'right', marginBottom: '16px', padding: '0 8px', fontFamily: 'sans-serif', fontWeight: '300', minHeight: '50px' }}>
@@ -1102,6 +774,334 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
     }
   };
 
+  const renderedChatFeed = React.useMemo(() => {
+    return messages.slice(1).map(msg => (
+              <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                {/* Avatar */}
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: msg.sender === 'user' ? '#3b82f6' : (isLight ? '#ffffff' : 'transparent'),
+                  border: msg.sender === 'ai' && isLight ? '1px solid var(--border-color)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  color: msg.sender === 'user' ? '#ffffff' : 'var(--text-primary)',
+                  flexShrink: 0
+                }}>
+                  {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} />}
+                </div>
+
+                {/* Content Bubble */}
+                <div style={{ flex: 1 }}>
+                  {msg.isDual ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
+                      {/* Model A Card */}
+                      <div style={{
+                        background: isLight ? '#ffffff' : '#0d1127',
+                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Cpu size={14} /> {msg.modelA.modelName}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
+                              ⚡ {msg.modelA.latencyMs}ms
+                            </span>
+                          </div>
+                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code({node, inline, className, children, ...props}) {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  return !inline && match ? (
+                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                      {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                  ) : (
+                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+                                  )
+                                }
+                              }}
+                            >
+                              {msg.modelA.text}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
+                          {msg.modelA.text?.includes('```') && (
+                            <button
+                              onClick={() => openCanvasWithCode(msg.modelA.text)}
+                              style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Play size={10} /> Live Sandbox
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Model B Card */}
+                      <div style={{
+                        background: isLight ? '#ffffff' : '#0d1127',
+                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Cpu size={14} /> {msg.modelB.modelName}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
+                              ⚡ {msg.modelB.latencyMs}ms
+                            </span>
+                          </div>
+                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
+                            <ReactMarkdown 
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code({node, inline, className, children, ...props}) {
+                                  const match = /language-(\w+)/.exec(className || '')
+                                  return !inline && match ? (
+                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                      {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                  ) : (
+                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+                                  )
+                                }
+                              }}
+                            >
+                              {msg.modelB.text}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
+                          {msg.modelB.text?.includes('```') && (
+                            <button
+                              onClick={() => openCanvasWithCode(msg.modelB.text)}
+                              style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Play size={10} /> Live Sandbox
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="prose" style={{
+                      background: msg.sender === 'user' ? (isLight ? '#f0f4f9' : '#1e1f20') : 'transparent',
+                      border: 'none',
+                      padding: msg.sender === 'user' ? '12px 18px' : '4px 0',
+                      borderRadius: '20px',
+                      color: textColor,
+                      fontSize: '1rem',
+                      lineHeight: 1.65,
+                      boxShadow: 'none',
+                      width: '100%'
+                    }}>
+                      {/* Render Attachments if present on user message */}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                          {msg.attachments.map((att, i) => (
+                            <span key={i} style={{ fontSize: '0.75rem', background: isLight ? '#fff' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#f97316', fontWeight: '600' }}>
+                              <Paperclip size={12} /> {att.name} ({att.size})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Render Ollama Style "Thought for a moment" Header */}
+                      {msg.thoughtProcess && (
+                        <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                          <Lightbulb size={14} color="#f97316" />
+                          <span>Thought for a moment ({msg.thoughtProcess})</span>
+                        </div>
+                      )}
+
+                      <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code({node, inline, className, children, ...props}) {
+                              const match = /language-(\w+)/.exec(className || '')
+                              return !inline && match ? (
+                                <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+                              )
+                            }
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      </div>
+
+                      {/* Standard Message Action Buttons */}
+                      {msg.sender === 'ai' && msg.text?.includes('```') && (
+                        <div style={{ marginTop: '12px' }}>
+                          <button
+                            onClick={() => openCanvasWithCode(msg.text)}
+                            style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <Play size={13} /> Open Live Canvas Mode
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Live Model Connection Diagnostic Footer */}
+                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.provider && (
+                    <div style={{
+                      marginTop: '14px',
+                      paddingTop: '10px',
+                      borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      fontSize: '0.75rem',
+                      color: subtextColor,
+                      flexWrap: 'wrap'
+                    }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        color: '#10b981',
+                        fontWeight: '700',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(16, 185, 129, 0.25)'
+                      }}>
+                        <Activity size={12} color="#10b981" /> Live AI Verified
+                      </span>
+                      <span>Engine: <strong style={{ color: textColor }}>{msg.provider}</strong></span>
+                      {msg.latencyMs && (
+                        <>
+                          <span>•</span>
+                          <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
+                        </>
+                      )}
+                      <span>•</span>
+                      <span style={{ opacity: 0.8 }}>No Mock / Pre-set SOP Data</span>
+                    </div>
+                  )}
+
+                  {/* Inline API Key Input Prompt */}
+                  {msg.isKeyPrompt && (
+                    <div style={{
+                      marginTop: '14px',
+                      padding: '16px',
+                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
+                      borderRadius: '12px',
+                      border: '1px solid #f97316',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={16} color="#f97316" /> Save {msg.keyType === 'gemini' ? 'Google Gemini' : 'OpenRouter'} API Key to chat live:
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="password"
+                          placeholder={msg.keyType === 'gemini' ? 'Paste Gemini Key (AIzaSy...)' : 'Paste OpenRouter Key (sk-or-v1...)'}
+                          value={keyInputValue}
+                          onChange={(e) => setKeyInputValue(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
+                            background: isLight ? '#ffffff' : '#1e293b',
+                            color: textColor,
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                        <button
+                          onClick={() => saveKeyAndRetry(msg.keyType)}
+                          style={{
+                            background: '#f97316',
+                            color: '#ffffff',
+                            border: 'none',
+                            padding: '10px 18px',
+                            borderRadius: '8px',
+                            fontWeight: 'bold',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Save Key & Retry
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: subtextColor }}>
+                        {msg.keyType === 'gemini' ? (
+                          <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
+                        ) : (
+                          <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Render Interactive Live Component Sandboxes Directly in Chat */}
+                  {msg.componentType === 'calculator' && <LiveIosCalculator />}
+                  {msg.componentType === 'beat' && <LiveBeatMaker />}
+                  {msg.componentType === 'quantum' && <LiveQuantumSimulator />}
+
+                  {/* Source Code Toggle Button */}
+                  {msg.codeSnippet && (
+                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <button
+                        onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
+                        style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Code2 size={14} /> {showCodeMap[msg.id] ? 'Hide Source Code' : 'Inspect Source Code'}
+                      </button>
+
+                      <button
+                        onClick={() => onPushToCanvas && onPushToCanvas(msg.codeSnippet)}
+                        style={{ background: isLight ? '#f3e8ff' : 'rgba(139, 92, 246, 0.2)', border: isLight ? '1px solid #d8b4fe' : '1px solid rgba(139, 92, 246, 0.4)', color: isLight ? '#7c3aed' : '#a78bfa', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Workflow size={12} /> Push to Canvas
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Optional Source Code Panel */}
+                  {showCodeMap[msg.id] && msg.codeSnippet && (
+                    <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                      <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                        {msg.codeSnippet}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ));
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel]);
   return (
     <div style={{
       display: 'flex',
