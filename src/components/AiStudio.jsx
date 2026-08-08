@@ -918,12 +918,12 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sparkles size={20} color="#f97316" />
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
               <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {activeSession ? activeSession.title : 'Quantora Open AI Studio'}
               </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                <span style={{ fontSize: '0.78rem', color: subtextColor }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
                   Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong>
                 </span>
                 <span style={{
@@ -945,7 +945,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
             </div>
           </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
           {/* Dual Model Arena Toggle Button */}
           <button
             onClick={() => setArenaMode(!arenaMode)}
