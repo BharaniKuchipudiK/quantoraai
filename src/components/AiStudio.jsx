@@ -1406,7 +1406,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           )}
 
           <button
-            onClick={() => setChatSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [] } : s))}
+            onClick={() => updateActiveMessages([])}
             style={{ background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)', color: subtextColor, padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <RefreshCw size={13} /> Reset Chat
