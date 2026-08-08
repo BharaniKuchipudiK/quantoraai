@@ -347,15 +347,98 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
 }
 
 export default function AiStudio({ selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight }) {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: 'ai',
-      modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
-      text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
-      type: 'greeting'
-    }
-  ]);
+  const [chatSessions, setChatSessions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('quantora_chat_sessions');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [{
+      id: Date.now(),
+      title: 'New Workspace',
+      messages: [{
+        id: 1,
+        sender: 'ai',
+        modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
+        text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
+        type: 'greeting'
+      }]
+    }];
+  });
+
+  const [activeSessionId, setActiveSessionId] = useState(chatSessions[0]?.id);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    localStorage.setItem('quantora_chat_sessions', JSON.stringify(chatSessions));
+  }, [chatSessions]);
+
+  const activeSessionIndex = chatSessions.findIndex(s => s.id === activeSessionId);
+  const activeSession = activeSessionIndex !== -1 ? chatSessions[activeSessionIndex] : chatSessions[0];
+  const messages = activeSession ? activeSession.messages : [];
+
+  const setMessages = (updater) => {
+    setChatSessions(prevSessions => {
+      const idx = prevSessions.findIndex(s => s.id === activeSessionId);
+      if (idx === -1) return prevSessions;
+      const session = prevSessions[idx];
+      const newMessages = typeof updater === 'function' ? updater(session.messages) : updater;
+      
+      let newTitle = session.title;
+      if (session.title === 'New Workspace' && newMessages.length > 1) {
+        const firstUserMsg = newMessages.find(m => m.sender === 'user');
+        if (firstUserMsg) {
+          newTitle = firstUserMsg.text.slice(0, 25) + (firstUserMsg.text.length > 25 ? '...' : '');
+        }
+      }
+      
+      const updatedSession = { ...session, title: newTitle, messages: newMessages };
+      const newSessions = [...prevSessions];
+      newSessions[idx] = updatedSession;
+      return newSessions;
+    });
+  };
+
+  const handleNewSession = () => {
+    const newSession = {
+      id: Date.now(),
+      title: 'New Workspace',
+      messages: [{
+        id: 1,
+        sender: 'ai',
+        modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
+        text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
+        type: 'greeting'
+      }]
+    };
+    setChatSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+  };
+
+  const handleDeleteSession = (id, e) => {
+    e.stopPropagation();
+    setChatSessions(prev => {
+      const filtered = prev.filter(s => s.id !== id);
+      if (filtered.length === 0) {
+        const newSession = {
+          id: Date.now(),
+          title: 'New Workspace',
+          messages: [{
+            id: 1,
+            sender: 'ai',
+            modelUsed: selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B',
+            text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! I'm connected to freely available open models (Qwen 2.5 Coder, DeepSeek V3, Llama 3.3, Gemma 2). What would you like to create or ask today?`,
+            type: 'greeting'
+          }]
+        };
+        setActiveSessionId(newSession.id);
+        return [newSession];
+      }
+      if (activeSessionId === id) {
+        setActiveSessionId(filtered[0].id);
+      }
+      return filtered;
+    });
+  };
 
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -621,14 +704,112 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
 
   return (
     <div style={{
-      maxWidth: '960px',
-      margin: '0 auto',
-      padding: '24px 20px',
       display: 'flex',
-      flexDirection: 'column',
       minHeight: 'calc(100vh - 120px)',
-      justifyContent: 'space-between'
+      width: '100%',
+      position: 'relative'
     }}>
+      {/* Sidebar */}
+      {isSidebarOpen && (
+        <div style={{
+          width: '260px',
+          background: isLight ? '#f8fafc' : '#0d1127',
+          borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px 12px',
+          flexShrink: 0
+        }}>
+          <button
+            onClick={handleNewSession}
+            style={{
+              background: 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)',
+              color: '#fff',
+              border: 'none',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '16px',
+              fontSize: '0.9rem'
+            }}
+          >
+            <Plus size={16} /> New Chat
+          </button>
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: subtextColor, marginBottom: '8px', paddingLeft: '4px', textTransform: 'uppercase' }}>Recent Sessions</div>
+            {chatSessions.map(session => (
+              <div
+                key={session.id}
+                onClick={() => setActiveSessionId(session.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  background: activeSessionId === session.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
+                  color: activeSessionId === session.id ? '#f97316' : textColor,
+                  border: activeSessionId === session.id ? '1px solid rgba(249, 115, 22, 0.3)' : '1px solid transparent',
+                  transition: 'background 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                  <MessageSquare size={14} color={activeSessionId === session.id ? '#f97316' : subtextColor} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: activeSessionId === session.id ? '600' : '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {session.title}
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => handleDeleteSession(session.id, e)}
+                  style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px' }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Chat Area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        {/* Toggle Sidebar Button */}
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          style={{
+            position: 'absolute',
+            left: '0px',
+            top: '24px',
+            background: isLight ? '#ffffff' : '#1e293b',
+            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.1)',
+            borderLeft: 'none',
+            borderRadius: '0 8px 8px 0',
+            padding: '6px',
+            cursor: 'pointer',
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
+            color: subtextColor
+          }}
+        >
+          <ChevronDown size={14} style={{ transform: isSidebarOpen ? 'rotate(90deg)' : 'rotate(-90deg)' }} />
+        </button>
+
+        <div style={{
+          maxWidth: '960px',
+          width: '100%',
+          margin: '0 auto',
+          padding: '24px 40px',
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          justifyContent: 'space-between'
+        }}>
       {/* Top Header Bar */}
       <div style={{
         display: 'flex',
@@ -1495,6 +1676,8 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

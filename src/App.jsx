@@ -17,7 +17,7 @@ export default function App() {
       return null;
     }
   });
-  const [activeTab, setActiveTab] = useState('landing');
+  const [activeTab, setActiveTab] = useState('studio');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [themeMode, setThemeMode] = useState('light'); // 'light' | 'dark' | 'system'
 
