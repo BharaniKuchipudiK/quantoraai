@@ -867,20 +867,16 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
         </div>
       </div>
 
-      {/* Main Content Split View */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
       {/* Main Chat Area */}
       <div style={{
-        flex: canvasOpen ? 'none' : 1,
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        maxWidth: canvasOpen ? '50%' : '850px',
-        margin: canvasOpen ? '0' : '0 auto',
-        width: canvasOpen ? '50%' : '100%',
-        position: 'relative',
-        borderRight: (canvasOpen && isLight) ? '1px solid #e2e8f0' : (canvasOpen ? '1px solid rgba(255,255,255,0.1)' : 'none')
+        maxWidth: '850px',
+        margin: '0 auto',
+        width: '100%',
+        position: 'relative'
       }}>
         {/* Top Header Bar */}
         <div style={{
@@ -1037,7 +1033,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
           )}
 
           <button
-            onClick={() => setMessages([messages[0]])}
+            onClick={() => setChatSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: [] } : s))}
             style={{ background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)', color: subtextColor, padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             <RefreshCw size={13} /> Reset Chat
@@ -1722,17 +1718,42 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
       </div>
       </div>
 
-      {/* Live Preview Canvas Pane */}
+      {/* Live Preview Canvas Overlay Modal */}
       {canvasOpen && (
-        <div style={{ flex: 1, height: '100%' }}>
-          <LivePreviewCanvas 
-            code={previewCode} 
-            isLight={isLight} 
-            onClose={() => setCanvasOpen(false)} 
-          />
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '1200px',
+            height: '90vh',
+            background: isLight ? '#f8fafc' : '#0d1127',
+            borderRadius: '20px',
+            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <LivePreviewCanvas 
+              code={previewCode} 
+              isLight={isLight} 
+              onClose={() => setCanvasOpen(false)} 
+            />
+          </div>
         </div>
       )}
-      </div> {/* End Main Content Split View */}
     </div>
   );
 }
