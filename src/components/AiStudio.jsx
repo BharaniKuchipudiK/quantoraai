@@ -1278,9 +1278,9 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                       </div>
                       <div style={{ fontSize: '0.78rem', color: subtextColor }}>
                         {msg.keyType === 'gemini' ? (
-                          <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
+                          <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
                         ) : (
-                          <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
+                          <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
                         )}
                       </div>
                     </div>
