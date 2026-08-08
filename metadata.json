@@ -1,0 +1,6 @@
+{
+  "name": "Quantora",
+  "description": "PROMPT TO ACTION — The open-source AI and Quantum Gateway for creators",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
