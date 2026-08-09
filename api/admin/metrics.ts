@@ -1,5 +1,6 @@
 import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
 import { authenticateAdmin } from "../_lib/admin-auth.js";
+import { getGrowthSummary, isStoreConfigured } from "../_lib/store.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -138,7 +139,22 @@ export default async function handler(req: any, res: any) {
     { country: 'Other', users: 703, flag: '🌍', percent: 8 }
   ];
 
+  /*
+   * Real growth numbers, computed from the users and usage tables.
+   *
+   * Everything below this point in the response is still synthetic — hourly
+   * traffic, CPU, uptime and session locations are Math.random(). That is a
+   * separate cleanup. These five are measured, and are labelled as such so the
+   * two are never confused: an operator reading a dashboard needs to know
+   * which numbers they can act on.
+   */
+  const growth = await getGrowthSummary();
+
   return res.status(200).json({
+    growth: growth
+      ? { ...growth, source: 'measured' }
+      : { source: isStoreConfigured() ? 'unavailable' : 'not_configured' },
+
     activeConnections,
     totalRequests,
     avgLatency,
