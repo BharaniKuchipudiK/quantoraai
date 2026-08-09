@@ -9,8 +9,6 @@ import BeeSwarmCanvas from './components/BeeSwarmCanvas';
 import AdminDashboard from './components/AdminDashboard';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import { jwtDecode } from 'jwt-decode';
-
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -65,24 +63,38 @@ export default function App() {
     }
   }, [effectiveTheme, isLight]);
 
-  const handleGoogleSuccess = (credentialResponse) => {
+  const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+  const [loginError, setLoginError] = useState('');
+
+  const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      const decoded = jwtDecode(credentialResponse.credential);
-      const newUser = {
-        name: decoded.name || 'Creator',
-        email: decoded.email || 'user@quantora.app',
-        avatar: decoded.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(decoded.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
-        authProvider: "Google OAuth 2.0",
-        tier: "Indie Creator ($0 / mo)",
-        joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-      };
+      setIsVerifyingLogin(true);
+      setLoginError('');
+
+      // Send the raw credential token to our secure backend for verification
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: credentialResponse.credential })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Authentication failed on server');
+      }
+
+      // Backend cryptographically verified the token and returned the secure profile
+      const newUser = await res.json();
 
       setUser(newUser);
       localStorage.setItem('quantora_user', JSON.stringify(newUser));
       setShowAuthModal(false);
       setActiveTab('studio');
     } catch (error) {
-      console.error("Error decoding JWT:", error);
+      console.error("Error during secure login:", error);
+      setLoginError(error.message || 'Failed to verify account securely.');
+    } finally {
+      setIsVerifyingLogin(false);
     }
   };
 
@@ -275,19 +287,35 @@ export default function App() {
             </p>
 
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={handleGoogleError}
-                useOneTap
-                shape="pill"
-                theme="filled_blue"
-                text="continue_with"
-                size="large"
-              />
+              {isVerifyingLogin ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#4b5563', fontSize: '0.9rem', fontWeight: '500' }}>
+                  <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  Cryptographically verifying with Google...
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+                  {loginError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.85rem', background: '#fef2f2', padding: '8px 12px', borderRadius: '8px', marginBottom: '8px' }}>
+                      {loginError}
+                    </div>
+                  )}
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={handleGoogleError}
+                    useOneTap
+                    shape="pill"
+                    theme="filled_blue"
+                    text="continue_with"
+                    size="large"
+                  />
+                </div>
+              )}
             </div>
 
             <div style={{ fontSize: '0.78rem', color: '#9ca3af', lineHeight: 1.5 }}>
-              By continuing, Google will share your name, email address, and profile picture with Quantora securely.
+              By continuing, Google will share your profile with Quantora securely.
             </div>
           </div>
         </div>
