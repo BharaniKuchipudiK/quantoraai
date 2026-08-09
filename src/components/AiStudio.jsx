@@ -351,7 +351,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
   );
 }
 
-export default function AiStudio({ selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
     id: 1,
@@ -702,16 +702,38 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
 
       } else {
         const errData = await res.json().catch(() => ({}));
-        const reqKey = errData.requiresKey || (targetModel.id.startsWith('gemini') ? 'gemini' : 'openrouter');
-        const errText = errData.error || `API Key required for ${targetModel.name}.`;
 
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: `⚠️ **API Key Required**: ${errText}\n\nPlease enter your API Key below to start chatting directly with **${targetModel.name}**.`,
-          isKeyPrompt: true,
-          keyType: reqKey,
-          thoughtProcess: `Live API Key required for ${targetModel.name}`
-        } : m));
+        /*
+         * "You need to sign in" and "you need an API key" are different
+         * problems with different fixes. Collapsing both into the key prompt
+         * told signed-out users to paste a key they did not need, which read
+         * as the key handling being broken.
+         */
+        if (res.status === 401 && errData.requiresAuth) {
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: `🔒 **Please sign in to continue.**\n\n${errData.error || "Sign in to use Quantora's built-in AI."}`,
+            isAuthPrompt: true,
+            thoughtProcess: 'Sign-in required'
+          } : m));
+        } else if (res.status === 429) {
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`,
+            thoughtProcess: 'Rate limited'
+          } : m));
+        } else {
+          const reqKey = errData.requiresKey || (targetModel.id.startsWith('gemini') ? 'gemini' : 'openrouter');
+          const errText = errData.error || `API Key required for ${targetModel.name}.`;
+
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: `⚠️ **API Key Required**: ${errText}\n\nPlease enter your API Key below to start chatting directly with **${targetModel.name}**.`,
+            isKeyPrompt: true,
+            keyType: reqKey,
+            thoughtProcess: `Live API Key required for ${targetModel.name}`
+          } : m));
+        }
       }
     } catch (error) {
       console.error('Chat error:', error);
@@ -962,6 +984,40 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                   )}
 
                   {/* Inline API Key Input Prompt */}
+                  {msg.isAuthPrompt && (
+                    <div style={{
+                      marginTop: '14px',
+                      padding: '16px',
+                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
+                      borderRadius: '12px',
+                      border: '1px solid #0ea5e9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      flexWrap: 'wrap'
+                    }}>
+                      <div style={{ fontSize: '0.85rem', color: subtextColor, flex: 1, minWidth: '200px' }}>
+                        Signing in lets you use Quantora's built-in AI without supplying your own key.
+                      </div>
+                      <button
+                        onClick={() => onOpenAuth && onOpenAuth()}
+                        style={{
+                          background: '#0ea5e9',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '10px 20px',
+                          borderRadius: '8px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        Sign in
+                      </button>
+                    </div>
+                  )}
+
                   {msg.isKeyPrompt && (
                     <div style={{
                       marginTop: '14px',
@@ -1059,7 +1115,7 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                 </div>
               </div>
             ));
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth]);
   return (
     <div style={{
       display: 'flex',
