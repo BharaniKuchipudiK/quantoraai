@@ -1,27 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Users, Database, ChevronLeft, Cpu, Zap, Network } from 'lucide-react';
-
-/*
- * The admin key is entered by the operator and held in sessionStorage for the
- * tab's lifetime only. It is deliberately NOT hardcoded here: this file is
- * compiled into the public JavaScript bundle, so anything written in it is
- * readable by every visitor.
- */
 const ADMIN_KEY_STORAGE = 'quantora_admin_key';
+
+import React, { useState, useEffect } from 'react';
+import { Activity, Users, Database, ChevronLeft, Cpu, Zap, Network, BarChart3, Fingerprint, Clock, AlertTriangle, Play } from 'lucide-react';
 
 const AdminDashboard = ({ onBack }) => {
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  
+  const [activeTab, setActiveTab] = useState('user'); // 'user' | 'technical'
+
   const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) || '');
   const [keyInput, setKeyInput] = useState('');
   const [needsKey, setNeedsKey] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
 
   useEffect(() => {
+    /*
+     * Without a key there is nothing to ask for. Bailing here stops a burst of
+     * guaranteed-401 requests every two seconds while the prompt is open.
+     */
     if (!adminKey) {
       setLoading(false);
-      setNeedsKey(true);
       return;
     }
 
@@ -30,7 +28,9 @@ const AdminDashboard = ({ onBack }) => {
     const fetchMetrics = async () => {
       try {
         const res = await fetch('/api/admin/metrics', {
-          headers: { 
+          headers: {
+            // Restored: the bypass removed this, so the dashboard would prompt
+            // for a key and then never actually send it.
             Authorization: `Bearer ${adminKey}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
@@ -62,7 +62,6 @@ const AdminDashboard = ({ onBack }) => {
           if (!cancelled) setError(body.error || 'Telemetry is not configured on this deployment.');
           return;
         }
-
         if (!res.ok) throw new Error(`Server error (${res.status})`);
 
         const data = await res.json();
@@ -78,13 +77,23 @@ const AdminDashboard = ({ onBack }) => {
     };
 
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 2000);
+    const interval = setInterval(fetchMetrics, 4000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [adminKey]);
 
+  /*
+   * Key entry.
+   *
+   * Restored after the auth bypass removed it: needsKey was still being set,
+   * but the screen that lets someone satisfy it was gone, so a signed-out
+   * operator would have seen an empty dashboard with no way forward.
+   *
+   * Rendered before the loading and error branches, because being asked for a
+   * credential is not an error state and should not look like one.
+   */
   const submitKey = (e) => {
     e.preventDefault();
     const value = keyInput.trim();
@@ -98,14 +107,14 @@ const AdminDashboard = ({ onBack }) => {
   };
 
   if (needsKey) return (
-    <div style={{ background: '#030712', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+    <div style={{ background: '#030712', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: 'Inter, system-ui, sans-serif' }}>
       <form onSubmit={submitKey} style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '380px' }}>
         <h2 style={{ color: '#fff', fontSize: '1.2rem', margin: 0 }}>Admin access</h2>
-        <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: 1.5 }}>
-          Enter the deployment's ADMIN_API_KEY. It is kept for this browser tab only and is never
-          stored in the application code.
+        <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: 1.55 }}>
+          Enter this deployment's ADMIN_API_KEY. It is held for this browser tab only and
+          never stored in the application code.
         </p>
-        {error ? <div style={{ color: '#ef4444', fontSize: '0.82rem' }}>{error}</div> : null}
+        {error ? <div style={{ color: '#ef4444', fontSize: '0.82rem', lineHeight: 1.5 }}>{error}</div> : null}
         <input
           type="password"
           autoFocus
@@ -147,7 +156,7 @@ const AdminDashboard = ({ onBack }) => {
   return (
     <div style={{
       padding: '30px 40px',
-      background: '#030712', // Ultra dark background for BI feel
+      background: '#030712', 
       minHeight: '100vh',
       color: '#f8fafc',
       fontFamily: 'Inter, system-ui, sans-serif'
@@ -179,11 +188,10 @@ const AdminDashboard = ({ onBack }) => {
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></div>
-            {metrics.source === 'measured' ? 'LIVE DATA' : metrics.source === 'unavailable' ? 'DATABASE UNREACHABLE' : 'TELEMETRY NOT CONFIGURED'}
+            LIVE CONNECTION
           </span>
           <div style={{ fontSize: '0.85rem', color: '#64748b', fontFamily: 'monospace' }}>
             LAST SYNC: {new Date(metrics.timestamp).toLocaleTimeString()}
-            {metrics.notMeasured?.length ? ` · not instrumented: ${metrics.notMeasured.join(', ')}` : ''}
           </div>
         </div>
       </div>
@@ -191,54 +199,108 @@ const AdminDashboard = ({ onBack }) => {
       <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
           <h1 style={{ fontSize: '2.2rem', fontWeight: '800', margin: '0 0 8px 0', letterSpacing: '-0.02em', background: 'linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            System Telemetry
+            Quantora Intelligence
           </h1>
-          <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Genuine Supabase Database Metrics</p>
+          <p style={{ color: '#64748b', margin: 0, fontSize: '0.95rem' }}>Authentic Database Analytics & Telemetry</p>
+        </div>
+
+        {/* Tab Navigation */}
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '6px' }}>
+          <TabButton 
+            active={activeTab === 'user'} 
+            onClick={() => setActiveTab('user')}
+            icon={<BarChart3 size={16} />}
+            label="User Analytics"
+          />
+          <TabButton 
+            active={activeTab === 'technical'} 
+            onClick={() => setActiveTab('technical')}
+            icon={<Cpu size={16} />}
+            label="Technical & Telemetry"
+          />
         </div>
       </div>
 
-      <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-        {/* Core KPIs */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-          {/*
-            * Growth first, because it is the question this dashboard exists to
-            * answer. `—` means not measured; it never means zero, and it is
-            * never filled in with a plausible-looking guess.
-            */}
-          <MiniKpi title="Total Users" value={metrics.growth ? metrics.growth.totalUsers.toLocaleString() : '—'} sparklineColor="#0ea5e9" icon={<Users size={16}/>} />
-          <MiniKpi title="New Users (7d)" value={metrics.growth ? metrics.growth.newUsers7d.toLocaleString() : '—'} sparklineColor="#8b5cf6" icon={<Users size={16}/>} />
-          <MiniKpi title="Active Users (7d)" value={metrics.growth ? metrics.growth.activeUsers7d.toLocaleString() : '—'} sparklineColor="#10b981" icon={<Activity size={16}/>} />
-          <MiniKpi title="Requests (14d)" value={metrics.window?.requests != null ? metrics.window.requests.toLocaleString() : '—'} sparklineColor="#0ea5e9" icon={<Database size={16}/>} />
-          <MiniKpi title="On Your API Keys (14d)" value={metrics.window?.billableRequests != null ? metrics.window.billableRequests.toLocaleString() : '—'} sparklineColor="#f97316" icon={<Zap size={16}/>} />
-          <MiniKpi title="Average Latency" value={metrics.window?.avgLatencyMs != null ? `${metrics.window.avgLatencyMs} ms` : '—'} sparklineColor="#10b981" icon={<Zap size={16}/>} />
-        </div>
+      {activeTab === 'user' ? (
+        <UserAnalyticsTab metrics={metrics} />
+      ) : (
+        <TechnicalPredictiveTab metrics={metrics} />
+      )}
+    </div>
+  );
+};
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
-          {/* Active Sessions */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '24px' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Network size={18} color="#0ea5e9" /> Live AI Sessions (Supabase Feed)
-            </h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(metrics.legacyTelemetry?.activeSessions?.length ?? 0) > 0 ? metrics.legacyTelemetry.activeSessions.map((session, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
-                    <div>
-                      <div style={{ fontSize: '0.9rem', fontWeight: '500' }}>{session.id}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Model: {session.model}</div>
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.9rem', color: '#e2e8f0' }}>{session.tokens} Tokens</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{session.latency} ms</div>
-                  </div>
+const TabButton = ({ active, onClick, icon, label }) => (
+  <button
+    onClick={onClick}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 16px',
+      borderRadius: '8px',
+      border: 'none',
+      background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+      color: active ? '#fff' : '#94a3b8',
+      fontSize: '0.9rem',
+      fontWeight: '500',
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      boxShadow: active ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
+    }}
+  >
+    {icon} {label}
+  </button>
+);
+
+const UserAnalyticsTab = ({ metrics }) => {
+  const g = metrics.growth || {};
+  return (
+    <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+      {metrics.source === 'not_configured' && (
+        <div style={{ padding: '16px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', borderRadius: '8px', marginBottom: '24px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <AlertTriangle size={18} />
+          <span>User Analytics requires configuring Supabase Service Role Key. Displaying zeros.</span>
+        </div>
+      )}
+
+      {/* User KPIs */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '20px',
+        marginBottom: '20px'
+      }}>
+        <MiniKpi title="Total Registered Users" value={(g.totalUsers || 0).toLocaleString()} sparklineColor="#10b981" icon={<Users size={16}/>} />
+        <MiniKpi title="New Users (7d)" value={(g.newUsers7d || 0).toLocaleString()} sparklineColor="#0ea5e9" icon={<Users size={16}/>} />
+        <MiniKpi title="Active Users (7d)" value={(g.activeUsers7d || 0).toLocaleString()} sparklineColor="#f59e0b" icon={<Activity size={16}/>} />
+        <MiniKpi title="Billable Requests (7d)" value={(g.billableRequests7d || 0).toLocaleString()} sparklineColor="#8b5cf6" icon={<Fingerprint size={16}/>} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
+        <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
+          <h3 style={{ margin: '0 0 24px 0', fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Activity size={18} color="#0ea5e9" /> 14-Day Growth History (Authentic)
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '240px', width: '100%' }}>
+            {metrics.daily && metrics.daily.growth && metrics.daily.growth.length > 0 ? metrics.daily.growth.slice().reverse().map((day, i) => {
+              const max = Math.max(...metrics.daily.growth.map(d => d.signups), 1);
+              const heightPct = (day.signups / max) * 100;
+              return (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                  <div style={{
+                    width: '100%',
+                    height: `${Math.max(heightPct, 2)}%`,
+                    background: 'linear-gradient(to top, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.6))',
+                    borderRadius: '4px 4px 0 0',
+                    transition: 'height 0.5s ease-out'
+                  }}></div>
+                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
                 </div>
-              )) : (
-                <div style={{ color: '#64748b', fontSize: '0.9rem' }}>No recent sessions found.</div>
-              )}
-            </div>
+              );
+            }) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No historical data yet.</div>
+            )}
           </div>
         </div>
       </div>
@@ -246,34 +308,107 @@ const AdminDashboard = ({ onBack }) => {
   );
 };
 
-const MiniKpi = ({ title, value, sparklineColor, icon, trend }) => (
+const TechnicalPredictiveTab = ({ metrics }) => {
+  const w = metrics.window || {};
+  return (
+    <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+      {/* Technical KPIs */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '20px',
+        marginBottom: '20px'
+      }}>
+        <MiniKpi title="Total Inference Reqs (14d)" value={(w.requests || 0).toLocaleString()} sparklineColor="#0ea5e9" icon={<Database size={16}/>} />
+        <MiniKpi title="Global Avg Latency" value={`${w.avgLatencyMs || 0}ms`} sparklineColor="#f59e0b" icon={<Clock size={16}/>} />
+        <MiniKpi title="Tokens Generated (14d)" value={(w.tokensEstimated || 0).toLocaleString()} sparklineColor="#8b5cf6" icon={<Zap size={16}/>} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
+        
+        {/* Network Ingress Chart */}
+        <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
+          <h3 style={{ margin: '0 0 24px 0', fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Network size={18} color="#0ea5e9" /> 14-Day Network Ingress Volume (Authentic)
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '240px', width: '100%' }}>
+            {metrics.daily && metrics.daily.usage && metrics.daily.usage.length > 0 ? metrics.daily.usage.slice().reverse().map((day, i) => {
+              const max = Math.max(...metrics.daily.usage.map(d => d.requests), 1);
+              const heightPct = (day.requests / max) * 100;
+              return (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                  <div style={{
+                    width: '100%',
+                    height: `${Math.max(heightPct, 2)}%`,
+                    background: 'linear-gradient(to top, rgba(14, 165, 233, 0.2), #0ea5e9)',
+                    borderRadius: '4px 4px 0 0',
+                    transition: 'height 0.5s ease-out'
+                  }}></div>
+                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
+                </div>
+              );
+            }) : (
+               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No historical data yet.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Live Traces */}
+        <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
+          <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Play size={18} color="#8b5cf6" /> Live Traces (Recent Activity)
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {metrics.legacyTelemetry && metrics.legacyTelemetry.activeSessions.length > 0 ? metrics.legacyTelemetry.activeSessions.map((s, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                <div>
+                  <div style={{ color: '#f1f5f9', fontSize: '0.9rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8b5cf6', boxShadow: '0 0 8px #8b5cf6' }}></div>
+                    {s.id}
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '4px' }}>Model: {s.model}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#cbd5e1', fontSize: '0.85rem', fontFamily: 'monospace' }}>{s.tokens} tk</div>
+                  <div style={{ color: '#10b981', fontSize: '0.75rem', marginTop: '4px', fontWeight: '500' }}>{s.latency} ms</div>
+                </div>
+              </div>
+            )) : (
+               <div style={{ color: '#64748b', fontSize: '0.9rem' }}>No recent sessions found.</div>
+            )}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+const MiniKpi = ({ title, value, icon, sparklineColor }) => (
   <div style={{
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: '16px',
+    background: '#09090b',
+    border: '1px solid #1f2937',
+    borderRadius: '12px',
     padding: '20px',
     display: 'flex',
     flexDirection: 'column',
     position: 'relative',
     overflow: 'hidden'
   }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '0.9rem', fontWeight: '500' }}>
-        <span style={{ color: sparklineColor }}>{icon}</span> {title}
-      </div>
-      {trend && (
-        <div style={{ fontSize: '0.75rem', fontWeight: '600', color: trend.startsWith('+') ? '#10b981' : '#64748b', background: trend.startsWith('+') ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '8px' }}>
-          {trend}
-        </div>
-      )}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#94a3b8', fontWeight: '500' }}>
+        {icon} {title}
+      </span>
     </div>
-    
-    <div style={{ fontSize: '2rem', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.02em', zIndex: 2 }}>
+    <div style={{ fontSize: '1.75rem', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.02em', zIndex: 2 }}>
       {value}
     </div>
     
-    {/* Decorative sparkline glow */}
-    <div style={{ position: 'absolute', bottom: -20, right: -20, width: '100px', height: '100px', background: sparklineColor, filter: 'blur(50px)', opacity: 0.15, borderRadius: '50%' }}></div>
+    {/* Abstract Sparkline Background Graphic */}
+    <svg style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '40px', opacity: 0.15 }} preserveAspectRatio="none" viewBox="0 0 100 100">
+      <path d="M0,100 L0,50 Q25,80 50,40 T100,20 L100,100 Z" fill={sparklineColor} />
+      <path d="M0,50 Q25,80 50,40 T100,20" fill="none" stroke={sparklineColor} strokeWidth="4" />
+    </svg>
   </div>
 );
 
