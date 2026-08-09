@@ -395,6 +395,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
   const messages = activeSession.messages || [defaultGreetingMsg];
 
+  /*
+   * Tell the ambient background to step back once there is work on screen.
+   *
+   * A warm gradient is the right welcome on an empty canvas and the wrong
+   * thing behind a long, code-heavy conversation — colour under dense text is
+   * exactly the readability problem the old particle field had, just prettier.
+   * The greeting message is not content, so it does not count.
+   */
+  const hasConversation = messages.length > 1;
+  React.useEffect(() => {
+    const root = document.documentElement;
+    if (hasConversation) root.setAttribute('data-workspace', 'active');
+    else root.removeAttribute('data-workspace');
+    return () => root.removeAttribute('data-workspace');
+  }, [hasConversation]);
+
   // Function to update current active session's messages
   const updateActiveMessages = (updater) => {
     setChatSessions(prevSessions => {
@@ -1941,7 +1957,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               style={{
                 background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
                 border: 'none',
-                color: '#ffffff',
+                /*
+                 * A white glyph on the pale disabled fill was effectively
+                 * invisible — the primary action looked absent rather than
+                 * inactive. Disabled state now keeps a legible mid-tone.
+                 */
+                color: (inputText.trim() || attachments.length)
+                  ? '#ffffff'
+                  : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
                 width: '38px',
                 height: '38px',
                 borderRadius: '12px',
