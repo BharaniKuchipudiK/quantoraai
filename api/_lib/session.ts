@@ -112,13 +112,34 @@ export function readSessionToken(token: string | null | undefined): SessionUser 
 function parseCookies(header: unknown): Record<string, string> {
   if (typeof header !== "string") return {};
   const out: Record<string, string> = {};
+
   for (const part of header.split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
     const key = part.slice(0, index).trim();
-    const value = part.slice(index + 1).trim();
-    if (key) out[key] = decodeURIComponent(value);
+    if (!key) continue;
+    const raw = part.slice(index + 1).trim();
+
+    /*
+     * Decoded per-cookie inside a try, because decodeURIComponent throws a
+     * URIError on a stray '%', and plenty of third-party cookies contain one —
+     * analytics values, anything storing a literal percentage.
+     *
+     * Decoding the whole jar in one pass meant a single malformed cookie set by
+     * an unrelated script threw before this function returned. In
+     * getSessionUser that surfaces as "not signed in" for someone holding a
+     * perfectly valid session; in api/chat.ts, where the call sits outside the
+     * try block, it takes the whole request down with a 500.
+     *
+     * One bad neighbour must not cost someone their login.
+     */
+    try {
+      out[key] = decodeURIComponent(raw);
+    } catch {
+      out[key] = raw;
+    }
   }
+
   return out;
 }
 

@@ -1,12 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
-import AiStudio from './components/AiStudio';
-import DreamActionCanvas from './components/DreamActionCanvas';
-import QuantumPlayground from './components/QuantumPlayground';
-import PrivacyVault from './components/PrivacyVault';
 import AuroraBackground from './components/AuroraBackground';
-import AdminDashboard from './components/AdminDashboard';
+
+/*
+ * The heavy surfaces load on demand.
+ *
+ * Everything used to be imported eagerly, so a first-time visitor landing on
+ * the marketing page downloaded the entire studio before they could read the
+ * headline — including react-syntax-highlighter, which is the single largest
+ * thing in the tree and is needed only once a code block exists to render.
+ *
+ * These are route-level boundaries: a person sees exactly one of them at a
+ * time, and switching costs one small network request on a warm connection.
+ * Kept eager above: the landing page, the header and the background, which are
+ * needed for the first paint and would only add a flash of nothing.
+ */
+const AiStudio = React.lazy(() => import('./components/AiStudio'));
+const DreamActionCanvas = React.lazy(() => import('./components/DreamActionCanvas'));
+const QuantumPlayground = React.lazy(() => import('./components/QuantumPlayground'));
+const PrivacyVault = React.lazy(() => import('./components/PrivacyVault'));
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
@@ -225,6 +239,17 @@ export default function App() {
             position: 'relative',
             zIndex: 10
           }}>
+            {/*
+              * Shown only while a route chunk is in flight — typically a few hundred
+              * milliseconds on a cold connection, nothing on a warm one. Deliberately
+              * plain: a spinner that appears and vanishes in 80ms reads as a flicker,
+              * which is worse than a moment of quiet.
+              */}
+            <React.Suspense fallback={
+              <div style={{ padding: '48px 24px', textAlign: 'center', color: isLight ? '#94a3b8' : '#64748b', fontSize: '0.9rem' }}>
+                Loading…
+              </div>
+            }>
             {activeTab === 'studio' && (
               <AiStudio
                 onOpenAuth={() => setShowAuthModal(true)}
@@ -272,6 +297,7 @@ export default function App() {
                 onBack={() => handleTabChange('studio')}
               />
             )}
+            </React.Suspense>
           </main>
         </>
       )}
