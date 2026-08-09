@@ -351,7 +351,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
   );
 }
 
-export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
     id: 1,
@@ -627,6 +627,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (lastPrompt) {
       handleSendMessage(lastPrompt);
     }
+  };
+
+  const handlePushToDream = (msg) => {
+    if (!setDreamNodes || !dreamNodes) return;
+    const newNode = {
+      id: Date.now().toString(),
+      stage: 'dream',
+      sourceText: msg.text,
+      timestamp: Date.now()
+    };
+    setDreamNodes([...dreamNodes, newNode]);
+    if (setActiveTab) setActiveTab('canvas');
   };
 
   const handleSendMessage = async (textToSend) => {
@@ -1005,16 +1017,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       </div>
 
                       {/* Standard Message Action Buttons */}
-                      {msg.sender === 'ai' && msg.text?.includes('```') && (
-                        <div style={{ marginTop: '12px' }}>
+                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {msg.sender === 'ai' && msg.text?.includes('```') && (
                           <button
                             onClick={() => openCanvasWithCode(msg.text)}
                             style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
                             <Play size={13} /> Open Live Canvas Mode
                           </button>
-                        </div>
-                      )}
+                        )}
+                        <button
+                          onClick={() => handlePushToDream(msg)}
+                          style={{ background: 'rgba(139, 92, 246, 0.15)', border: '1px solid rgba(139, 92, 246, 0.4)', color: '#8b5cf6', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Workflow size={13} /> Push to Dream Canvas
+                        </button>
+                      </div>
                     </div>
                   )}
 

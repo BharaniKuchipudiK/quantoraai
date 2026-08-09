@@ -158,6 +158,7 @@ export default function App() {
 
   const [selectedModel, setSelectedModel] = useState(availableModels[0]);
   const [activeCanvasNode, setActiveCanvasNode] = useState(null);
+  const [dreamNodes, setDreamNodes] = useState([]);
 
   const handleSendToCanvas = (messageData) => {
     setActiveCanvasNode(messageData);
@@ -221,6 +222,9 @@ export default function App() {
                 onSendToCanvas={handleSendToCanvas}
                 user={user}
                 isLight={isLight}
+                dreamNodes={dreamNodes}
+                setDreamNodes={setDreamNodes}
+                setActiveTab={setActiveTab}
               />
             )}
 
@@ -229,6 +233,8 @@ export default function App() {
                 activeCanvasNode={activeCanvasNode}
                 setActiveCanvasNode={setActiveCanvasNode}
                 isLight={isLight}
+                dreamNodes={dreamNodes}
+                setDreamNodes={setDreamNodes}
               />
             )}
 

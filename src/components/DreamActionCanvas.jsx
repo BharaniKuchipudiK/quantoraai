@@ -1,71 +1,36 @@
 import React, { useState } from 'react';
-import { Workflow, Sparkles, Code, Play, CheckCircle, ArrowRight, Layers, Cpu, Terminal, Smartphone } from 'lucide-react';
+import { Workflow, Sparkles, Code, Play, ArrowRight, Layers, Cpu, Terminal, Smartphone, Trash2 } from 'lucide-react';
 
-export default function DreamActionCanvas({ activeCanvasNode, setActiveCanvasNode, isLight }) {
-  const [selectedStage, setSelectedStage] = useState('action');
-
+export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLight }) {
   const textColor = isLight ? '#0f172a' : '#ffffff';
   const subtextColor = isLight ? '#475569' : '#94a3b8';
   const itemBg = isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)';
   const borderSubtle = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)';
 
-  const canvasStages = [
-    {
-      id: 'dream',
-      stage: 'Stage 1: Dream',
-      subtitle: 'Raw Human Prompt',
-      icon: Sparkles,
-      color: '#f97316',
-      description: 'Capture ambient thoughts, natural language prompts, and raw vision specs.',
-      nodeOutput: {
-        rawPrompt: "I want an interactive iOS style calculator and beat maker for Gen Z.",
-        targetDemographic: "Gen Z / Gen Alpha Creators",
-        subscriptionCost: "$0 / mo (Open Models)"
-      }
-    },
-    {
-      id: 'idea',
-      stage: 'Stage 2: Idea',
-      subtitle: 'Open Model Router',
-      icon: Layers,
-      color: '#8b5cf6',
-      description: 'Synthesize architecture blueprints using Qwen 2.5 Coder, Gemma 2, and DeepSeek V3.',
-      nodeOutput: {
-        modelSelected: "Qwen 2.5 Coder 32B",
-        uiFramework: "React 18 + Vanilla CSS Glassmorphism",
-        quantumEngine: "Qiskit / Cirq JS Simulator"
-      }
-    },
-    {
-      id: 'thought',
-      stage: 'Stage 3: Thought',
-      subtitle: 'Logical Structure',
-      icon: Cpu,
-      color: '#06b6d4',
-      description: 'Formulate state vector math, execution graphs, and component trees.',
-      nodeOutput: {
-        stateManagement: "Stateless PKCE OAuth + Browser Local Storage",
-        components: ["IosCalculator", "LiveBeatMaker", "PrismEngine"]
-      }
-    },
-    {
-      id: 'action',
-      stage: 'Stage 4: Action',
-      subtitle: 'Live Playable App',
-      icon: Play,
-      color: '#10b981',
-      description: 'Transform specifications into live, playable web components and executable code sandboxes.',
-      nodeOutput: {
-        status: "Production Ready",
-        sandboxUrl: "quantoraai.app/sandbox/beat-maker"
-      }
-    }
+  const columns = [
+    { id: 'dream', title: '1. Dream', icon: Sparkles, color: '#f97316', desc: 'Raw Sparks & Ideas' },
+    { id: 'idea', title: '2. Idea', icon: Layers, color: '#8b5cf6', desc: 'Architecture Spec' },
+    { id: 'thought', title: '3. Thought', icon: Cpu, color: '#06b6d4', desc: 'Component Logic' },
+    { id: 'action', title: '4. Action', icon: Play, color: '#10b981', desc: 'Live Prototype' }
   ];
 
-  const currentStageData = canvasStages.find(s => s.id === selectedStage);
+  const moveNode = (nodeId, currentStage) => {
+    if (!setDreamNodes) return;
+    const stageOrder = ['dream', 'idea', 'thought', 'action'];
+    const currentIndex = stageOrder.indexOf(currentStage);
+    if (currentIndex < stageOrder.length - 1) {
+      const nextStage = stageOrder[currentIndex + 1];
+      setDreamNodes(dreamNodes.map(n => n.id === nodeId ? { ...n, stage: nextStage } : n));
+    }
+  };
+
+  const deleteNode = (nodeId) => {
+    if (!setDreamNodes) return;
+    setDreamNodes(dreamNodes.filter(n => n.id !== nodeId));
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%', minHeight: '80vh' }}>
       {/* Header Banner */}
       <div className="glass-card" style={{ padding: '24px', background: isLight ? 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
@@ -73,97 +38,71 @@ export default function DreamActionCanvas({ activeCanvasNode, setActiveCanvasNod
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <Workflow size={22} color="#0284c7" />
               <h2 style={{ fontSize: '1.4rem', margin: 0 }} className="gradient-text">
-                Dream-to-Action Visual Canvas
+                Dream-to-Action Visual Pipeline
               </h2>
             </div>
             <p style={{ fontSize: '0.88rem', color: subtextColor, margin: 0 }}>
-              The USP of Quantora: Transform raw creative sparks into executable code, visual wireframes, and live prototypes.
+              Push ideas from AI Studio and execute them through the 4-stage engine.
             </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <span style={{ fontSize: '0.75rem', background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#c2410c', padding: '6px 12px', borderRadius: '8px', fontWeight: '600' }}>
-              ⚡ 4-Stage Visual Execution Pipeline
-            </span>
           </div>
         </div>
       </div>
 
-      {/* 4-Stage Horizontal Pipeline Connector */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-        {canvasStages.map((s, idx) => {
-          const IconComp = s.icon;
-          const isSelected = selectedStage === s.id;
-
+      {/* Kanban Board */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', flex: 1 }}>
+        {columns.map(col => {
+          const colNodes = dreamNodes.filter(n => n.stage === col.id);
+          const IconComp = col.icon;
+          
           return (
-            <div
-              key={s.id}
-              onClick={() => setSelectedStage(s.id)}
-              className="glass-card"
-              style={{
-                padding: '18px',
-                cursor: 'pointer',
-                border: isSelected ? `2px solid ${s.color}` : `1px solid ${borderSubtle}`,
-                background: isSelected ? (isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.06)') : itemBg,
-                boxShadow: isSelected ? `0 0 20px ${s.color}33` : 'none',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: `${s.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <IconComp size={18} color={s.color} />
+            <div key={col.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: `1px solid ${borderSubtle}` }}>
+              {/* Column Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                <IconComp size={18} color={col.color} />
+                <div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: '700', color: textColor }}>{col.title}</div>
+                  <div style={{ fontSize: '0.7rem', color: subtextColor }}>{col.desc}</div>
                 </div>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: textColor }}>{s.stage}</span>
+                <div style={{ marginLeft: 'auto', background: `${col.color}22`, color: col.color, padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700' }}>
+                  {colNodes.length}
+                </div>
               </div>
 
-              <div style={{ fontSize: '0.78rem', color: subtextColor }}>{s.subtitle}</div>
+              {/* Cards Container */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                {colNodes.map(node => (
+                  <div key={node.id} className="glass-card" style={{ padding: '14px', borderLeft: `3px solid ${col.color}`, position: 'relative', background: itemBg }}>
+                    <div style={{ fontSize: '0.8rem', color: textColor, marginBottom: '12px', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
+                      {node.sourceText.length > 200 ? node.sourceText.substring(0, 200) + '...' : node.sourceText}
+                    </div>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${borderSubtle}`, paddingTop: '8px' }}>
+                      <button onClick={() => deleteNode(node.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                        <Trash2 size={14} />
+                      </button>
+                      
+                      {col.id !== 'action' && (
+                        <button onClick={() => moveNode(node.id, col.id)} style={{ background: `${col.color}15`, border: `1px solid ${col.color}44`, color: col.color, padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          Execute <ArrowRight size={12} />
+                        </button>
+                      )}
+                      {col.id === 'action' && (
+                        <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: '700' }}>Production Ready</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                
+                {colNodes.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '20px', color: subtextColor, fontSize: '0.8rem', border: `1px dashed ${borderSubtle}`, borderRadius: '12px', opacity: 0.5 }}>
+                    No items here
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
-
-      {/* Node Detail & Interactive Playground Box */}
-      {currentStageData && (
-        <div className="glass-card" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', borderBottom: `1px solid ${borderSubtle}`, paddingBottom: '14px' }}>
-            <currentStageData.icon size={24} color={currentStageData.color} />
-            <div>
-              <h3 style={{ fontSize: '1.2rem', margin: 0, color: textColor }}>{currentStageData.stage} — {currentStageData.subtitle}</h3>
-              <p style={{ fontSize: '0.82rem', color: subtextColor, margin: '2px 0 0 0' }}>{currentStageData.description}</p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            {/* Spec JSON Output */}
-            <div style={{ background: isLight ? '#0f172a' : '#070913', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#34d399', fontWeight: '600', marginBottom: '10px', fontFamily: 'monospace' }}>
-                STAGE OUTPUT DATA
-              </div>
-              <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-                {JSON.stringify(currentStageData.nodeOutput, null, 2)}
-              </pre>
-            </div>
-
-            {/* Stage Action Guide */}
-            <div style={{ background: itemBg, padding: '20px', borderRadius: '12px', border: `1px solid ${borderSubtle}`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: textColor }}>
-                  Pipeline Node Execution Status
-                </h4>
-                <p style={{ fontSize: '0.84rem', color: subtextColor, lineHeight: 1.6, margin: 0 }}>
-                  Quantora's open engine automatically resolves state transitions across iOS, Android, and Web.
-                </p>
-              </div>
-
-              <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-                <button style={{ flex: 1, padding: '10px', borderRadius: '10px', background: currentStageData.color, border: 'none', color: '#ffffff', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
-                  Execute Stage Node
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
