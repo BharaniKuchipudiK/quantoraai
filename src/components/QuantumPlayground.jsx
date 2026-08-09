@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Cpu, Play, RefreshCw, Sparkles, Layers, Terminal, Zap, Activity } from 'lucide-react';
-import { runCircuit, sample } from '../lib/quantum/statevector';
+import { runCircuit, runCircuitTo, sample } from '../lib/quantum/statevector';
+import BlochSphere from './BlochSphere';
 
 const NUM_QUBITS = 2;
 
@@ -24,8 +25,17 @@ export default function QuantumPlayground({ selectedModel, isLight }) {
   const [isSimulating, setIsSimulating] = useState(false);
   const [promptInput, setPromptInput] = useState('');
 
-  /* Exact amplitudes, recomputed whenever the circuit changes. */
-  const state = useMemo(() => runCircuit(NUM_QUBITS, circuit), [circuit]);
+  /*
+   * Step position. `null` means "show the finished circuit"; a number means the
+   * user is walking through it. The whole panel reads from whatever state this
+   * resolves to, so the bars, the spheres and the totals can never disagree
+   * about which moment they are describing.
+   */
+  const [step, setStep] = useState(null);
+  const atStep = step === null ? circuit.length : Math.min(step, circuit.length);
+
+  /* Exact amplitudes for the moment currently being shown. */
+  const state = useMemo(() => runCircuitTo(NUM_QUBITS, circuit, atStep), [circuit, atStep]);
   const exact = useMemo(() => Array.from(state.probabilities()), [state]);
   const labels = useMemo(
     () => Array.from({ length: 1 << NUM_QUBITS }, (_, i) => i.toString(2).padStart(NUM_QUBITS, '0')),
@@ -70,19 +80,22 @@ export default function QuantumPlayground({ selectedModel, isLight }) {
   const itemBg = isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)';
   const borderSubtle = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)';
 
-  const addGate = (step) => {
-    setCircuit((prev) => [...prev, step]);
+  const addGate = (gateStep) => {
+    setCircuit((prev) => [...prev, gateStep]);
     setMeasured(null);   // the old shots describe a circuit that no longer exists
+    setStep(null);       // jump back to the end so the new gate is visible
   };
 
   const clearCircuit = () => {
     setCircuit([]);
     setMeasured(null);
+    setStep(null);
   };
 
   const undoGate = () => {
     setCircuit((prev) => prev.slice(0, -1));
     setMeasured(null);
+    setStep(null);
   };
 
   /*
@@ -147,6 +160,7 @@ export default function QuantumPlayground({ selectedModel, isLight }) {
 
       if (built) setCircuit(built);
       setMeasured(null);
+      setStep(null);
       setBuildNote(note);
       setIsSimulating(false);
     }, 320);
@@ -279,6 +293,63 @@ export default function QuantumPlayground({ selectedModel, isLight }) {
               );
             })}
           </div>
+
+          {/*
+            * Bloch spheres, one per qubit.
+            *
+            * The probability bars above describe the register as a whole. These
+            * describe each qubit on its own — and the moment a CNOT lands, both
+            * arrows vanish, because neither qubit has an individual state any
+            * more. That collapse is entanglement, shown rather than asserted.
+            */}
+          <div style={{ borderTop: `1px solid ${borderSubtle}`, paddingTop: '16px' }}>
+            <div style={{ fontSize: '0.8rem', color: subtextColor, marginBottom: '10px' }}>
+              Each qubit on its own:
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-around', flexWrap: 'wrap' }}>
+              {Array.from({ length: NUM_QUBITS }, (_, q) => (
+                <BlochSphere key={q} state={state} qubit={q} label={`q${q}`} isLight={isLight} />
+              ))}
+            </div>
+          </div>
+
+          {/*
+            * Step-through.
+            *
+            * The final distribution says where the circuit ended up and nothing
+            * about how it got there. Walking the gates one at a time is where
+            * the intuition actually forms — you can watch superposition appear,
+            * then watch entanglement consume it.
+            */}
+          {circuit.length > 0 && (
+            <div style={{ borderTop: `1px solid ${borderSubtle}`, paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', justifyContent: 'space-between' }}>
+                <span>Step through</span>
+                <strong style={{ color: textColor, fontFamily: 'var(--font-mono)' }}>
+                  {atStep} / {circuit.length}
+                </strong>
+              </label>
+              <input
+                type="range" min="0" max={circuit.length} step="1"
+                value={atStep}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setStep(v === circuit.length ? null : v);
+                  setMeasured(null);
+                }}
+                style={{ width: '100%', accentColor: '#7c3aed' }}
+              />
+              <div style={{ fontSize: '0.72rem', color: subtextColor, minHeight: '17px' }}>
+                {atStep === 0
+                  ? 'Before any gate — the register sits in |0…0⟩.'
+                  : `Just applied: ${circuit[atStep - 1].gate}${
+                      circuit[atStep - 1].control !== undefined
+                        ? ` (control q${circuit[atStep - 1].control} → target q${circuit[atStep - 1].target})`
+                        : ` on q${circuit[atStep - 1].target}`
+                    }`}
+              </div>
+            </div>
+          )}
 
           <div style={{ borderTop: `1px solid ${borderSubtle}`, paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <label style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', justifyContent: 'space-between' }}>
