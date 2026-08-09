@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { authenticateAdmin } from "./api/_lib/admin-auth.js";
 
 dotenv.config();
 
@@ -135,9 +136,12 @@ async function startServer() {
 
   // Admin Analytics Endpoint
   app.get("/api/admin/metrics", (req, res) => {
-    // Basic Auth Check (simple hardcoded param for demo)
-    if (req.query.admin !== "quantora2026") {
-      return res.status(401).json({ error: "Unauthorized" });
+    // Same auth as the deployed serverless function: an ADMIN_API_KEY read
+    // from the environment, presented in a header, compared in constant time.
+    // Fails closed when unset. See api/_lib/admin-auth.ts.
+    const authFailure = authenticateAdmin(req);
+    if (authFailure) {
+      return res.status(authFailure.status).json({ error: authFailure.error });
     }
     
     const avgLatency = globalMetrics.successfulRequests > 0 

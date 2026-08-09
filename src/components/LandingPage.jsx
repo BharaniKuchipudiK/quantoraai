@@ -243,7 +243,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
 
         {/* Security Notice Pill */}
         <div style={{ marginTop: '32px', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#f97316', background: 'rgba(249, 115, 22, 0.1)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '6px 18px', borderRadius: '9999px' }}>
-          <Lock size={14} /> Protected by Google OAuth 2.0 PKCE • Zero Knowledge Vault
+          <Lock size={14} /> Sign in with Google • Your API keys stay on your device
         </div>
       </section>
 

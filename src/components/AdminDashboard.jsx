@@ -1,29 +1,119 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Users, Clock, Database, ChevronLeft, Cpu, HardDrive, Zap, Network, Server, Globe2 } from 'lucide-react';
 
+/*
+ * The admin key is entered by the operator and held in sessionStorage for the
+ * tab's lifetime only. It is deliberately NOT hardcoded here: this file is
+ * compiled into the public JavaScript bundle, so anything written in it is
+ * readable by every visitor. The previous version embedded the password
+ * directly, which meant the endpoint had no real protection at all.
+ *
+ * sessionStorage rather than localStorage so the key does not outlive the tab.
+ */
+const ADMIN_KEY_STORAGE = 'quantora_admin_key';
+
 const AdminDashboard = ({ onBack }) => {
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) || '');
+  const [keyInput, setKeyInput] = useState('');
+  const [needsKey, setNeedsKey] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
 
   useEffect(() => {
+    if (!adminKey) {
+      setLoading(false);
+      setNeedsKey(true);
+      return;
+    }
+
+    let cancelled = false;
+
     const fetchMetrics = async () => {
       try {
-        const res = await fetch('/api/admin/metrics?admin=quantora2026');
-        if (!res.ok) throw new Error('Unauthorized or Server Error');
+        const res = await fetch('/api/admin/metrics', {
+          headers: { Authorization: `Bearer ${adminKey}` }
+        });
+
+        if (res.status === 401) {
+          // Wrong key — drop it and ask again rather than retrying forever.
+          sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+          if (!cancelled) {
+            setAdminKey('');
+            setNeedsKey(true);
+            setError('That admin key was rejected.');
+          }
+          return;
+        }
+
+        if (res.status === 503) {
+          const body = await res.json().catch(() => ({}));
+          if (!cancelled) setError(body.error || 'Telemetry is not configured on this deployment.');
+          return;
+        }
+
+        if (!res.ok) throw new Error(`Server error (${res.status})`);
+
         const data = await res.json();
-        setMetrics(data);
+        if (!cancelled) {
+          setMetrics(data);
+          setError('');
+        }
       } catch (err) {
-        setError(err.message);
+        if (!cancelled) setError(err.message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [adminKey]);
+
+  const submitKey = (e) => {
+    e.preventDefault();
+    const value = keyInput.trim();
+    if (!value) return;
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, value);
+    setAdminKey(value);
+    setKeyInput('');
+    setNeedsKey(false);
+    setError('');
+    setLoading(true);
+  };
+
+  if (needsKey) return (
+    <div style={{ background: '#030712', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+      <form onSubmit={submitKey} style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '380px' }}>
+        <h2 style={{ color: '#fff', fontSize: '1.2rem', margin: 0 }}>Admin access</h2>
+        <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: 1.5 }}>
+          Enter the deployment's ADMIN_API_KEY. It is kept for this browser tab only and is never
+          stored in the application code.
+        </p>
+        {error ? <div style={{ color: '#ef4444', fontSize: '0.82rem' }}>{error}</div> : null}
+        <input
+          type="password"
+          autoFocus
+          value={keyInput}
+          onChange={(e) => setKeyInput(e.target.value)}
+          placeholder="Admin API key"
+          style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid #1e293b', background: '#0f172a', color: '#fff', fontSize: '0.9rem' }}
+        />
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button type="submit" style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#0ea5e9', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+            Unlock
+          </button>
+          <button type="button" onClick={onBack} style={{ padding: '12px 18px', borderRadius: '10px', border: '1px solid #1e293b', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
+            Back
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 
   if (loading) return (
     <div style={{ background: '#030712', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>

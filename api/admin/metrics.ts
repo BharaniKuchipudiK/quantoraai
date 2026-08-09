@@ -1,4 +1,5 @@
 import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
+import { authenticateAdmin } from "../_lib/admin-auth.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -7,22 +8,16 @@ export default async function handler(req: any, res: any) {
     return res.status(200).end();
   }
 
-  // Rate-limited even for a caller who has the password below — the auth on
-  // this endpoint is weak (see the code review), so this at least stops
-  // someone from hammering it. Set well above the dashboard's own 2s poll
-  // interval (30/min) so normal viewing is never affected. Does not change
-  // who can authenticate.
+  // Rate-limited ahead of the auth check so credential guessing is throttled
+  // too. Set well above the dashboard's own 2s poll interval (30/min) so
+  // normal viewing is never affected.
   if (isRateLimited(`admin-metrics:${clientIp(req)}`, 90, 60_000)) {
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
 
-  // NOTE: this password is hardcoded and shipped in the client bundle
-  // (src/components/AdminDashboard.jsx) — it provides no real access
-  // control today. Left unchanged in this pass; needs a real auth mechanism
-  // before this dashboard should be trusted with anything sensitive.
-  const adminKey = req.query.admin || req.body?.admin;
-  if (adminKey !== 'quantora2026') {
-    return res.status(401).json({ error: 'Unauthorized Access to Telemetry' });
+  const authFailure = authenticateAdmin(req);
+  if (authFailure) {
+    return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;
