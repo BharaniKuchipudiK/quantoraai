@@ -1,5 +1,5 @@
 import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
-import { authenticateAdmin } from "../_lib/admin-auth.js";
+import { authenticateAdminRequest } from "../_lib/admin-auth.js";
 import { getGrowthSummary, getDailySeries, isStoreConfigured } from "../_lib/store.js";
 
 export default async function handler(req: any, res: any) {
@@ -16,7 +16,7 @@ export default async function handler(req: any, res: any) {
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
 
-  const authFailure = authenticateAdmin(req);
+  const authFailure = await authenticateAdminRequest(req);
   if (authFailure) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }

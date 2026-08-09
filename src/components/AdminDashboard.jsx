@@ -1,5 +1,3 @@
-const ADMIN_KEY_STORAGE = 'quantora_admin_key';
-
 import React, { useState, useEffect } from 'react';
 import { Activity, Users, Database, ChevronLeft, Cpu, Zap, Network, BarChart3, Fingerprint, Clock, AlertTriangle, Play } from 'lucide-react';
 
@@ -9,50 +7,31 @@ const AdminDashboard = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('user'); // 'user' | 'technical'
 
-  const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) || '');
-  const [keyInput, setKeyInput] = useState('');
-  const [needsKey, setNeedsKey] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
-
   useEffect(() => {
-    /*
-     * Without a key there is nothing to ask for. Bailing here stops a burst of
-     * guaranteed-401 requests every two seconds while the prompt is open.
-     */
-    if (!adminKey) {
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchMetrics = async () => {
       try {
         const res = await fetch('/api/admin/metrics', {
           headers: {
-            // Restored: the bypass removed this, so the dashboard would prompt
-            // for a key and then never actually send it.
-            Authorization: `Bearer ${adminKey}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
           }
         });
 
-        if (res.status === 401) {
+        if (res.status === 401 || res.status === 403) {
           /*
-           * Wrong key: forget it and ask again, saying so plainly.
-           *
-           * The message matters. Previously this said only "rejected", which is
-           * indistinguishable from the real cause of the recent lockout — a
-           * trailing space on the stored environment variable, where the key
-           * being typed was correct all along. Naming that possibility is the
-           * difference between a fixable problem and an inexplicable one.
+           * Not an admin. There is nothing for the visitor to type, so this
+           * explains the situation instead of demanding a credential they do
+           * not have. The previous password prompt could not distinguish "you
+           * are not an admin" from "your key has a stray space", and offered
+           * the same useless box for both.
            */
-          sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+          const body = await res.json().catch(() => ({}));
           if (!cancelled) {
-            setAdminKey('');
-            setNeedsKey(true);
-            setError('That admin key was rejected. If you are certain it is correct, check ADMIN_API_KEY in Vercel for a stray space or newline — pasting a generated key often adds one.');
+            setError(body.error || 'You do not have access to this dashboard.');
+            setLoading(false);
           }
           return;
         }
@@ -82,58 +61,7 @@ const AdminDashboard = ({ onBack }) => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [adminKey]);
-
-  /*
-   * Key entry.
-   *
-   * Restored after the auth bypass removed it: needsKey was still being set,
-   * but the screen that lets someone satisfy it was gone, so a signed-out
-   * operator would have seen an empty dashboard with no way forward.
-   *
-   * Rendered before the loading and error branches, because being asked for a
-   * credential is not an error state and should not look like one.
-   */
-  const submitKey = (e) => {
-    e.preventDefault();
-    const value = keyInput.trim();
-    if (!value) return;
-    sessionStorage.setItem(ADMIN_KEY_STORAGE, value);
-    setAdminKey(value);
-    setKeyInput('');
-    setNeedsKey(false);
-    setError('');
-    setLoading(true);
-  };
-
-  if (needsKey) return (
-    <div style={{ background: '#030712', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <form onSubmit={submitKey} style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', maxWidth: '380px' }}>
-        <h2 style={{ color: '#fff', fontSize: '1.2rem', margin: 0 }}>Admin access</h2>
-        <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: 1.55 }}>
-          Enter this deployment's ADMIN_API_KEY. It is held for this browser tab only and
-          never stored in the application code.
-        </p>
-        {error ? <div style={{ color: '#ef4444', fontSize: '0.82rem', lineHeight: 1.5 }}>{error}</div> : null}
-        <input
-          type="password"
-          autoFocus
-          value={keyInput}
-          onChange={(e) => setKeyInput(e.target.value)}
-          placeholder="Admin API key"
-          style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid #1e293b', background: '#0f172a', color: '#fff', fontSize: '0.9rem' }}
-        />
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button type="submit" style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#0ea5e9', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
-            Unlock
-          </button>
-          <button type="button" onClick={onBack} style={{ padding: '12px 18px', borderRadius: '10px', border: '1px solid #1e293b', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
-            Back
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+  }, []);
 
   if (loading) return (
     <div style={{ background: '#030712', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
