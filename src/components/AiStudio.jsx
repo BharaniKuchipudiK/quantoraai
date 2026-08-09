@@ -652,7 +652,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const newNode = {
       id: Date.now().toString(),
       stage: 'dream',
-      sourceText: msg.text,
+      dreamText: msg.text,
+      ideaSpec: null,
+      thoughtCode: null,
+      actionUrl: null,
+      isExecuting: false,
       timestamp: Date.now()
     };
     setDreamNodes([...dreamNodes, newNode]);
@@ -1961,7 +1965,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     const newNode = {
                       id: Date.now().toString(),
                       stage: 'dream',
-                      sourceText: inputText,
+                      dreamText: inputText,
+                      ideaSpec: null,
+                      thoughtCode: null,
+                      actionUrl: null,
+                      isExecuting: false,
                       timestamp: Date.now()
                     };
                     setDreamNodes([...dreamNodes, newNode]);

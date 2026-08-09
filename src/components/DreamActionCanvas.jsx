@@ -14,13 +14,36 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
     { id: 'action', title: '4. Action', icon: Play, color: '#10b981', desc: 'Live Prototype' }
   ];
 
-  const moveNode = (nodeId, currentStage) => {
+  const moveNode = async (nodeId, currentStage) => {
     if (!setDreamNodes) return;
     const stageOrder = ['dream', 'idea', 'thought', 'action'];
     const currentIndex = stageOrder.indexOf(currentStage);
     if (currentIndex < stageOrder.length - 1) {
       const nextStage = stageOrder[currentIndex + 1];
-      setDreamNodes(dreamNodes.map(n => n.id === nodeId ? { ...n, stage: nextStage } : n));
+      
+      setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: true } : n));
+      
+      try {
+        const nodeToExecute = dreamNodes.find(n => n.id === nodeId);
+        const res = await fetch('/api/pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node: nodeToExecute, targetStage: nextStage })
+        });
+        
+        if (!res.ok) throw new Error('Pipeline execution failed');
+        const data = await res.json();
+        
+        setDreamNodes(prev => prev.map(n => 
+          n.id === nodeId 
+            ? { ...n, stage: nextStage, ...data, isExecuting: false }
+            : n
+        ));
+      } catch (e) {
+        console.error(e);
+        alert('Pipeline execution failed. Make sure you are signed in.');
+        setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: false } : n));
+      }
     }
   };
 
@@ -71,9 +94,21 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
               {/* Cards Container */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
                 {colNodes.map(node => (
-                  <div key={node.id} className="glass-card" style={{ padding: '14px', borderLeft: `3px solid ${col.color}`, position: 'relative', background: itemBg }}>
+                  <div key={node.id} className="glass-card" style={{ padding: '14px', borderLeft: `3px solid ${col.color}`, position: 'relative', background: itemBg, opacity: node.isExecuting ? 0.6 : 1 }}>
                     <div style={{ fontSize: '0.8rem', color: textColor, marginBottom: '12px', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                      {node.sourceText.length > 200 ? node.sourceText.substring(0, 200) + '...' : node.sourceText}
+                      {node.stage === 'dream' && node.dreamText && (
+                        node.dreamText.length > 200 ? node.dreamText.substring(0, 200) + '...' : node.dreamText
+                      )}
+                      {node.stage === 'idea' && node.ideaSpec && (
+                        <pre style={{ margin: 0, fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'monospace' }}>
+                          {JSON.stringify(node.ideaSpec, null, 2)}
+                        </pre>
+                      )}
+                      {node.stage === 'thought' && node.thoughtCode && (
+                        <pre style={{ margin: 0, fontSize: '0.7rem', color: '#a78bfa', fontFamily: 'monospace' }}>
+                          {node.thoughtCode.substring(0, 300)}...
+                        </pre>
+                      )}
                     </div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${borderSubtle}`, paddingTop: '8px' }}>
@@ -82,8 +117,8 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
                       </button>
                       
                       {col.id !== 'action' && (
-                        <button onClick={() => moveNode(node.id, col.id)} style={{ background: `${col.color}15`, border: `1px solid ${col.color}44`, color: col.color, padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          Execute <ArrowRight size={12} />
+                        <button onClick={() => moveNode(node.id, col.id)} disabled={node.isExecuting} style={{ background: `${col.color}15`, border: `1px solid ${col.color}44`, color: col.color, padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '600', cursor: node.isExecuting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          {node.isExecuting ? 'Executing...' : 'Execute'} <ArrowRight size={12} />
                         </button>
                       )}
                       {col.id === 'action' && (
