@@ -472,6 +472,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCodeMap, setShowCodeMap] = useState({});
+  const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
+  const [suggestedModel, setSuggestedModel] = useState(null);
 
   const [attachments, setAttachments] = useState([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
@@ -560,6 +562,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
+
+  // Intelligent Router Logic
+  useEffect(() => {
+    const text = inputText.toLowerCase();
+    if (!text.trim()) {
+      setSuggestedModel(null);
+      return;
+    }
+    const isCode = /react|function|const|python|api|bug|error|html|css|javascript|code|app|component/.test(text);
+    const isResearch = /analyze|summarize|explain|compare|theory|architecture|research/.test(text);
+
+    if (isCode && selectedModel?.name !== 'Qwen 2.5 Coder 32B') {
+      const qwen = availableModels?.find(m => m.name.includes('Qwen 2.5 Coder')) || { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' };
+      setSuggestedModel(qwen);
+    } else if (isResearch && selectedModel?.name !== 'DeepSeek V3') {
+      const ds = availableModels?.find(m => m.name.includes('DeepSeek V3')) || { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' };
+      setSuggestedModel(ds);
+    } else {
+      setSuggestedModel(null);
+    }
+  }, [inputText, selectedModel, availableModels]);
 
   const saveKeyAndRetry = (keyType) => {
     if (!keyInputValue.trim()) return;
@@ -684,7 +707,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           modelId: targetModel.id,
           modelName: targetModel.name,
           history: cleanMessages,
-          openRouterKey: openRouterApiKey
+          openRouterKey: openRouterApiKey,
+          cognitiveLevel: cognitiveLevel
         })
       });
 
@@ -1509,6 +1533,34 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           position: 'relative',
           padding: '4px'
         }}>
+          {/* Intelligent Router Suggestion Pill */}
+          {suggestedModel && (
+            <div style={{
+              position: 'absolute',
+              top: '-35px',
+              left: '12px',
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.95) 100%)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(249, 115, 22, 0.4)',
+              borderRadius: '20px',
+              padding: '6px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+              zIndex: 10
+            }}>
+              <span style={{ fontSize: '0.75rem', color: '#e2e8f0', fontWeight: '500' }}>
+                🧠 Looks like you're {suggestedModel.name.includes('Qwen') ? 'coding' : 'researching'}. Recommend: <strong style={{color: '#f97316'}}>{suggestedModel.name}</strong>
+              </span>
+              <button 
+                onClick={() => { setSelectedModel(suggestedModel); setSuggestedModel(null); }}
+                style={{ background: '#f97316', color: '#fff', border: 'none', padding: '3px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                Switch
+              </button>
+            </div>
+          )}
+
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '12px 18px' }}>
             <textarea
@@ -1604,6 +1656,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Wand2 size={14} color="#f97316" className={isEnhancingPrompt ? "animate-spin" : ""} />
                 <span>Magic Wand</span>
               </button>
+
+              {/* Cognitive Effort Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', borderRadius: '20px', padding: '2px', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)' }}>
+                {['Lightning', 'Balanced', 'Deep Think'].map(level => (
+                  <button
+                    key={level}
+                    onClick={() => setCognitiveLevel(level)}
+                    style={{
+                      background: cognitiveLevel === level ? (isLight ? '#ffffff' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
+                      color: cognitiveLevel === level ? '#f97316' : subtextColor,
+                      border: 'none',
+                      padding: '4px 10px',
+                      borderRadius: '18px',
+                      fontSize: '0.72rem',
+                      fontWeight: cognitiveLevel === level ? '700' : '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: cognitiveLevel === level && isLight ? '0 2px 6px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                  >
+                    {level === 'Lightning' && '⚡ '}{level === 'Deep Think' && '🧠 '}{level}
+                  </button>
+                ))}
+              </div>
 
               {/* Model Selector Pill */}
               <div ref={inBarModelRef} style={{ position: 'relative' }}>

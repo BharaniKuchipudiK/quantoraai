@@ -45,7 +45,7 @@ function buildGeminiContents(history: any[], currentMessage: string) {
   return contents;
 }
 
-async function generateGeminiContent(apiKey: string, contents: any[], systemInstruction: string) {
+async function generateGeminiContent(apiKey: string, contents: any[], systemInstruction: string, temperature: number = 0.7) {
   const client = new GoogleGenAI({ apiKey });
   
   let selectedModel = "";
@@ -94,7 +94,7 @@ async function generateGeminiContent(apiKey: string, contents: any[], systemInst
         contents: contents,
         config: {
           systemInstruction: systemInstruction,
-          temperature: 0.7,
+          temperature: temperature,
         },
       });
       if (response && response.text) {
@@ -165,7 +165,26 @@ export default async function handler(req: any, res: any) {
   const startTime = Date.now();
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel } = req.body || {};
+
+    let dynamicTemperature = 0.7;
+    let cognitiveDirective = "";
+    if (cognitiveLevel === 'Lightning') {
+      dynamicTemperature = 0.3;
+      cognitiveDirective = "\n\nCognitive Directive: Provide the final answer immediately. Be ruthlessly concise. No explanations.";
+    } else if (cognitiveLevel === 'Deep Think') {
+      dynamicTemperature = 0.2;
+      cognitiveDirective = "\n\nCognitive Directive: Think step-by-step. Analyze all edge cases, consider architectural impacts, and provide an exhaustive, research-grade explanation before concluding.";
+    }
+
+    const baseSystemPrompt = `You are Quantora AI, an elite Senior Developer and Technical Architect pair-programming with the user.
+Rules:
+1. Speak like a human peer engineer. Never use robotic intros like "As an AI..." or "Here is the code". Jump straight into the solution.
+2. Be concise, authoritative, and highly analytical.
+3. Provide clean, production-ready code with no fluff.
+4. When discussing architecture, speak casually but brilliantly about tradeoffs.`;
+    
+    const finalSystemPrompt = baseSystemPrompt + cognitiveDirective;
 
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Message string is required" });
@@ -209,13 +228,7 @@ export default async function handler(req: any, res: any) {
 
       try {
         const contents = buildGeminiContents(boundedHistory, message);
-        const systemInstruction = `You are Quantora AI, an elite Senior Developer and Technical Architect pair-programming with the user.
-Rules:
-1. Speak like a human peer engineer. Never use robotic intros like "As an AI..." or "Here is the code". Jump straight into the solution.
-2. Be concise, authoritative, and highly analytical.
-3. Provide clean, production-ready code with no fluff.
-4. When discussing architecture, speak casually but brilliantly about tradeoffs.`;
-        const result = await generateGeminiContent(effectiveGeminiKey, contents, systemInstruction);
+        const result = await generateGeminiContent(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature);
         
         const latencyMs = Date.now() - startTime;
         logTelemetry(result.usedModel, latencyMs, result.text.length, "Gemini");
@@ -242,12 +255,7 @@ Rules:
       const formattedHistory = [
         { 
           role: "system", 
-          content: `You are Quantora AI, an elite Senior Developer and Technical Architect pair-programming with the user.
-Rules:
-1. Speak like a human peer engineer. Never use robotic intros like "As an AI..." or "Here is the code". Jump straight into the solution.
-2. Be concise, authoritative, and highly analytical.
-3. Provide clean, production-ready code with no fluff.
-4. When discussing architecture, speak casually but brilliantly about tradeoffs.` 
+          content: finalSystemPrompt 
         },
         ...(boundedHistory || []).map((m: any) => ({
           role: m.role === "model" || m.role === "assistant" || m.sender === "ai" ? "assistant" : "user",
@@ -267,6 +275,7 @@ Rules:
         body: JSON.stringify({
           model: modelId,
           messages: formattedHistory,
+          temperature: dynamicTemperature,
         }),
       });
 
