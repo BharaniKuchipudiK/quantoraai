@@ -234,6 +234,8 @@ Rules:
         method: "POST",
         headers: {
           Authorization: `Bearer ${effectiveOpenRouterKey}`,
+          "HTTP-Referer": process.env.APP_URL || "https://quantoraai.app",
+          "X-Title": "Quantora AI",
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -253,7 +255,8 @@ Rules:
       
       if (!reply) {
         console.error("OpenRouter empty response data:", JSON.stringify(data));
-        throw new Error("OpenRouter API returned an empty response.");
+        const errMsg = data.error?.message || "OpenRouter API returned an empty response.";
+        throw new Error(`OpenRouter Error: ${errMsg}`);
       }
 
       const latencyMs = Date.now() - startTime;
