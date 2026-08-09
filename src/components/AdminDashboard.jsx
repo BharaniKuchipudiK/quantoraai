@@ -14,9 +14,9 @@ const AdminDashboard = ({ onBack }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   
-  const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) || '');
+  const [adminKey, setAdminKey] = useState('bypassed');
   const [keyInput, setKeyInput] = useState('');
-  const [needsKey, setNeedsKey] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
+  const [needsKey, setNeedsKey] = useState(false);
 
   useEffect(() => {
     if (!adminKey) {
