@@ -279,3 +279,14 @@ body {
   .aurora-blob { filter: blur(64px); }
   .aurora-3 { display: none; }
 }
+
+/*
+ * The background recedes once there is a conversation on screen.
+ * Full warmth to welcome an empty canvas; quiet while someone is reading code.
+ * Driven by a data attribute on <html> so the background component needs no
+ * knowledge of chat state, and no props thread through the tree to reach it.
+ */
+.aurora-bg { transition: opacity 700ms cubic-bezier(.16, 1, .3, 1); }
+[data-workspace="active"] .aurora-blob { opacity: 0.30; }
+[data-workspace="active"] .aurora-grain { opacity: 0.06; }
+.aurora-blob, .aurora-grain { transition: opacity 700ms cubic-bezier(.16, 1, .3, 1); }

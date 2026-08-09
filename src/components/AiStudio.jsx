@@ -395,6 +395,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
   const messages = activeSession.messages || [defaultGreetingMsg];
 
+  /*
+   * Tell the ambient background to step back once there is work on screen.
+   *
+   * A warm gradient is the right welcome on an empty canvas and the wrong
+   * thing behind a long, code-heavy conversation — colour under dense text is
+   * exactly the readability problem the old particle field had, just prettier.
+   * The greeting message is not content, so it does not count.
+   */
+  const hasConversation = messages.length > 1;
+  React.useEffect(() => {
+    const root = document.documentElement;
+    if (hasConversation) root.setAttribute('data-workspace', 'active');
+    else root.removeAttribute('data-workspace');
+    return () => root.removeAttribute('data-workspace');
+  }, [hasConversation]);
+
   // Function to update current active session's messages
   const updateActiveMessages = (updater) => {
     setChatSessions(prevSessions => {
