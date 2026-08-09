@@ -976,6 +976,11 @@ export default function AiStudio({ selectedModel, setSelectedModel, availableMod
                       <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Sparkles size={16} color="#f97316" /> Save {msg.keyType === 'gemini' ? 'Google Gemini' : 'OpenRouter'} API Key to chat live:
                       </div>
+                      <div style={{ fontSize: '0.72rem', color: subtextColor, lineHeight: 1.5 }}>
+                        Stored unencrypted in this browser's local storage, and sent to Quantora's
+                        server only to make your request. Anyone with access to this browser profile
+                        can read it — use a key you can revoke.
+                      </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <input
                           type="password"

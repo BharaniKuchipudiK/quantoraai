@@ -44,7 +44,7 @@ export default function DreamActionCanvas({ activeCanvasNode, setActiveCanvasNod
       color: '#06b6d4',
       description: 'Formulate state vector math, execution graphs, and component trees.',
       nodeOutput: {
-        stateManagement: "Stateless PKCE OAuth + Encrypted Vault",
+        stateManagement: "Stateless PKCE OAuth + Browser Local Storage",
         components: ["IosCalculator", "LiveBeatMaker", "PrismEngine"]
       }
     },
