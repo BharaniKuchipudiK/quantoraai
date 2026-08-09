@@ -1,4 +1,4 @@
-import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit";
+import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");

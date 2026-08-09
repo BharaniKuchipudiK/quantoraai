@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit";
+import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
