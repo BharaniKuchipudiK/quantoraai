@@ -218,3 +218,63 @@ export function sample(state, shots = 1024, rng = Math.random) {
   }
   return counts;
 }
+
+/*
+ * The reduced density matrix of a single qubit.
+ *
+ * A qubit inside an entangled register has no state of its own — the register
+ * has a state, and the qubit is only part of it. Tracing out every other qubit
+ * is what makes that concrete: the result is a 2x2 matrix that describes
+ * everything measurable about this one qubit alone.
+ *
+ * This is the object the Bloch sphere is drawn from, and the reason an
+ * entangled qubit lands at the centre of the sphere instead of on its surface.
+ */
+export function reducedDensityMatrix(state, q) {
+  if (q < 0 || q >= state.n) throw new Error(`Qubit ${q} is outside this register.`);
+  const bit = 1 << q;
+  let r00 = 0, r11 = 0, r01re = 0, r01im = 0;
+
+  for (let i = 0; i < state.size; i++) {
+    if (i & bit) continue;
+    const j = i | bit;
+    const ar = state.re[i], ai = state.im[i];   // amplitude with this qubit = 0
+    const br = state.re[j], bi = state.im[j];   // amplitude with this qubit = 1
+
+    r00 += ar * ar + ai * ai;
+    r11 += br * br + bi * bi;
+    // rho01 = sum over the rest of  a * conj(b)
+    r01re += ar * br + ai * bi;
+    r01im += ai * br - ar * bi;
+  }
+  return { r00, r11, r01re, r01im };
+}
+
+/*
+ * Bloch vector for one qubit: rho = (I + r.sigma) / 2.
+ *
+ * The length of r is the whole story. A qubit in a definite state of its own
+ * sits on the surface (|r| = 1). Entangle it with another and r shrinks toward
+ * the origin — at |r| = 0 the qubit has no individual state at all, only a
+ * relationship. Watching the arrow collapse the moment a CNOT is applied
+ * explains entanglement better than any sentence about it.
+ */
+export function blochVector(state, q) {
+  const { r00, r11, r01re, r01im } = reducedDensityMatrix(state, q);
+  const x = 2 * r01re;
+  const y = -2 * r01im;
+  const z = r00 - r11;
+  return { x, y, z, purity: Math.sqrt(x * x + y * y + z * z) };
+}
+
+/*
+ * The state after the first `steps` gates.
+ *
+ * Step-through is not a debugging convenience here, it is the pedagogy: the
+ * final distribution tells you where you ended up, and says nothing about how.
+ * Replaying gate by gate is where the intuition forms.
+ */
+export function runCircuitTo(numQubits, circuit, steps) {
+  const limit = Math.max(0, Math.min(steps, (circuit || []).length));
+  return runCircuit(numQubits, (circuit || []).slice(0, limit));
+}

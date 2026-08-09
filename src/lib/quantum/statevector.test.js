@@ -165,3 +165,76 @@ test('rejects a gate controlled by its own target', () => {
   const s = new StateVector(2);
   assert.throws(() => s.applyControlled(1, 1, GATES.X));
 });
+
+/* ---- Bloch sphere and step-through (Step 2) ---- */
+
+import { blochVector, reducedDensityMatrix, runCircuitTo } from './statevector.js';
+
+test('|0> points to the north pole of the Bloch sphere', () => {
+  const b = blochVector(new StateVector(1), 0);
+  assert.ok(close(b.x, 0) && close(b.y, 0) && close(b.z, 1));
+  assert.ok(close(b.purity, 1), 'an isolated qubit must sit on the surface');
+});
+
+test('X takes it to the south pole', () => {
+  const b = blochVector(runCircuit(1, [{ gate: 'X', target: 0 }]), 0);
+  assert.ok(close(b.z, -1));
+});
+
+test('H puts it on the equator, along +x', () => {
+  const b = blochVector(runCircuit(1, [{ gate: 'H', target: 0 }]), 0);
+  assert.ok(close(b.x, 1, 1e-12), `x was ${b.x}`);
+  assert.ok(close(b.z, 0, 1e-12));
+  assert.ok(close(b.purity, 1, 1e-12));
+});
+
+test('S after H rotates the equator toward +y', () => {
+  const b = blochVector(runCircuit(1, [{ gate: 'H', target: 0 }, { gate: 'S', target: 0 }]), 0);
+  assert.ok(close(b.y, 1, 1e-12), `y was ${b.y}`);
+  assert.ok(close(b.x, 0, 1e-12));
+});
+
+test('an entangled qubit collapses to the centre — it has no state of its own', () => {
+  const bell = runCircuit(2, [{ gate: 'H', target: 0 }, { gate: 'CNOT', control: 0, target: 1 }]);
+  for (const q of [0, 1]) {
+    const b = blochVector(bell, q);
+    assert.ok(close(b.purity, 0, 1e-12), `qubit ${q} purity was ${b.purity}, expected 0`);
+  }
+});
+
+test('a reduced density matrix always has unit trace', () => {
+  const s = runCircuit(3, [
+    { gate: 'H', target: 0 }, { gate: 'T', target: 1 },
+    { gate: 'CNOT', control: 0, target: 2 }, { gate: 'RY', target: 1, angle: 0.7 },
+  ]);
+  for (const q of [0, 1, 2]) {
+    const { r00, r11 } = reducedDensityMatrix(s, q);
+    assert.ok(close(r00 + r11, 1, 1e-12), `trace for qubit ${q} was ${r00 + r11}`);
+  }
+});
+
+test('step-through reproduces the full circuit at its final step', () => {
+  const circuit = [
+    { gate: 'H', target: 0 },
+    { gate: 'CNOT', control: 0, target: 1 },
+    { gate: 'Z', target: 1 },
+  ];
+  const full = runCircuit(2, circuit);
+  const stepped = runCircuitTo(2, circuit, circuit.length);
+  for (let i = 0; i < full.size; i++) {
+    assert.ok(close(full.re[i], stepped.re[i]) && close(full.im[i], stepped.im[i]));
+  }
+});
+
+test('step 0 is the untouched register, and steps are clamped', () => {
+  const circuit = [{ gate: 'X', target: 0 }];
+  assert.ok(close(Array.from(runCircuitTo(1, circuit, 0).probabilities())[0], 1));
+  assert.ok(close(Array.from(runCircuitTo(1, circuit, 99).probabilities())[1], 1));
+  assert.ok(close(Array.from(runCircuitTo(1, circuit, -5).probabilities())[0], 1));
+});
+
+test('entanglement builds mid-circuit — visible only by stepping', () => {
+  const circuit = [{ gate: 'H', target: 0 }, { gate: 'CNOT', control: 0, target: 1 }];
+  assert.ok(close(blochVector(runCircuitTo(2, circuit, 1), 0).purity, 1, 1e-12), 'after H the qubit is still its own');
+  assert.ok(close(blochVector(runCircuitTo(2, circuit, 2), 0).purity, 0, 1e-12), 'the CNOT is what dissolves it');
+});
