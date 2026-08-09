@@ -159,7 +159,18 @@ export default function App() {
 
   const [selectedModel, setSelectedModel] = useState(availableModels[0]);
   const [activeCanvasNode, setActiveCanvasNode] = useState(null);
-  const [dreamNodes, setDreamNodes] = useState([]);
+  const [dreamNodes, setDreamNodes] = useState(() => {
+    try {
+      const saved = localStorage.getItem('quantora_canvas_nodes');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('quantora_canvas_nodes', JSON.stringify(dreamNodes));
+  }, [dreamNodes]);
   const [studioInputText, setStudioInputText] = useState('');
 
   const handleSendToCanvas = (messageData) => {

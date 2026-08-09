@@ -57,6 +57,18 @@ Your job is to take an Architecture Spec (JSON) and write the core React Compone
 Do not write out setup instructions. Just write the raw, beautiful, glassmorphic React code. 
 Return ONLY code inside a single \`\`\`jsx block.`;
       userPrompt = `Architecture Spec: ${JSON.stringify(node.ideaSpec)}`;
+    } else if (targetStage === 'action') {
+      systemPrompt = `You are a DevOps and Deployment Expert. 
+Your job is to take a React Component Code block and output a deployment JSON spec.
+You MUST output ONLY valid JSON, no markdown formatting blocks, no explanations.
+Schema:
+{
+  "platform": "Vercel | Netlify | Cloudflare",
+  "buildCmd": "Build command to use",
+  "envVars": ["Array of required env var names"],
+  "summary": "Short deployment summary"
+}`;
+      userPrompt = `React Code:\n${node.thoughtCode}`;
     } else {
       return res.status(400).json({ error: "Invalid target stage" });
     }
@@ -89,6 +101,15 @@ Return ONLY code inside a single \`\`\`jsx block.`;
       return res.status(200).json({ ideaSpec: parsedJson });
     } else if (targetStage === 'thought') {
       return res.status(200).json({ thoughtCode: reply });
+    } else if (targetStage === 'action') {
+      reply = reply.replace(/```json/g, '').replace(/```/g, '').trim();
+      let parsedAction;
+      try {
+        parsedAction = JSON.parse(reply);
+      } catch(e) {
+        parsedAction = { platform: "Unknown", error: "Failed to parse action output as JSON", raw: reply };
+      }
+      return res.status(200).json({ actionSpec: parsedAction });
     }
 
   } catch (err: any) {

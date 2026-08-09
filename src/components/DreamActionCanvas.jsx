@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Workflow, Sparkles, Code, Play, ArrowRight, Layers, Cpu, Terminal, Smartphone, Trash2 } from 'lucide-react';
+import { Workflow, Sparkles, Code, Play, ArrowRight, Layers, Cpu, Terminal, Smartphone, Trash2, Edit2, Save, X } from 'lucide-react';
 
 export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLight }) {
   const textColor = isLight ? '#0f172a' : '#ffffff';
@@ -14,6 +14,37 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
     { id: 'action', title: '4. Action', icon: Play, color: '#10b981', desc: 'Live Prototype' }
   ];
 
+  const [editingNodeId, setEditingNodeId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+
+  const startEditing = (node) => {
+    setEditingNodeId(node.id);
+    if (node.stage === 'idea') {
+      setEditValue(node.ideaSpec ? JSON.stringify(node.ideaSpec, null, 2) : "");
+    } else if (node.stage === 'thought') {
+      setEditValue(node.thoughtCode || "");
+    } else if (node.stage === 'action') {
+      setEditValue(node.actionSpec ? JSON.stringify(node.actionSpec, null, 2) : "");
+    }
+  };
+
+  const saveEditing = (node) => {
+    let updates = {};
+    try {
+      if (node.stage === 'idea' || node.stage === 'action') {
+        const parsed = JSON.parse(editValue);
+        if (node.stage === 'idea') updates.ideaSpec = parsed;
+        if (node.stage === 'action') updates.actionSpec = parsed;
+      } else if (node.stage === 'thought') {
+        updates.thoughtCode = editValue;
+      }
+      setDreamNodes(prev => prev.map(n => n.id === node.id ? { ...n, ...updates } : n));
+      setEditingNodeId(null);
+    } catch(e) {
+      alert("Invalid JSON format. Please fix before saving.");
+    }
+  };
+
   const moveNode = async (nodeId, currentStage) => {
     if (!setDreamNodes) return;
     const stageOrder = ['dream', 'idea', 'thought', 'action'];
@@ -21,7 +52,7 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
     if (currentIndex < stageOrder.length - 1) {
       const nextStage = stageOrder[currentIndex + 1];
       
-      setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: true } : n));
+      setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: true, error: null } : n));
       
       try {
         const nodeToExecute = dreamNodes.find(n => n.id === nodeId);
@@ -36,13 +67,12 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
         
         setDreamNodes(prev => prev.map(n => 
           n.id === nodeId 
-            ? { ...n, stage: nextStage, ...data, isExecuting: false }
+            ? { ...n, stage: nextStage, ...data, isExecuting: false, error: null }
             : n
         ));
       } catch (e) {
         console.error(e);
-        alert(`Pipeline execution failed: ${e.message}`);
-        setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: false } : n));
+        setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: false, error: e.message } : n));
       }
     }
   };
@@ -96,29 +126,69 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
                 {colNodes.map(node => (
                   <div key={node.id} className="glass-card" style={{ padding: '14px', borderLeft: `3px solid ${col.color}`, position: 'relative', background: itemBg, opacity: node.isExecuting ? 0.6 : 1 }}>
                     <div style={{ fontSize: '0.8rem', color: textColor, marginBottom: '12px', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                      {node.stage === 'dream' && (node.dreamText || node.sourceText) && (
-                        (node.dreamText || node.sourceText).length > 200 ? (node.dreamText || node.sourceText).substring(0, 200) + '...' : (node.dreamText || node.sourceText)
+                      {node.error && (
+                        <div style={{ padding: '8px', background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', color: '#ef4444', fontSize: '0.75rem', marginBottom: '12px' }}>
+                          <strong>Error:</strong> {node.error}
+                        </div>
                       )}
-                      {node.stage === 'idea' && (node.ideaSpec ? (
-                        <pre style={{ margin: 0, fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'monospace' }}>
-                          {JSON.stringify(node.ideaSpec, null, 2)}
-                        </pre>
+                      {editingNodeId === node.id ? (
+                        <textarea
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          style={{ width: '100%', minHeight: '150px', background: 'rgba(0,0,0,0.1)', color: textColor, border: `1px solid ${col.color}`, borderRadius: '8px', padding: '8px', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none' }}
+                        />
                       ) : (
-                        <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
-                      ))}
-                      {node.stage === 'thought' && (node.thoughtCode ? (
-                        <pre style={{ margin: 0, fontSize: '0.7rem', color: '#a78bfa', fontFamily: 'monospace' }}>
-                          {node.thoughtCode.substring(0, 300)}...
-                        </pre>
-                      ) : (
-                        <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
-                      ))}
+                        <>
+                          {node.stage === 'dream' && (node.dreamText || node.sourceText) && (
+                            (node.dreamText || node.sourceText).length > 200 ? (node.dreamText || node.sourceText).substring(0, 200) + '...' : (node.dreamText || node.sourceText)
+                          )}
+                          {node.stage === 'idea' && (node.ideaSpec ? (
+                            <pre style={{ margin: 0, fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'monospace' }}>
+                              {JSON.stringify(node.ideaSpec, null, 2)}
+                            </pre>
+                          ) : (
+                            <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
+                          ))}
+                          {node.stage === 'thought' && (node.thoughtCode ? (
+                            <pre style={{ margin: 0, fontSize: '0.7rem', color: '#a78bfa', fontFamily: 'monospace' }}>
+                              {node.thoughtCode.substring(0, 300)}...
+                            </pre>
+                          ) : (
+                            <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
+                          ))}
+                          {node.stage === 'action' && (node.actionSpec ? (
+                            <pre style={{ margin: 0, fontSize: '0.7rem', color: '#10b981', fontFamily: 'monospace' }}>
+                              {JSON.stringify(node.actionSpec, null, 2)}
+                            </pre>
+                          ) : (
+                            <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
+                          ))}
+                        </>
+                      )}
                     </div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${borderSubtle}`, paddingTop: '8px' }}>
-                      <button onClick={() => deleteNode(node.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
-                        <Trash2 size={14} />
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => deleteNode(node.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                          <Trash2 size={14} />
+                        </button>
+                        {col.id !== 'dream' && (
+                          editingNodeId === node.id ? (
+                            <>
+                              <button onClick={() => saveEditing(node)} style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', padding: '4px' }}>
+                                <Save size={14} />
+                              </button>
+                              <button onClick={() => setEditingNodeId(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px' }}>
+                                <X size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => startEditing(node)} style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px' }}>
+                              <Edit2 size={14} />
+                            </button>
+                          )
+                        )}
+                      </div>
                       
                       {col.id !== 'action' && (
                         <button onClick={() => moveNode(node.id, col.id)} disabled={node.isExecuting} style={{ background: `${col.color}15`, border: `1px solid ${col.color}44`, color: col.color, padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '600', cursor: node.isExecuting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
