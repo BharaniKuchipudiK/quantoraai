@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Merge-conflict artefacts. api/chat.ts.orig was committed once and held a
+# pre-security copy of the chat endpoint — no session gating, no key
+# protection. Harmless while inert, but a genuine trap for anyone reading the
+# repo or restoring it by mistake.
+*.orig
+*.rej
