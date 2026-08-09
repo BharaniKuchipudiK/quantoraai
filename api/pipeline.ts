@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 
@@ -25,18 +26,20 @@ export default async function handler(req: any, res: any) {
     
     // Auth Check
     const mayUseServerKeys = Boolean(sessionUser);
-    const effectiveOpenRouterKey = mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined;
+    const effectiveGeminiKey = mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined;
 
-    if (!effectiveOpenRouterKey && !sessionUser) {
+    if (!effectiveGeminiKey && !sessionUser) {
       return res.status(401).json({ error: "Please sign in to use Quantora's AI execution pipeline." });
+    }
+
+    if (!effectiveGeminiKey) {
+      return res.status(500).json({ error: "Server is missing Gemini API Key configuration." });
     }
 
     let systemPrompt = "";
     let userPrompt = "";
-    let modelId = "google/gemma-2-9b-it"; // Default fast model
 
     if (targetStage === 'idea') {
-      modelId = "google/gemma-2-9b-it";
       systemPrompt = `You are an elite Solutions Architect. 
 Your job is to take a raw user dream/prompt and output a strict JSON Architecture Spec.
 You MUST output ONLY valid JSON, no markdown formatting blocks, no explanations.
@@ -47,9 +50,8 @@ Schema:
   "keyFeatures": ["feature 1", "feature 2"],
   "dataModels": [{"name": "User", "fields": ["id", "name"]}]
 }`;
-      userPrompt = `Raw Dream: ${node.dreamText}`;
+      userPrompt = `Raw Dream: ${node.dreamText || node.sourceText}`;
     } else if (targetStage === 'thought') {
-      modelId = "qwen/qwen-2.5-coder-32b-instruct";
       systemPrompt = `You are an elite Senior React Developer. 
 Your job is to take an Architecture Spec (JSON) and write the core React Component Code for it.
 Do not write out setup instructions. Just write the raw, beautiful, glassmorphic React code. 
@@ -59,31 +61,19 @@ Return ONLY code inside a single \`\`\`jsx block.`;
       return res.status(400).json({ error: "Invalid target stage" });
     }
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${effectiveOpenRouterKey}`,
-        "HTTP-Referer": process.env.APP_URL || "https://quantoraai.app",
-        "X-Title": "Quantora Pipeline",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
+    const client = new GoogleGenAI({ apiKey: effectiveGeminiKey });
+    
+    // Use gemini-3.5-flash as the fast, reliable model for pipeline tasks
+    const response = await client.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      config: {
+        systemInstruction: systemPrompt,
         temperature: 0.2,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`OpenRouter API failed: ${response.status} ${errText}`);
-    }
-
-    const data = await response.json();
-    let reply = data.choices?.[0]?.message?.content || "";
+    let reply = response.text || "";
 
     // Clean up output depending on stage
     if (targetStage === 'idea') {

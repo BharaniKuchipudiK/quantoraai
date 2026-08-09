@@ -31,8 +31,8 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
           body: JSON.stringify({ node: nodeToExecute, targetStage: nextStage })
         });
         
-        if (!res.ok) throw new Error('Pipeline execution failed');
         const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Pipeline execution failed');
         
         setDreamNodes(prev => prev.map(n => 
           n.id === nodeId 
@@ -41,7 +41,7 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
         ));
       } catch (e) {
         console.error(e);
-        alert('Pipeline execution failed. Make sure you are signed in.');
+        alert(`Pipeline execution failed: ${e.message}`);
         setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: false } : n));
       }
     }
