@@ -47,7 +47,55 @@ function extractPresentedKey(req: any): string | null {
 }
 
 export function authenticateAdmin(req: any): AdminAuthFailure | null {
-  // TEMPORARY BYPASS: The user is locked out due to a stubborn frontend/sessionStorage bug.
-  // Bypassing auth so they can access the dashboard immediately.
+  /*
+   * Both sides are trimmed. This was the bug that caused the lockout.
+   *
+   * The presented key was trimmed and the expected one was not, so a single
+   * trailing newline or space on the Vercel environment variable — trivially
+   * easy when pasting a generated key — made every correct key mismatch, with
+   * no way to tell from the outside that the key was right and the whitespace
+   * was wrong. That is a bad failure: indistinguishable from a wrong password,
+   * and unfixable by the person typing it.
+   *
+   * Trimming the stored value costs nothing. No legitimate secret depends on
+   * leading or trailing whitespace.
+   */
+  const expected = process.env.ADMIN_API_KEY?.trim();
+
+  /*
+   * No hardcoded fallback, ever.
+   *
+   * A literal default key was briefly committed here to work around the
+   * lockout. That is the same failure this file was written to remove: a
+   * secret in source is a secret in git history, and in every clone of it, for
+   * good. An unconfigured deployment must refuse, not quietly accept a value
+   * anyone can read.
+   */
+  if (!expected || expected.length < 16) {
+    return {
+      status: 503,
+      error:
+        "Telemetry unavailable: ADMIN_API_KEY is not configured on this deployment (minimum 16 characters).",
+    };
+  }
+
+  const presented = extractPresentedKey(req);
+  if (!presented) return { status: 401, error: "Unauthorized" };
+
+  const presentedBuf = Buffer.from(presented, "utf8");
+  const expectedBuf = Buffer.from(expected, "utf8");
+
+  // timingSafeEqual throws on length mismatch, which would itself leak length,
+  // so both are copied into equal-sized buffers and length is folded into the
+  // result afterwards.
+  const size = Math.max(presentedBuf.length, expectedBuf.length);
+  const a = Buffer.alloc(size);
+  const b = Buffer.alloc(size);
+  presentedBuf.copy(a);
+  expectedBuf.copy(b);
+
+  const equal = timingSafeEqual(a, b) && presentedBuf.length === expectedBuf.length;
+  if (!equal) return { status: 401, error: "Unauthorized" };
+
   return null;
 }

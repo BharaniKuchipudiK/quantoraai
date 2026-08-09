@@ -14,9 +14,9 @@ const AdminDashboard = ({ onBack }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   
-  const [adminKey, setAdminKey] = useState('bypassed');
+  const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(ADMIN_KEY_STORAGE) || '');
   const [keyInput, setKeyInput] = useState('');
-  const [needsKey, setNeedsKey] = useState(false);
+  const [needsKey, setNeedsKey] = useState(() => !sessionStorage.getItem(ADMIN_KEY_STORAGE));
 
   useEffect(() => {
     if (!adminKey) {
@@ -39,12 +39,20 @@ const AdminDashboard = ({ onBack }) => {
         });
 
         if (res.status === 401) {
-          // Wrong key — drop it and ask again rather than retrying forever.
+          /*
+           * Wrong key: forget it and ask again, saying so plainly.
+           *
+           * The message matters. Previously this said only "rejected", which is
+           * indistinguishable from the real cause of the recent lockout — a
+           * trailing space on the stored environment variable, where the key
+           * being typed was correct all along. Naming that possibility is the
+           * difference between a fixable problem and an inexplicable one.
+           */
           sessionStorage.removeItem(ADMIN_KEY_STORAGE);
           if (!cancelled) {
             setAdminKey('');
             setNeedsKey(true);
-            setError('That admin key was rejected.');
+            setError('That admin key was rejected. If you are certain it is correct, check ADMIN_API_KEY in Vercel for a stray space or newline — pasting a generated key often adds one.');
           }
           return;
         }
