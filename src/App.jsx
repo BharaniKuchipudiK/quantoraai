@@ -7,6 +7,7 @@ import QuantumPlayground from './components/QuantumPlayground';
 import PrivacyVault from './components/PrivacyVault';
 import AuroraBackground from './components/AuroraBackground';
 import AdminDashboard from './components/AdminDashboard';
+import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 class ErrorBoundary extends React.Component {
@@ -378,8 +379,7 @@ export default function App() {
       }}>
         <div style={{ maxWidth: '1300px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <img src="/quantora-logo.png" alt="QUANTORA Logo" style={{ height: '24px', objectFit: 'contain' }} />
-            <span style={{ color: isLight ? '#0f172a' : '#ffffff', fontWeight: '700' }}>QUANTORA</span> • PROMPT TO ACTION
+            <QuantoraFullLogoSvg height={24} isDark={!isLight} />
           </div>
           <div style={{ display: 'flex', gap: '20px' }}>
             <span onClick={() => handleTabChange('landing')} style={{ cursor: 'pointer', color: activeTab === 'landing' ? '#f97316' : 'currentColor' }}>Home</span>

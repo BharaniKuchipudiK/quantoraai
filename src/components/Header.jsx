@@ -71,6 +71,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
   const dropdownBorder = isLight ? '#e2e8f0' : 'rgba(249, 115, 22, 0.3)';
 
   return (
+    <>
     <header style={{
       position: 'sticky',
       top: 0,
@@ -450,6 +451,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
           )}
         </div>
       </div>
+    </header>
 
       {/* Double Confirmation Security Modal */}
       {confirmModalType && (
@@ -564,6 +566,6 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 }
