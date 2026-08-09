@@ -1,6 +1,6 @@
 import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
 import { authenticateAdmin } from "../_lib/admin-auth.js";
-import { getGrowthSummary, isStoreConfigured } from "../_lib/store.js";
+import { getGrowthSummary, getDailySeries, isStoreConfigured } from "../_lib/store.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -79,21 +79,58 @@ export default async function handler(req: any, res: any) {
   }
 
   /*
-   * Real growth numbers, computed from the users and usage tables.
+   * Everything below is measured or absent. Nothing is invented.
+   *
+   * Two things were still being reported dishonestly here. systemUptime was the
+   * literal string '99.99%' — never measured, and exactly the sort of number an
+   * operator would quote to someone. And tokensGenerated summed only the fifty
+   * most recent rows while being displayed as a lifetime total, so it silently
+   * stopped growing once the table passed fifty entries.
+   *
+   * Aggregates now come from the daily views, computed in Postgres over the
+   * whole window rather than over whatever happened to be fetched.
    */
-  const growth = await getGrowthSummary();
+  const [growth, series] = await Promise.all([getGrowthSummary(), getDailySeries(14)]);
+
+  const usageDays = series?.usage ?? [];
+  const measured = {
+    requests: usageDays.reduce((a, d) => a + Number(d.requests || 0), 0),
+    billableRequests: usageDays.reduce((a, d) => a + Number(d.billable_requests || 0), 0),
+    tokens: usageDays.reduce((a, d) => a + Number(d.tokens_est || 0), 0),
+  };
+
+  // Latency weighted by request volume — a straight mean of daily averages
+  // would let a quiet day with two slow calls outweigh a busy one.
+  const weightedLatency = usageDays.reduce((a, d) => a + Number(d.avg_latency_ms || 0) * Number(d.requests || 0), 0);
+  const avgLatencyMs = measured.requests ? Math.round(weightedLatency / measured.requests) : null;
 
   return res.status(200).json({
-    growth: growth
-      ? { ...growth, source: 'measured' }
-      : { source: isStoreConfigured() ? 'unavailable' : 'not_configured' },
+    /* 'measured' | 'unavailable' | 'not_configured' — say which, always. */
+    source: growth ? 'measured' : (isStoreConfigured() ? 'unavailable' : 'not_configured'),
 
-    totalRequests,
-    avgLatency,
-    tokensGenerated,
-    activeSessions,
-    systemUptime: '99.99%',
+    growth: growth ?? null,
+
+    window: {
+      days: 14,
+      requests: series ? measured.requests : null,
+      billableRequests: series ? measured.billableRequests : null,
+      tokensEstimated: series ? measured.tokens : null,
+      avgLatencyMs,
+    },
+
+    daily: series ? { growth: series.growth, usage: series.usage } : null,
+
+    /* Legacy telemetry table, kept while it still holds history. */
+    legacyTelemetry: { totalRequests, avgLatency, tokensGenerated, activeSessions },
+
+    /*
+     * Deliberately absent rather than fabricated: uptime, CPU, memory and
+     * cache hit ratio are not instrumented. A dashboard that invents them
+     * teaches its reader to distrust the numbers that are real.
+     */
+    notMeasured: ['systemUptime', 'cpuUsage', 'memoryUsage', 'cacheHitRatio'],
+
     timestamp: Date.now(),
-    isLiveConnected: !!(supabaseUrl && supabaseKey)
+    isLiveConnected: isStoreConfigured()
   });
 }

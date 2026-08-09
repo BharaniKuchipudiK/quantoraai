@@ -60,3 +60,65 @@ export function applyCors(
   res.setHeader("Access-Control-Allow-Methods", methods);
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
+
+/*
+ * Durable rate limiting, backed by Postgres.
+ *
+ * isRateLimited above keeps counters in a module-scope Map, which on Vercel is
+ * per-instance and per-cold-start: concurrent functions each get a fresh
+ * allowance, and a restart forgets everything. Fine as a speed bump, useless
+ * as a guarantee.
+ *
+ * This asks the database instead, where a single row per (key, window) is
+ * shared by every instance and survives restarts. The increment and the check
+ * happen in one statement inside hit_rate_limit, so two requests arriving
+ * together cannot both read the same count and both conclude they are under
+ * the limit.
+ *
+ * Fails OPEN, deliberately. If the database is unreachable this returns
+ * `false` — not rate limited — and the caller proceeds. The in-memory limiter
+ * still applies underneath, so there is never no limit at all. The judgement:
+ * a brief window of weaker limits during an outage is a smaller harm than
+ * locking out every legitimate user because a counter table was unreachable.
+ */
+export async function isRateLimitedDurable(
+  key: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<{ limited: boolean; hits: number | null; resetsAt: string | null }> {
+  const url = process.env.SUPABASE_URL;
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !secret) return { limited: false, hits: null, resetsAt: null };
+
+  try {
+    const response = await fetch(`${url.replace(/\/+$/, "")}/rest/v1/rpc/hit_rate_limit`, {
+      method: "POST",
+      headers: {
+        apikey: secret,
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_key: key, p_limit: limit, p_window_s: windowSeconds }),
+      // Short: a rate-limit check must never become the slowest part of a request.
+      signal: AbortSignal.timeout(2_000),
+    });
+
+    if (!response.ok) {
+      console.warn("Durable rate limit unavailable:", response.status, await response.text());
+      return { limited: false, hits: null, resetsAt: null };
+    }
+
+    const rows = await response.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) return { limited: false, hits: null, resetsAt: null };
+
+    return {
+      limited: row.allowed === false,
+      hits: typeof row.hits === "number" ? row.hits : null,
+      resetsAt: row.resets_at ?? null,
+    };
+  } catch (err: any) {
+    console.warn("Durable rate limit check failed:", err?.message || err);
+    return { limited: false, hits: null, resetsAt: null };
+  }
+}

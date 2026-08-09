@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { recordUsage } from "./_lib/store.js";
 
@@ -183,8 +183,26 @@ export default async function handler(req: any, res: any) {
    * behind one office NAT share an IP and should not exhaust each other.
    */
   const limitKey = sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
+
+  /*
+   * Two layers, on purpose.
+   *
+   * The in-memory check is free and catches a hot loop on this instance
+   * immediately, without a network round trip. The durable check is shared
+   * across every instance and survives cold starts, which is what actually
+   * bounds a determined caller. Cheapest first.
+   */
   if (isRateLimited(limitKey, RATE_LIMIT_PER_MINUTE, 60_000)) {
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  }
+
+  const durable = await isRateLimitedDurable(limitKey, RATE_LIMIT_PER_MINUTE, 60);
+  if (durable.limited) {
+    if (durable.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durable.resetsAt).getTime() - Date.now()) / 1000)));
+    return res.status(429).json({
+      error: 'Too many requests. Please wait a minute and try again.',
+      resetsAt: durable.resetsAt,
+    });
   }
 
   const startTime = Date.now();
