@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -475,6 +475,37 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
   const [suggestedModel, setSuggestedModel] = useState(null);
 
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+
+  const handleInputTextChange = (e) => {
+    const text = e.target.value;
+    setInputText(text);
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+    
+    // Trigger context menu on '@' typed at end or after space
+    const mentionMatch = text.match(/(^|\s)@(\w*)$/);
+    if (mentionMatch) {
+      setShowMentionMenu(true);
+    } else {
+      setShowMentionMenu(false);
+    }
+  };
+
+  const handleSelectMention = (mentionType, mentionName) => {
+    const newAttachments = [...attachments, {
+      name: mentionName,
+      size: 'Context',
+      type: 'context',
+      contextType: mentionType
+    }];
+    setAttachments(newAttachments);
+    
+    const newText = inputText.replace(/(^|\s)@(\w*)$/, '$1');
+    setInputText(newText);
+    setShowMentionMenu(false);
+  };
+
   const [attachments, setAttachments] = useState([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
@@ -599,9 +630,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const handleSendMessage = async (textToSend) => {
-    const text = textToSend || inputText;
+    let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
+
+    // Inject Context Chips
+    const contextChips = attachments.filter(a => a.type === 'context');
+    if (contextChips.length > 0) {
+      let contextString = "";
+      for (const chip of contextChips) {
+        if (chip.contextType === 'canvas') {
+          contextString += `\n\n[CONTEXT: CURRENT CANVAS CODE]\n\`\`\`\n${previewCode}\n\`\`\``;
+        } else if (chip.contextType === 'history') {
+           const prevSession = chatSessions.find(s => s.id !== activeSessionId);
+           if (prevSession) {
+             const stringifiedHistory = prevSession.messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
+             contextString += `\n\n[CONTEXT: PREVIOUS SESSION (${prevSession.title})]\n${stringifiedHistory.substring(0, 5000)}...`;
+           }
+        }
+      }
+      text = text + contextString;
+    }
 
     setLastPrompt(text.trim());
 
@@ -980,8 +1029,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       gap: '12px',
                       fontSize: '0.75rem',
                       color: subtextColor,
-                      flexWrap: 'wrap'
-                    }}>
+                      flexWrap: 'wrap',
+                      opacity: 0.25,
+                      transition: 'opacity 0.2s ease',
+                      cursor: 'default'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0.25}
+                    >
+                      <Info size={14} />
                       <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -1514,7 +1570,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                 }}
               >
-                {att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
+                {att.type === 'context' ? <Layers size={12} color="#8b5cf6" /> : att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
                 <span>{att.name}</span>
                 <X
                   size={12}
@@ -1534,7 +1590,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           padding: '4px'
         }}>
           {/* Intelligent Router Suggestion Pill */}
-          {suggestedModel && (
+          {suggestedModel && !showMentionMenu && (
             <div style={{
               position: 'absolute',
               top: '-35px',
@@ -1561,16 +1617,77 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
 
+          {/* Context Mention Floating Menu */}
+          {showMentionMenu && (
+            <div style={{
+              position: 'absolute',
+              bottom: 'calc(100% + 10px)',
+              left: '12px',
+              background: isLight ? '#ffffff' : '#0d1127',
+              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(139, 92, 246, 0.4)',
+              borderRadius: '16px',
+              padding: '8px',
+              boxShadow: isLight ? '0 -10px 30px rgba(0,0,0,0.15)' : '0 -15px 40px rgba(0,0,0,0.6)',
+              zIndex: 100,
+              width: '280px'
+            }}>
+              <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '6px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Tag Context
+              </div>
+              <div
+                onClick={() => handleSelectMention('canvas', '@CanvasCode')}
+                style={{
+                  padding: '10px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontSize: '0.85rem',
+                  color: textColor,
+                  transition: 'background 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(139, 92, 246, 0.2)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <Code2 size={16} color="#8b5cf6" />
+                <div>
+                  <div style={{ fontWeight: '600' }}>Current Canvas Code</div>
+                  <div style={{ fontSize: '0.7rem', color: subtextColor }}>Ground AI in sandbox code</div>
+                </div>
+              </div>
+              
+              <div
+                onClick={() => handleSelectMention('history', '@LastSession')}
+                style={{
+                  padding: '10px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontSize: '0.85rem',
+                  color: textColor,
+                  transition: 'background 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(139, 92, 246, 0.2)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <MessageSquare size={16} color="#8b5cf6" />
+                <div>
+                  <div style={{ fontWeight: '600' }}>Last Session Context</div>
+                  <div style={{ fontSize: '0.7rem', color: subtextColor }}>Read previous conversation</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '12px 18px' }}>
             <textarea
               rows={1}
               value={inputText}
-              onChange={(e) => {
-                setInputText(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
-              }}
+              onChange={handleInputTextChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -1657,31 +1774,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <span>Magic Wand</span>
               </button>
 
-              {/* Cognitive Effort Selector */}
-              <div style={{ display: 'flex', alignItems: 'center', background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', borderRadius: '20px', padding: '2px', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                {['Lightning', 'Balanced', 'Deep Think'].map(level => (
-                  <button
-                    key={level}
-                    onClick={() => setCognitiveLevel(level)}
-                    style={{
-                      background: cognitiveLevel === level ? (isLight ? '#ffffff' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
-                      color: cognitiveLevel === level ? '#f97316' : subtextColor,
-                      border: 'none',
-                      padding: '4px 10px',
-                      borderRadius: '18px',
-                      fontSize: '0.72rem',
-                      fontWeight: cognitiveLevel === level ? '700' : '500',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      boxShadow: cognitiveLevel === level && isLight ? '0 2px 6px rgba(0,0,0,0.05)' : 'none'
-                    }}
-                  >
-                    {level === 'Lightning' && '⚡ '}{level === 'Deep Think' && '🧠 '}{level}
-                  </button>
-                ))}
-              </div>
-
-              {/* Model Selector Pill */}
+              {/* Engine Settings Popover */}
               <div ref={inBarModelRef} style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowInBarModelDropdown(!showInBarModelDropdown)}
@@ -1699,8 +1792,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     cursor: 'pointer'
                   }}
                 >
-                  <Cpu size={13} color="#f97316" />
-                  <span>{selectedModel ? selectedModel.name : 'Qwen 2.5 Coder 32B'}</span>
+                  <Settings size={13} color="#f97316" />
+                  <span>Engine</span>
                   <ChevronDown size={12} color={subtextColor} />
                 </button>
 
@@ -1709,50 +1802,93 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     position: 'absolute',
                     bottom: 'calc(100% + 10px)',
                     left: 0,
-                    width: '280px',
-                    maxHeight: '340px',
+                    width: '300px',
+                    maxHeight: '400px',
                     overflowY: 'auto',
                     background: isLight ? '#ffffff' : '#0d1127',
                     border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
                     borderRadius: '16px',
-                    padding: '8px',
+                    padding: '12px',
                     boxShadow: isLight ? '0 -10px 30px rgba(0,0,0,0.15)' : '0 -15px 40px rgba(0,0,0,0.6)',
-                    zIndex: 900
+                    zIndex: 900,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '16px'
                   }}>
-                    <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '6px 10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Select Live AI Engine
-                    </div>
-                    {availableModels && availableModels.map(model => (
-                      <div
-                        key={model.id}
-                        onClick={() => {
-                          setSelectedModel(model);
-                          setShowInBarModelDropdown(false);
-                        }}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          cursor: 'pointer',
-                          background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '10px',
-                          fontSize: '0.82rem',
-                          color: selectedModel?.id === model.id ? '#f97316' : textColor,
-                          fontWeight: selectedModel?.id === model.id ? '700' : '500',
-                          transition: 'background 0.15s ease'
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.name}</span>
-                          <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider}</span>
-                        </div>
-                        <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.15)', color: '#059669', padding: '2px 6px', borderRadius: '6px', fontWeight: '700', flexShrink: 0 }}>
-                          Active
-                        </span>
+                    {/* Cognitive Effort Control (Inside Popover) */}
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: subtextColor, marginBottom: '8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Cognitive Effort
                       </div>
-                    ))}
+                      <div style={{ display: 'flex', alignItems: 'center', background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', borderRadius: '12px', padding: '4px', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)' }}>
+                        {['Lightning', 'Balanced', 'Deep Think'].map(level => (
+                          <button
+                            key={level}
+                            onClick={() => setCognitiveLevel(level)}
+                            style={{
+                              flex: 1,
+                              background: cognitiveLevel === level ? (isLight ? '#ffffff' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
+                              color: cognitiveLevel === level ? '#f97316' : subtextColor,
+                              border: 'none',
+                              padding: '6px 0',
+                              borderRadius: '8px',
+                              fontSize: '0.72rem',
+                              fontWeight: cognitiveLevel === level ? '700' : '500',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              boxShadow: cognitiveLevel === level && isLight ? '0 2px 6px rgba(0,0,0,0.05)' : 'none'
+                            }}
+                          >
+                            {level === 'Lightning' && '⚡ '}{level === 'Deep Think' && '🧠 '}{level}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* AI Model Control (Inside Popover) */}
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: subtextColor, marginBottom: '8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        AI Model
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {availableModels && availableModels.map(model => (
+                          <div
+                            key={model.id}
+                            onClick={() => {
+                              setSelectedModel(model);
+                              setShowInBarModelDropdown(false);
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.8rem',
+                              color: selectedModel?.id === model.id ? '#f97316' : textColor,
+                              fontWeight: selectedModel?.id === model.id ? '700' : '500',
+                              transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (selectedModel?.id !== model.id) e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (selectedModel?.id !== model.id) e.currentTarget.style.background = 'transparent';
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.name}</span>
+                              <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter')}</span>
+                            </div>
+                            {selectedModel?.id === model.id && (
+                              <span style={{ fontSize: '0.65rem', background: '#f97316', color: '#fff', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Active</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
