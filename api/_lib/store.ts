@@ -169,3 +169,36 @@ export async function getGrowthSummary(): Promise<{
 
   return { totalUsers, newUsers7d, activeUsers7d, requests7d, billableRequests7d };
 }
+
+/*
+ * Daily aggregates, straight from the views.
+ *
+ * Aggregating in Postgres rather than pulling rows and summing in JavaScript.
+ * The previous dashboard fetched the most recent 50 telemetry rows and
+ * presented their token sum as a lifetime total — a number that was neither
+ * the total nor labelled as a sample, and which stopped growing once the table
+ * passed fifty rows.
+ */
+export async function getDailySeries(days = 14): Promise<{
+  growth: Array<{ day: string; signups: number }>;
+  usage: Array<{
+    day: string; requests: number; active_users: number;
+    billable_requests: number; tokens_est: number; avg_latency_ms: number;
+  }>;
+} | null> {
+  if (!config()) return null;
+
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const [growthRes, usageRes] = await Promise.all([
+    request(`growth_daily?select=*&day=gte.${since}&order=day.desc`, { method: "GET" }),
+    request(`usage_daily?select=*&day=gte.${since}&order=day.desc`, { method: "GET" }),
+  ]);
+
+  const parse = async (res: Response | null) => {
+    if (!res) return [];
+    try { return (await res.json()) as any[]; } catch { return []; }
+  };
+
+  return { growth: await parse(growthRes), usage: await parse(usageRes) };
+}

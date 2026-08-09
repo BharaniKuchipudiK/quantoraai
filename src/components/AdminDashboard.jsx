@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Database, ChevronLeft, Cpu, Zap, Network } from 'lucide-react';
+import { Activity, Users, Database, ChevronLeft, Cpu, Zap, Network } from 'lucide-react';
 
 /*
  * The admin key is entered by the operator and held in sessionStorage for the
@@ -166,10 +166,11 @@ const AdminDashboard = ({ onBack }) => {
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></div>
-            LIVE {metrics.systemUptime} UPTIME
+            {metrics.source === 'measured' ? 'LIVE DATA' : metrics.source === 'unavailable' ? 'DATABASE UNREACHABLE' : 'TELEMETRY NOT CONFIGURED'}
           </span>
           <div style={{ fontSize: '0.85rem', color: '#64748b', fontFamily: 'monospace' }}>
             LAST SYNC: {new Date(metrics.timestamp).toLocaleTimeString()}
+            {metrics.notMeasured?.length ? ` · not instrumented: ${metrics.notMeasured.join(', ')}` : ''}
           </div>
         </div>
       </div>
@@ -186,9 +187,17 @@ const AdminDashboard = ({ onBack }) => {
       <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
         {/* Core KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-          <MiniKpi title="Total AI Generations" value={metrics.totalRequests.toLocaleString()} sparklineColor="#0ea5e9" icon={<Database size={16}/>} />
-          <MiniKpi title="Total Tokens Generated" value={metrics.tokensGenerated.toLocaleString()} sparklineColor="#8b5cf6" icon={<Cpu size={16}/>} />
-          <MiniKpi title="Average Latency" value={`${metrics.avgLatency} ms`} sparklineColor="#10b981" icon={<Zap size={16}/>} />
+          {/*
+            * Growth first, because it is the question this dashboard exists to
+            * answer. `—` means not measured; it never means zero, and it is
+            * never filled in with a plausible-looking guess.
+            */}
+          <MiniKpi title="Total Users" value={metrics.growth ? metrics.growth.totalUsers.toLocaleString() : '—'} sparklineColor="#0ea5e9" icon={<Users size={16}/>} />
+          <MiniKpi title="New Users (7d)" value={metrics.growth ? metrics.growth.newUsers7d.toLocaleString() : '—'} sparklineColor="#8b5cf6" icon={<Users size={16}/>} />
+          <MiniKpi title="Active Users (7d)" value={metrics.growth ? metrics.growth.activeUsers7d.toLocaleString() : '—'} sparklineColor="#10b981" icon={<Activity size={16}/>} />
+          <MiniKpi title="Requests (14d)" value={metrics.window?.requests != null ? metrics.window.requests.toLocaleString() : '—'} sparklineColor="#0ea5e9" icon={<Database size={16}/>} />
+          <MiniKpi title="On Your API Keys (14d)" value={metrics.window?.billableRequests != null ? metrics.window.billableRequests.toLocaleString() : '—'} sparklineColor="#f97316" icon={<Zap size={16}/>} />
+          <MiniKpi title="Average Latency" value={metrics.window?.avgLatencyMs != null ? `${metrics.window.avgLatencyMs} ms` : '—'} sparklineColor="#10b981" icon={<Zap size={16}/>} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
@@ -199,7 +208,7 @@ const AdminDashboard = ({ onBack }) => {
             </h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {metrics.activeSessions.length > 0 ? metrics.activeSessions.map((session, i) => (
+              {(metrics.legacyTelemetry?.activeSessions?.length ?? 0) > 0 ? metrics.legacyTelemetry.activeSessions.map((session, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
