@@ -252,6 +252,7 @@ Rules:
       const reply = data.choices?.[0]?.message?.content;
       
       if (!reply) {
+        console.error("OpenRouter empty response data:", JSON.stringify(data));
         throw new Error("OpenRouter API returned an empty response.");
       }
 
