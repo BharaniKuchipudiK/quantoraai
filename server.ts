@@ -4,6 +4,8 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { authenticateAdmin } from "./api/_lib/admin-auth.js";
+import { getSessionUser, createSessionToken, setSessionCookie, clearSessionCookie, isSessionConfigured } from "./api/_lib/session.js";
+import { OAuth2Client } from "google-auth-library";
 
 dotenv.config();
 
@@ -154,6 +156,60 @@ async function startServer() {
       timestamp: new Date().toISOString()
     });
   });
+  /*
+   * Auth routes, mirroring api/auth/*.ts so the dev server and the deployed
+   * serverless functions cannot drift apart on who counts as signed in.
+   */
+  const devClientId = process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "";
+  const devOAuth = devClientId ? new OAuth2Client(devClientId) : null;
+
+  app.post("/api/auth/verify", async (req, res) => {
+    if (!devOAuth || !isSessionConfigured()) {
+      return res.status(503).json({ error: "Sign-in is not configured on this deployment." });
+    }
+    const credential = req.body?.credential;
+    if (!credential || typeof credential !== "string") {
+      return res.status(400).json({ error: "Missing credential token" });
+    }
+    try {
+      const ticket = await devOAuth.verifyIdToken({ idToken: credential, audience: devClientId });
+      const payload = ticket.getPayload();
+      if (!payload?.sub) return res.status(401).json({ error: "Invalid token payload" });
+      if (!payload.email || payload.email_verified === false) {
+        return res.status(401).json({ error: "This Google account has no verified email address." });
+      }
+      const token = createSessionToken({
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name || payload.email.split("@")[0],
+        picture: payload.picture || "",
+      });
+      if (!token) return res.status(503).json({ error: "Sign-in is not configured on this deployment." });
+      setSessionCookie(res, token);
+      return res.status(200).json({
+        name: payload.name || "Creator",
+        email: payload.email,
+        avatar: payload.picture || "",
+        authProvider: "Google OAuth 2.0 (Verified)",
+        tier: "Indie Creator ($0 / mo)",
+        joinedDate: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+      });
+    } catch (err: any) {
+      console.warn("Google credential verification failed:", err?.message || err);
+      return res.status(401).json({ error: "Authentication failed or token expired." });
+    }
+  });
+
+  app.get("/api/auth/session", (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json({ user: getSessionUser(req) ?? null });
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    clearSessionCookie(res);
+    return res.status(200).json({ ok: true });
+  });
+
   // API route for real AI chat using Gemini API or OpenRouter API with SSE Streaming
   app.post("/api/chat", async (req, res) => {
     globalMetrics.totalRequests++;
@@ -179,8 +235,20 @@ async function startServer() {
         return res.status(400).json({ error: "Message string is required" });
       }
 
-      const effectiveOpenRouterKey = openRouterKey || process.env.OPENROUTER_API_KEY;
-      const effectiveGeminiKey = userKey || process.env.GEMINI_API_KEY;
+      // Server-held keys are for signed-in users only; BYOK still works signed out.
+      const sessionUser = getSessionUser(req);
+      const mayUseServerKeys = Boolean(sessionUser);
+      const effectiveOpenRouterKey =
+        openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined);
+      const effectiveGeminiKey =
+        userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined);
+
+      if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
+        return res.status(401).json({
+          error: "Please sign in to use Quantora's built-in AI, or add your own API key.",
+          requiresAuth: true,
+        });
+      }
 
       // 1. If OpenRouter Key is available and non-Gemini model requested, call OpenRouter directly
       if (modelId && !modelId.startsWith("gemini") && effectiveOpenRouterKey) {
