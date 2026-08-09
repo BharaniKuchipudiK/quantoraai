@@ -1711,7 +1711,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               style={{
                 background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
                 border: 'none',
-                color: '#ffffff',
+                /*
+                 * A white glyph on the pale disabled fill was effectively
+                 * invisible — the primary action looked absent rather than
+                 * inactive. Disabled state now keeps a legible mid-tone.
+                 */
+                color: (inputText.trim() || attachments.length)
+                  ? '#ffffff'
+                  : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
                 width: '38px',
                 height: '38px',
                 borderRadius: '12px',

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import BeeSwarmCanvas from './BeeSwarmCanvas';
+import AuroraBackground from './AuroraBackground';
 import { QuantoraEmblemSvg, QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import { Sparkles, Workflow, Cpu, ShieldCheck, ArrowRight, LogIn, CheckCircle2, Zap, Sun, Moon, Lock, ChevronDown } from 'lucide-react';
 

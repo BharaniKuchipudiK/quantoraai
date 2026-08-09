@@ -213,3 +213,69 @@ body {
   overflow-x: auto;
   border: 1px solid var(--border-color);
 }
+
+/* ============================================================
+   Ambient aurora background
+   Replaces the particle canvas. Transform-only animation so the
+   compositor runs it on the GPU: no per-frame JavaScript, no
+   layout, no repaint.
+   ============================================================ */
+
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora-bg.is-light { background: #fdfbf7; }   /* warm off-white, not clinical white */
+.aurora-bg.is-dark  { background: #070913; }
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  will-change: transform;
+}
+
+/* Pushed toward the edges so the middle of the screen stays readable. */
+.aurora-1 { width: 46vw; height: 46vw; min-width: 380px; min-height: 380px; left: -12vw; top: -14vh; animation: aurora-drift-1 34s ease-in-out infinite alternate; }
+.aurora-2 { width: 40vw; height: 40vw; min-width: 340px; min-height: 340px; right: -10vw; top: 4vh;  animation: aurora-drift-2 42s ease-in-out infinite alternate; }
+.aurora-3 { width: 44vw; height: 44vw; min-width: 360px; min-height: 360px; left: 34vw; bottom: -22vh; animation: aurora-drift-3 38s ease-in-out infinite alternate; }
+
+.is-light .aurora-1 { background: radial-gradient(circle, rgba(249, 115, 22, 0.30), transparent 66%); }
+.is-light .aurora-2 { background: radial-gradient(circle, rgba(236, 72, 153, 0.22), transparent 66%); }
+.is-light .aurora-3 { background: radial-gradient(circle, rgba(139, 92, 246, 0.20), transparent 66%); }
+
+.is-dark .aurora-1 { background: radial-gradient(circle, rgba(249, 115, 22, 0.42), transparent 66%); }
+.is-dark .aurora-2 { background: radial-gradient(circle, rgba(236, 72, 153, 0.32), transparent 66%); }
+.is-dark .aurora-3 { background: radial-gradient(circle, rgba(56, 189, 248, 0.28), transparent 66%); }
+
+@keyframes aurora-drift-1 { from { transform: translate3d(0,0,0) scale(1);    } to { transform: translate3d(6vw, 5vh, 0)  scale(1.16); } }
+@keyframes aurora-drift-2 { from { transform: translate3d(0,0,0) scale(1.08); } to { transform: translate3d(-5vw, 6vh, 0) scale(1);    } }
+@keyframes aurora-drift-3 { from { transform: translate3d(0,0,0) scale(1);    } to { transform: translate3d(4vw, -5vh, 0) scale(1.20); } }
+
+/*
+ * A whisper of grain. Large flat gradients band on cheaper displays; a little
+ * noise breaks the banding up and gives the surface some texture rather than
+ * looking like a plastic gradient.
+ */
+.aurora-grain {
+  position: absolute;
+  inset: -50%;
+  opacity: 0.16;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.is-dark .aurora-grain { opacity: 0.09; }
+
+/* Motion is decorative here, so it goes away entirely when the OS asks. */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob { animation: none !important; }
+}
+
+/* Phones: fewer, calmer layers — saves fill-rate on weaker GPUs. */
+@media (max-width: 640px) {
+  .aurora-blob { filter: blur(64px); }
+  .aurora-3 { display: none; }
+}

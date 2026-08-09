@@ -5,7 +5,7 @@ import AiStudio from './components/AiStudio';
 import DreamActionCanvas from './components/DreamActionCanvas';
 import QuantumPlayground from './components/QuantumPlayground';
 import PrivacyVault from './components/PrivacyVault';
-import BeeSwarmCanvas from './components/BeeSwarmCanvas';
+import AuroraBackground from './components/AuroraBackground';
 import AdminDashboard from './components/AdminDashboard';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
@@ -56,7 +56,7 @@ export default function App() {
   useEffect(() => {
     try {
       document.documentElement.setAttribute('data-theme', effectiveTheme);
-      document.body.style.background = isLight ? '#ffffff' : '#070913';
+      document.body.style.background = isLight ? '#fdfbf7' : '#070913';
       document.body.style.color = isLight ? '#0f172a' : '#ffffff';
     } catch (e) {
       console.error(e);
@@ -172,12 +172,12 @@ export default function App() {
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
-      background: isLight ? '#ffffff' : '#070913',
+      background: 'transparent',
       color: isLight ? '#0f172a' : '#ffffff',
       transition: 'background 0.3s ease, color 0.3s ease'
     }}>
-      {/* Background Particle Engine */}
-      <BeeSwarmCanvas theme={effectiveTheme} />
+      {/* Ambient background — see AuroraBackground for why this replaced the canvas */}
+      <AuroraBackground theme={effectiveTheme} />
 
       {/* Main View Router */}
       {activeTab === 'landing' ? (
