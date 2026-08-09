@@ -1,4 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
+import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit";
+
+// Generous ceilings: bound worst-case cost/abuse without rejecting any
+// realistic legitimate use (long chats, pasted code files). History is
+// truncated to the most recent items rather than rejected outright, so an
+// existing long-running session never breaks — it just loses very old
+// context, the same tradeoff every chat app with a context window makes.
+const MAX_MESSAGE_LENGTH = 50_000;
+const MAX_HISTORY_ITEMS = 100;
+const RATE_LIMIT_PER_MINUTE = 25;
 
 function buildGeminiContents(history: any[], currentMessage: string) {
   const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
@@ -36,17 +46,47 @@ function buildGeminiContents(history: any[], currentMessage: string) {
 
 async function generateGeminiContent(apiKey: string, contents: any[], systemInstruction: string) {
   const client = new GoogleGenAI({ apiKey });
-  const fallbackModels = [
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3-flash-preview",
-    "gemini-flash-latest",
-    "gemma-4-26b-a4b-it",
-    "gemma-4-31b-it"
-  ];
+  
+  let selectedModel = "";
+  let availableModels: string[] = [];
+  
+  // 1. Dynamically ask Google exactly which models this specific API key is allowed to use
+  try {
+    const modelsResponse = await client.models.list();
+    for await (const m of modelsResponse) {
+      if (m && m.name) {
+        const modelName = m.name.replace(/^models\//, "");
+        availableModels.push(modelName);
+      }
+    }
+  } catch (err: any) {
+    console.warn("Failed to dynamically list models:", err.message);
+    throw new Error(`CRITICAL GOOGLE API ERROR: Your API key was rejected before we could ask Google for a list of models. Error from Google: ${err.message || err}. Ensure you enabled the 'Generative Language API' in your Google Cloud Project.`);
+  }
+  
+  const availableModelsStr = availableModels.join(", ");
+  
+  // 2. Pick the most modern Flash model by dynamically parsing version numbers
+  const flashModels = availableModels.filter(m => m.includes("gemini") && m.includes("flash"));
+  
+  flashModels.sort((a, b) => {
+    const matchA = a.match(/(\d+\.\d+)/);
+    const matchB = b.match(/(\d+\.\d+)/);
+    const valA = matchA ? parseFloat(matchA[1]) : 0;
+    const valB = matchB ? parseFloat(matchB[1]) : 0;
+    return valB - valA;
+  });
 
-  let lastError: any = null;
-  for (const m of fallbackModels) {
+  const modelsToTry = flashModels.length > 0 ? flashModels : availableModels;
+  
+  if (modelsToTry.length === 0) {
+    throw new Error(`CRITICAL GOOGLE API ERROR: Your API key successfully connected, but Google returned ZERO models. (Google returned: ${availableModelsStr || "nothing"}). This usually means your Google Cloud project has no quota or is region-blocked.`);
+  }
+
+  let lastError = null;
+  
+  // 3. Generate content using the strictly validated dynamic models, falling back gracefully if Google rejects one
+  for (const m of modelsToTry) {
     try {
       const response = await client.models.generateContent({
         model: m,
@@ -60,11 +100,13 @@ async function generateGeminiContent(apiKey: string, contents: any[], systemInst
         return { text: response.text, usedModel: m };
       }
     } catch (err: any) {
-      console.warn(`Gemini model ${m} failed:`, err.message || err);
       lastError = err;
+      console.warn(`Google API rejected model '${m}':`, err.message || err);
+      // Loop gracefully to the next dynamically discovered model
     }
   }
-  throw lastError || new Error("All Gemini fallback models failed.");
+  
+  throw new Error(`Google API generated an error for all available dynamic models. Last error from model '${modelsToTry[modelsToTry.length - 1]}': ${lastError?.message || lastError}`);
 }
 
 
@@ -95,14 +137,7 @@ function logTelemetry(modelId: string, latencyMs: number, textLength: number, pr
 }
 
 export default async function handler(req: any, res: any) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -110,6 +145,13 @@ export default async function handler(req: any, res: any) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Best-effort per-IP limit — see api/_lib/rate-limit.ts for caveats under
+  // Vercel's serverless model. Still closes the "unlimited free requests"
+  // gap that existed with no limiter at all.
+  if (isRateLimited(`chat:${clientIp(req)}`, RATE_LIMIT_PER_MINUTE, 60_000)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
 
   const startTime = Date.now();
@@ -120,67 +162,41 @@ export default async function handler(req: any, res: any) {
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Message string is required" });
     }
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
+    }
+    // Bound, never reject: an over-long history just loses its oldest turns.
+    const boundedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS) : history;
 
     const effectiveOpenRouterKey = openRouterKey || process.env.OPENROUTER_API_KEY;
     const effectiveGeminiKey = userKey || process.env.GEMINI_API_KEY;
 
-    // 1. If OpenRouter Key is available and non-Gemini model requested
-    if (modelId && !modelId.startsWith("gemini") && effectiveOpenRouterKey) {
-      try {
-        const formattedHistory = (history || []).map((m: any) => ({
-          role: m.role === "model" || m.role === "assistant" || m.sender === "ai" ? "assistant" : "user",
-          content: m.text || m.content || "",
-        }));
-        formattedHistory.push({ role: "user", content: message });
+    const isGeminiModel = modelId && modelId.startsWith("gemini");
 
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${effectiveOpenRouterKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: modelId,
-            messages: formattedHistory,
-          }),
+    if (isGeminiModel) {
+      if (!effectiveGeminiKey) {
+        return res.status(401).json({
+          error: "No Google Gemini API key configured. Please enter an API key in the Privacy Vault.",
+          requiresKey: "gemini"
         });
-
-        if (response.ok) {
-          const data = await response.json();
-          const reply = data.choices?.[0]?.message?.content;
-          if (reply) {
-            const latencyMs = Date.now() - startTime;
-            logTelemetry(modelId, latencyMs, reply.length, "OpenRouter");
-            return res.status(200).json({
-              text: reply,
-              provider: `OpenRouter (${modelName || modelId})`,
-              latencyMs,
-              modelId: modelId,
-              liveConnected: true
-            });
-          }
-        }
-      } catch (orErr) {
-        console.warn("OpenRouter request failed:", orErr);
       }
-    }
 
-    // 2. Gemini fallback
-    if (effectiveGeminiKey) {
       try {
-        const contents = buildGeminiContents(history, message);
-        const isCustomModel = modelId && !modelId.startsWith("gemini");
-        const systemInstruction = isCustomModel
-          ? `You are Quantora AI, an advanced AI Engine powering Quantora.app. You are currently functioning as "${modelName || modelId}". Respond accurately, intelligently, and comprehensively in Markdown formatted text, preserving the expertise and personality of ${modelName || modelId}.`
-          : `You are Quantora AI, an advanced AI Assistant powering Quantora.app. You are currently functioning as "${modelName || "Gemini 3.6 Flash"}". Provide intelligent, highly accurate, and comprehensive responses formatted in clean Markdown.`;
-
+        const contents = buildGeminiContents(boundedHistory, message);
+        const systemInstruction = `You are Quantora AI, an elite Senior Developer and Technical Architect pair-programming with the user.
+Rules:
+1. Speak like a human peer engineer. Never use robotic intros like "As an AI..." or "Here is the code". Jump straight into the solution.
+2. Be concise, authoritative, and highly analytical.
+3. Provide clean, production-ready code with no fluff.
+4. When discussing architecture, speak casually but brilliantly about tradeoffs.`;
         const result = await generateGeminiContent(effectiveGeminiKey, contents, systemInstruction);
+        
         const latencyMs = Date.now() - startTime;
         logTelemetry(result.usedModel, latencyMs, result.text.length, "Gemini");
 
         return res.status(200).json({
           text: result.text,
-          provider: isCustomModel ? `Quantora AI Engine (${modelName || modelId})` : `Google Gemini (${modelName || "Gemini 3.6 Flash"})`,
+          provider: `Google Gemini (${modelName || result.usedModel})`,
           latencyMs,
           modelId: result.usedModel,
           liveConnected: true
@@ -189,12 +205,67 @@ export default async function handler(req: any, res: any) {
         console.error("Gemini API call failed:", geminiErr);
         throw geminiErr;
       }
-    }
+    } else {
+      if (!effectiveOpenRouterKey) {
+        return res.status(401).json({
+          error: `No OpenRouter API key configured. You need an OpenRouter key to use ${modelName || modelId}.`,
+          requiresKey: "openrouter"
+        });
+      }
 
-    return res.status(400).json({
-      error: "No AI service key configured. Please enter an API key in the Privacy Vault.",
-      requiresKey: "gemini"
-    });
+      const formattedHistory = [
+        { 
+          role: "system", 
+          content: `You are Quantora AI, an elite Senior Developer and Technical Architect pair-programming with the user.
+Rules:
+1. Speak like a human peer engineer. Never use robotic intros like "As an AI..." or "Here is the code". Jump straight into the solution.
+2. Be concise, authoritative, and highly analytical.
+3. Provide clean, production-ready code with no fluff.
+4. When discussing architecture, speak casually but brilliantly about tradeoffs.` 
+        },
+        ...(boundedHistory || []).map((m: any) => ({
+          role: m.role === "model" || m.role === "assistant" || m.sender === "ai" ? "assistant" : "user",
+          content: m.text || m.content || "",
+        }))
+      ];
+      formattedHistory.push({ role: "user", content: message });
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${effectiveOpenRouterKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages: formattedHistory,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn("OpenRouter API error:", errText);
+        throw new Error(`OpenRouter API failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content;
+      
+      if (!reply) {
+        throw new Error("OpenRouter API returned an empty response.");
+      }
+
+      const latencyMs = Date.now() - startTime;
+      logTelemetry(modelId, latencyMs, reply.length, "OpenRouter");
+      
+      return res.status(200).json({
+        text: reply,
+        provider: `OpenRouter (${modelName || modelId})`,
+        latencyMs,
+        modelId: modelId,
+        liveConnected: true
+      });
+    }
 
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
