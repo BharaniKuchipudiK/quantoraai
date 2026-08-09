@@ -40,13 +40,17 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
     if (confirmInputValue.trim().toUpperCase() !== requiredConfirmationText) return;
 
     if (confirmModalType === 'logout') {
+      // Clearing local state is not logging out: the session lives in an
+      // HttpOnly cookie only the server can revoke, so the server must be told.
       try {
         localStorage.removeItem('quantora_user');
       } catch (e) {}
+      fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
       setUser(null);
       setActiveTab('landing');
     } else if (confirmModalType === 'delete_account') {
       localStorage.clear();
+      fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
       setUser(null);
       setActiveTab('landing');
     } else if (confirmModalType === 'delete_data') {

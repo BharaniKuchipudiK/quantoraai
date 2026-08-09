@@ -66,6 +66,37 @@ export default function App() {
   const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  /*
+   * Restore an existing session by asking the server, not by trusting a cached
+   * object. A stale or edited localStorage entry cannot produce a session here:
+   * if the cookie is missing, expired or tampered with, the server says null
+   * and the app treats the visitor as signed out.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/session')
+      .then((res) => (res.ok ? res.json() : { user: null }))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.user) {
+          setUser({
+            name: data.user.name || 'Creator',
+            email: data.user.email,
+            avatar: data.user.picture
+              || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
+            authProvider: 'Google OAuth 2.0 (Verified)',
+            tier: 'Indie Creator ($0 / mo)',
+            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+          });
+        } else {
+          // No valid server session — clear any leftover local profile.
+          try { localStorage.removeItem('quantora_user'); } catch (e) {}
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
       setIsVerifyingLogin(true);
@@ -86,8 +117,13 @@ export default function App() {
       // Backend cryptographically verified the token and returned the secure profile
       const newUser = await res.json();
 
+      /*
+       * The server has verified the token and set an HttpOnly session cookie.
+       * The profile below is display data only — it is deliberately NOT the
+       * proof of identity. Storing it in localStorage is fine for showing a
+       * name and avatar; what matters is that no server route trusts it.
+       */
       setUser(newUser);
-      localStorage.setItem('quantora_user', JSON.stringify(newUser));
       setShowAuthModal(false);
       setActiveTab('studio');
     } catch (error) {

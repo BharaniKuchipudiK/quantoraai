@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
+import { getSessionUser } from "./_lib/session.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -150,7 +151,14 @@ export default async function handler(req: any, res: any) {
   // Best-effort per-IP limit — see api/_lib/rate-limit.ts for caveats under
   // Vercel's serverless model. Still closes the "unlimited free requests"
   // gap that existed with no limiter at all.
-  if (isRateLimited(`chat:${clientIp(req)}`, RATE_LIMIT_PER_MINUTE, 60_000)) {
+  const sessionUser = getSessionUser(req);
+
+  /*
+   * Keyed per account when signed in, falling back to IP. Several people
+   * behind one office NAT share an IP and should not exhaust each other.
+   */
+  const limitKey = sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
+  if (isRateLimited(limitKey, RATE_LIMIT_PER_MINUTE, 60_000)) {
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
 
@@ -168,8 +176,26 @@ export default async function handler(req: any, res: any) {
     // Bound, never reject: an over-long history just loses its oldest turns.
     const boundedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS) : history;
 
-    const effectiveOpenRouterKey = openRouterKey || process.env.OPENROUTER_API_KEY;
-    const effectiveGeminiKey = userKey || process.env.GEMINI_API_KEY;
+    /*
+     * The deployment's own API keys are for signed-in users only.
+     *
+     * Verifying a Google token at login does not protect this endpoint: this
+     * is a separate request, and without a session check anyone can POST here
+     * directly and bill this deployment's keys. Bring-your-own-key callers are
+     * unaffected — their requests cost the deployment nothing.
+     */
+    const mayUseServerKeys = Boolean(sessionUser);
+    const effectiveOpenRouterKey =
+      openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined);
+    const effectiveGeminiKey =
+      userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined);
+
+    if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
+      return res.status(401).json({
+        error: "Please sign in to use Quantora's built-in AI, or add your own API key.",
+        requiresAuth: true,
+      });
+    }
 
     const isGeminiModel = modelId && modelId.startsWith("gemini");
 
