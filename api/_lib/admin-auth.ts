@@ -1,4 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
+import { getSessionUser } from "./session.js";
+import { isAdminUser } from "./store.js";
 
 /*
  * Admin authentication for the telemetry endpoints.
@@ -44,6 +46,47 @@ function extractPresentedKey(req: any): string | null {
   const headerKey = req.headers?.["x-admin-key"];
   if (typeof headerKey === "string" && headerKey.trim()) return headerKey.trim();
   return null;
+}
+
+/*
+ * Admin access, decided by who is signed in.
+ *
+ * The dashboard used to require ADMIN_API_KEY — a second secret for a person
+ * the server had already authenticated. That was redundant the moment Google
+ * sign-in became real, and it locked the operator out twice: once through a
+ * trailing newline on the stored value, once because the key entry screen was
+ * removed while the check remained.
+ *
+ * Now: if the signed-in account is flagged is_admin, that is sufficient. There
+ * is nothing to paste and nothing to lose, and access can always be restored
+ * from the Supabase table editor by whoever owns the database.
+ *
+ * ADMIN_API_KEY still works when configured, for curl and scripts that have no
+ * session. It is no longer required, and no longer the primary path.
+ */
+export async function authenticateAdminRequest(req: any): Promise<AdminAuthFailure | null> {
+  const sessionUser = getSessionUser(req);
+  if (sessionUser) {
+    const admin = await isAdminUser(sessionUser.sub);
+    if (admin === true) return null;
+    if (admin === false) {
+      return {
+        status: 403,
+        error: "This account is not an administrator. Set is_admin on your row in the users table to grant access.",
+      };
+    }
+    // admin === null: the store could not answer. Fall through to the key.
+  }
+
+  const keyFailure = authenticateAdmin(req);
+  if (!keyFailure) return null;
+
+  // Without a session and without a key, say which is missing rather than
+  // returning a bare 401 that explains nothing.
+  if (!sessionUser) {
+    return { status: 401, error: "Sign in to Quantora, or present an admin API key." };
+  }
+  return keyFailure;
 }
 
 export function authenticateAdmin(req: any): AdminAuthFailure | null {

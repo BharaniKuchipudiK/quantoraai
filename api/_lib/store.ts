@@ -202,3 +202,16 @@ export async function getDailySeries(days = 14): Promise<{
 
   return { growth: await parse(growthRes), usage: await parse(usageRes) };
 }
+
+/* Is this account flagged as an admin? Null when the store is unreachable. */
+export async function isAdminUser(googleSub: string): Promise<boolean | null> {
+  if (!config()) return null;
+  const res = await request(`users?select=is_admin&google_sub=eq.${encodeURIComponent(googleSub)}`, { method: "GET" });
+  if (!res) return null;
+  try {
+    const rows = (await res.json()) as Array<{ is_admin: boolean }>;
+    return rows.length ? rows[0].is_admin === true : false;
+  } catch {
+    return null;
+  }
+}
