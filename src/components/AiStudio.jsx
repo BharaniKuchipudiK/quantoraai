@@ -1974,7 +1974,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     };
                     setDreamNodes([...dreamNodes, newNode]);
                     if (setActiveTab) setActiveTab('canvas');
-                    setInputText('');
                   }
                 }}
                 disabled={!inputText.trim()}

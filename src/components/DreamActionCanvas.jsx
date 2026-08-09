@@ -96,19 +96,23 @@ export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLi
                 {colNodes.map(node => (
                   <div key={node.id} className="glass-card" style={{ padding: '14px', borderLeft: `3px solid ${col.color}`, position: 'relative', background: itemBg, opacity: node.isExecuting ? 0.6 : 1 }}>
                     <div style={{ fontSize: '0.8rem', color: textColor, marginBottom: '12px', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                      {node.stage === 'dream' && node.dreamText && (
-                        node.dreamText.length > 200 ? node.dreamText.substring(0, 200) + '...' : node.dreamText
+                      {node.stage === 'dream' && (node.dreamText || node.sourceText) && (
+                        (node.dreamText || node.sourceText).length > 200 ? (node.dreamText || node.sourceText).substring(0, 200) + '...' : (node.dreamText || node.sourceText)
                       )}
-                      {node.stage === 'idea' && node.ideaSpec && (
+                      {node.stage === 'idea' && (node.ideaSpec ? (
                         <pre style={{ margin: 0, fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'monospace' }}>
                           {JSON.stringify(node.ideaSpec, null, 2)}
                         </pre>
-                      )}
-                      {node.stage === 'thought' && node.thoughtCode && (
+                      ) : (
+                        <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
+                      ))}
+                      {node.stage === 'thought' && (node.thoughtCode ? (
                         <pre style={{ margin: 0, fontSize: '0.7rem', color: '#a78bfa', fontFamily: 'monospace' }}>
                           {node.thoughtCode.substring(0, 300)}...
                         </pre>
-                      )}
+                      ) : (
+                        <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
+                      ))}
                     </div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${borderSubtle}`, paddingTop: '8px' }}>
