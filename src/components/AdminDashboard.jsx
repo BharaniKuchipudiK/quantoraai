@@ -30,7 +30,12 @@ const AdminDashboard = ({ onBack }) => {
     const fetchMetrics = async () => {
       try {
         const res = await fetch('/api/admin/metrics', {
-          headers: { Authorization: `Bearer ${adminKey}` }
+          headers: { 
+            Authorization: `Bearer ${adminKey}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
         });
 
         if (res.status === 401) {

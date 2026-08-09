@@ -47,7 +47,7 @@ function extractPresentedKey(req: any): string | null {
 }
 
 export function authenticateAdmin(req: any): AdminAuthFailure | null {
-  const expected = process.env.ADMIN_API_KEY;
+  const expected = process.env.ADMIN_API_KEY?.trim();
 
   // Also refuses a too-short key: a 6-character "secret" is guessable, and
   // configuring one should be an obvious failure rather than a silent weakness.
