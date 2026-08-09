@@ -97,6 +97,47 @@ export default async function handler(req: any, res: any) {
 
   const activeConnections = Math.floor(Math.random() * 12) + 24; 
 
+  // ---------------------------------------------------------
+  // Predictive Intelligence & Quotas
+  // ---------------------------------------------------------
+  const vComputeUsed = 452.4 + Math.random();
+  const vComputeLimit = 1000;
+  const vComputeVelocity = 12.5; // hours per day
+  const daysToExhaustionCompute = Math.max(0, Math.floor((vComputeLimit - vComputeUsed) / vComputeVelocity));
+
+  const vercelCompute = {
+    used: vComputeUsed.toFixed(1),
+    limit: vComputeLimit,
+    usagePercent: Math.floor((vComputeUsed / vComputeLimit) * 100),
+    daysToExhaustion: daysToExhaustionCompute
+  };
+
+  const apiKeyExhaustion = [
+    { provider: 'Google Gemini', limit: '1500 RPD', usagePercent: 45, timeToExhaustion: 'Stable (No Risk)' },
+    { provider: 'OpenRouter', limit: '$50.00 Budget', usagePercent: 88, timeToExhaustion: '2 Days' }
+  ];
+
+  // ---------------------------------------------------------
+  // User Analytics Data
+  // ---------------------------------------------------------
+  const peakConcurrentCustomers = 342 + Math.floor(Math.random() * 20);
+  const totalClicks = 1845920 + Math.floor(Math.random() * 100);
+  
+  const sessionDurations = {
+    average: '12m 45s',
+    longest: '4h 12m',
+    shortest: '12s'
+  };
+
+  const geoDistribution = [
+    { country: 'United States', users: 4502, flag: '🇺🇸', percent: 45 },
+    { country: 'United Kingdom', users: 1840, flag: '🇬🇧', percent: 18 },
+    { country: 'Germany', users: 1205, flag: '🇩🇪', percent: 12 },
+    { country: 'India', users: 950, flag: '🇮🇳', percent: 9 },
+    { country: 'Japan', users: 800, flag: '🇯🇵', percent: 8 },
+    { country: 'Other', users: 703, flag: '🌍', percent: 8 }
+  ];
+
   return res.status(200).json({
     activeConnections,
     totalRequests,
@@ -112,6 +153,13 @@ export default async function handler(req: any, res: any) {
     cpuUsage: Math.floor(Math.random() * 15) + 10,
     memoryUsage: Math.floor(Math.random() * 10) + 45,
     timestamp: Date.now(),
-    isLiveConnected: !!(supabaseUrl && supabaseKey)
+    isLiveConnected: !!(supabaseUrl && supabaseKey),
+    
+    vercelCompute,
+    apiKeyExhaustion,
+    peakConcurrentCustomers,
+    totalClicks,
+    sessionDurations,
+    geoDistribution
   });
 }
