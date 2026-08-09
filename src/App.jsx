@@ -213,6 +213,7 @@ export default function App() {
           }}>
             {activeTab === 'studio' && (
               <AiStudio
+                onOpenAuth={() => setShowAuthModal(true)}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 availableModels={availableModels}
