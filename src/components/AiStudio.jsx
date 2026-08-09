@@ -351,7 +351,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
   );
 }
 
-export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
     id: 1,
@@ -485,7 +485,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   };
 
-  const [inputText, setInputText] = useState('');
+  const [localInputText, setLocalInputText] = useState('');
+  const inputText = externalInputText !== undefined ? externalInputText : localInputText;
+  const setInputText = setExternalInputText || setLocalInputText;
   const [isGenerating, setIsGenerating] = useState(false);
   const [showCodeMap, setShowCodeMap] = useState({});
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
@@ -1950,35 +1952,66 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </button>
             </div>
 
-            {/* Right Control: Send Button */}
-            <button
-              onClick={() => handleSendMessage()}
-              disabled={(!inputText.trim() && !attachments.length) || isGenerating}
-              style={{
-                background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
-                border: 'none',
-                /*
-                 * A white glyph on the pale disabled fill was effectively
-                 * invisible — the primary action looked absent rather than
-                 * inactive. Disabled state now keeps a legible mid-tone.
-                 */
-                color: (inputText.trim() || attachments.length)
-                  ? '#ffffff'
-                  : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
-                width: '38px',
-                height: '38px',
-                borderRadius: '12px',
-                cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease',
-                fontWeight: 'bold',
-                boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
-              }}
-            >
-              <Send size={16} />
-            </button>
+            {/* Right Control: Send & Push Buttons */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => {
+                  if (!inputText.trim()) return;
+                  if (setDreamNodes && dreamNodes) {
+                    const newNode = {
+                      id: Date.now().toString(),
+                      stage: 'dream',
+                      sourceText: inputText,
+                      timestamp: Date.now()
+                    };
+                    setDreamNodes([...dreamNodes, newNode]);
+                    if (setActiveTab) setActiveTab('canvas');
+                    setInputText('');
+                  }
+                }}
+                disabled={!inputText.trim()}
+                title="Push raw prompt to Dream Canvas"
+                style={{
+                  background: inputText.trim() ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                  border: inputText.trim() ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid transparent',
+                  color: inputText.trim() ? '#8b5cf6' : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '12px',
+                  cursor: inputText.trim() ? 'pointer' : 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Workflow size={16} />
+              </button>
+
+              <button
+                onClick={() => handleSendMessage()}
+                disabled={(!inputText.trim() && !attachments.length) || isGenerating}
+                style={{
+                  background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
+                  border: 'none',
+                  color: (inputText.trim() || attachments.length)
+                    ? '#ffffff'
+                    : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '12px',
+                  cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease',
+                  fontWeight: 'bold',
+                  boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
+                }}
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </div>
 

@@ -160,6 +160,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState(availableModels[0]);
   const [activeCanvasNode, setActiveCanvasNode] = useState(null);
   const [dreamNodes, setDreamNodes] = useState([]);
+  const [studioInputText, setStudioInputText] = useState('');
 
   const handleSendToCanvas = (messageData) => {
     setActiveCanvasNode(messageData);
@@ -226,6 +227,8 @@ export default function App() {
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
                 setActiveTab={setActiveTab}
+                inputText={studioInputText}
+                setInputText={setStudioInputText}
               />
             )}
 
