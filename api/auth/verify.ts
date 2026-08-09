@@ -1,6 +1,7 @@
 import { OAuth2Client } from 'google-auth-library';
 import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
 import { createSessionToken, setSessionCookie, isSessionConfigured } from '../_lib/session.js';
+import { recordSignIn } from '../_lib/store.js';
 
 /*
  * The client ID is read strictly from the environment, with no placeholder
@@ -80,6 +81,29 @@ export default async function handler(req: any, res: any) {
      * So the server issues its own signed, HttpOnly session cookie here. That
      * cookie, not the browser's word, is what every later request is judged on.
      */
+    /*
+     * Record the sign-in, and honour a block if one is set.
+     *
+     * Deliberately fails soft: recordSignIn returns null when the store is
+     * unconfigured or unreachable, and that is treated as "carry on". Losing a
+     * bookkeeping row is a nuisance; refusing someone entry because analytics
+     * is down is not a trade worth making. A block is only enforced when the
+     * database actually answered and actually said so.
+     */
+    const stored = await recordSignIn({
+      sub: payload.sub,
+      email: payload.email,
+      name: payload.name || payload.email.split('@')[0],
+      picture: payload.picture || '',
+    });
+
+    if (stored?.blocked_at) {
+      console.warn('Blocked account attempted sign-in:', payload.sub);
+      return res.status(403).json({
+        error: stored.blocked_reason || 'This account has been suspended.',
+      });
+    }
+
     const token = createSessionToken({
       sub: payload.sub,
       email: payload.email,

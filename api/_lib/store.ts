@@ -1,0 +1,171 @@
+/*
+ * Server-side reads and writes against Supabase.
+ *
+ * Uses the SERVICE ROLE key, never the anon key. The anon key ships to every
+ * browser and is public by design; the users table has row-level security on
+ * with no policies, so the anon key can touch nothing here. Service role
+ * bypasses RLS and therefore must never leave the server — no VITE_ prefix,
+ * no returning it in any response.
+ *
+ * Every function here fails soft. Recording that somebody signed in is
+ * bookkeeping; if the database is unreachable, a user must still be able to
+ * sign in and use the product. Losing a row is annoying, refusing a login
+ * because analytics is down is inexcusable.
+ */
+
+const REST_TIMEOUT_MS = 4_000;
+
+function config() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return { url: url.replace(/\/+$/, ""), key };
+}
+
+export function isStoreConfigured(): boolean {
+  return config() !== null;
+}
+
+async function request(path: string, init: RequestInit & { headers?: Record<string, string> }) {
+  const cfg = config();
+  if (!cfg) return null;
+
+  try {
+    const response = await fetch(`${cfg.url}/rest/v1/${path}`, {
+      ...init,
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        "Content-Type": "application/json",
+        ...(init.headers || {}),
+      },
+      signal: AbortSignal.timeout(REST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      // Logged, never thrown — see the fail-soft note above.
+      console.warn(`Supabase ${init.method || "GET"} ${path} -> ${response.status}`, await response.text());
+      return null;
+    }
+    return response;
+  } catch (err: any) {
+    console.warn(`Supabase ${init.method || "GET"} ${path} failed:`, err?.message || err);
+    return null;
+  }
+}
+
+export type StoredUser = {
+  google_sub: string;
+  email: string;
+  blocked_at: string | null;
+  blocked_reason: string | null;
+};
+
+/*
+ * Record a sign-in, and report whether the account is blocked.
+ *
+ * Upsert on google_sub: one row per person, created on first sign-in and
+ * touched on every later one. Google's `sub` is the key rather than the email
+ * address, because an email can change and keying on it would quietly split
+ * one person into two accounts.
+ *
+ * Returns null when the store is unconfigured or unreachable, which callers
+ * must treat as "carry on" rather than "deny".
+ */
+export async function recordSignIn(user: {
+  sub: string; email: string; name: string; picture: string;
+}): Promise<StoredUser | null> {
+  const now = new Date().toISOString();
+
+  const response = await request("users?on_conflict=google_sub", {
+    method: "POST",
+    headers: {
+      // merge-duplicates turns this into an upsert; representation returns the row
+      Prefer: "resolution=merge-duplicates,return=representation",
+    },
+    body: JSON.stringify([{
+      google_sub: user.sub,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      last_seen_at: now,
+    }]),
+  });
+  if (!response) return null;
+
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * One row per AI request.
+ *
+ * `used_server_key` is the column that matters: it separates requests this
+ * deployment paid for from requests a user funded with their own key. Without
+ * it, "how much is this costing me" is unanswerable.
+ *
+ * Deliberately not awaited by callers — a chat response must never wait on
+ * bookkeeping.
+ */
+export function recordUsage(entry: {
+  userSub: string | null;
+  provider: string;
+  modelId: string;
+  latencyMs: number;
+  tokensEst: number;
+  usedServerKey: boolean;
+}): void {
+  void request("usage", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      user_sub: entry.userSub,
+      provider: entry.provider,
+      model_id: entry.modelId,
+      latency_ms: entry.latencyMs,
+      tokens_est: entry.tokensEst,
+      used_server_key: entry.usedServerKey,
+    }]),
+  });
+}
+
+/* Real counts for the admin dashboard, replacing fabricated values. */
+export async function getGrowthSummary(): Promise<{
+  totalUsers: number; newUsers7d: number; activeUsers7d: number;
+  requests7d: number; billableRequests7d: number;
+} | null> {
+  const cfg = config();
+  if (!cfg) return null;
+
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const countOf = async (path: string) => {
+    const res = await request(path, { method: "HEAD", headers: { Prefer: "count=exact" } });
+    if (!res) return 0;
+    const range = res.headers.get("content-range");
+    return range ? Number(range.split("/")[1]) || 0 : 0;
+  };
+
+  const [totalUsers, newUsers7d, requests7d, billableRequests7d] = await Promise.all([
+    countOf("users?select=google_sub"),
+    countOf(`users?select=google_sub&created_at=gte.${since}`),
+    countOf(`usage?select=id&created_at=gte.${since}`),
+    countOf(`usage?select=id&created_at=gte.${since}&used_server_key=is.true`),
+  ]);
+
+  // Distinct actives needs rows rather than a count header.
+  let activeUsers7d = 0;
+  const activeRes = await request(`usage?select=user_sub&created_at=gte.${since}&user_sub=not.is.null`, { method: "GET" });
+  if (activeRes) {
+    try {
+      const rows = (await activeRes.json()) as Array<{ user_sub: string }>;
+      activeUsers7d = new Set(rows.map((r) => r.user_sub)).size;
+    } catch { /* leave at 0 */ }
+  }
+
+  return { totalUsers, newUsers7d, activeUsers7d, requests7d, billableRequests7d };
+}

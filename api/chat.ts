@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
+import { recordUsage } from "./_lib/store.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -112,7 +113,31 @@ async function generateGeminiContent(apiKey: string, contents: any[], systemInst
 
 
 // Background telemetry logging to Supabase
-function logTelemetry(modelId: string, latencyMs: number, textLength: number, provider: string) {
+function logTelemetry(
+  modelId: string,
+  latencyMs: number,
+  textLength: number,
+  provider: string,
+  userSub: string | null = null,
+  usedServerKey: boolean = false,
+) {
+  /*
+   * Per-user usage, alongside the existing anonymous telemetry.
+   *
+   * usedServerKey is the column that matters: it separates requests this
+   * deployment paid for from requests a user funded with their own key.
+   * Without that split, "what is this costing me" cannot be answered, and
+   * that is the number that decides whether free stays free.
+   */
+  recordUsage({
+    userSub,
+    provider,
+    modelId,
+    latencyMs,
+    tokensEst: Math.ceil(textLength / 4),
+    usedServerKey,
+  });
+
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseKey) return;
@@ -231,7 +256,8 @@ Rules:
         const result = await generateGeminiContent(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature);
         
         const latencyMs = Date.now() - startTime;
-        logTelemetry(result.usedModel, latencyMs, result.text.length, "Gemini");
+        logTelemetry(result.usedModel, latencyMs, result.text.length, "Gemini",
+          sessionUser?.sub ?? null, !userKey && mayUseServerKeys);
 
         return res.status(200).json({
           text: result.text,
@@ -295,7 +321,8 @@ Rules:
       }
 
       const latencyMs = Date.now() - startTime;
-      logTelemetry(modelId, latencyMs, reply.length, "OpenRouter");
+      logTelemetry(modelId, latencyMs, reply.length, "OpenRouter",
+        sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys);
       
       return res.status(200).json({
         text: reply,
