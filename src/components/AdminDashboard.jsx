@@ -181,8 +181,12 @@ const TabButton = ({ active, onClick, icon, label }) => (
   </button>
 );
 
+import LiveUsersMap from './LiveUsersMap';
+
 const UserAnalyticsTab = ({ metrics }) => {
   const g = metrics.growth || {};
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  
   return (
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
       {metrics.source === 'not_configured' && (
@@ -204,7 +208,9 @@ const UserAnalyticsTab = ({ metrics }) => {
         <MiniKpi title="Active Users (7d)" value={(g.activeUsers7d || 0).toLocaleString()} sparklineColor="#f59e0b" icon={<Activity size={16}/>} />
         <MiniKpi title="Billable Requests (7d)" value={(g.billableRequests7d || 0).toLocaleString()} sparklineColor="#8b5cf6" icon={<Fingerprint size={16}/>} />
       </div>
-
+      
+      <LiveUsersMap isLight={isLight} />
+      <div style={{ marginBottom: '24px' }}></div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
         <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
           <h3 style={{ margin: '0 0 24px 0', fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>

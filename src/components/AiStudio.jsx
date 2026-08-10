@@ -2390,42 +2390,53 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         AI Model
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {availableModels && availableModels.map(model => (
+                        {availableModels && availableModels.map(model => {
+                          const isAvailable = model.available !== false;
+                          
+                          return (
                           <div
                             key={model.id}
                             onClick={() => {
-                              setSelectedModel(model);
-                              setShowInBarModelDropdown(false);
+                              if (isAvailable) {
+                                setSelectedModel(model);
+                                setShowInBarModelDropdown(false);
+                              }
                             }}
                             style={{
                               padding: '8px 10px',
                               borderRadius: '8px',
-                              cursor: 'pointer',
+                              cursor: isAvailable ? 'pointer' : 'not-allowed',
                               background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               fontSize: '0.8rem',
-                              color: selectedModel?.id === model.id ? '#f97316' : textColor,
+                              color: isAvailable ? (selectedModel?.id === model.id ? '#f97316' : textColor) : subtextColor,
                               fontWeight: selectedModel?.id === model.id ? '700' : '500',
+                              opacity: isAvailable ? 1 : 0.6,
                               transition: 'all 0.2s ease'
                             }}
                             onMouseEnter={(e) => {
-                              if (selectedModel?.id !== model.id) e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                              if (isAvailable && selectedModel?.id !== model.id) {
+                                e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                              }
                             }}
                             onMouseLeave={(e) => {
                               if (selectedModel?.id !== model.id) e.currentTarget.style.background = 'transparent';
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.name}</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: !isAvailable ? 'line-through' : 'none' }}>{model.name}</span>
                               <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter')}</span>
                             </div>
                             {selectedModel?.id === model.id && (
                               <span style={{ fontSize: '0.65rem', background: '#f97316', color: '#fff', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Active</span>
                             )}
+                            {!isAvailable && (
+                              <span style={{ fontSize: '0.65rem', background: isLight ? '#cbd5e1' : '#334155', color: isLight ? '#64748b' : '#94a3b8', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Unavailable</span>
+                            )}
                           </div>
-                        ))}
+                        )})}
                       </div>
                     </div>
                   </div>
