@@ -842,27 +842,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer style={{
-        borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-        padding: '36px 24px',
-        textAlign: 'center',
-        fontSize: '0.85rem',
-        color: subtextColor,
-        background: isLight ? '#ffffff' : '#05070f'
-      }}>
-        <div style={{ maxWidth: '1240px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <QuantoraFullLogoSvg height={26} isDark={!isLight} tagline="" />
-            <span>• © 2026 Quantora AI. All rights reserved.</span>
-          </div>
-          <div style={{ display: 'flex', gap: '20px', fontWeight: '600' }}>
-            <span style={{ cursor: 'pointer' }} onClick={() => user ? onLaunchStudio() : onOpenAuth()}>Privacy</span>
-            <span style={{ cursor: 'pointer' }} onClick={() => user ? onLaunchStudio() : onOpenAuth()}>Terms</span>
-            <span style={{ cursor: 'pointer' }} onClick={() => user ? onLaunchStudio() : onOpenAuth()}>Documentation</span>
-          </div>
-        </div>
-      </footer>
+      {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
     </div>
   );
 }

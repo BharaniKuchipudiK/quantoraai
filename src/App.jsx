@@ -413,26 +413,29 @@ export default function App() {
 
       {/* Global Footer */}
       <footer style={{
-        borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.15)',
-        background: isLight ? '#f8fafc' : 'rgba(7, 9, 19, 0.95)',
-        padding: '20px 24px',
+        borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+        background: isLight ? '#ffffff' : '#05070f',
+        padding: '30px 24px',
         textAlign: 'center',
-        fontSize: '0.82rem',
+        fontSize: '0.85rem',
         color: isLight ? '#64748b' : 'var(--text-secondary)',
         position: 'relative',
         zIndex: 10,
         transition: 'background 0.3s ease, border-color 0.3s ease'
       }}>
-        <div style={{ maxWidth: '1300px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+        <div style={{ maxWidth: '1240px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <QuantoraFullLogoSvg height={24} isDark={!isLight} />
+            <QuantoraFullLogoSvg height={22} isDark={!isLight} tagline="" />
+            <span style={{ marginLeft: '4px' }}>• © 2026 Quantora AI. All rights reserved.</span>
           </div>
-          <div style={{ display: 'flex', gap: '20px' }}>
-            <span onClick={() => handleTabChange('landing')} style={{ cursor: 'pointer', color: activeTab === 'landing' ? '#f97316' : 'currentColor' }}>Home</span>
-            <span onClick={() => handleTabChange('studio')} style={{ cursor: 'pointer', color: activeTab === 'studio' ? '#f97316' : 'currentColor' }}>AI Studio</span>
-            <span onClick={() => handleTabChange('canvas')} style={{ cursor: 'pointer', color: activeTab === 'canvas' ? '#f97316' : 'currentColor' }}>Dream-to-Action</span>
-            <span onClick={() => handleTabChange('quantum')} style={{ cursor: 'pointer', color: activeTab === 'quantum' ? '#f97316' : 'currentColor' }}>Quantum Playground</span>
-            <span onClick={() => handleTabChange('dashboard')} style={{ cursor: 'pointer', color: activeTab === 'dashboard' ? '#f97316' : 'currentColor' }}>Analytics</span>
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', fontWeight: '500' }}>
+            <span onClick={() => handleTabChange('landing')} style={{ cursor: 'pointer', color: activeTab === 'landing' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Home</span>
+            <span onClick={() => handleTabChange('studio')} style={{ cursor: 'pointer', color: activeTab === 'studio' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">AI Studio</span>
+            <span onClick={() => handleTabChange('canvas')} style={{ cursor: 'pointer', color: activeTab === 'canvas' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Dream Canvas</span>
+            <span onClick={() => handleTabChange('quantum')} style={{ cursor: 'pointer', color: activeTab === 'quantum' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Quantum</span>
+            <span onClick={() => handleTabChange('dashboard')} style={{ cursor: 'pointer', color: activeTab === 'dashboard' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Analytics</span>
+            <span style={{ cursor: 'pointer', opacity: 0.6 }} className="hover:opacity-100 transition-opacity">Privacy</span>
+            <span style={{ cursor: 'pointer', opacity: 0.6 }} className="hover:opacity-100 transition-opacity">Terms</span>
           </div>
         </div>
       </footer>
