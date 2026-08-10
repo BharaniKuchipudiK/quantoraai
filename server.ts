@@ -6,6 +6,14 @@ import dotenv from "dotenv";
 import { authenticateAdmin } from "./api/_lib/admin-auth.js";
 import { getSessionUser, createSessionToken, setSessionCookie, clearSessionCookie, isSessionConfigured } from "./api/_lib/session.js";
 import { OAuth2Client } from "google-auth-library";
+import { DuckDuckGoSearch } from "@langchain/community/tools/duckduckgo_search";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
+import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
+import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
+import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
 
 dotenv.config();
 
@@ -264,144 +272,122 @@ Make complex topics easy to understand. Structure responses with clear headings,
         });
       }
 
-      // 1. If OpenRouter Key is available and non-Gemini model requested, call OpenRouter directly
-      if (modelId && !modelId.startsWith("gemini") && effectiveOpenRouterKey) {
-        try {
-          const formattedHistory = (history || []).map((m: any) => ({
-            role: m.role === "model" || m.role === "assistant" || m.sender === "ai" ? "assistant" : "user",
-            content: m.text || m.content || "",
-          }));
-          
-          // Inject Quantora Guide Persona for OpenRouter
-          const systemInstruction = modelId && !modelId.startsWith("gemini") 
-            ? `${personaString}\nYou are currently functioning as "${modelName || modelId}". Preserving your underlying expertise, always follow the Quantora Guidelines above.`
-            : personaString;
-            
-          formattedHistory.unshift({ role: "system", content: systemInstruction });
-          
-          formattedHistory.push({ role: "user", content: message });
-
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${effectiveOpenRouterKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: modelId,
-              messages: formattedHistory,
-              stream: true,
-            }),
-          });
-
-          if (response.ok && response.body) {
-            res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection', 'keep-alive');
-            
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split("\n");
-              for (const line of lines) {
-                if (line.startsWith("data: ") && !line.includes("[DONE]")) {
-                  try {
-                    const parsed = JSON.parse(line.slice(6));
-                    const content = parsed.choices?.[0]?.delta?.content;
-                    if (content) {
-                      res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
-                    }
-                  } catch (e) {}
-                }
-              }
+      // 1. Initialize Tools
+      const searchTool = new DuckDuckGoSearch({ maxResults: 3 });
+      
+      const githubReaderTool = new DynamicStructuredTool({
+        name: "read_github_repo",
+        description: "Reads a public GitHub repository and returns a summary of its files.",
+        schema: z.object({
+          repoUrl: z.string().describe("The URL of the GitHub repository (e.g., https://github.com/facebook/react)")
+        }),
+        func: async ({ repoUrl }) => {
+          try {
+            // Re-using our existing /api/github/fetch-repo logic
+            let apiUrl = repoUrl.replace("github.com", "api.github.com/repos") + "/contents";
+            const response = await fetch(apiUrl);
+            if (!response.ok) return `Failed to read repository: ${response.statusText}`;
+            const data = await response.json();
+            if (Array.isArray(data)) {
+               return `Found files: ${data.map((f: any) => f.name).join(', ')}. Use this to help the user.`;
             }
-            
-            const latencyMs = Date.now() - startTime;
-            const payload = { done: true, provider: `OpenRouter ${modelName || modelId}`, latencyMs };
-            res.write(`data: ${JSON.stringify(payload)}\n\n`);
-            recordMetric(latencyMs, modelName || modelId, true);
-            isTracked = true;
-            return res.end();
-          } else {
-            const errText = await response.text();
-            console.warn("OpenRouter API returned error:", response.status, errText);
+            return "Unable to parse repository.";
+          } catch (e: any) {
+            return `Error reading github repo: ${e.message}`;
           }
-        } catch (orErr) {
-          console.warn("OpenRouter request failed, falling back to Quantora AI Engine:", orErr);
         }
+      });
+
+      const tools = [searchTool, githubReaderTool];
+
+      // 2. Initialize LLM (Gemini or OpenRouter)
+      let llm;
+      if (modelId && !modelId.startsWith("gemini") && effectiveOpenRouterKey) {
+        llm = new ChatOpenAI({
+          modelName: modelId,
+          openAIApiKey: effectiveOpenRouterKey,
+          configuration: {
+            baseURL: "https://openrouter.ai/api/v1"
+          },
+          streaming: true
+        });
+      } else if (effectiveGeminiKey) {
+        llm = new ChatGoogleGenerativeAI({
+          modelName: modelName || "gemini-1.5-flash",
+          apiKey: effectiveGeminiKey,
+          streaming: true
+        });
+      } else {
+        return res.status(401).json({ error: "No API key available." });
       }
 
-      // 2. Process via Quantora's High-Performance Gemini Engine (with multi-model fallback chain)
-      if (effectiveGeminiKey) {
-        try {
-          const contents = buildGeminiContents(history, message);
-          const isCustomModel = modelId && !modelId.startsWith("gemini");
-          const systemInstruction = isCustomModel
-            ? `${personaString}\nYou are currently functioning as "${modelName || modelId}". Preserving your underlying expertise, always follow the Quantora Guidelines above.`
-            : `${personaString}\nYou are currently functioning as "${modelName || "Gemini 3.6 Flash"}".`;
+      // 3. Format History for LangChain
+      const lcHistory = (history || []).map((m: any) => {
+         const content = m.text || m.content || "";
+         if (m.role === "model" || m.role === "assistant" || m.sender === "ai") {
+           return new AIMessage(content);
+         }
+         return new HumanMessage(content);
+      });
 
-          const client = new GoogleGenAI({ apiKey: effectiveGeminiKey });
-          const fallbackModels = [
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gemini-3-flash-preview",
-            "gemini-flash-latest",
-            "gemma-4-26b-a4b-it",
-            "gemma-4-31b-it"
-          ];
-          
-          let responseStream;
-          let usedModel;
-          let lastError;
-          
-          for (const m of fallbackModels) {
-            try {
-              responseStream = await client.models.generateContentStream({
-                model: m,
-                contents: contents,
-                config: {
-                  systemInstruction: systemInstruction,
-                  temperature: 0.7,
-                },
-              });
-              usedModel = m;
-              break;
-            } catch (err: any) {
-              console.warn(`Gemini model ${m} failed to connect stream:`, err.message || err);
-              lastError = err;
+      // 4. Build Agent Prompt
+      const systemInstruction = modelId && !modelId.startsWith("gemini") 
+        ? `${personaString}\nYou are currently functioning as "${modelName || modelId}". Preserving your underlying expertise, always follow the Quantora Guidelines above.`
+        : personaString;
+
+      const prompt = ChatPromptTemplate.fromMessages([
+        ["system", systemInstruction],
+        new MessagesPlaceholder("chat_history"),
+        ["human", "{input}"],
+        new MessagesPlaceholder("agent_scratchpad"),
+      ]);
+
+      // 5. Create and Execute Agent
+      const agent = createToolCallingAgent({
+        llm,
+        tools,
+        prompt,
+      });
+
+      const agentExecutor = new AgentExecutor({
+        agent,
+        tools,
+      });
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      try {
+        const eventStream = await agentExecutor.streamEvents(
+          {
+            input: message,
+            chat_history: lcHistory
+          },
+          { version: "v2" }
+        );
+
+        for await (const event of eventStream) {
+          if (event.event === "on_chat_model_stream") {
+            const content = event.data.chunk?.content;
+            if (content && typeof content === "string") {
+              res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
             }
+          } else if (event.event === "on_tool_start") {
+             const toolName = event.name;
+             res.write(`data: ${JSON.stringify({ text: `\n\n> [!NOTE]\n> *Quantora is using a tool: **${toolName}***\n\n` })}\n\n`);
           }
-          
-          if (!responseStream) {
-            throw lastError || new Error("All Gemini fallback models failed.");
-          }
-
-          res.setHeader('Content-Type', 'text/event-stream');
-          res.setHeader('Cache-Control', 'no-cache');
-          res.setHeader('Connection', 'keep-alive');
-
-          for await (const chunk of responseStream) {
-            if (chunk.text) {
-              res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
-            }
-          }
-
-          const latencyMs = Date.now() - startTime;
-          const payload = { done: true, provider: isCustomModel ? `Quantora AI Engine (${modelName || modelId})` : `Google Gemini (${usedModel})`, latencyMs };
-          res.write(`data: ${JSON.stringify(payload)}\n\n`);
-          recordMetric(latencyMs, modelName || modelId, true);
-          isTracked = true;
-          return res.end();
-          
-        } catch (geminiErr: any) {
-          console.error("All Gemini API calls failed:", geminiErr);
-          return res.status(500).json({ error: geminiErr.message || "Failed to communicate with AI model." });
         }
+
+        const latencyMs = Date.now() - startTime;
+        const payload = { done: true, provider: `LangChain ${modelName || modelId}`, latencyMs };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        recordMetric(latencyMs, modelName || modelId, true);
+        isTracked = true;
+        return res.end();
+      } catch (err: any) {
+        console.warn("Agent Executor failed:", err);
+        return res.status(500).json({ error: "Agent Executor failed", details: err.message });
       }
 
       return res.status(400).json({
