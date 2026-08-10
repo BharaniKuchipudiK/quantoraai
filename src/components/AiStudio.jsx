@@ -820,8 +820,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
-  const [isMagicWandModalOpen, setIsMagicWandModalOpen] = useState(false);
-  const [magicWandResultText, setMagicWandResultText] = useState('');
+  const [showHeroCardModal, setShowHeroCardModal] = useState(false);
   const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
   const handleMagicWandEnhance = async () => {
@@ -846,8 +845,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       });
       const data = await res.json();
       if (res.ok && data.enhancedPrompt) {
-        setMagicWandResultText(data.enhancedPrompt);
-        setIsMagicWandModalOpen(true);
+        setInputText(data.enhancedPrompt);
+        setShowHeroCardModal(true);
       } else {
         console.error("Magic Wand failed:", data.error);
       }
@@ -2846,126 +2845,164 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
       )}
 
-      {/* Magic Wand Modal */}
-      {isMagicWandModalOpen && (
+      {/* Magic Wand Blocking Loader Overlay */}
+      {isEnhancingPrompt && (
         <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(8px)',
-          zIndex: 2000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          animation: 'fadeIn 0.2s ease',
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: isLight ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(24px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+          zIndex: 3000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <div style={{
+            background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(15, 23, 42, 0.8)',
+            border: isLight ? '1px solid rgba(255,255,255,1)' : '1px solid rgba(255,255,255,0.1)',
+            padding: '32px 48px',
+            borderRadius: '32px',
+            boxShadow: isLight ? '0 32px 64px rgba(0,0,0,0.08)' : '0 32px 64px rgba(0,0,0,0.5)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px'
+          }}>
+            <Wand2 size={48} color="#f97316" className="animate-spin" style={{ animationDuration: '3s' }} />
+            <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '700', color: textColor }}>
+              The Magic Wand is doing its magic...
+            </h3>
+            <p style={{ margin: 0, color: subtextColor, fontSize: '1rem' }}>
+              Optimizing your prompt. Worth waiting.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* The Hero Card Modal (Image 3) */}
+      {showHeroCardModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(30px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(30px) saturate(200%)',
+          zIndex: 2500,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeIn 0.3s ease',
           padding: '24px'
         }}>
           <div style={{
-            background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.85)',
-            backdropFilter: 'blur(32px) saturate(150%)',
-            WebkitBackdropFilter: 'blur(32px) saturate(150%)',
-            border: isLight ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.15)',
-            borderRadius: '24px',
-            width: '100%',
-            maxWidth: '640px',
-            maxHeight: '90vh',
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: isLight ? '0 24px 60px rgba(31, 38, 135, 0.15)' : '0 24px 60px rgba(0,0,0,0.5)',
+            width: '100%', maxWidth: '800px',
+            background: 'linear-gradient(135deg, rgba(30,30,40,0.8) 0%, rgba(15,15,25,0.9) 100%)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '40px',
+            padding: '60px 40px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '40px',
+            boxShadow: '0 40px 100px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.15)',
             position: 'relative',
             overflow: 'hidden'
           }}>
-            <div style={{ padding: '24px 32px', borderBottom: isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '12px', background: 'linear-gradient(90deg, rgba(249, 115, 22, 0.1), transparent)' }}>
-              <Wand2 size={24} color="#f97316" />
-              <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Enhanced Specification</h3>
-              <button
-                onClick={() => setIsMagicWandModalOpen(false)}
-                style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
-              <p style={{ color: subtextColor, marginBottom: '20px', fontSize: '0.95rem' }}>Review and adjust the enhanced prompt before sending to the AI. Answer any clarifying questions added at the bottom.</p>
-              <textarea
-                value={magicWandResultText}
-                onChange={(e) => setMagicWandResultText(e.target.value)}
+            {/* Ambient glows inside the card */}
+            <div style={{ position: 'absolute', top: '-20%', left: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', bottom: '-20%', right: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(56, 189, 248, 0.3) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
+
+            <button
+              onClick={() => setShowHeroCardModal(false)}
+              style={{ position: 'absolute', top: '30px', right: '30px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', cursor: 'pointer', padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+            >
+              <X size={20} />
+            </button>
+
+            <h2 style={{ fontSize: '2.8rem', fontWeight: '800', color: '#fff', margin: 0, textAlign: 'center', letterSpacing: '-0.02em', zIndex: 10 }}>
+              What would you like<br/>to build today?
+            </h2>
+
+            {/* Model Cards Row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', width: '100%', zIndex: 10 }}>
+              {/* Gemini */}
+              <div 
+                onClick={() => setSelectedModel(availableModels.find(m => m.name.includes('Gemini')) || availableModels[0])}
                 style={{
-                  width: '100%',
-                  height: '300px',
-                  padding: '16px',
-                  borderRadius: '12px',
-                  border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
-                  background: isLight ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.3)',
-                  color: textColor,
-                  fontSize: '0.95rem',
-                  fontFamily: 'monospace',
-                  lineHeight: '1.6',
-                  outline: 'none',
-                  resize: 'vertical',
-                  boxSizing: 'border-box'
-                }}
-              />
+                background: selectedModel?.name?.includes('Gemini') ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+                border: selectedModel?.name?.includes('Gemini') ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '24px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative'
+              }}>
+                <div style={{ position: 'absolute', top: '20px', right: '20px', background: '#22c55e', color: '#fff', fontSize: '0.7rem', fontWeight: '800', padding: '4px 8px', borderRadius: '8px' }}>NEW</div>
+                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #4285F4, #DB4437, #F4B400, #0F9D58)', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>G</div>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', color: '#fff', fontWeight: '700' }}>Gemini</h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: '#a1a1aa', lineHeight: 1.4 }}>Advanced capabilities,<br/>Multimodal AI</p>
+              </div>
+
+              {/* Claude */}
+              <div 
+                onClick={() => setSelectedModel(availableModels.find(m => m.name.includes('Claude') || m.name.includes('Qwen')) || availableModels[1])}
+                style={{
+                background: selectedModel?.name?.includes('Claude') || selectedModel?.name?.includes('Qwen') ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+                border: selectedModel?.name?.includes('Claude') || selectedModel?.name?.includes('Qwen') ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '24px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative'
+              }}>
+                <div style={{ position: 'absolute', top: '20px', right: '20px', background: '#f97316', color: '#fff', fontSize: '0.7rem', fontWeight: '800', padding: '4px 8px', borderRadius: '8px' }}>NEW</div>
+                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #d97757, #e29b71)', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>AI</div>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', color: '#fff', fontWeight: '700' }}>{availableModels.find(m => m.name.includes('Claude')) ? 'Claude 3.5' : 'Qwen Coder'}</h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: '#a1a1aa', lineHeight: 1.4 }}>Contextual reasoning,<br/>Creative coding</p>
+              </div>
+
+              {/* Llama */}
+              <div 
+                onClick={() => setSelectedModel(availableModels.find(m => m.name.includes('Llama')) || availableModels[4])}
+                style={{
+                background: selectedModel?.name?.includes('Llama') ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+                border: selectedModel?.name?.includes('Llama') ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '24px', padding: '24px', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative'
+              }}>
+                <div style={{ position: 'absolute', top: '20px', right: '20px', background: '#ef4444', color: '#fff', fontSize: '0.7rem', fontWeight: '800', padding: '4px 8px', borderRadius: '8px' }}>NEW</div>
+                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>∞</div>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', color: '#fff', fontWeight: '700' }}>Llama 3.1</h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: '#a1a1aa', lineHeight: 1.4 }}>Open-source power,<br/>High performance</p>
+              </div>
             </div>
 
-            <div style={{ padding: '24px 32px', borderTop: isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255, 255, 255, 0.1)', background: isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)', display: 'flex', gap: '12px' }}>
-              
-              {/* Smart Auto-Apply (Intelligent parsing) */}
-              {(() => {
-                const lowerText = magicWandResultText.toLowerCase();
-                const impliesWeb = lowerText.includes('web-based') || lowerText.includes('website') || lowerText.includes('web app') || lowerText.includes('dashboard') || lowerText.includes('react');
-                const impliesMobile = lowerText.includes('mobile pwa') || lowerText.includes('ios') || lowerText.includes('android') || lowerText.includes('mobile app');
-                
-                if (impliesWeb && !impliesMobile) {
-                  return (
-                    <button
-                      onClick={() => {
-                        setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Web App)`);
-                        setIsMagicWandModalOpen(false);
-                      }}
-                      style={{ flex: 1, background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
-                    >
-                      <Globe size={18} /> Apply (Auto-Detected: Web App)
-                    </button>
-                  );
-                } else if (impliesMobile && !impliesWeb) {
-                   return (
-                    <button
-                      onClick={() => {
-                        setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Mobile PWA)`);
-                        setIsMagicWandModalOpen(false);
-                      }}
-                      style={{ flex: 1, background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)' }}
-                    >
-                      <Smartphone size={18} /> Apply (Auto-Detected: Mobile PWA)
-                    </button>
-                  );
-                } else {
-                  return (
-                    <>
-                      <button
-                        onClick={() => {
-                          setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Web App)`);
-                          setIsMagicWandModalOpen(false);
-                        }}
-                        style={{ flex: 1, background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
-                      >
-                        <Globe size={18} /> Apply as Web App
-                      </button>
-                      <button
-                        onClick={() => {
-                          setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Mobile PWA)`);
-                          setIsMagicWandModalOpen(false);
-                        }}
-                        style={{ flex: 1, background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)' }}
-                      >
-                        <Smartphone size={18} /> Apply as Mobile PWA
-                      </button>
-                    </>
-                  );
-                }
-              })()}
+            {/* Architecture Pill */}
+            <div style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '9999px',
+              padding: '10px',
+              display: 'flex',
+              gap: '10px',
+              zIndex: 10,
+              boxShadow: '0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)'
+            }}>
+              <button
+                onClick={() => {
+                  setInputText(prev => prev.trim() + `\n\n(Target Architecture: Build as Web App)`);
+                  setShowHeroCardModal(false);
+                }}
+                style={{
+                  background: 'linear-gradient(180deg, rgba(56, 189, 248, 0.2) 0%, rgba(59, 130, 246, 0.4) 100%)',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  color: '#fff', padding: '16px 40px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)', transition: 'transform 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <Globe size={20} /> Web App
+              </button>
+              <button
+                onClick={() => {
+                  setInputText(prev => prev.trim() + `\n\n(Target Architecture: Build as Mobile PWA)`);
+                  setShowHeroCardModal(false);
+                }}
+                style={{
+                  background: 'linear-gradient(180deg, rgba(192, 132, 252, 0.2) 0%, rgba(147, 51, 234, 0.4) 100%)',
+                  border: '1px solid rgba(192, 132, 252, 0.4)',
+                  color: '#fff', padding: '16px 40px', borderRadius: '9999px', fontSize: '1.1rem', fontWeight: '700', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(147, 51, 234, 0.3)', transition: 'transform 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <Smartphone size={20} /> Mobile App
+              </button>
             </div>
           </div>
         </div>
