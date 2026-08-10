@@ -48,7 +48,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       nav: 'AI Studio'
     },
     {
-      bg: '/card-bg-canvas.jpg',
+      bg: '/hero-bg.jpg',
       headline: <>Visualize architecture.<br/></>,
       gradientText: 'Architect the future.',
       sub: 'Map out your software architecture visually. Convert abstract concepts into structured, executable nodes in real-time.',
@@ -56,7 +56,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       nav: 'Dream Canvas'
     },
     {
-      bg: '/card-bg-quantum.jpg',
+      bg: '/hero-bg.jpg',
       headline: <>Simulate logic.<br/></>,
       gradientText: 'Command the quantum realm.',
       sub: 'Simulate 2-Qubit logic gates, compute exact state vector matrices, and synthesize IBM Qiskit code.',
@@ -366,10 +366,10 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
 
           {/* Circular Controls */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={prevSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.4)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#000' : '#fff', transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+            <button onClick={prevSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: isLight ? '#000000' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#ffffff' : '#000000', transition: 'transform 0.2s, background 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }} className="hover:scale-105 hover:bg-amber-600">
               <ArrowLeft size={20} strokeWidth={2} />
             </button>
-            <button onClick={nextSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.4)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#000' : '#fff', transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+            <button onClick={nextSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: isLight ? '#000000' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#ffffff' : '#000000', transition: 'transform 0.2s, background 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }} className="hover:scale-105 hover:bg-amber-600">
               <ArrowRight size={20} strokeWidth={2} />
             </button>
           </div>
