@@ -47,7 +47,7 @@ function buildGeminiContents(history: any[], currentMessage: string) {
   return contents;
 }
 
-async function generateGeminiContent(apiKey: string, contents: any[], systemInstruction: string, temperature: number = 0.7) {
+async function generateGeminiContentStream(apiKey: string, contents: any[], systemInstruction: string, temperature: number = 0.7) {
   const client = new GoogleGenAI({ apiKey });
   
   let selectedModel = "";
@@ -88,10 +88,10 @@ async function generateGeminiContent(apiKey: string, contents: any[], systemInst
 
   let lastError = null;
   
-  // 3. Generate content using the strictly validated dynamic models, falling back gracefully if Google rejects one
+  // 3. Generate content stream using the strictly validated dynamic models
   for (const m of modelsToTry) {
     try {
-      const response = await client.models.generateContent({
+      const responseStream = await client.models.generateContentStream({
         model: m,
         contents: contents,
         config: {
@@ -99,9 +99,7 @@ async function generateGeminiContent(apiKey: string, contents: any[], systemInst
           temperature: temperature,
         },
       });
-      if (response && response.text) {
-        return { text: response.text, usedModel: m };
-      }
+      return { stream: responseStream, usedModel: m };
     } catch (err: any) {
       lastError = err;
       console.warn(`Google API rejected model '${m}':`, err.message || err);
@@ -272,19 +270,29 @@ Rules:
 
       try {
         const contents = buildGeminiContents(boundedHistory, message);
-        const result = await generateGeminiContent(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature);
+        const { stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature);
+        
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+
+        let fullReply = "";
+        for await (const chunk of responseStream) {
+          if (chunk.text) {
+            fullReply += chunk.text;
+            res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+            if (res.flush) res.flush();
+          }
+        }
         
         const latencyMs = Date.now() - startTime;
-        logTelemetry(result.usedModel, latencyMs, result.text.length, "Gemini",
-          sessionUser?.sub ?? null, !userKey && mayUseServerKeys);
+        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys);
 
-        return res.status(200).json({
-          text: result.text,
-          provider: `Google Gemini (${modelName || result.usedModel})`,
-          latencyMs,
-          modelId: result.usedModel,
-          liveConnected: true
-        });
+        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, liveConnected: true })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
       } catch (geminiErr: any) {
         console.error("Gemini API call failed:", geminiErr);
         throw geminiErr;
@@ -321,6 +329,7 @@ Rules:
           model: modelId,
           messages: formattedHistory,
           temperature: dynamicTemperature,
+          stream: true
         }),
       });
 
@@ -330,26 +339,47 @@ Rules:
         throw new Error(`OpenRouter API failed: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content;
-      
-      if (!reply) {
-        console.error("OpenRouter empty response data:", JSON.stringify(data));
-        const errMsg = data.error?.message || "OpenRouter API returned an empty response.";
-        throw new Error(`OpenRouter Error: ${errMsg}`);
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      });
+
+      if (!response.body) {
+        throw new Error("OpenRouter API returned no body.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let fullReply = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkStr = decoder.decode(value, { stream: true });
+        const lines = chunkStr.split('\n');
+        for (const line of lines) {
+           if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+              try {
+                const parsed = JSON.parse(line.slice(6));
+                const token = parsed.choices?.[0]?.delta?.content || "";
+                if (token) {
+                   fullReply += token;
+                   res.write(`data: ${JSON.stringify({ text: token })}\n\n`);
+                   if (res.flush) res.flush();
+                }
+              } catch(e) {}
+           }
+        }
       }
 
       const latencyMs = Date.now() - startTime;
-      logTelemetry(modelId, latencyMs, reply.length, "OpenRouter",
+      logTelemetry(modelId, latencyMs, fullReply.length, "OpenRouter",
         sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys);
       
-      return res.status(200).json({
-        text: reply,
-        provider: `OpenRouter (${modelName || modelId})`,
-        latencyMs,
-        modelId: modelId,
-        liveConnected: true
-      });
+      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || modelId})`, latencyMs, modelId: modelId, liveConnected: true })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
     }
 
   } catch (err: any) {

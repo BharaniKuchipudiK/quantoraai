@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
+import { fetchApiGatewayKey } from "./autocomplete.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 
@@ -26,7 +27,7 @@ export default async function handler(req: any, res: any) {
     
     // Auth Check
     const mayUseServerKeys = Boolean(sessionUser);
-    const effectiveGeminiKey = mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined;
+    const effectiveGeminiKey = mayUseServerKeys ? await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY : undefined;
 
     if (!effectiveGeminiKey && !sessionUser) {
       return res.status(401).json({ error: "Please sign in to use Quantora's AI execution pipeline." });

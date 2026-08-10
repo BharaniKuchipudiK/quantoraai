@@ -982,24 +982,50 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           
           if (!res.ok) throw new Error('API Error');
           
-          const data = await res.json();
-          
-          updateActiveMessages(prev => prev.map(m => {
-            if (m.id === dualMsgId) {
-              const updatedModelInfo = { 
-                modelName: mod.name, 
-                text: data.text || "No response received.", 
-                provider: data.provider || mod.name, 
-                latencyMs: data.latencyMs || 0 
-              };
-              return {
-                ...m,
-                modelA: isModelA ? updatedModelInfo : m.modelA,
-                modelB: !isModelA ? updatedModelInfo : m.modelB
-              };
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let currentText = "";
+          let finalProvider = mod.name;
+          let finalLatency = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6);
+                if (dataStr === '[DONE]') break;
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  if (parsed.text) {
+                    currentText += parsed.text;
+                    updateActiveMessages(prev => prev.map(m => {
+                      if (m.id === dualMsgId) {
+                        const updatedModelInfo = { modelName: mod.name, text: currentText, provider: finalProvider, latencyMs: finalLatency };
+                        return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
+                      }
+                      return m;
+                    }));
+                  }
+                  if (parsed.provider) {
+                    finalProvider = parsed.provider;
+                    finalLatency = parsed.latencyMs || 0;
+                    updateActiveMessages(prev => prev.map(m => {
+                      if (m.id === dualMsgId) {
+                        const updatedModelInfo = { modelName: mod.name, text: currentText, provider: finalProvider, latencyMs: finalLatency };
+                        return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
+                      }
+                      return m;
+                    }));
+                  }
+                } catch (e) {}
+              }
             }
-            return m;
-          }));
+          }
           
         } catch (e) {
           updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
@@ -1048,16 +1074,43 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       });
 
       if (res.ok) {
-        const data = await res.json();
-        
-        // Final sync
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: data.text || "No response received.",
-          latencyMs: data.latencyMs || 0,
-          provider: data.provider || targetModel.name,
-          thoughtProcess: `Processed live via ${data.provider || targetModel.name} (${data.latencyMs || 0}ms)`
-        } : m));
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let currentText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              if (dataStr === '[DONE]') break;
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.text) {
+                  currentText += parsed.text;
+                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
+                    text: currentText,
+                    thoughtProcess: 'Generating live...'
+                  } : m));
+                }
+                if (parsed.provider) {
+                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
+                    provider: parsed.provider,
+                    latencyMs: parsed.latencyMs || 0,
+                    thoughtProcess: `Processed live via ${parsed.provider} (${parsed.latencyMs || 0}ms)`
+                  } : m));
+                }
+              } catch (e) {}
+            }
+          }
+        }
 
       } else {
         const errData = await res.json().catch(() => ({}));
