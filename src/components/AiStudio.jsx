@@ -642,6 +642,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const audioWsRef = useRef(null);
 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
+  const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubError, setGithubError] = useState('');
@@ -2269,41 +2270,103 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 {isListening ? <MicOff size={18} /> : <Mic size={18} />}
               </button>
               
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach file or code"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: subtextColor,
-                  padding: '6px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <Paperclip size={18} />
-              </button>
+              {/* Attachment Dropdown */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
+                  title="Attach file, image, or GitHub"
+                  style={{
+                    background: isAttachmentMenuOpen ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
+                    border: 'none',
+                    color: isAttachmentMenuOpen ? textColor : subtextColor,
+                    padding: '6px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={e => {
+                    if (!isAttachmentMenuOpen) {
+                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
+                      e.currentTarget.style.color = textColor;
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isAttachmentMenuOpen) {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = subtextColor;
+                    }
+                  }}
+                >
+                  <Paperclip size={18} />
+                </button>
 
-              <button
-                onClick={() => setIsGithubModalOpen(true)}
-                title="Import from GitHub repository"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: subtextColor,
-                  padding: '6px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <Github size={18} />
-              </button>
+                {isAttachmentMenuOpen && (
+                  <>
+                    {/* Backdrop to close menu */}
+                    <div 
+                      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }} 
+                      onClick={() => setIsAttachmentMenuOpen(false)} 
+                    />
+                    
+                    {/* Dropdown Menu */}
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '100%',
+                      left: '0',
+                      marginBottom: '8px',
+                      background: isLight ? '#ffffff' : '#1e293b',
+                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      minWidth: '200px',
+                      zIndex: 101
+                    }}>
+                      <button 
+                        onClick={() => { fileInputRef.current?.click(); setIsAttachmentMenuOpen(false); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <FileText size={16} color="#3b82f6" /> Add a File
+                      </button>
+                      
+                      <button 
+                        onClick={() => { 
+                          if (fileInputRef.current) {
+                            fileInputRef.current.accept = "image/*";
+                            fileInputRef.current.click();
+                            setTimeout(() => { if (fileInputRef.current) fileInputRef.current.accept = ""; }, 1000);
+                          }
+                          setIsAttachmentMenuOpen(false); 
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <ImageIcon size={16} color="#10b981" /> Image
+                      </button>
+
+                      <div style={{ height: '1px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
+
+                      <button 
+                        onClick={() => { setIsGithubModalOpen(true); setIsAttachmentMenuOpen(false); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Github size={16} color={isLight ? "#334155" : "#e2e8f0"} /> Connect to Github
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Magic Wand Enhancer */}
               <button
@@ -2466,51 +2529,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 )}
               </div>
 
-              {/* Sleek Firebase-style Language Icons */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '4px', borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)', paddingLeft: '10px' }}>
-                {['React', 'Java', 'Python'].map(lang => (
-                  <button
-                    key={lang}
-                    onClick={() => {
-                      const newText = inputText ? `${inputText} using ${lang}` : `Build a ${lang} app that `;
-                      setInputText(newText);
-                      if (textareaRef.current) {
-                        textareaRef.current.style.height = 'auto';
-                        setTimeout(() => {
-                           textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
-                        }, 50);
-                      }
-                    }}
-                    title={`${lang}`}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: subtextColor,
-                      padding: '6px',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s ease'
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)';
-                      e.currentTarget.style.color = textColor;
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = subtextColor;
-                    }}
-                  >
-                    {lang === 'React' && <Atom size={16} />}
-                    {lang === 'Java' && <Code2 size={16} />}
-                    {lang === 'Python' && <Activity size={16} />}
-                  </button>
-                ))}
-              </div>
 
-              {/* Web Grounding Toggle */}
+
+              {/* Web Grounding Chip */}
               <button
                 onClick={() => setWebSearchEnabled(!webSearchEnabled)}
                 title={webSearchEnabled ? "Live Web Search Enabled" : "Enable Web Search Grounding"}
@@ -2518,15 +2539,31 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: webSearchEnabled ? 'rgba(2, 132, 199, 0.15)' : 'transparent',
-                  border: 'none',
-                  color: webSearchEnabled ? '#0284c7' : subtextColor,
-                  padding: '6px',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
+                  gap: '6px',
+                  background: webSearchEnabled ? 'rgba(2, 132, 199, 0.15)' : (isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)'),
+                  border: webSearchEnabled ? '1px solid rgba(2, 132, 199, 0.3)' : '1px solid transparent',
+                  color: webSearchEnabled ? '#0ea5e9' : subtextColor,
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: '500',
+                  transition: 'all 0.2s ease',
+                  marginLeft: '8px'
+                }}
+                onMouseEnter={e => {
+                  if (!webSearchEnabled) {
+                    e.currentTarget.style.background = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!webSearchEnabled) {
+                    e.currentTarget.style.background = isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)';
+                  }
                 }}
               >
-                <Globe size={18} />
+                <Globe size={16} /> 
+                {webSearchEnabled ? 'Grounded' : 'Web Grounding'}
               </button>
             </div>
 
