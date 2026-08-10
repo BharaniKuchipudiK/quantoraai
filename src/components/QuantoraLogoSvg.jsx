@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * QuantoraIconSvg: 100% Crisp Vector SVG Logo Icon
- * Elegant thin-line Q with a glowing gradient, exactly matching the premium style.
+ * Bold, strong gold ring with a glowing gradient, matching the ambitious vision.
  */
 export function QuantoraIconSvg({ size = 36, isDark = true }) {
   return (
@@ -13,7 +13,7 @@ export function QuantoraIconSvg({ size = 36, isDark = true }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       style={{
-        filter: isDark ? 'drop-shadow(0 0 12px rgba(249, 115, 22, 0.6))' : 'drop-shadow(0 2px 8px rgba(234, 88, 12, 0.3))',
+        filter: isDark ? 'drop-shadow(0 0 16px rgba(249, 115, 22, 0.7))' : 'drop-shadow(0 4px 12px rgba(234, 88, 12, 0.4))',
         flexShrink: 0,
         overflow: 'visible'
       }}
@@ -21,26 +21,27 @@ export function QuantoraIconSvg({ size = 36, isDark = true }) {
       <defs>
         <linearGradient id="qPremiumGradient" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#fde047" />    {/* Yellow */}
-          <stop offset="50%" stopColor="#f97316" />   {/* Orange */}
+          <stop offset="35%" stopColor="#f59e0b" />   {/* Gold */}
+          <stop offset="70%" stopColor="#f97316" />   {/* Orange */}
           <stop offset="100%" stopColor="#ea580c" />  {/* Deep Orange */}
         </linearGradient>
       </defs>
 
-      {/* Main Outer Q Ring - Thin & Elegant */}
+      {/* Main Outer Q Ring - Strong & Bold */}
       <circle
         cx="44"
         cy="44"
-        r="36"
+        r="34"
         stroke="url(#qPremiumGradient)"
-        strokeWidth="2.5"
+        strokeWidth="10"
         fill="none"
       />
 
       {/* Q Diagonal Tail */}
       <path
-        d="M62 62 L88 88"
+        d="M60 60 L86 86"
         stroke="url(#qPremiumGradient)"
-        strokeWidth="3.5"
+        strokeWidth="10"
         strokeLinecap="round"
       />
     </svg>

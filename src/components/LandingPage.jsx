@@ -168,141 +168,115 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
 
       {/* Flagship Hero Section */}
       <section style={{
-        maxWidth: '1240px',
-        margin: '0 auto',
-        padding: '60px 24px 40px 24px',
-        textAlign: 'center',
+        width: '100%',
+        minHeight: '85vh',
+        display: 'flex',
+        alignItems: 'center',
+        padding: '80px 5%',
         position: 'relative',
-        zIndex: 10
+        zIndex: 10,
+        backgroundImage: 'url(/hero-bg.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed',
       }}>
-
-
-        {/* Quantora Masterpiece Emblem */}
-        <div style={{ marginBottom: '64px', display: 'inline-block', width: '100%' }}>
-          <QuantoraEmblemSvg size={140} isDark={!isLight} tagline="PROMPT TO ACTION" />
-        </div>
-
-        {/* Headline */}
-        <h1 style={{
-          fontSize: 'clamp(2.5rem, 5vw, 4.5rem)',
-          fontWeight: '900',
-          lineHeight: 1.2,
-          color: textColor,
-          marginBottom: '24px',
-          letterSpacing: '-0.03em',
-          width: '100%',
-          margin: '0 auto 24px auto'
-        }}>
-          <span style={{ color: textColor }}>Turn Prompts into Live Software with</span>{' '}
-          <span style={{
-            background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 45%, #ec4899 90%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
-            Multi-Model AI & Quantum Power
-          </span>
-        </h1>
-
-        {/* Subtitle */}
-        <p style={{
-          fontSize: 'clamp(1.1rem, 2vw, 1.4rem)',
-          color: subtextColor,
-          width: '100%',
-          maxWidth: '1200px',
-          margin: '0 auto 48px auto',
-          lineHeight: 1.6,
-          fontWeight: '400'
-        }}>
-          <strong>Quantora</strong> bridges natural language directly to full-stack React applications, interactive canvas workflows, and 3D quantum circuit simulations. Orchestrated via Gemini, GPT-4o, DeepSeek, and encrypted API Vaults.
-        </p>
-
-        {/* Primary Call to Actions */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '40px' }}>
-          {user ? (
-            <button
-              onClick={onLaunchStudio}
-              style={{
-                padding: '16px 38px',
-                borderRadius: '9999px',
-                fontSize: '1.08rem',
-                fontWeight: '800',
-                background: 'linear-gradient(135deg, #f97316 0%, #d97706 100%)',
-                color: '#ffffff',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '10px',
-                boxShadow: '0 10px 30px rgba(249, 115, 22, 0.4)'
-              }}
-            >
-              <Sparkles size={18} color="#ffffff" /> Launch AI Studio
-            </button>
-          ) : (
-            <button
-              onClick={onOpenAuth}
-              style={{
-                padding: '16px 38px',
-                borderRadius: '9999px',
-                fontSize: '1.08rem',
-                fontWeight: '800',
-                background: 'linear-gradient(135deg, #f97316 0%, #d97706 100%)',
-                color: '#ffffff',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '12px',
-                boxShadow: '0 10px 30px rgba(249, 115, 22, 0.4)'
-              }}
-            >
-              <LogIn size={18} color="#ffffff" /> Sign in with Google to Start
-            </button>
-          )}
-
-          <button
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-            style={{
-              padding: '16px 32px',
-              borderRadius: '9999px',
-              fontSize: '1.02rem',
-              fontWeight: '700',
-              background: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.06)',
-              color: textColor,
-              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.18)',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}
-          >
-            <Cpu size={18} color="#f59e0b" /> Explore Quantum Simulator
-          </button>
-        </div>
-
-        {/* Feature Highlights Pills */}
+        {/* Overlay for readability while letting the city glow through */}
         <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          gap: '16px',
-          flexWrap: 'wrap',
-          fontSize: '0.85rem',
-          fontWeight: '600',
-          color: isLight ? '#475569' : '#cbd5e1'
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(7, 9, 19, 0.70)',
+          zIndex: 0
+        }} />
+
+        <div style={{
+          maxWidth: '1240px',
+          margin: '0 auto',
+          width: '100%',
+          textAlign: 'left',
+          position: 'relative',
+          zIndex: 10
         }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)', padding: '6px 16px', borderRadius: '9999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
-            <CheckCircle2 size={15} color="#10b981" /> Free Multi-Model Access
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)', padding: '6px 16px', borderRadius: '9999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
-            <ShieldCheck size={15} color="#3b82f6" /> Supabase Vault API Gateway
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)', padding: '6px 16px', borderRadius: '9999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
-            <Zap size={15} color="#f59e0b" /> Live SSE Execution
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)', padding: '6px 16px', borderRadius: '9999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
-            <Lock size={15} color="#ec4899" /> Zero-Log Security
-          </span>
+          <div style={{ maxWidth: '800px' }}>
+            {/* Headline */}
+            <h1 style={{
+              fontSize: 'clamp(3.5rem, 7vw, 6rem)',
+              fontWeight: '900',
+              lineHeight: 1.05,
+              color: textColor,
+              marginBottom: '24px',
+              letterSpacing: '-0.04em',
+            }}>
+              Confidence to reimagine.<br/>
+              <span style={{
+                background: 'linear-gradient(135deg, #fde047 0%, #ea580c 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
+              }}>
+                Power to realize.
+              </span>
+            </h1>
+
+            {/* Subtitle */}
+            <p style={{
+              fontSize: 'clamp(1.15rem, 2vw, 1.4rem)',
+              color: textColor,
+              opacity: 0.9,
+              marginBottom: '48px',
+              lineHeight: 1.6,
+              fontWeight: '500',
+              maxWidth: '650px'
+            }}>
+              Quantora gives you the power to unleash your ideas. Transform your dreams into live software, scale your vision, and shape the future.
+            </p>
+
+            {/* Primary Call to Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              {user ? (
+                <button
+                  onClick={onLaunchStudio}
+                  style={{
+                    padding: '18px 42px',
+                    borderRadius: '9999px',
+                    fontSize: '1.1rem',
+                    fontWeight: '800',
+                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    boxShadow: '0 10px 30px rgba(234, 88, 12, 0.5)'
+                  }}
+                >
+                  Start here <ArrowRight size={18} />
+                </button>
+              ) : (
+                <button
+                  onClick={onOpenAuth}
+                  style={{
+                    padding: '18px 42px',
+                    borderRadius: '9999px',
+                    fontSize: '1.1rem',
+                    fontWeight: '800',
+                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    boxShadow: '0 10px 30px rgba(234, 88, 12, 0.5)'
+                  }}
+                >
+                  Start here <ArrowRight size={18} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </section>
 
