@@ -28,14 +28,14 @@ import {
   Atom
 } from 'lucide-react';
 
-export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
-  const [theme, setTheme] = useState('dark');
+export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMode, setThemeMode }) {
   const [activeDemoTab, setActiveDemoTab] = useState('app-builder'); // 'app-builder', 'quantum', 'multi-model', 'vault'
   const [selectedPrompt, setSelectedPrompt] = useState('Create a real-time crypto portfolio tracker with dark glassmorphic charts');
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationComplete, setSimulationComplete] = useState(false);
 
-  const isLight = theme === 'light';
+  // Use global theme
+  const isLight = themeMode === 'light';
 
   const bgColor = isLight ? '#f8fafc' : '#070913';
   const textColor = isLight ? '#0f172a' : '#ffffff';
@@ -70,9 +70,6 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
       fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
       transition: 'background 0.4s ease, color 0.4s ease'
     }}>
-      {/* Dynamic Ambient Glow Background in Dark Mode */}
-      {!isLight && <AuroraBackground />}
-
       {/* Header Navigation */}
       <header style={{
         position: 'sticky',
@@ -122,30 +119,29 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
             </span>
           </nav>
 
-          {/* Theme Switcher & Login CTA */}
+          {/* Theme Switcher */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', zIndex: 60 }}>
             <button
-              onClick={() => setTheme(isLight ? 'dark' : 'light')}
+              onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
               style={{
                 background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
                 border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
                 color: textColor,
-                padding: '8px 16px',
-                borderRadius: '9999px',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                fontSize: '0.82rem',
-                fontWeight: '700'
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
               }}
               title="Toggle Theme"
             >
-              {isLight ? <Moon size={15} color="#8b5cf6" /> : <Sun size={15} color="#fb923c" />}
-              {isLight ? 'Dark Mode' : 'Light Mode'}
+              {isLight ? <Moon size={18} color="#8b5cf6" /> : <Sun size={18} color="#fb923c" />}
             </button>
 
-            {user ? (
+            {user && (
               <button
                 onClick={onLaunchStudio}
                 style={{
@@ -164,26 +160,6 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
                 }}
               >
                 <Sparkles size={16} color="#ffffff" /> Enter Portal
-              </button>
-            ) : (
-              <button
-                onClick={onOpenAuth}
-                style={{
-                  background: '#0f172a',
-                  color: '#ffffff',
-                  border: isLight ? 'none' : '1px solid rgba(251, 191, 36, 0.4)',
-                  padding: '10px 24px',
-                  borderRadius: '9999px',
-                  fontSize: '0.9rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  boxShadow: '0 4px 18px rgba(0,0,0,0.25)'
-                }}
-              >
-                <LogIn size={16} color="#f59e0b" /> Sign in with Google
               </button>
             )}
           </div>

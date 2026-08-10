@@ -214,6 +214,8 @@ export default function App() {
           onLaunchStudio={() => handleTabChange('studio')}
           onOpenAuth={() => setShowAuthModal(true)}
           user={user}
+          themeMode={themeMode}
+          setThemeMode={setThemeMode}
         />
       ) : (
         <>

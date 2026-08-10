@@ -14,10 +14,10 @@ export function QuantoraBrandText({ isDark = true, fontSize = '1.25rem', tagline
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', textAlign: 'left', lineHeight: 1.15 }}>
       <div style={{
-        fontFamily: "'Orbitron', 'Plus Jakarta Sans', 'Outfit', sans-serif",
+        fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif",
         fontWeight: '800',
         fontSize: fontSize,
-        letterSpacing: '0.1em',
+        letterSpacing: '0.05em',
         color: mainTextColor,
         textTransform: 'uppercase',
         userSelect: 'none',
@@ -105,7 +105,7 @@ export function QuantoraIconSvg({ size = 36, isDark = true }) {
  */
 export function QuantoraEmblemSvg({ size = 100, isDark = true, showText = true, tagline = "PROMPT TO ACTION" }) {
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '14px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '14px', width: '100%' }}>
       <QuantoraIconSvg size={size} isDark={isDark} />
       {showText && (
         <QuantoraBrandText isDark={isDark} fontSize={`${Math.max(22, size * 0.24)}px`} tagline={tagline} />
