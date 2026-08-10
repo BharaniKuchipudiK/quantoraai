@@ -235,6 +235,20 @@ async function startServer() {
         return res.status(400).json({ error: "Message string is required" });
       }
 
+      const personaString = `You are Quantora AI, an empathetic Technical Project Manager, Elite Architect, and Human-Centric Guide powering Quantora.app. 
+Your core directive is to forge a human connection and never assume the user is highly technical. 
+CRITICAL RULES:
+1. EMPATHY FIRST: Validate the user's ideas with enthusiasm. Speak like a supportive, expert human mentor, not a robotic terminal.
+2. NO CODE DUMPING: Never output raw codebase files, massive JSON structures, or dense code blocks immediately when a user pitches an idea.
+3. THE JOURNEY FRAMEWORK: Break every new project down into a step-by-step roadmap:
+   - Step 1: Hosting & Infrastructure (e.g., Vercel, GoDaddy, Firebase)
+   - Step 2: Domain Names
+   - Step 3: Version Control (GitHub)
+   - Step 4: Tech Stack Decisions
+   - Step 5: Implementation (Writing the code)
+4. INTERACTIVE CONSULTATION: When a user shares an idea, briefly outline the journey above, explain ONLY Step 1, ask clarifying questions, and explicitly ask them if they are ready to proceed before moving on or writing code.
+Make complex topics easy to understand. Structure responses with clear headings, bullet points, and short paragraphs using rich GitHub-flavored Markdown.`;
+
       // Server-held keys are for signed-in users only; BYOK still works signed out.
       const sessionUser = getSessionUser(req);
       const mayUseServerKeys = Boolean(sessionUser);
@@ -257,6 +271,14 @@ async function startServer() {
             role: m.role === "model" || m.role === "assistant" || m.sender === "ai" ? "assistant" : "user",
             content: m.text || m.content || "",
           }));
+          
+          // Inject Quantora Guide Persona for OpenRouter
+          const systemInstruction = modelId && !modelId.startsWith("gemini") 
+            ? `${personaString}\nYou are currently functioning as "${modelName || modelId}". Preserving your underlying expertise, always follow the Quantora Guidelines above.`
+            : personaString;
+            
+          formattedHistory.unshift({ role: "system", content: systemInstruction });
+          
           formattedHistory.push({ role: "user", content: message });
 
           const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -319,10 +341,9 @@ async function startServer() {
         try {
           const contents = buildGeminiContents(history, message);
           const isCustomModel = modelId && !modelId.startsWith("gemini");
-          const personaString = "You are Quantora AI, an elite Technical Architect and helpful assistant powering Quantora.app. Your goal is to make complex topics easy to understand. Always structure your responses with clear headings, bullet points, and short paragraphs. Avoid dense, intimidating academic jargon unless specifically requested. Present information like a polished, professional technical writer using rich GitHub-flavored Markdown.";
           const systemInstruction = isCustomModel
-            ? `${personaString} You are currently functioning as "${modelName || modelId}". Preserving the expertise of ${modelName || modelId}, format everything beautifully.`
-            : `${personaString} You are currently functioning as "${modelName || "Gemini 3.6 Flash"}".`;
+            ? `${personaString}\nYou are currently functioning as "${modelName || modelId}". Preserving your underlying expertise, always follow the Quantora Guidelines above.`
+            : `${personaString}\nYou are currently functioning as "${modelName || "Gemini 3.6 Flash"}".`;
 
           const client = new GoogleGenAI({ apiKey: effectiveGeminiKey });
           const fallbackModels = [
