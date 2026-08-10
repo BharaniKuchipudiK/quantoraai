@@ -589,23 +589,37 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
 
-  const handleMagicWandEnhance = () => {
+  const handleMagicWandEnhance = async () => {
+    if (!inputText.trim()) {
+      const samplePrompts = [
+        "Build a full-stack AI dashboard with real-time analytics, dark theme, and interactive widgets",
+        "Create a Singapore SGD to INR currency exchange app with live charts and historical conversion rates",
+        "Build an interactive AI Beat Synthesizer with customizable BPM and multi-track audio controls",
+        "Design a sleek iOS-style calculator with currency conversion and history memory",
+        "Create an intelligent recipe finder that generates meal plans based on leftover ingredients"
+      ];
+      setInputText(samplePrompts[Math.floor(Math.random() * samplePrompts.length)]);
+      return;
+    }
+
     setIsEnhancingPrompt(true);
-    setTimeout(() => {
-      if (!inputText.trim()) {
-        const samplePrompts = [
-          "Build a full-stack AI dashboard with real-time analytics, dark theme, and interactive widgets",
-          "Create a Singapore SGD to INR currency exchange app with live charts and historical conversion rates",
-          "Build an interactive AI Beat Synthesizer with customizable BPM and multi-track audio controls",
-          "Design a sleek iOS-style calculator with currency conversion and history memory",
-          "Create an intelligent recipe finder that generates meal plans based on leftover ingredients"
-        ];
-        setInputText(samplePrompts[Math.floor(Math.random() * samplePrompts.length)]);
+    try {
+      const res = await fetch('/api/enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: inputText })
+      });
+      const data = await res.json();
+      if (res.ok && data.enhancedPrompt) {
+        setInputText(data.enhancedPrompt);
       } else {
-        setInputText(`Build a comprehensive, production-ready web app for: ${inputText.trim()} with clean UI, responsive layout, dark/light theme toggle, and interactive features.`);
+        console.error("Magic Wand failed:", data.error);
       }
+    } catch (e) {
+      console.error("Magic Wand network error:", e);
+    } finally {
       setIsEnhancingPrompt(false);
-    }, 400);
+    }
   };
 
   const [keyInputValue, setKeyInputValue] = useState('');
