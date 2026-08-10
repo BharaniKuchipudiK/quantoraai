@@ -15,7 +15,7 @@ export default function handler(req, res) {
   const forbiddenPatterns = [
     /ignore all previous instructions/i,
     /you are a developer mode/i,
-    /system prompt/i,
+
     /how to make a bomb/i,
     /bypass safety/i,
     /DAN/i, // Do Anything Now jailbreaks
