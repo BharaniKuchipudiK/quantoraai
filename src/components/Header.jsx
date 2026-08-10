@@ -92,7 +92,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
         gap: '16px'
       }}>
         {/* Vector SVG Brand Logo */}
-        <div style={{ cursor: 'pointer' }} onClick={() => setActiveTab('landing')}>
+        <div style={{ cursor: 'pointer' }} onClick={() => setActiveTab(user ? 'hub' : 'landing')}>
           <QuantoraFullLogoSvg height={36} isDark={!isLight} />
         </div>
 

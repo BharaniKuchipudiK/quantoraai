@@ -21,6 +21,7 @@ const DreamActionCanvas = React.lazy(() => import('./components/DreamActionCanva
 const QuantumPlayground = React.lazy(() => import('./components/QuantumPlayground'));
 const PrivacyVault = React.lazy(() => import('./components/PrivacyVault'));
 const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+const WelcomeHub = React.lazy(() => import('./components/WelcomeHub'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
@@ -140,7 +141,7 @@ export default function App() {
        */
       setUser(newUser);
       setShowAuthModal(false);
-      setActiveTab('studio');
+      setActiveTab('hub');
     } catch (error) {
       console.error("Error during secure login:", error);
       setLoginError(error.message || 'Failed to verify account securely.');
@@ -250,6 +251,14 @@ export default function App() {
                 Loading…
               </div>
             }>
+            {activeTab === 'hub' && (
+              <WelcomeHub
+                user={user}
+                onNavigate={setActiveTab}
+                isLight={isLight}
+              />
+            )}
+
             {activeTab === 'studio' && (
               <AiStudio
                 onOpenAuth={() => setShowAuthModal(true)}
