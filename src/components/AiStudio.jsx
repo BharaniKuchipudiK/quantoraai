@@ -441,6 +441,102 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   };
 
+  // --- Pillar 4: Predictive Code Assist Logic ---
+  const handleCodeChange = (e) => {
+    const val = e.target.value;
+    const pos = e.target.selectionStart;
+    setWorkspaceCode(val);
+    setCursorPos(pos);
+    setGhostText('');
+    
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    
+    typingTimeoutRef.current = setTimeout(async () => {
+      try {
+        const prefix = val.substring(0, pos);
+        const suffix = val.substring(pos);
+        const res = await fetch('/api/autocomplete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix, suffix })
+        });
+        const data = await res.json();
+        if (data.completion) {
+          setGhostText(data.completion);
+        }
+      } catch (err) {
+        console.error("Autocomplete fetch failed:", err);
+      }
+    }, 500);
+  };
+
+  const handleCodeKeyDown = (e) => {
+    if (e.key === 'Tab' && ghostText) {
+      e.preventDefault();
+      const val = workspaceCode;
+      const newCode = val.substring(0, cursorPos) + ghostText + val.substring(cursorPos);
+      setWorkspaceCode(newCode);
+      setCursorPos(cursorPos + ghostText.length);
+      setGhostText('');
+    } else if (e.key === 'Escape' && ghostText) {
+      setGhostText('');
+    }
+  };
+
+  // --- Pillar 3: Voice Mode Logic ---
+  const toggleVoiceMode = async () => {
+    if (isVoiceMode) {
+      setIsVoiceMode(false);
+      if (mediaRecorderRef.current) {
+         mediaRecorderRef.current.stop();
+      }
+      if (audioWsRef.current) {
+         audioWsRef.current.close();
+      }
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setIsVoiceMode(true);
+      
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${window.location.host}/api/live`;
+      const ws = new WebSocket(wsUrl);
+      audioWsRef.current = ws;
+      
+      ws.onopen = () => {
+         const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+         mediaRecorderRef.current = mediaRecorder;
+         
+         mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+               ws.send(event.data);
+            }
+         };
+         
+         mediaRecorder.start(250); // Send chunk every 250ms
+      };
+
+      ws.onmessage = (event) => {
+         console.log("Voice AI Response:", event.data);
+      };
+
+      ws.onerror = (e) => {
+         console.error("Voice WebSocket Error:", e);
+         setIsVoiceMode(false);
+      };
+
+      ws.onclose = () => {
+         setIsVoiceMode(false);
+      };
+
+    } catch (e) {
+      console.error("Failed to start voice mode:", e);
+      alert("Microphone access denied or unavailable.");
+    }
+  };
+
   const handleCreateNewChat = () => {
     const newId = 'session-' + Date.now();
     const newSession = {
@@ -534,6 +630,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
+  
+  // Pillar 4: Predictive Code Assist State
+  const [ghostText, setGhostText] = useState('');
+  const [cursorPos, setCursorPos] = useState(0);
+  const typingTimeoutRef = useRef(null);
+
+  // Pillar 3: Continuous Voice State
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioWsRef = useRef(null);
 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
@@ -2429,26 +2535,63 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           </div>
 
-          {/* Canvas Editor Area */}
+          {/* Canvas Editor Area (Pillar 4: Predictive Assist) */}
           <div style={{ flex: 1, overflow: 'auto', background: '#0d1127', padding: '24px', position: 'relative' }}>
              {/* Line Numbers */}
-             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none' }}>
+             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none', zIndex: 10 }}>
                 {Array.from({ length: Math.max(20, (workspaceCode.match(/\n/g) || []).length + 2) }).map((_, i) => (
                   <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
                 ))}
              </div>
+             
+             {/* Textarea for actual input */}
+             <textarea
+                value={workspaceCode}
+                onChange={handleCodeChange}
+                onKeyDown={handleCodeKeyDown}
+                spellCheck="false"
+                style={{
+                  position: 'absolute',
+                  top: '24px',
+                  left: '60px',
+                  width: 'calc(100% - 84px)',
+                  height: 'calc(100% - 48px)',
+                  background: 'transparent',
+                  color: 'transparent',
+                  caretColor: '#e2e8f0',
+                  border: 'none',
+                  outline: 'none',
+                  resize: 'none',
+                  fontFamily: '"Fira Code", monospace',
+                  fontSize: '0.9rem',
+                  lineHeight: '1.6',
+                  whiteSpace: 'pre-wrap',
+                  zIndex: 2,
+                  margin: 0,
+                  padding: 0
+                }}
+             />
+             
+             {/* Syntax Highlighted & Ghost Text Layer */}
              <pre style={{
+                position: 'absolute',
+                top: '24px',
+                left: '60px',
+                width: 'calc(100% - 84px)',
+                pointerEvents: 'none',
                 margin: 0,
-                marginLeft: '36px',
-                paddingLeft: '16px',
+                padding: 0,
                 fontFamily: '"Fira Code", monospace',
                 fontSize: '0.9rem',
                 lineHeight: '1.6',
                 color: '#e2e8f0',
                 outline: 'none',
-                whiteSpace: 'pre-wrap'
+                whiteSpace: 'pre-wrap',
+                zIndex: 1
              }}>
-                {workspaceActiveTab === 'App.jsx' ? (workspaceCode || '// Quantora FX Interactive Canvas\n// Tell Quantora to build something, and the code will appear here.') : `// ${workspaceActiveTab} content`}
+                {workspaceCode}
+                {ghostText && <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>{ghostText}</span>}
+                {!workspaceCode && <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>{'// Quantora FX Interactive Canvas\n// Start typing or tell Quantora to build something...'}</span>}
              </pre>
           </div>
         </div>
