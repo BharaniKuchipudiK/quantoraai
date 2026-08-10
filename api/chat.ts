@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { recordUsage } from "./_lib/store.js";
+import { fetchApiGatewayKey } from "./autocomplete.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -248,9 +249,9 @@ Rules:
      */
     const mayUseServerKeys = Boolean(sessionUser);
     const effectiveOpenRouterKey =
-      openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined);
+      openRouterKey || (mayUseServerKeys ? await fetchApiGatewayKey('OPENROUTER') || process.env.OPENROUTER_API_KEY : undefined);
     const effectiveGeminiKey =
-      userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined);
+      userKey || (mayUseServerKeys ? await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY : undefined);
 
     if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
       return res.status(401).json({
