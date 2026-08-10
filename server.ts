@@ -306,63 +306,30 @@ Make complex topics easy to understand. Structure responses with clear headings,
       }
 
       // 1. Initialize Tools
-      // Replaced DuckDuckGo with Parallel Web Systems API
-      const parallelSearchTool = new DynamicStructuredTool({
-        name: "parallel_web_research",
-        description: "Searches the live web using the Parallel Web Systems API to find highly accurate real-time information. Returns a comprehensive research summary.",
-        schema: z.object({
-          query: z.string().describe("The search query.")
-        }),
-        func: async ({ query }) => {
-          try {
-            const apiKey = process.env.PARALLEL_API_KEY;
-            if (!apiKey) {
-              return "Parallel API key is not configured in .env file.";
-            }
-            // Real endpoint for Parallel Web Systems (placeholder based on common AI APIs)
-            const response = await fetch("https://api.parallel.ai/v1/search", {
-               method: "POST",
-               headers: {
-                 "Content-Type": "application/json",
-                 "Authorization": `Bearer ${apiKey}`
-               },
-               body: JSON.stringify({ query })
-            });
-            if (!response.ok) {
-              return `Parallel Web API returned an error: ${response.statusText}.`;
-            }
-            const data = await response.json();
-            return `Parallel API Results: ${JSON.stringify(data.results)}`;
-          } catch (e: any) {
-             return `Error querying Parallel Web Systems: ${e.message}`;
-          }
-        }
-      });
+      // Reverted back to DuckDuckGo to remove API key overhead
+      const { DuckDuckGoSearch } = await import("@langchain/community/tools/duckduckgo_search");
+      const searchTool = new DuckDuckGoSearch({ maxResults: 3 });
       
       const githubReaderTool = new DynamicStructuredTool({
         name: "read_github_repo",
-        description: "Reads a public GitHub repository and returns a summary of its files.",
+        description: "Fetches and reads the contents of a GitHub repository. Use this to analyze a codebase.",
         schema: z.object({
-          repoUrl: z.string().describe("The URL of the GitHub repository (e.g., https://github.com/facebook/react)")
+          owner: z.string().describe("The owner of the repository (e.g., 'facebook')."),
+          repo: z.string().describe("The name of the repository (e.g., 'react').")
         }),
-        func: async ({ repoUrl }) => {
+        func: async ({ owner, repo }) => {
           try {
-            // Re-using our existing /api/github/fetch-repo logic
-            let apiUrl = repoUrl.replace("github.com", "api.github.com/repos") + "/contents";
-            const response = await fetch(apiUrl);
-            if (!response.ok) return `Failed to read repository: ${response.statusText}`;
-            const data = await response.json();
-            if (Array.isArray(data)) {
-               return `Found files: ${data.map((f: any) => f.name).join(', ')}. Use this to help the user.`;
-            }
-            return "Unable to parse repository.";
+            const res = await fetch(`http://localhost:3000/api/github/fetch-repo?owner=${owner}&repo=${repo}`);
+            if (!res.ok) return `Failed to fetch repo ${owner}/${repo}`;
+            const data = await res.json();
+            return data.content;
           } catch (e: any) {
-            return `Error reading github repo: ${e.message}`;
+            return `Error reading GitHub repo: ${e.message}`;
           }
         }
       });
 
-      const tools = [parallelSearchTool, githubReaderTool];
+      const tools = [searchTool, githubReaderTool];
 
       // 2. Initialize LLM (Gemini or OpenRouter)
       let llm;
