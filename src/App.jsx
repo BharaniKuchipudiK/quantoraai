@@ -331,13 +331,13 @@ export default function App() {
           padding: '20px'
         }}>
           <div style={{
-            background: '#1a1a1d', // Dark charcoal/black
-            color: '#ffffff',
+            background: isLight ? '#ffffff' : '#1a1a1d', // Adapts to theme
+            color: isLight ? '#0f172a' : '#ffffff',
             borderRadius: '48px', // Extremely rounded pill-like corners
             maxWidth: '540px',
             width: '100%',
             padding: '64px 40px',
-            boxShadow: '0 40px 120px rgba(0, 0, 0, 0.8)',
+            boxShadow: isLight ? '0 40px 120px rgba(0, 0, 0, 0.15)' : '0 40px 120px rgba(0, 0, 0, 0.8)',
             textAlign: 'center',
             position: 'relative'
           }}>
@@ -350,32 +350,32 @@ export default function App() {
                 position: 'absolute',
                 top: '24px',
                 right: '24px',
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)',
                 border: 'none',
                 width: '36px',
                 height: '36px',
                 borderRadius: '50%',
                 cursor: 'pointer',
                 fontSize: '1.2rem',
-                color: '#a1a1aa',
+                color: isLight ? '#64748b' : '#a1a1aa',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 transition: 'background 0.2s'
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
+              onMouseEnter={e => e.currentTarget.style.background = isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.15)'}
+              onMouseLeave={e => e.currentTarget.style.background = isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)'}
             >
               ✕
             </button>
 
-            <p style={{ fontSize: '1.1rem', color: '#a1a1aa', margin: '0 0 16px 0', fontWeight: '400' }}>
+            <p style={{ fontSize: '1.1rem', color: isLight ? '#64748b' : '#a1a1aa', margin: '0 0 16px 0', fontWeight: '400' }}>
               Welcome to
             </p>
-            <h2 style={{ fontSize: '3.2rem', fontWeight: '700', margin: '0 0 24px 0', color: '#ffffff', letterSpacing: '-0.04em', lineHeight: '1.1' }}>
+            <h2 style={{ fontSize: '3.2rem', fontWeight: '700', margin: '0 0 24px 0', color: isLight ? '#0f172a' : '#ffffff', letterSpacing: '-0.04em', lineHeight: '1.1' }}>
               quantora/ai
             </h2>
-            <p style={{ fontSize: '1.1rem', color: '#d4d4d8', margin: '0 0 40px 0' }}>
+            <p style={{ fontSize: '1.1rem', color: isLight ? '#475569' : '#d4d4d8', margin: '0 0 40px 0' }}>
               Sign in with Google
             </p>
 
@@ -394,13 +394,13 @@ export default function App() {
                       {loginError}
                     </div>
                   )}
-                  {/* Google Login Component using a dark pill button matching the aesthetic */}
+                  {/* Google Login Component using a dynamic pill button matching the aesthetic */}
                   <GoogleLogin
                     onSuccess={handleGoogleSuccess}
                     onError={handleGoogleError}
                     useOneTap
                     shape="pill"
-                    theme="filled_black"
+                    theme={isLight ? "outline" : "filled_black"}
                     text="signin"
                     size="large"
                   />
