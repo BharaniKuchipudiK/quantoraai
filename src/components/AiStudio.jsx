@@ -1674,12 +1674,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div style={{
-        flex: isWorkspaceMode ? '0 0 35%' : 1,
+        flex: isWorkspaceMode ? '0 0 42%' : 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isWorkspaceMode ? '35%' : '800px',
-        margin: isWorkspaceMode ? '0' : '0 auto',
-        padding: isWorkspaceMode ? '0' : '20px',
+        maxWidth: isWorkspaceMode ? '42%' : '100%',
+        margin: '0 auto',
+        padding: isWorkspaceMode ? '0 10px 0 0' : '20px 40px',
         minHeight: 0,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
@@ -1899,7 +1899,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         ) : (
           /* Active Chat Thread */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
           </div>
         )}
@@ -1912,7 +1912,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Clean Prompt Console Input Area */}
-      <div style={{ position: 'relative', width: '100%', maxWidth: '820px', margin: '0 auto' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
         {/* Attachment Files Badge Bar */}
         {attachments.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', paddingLeft: '4px' }}>
