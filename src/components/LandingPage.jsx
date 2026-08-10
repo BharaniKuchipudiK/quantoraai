@@ -7,6 +7,7 @@ import {
   Cpu, 
   ShieldCheck, 
   ArrowRight, 
+  ArrowLeft,
   LogIn, 
   CheckCircle2, 
   Zap, 
@@ -169,10 +170,10 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       {/* Flagship Hero Section */}
       <section style={{
         width: '100%',
-        minHeight: '85vh',
+        minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
-        padding: '80px 5%',
+        padding: '100px 5% 120px 5%',
         position: 'relative',
         zIndex: 10,
         backgroundImage: 'url(/hero-bg.jpg)',
@@ -192,22 +193,23 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         }} />
 
         <div style={{
-          maxWidth: '1240px',
+          maxWidth: '1350px',
           margin: '0 auto',
           width: '100%',
           textAlign: 'left',
           position: 'relative',
           zIndex: 10
         }}>
-          <div style={{ maxWidth: '800px' }}>
-            {/* Headline */}
+          <div style={{ maxWidth: '900px' }}>
+            {/* Headline (Accenture Style: Massive, Uppercase, > symbol) */}
             <h1 style={{
-              fontSize: 'clamp(3.5rem, 7vw, 6rem)',
+              fontSize: 'clamp(4rem, 8vw, 7.5rem)',
               fontWeight: '900',
-              lineHeight: 1.05,
+              lineHeight: 1,
               color: textColor,
-              marginBottom: '24px',
-              letterSpacing: '-0.04em',
+              marginBottom: '32px',
+              letterSpacing: '-0.02em',
+              textTransform: 'uppercase'
             }}>
               Confidence to reimagine.<br/>
               <span style={{
@@ -219,63 +221,98 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
               </span>
             </h1>
 
-            {/* Subtitle */}
-            <p style={{
-              fontSize: 'clamp(1.15rem, 2vw, 1.4rem)',
-              color: textColor,
-              opacity: 0.9,
-              marginBottom: '48px',
-              lineHeight: 1.6,
-              fontWeight: '500',
-              maxWidth: '650px'
+            {/* Subtitle (EY Style: Vertical Gold Line Accent) */}
+            <div style={{
+              borderLeft: '5px solid #f97316',
+              paddingLeft: '24px',
+              marginBottom: '56px',
+              maxWidth: '700px'
             }}>
-              Quantora gives you the power to unleash your ideas. Transform your dreams into live software, scale your vision, and shape the future.
-            </p>
-
-            {/* Primary Call to Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-              {user ? (
-                <button
-                  onClick={onLaunchStudio}
-                  style={{
-                    padding: '18px 42px',
-                    borderRadius: '9999px',
-                    fontSize: '1.1rem',
-                    fontWeight: '800',
-                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    boxShadow: '0 10px 30px rgba(234, 88, 12, 0.5)'
-                  }}
-                >
-                  Start here <ArrowRight size={18} />
-                </button>
-              ) : (
-                <button
-                  onClick={onOpenAuth}
-                  style={{
-                    padding: '18px 42px',
-                    borderRadius: '9999px',
-                    fontSize: '1.1rem',
-                    fontWeight: '800',
-                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    boxShadow: '0 10px 30px rgba(234, 88, 12, 0.5)'
-                  }}
-                >
-                  Start here <ArrowRight size={18} />
-                </button>
-              )}
+              <p style={{
+                fontSize: 'clamp(1.15rem, 2vw, 1.4rem)',
+                color: textColor,
+                opacity: 0.95,
+                lineHeight: 1.6,
+                fontWeight: '500'
+              }}>
+                Quantora gives you the power to unleash your ideas. Transform your dreams into live software, scale your vision, and shape the future.
+              </p>
             </div>
+
+            {/* Primary Call to Actions (Accenture Style Sharp Geometric Button) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => user ? onLaunchStudio() : onOpenAuth()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'stretch',
+                  cursor: 'pointer',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.15)'
+                }}
+              >
+                <div style={{
+                  padding: '20px 36px',
+                  fontSize: '1.25rem',
+                  fontWeight: '800',
+                  background: isLight ? '#000000' : '#ffffff',
+                  color: isLight ? '#ffffff' : '#000000',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Start here
+                </div>
+                <div style={{
+                  padding: '0 24px',
+                  background: '#ea580c', // Bright orange/gold accent block
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff',
+                  transition: 'background 0.2s'
+                }} className="hover:bg-amber-500">
+                  <ChevronRight size={28} strokeWidth={3} />
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Interactive Navigation / Carousel Controls (EY Style) */}
+        <div style={{
+          position: 'absolute',
+          bottom: '40px',
+          left: '5%',
+          right: '5%',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderTop: isLight ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.15)',
+          paddingTop: '20px',
+          zIndex: 10,
+          flexWrap: 'wrap',
+          gap: '16px'
+        }}>
+          {/* Link List */}
+          <div style={{ display: 'flex', gap: '40px', overflowX: 'auto', paddingBottom: '4px' }}>
+            <span style={{ fontSize: '1.05rem', fontWeight: '700', color: textColor, borderBottom: '3px solid #ea580c', paddingBottom: '6px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.03em' }}>AI Studio</span>
+            <span style={{ fontSize: '1.05rem', fontWeight: '600', color: textColor, opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s', paddingBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.03em' }} className="hover:opacity-100">Dream Canvas</span>
+            <span style={{ fontSize: '1.05rem', fontWeight: '600', color: textColor, opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s', paddingBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.03em' }} className="hover:opacity-100">Quantum Horizon</span>
+          </div>
+
+          {/* Circular Controls */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <button style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: textColor, transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+              <ArrowLeft size={20} strokeWidth={1.5} />
+            </button>
+            <button style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: textColor, transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+              <ArrowRight size={20} strokeWidth={1.5} />
+            </button>
+            <button style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: textColor, transition: 'all 0.2s', marginLeft: '8px' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+              <Play size={18} strokeWidth={1.5} fill="currentColor" />
+            </button>
           </div>
         </div>
       </section>
