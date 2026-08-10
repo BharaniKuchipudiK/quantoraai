@@ -1927,7 +1927,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px' }}>
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
-          <div style={{ textAlign: 'center', padding: '40px 20px 24px 20px', maxWidth: '720px', margin: '0 auto', width: '100%' }}>
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '48px 32px 32px 32px', 
+            maxWidth: '720px', 
+            margin: '40px auto 0 auto', 
+            width: '100%',
+            background: isLight ? 'rgba(255, 255, 255, 0.4)' : 'rgba(15, 23, 42, 0.4)',
+            backdropFilter: 'blur(40px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(40px) saturate(150%)',
+            border: isLight ? '1px solid rgba(255, 255, 255, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '32px',
+            boxShadow: isLight ? '0 24px 48px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8)' : '0 24px 48px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)'
+          }}>
             <div style={{
               width: '56px',
               height: '56px',
