@@ -1155,15 +1155,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             thoughtProcess: 'Rate limited'
           } : m));
         } else {
-          const reqKey = errData.requiresKey || (targetModel.id.startsWith('gemini') ? 'gemini' : 'openrouter');
-          const errText = errData.error || `API Key required for ${targetModel.name}.`;
+          const errText = errData.error || `The backend server encountered an error with ${targetModel.name}.`;
 
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: `⚠️ **API Key Required**: ${errText}\n\nPlease enter your API Key below to start chatting directly with **${targetModel.name}**.`,
-            isKeyPrompt: true,
-            keyType: reqKey,
-            thoughtProcess: `Live API Key required for ${targetModel.name}`
+            text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment. Please try again later or select a different model.`,
+            thoughtProcess: `Error processing request via ${targetModel.name}`
           } : m));
         }
       }
@@ -1171,9 +1168,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       console.error('Chat error:', error);
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
         ...m,
-        text: `⚠️ **Connection Error**: Unable to reach ${targetModel.name}. Please check your connection or enter an API Key in the Privacy Vault.`,
-        isKeyPrompt: true,
-        keyType: targetModel.id.startsWith('gemini') ? 'gemini' : 'openrouter',
+        text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${targetModel.name}. Please check your connection and try again.`,
         thoughtProcess: `Network connection error for ${targetModel.name}`
       } : m));
     } finally {
@@ -1463,67 +1458,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     </div>
                   )}
 
-                  {msg.isKeyPrompt && (
-                    <div style={{
-                      marginTop: '14px',
-                      padding: '16px',
-                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
-                      borderRadius: '12px',
-                      border: '1px solid #f97316',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '10px'
-                    }}>
-                      <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Sparkles size={16} color="#f97316" /> Save {msg.keyType === 'gemini' ? 'Google Gemini' : 'OpenRouter'} API Key to chat live:
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: subtextColor, lineHeight: 1.5 }}>
-                        Stored unencrypted in this browser's local storage, and sent to Quantora's
-                        server only to make your request. Anyone with access to this browser profile
-                        can read it — use a key you can revoke.
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input
-                          type="password"
-                          placeholder={msg.keyType === 'gemini' ? 'Paste Gemini Key (AIzaSy...)' : 'Paste OpenRouter Key (sk-or-v1...)'}
-                          value={keyInputValue}
-                          onChange={(e) => setKeyInputValue(e.target.value)}
-                          style={{
-                            flex: 1,
-                            padding: '10px 14px',
-                            borderRadius: '8px',
-                            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                            background: isLight ? '#ffffff' : '#1e293b',
-                            color: textColor,
-                            fontSize: '0.85rem'
-                          }}
-                        />
-                        <button
-                          onClick={() => saveKeyAndRetry(msg.keyType)}
-                          style={{
-                            background: '#f97316',
-                            color: '#ffffff',
-                            border: 'none',
-                            padding: '10px 18px',
-                            borderRadius: '8px',
-                            fontWeight: 'bold',
-                            fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          Save Key & Retry
-                        </button>
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: subtextColor }}>
-                        {msg.keyType === 'gemini' ? (
-                          <span>Free Key Link: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>aistudio.google.com/app/apikey</a></span>
-                        ) : (
-                          <span>Free Key Link: <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: '#f97316', textDecoration: 'underline', fontWeight: 'bold' }}>openrouter.ai/keys</a></span>
-                        )}
-                      </div>
-                    </div>
-                  )}
+
 
                   {/* Render Interactive Live Component Sandboxes Directly in Chat */}
                   {msg.componentType === 'calculator' && <LiveIosCalculator />}
