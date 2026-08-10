@@ -184,21 +184,20 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
 
         {/* Headline */}
         <h1 style={{
-          fontSize: '3.8rem',
+          fontSize: 'clamp(2.5rem, 5vw, 4.5rem)',
           fontWeight: '900',
-          lineHeight: 1.12,
+          lineHeight: 1.2,
           color: textColor,
-          marginBottom: '20px',
+          marginBottom: '24px',
           letterSpacing: '-0.03em',
-          maxWidth: '1020px',
-          margin: '0 auto 20px auto'
+          width: '100%',
+          margin: '0 auto 24px auto'
         }}>
           <span style={{ color: textColor }}>Turn Prompts into Live Software with</span>{' '}
           <span style={{
             background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 45%, #ec4899 90%)',
             WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            display: 'inline-block'
+            WebkitTextFillColor: 'transparent'
           }}>
             Multi-Model AI & Quantum Power
           </span>
@@ -206,10 +205,11 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
 
         {/* Subtitle */}
         <p style={{
-          fontSize: '1.2rem',
+          fontSize: 'clamp(1.1rem, 2vw, 1.4rem)',
           color: subtextColor,
-          maxWidth: '840px',
-          margin: '0 auto 36px auto',
+          width: '100%',
+          maxWidth: '1200px',
+          margin: '0 auto 48px auto',
           lineHeight: 1.6,
           fontWeight: '400'
         }}>

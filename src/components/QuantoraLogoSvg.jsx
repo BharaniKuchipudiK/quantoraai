@@ -58,10 +58,10 @@ export function QuantoraBrandText({ isDark = true, fontSize = '1.25rem', tagline
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', textAlign: 'center', alignItems: 'center', lineHeight: 1.15 }}>
       <div style={{
-        fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif",
-        fontWeight: '300', /* Elegant, light weight */
+        fontFamily: "'Syncopate', sans-serif",
+        fontWeight: '700', /* Syncopate needs bold to look right */
         fontSize: fontSize,
-        letterSpacing: '0.25em',
+        letterSpacing: '0.15em',
         color: mainTextColor,
         textTransform: 'uppercase',
         userSelect: 'none',
