@@ -1961,21 +1961,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               What would you like to build today?
             </p>
 
-            {/* AI Models Highlight Carousel */}
+            {/* AI Models Highlight Cards */}
             <div style={{
               display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
               gap: '16px',
-              overflowX: 'auto',
               paddingBottom: '20px',
-              margin: '0 -20px',
-              padding: '0 20px 20px 20px',
-              scrollbarWidth: 'none', /* Firefox */
-              msOverflowStyle: 'none', /* IE */
-              scrollSnapType: 'x mandatory'
+              width: '100%'
             }}>
-              <style>{`
-                div::-webkit-scrollbar { display: none; }
-              `}</style>
               
               {[
                 { name: "Gemini 1.5 Pro", desc: "2M Context Window • Advanced Reasoning for complex logic.", icon: <Cpu size={20} color="#f97316"/>, badge: "NEW", color: "#f97316" },
@@ -1983,7 +1977,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 { name: "Llama 3 70B", desc: "Open-source powerhouse with zero filters.", icon: <Layers size={20} color="#10b981"/>, badge: "UPDATED", color: "#10b981" }
               ].map((model, idx) => (
                 <div key={idx} style={{
-                  flex: '0 0 240px',
+                  flex: '1 1 200px',
+                  maxWidth: '280px',
                   background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.05)',
                   backdropFilter: 'blur(20px)',
                   WebkitBackdropFilter: 'blur(20px)',
@@ -1991,7 +1986,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   boxShadow: isLight ? '0 8px 32px rgba(31, 38, 135, 0.07)' : '0 8px 32px rgba(0, 0, 0, 0.3)',
                   borderRadius: '16px',
                   padding: '16px',
-                  scrollSnapAlign: 'start',
                   position: 'relative',
                   overflow: 'hidden',
                   cursor: 'pointer',
