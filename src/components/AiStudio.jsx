@@ -1933,12 +1933,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             maxWidth: '720px', 
             margin: '40px auto 0 auto', 
             width: '100%',
-            background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.06)',
+            background: isLight ? 'linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.85))' : 'rgba(255, 255, 255, 0.06)',
             backdropFilter: 'blur(40px) saturate(200%)',
             WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-            border: isLight ? '1px solid rgba(255, 255, 255, 0.8)' : '1px solid rgba(255, 255, 255, 0.15)',
+            border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.15)',
             borderRadius: '32px',
-            boxShadow: isLight ? '0 32px 64px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,1)' : '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)'
+            boxShadow: isLight ? '0 32px 64px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255,255,255,0.6) inset' : '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)'
           }}>
             <div style={{
               width: '56px',
