@@ -601,32 +601,49 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Voice input is not supported in this browser. Please try Chrome, Edge, or Safari.");
+      alert("Voice input is not supported in this browser. Please use Google Chrome.");
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true; // Show words as they are spoken
     recognition.lang = 'en-US';
 
-    recognition.onstart = () => setIsListening(true);
+    recognition.onstart = () => {
+      setIsListening(true);
+      // Optional: alert or toast here if we had a toast system
+    };
     
     recognition.onresult = (event) => {
       let finalTranscript = '';
+      let interimTranscript = '';
+      
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
         }
       }
+      
       if (finalTranscript) {
-        setInputText(prev => (prev + ' ' + finalTranscript).trim());
+        setInputText(prev => {
+          // Clean up any trailing space before appending
+          const base = prev.replace(/\s+$/, '');
+          return base ? base + ' ' + finalTranscript : finalTranscript;
+        });
       }
     };
 
     recognition.onerror = (event) => {
       console.error("Speech recognition error", event.error);
+      if (event.error === 'not-allowed') {
+        alert("Microphone access blocked! Please click the camera/mic icon in your browser URL bar to allow microphone access.");
+      } else {
+        alert("Microphone error: " + event.error);
+      }
       setIsListening(false);
     };
 
@@ -638,6 +655,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       recognition.start();
     } catch (e) {
       console.error("Failed to start speech recognition:", e);
+      alert("Could not start microphone. Please ensure no other tab is using it.");
       setIsListening(false);
     }
   };
