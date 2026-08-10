@@ -59,6 +59,28 @@ function buildGeminiContents(history: any[], currentMessage: string) {
   return contents;
 }
 
+async function fetchApiGatewayKey(providerName: string): Promise<string | null> {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) return null;
+    
+    const res = await fetch(`${supabaseUrl}/rest/v1/api_gateway_keys?provider=eq.${providerName}&select=api_key`, {
+       headers: {
+         'apikey': supabaseKey,
+         'Authorization': `Bearer ${supabaseKey}`
+       }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.length > 0) return data[0].api_key;
+    return null;
+  } catch(e) {
+    console.error("Failed to fetch API key from Supabase Gateway:", e);
+    return null;
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -66,12 +88,18 @@ async function startServer() {
 
   // Pillar 3: Continuous Voice / Gemini Live WebSocket Bridge
   const wss = new WebSocketServer({ server: httpServer, path: "/api/live" });
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
     console.log("Client connected to /api/live WebSocket");
     
+    const geminiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+       console.error("No Gemini API key found for Voice mode");
+       ws.close();
+       return;
+    }
+    
     // Connect to Google Gemini Multimodal Live API
-    // Need a real key here. We fallback to process.env.GEMINI_API_KEY
-    const geminiWs = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`);
+    const geminiWs = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`);
     
     ws.on('message', (message) => {
        if (geminiWs.readyState === WebSocket.OPEN) {
@@ -293,10 +321,12 @@ Make complex topics easy to understand. Structure responses with clear headings,
       // Server-held keys are for signed-in users only; BYOK still works signed out.
       const sessionUser = getSessionUser(req);
       const mayUseServerKeys = Boolean(sessionUser);
-      const effectiveOpenRouterKey =
-        openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined);
-      const effectiveGeminiKey =
-        userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined);
+      
+      const gatewayGeminiKey = mayUseServerKeys ? await fetchApiGatewayKey('GEMINI') : null;
+      const gatewayOpenRouterKey = mayUseServerKeys ? await fetchApiGatewayKey('OPENROUTER') : null;
+      
+      const effectiveGeminiKey = req.headers["x-gemini-key"] as string || gatewayGeminiKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined);
+      const effectiveOpenRouterKey = req.headers["x-openrouter-key"] as string || gatewayOpenRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined);
 
       if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
         return res.status(401).json({
@@ -532,7 +562,7 @@ Make complex topics easy to understand. Structure responses with clear headings,
   app.post("/api/autocomplete", async (req, res) => {
     try {
        const { prefix, suffix, modelId } = req.body;
-       const apiKey = process.env.GEMINI_API_KEY;
+       const apiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
        if (!apiKey) return res.status(401).json({ error: "No API key" });
        
        const client = new GoogleGenAI({ apiKey });
