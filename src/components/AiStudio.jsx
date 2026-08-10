@@ -2460,7 +2460,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
       {isWorkspaceMode && (
         <div style={{
-          flex: '0 0 calc(65% - 20px)',
+          flex: 1,
           background: isLight ? '#ffffff' : '#0d1127',
           border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: '16px',
