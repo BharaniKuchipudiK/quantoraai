@@ -25,7 +25,7 @@ export function QuantoraBrandText({ isDark = true, fontSize = '1.25rem', tagline
         alignItems: 'center',
         whiteSpace: 'nowrap'
       }}>
-        QU<span style={{ color: '#f97316' }}>A</span>NTORA
+        QUANT<span style={{ color: '#f97316' }}>O</span>RA
       </div>
       {tagline && (
         <span style={{
