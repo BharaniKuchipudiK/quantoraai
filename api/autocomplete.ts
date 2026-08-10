@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-async function fetchApiGatewayKey(providerName: string): Promise<string | null> {
+export async function fetchApiGatewayKey(providerName: string): Promise<string | null> {
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
