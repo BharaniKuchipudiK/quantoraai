@@ -190,84 +190,71 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Flagship Hero Section */}
       <section style={{
-        padding: '80px 24px',
+        maxWidth: '1240px',
+        margin: '0 auto',
+        padding: '60px 24px 40px 24px',
         textAlign: 'center',
         position: 'relative',
         zIndex: 10
       }}>
-        {/* Massive Glassmorphic Hero Card Wrapper */}
+        {/* Release Announcement Badge */}
         <div style={{
-          maxWidth: '1100px',
-          margin: '0 auto',
-          background: isLight ? 'rgba(255, 255, 255, 0.4)' : 'rgba(15, 23, 42, 0.4)',
-          backdropFilter: 'blur(40px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(40px) saturate(150%)',
-          border: isLight ? '1px solid rgba(255, 255, 255, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '40px',
-          padding: '60px 40px',
-          boxShadow: isLight ? '0 40px 100px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8)' : '0 40px 100px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15)',
-          position: 'relative',
-          overflow: 'hidden'
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '6px 20px',
+          borderRadius: '9999px',
+          background: isLight ? 'rgba(249, 115, 22, 0.08)' : 'rgba(249, 115, 22, 0.15)',
+          border: isLight ? '1px solid rgba(249, 115, 22, 0.25)' : '1px solid rgba(251, 191, 36, 0.35)',
+          fontSize: '0.84rem',
+          fontWeight: '700',
+          color: '#f59e0b',
+          marginBottom: '24px'
         }}>
-          {/* Ambient internal glows */}
-          <div style={{ position: 'absolute', top: '-20%', left: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(249, 115, 22, 0.15) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', bottom: '-20%', right: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(236, 72, 153, 0.15) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
+          QUANTORA v3.2 • Quantum-Accelerated AI Studio Live
+        </div>
 
-          {/* Release Announcement Badge */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '6px 20px',
-            borderRadius: '9999px',
-            background: isLight ? 'rgba(249, 115, 22, 0.08)' : 'rgba(249, 115, 22, 0.15)',
-            border: isLight ? '1px solid rgba(249, 115, 22, 0.25)' : '1px solid rgba(251, 191, 36, 0.35)',
-            fontSize: '0.84rem',
-            fontWeight: '700',
-            color: '#f59e0b',
-            marginBottom: '24px',
-            position: 'relative', zIndex: 5
-          }}>
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
-            QUANTORA v3.2 • Quantum-Accelerated AI Studio Live
-          </div>
+        {/* Quantora Masterpiece Emblem */}
+        <div style={{ marginBottom: '24px', display: 'inline-block' }}>
+          <QuantoraEmblemSvg size={140} isDark={!isLight} tagline="PROMPT TO ACTION" />
+        </div>
 
-          {/* Headline */}
-          <h1 style={{
-            fontSize: '3.8rem',
-            fontWeight: '900',
-            lineHeight: 1.12,
-            marginBottom: '20px',
-            letterSpacing: '-0.03em',
-            maxWidth: '1020px',
-            margin: '0 auto 20px auto',
-            position: 'relative', zIndex: 5
+        {/* Headline */}
+        <h1 style={{
+          fontSize: '3.8rem',
+          fontWeight: '900',
+          lineHeight: 1.12,
+          color: textColor,
+          marginBottom: '20px',
+          letterSpacing: '-0.03em',
+          maxWidth: '1020px',
+          margin: '0 auto 20px auto'
+        }}>
+          <span style={{ color: textColor }}>Turn Prompts into Live Software with</span>{' '}
+          <span style={{
+            background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 45%, #ec4899 90%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            display: 'inline-block'
           }}>
-            Turn Prompts into Live Software<br/>with{' '}
-            <span style={{
-              background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 45%, #ec4899 90%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              display: 'inline-block'
-            }}>
-              Multi-Model AI & Quantum Power
-            </span>
-          </h1>
+            Multi-Model AI & Quantum Power
+          </span>
+        </h1>
 
-          {/* Subtitle */}
-          <p style={{
-            fontSize: '1.2rem',
-            color: subtextColor,
-            maxWidth: '840px',
-            margin: '0 auto 36px auto',
-            lineHeight: 1.6,
-            fontWeight: '400',
-            position: 'relative', zIndex: 5
-          }}>
-            <strong>Quantora</strong> bridges natural language directly to full-stack React applications, interactive canvas workflows, and 3D quantum circuit simulations. Orchestrated via Gemini, GPT-4o, DeepSeek, and encrypted API Vaults.
-          </p>
+        {/* Subtitle */}
+        <p style={{
+          fontSize: '1.2rem',
+          color: subtextColor,
+          maxWidth: '840px',
+          margin: '0 auto 36px auto',
+          lineHeight: 1.6,
+          fontWeight: '400'
+        }}>
+          <strong>Quantora</strong> bridges natural language directly to full-stack React applications, interactive canvas workflows, and 3D quantum circuit simulations. Orchestrated via Gemini, GPT-4o, DeepSeek, and encrypted API Vaults.
+        </p>
 
         {/* Primary Call to Actions */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '40px' }}>
@@ -356,7 +343,6 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)', padding: '6px 16px', borderRadius: '9999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
             <Lock size={15} color="#ec4899" /> Zero-Log Security
           </span>
-        </div>
         </div>
       </section>
 
