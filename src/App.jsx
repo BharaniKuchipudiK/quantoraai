@@ -233,6 +233,9 @@ export default function App() {
 
           <main style={{
             flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
             maxWidth: '1400px',
             width: '100%',
             margin: '0 auto',

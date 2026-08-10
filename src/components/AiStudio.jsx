@@ -590,6 +590,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const fileInputRef = useRef(null);
   const inBarModelRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Auto-resize textarea when inputText changes programmatically (e.g., Magic Wand)
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
+    }
+  }, [inputText]);
 
   // Click outside listener for in-bar model dropdown
   useEffect(() => {
@@ -702,6 +711,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
+  const [isMagicWandModalOpen, setIsMagicWandModalOpen] = useState(false);
+  const [magicWandResultText, setMagicWandResultText] = useState('');
 
   const handleMagicWandEnhance = async () => {
     if (!inputText.trim()) {
@@ -725,7 +736,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       });
       const data = await res.json();
       if (res.ok && data.enhancedPrompt) {
-        setInputText(data.enhancedPrompt);
+        setMagicWandResultText(data.enhancedPrompt);
+        setIsMagicWandModalOpen(true);
       } else {
         console.error("Magic Wand failed:", data.error);
       }
@@ -1369,7 +1381,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       gap: '20px',
       maxWidth: '1400px',
       margin: '0 auto',
-      minHeight: 'calc(100vh - 120px)',
+      flex: 1,
+      minHeight: 0,
+      width: '100%',
       alignItems: 'stretch',
       position: 'relative'
     }}>
@@ -1549,6 +1563,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       {/* Main Chat Area */}
       <div style={{
         flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
@@ -1898,6 +1913,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '12px 18px' }}>
             <textarea
+              ref={textareaRef}
               rows={1}
               value={inputText}
               onChange={handleInputTextChange}
@@ -2002,7 +2018,54 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Github size={18} />
               </button>
 
-
+              {/* Quick Language Badges */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '2px', marginRight: '4px', paddingLeft: '10px', borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)' }}>
+                {['React', 'Java', 'Python'].map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => {
+                      const newText = inputText ? `${inputText} using ${lang}` : `Build a ${lang} app that `;
+                      setInputText(newText);
+                      if (textareaRef.current) {
+                        textareaRef.current.style.height = 'auto';
+                        setTimeout(() => {
+                           textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
+                        }, 50);
+                      }
+                    }}
+                    title={`Add ${lang} context`}
+                    style={{
+                      background: 'transparent',
+                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)',
+                      color: subtextColor,
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)';
+                      e.currentTarget.style.color = textColor;
+                      e.currentTarget.style.borderColor = isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.3)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = subtextColor;
+                      e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.15)';
+                    }}
+                  >
+                    {lang === 'React' && <Atom size={12} />}
+                    {lang === 'Java' && <Code2 size={12} />}
+                    {lang === 'Python' && <Activity size={12} />}
+                    {lang}
+                  </button>
+                ))}
+              </div>
               {/* Magic Wand Enhancer */}
               <button
                 onClick={handleMagicWandEnhance}
@@ -2374,6 +2437,104 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <><Github size={18} /> Import to Context</>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Magic Wand Modal */}
+      {isMagicWandModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          animation: 'fadeIn 0.2s ease',
+          padding: '24px'
+        }}>
+          <div style={{
+            background: isLight ? '#ffffff' : '#0d1127',
+            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.4)',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '640px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.4)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            <div style={{ padding: '24px 32px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '12px', background: 'linear-gradient(90deg, rgba(249, 115, 22, 0.1), transparent)' }}>
+              <Wand2 size={24} color="#f97316" />
+              <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Enhanced Specification</h3>
+              <button
+                onClick={() => setIsMagicWandModalOpen(false)}
+                style={{ position: 'absolute', top: '24px', right: '24px', background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
+              <p style={{ color: subtextColor, marginBottom: '20px', fontSize: '0.95rem' }}>Review and adjust the enhanced prompt before sending to the AI. Answer any clarifying questions added at the bottom.</p>
+              <textarea
+                value={magicWandResultText}
+                onChange={(e) => setMagicWandResultText(e.target.value)}
+                style={{
+                  width: '100%',
+                  height: '300px',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
+                  background: isLight ? '#f8fafc' : 'rgba(0,0,0,0.3)',
+                  color: textColor,
+                  fontSize: '0.95rem',
+                  fontFamily: 'monospace',
+                  lineHeight: '1.6',
+                  outline: 'none',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ padding: '24px 32px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', background: isLight ? '#f8fafc' : 'rgba(0,0,0,0.2)' }}>
+              <button
+                onClick={() => {
+                  setInputText(magicWandResultText);
+                  setIsMagicWandModalOpen(false);
+                  if (textareaRef.current) {
+                    textareaRef.current.style.height = 'auto';
+                    setTimeout(() => {
+                       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
+                    }, 50);
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: '700',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(249, 115, 22, 0.3)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <Sparkles size={18} /> Apply to Prompt
+              </button>
+            </div>
           </div>
         </div>
       )}
