@@ -1958,6 +1958,59 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               ))}
             </div>
 
+            {/* Glossy Project Type Selector Card */}
+            <div style={{
+              background: isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(30, 41, 59, 0.4)',
+              backdropFilter: 'blur(12px)',
+              border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '24px',
+              padding: '24px',
+              maxWidth: '500px',
+              margin: '0 auto 40px auto',
+              boxShadow: isLight ? '0 20px 40px rgba(0,0,0,0.05)' : '0 20px 40px rgba(0,0,0,0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: textColor, display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                <Sparkles size={18} color="#f97316" /> Choose your target platform
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <button 
+                  onClick={() => setInputValue("I want to build a responsive Website. ")}
+                  style={{
+                    background: isLight ? 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.05)',
+                    padding: '16px', borderRadius: '16px', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
+                    transition: 'all 0.2s',
+                    color: textColor
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.05)'; e.currentTarget.style.transform = 'none'; }}
+                >
+                  <Monitor size={28} color="#3b82f6" />
+                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Web App</span>
+                </button>
+                <button 
+                  onClick={() => setInputValue("I want to build a Mobile-first PWA. ")}
+                  style={{
+                    background: isLight ? 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.05)',
+                    padding: '16px', borderRadius: '16px', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
+                    transition: 'all 0.2s',
+                    color: textColor
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.05)'; e.currentTarget.style.transform = 'none'; }}
+                >
+                  <Smartphone size={28} color="#f97316" />
+                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Mobile App</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         ) : (
           /* Active Chat Thread */
