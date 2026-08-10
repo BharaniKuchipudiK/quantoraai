@@ -532,6 +532,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasCode, setCanvasCode] = useState('');
 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
