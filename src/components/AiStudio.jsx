@@ -2157,44 +2157,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onClick={handleMagicWandEnhance}
                 title="AI Magic Wand - Enhance & Expand Prompt"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
-                  border: isLight ? '1px solid rgba(249, 115, 22, 0.3)' : '1px solid rgba(249, 115, 22, 0.4)',
+                  background: isEnhancingPrompt ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)' : 'transparent',
+                  border: 'none',
                   color: '#f97316',
-                  padding: '5px 12px',
-                  borderRadius: '20px',
+                  padding: '6px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '0.78rem',
-                  fontWeight: '600'
+                  justifyContent: 'center',
                 }}
               >
-                <Wand2 size={14} color="#f97316" className={isEnhancingPrompt ? "animate-spin" : ""} />
-                <span>Magic Wand</span>
+                <Wand2 size={18} color={isEnhancingPrompt ? "#f97316" : subtextColor} className={isEnhancingPrompt ? "animate-spin" : ""} />
               </button>
 
               {/* Engine Settings Popover */}
               <div ref={inBarModelRef} style={{ position: 'relative' }}>
                 <button
                   onClick={() => setShowInBarModelDropdown(!showInBarModelDropdown)}
+                  title="Select AI Engine"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    background: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.08)',
-                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.15)',
-                    color: textColor,
-                    padding: '5px 12px',
-                    borderRadius: '20px',
-                    fontSize: '0.78rem',
-                    fontWeight: '600',
+                    justifyContent: 'center',
+                    background: showInBarModelDropdown ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+                    border: 'none',
+                    color: subtextColor,
+                    padding: '6px',
+                    borderRadius: '8px',
                     cursor: 'pointer'
                   }}
                 >
-                  <Settings size={13} color="#f97316" />
-                  <span>Engine</span>
-                  <ChevronDown size={12} color={subtextColor} />
+                  <Settings size={18} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
                 </button>
 
                 {showInBarModelDropdown && (
@@ -2344,19 +2338,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '5px',
+                  justifyContent: 'center',
                   background: webSearchEnabled ? 'rgba(2, 132, 199, 0.15)' : 'transparent',
-                  border: webSearchEnabled ? '1px solid rgba(2, 132, 199, 0.4)' : 'none',
+                  border: 'none',
                   color: webSearchEnabled ? '#0284c7' : subtextColor,
-                  padding: '5px 10px',
-                  borderRadius: '20px',
-                  fontSize: '0.78rem',
-                  fontWeight: '600',
+                  padding: '6px',
+                  borderRadius: '8px',
                   cursor: 'pointer'
                 }}
               >
-                <Globe size={13} />
-                <span>Web Grounding</span>
+                <Globe size={18} />
               </button>
             </div>
 
