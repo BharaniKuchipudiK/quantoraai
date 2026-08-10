@@ -1,134 +1,138 @@
 import React from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
-import { Linkedin, Twitter, Youtube } from 'lucide-react';
+import { Linkedin, Twitter, Youtube, ArrowRight } from 'lucide-react';
 
 export default function Footer({ isLight, activeTab, handleTabChange }) {
-  const footerBg = isLight ? '#ffffff' : '#05070f';
-  const textColor = isLight ? '#475569' : '#94a3b8';
-  const headingColor = isLight ? '#0f172a' : '#f8fafc';
-  const borderColor = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)';
+  // Enterprise footers (like Accenture/EY) are typically always dark and anchoring
+  const footerBg = '#000000';
+  const textColor = '#a1a1aa'; // zinc-400
+  const headingColor = '#ffffff';
+  const accentColor = '#f97316'; // orange-500
 
   return (
     <footer style={{
       background: footerBg,
-      borderTop: `1px solid ${borderColor}`,
-      padding: '60px 5%',
+      padding: '80px 5% 40px',
       color: textColor,
       fontFamily: "'Inter', sans-serif",
       position: 'relative',
       zIndex: 10,
-      transition: 'background 0.3s ease, border-color 0.3s ease'
+      borderTop: '4px solid #f97316'
     }}>
       <div style={{ 
         width: '100%', 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
-        gap: '40px'
+        maxWidth: '1400px',
+        margin: '0 auto',
+        display: 'flex', 
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        gap: '60px'
       }}>
         
-        {/* Left Side: Logo & Disclaimer */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div>
-            <QuantoraFullLogoSvg height={36} isDark={!isLight} tagline="" />
-            <div style={{ 
-              fontSize: '0.85rem', 
-              fontWeight: '800', 
-              color: headingColor, 
-              marginTop: '16px',
-              letterSpacing: '-0.01em',
-              textTransform: 'uppercase'
-            }}>
-              Prompt to Action
-            </div>
-          </div>
-          
+        {/* Brand Column */}
+        <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <QuantoraFullLogoSvg height={40} isDark={true} tagline="" />
+          <div style={{ width: '40px', height: '2px', background: accentColor }}></div>
           <p style={{ 
-            fontSize: '0.85rem', 
-            lineHeight: 1.6, 
+            fontSize: '0.9rem', 
+            lineHeight: 1.7, 
             color: textColor, 
             margin: 0,
-            opacity: 0.8,
             maxWidth: '400px'
           }}>
             Quantora refers to the global AI orchestration platform, bridging natural language directly to full-stack applications, interactive canvas workflows, and quantum circuit simulations.
           </p>
-        </div>
-
-        {/* Middle Column: Links */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h4 style={{ color: headingColor, fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px 0' }}>Platform</h4>
-          {['AI Studio', 'Dream Canvas', 'Quantum Horizon', 'Privacy Vault'].map((link) => (
-            <span 
-              key={link}
-              style={{ 
-                fontSize: '0.9rem', 
-                fontWeight: '600', 
-                color: textColor,
-                cursor: 'pointer',
-                transition: 'color 0.2s'
-              }}
-              className="hover:text-amber-500"
-            >
-              {link}
+          <div style={{ marginTop: '10px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: headingColor, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Prompt to Action
             </span>
-          ))}
+          </div>
         </div>
 
-        {/* Middle Column 2: Resources */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h4 style={{ color: headingColor, fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px 0' }}>Resources</h4>
-          {['Connect with us', 'Our locations', 'My Quantora', 'Site map', 'Legal and privacy'].map((link) => (
-            <span 
-              key={link}
-              style={{ 
-                fontSize: '0.9rem', 
-                fontWeight: '600', 
-                color: textColor,
-                cursor: 'pointer',
-                transition: 'color 0.2s'
-              }}
-              className="hover:text-amber-500"
-            >
-              {link}
-            </span>
-          ))}
-        </div>
-
-        {/* Right Column: Social & Legal */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <h4 style={{ color: headingColor, fontSize: '0.9rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px 0' }}>Connect</h4>
-          {/* Social Icons */}
-          <div style={{ display: 'flex', gap: '16px' }}>
-            {[
-              { icon: <Linkedin size={18} /> },
-              { icon: <Twitter size={18} /> },
-              { icon: <Youtube size={18} /> }
-            ].map((social, idx) => (
-              <div 
-                key={idx}
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: headingColor,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                className="hover:bg-amber-500 hover:text-white"
-              >
-                {social.icon}
+        {/* Links Columns Container */}
+        <div style={{ flex: '2 1 500px', display: 'flex', flexWrap: 'wrap', gap: '60px', justifyContent: 'space-between' }}>
+          
+          {/* Platform */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '160px' }}>
+            <h4 style={{ color: headingColor, fontSize: '0.95rem', fontWeight: '800', margin: '0 0 8px 0' }}>Platform</h4>
+            {['AI Studio', 'Dream Canvas', 'Quantum Horizon', 'Privacy Vault'].map((link) => (
+              <div key={link} className="group" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <ArrowRight size={14} className="text-transparent group-hover:text-amber-500 transition-colors" />
+                <span style={{ fontSize: '0.9rem', fontWeight: '500', transition: 'color 0.2s' }} className="group-hover:text-white">
+                  {link}
+                </span>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 'auto', fontSize: '0.8rem', color: textColor, opacity: 0.7 }}>
-            © {new Date().getFullYear()} Quantora Inc.<br/>All rights reserved.
+
+          {/* Resources */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '160px' }}>
+            <h4 style={{ color: headingColor, fontSize: '0.95rem', fontWeight: '800', margin: '0 0 8px 0' }}>Resources</h4>
+            {['Connect with us', 'Our locations', 'My Quantora', 'Site map', 'Legal and privacy'].map((link) => (
+              <div key={link} className="group" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <ArrowRight size={14} className="text-transparent group-hover:text-amber-500 transition-colors" />
+                <span style={{ fontSize: '0.9rem', fontWeight: '500', transition: 'color 0.2s' }} className="group-hover:text-white">
+                  {link}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Connect */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '160px' }}>
+            <h4 style={{ color: headingColor, fontSize: '0.95rem', fontWeight: '800', margin: '0 0 8px 0' }}>Connect</h4>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              {[
+                { icon: <Linkedin size={18} /> },
+                { icon: <Twitter size={18} /> },
+                { icon: <Youtube size={18} /> }
+              ].map((social, idx) => (
+                <div 
+                  key={idx}
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '4px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  className="hover:bg-amber-500 hover:border-amber-500"
+                >
+                  {social.icon}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
+      </div>
 
+      {/* Bottom Bar */}
+      <div style={{ 
+        width: '100%', 
+        maxWidth: '1400px', 
+        margin: '60px auto 0', 
+        paddingTop: '30px', 
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '20px'
+      }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: '500' }}>
+          © {new Date().getFullYear()} Quantora Inc. All rights reserved.
+        </div>
+        <div style={{ display: 'flex', gap: '24px', fontSize: '0.85rem', fontWeight: '500' }}>
+          <span style={{ cursor: 'pointer' }} className="hover:text-white">Privacy Statement</span>
+          <span style={{ cursor: 'pointer' }} className="hover:text-white">Terms & Conditions</span>
+          <span style={{ cursor: 'pointer' }} className="hover:text-white">Cookie Policy</span>
+        </div>
       </div>
     </footer>
   );

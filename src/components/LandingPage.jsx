@@ -48,7 +48,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       nav: 'AI Studio'
     },
     {
-      bg: '/hero_times_square.jpg',
+      bg: '/hero-bg.jpg',
       headline: <>Visualize architecture.<br/></>,
       gradientText: 'Architect the future.',
       sub: 'Map out your software architecture visually. Convert abstract concepts into structured, executable nodes in real-time.',
@@ -56,7 +56,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       nav: 'Dream Canvas'
     },
     {
-      bg: '/hero_gardens.jpg',
+      bg: '/hero-bg.jpg',
       headline: <>Simulate logic.<br/></>,
       gradientText: 'Command the quantum realm.',
       sub: 'Simulate 2-Qubit logic gates, compute exact state vector matrices, and synthesize IBM Qiskit code.',
