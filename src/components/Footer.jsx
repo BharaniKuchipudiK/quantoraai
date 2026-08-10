@@ -57,45 +57,67 @@ export default function Footer({ isLight, activeTab, handleTabChange }) {
       zIndex: 10,
       transition: 'background 0.3s ease, border-color 0.3s ease'
     }}>
-      <div style={{ maxWidth: '1240px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '80px' }}>
         
         {/* Top Section: Logo and Columns */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '48px', marginBottom: '80px' }}>
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gap: '48px',
+          alignItems: 'start'
+        }}>
           
-          {/* Brand Column */}
-          <div style={{ gridColumn: '1 / -1', '@media (min-width: 1024px)': { gridColumn: 'span 2' }, maxWidth: '300px' }}>
-            <div style={{ marginBottom: '24px' }}>
-              <QuantoraFullLogoSvg height={28} isDark={!isLight} tagline="" />
+          {/* Brand Column (Wider on Desktop) */}
+          <div style={{ flex: '1 1 300px', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <div style={{ marginLeft: '-4px' }}> {/* Slight negative margin to optically align the circular SVG with the flat text below */}
+              <QuantoraFullLogoSvg height={32} isDark={!isLight} tagline="" />
             </div>
-            <p style={{ fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '24px' }}>
+            <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: textColor, margin: 0 }}>
               Quantora bridges natural language directly to full-stack applications, interactive canvas workflows, and 3D quantum circuit simulations.
             </p>
           </div>
 
           {/* Link Columns */}
-          {columns.map((col, idx) => (
-            <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h4 style={{ color: headingColor, fontSize: '1rem', fontWeight: '700', marginBottom: '8px', letterSpacing: '0.02em' }}>
-                {col.title}
-              </h4>
-              {col.links.map((link, lIdx) => (
-                <span
-                  key={lIdx}
-                  onClick={() => link.tab ? handleTabChange(link.tab) : null}
-                  style={{
-                    fontSize: '0.9rem',
-                    cursor: link.tab ? 'pointer' : 'default',
-                    color: link.tab && activeTab === link.tab ? '#f97316' : textColor,
-                    transition: 'color 0.2s',
-                  }}
-                  onMouseEnter={(e) => { if (link.tab) e.currentTarget.style.color = '#f97316'; }}
-                  onMouseLeave={(e) => { if (link.tab) e.currentTarget.style.color = activeTab === link.tab ? '#f97316' : textColor; }}
-                >
-                  {link.name}
-                </span>
-              ))}
-            </div>
-          ))}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
+            gap: '40px',
+            flex: '2 1 600px'
+          }}>
+            {columns.map((col, idx) => (
+              <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <h4 style={{ 
+                  color: headingColor, 
+                  fontSize: '1rem', 
+                  fontWeight: '700', 
+                  margin: 0,
+                  letterSpacing: '0.02em',
+                  textTransform: 'uppercase'
+                }}>
+                  {col.title}
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {col.links.map((link, lIdx) => (
+                    <span
+                      key={lIdx}
+                      onClick={() => link.tab ? handleTabChange(link.tab) : null}
+                      style={{
+                        fontSize: '0.95rem',
+                        cursor: link.tab ? 'pointer' : 'default',
+                        color: link.tab && activeTab === link.tab ? '#f97316' : textColor,
+                        transition: 'color 0.2s',
+                        fontWeight: link.tab && activeTab === link.tab ? '600' : '400'
+                      }}
+                      onMouseEnter={(e) => { if (link.tab) e.currentTarget.style.color = '#f97316'; }}
+                      onMouseLeave={(e) => { if (link.tab) e.currentTarget.style.color = activeTab === link.tab ? '#f97316' : textColor; }}
+                    >
+                      {link.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Bottom Section: Legal and Copyright */}
@@ -109,13 +131,13 @@ export default function Footer({ isLight, activeTab, handleTabChange }) {
           borderTop: `1px solid ${borderColor}`,
           fontSize: '0.85rem'
         }}>
-          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-            <span style={{ cursor: 'pointer' }} className="hover:text-amber-500 transition-colors">Privacy Policy</span>
-            <span style={{ cursor: 'pointer' }} className="hover:text-amber-500 transition-colors">Terms of Service</span>
-            <span style={{ cursor: 'pointer' }} className="hover:text-amber-500 transition-colors">Cookie Notice</span>
-            <span style={{ cursor: 'pointer' }} className="hover:text-amber-500 transition-colors">Security</span>
+          <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Privacy Policy</span>
+            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Terms of Service</span>
+            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Cookie Notice</span>
+            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Security</span>
           </div>
-          <div>
+          <div style={{ fontWeight: '500' }}>
             © {new Date().getFullYear()} Quantora AI. All rights reserved.
           </div>
         </div>
