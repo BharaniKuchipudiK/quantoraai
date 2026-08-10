@@ -199,23 +199,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
         position: 'relative',
         zIndex: 10
       }}>
-        {/* Release Announcement Badge */}
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '6px 20px',
-          borderRadius: '9999px',
-          background: isLight ? 'rgba(249, 115, 22, 0.08)' : 'rgba(249, 115, 22, 0.15)',
-          border: isLight ? '1px solid rgba(249, 115, 22, 0.25)' : '1px solid rgba(251, 191, 36, 0.35)',
-          fontSize: '0.84rem',
-          fontWeight: '700',
-          color: '#f59e0b',
-          marginBottom: '24px'
-        }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
-          QUANTORA v3.2 • Quantum-Accelerated AI Studio Live
-        </div>
+
 
         {/* Quantora Masterpiece Emblem */}
         <div style={{ marginBottom: '24px', display: 'inline-block' }}>

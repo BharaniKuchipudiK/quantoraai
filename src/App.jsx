@@ -433,7 +433,6 @@ export default function App() {
             <span onClick={() => handleTabChange('studio')} style={{ cursor: 'pointer', color: activeTab === 'studio' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">AI Studio</span>
             <span onClick={() => handleTabChange('canvas')} style={{ cursor: 'pointer', color: activeTab === 'canvas' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Dream Canvas</span>
             <span onClick={() => handleTabChange('quantum')} style={{ cursor: 'pointer', color: activeTab === 'quantum' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Quantum</span>
-            <span onClick={() => handleTabChange('dashboard')} style={{ cursor: 'pointer', color: activeTab === 'dashboard' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Analytics</span>
             <span style={{ cursor: 'pointer', opacity: 0.6 }} className="hover:opacity-100 transition-opacity">Privacy</span>
             <span style={{ cursor: 'pointer', opacity: 0.6 }} className="hover:opacity-100 transition-opacity">Terms</span>
           </div>
