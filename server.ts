@@ -401,6 +401,95 @@ async function startServer() {
     }
   });
 
+  // API route for GitHub Context Fetching
+  app.post("/api/github/fetch-repo", async (req, res) => {
+    try {
+      const { repoUrl } = req.body;
+      if (!repoUrl) return res.status(400).json({ error: "repoUrl is required" });
+
+      // Extract owner and repo from URL (e.g. https://github.com/facebook/react)
+      const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (!match) return res.status(400).json({ error: "Invalid GitHub URL format" });
+      
+      const owner = match[1];
+      const repo = match[2].replace(/\.git$/, "");
+      const githubToken = process.env.GITHUB_TOKEN;
+
+      const headers: Record<string, string> = {
+        "User-Agent": "Quantora-API-Gateway",
+        "Accept": "application/vnd.github.v3+json"
+      };
+      if (githubToken) {
+        headers["Authorization"] = `Bearer ${githubToken}`;
+      }
+
+      // 1. Get Repo Metadata (to find default branch)
+      const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+      if (!repoRes.ok) {
+        if (repoRes.status === 404) return res.status(404).json({ error: "Repository not found or is private." });
+        if (repoRes.status === 403) return res.status(403).json({ error: "GitHub API rate limit exceeded. Please add GITHUB_TOKEN to server env." });
+        return res.status(repoRes.status).json({ error: "Failed to fetch repository metadata" });
+      }
+      const repoData = await repoRes.json();
+      const defaultBranch = repoData.default_branch || "main";
+
+      // 2. Get File Tree
+      const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`, { headers });
+      if (!treeRes.ok) return res.status(treeRes.status).json({ error: "Failed to fetch repository tree" });
+      const treeData = await treeRes.json();
+
+      // 3. Filter Files
+      const ignorePatterns = [
+        /node_modules\//, /\.git\//, /dist\//, /build\//, /\.vscode\//, /\.idea\//, /__pycache__\//,
+        /\.jpg$/, /\.jpeg$/, /\.png$/, /\.gif$/, /\.ico$/, /\.svg$/, /\.mp4$/, /\.webm$/, /\.mp3$/, /\.wav$/,
+        /\.pdf$/, /\.zip$/, /\.tar\.gz$/, /\.woff$/, /\.woff2$/, /\.ttf$/, /\.eot$/, /\.DS_Store$/, /\.lock$/
+      ];
+      
+      const MAX_FILES = 50; // Safety limit
+      const sourceFiles = treeData.tree.filter((file: any) => {
+        if (file.type !== "blob") return false;
+        if (ignorePatterns.some(pattern => pattern.test(file.path))) return false;
+        return true;
+      }).slice(0, MAX_FILES);
+
+      if (sourceFiles.length === 0) {
+        return res.status(400).json({ error: "No relevant source files found or repository is empty." });
+      }
+
+      // 4. Fetch File Contents Concurrently (Batched)
+      const results: string[] = [];
+      const batchSize = 10;
+      for (let i = 0; i < sourceFiles.length; i += batchSize) {
+        const batch = sourceFiles.slice(i, i + batchSize);
+        const fetches = batch.map(async (file: any) => {
+          const contentRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${defaultBranch}/${file.path}`, {
+            headers: githubToken ? { "Authorization": `Bearer ${githubToken}` } : {}
+          });
+          if (contentRes.ok) {
+            const content = await contentRes.text();
+            return `\n\n--- File: ${file.path} ---\n\n${content}`;
+          }
+          return `\n\n--- File: ${file.path} ---\n\n[Failed to fetch content]`;
+        });
+        const batchResults = await Promise.all(fetches);
+        results.push(...batchResults);
+      }
+
+      const finalContent = `# GitHub Repository: ${owner}/${repo}\nBranch: ${defaultBranch}\n${results.join("")}`;
+      
+      // Safety limit on total length (approx 250k chars / 50k tokens)
+      const truncatedContent = finalContent.length > 250000 
+        ? finalContent.slice(0, 250000) + "\n\n...[CONTENT TRUNCATED DUE TO SIZE LIMIT]..."
+        : finalContent;
+
+      return res.json({ name: `${owner}/${repo}`, content: truncatedContent });
+
+    } catch (err: any) {
+      console.error("Error in /api/github/fetch-repo:", err);
+      return res.status(500).json({ error: err.message || "Failed to process GitHub repository" });
+    }
+  });
+
   // Vite middleware for development vs production static serve
   const isExplicitProductionServe = process.env.NODE_ENV === "production" && process.env.SERVE_STATIC === "true";
   if (!isExplicitProductionServe) {

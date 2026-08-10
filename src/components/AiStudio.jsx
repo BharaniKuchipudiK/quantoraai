@@ -532,6 +532,47 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [previewCode, setPreviewCode] = useState('');
 
+  const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
+  const [githubRepoUrl, setGithubRepoUrl] = useState('');
+  const [isFetchingGithub, setIsFetchingGithub] = useState(false);
+  const [githubError, setGithubError] = useState('');
+
+  const handleImportGithub = async () => {
+    if (!githubRepoUrl) {
+      setGithubError("Please enter a valid GitHub URL");
+      return;
+    }
+    
+    setIsFetchingGithub(true);
+    setGithubError('');
+
+    try {
+      const response = await fetch('/api/github/fetch-repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: githubRepoUrl })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to import repository');
+      }
+
+      setAttachments(prev => [...prev, {
+        type: 'context',
+        name: data.name,
+        content: data.content
+      }]);
+      
+      setIsGithubModalOpen(false);
+      setGithubRepoUrl('');
+    } catch (err) {
+      setGithubError(err.message);
+    } finally {
+      setIsFetchingGithub(false);
+    }
+  };
+
   const openCanvasWithCode = (rawText) => {
     let cleanCode = '';
     const htmlMatch = rawText.match(/```html\n([\s\S]*?)```/i) || rawText.match(/```\n([\s\S]*?<html[\s\S]*?)```/i);
@@ -1944,7 +1985,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </button>
 
               <button
-                onClick={() => alert("GitHub integration coming soon!")}
+                onClick={() => setIsGithubModalOpen(true)}
                 title="Import from GitHub repository"
                 style={{
                   background: 'transparent',
@@ -2228,6 +2269,111 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               isLight={isLight} 
               onClose={() => setCanvasOpen(false)} 
             />
+          </div>
+        </div>
+      )}
+      {/* GitHub Import Modal */}
+      {isGithubModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          animation: 'fadeIn 0.2s ease'
+        }}>
+          <div style={{
+            background: isLight ? '#ffffff' : '#0f172a',
+            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '24px',
+            width: '90%',
+            maxWidth: '480px',
+            padding: '32px',
+            boxShadow: '0 24px 48px rgba(0,0,0,0.2)',
+            position: 'relative'
+          }}>
+            <button
+              onClick={() => setIsGithubModalOpen(false)}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                background: 'transparent',
+                border: 'none',
+                color: subtextColor,
+                cursor: 'pointer',
+                padding: '4px'
+              }}
+            >
+              <X size={20} />
+            </button>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f97316' }}>
+                <Github size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Import Repository</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Load codebase context directly into AI Studio.</p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: textColor, marginBottom: '8px' }}>GitHub Repository URL</label>
+              <input
+                type="text"
+                value={githubRepoUrl}
+                onChange={(e) => setGithubRepoUrl(e.target.value)}
+                placeholder="https://github.com/owner/repo"
+                disabled={isFetchingGithub}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  borderRadius: '12px',
+                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
+                  background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)',
+                  color: textColor,
+                  fontSize: '1rem',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#f97316'}
+                onBlur={(e) => e.target.style.borderColor = isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.2)'}
+              />
+              {githubError && <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
+            </div>
+
+            <button
+              onClick={handleImportGithub}
+              disabled={isFetchingGithub || !githubRepoUrl}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                background: isFetchingGithub ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                color: '#fff',
+                border: 'none',
+                fontWeight: '700',
+                fontSize: '1rem',
+                cursor: (isFetchingGithub || !githubRepoUrl) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: (isFetchingGithub || !githubRepoUrl) ? 'none' : '0 4px 14px rgba(249, 115, 22, 0.3)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {isFetchingGithub ? (
+                <><RefreshCw size={18} className="animate-spin" /> Fetching Codebase...</>
+              ) : (
+                <><Github size={18} /> Import to Context</>
+              )}
+            </button>
           </div>
         </div>
       )}
