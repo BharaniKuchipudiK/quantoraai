@@ -1,145 +1,132 @@
 import React from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
+import { Linkedin, Twitter, Youtube } from 'lucide-react';
 
 export default function Footer({ isLight, activeTab, handleTabChange }) {
-  const footerBg = isLight ? '#f1f5f9' : '#05070f';
-  const textColor = isLight ? '#334155' : '#94a3b8';
+  const footerBg = isLight ? '#ffffff' : '#05070f';
+  const textColor = isLight ? '#475569' : '#94a3b8';
   const headingColor = isLight ? '#0f172a' : '#f8fafc';
   const borderColor = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)';
-
-  const columns = [
-    {
-      title: 'Platforms',
-      links: [
-        { name: 'AI Studio', tab: 'studio' },
-        { name: 'Dream Canvas', tab: 'canvas' },
-        { name: 'Quantum Horizon', tab: 'quantum' },
-        { name: 'Privacy Vault', tab: 'vault' }
-      ]
-    },
-    {
-      title: 'Solutions',
-      links: [
-        { name: 'Enterprise Analytics', tab: null },
-        { name: 'Automated Deployments', tab: null },
-        { name: 'Model Orchestration', tab: null },
-        { name: 'API Security', tab: null }
-      ]
-    },
-    {
-      title: 'Insights',
-      links: [
-        { name: 'Documentation', tab: null },
-        { name: 'Research Papers', tab: null },
-        { name: 'Case Studies', tab: null },
-        { name: 'Blog', tab: null }
-      ]
-    },
-    {
-      title: 'Company',
-      links: [
-        { name: 'About Quantora', tab: null },
-        { name: 'Careers', tab: null },
-        { name: 'Contact Us', tab: null },
-        { name: 'Partners', tab: null }
-      ]
-    }
-  ];
 
   return (
     <footer style={{
       background: footerBg,
       borderTop: `1px solid ${borderColor}`,
-      padding: '80px 24px 40px 24px',
+      padding: '40px 24px',
       color: textColor,
       fontFamily: "'Inter', sans-serif",
       position: 'relative',
       zIndex: 10,
       transition: 'background 0.3s ease, border-color 0.3s ease'
     }}>
-      <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '80px' }}>
+      <div style={{ 
+        maxWidth: '1280px', 
+        margin: '0 auto', 
+        display: 'flex', 
+        flexDirection: 'row', 
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '40px'
+      }}>
         
-        {/* Top Section: Logo and Columns */}
+        {/* Left Side: Logo & Disclaimer */}
+        <div style={{ flex: '1 1 400px', maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div>
+            <QuantoraFullLogoSvg height={36} isDark={!isLight} tagline="" />
+            <div style={{ 
+              fontSize: '0.8rem', 
+              fontWeight: '700', 
+              color: headingColor, 
+              marginTop: '12px',
+              letterSpacing: '-0.01em'
+            }}>
+              Prompt to Action.
+            </div>
+          </div>
+          
+          <p style={{ 
+            fontSize: '0.75rem', 
+            lineHeight: 1.5, 
+            color: textColor, 
+            margin: 0,
+            opacity: 0.8
+          }}>
+            Quantora refers to the global AI orchestration platform, bridging natural language directly to full-stack applications, interactive canvas workflows, and quantum circuit simulations.
+          </p>
+        </div>
+
+        {/* Right Side: Links & Social */}
         <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-          gap: '48px',
-          alignItems: 'start'
+          flex: '1 1 400px', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          gap: '32px'
         }}>
           
-          {/* Brand Column (Wider on Desktop) */}
-          <div style={{ flex: '1 1 300px', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
-            <div style={{ marginLeft: '-4px' }}> {/* Slight negative margin to optically align the circular SVG with the flat text below */}
-              <QuantoraFullLogoSvg height={32} isDark={!isLight} tagline="" />
-            </div>
-            <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: textColor, margin: 0 }}>
-              Quantora bridges natural language directly to full-stack applications, interactive canvas workflows, and 3D quantum circuit simulations.
-            </p>
+          {/* Horizontal Links */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '24px', 
+            flexWrap: 'wrap', 
+            justifyContent: 'flex-end' 
+          }}>
+            {['Connect with us', 'Our locations', 'My Quantora', 'Site map', 'Legal and privacy'].map((link) => (
+              <span 
+                key={link}
+                style={{ 
+                  fontSize: '0.85rem', 
+                  fontWeight: '700', 
+                  color: headingColor,
+                  cursor: 'pointer',
+                  borderBottom: `2px solid ${headingColor}`,
+                  paddingBottom: '2px',
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = 0.7}
+                onMouseLeave={e => e.currentTarget.style.opacity = 1}
+              >
+                {link}
+              </span>
+            ))}
           </div>
 
-          {/* Link Columns */}
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
-            gap: '40px',
-            flex: '2 1 600px'
-          }}>
-            {columns.map((col, idx) => (
-              <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <h4 style={{ 
-                  color: headingColor, 
-                  fontSize: '1rem', 
-                  fontWeight: '700', 
-                  margin: 0,
-                  letterSpacing: '0.02em',
-                  textTransform: 'uppercase'
-                }}>
-                  {col.title}
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {col.links.map((link, lIdx) => (
-                    <span
-                      key={lIdx}
-                      onClick={() => link.tab ? handleTabChange(link.tab) : null}
-                      style={{
-                        fontSize: '0.95rem',
-                        cursor: link.tab ? 'pointer' : 'default',
-                        color: link.tab && activeTab === link.tab ? '#f97316' : textColor,
-                        transition: 'color 0.2s',
-                        fontWeight: link.tab && activeTab === link.tab ? '600' : '400'
-                      }}
-                      onMouseEnter={(e) => { if (link.tab) e.currentTarget.style.color = '#f97316'; }}
-                      onMouseLeave={(e) => { if (link.tab) e.currentTarget.style.color = activeTab === link.tab ? '#f97316' : textColor; }}
-                    >
-                      {link.name}
-                    </span>
-                  ))}
-                </div>
+          {/* Social Icons */}
+          <div style={{ display: 'flex', gap: '16px' }}>
+            {[
+              { icon: <Linkedin size={16} /> },
+              { icon: <Twitter size={16} /> },
+              { icon: <Youtube size={16} /> }
+            ].map((social, idx) => (
+              <div 
+                key={idx}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  border: `1px solid ${borderColor}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: headingColor,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = headingColor;
+                  e.currentTarget.style.color = footerBg;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = headingColor;
+                }}
+              >
+                {social.icon}
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Bottom Section: Legal and Copyright */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          flexWrap: 'wrap', 
-          gap: '24px', 
-          paddingTop: '32px',
-          borderTop: `1px solid ${borderColor}`,
-          fontSize: '0.85rem'
-        }}>
-          <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Privacy Policy</span>
-            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Terms of Service</span>
-            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Cookie Notice</span>
-            <span style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = headingColor} onMouseLeave={e => e.currentTarget.style.color = textColor}>Security</span>
-          </div>
-          <div style={{ fontWeight: '500' }}>
-            © {new Date().getFullYear()} Quantora AI. All rights reserved.
-          </div>
         </div>
 
       </div>
