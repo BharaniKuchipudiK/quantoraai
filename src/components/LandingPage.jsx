@@ -35,6 +35,40 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationComplete, setSimulationComplete] = useState(false);
 
+  // Hero Carousel State
+  const [heroSlide, setHeroSlide] = useState(0);
+
+  const heroSlides = [
+    {
+      bg: '/hero-bg.jpg',
+      headline: <>Confidence to reimagine.<br/></>,
+      gradientText: 'Power to realize.',
+      sub: 'Quantora gives you the power to unleash your ideas. Transform your dreams into live software, scale your vision, and shape the future.',
+      cta: 'Start here',
+      nav: 'AI Studio'
+    },
+    {
+      bg: '/card-bg-canvas.jpg',
+      headline: <>Visualize architecture.<br/></>,
+      gradientText: 'Architect the future.',
+      sub: 'Map out your software architecture visually. Convert abstract concepts into structured, executable nodes in real-time.',
+      cta: 'Launch Canvas',
+      nav: 'Dream Canvas'
+    },
+    {
+      bg: '/card-bg-quantum.jpg',
+      headline: <>Simulate logic.<br/></>,
+      gradientText: 'Command the quantum realm.',
+      sub: 'Simulate 2-Qubit logic gates, compute exact state vector matrices, and synthesize IBM Qiskit code.',
+      cta: 'Simulate Circuits',
+      nav: 'Quantum Horizon'
+    }
+  ];
+
+  const nextSlide = () => setHeroSlide((prev) => (prev + 1) % heroSlides.length);
+  const prevSlide = () => setHeroSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length);
+
+
   // Use global theme
   const isLight = themeMode === 'light';
 
@@ -79,10 +113,10 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         background: navBg,
         backdropFilter: 'blur(20px)',
         borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)',
-        padding: '14px 36px',
+        padding: '14px 5%',
         transition: 'all 0.3s ease'
       }}>
-        <div style={{ maxWidth: '1350px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
           {/* Brand Logo */}
           <div style={{ cursor: 'pointer' }} onClick={() => user ? onLaunchStudio() : onOpenAuth()}>
             <QuantoraFullLogoSvg height={38} isDark={!isLight} tagline="PROMPT TO ACTION" />
@@ -170,76 +204,86 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       {/* Flagship Hero Section */}
       <section style={{
         width: '100%',
-        minHeight: '100vh',
+        height: 'calc(100vh - 67px)', // Fits perfectly within viewport accounting for header
+        minHeight: '600px', // Fallback for very small screens
         display: 'flex',
         alignItems: 'center',
-        padding: '100px 5% 120px 5%',
+        padding: '0 5%',
         position: 'relative',
         zIndex: 10,
-        backgroundImage: 'url(/hero-bg.jpg)',
+        backgroundImage: `url(${heroSlides[heroSlide].bg})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
-        backgroundAttachment: 'fixed',
+        transition: 'background-image 0.5s ease-in-out'
       }}>
-        {/* Overlay for readability while letting the city glow through */}
+        {/* Subtle gradient behind text instead of washing out the entire image */}
         <div style={{
           position: 'absolute',
           top: 0,
           left: 0,
-          right: 0,
-          bottom: 0,
-          background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(7, 9, 19, 0.70)',
-          zIndex: 0
+          width: '50%',
+          height: '100%',
+          background: 'linear-gradient(90deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 100%)',
+          zIndex: 0,
+          opacity: isLight ? 1 : 0
+        }} />
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '60%',
+          height: '100%',
+          background: 'linear-gradient(90deg, rgba(7,9,19,0.9) 0%, rgba(7,9,19,0) 100%)',
+          zIndex: 0,
+          opacity: isLight ? 0 : 1
         }} />
 
         <div style={{
-          maxWidth: '1350px',
-          margin: '0 auto',
           width: '100%',
           textAlign: 'left',
           position: 'relative',
-          zIndex: 10
+          zIndex: 10,
+          marginTop: '-40px' // Nudge up slightly to balance bottom carousel
         }}>
-          <div style={{ maxWidth: '900px' }}>
-            {/* Headline (Accenture Style: Massive, Uppercase, > symbol) */}
+          <div style={{ maxWidth: '900px' }} key={heroSlide} className="animate-fade-in-up">
+            {/* Headline */}
             <h1 style={{
-              fontSize: 'clamp(4rem, 8vw, 7.5rem)',
+              fontSize: 'clamp(4rem, 7vw, 7.5rem)',
               fontWeight: '900',
-              lineHeight: 1,
-              color: textColor,
-              marginBottom: '32px',
+              lineHeight: 1.05,
+              color: isLight ? '#0f172a' : '#ffffff', // Ensure high contrast against the subtle gradient
+              marginBottom: '24px',
               letterSpacing: '-0.02em',
               textTransform: 'uppercase'
             }}>
-              Confidence to reimagine.<br/>
+              {heroSlides[heroSlide].headline}
               <span style={{
                 background: 'linear-gradient(135deg, #fde047 0%, #ea580c 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent'
               }}>
-                Power to realize.
+                {heroSlides[heroSlide].gradientText}
               </span>
             </h1>
 
-            {/* Subtitle (EY Style: Vertical Gold Line Accent) */}
+            {/* Subtitle */}
             <div style={{
               borderLeft: '5px solid #f97316',
               paddingLeft: '24px',
-              marginBottom: '56px',
+              marginBottom: '40px',
               maxWidth: '700px'
             }}>
               <p style={{
-                fontSize: 'clamp(1.15rem, 2vw, 1.4rem)',
-                color: textColor,
-                opacity: 0.95,
+                fontSize: 'clamp(1.15rem, 1.5vw, 1.4rem)',
+                color: isLight ? '#334155' : '#e2e8f0',
                 lineHeight: 1.6,
-                fontWeight: '500'
+                fontWeight: '600'
               }}>
-                Quantora gives you the power to unleash your ideas. Transform your dreams into live software, scale your vision, and shape the future.
+                {heroSlides[heroSlide].sub}
               </p>
             </div>
 
-            {/* Primary Call to Actions (Accenture Style Sharp Geometric Button) */}
+            {/* Primary Call to Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => user ? onLaunchStudio() : onOpenAuth()}
@@ -257,16 +301,16 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
                   padding: '20px 36px',
                   fontSize: '1.25rem',
                   fontWeight: '800',
-                  background: isLight ? '#000000' : '#ffffff',
-                  color: isLight ? '#ffffff' : '#000000',
+                  background: '#000000',
+                  color: '#ffffff',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em'
                 }}>
-                  Start here
+                  {heroSlides[heroSlide].cta}
                 </div>
                 <div style={{
                   padding: '0 24px',
-                  background: '#ea580c', // Bright orange/gold accent block
+                  background: '#ea580c',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -283,13 +327,13 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         {/* Bottom Interactive Navigation / Carousel Controls (EY Style) */}
         <div style={{
           position: 'absolute',
-          bottom: '40px',
+          bottom: '30px',
           left: '5%',
           right: '5%',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderTop: isLight ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.15)',
+          borderTop: isLight ? '1px solid rgba(0,0,0,0.2)' : '1px solid rgba(255,255,255,0.2)',
           paddingTop: '20px',
           zIndex: 10,
           flexWrap: 'wrap',
@@ -297,21 +341,36 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         }}>
           {/* Link List */}
           <div style={{ display: 'flex', gap: '40px', overflowX: 'auto', paddingBottom: '4px' }}>
-            <span style={{ fontSize: '1.05rem', fontWeight: '700', color: textColor, borderBottom: '3px solid #ea580c', paddingBottom: '6px', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.03em' }}>AI Studio</span>
-            <span style={{ fontSize: '1.05rem', fontWeight: '600', color: textColor, opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s', paddingBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.03em' }} className="hover:opacity-100">Dream Canvas</span>
-            <span style={{ fontSize: '1.05rem', fontWeight: '600', color: textColor, opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s', paddingBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.03em' }} className="hover:opacity-100">Quantum Horizon</span>
+            {heroSlides.map((slide, index) => (
+              <span 
+                key={index}
+                onClick={() => setHeroSlide(index)}
+                style={{ 
+                  fontSize: '1.05rem', 
+                  fontWeight: heroSlide === index ? '800' : '600', 
+                  color: isLight ? '#0f172a' : '#ffffff', 
+                  opacity: heroSlide === index ? 1 : 0.6,
+                  borderBottom: heroSlide === index ? '3px solid #ea580c' : '3px solid transparent', 
+                  paddingBottom: '6px', 
+                  cursor: 'pointer', 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.05em',
+                  transition: 'all 0.2s ease'
+                }} 
+                className="hover:opacity-100"
+              >
+                {slide.nav}
+              </span>
+            ))}
           </div>
 
           {/* Circular Controls */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: textColor, transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
-              <ArrowLeft size={20} strokeWidth={1.5} />
+            <button onClick={prevSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.4)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#000' : '#fff', transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+              <ArrowLeft size={20} strokeWidth={2} />
             </button>
-            <button style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: textColor, transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
-              <ArrowRight size={20} strokeWidth={1.5} />
-            </button>
-            <button style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.3)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: textColor, transition: 'all 0.2s', marginLeft: '8px' }} className="hover:bg-black/10 dark:hover:bg-white/10">
-              <Play size={18} strokeWidth={1.5} fill="currentColor" />
+            <button onClick={nextSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: isLight ? '1px solid rgba(0,0,0,0.4)' : '1px solid rgba(255,255,255,0.4)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#000' : '#fff', transition: 'all 0.2s' }} className="hover:bg-black/10 dark:hover:bg-white/10">
+              <ArrowRight size={20} strokeWidth={2} />
             </button>
           </div>
         </div>
