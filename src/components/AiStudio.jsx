@@ -1393,6 +1393,51 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </button>
         </div>
 
+        {/* Starter Templates Section */}
+        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
+          Starter Templates
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', marginBottom: '24px' }}>
+          {[
+            { title: 'Task Manager App', icon: <FileText size={15} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
+            { title: 'iOS Calculator', icon: <Calculator size={15} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
+            { title: 'AI Beat Synthesizer', icon: <Music size={15} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
+            { title: 'Quantum Simulator', icon: <Atom size={15} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
+          ].map((card, idx) => (
+            <div
+              key={idx}
+              onClick={() => {
+                handleSendMessage(card.prompt);
+                if (window.innerWidth < 768) setSidebarOpen(false);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontWeight: '500',
+                color: textColor,
+                border: '1px solid transparent',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'transparent';
+              }}
+            >
+              <div style={{ flexShrink: 0 }}>{card.icon}</div>
+              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
+            </div>
+          ))}
+        </div>
+
         {/* History Section Title */}
         <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
           Chat History
@@ -1660,54 +1705,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 32px 0', color: subtextColor }}>
               What would you like to build today?
             </p>
-
-            {/* 4 Clean Starter Cards Grid on Initial Empty View */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '12px',
-              marginTop: '20px'
-            }}>
-              {[
-                { title: 'Task Manager App', desc: 'Build a task tracker with status filters & categories', icon: <FileText size={18} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
-                { title: 'iOS Calculator', desc: 'Build an interactive calculator with conversion history', icon: <Calculator size={18} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
-                { title: 'AI Beat Synthesizer', desc: 'Create a drum machine with multi-track BPM controls', icon: <Music size={18} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
-                { title: 'Quantum Simulator', desc: 'Simulate Bell state entanglement & Hadamard gates', icon: <Atom size={18} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
-              ].map((card, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => handleSendMessage(card.prompt)}
-                  style={{
-                    background: isLight ? '#ffffff' : 'rgba(13, 17, 39, 0.6)',
-                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '14px',
-                    padding: '14px 16px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px',
-                    textAlign: 'left'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#f97316';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = isLight ? '0 6px 16px rgba(249, 115, 22, 0.12)' : '0 6px 20px rgba(0,0,0,0.3)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
-                    e.currentTarget.style.transform = 'none';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {card.icon}
-                    <span style={{ fontSize: '0.88rem', fontWeight: '700', color: textColor }}>{card.title}</span>
-                  </div>
-                  <span style={{ fontSize: '0.78rem', color: subtextColor, lineHeight: '1.4' }}>{card.desc}</span>
-                </div>
-              ))}
-            </div>
 
           </div>
         ) : (

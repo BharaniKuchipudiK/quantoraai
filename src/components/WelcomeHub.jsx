@@ -36,7 +36,7 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
           fontSize: '1.25rem',
           color: subtextColor,
           fontWeight: '500',
-          maxWidth: '800px',
+          maxWidth: '100%',
           lineHeight: '1.6'
         }}>
           Welcome to Quantora. Select a module below to start building, analyzing, or exploring.
