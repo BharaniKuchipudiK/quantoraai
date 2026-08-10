@@ -1892,9 +1892,71 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <h1 style={{ fontSize: '2.6rem', fontWeight: '800', margin: '0 0 8px 0', color: textColor, letterSpacing: '-0.03em' }}>
               Hello, {user?.name ? user.name.split(' ')[0] : 'Bharani'}
             </h1>
-            <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 32px 0', color: subtextColor }}>
+            <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 40px 0', color: subtextColor }}>
               What would you like to build today?
             </p>
+
+            {/* AI Models Highlight Carousel */}
+            <div style={{
+              display: 'flex',
+              gap: '16px',
+              overflowX: 'auto',
+              paddingBottom: '20px',
+              margin: '0 -20px',
+              padding: '0 20px 20px 20px',
+              scrollbarWidth: 'none', /* Firefox */
+              msOverflowStyle: 'none', /* IE */
+              scrollSnapType: 'x mandatory'
+            }}>
+              <style>{`
+                div::-webkit-scrollbar { display: none; }
+              `}</style>
+              
+              {[
+                { name: "Gemini 1.5 Pro", desc: "2M Context Window • Advanced Reasoning for complex logic.", icon: <Cpu size={20} color="#f97316"/>, badge: "NEW", color: "#f97316" },
+                { name: "Claude 3.5 Sonnet", desc: "Ultra-fast coding via OpenRouter integration.", icon: <Sparkles size={20} color="#8b5cf6"/>, badge: "HOT", color: "#8b5cf6" },
+                { name: "Llama 3 70B", desc: "Open-source powerhouse with zero filters.", icon: <Layers size={20} color="#10b981"/>, badge: "UPDATED", color: "#10b981" }
+              ].map((model, idx) => (
+                <div key={idx} style={{
+                  flex: '0 0 240px',
+                  background: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  scrollSnapAlign: 'start',
+                  boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.03)' : '0 8px 32px rgba(0,0,0,0.2)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
+                }}
+                onMouseEnter={(e) => { 
+                  e.currentTarget.style.transform = 'translateY(-3px)'; 
+                  e.currentTarget.style.boxShadow = `0 12px 24px ${model.color}33`; 
+                  e.currentTarget.style.borderColor = `${model.color}66`;
+                }}
+                onMouseLeave={(e) => { 
+                  e.currentTarget.style.transform = 'none'; 
+                  e.currentTarget.style.boxShadow = isLight ? '0 4px 12px rgba(0,0,0,0.03)' : '0 8px 32px rgba(0,0,0,0.2)'; 
+                  e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+                }}
+                >
+                  <div style={{ position: 'absolute', top: 0, right: 0, background: `${model.color}22`, color: model.color, fontSize: '0.65rem', fontWeight: '800', padding: '4px 10px', borderBottomLeftRadius: '12px' }}>
+                    {model.badge}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{ background: `${model.color}15`, padding: '8px', borderRadius: '12px', display: 'flex' }}>
+                      {model.icon}
+                    </div>
+                    <h3 style={{ margin: 0, fontSize: '0.95rem', color: textColor, fontWeight: '700' }}>{model.name}</h3>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: subtextColor, lineHeight: '1.5' }}>
+                    {model.desc}
+                  </p>
+                </div>
+              ))}
+            </div>
 
           </div>
         ) : (
