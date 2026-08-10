@@ -2877,57 +2877,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       {isEnhancingPrompt && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: isLight ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(24px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+          background: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(36px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(36px) saturate(200%)',
           zIndex: 3000,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: 'fadeIn 0.3s ease'
+          animation: 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
         }}>
           <div style={{
-            background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(15, 23, 42, 0.8)',
-            border: isLight ? '1px solid rgba(255,255,255,1)' : '1px solid rgba(255,255,255,0.1)',
-            padding: '32px 48px',
-            borderRadius: '32px',
-            boxShadow: isLight ? '0 32px 64px rgba(0,0,0,0.08)' : '0 32px 64px rgba(0,0,0,0.5)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px'
+            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15, 23, 42, 0.9)',
+            border: isLight ? '1px solid rgba(226,232,240,1)' : '1px solid rgba(255,255,255,0.1)',
+            padding: '48px 64px',
+            borderRadius: '24px',
+            boxShadow: isLight ? '0 40px 80px rgba(0,0,0,0.06)' : '0 40px 80px rgba(0,0,0,0.6)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px',
+            minWidth: '400px'
           }}>
-            <Wand2 size={48} color="#f97316" className="animate-spin" style={{ animationDuration: '3s' }} />
-            <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '700', color: textColor }}>
-              The Magic Wand is doing its magic...
+            <Wand2 size={56} color="#f97316" className="animate-spin" style={{ animationDuration: '4s' }} />
+            <h3 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: textColor, letterSpacing: '-0.02em' }}>
+              Synthesizing Architecture
             </h3>
-            <p style={{ margin: 0, color: subtextColor, fontSize: '1rem' }}>
-              Optimizing your prompt. Worth waiting.
+            <p style={{ margin: 0, color: subtextColor, fontSize: '1.1rem', fontWeight: '400' }}>
+              Orchestrating multi-model pipelines for your prompt.
             </p>
           </div>
         </div>
       )}
-
-      {/* The Hero Card Modal (Image 3) */}
-      {showHeroCardModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(30px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-          zIndex: 2500,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: 'fadeIn 0.3s ease',
-          padding: '24px'
-        }}>
-          <div style={{
-            width: '100%', maxWidth: '800px',
-            background: 'linear-gradient(135deg, rgba(30,30,40,0.8) 0%, rgba(15,15,25,0.9) 100%)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '40px',
-            padding: '60px 40px',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '40px',
-            boxShadow: '0 40px 100px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.15)',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            {/* Ambient glows inside the card */}
-            <div style={{ position: 'absolute', top: '-20%', left: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
             <div style={{ position: 'absolute', bottom: '-20%', right: '-10%', width: '60%', height: '60%', background: 'radial-gradient(circle, rgba(56, 189, 248, 0.3) 0%, transparent 70%)', filter: 'blur(60px)', pointerEvents: 'none' }} />
 
             <button
