@@ -529,8 +529,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [arenaMode, setArenaMode] = useState(false);
   const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
-  const [canvasOpen, setCanvasOpen] = useState(false);
-  const [previewCode, setPreviewCode] = useState('');
+  const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
+  const [workspaceCode, setWorkspaceCode] = useState('');
+  const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
@@ -1375,29 +1376,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             ));
   }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth]);
+
   return (
     <div style={{
       display: 'flex',
       gap: '20px',
-      maxWidth: '1400px',
+      maxWidth: isWorkspaceMode ? '100%' : '1400px',
+      padding: isWorkspaceMode ? '20px' : '0',
       margin: '0 auto',
       flex: 1,
       minHeight: 0,
       width: '100%',
       alignItems: 'stretch',
-      position: 'relative'
+      position: 'relative',
+      transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
-      {/* Left Navigation Sidebar - Chat History (ChatGPT / Claude / Gemini style) */}
+      {/* Left Navigation Sidebar - Chat History */}
       <div style={{
-        width: sidebarOpen ? '260px' : '0px',
+        width: sidebarOpen ? (isWorkspaceMode ? '220px' : '260px') : '0px',
         opacity: sidebarOpen ? 1 : 0,
         pointerEvents: sidebarOpen ? 'auto' : 'none',
-        transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         display: 'flex',
         flexDirection: 'column',
         background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
         border: 'none',
-        borderRadius: '0 24px 24px 0',
+        borderRadius: isWorkspaceMode ? '16px' : '0 24px 24px 0',
         padding: sidebarOpen ? '20px 16px' : '0px',
         overflow: 'hidden',
         flexShrink: 0
@@ -1560,17 +1564,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
       </div>
 
-      {/* Main Chat Area */}
+      {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div style={{
-        flex: 1,
-        minHeight: 0,
+        flex: isWorkspaceMode ? '0 0 35%' : 1,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        maxWidth: '850px',
-        margin: '0 auto',
-        width: '100%',
-        position: 'relative'
+        maxWidth: isWorkspaceMode ? '35%' : '800px',
+        margin: isWorkspaceMode ? '0' : '0 auto',
+        padding: isWorkspaceMode ? '0' : '20px',
+        minHeight: 0,
+        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Top Header Bar */}
         <div style={{
@@ -1604,6 +1607,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <PanelLeft size={18} />
               </button>
             )}
+
+            <button
+              onClick={() => setIsWorkspaceMode(!isWorkspaceMode)}
+              title={isWorkspaceMode ? "Close Code Canvas" : "Open Code Canvas"}
+              style={{
+                background: isWorkspaceMode ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' : (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)'),
+                color: isWorkspaceMode ? '#fff' : subtextColor,
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                transition: 'all 0.2s ease',
+                boxShadow: isWorkspaceMode ? '0 4px 12px rgba(249, 115, 22, 0.3)' : 'none'
+              }}
+            >
+              <Layout size={14} />
+              <span className="hidden md:inline">Workspace</span>
+            </button>
 
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sparkles size={20} color="#f97316" />
@@ -2331,6 +2357,101 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         </div>
       )}
+
+      {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
+      {isWorkspaceMode && (
+        <div style={{
+          flex: '0 0 calc(65% - 20px)',
+          background: isLight ? '#ffffff' : '#0d1127',
+          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          boxShadow: isLight ? '0 10px 40px rgba(0,0,0,0.05)' : '0 20px 60px rgba(0,0,0,0.4)',
+          animation: 'slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          position: 'relative'
+        }}>
+          {/* Canvas Header (File Tabs) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: isLight ? '#f8fafc' : '#0a0d1e',
+            borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '0 16px',
+            height: '48px',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', gap: '4px', height: '100%' }}>
+              {['App.jsx', 'styles.css', 'package.json'].map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setWorkspaceActiveTab(tab)}
+                  style={{
+                    background: workspaceActiveTab === tab ? (isLight ? '#ffffff' : '#0d1127') : 'transparent',
+                    border: 'none',
+                    color: workspaceActiveTab === tab ? '#f97316' : subtextColor,
+                    padding: '0 16px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: workspaceActiveTab === tab ? '600' : '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    height: '100%',
+                    borderTop: workspaceActiveTab === tab ? '2px solid #f97316' : '2px solid transparent',
+                    borderLeft: workspaceActiveTab === tab && isLight ? '1px solid #e2e8f0' : '1px solid transparent',
+                    borderRight: workspaceActiveTab === tab && isLight ? '1px solid #e2e8f0' : '1px solid transparent',
+                    borderBottom: 'none',
+                    transition: 'all 0.2s ease',
+                    marginTop: 'auto'
+                  }}
+                >
+                  {tab.includes('.jsx') ? <Code2 size={14} /> : <FileText size={14} />}
+                  {tab}
+                </button>
+              ))}
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Play size={12} /> Preview App
+              </button>
+              <button 
+                onClick={() => setIsWorkspaceMode(false)}
+                style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas Editor Area */}
+          <div style={{ flex: 1, overflow: 'auto', background: '#0d1127', padding: '24px', position: 'relative' }}>
+             {/* Line Numbers */}
+             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none' }}>
+                {Array.from({ length: Math.max(20, (workspaceCode.match(/\n/g) || []).length + 2) }).map((_, i) => (
+                  <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
+                ))}
+             </div>
+             <pre style={{
+                margin: 0,
+                marginLeft: '36px',
+                paddingLeft: '16px',
+                fontFamily: '"Fira Code", monospace',
+                fontSize: '0.9rem',
+                lineHeight: '1.6',
+                color: '#e2e8f0',
+                outline: 'none',
+                whiteSpace: 'pre-wrap'
+             }}>
+                {workspaceActiveTab === 'App.jsx' ? (workspaceCode || '// Quantora FX Interactive Canvas\n// Tell Quantora to build something, and the code will appear here.') : `// ${workspaceActiveTab} content`}
+             </pre>
+          </div>
+        </div>
+      )}
+
       {/* GitHub Import Modal */}
       {isGithubModalOpen && (
         <div style={{
