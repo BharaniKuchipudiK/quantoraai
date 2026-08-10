@@ -132,14 +132,19 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user }) {
         </div>
       </header>
 
-      {/* Flagship Hero Section */}
       <section style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-        padding: '80px 24px 60px 24px',
+        maxWidth: '960px',
+        margin: '60px auto 80px auto',
+        padding: '64px 40px',
         textAlign: 'center',
         position: 'relative',
-        zIndex: 10
+        zIndex: 10,
+        background: isLight ? 'linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.85))' : 'rgba(15, 23, 42, 0.4)',
+        backdropFilter: 'blur(40px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+        border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '40px',
+        boxShadow: isLight ? '0 32px 64px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255,255,255,0.6) inset' : '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)'
       }}>
         {/* Emblem Node with PROMPT TO ACTION Caption */}
         <div style={{ marginBottom: '32px', display: 'inline-block' }}>
