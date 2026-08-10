@@ -1976,8 +1976,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               ].map((model, idx) => (
                 <div key={idx} style={{
                   flex: '0 0 240px',
-                  background: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.05)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border: isLight ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
+                  boxShadow: isLight ? '0 8px 32px rgba(31, 38, 135, 0.07)' : '0 8px 32px rgba(0, 0, 0, 0.3)',
                   borderRadius: '16px',
                   padding: '16px',
                   scrollSnapAlign: 'start',
@@ -2172,20 +2175,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               bottom: 'calc(100% + 12px)',
               left: '50%',
               transform: 'translateX(-50%)',
-              background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(30, 41, 59, 0.95)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(15, 23, 42, 0.85)',
+              backdropFilter: 'blur(24px) saturate(150%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
               borderRadius: '16px',
               padding: '8px',
               width: '320px',
-              boxShadow: isLight ? '0 10px 40px rgba(0,0,0,0.1)' : '0 10px 40px rgba(0,0,0,0.5)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)',
               zIndex: 100,
               display: 'flex',
               flexDirection: 'column',
               gap: '4px'
             }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: subtextColor, padding: '8px 12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'rgba(255,255,255,0.5)', padding: '8px 12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Confirm Intent
               </div>
               {[
@@ -2202,8 +2205,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '10px',
-                    background: intentSelectedIndex === idx ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
-                    color: intentSelectedIndex === idx ? (isLight ? '#0f172a' : '#ffffff') : subtextColor,
+                    background: intentSelectedIndex === idx ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                    color: intentSelectedIndex === idx ? '#ffffff' : 'rgba(255, 255, 255, 0.6)',
+                    border: intentSelectedIndex === idx ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
+                    boxShadow: intentSelectedIndex === idx ? '0 0 20px rgba(255,255,255,0.05)' : 'none',
                     cursor: 'pointer', transition: 'all 0.1s'
                   }}
                 >
@@ -2901,19 +2906,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           padding: '24px'
         }}>
           <div style={{
-            background: isLight ? '#ffffff' : '#0d1127',
-            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.4)',
+            background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(32px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(32px) saturate(150%)',
+            border: isLight ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.15)',
             borderRadius: '24px',
             width: '100%',
             maxWidth: '640px',
             maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
-            boxShadow: '0 24px 60px rgba(0,0,0,0.4)',
+            boxShadow: isLight ? '0 24px 60px rgba(31, 38, 135, 0.15)' : '0 24px 60px rgba(0,0,0,0.5)',
             position: 'relative',
             overflow: 'hidden'
           }}>
-            <div style={{ padding: '24px 32px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '12px', background: 'linear-gradient(90deg, rgba(249, 115, 22, 0.1), transparent)' }}>
+            <div style={{ padding: '24px 32px', borderBottom: isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '12px', background: 'linear-gradient(90deg, rgba(249, 115, 22, 0.1), transparent)' }}>
               <Wand2 size={24} color="#f97316" />
               <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Enhanced Specification</h3>
               <button
@@ -2934,8 +2941,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   height: '300px',
                   padding: '16px',
                   borderRadius: '12px',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                  background: isLight ? '#f8fafc' : 'rgba(0,0,0,0.3)',
+                  border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                  background: isLight ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.3)',
                   color: textColor,
                   fontSize: '0.95rem',
                   fontFamily: 'monospace',
@@ -2947,7 +2954,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               />
             </div>
 
-            <div style={{ padding: '24px 32px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', background: isLight ? '#f8fafc' : 'rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '24px 32px', borderTop: isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255, 255, 255, 0.1)', background: isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)' }}>
               <button
                 onClick={() => {
                   setInputText(magicWandResultText);
