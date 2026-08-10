@@ -1,183 +1,136 @@
 import React from 'react';
 
-export function QuantoraEmblemSvg({ size = 140, isDark = false }) {
+// Masterpiece-Grade Defs for Quantora Brand Identity
+const QuantoraLogoDefs = () => (
+  <defs>
+    {/* Pure Gold Flame Gradient for the Q Emblem */}
+    <linearGradient id="qEmblemGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#f59e0b" />
+      <stop offset="50%" stopColor="#fbbf24" />
+      <stop offset="100%" stopColor="#d97706" />
+    </linearGradient>
+  </defs>
+);
+
+/**
+ * QuantoraBrandText: Clean Orbitron Typography
+ * - Geometric characters: Q U Λ N T O R Λ
+ * - 'O' is a glowing golden ring letter
+ * - Dark theme: Q, U, Λ, N, T, R, Λ in solid WHITE (#ffffff). O in GOLD (#fbbf24)
+ * - Light theme: Q, U, Λ, N, T, R, Λ in solid BLACK (#000000). O in GOLD (#d97706)
+ * - Tagline: "PROMPT TO ACTION"
+ */
+export function QuantoraBrandText({ isDark = true, fontSize = '1.5rem', tagline = 'PROMPT TO ACTION' }) {
+  const mainTextColor = isDark ? '#ffffff' : '#000000';
+  const oColor = isDark ? '#fbbf24' : '#d97706';
+  const taglineColor = isDark ? '#f59e0b' : '#d97706';
+
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 200 200"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ filter: 'drop-shadow(0 0 15px rgba(251, 191, 36, 0.6))' }}
-      >
-        <g style={{ transformOrigin: '100px 100px' }}>
-          <animateTransform
-            attributeName="transform"
-            type="scale"
-            values="1; 1.05; 1"
-            dur="4s"
-            repeatCount="indefinite"
-            additive="sum"
-          />
-          <defs>
-            <linearGradient id="goldenPhoenixGlow" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#ea580c">
-                <animate attributeName="stop-color" values="#ea580c;#dc2626;#ea580c" dur="3s" repeatCount="indefinite" />
-              </stop>
-              <stop offset="50%" stopColor="#f59e0b">
-                <animate attributeName="stop-color" values="#f59e0b;#ea580c;#f59e0b" dur="3s" repeatCount="indefinite" />
-              </stop>
-              <stop offset="100%" stopColor="#fef08a">
-                <animate attributeName="stop-color" values="#fef08a;#f59e0b;#fef08a" dur="3s" repeatCount="indefinite" />
-              </stop>
-            </linearGradient>
-
-            <filter id="hyperGlow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="6" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
-
-          {/* Outer Prism Ring */}
-          <circle
-            cx="100"
-            cy="90"
-            r="66"
-            stroke="url(#goldenPhoenixGlow)"
-            strokeWidth="10"
-            strokeLinecap="round"
-            fill="none"
-            filter="url(#hyperGlow)"
-            strokeDasharray="415"
-            strokeDashoffset="0"
-          >
-            <animate attributeName="stroke-dashoffset" values="415;0" dur="8s" repeatCount="indefinite" />
-          </circle>
-
-          {/* Diagonal Q Cut Line */}
-          <line
-            x1="124"
-            y1="114"
-            x2="168"
-            y2="158"
-            stroke="url(#goldenPhoenixGlow)"
-            strokeWidth="12"
-            strokeLinecap="round"
-            filter="url(#hyperGlow)"
-          />
-        </g>
-      </svg>
-
-      {/* Iconic High-Contrast Brand Text */}
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
       <div style={{
-        marginTop: '12px',
-        display: 'flex',
-        flexDirection: 'column',
+        fontFamily: "'Orbitron', 'Space Grotesk', 'Syne', sans-serif",
+        fontWeight: '700',
+        fontSize: fontSize,
+        letterSpacing: '0.28em',
+        lineHeight: 1,
+        display: 'inline-flex',
         alignItems: 'center',
-        gap: '4px'
+        justifyContent: 'center',
+        textTransform: 'uppercase',
+        userSelect: 'none'
       }}>
+        <span style={{ color: mainTextColor }}>Q</span>
+        <span style={{ color: mainTextColor }}>U</span>
+        <span style={{ color: mainTextColor }}>Λ</span>
+        <span style={{ color: mainTextColor }}>N</span>
+        <span style={{ color: mainTextColor }}>T</span>
+        
+        {/* 'O' in Gold - styled as a glowing golden ring letter */}
         <span style={{
-          fontSize: '1.45rem',
-          fontWeight: '900',
-          fontFamily: 'var(--font-heading)',
-          letterSpacing: '0.12em',
-          color: isDark ? '#ffffff' : '#0f172a',
-          lineHeight: 1
-        }}>
-          QUANTORA
-        </span>
-        <span style={{
-          fontSize: '0.74rem',
-          color: '#fbbf24',
+          position: 'relative',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: oColor,
+          margin: '0 0.05em',
           fontWeight: '800',
-          letterSpacing: '0.35em',
-          textTransform: 'uppercase'
+          textShadow: isDark 
+            ? '0 0 14px rgba(251, 191, 36, 0.85), 0 0 4px rgba(245, 158, 11, 0.7)' 
+            : '0 0 6px rgba(217, 119, 6, 0.4)'
         }}>
-          PROMPT TO ACTION
+          O
         </span>
+
+        <span style={{ color: mainTextColor }}>R</span>
+        <span style={{ color: mainTextColor }}>Λ</span>
       </div>
+
+      {tagline && (
+        <span style={{
+          fontSize: '0.52em',
+          color: taglineColor,
+          fontWeight: '700',
+          letterSpacing: '0.42em',
+          textTransform: 'uppercase',
+          marginTop: '8px',
+          opacity: 0.95,
+          fontFamily: "'Orbitron', 'Space Grotesk', sans-serif"
+        }}>
+          {tagline}
+        </span>
+      )}
     </div>
   );
 }
 
-export function QuantoraFullLogoSvg({ height = 40, isDark = true }) {
+/**
+ * QuantoraEmblemSvg: Clean Main Q Symbol
+ * - Clean interior: no background clutter or floating dots
+ * - Ring & Diagonal Leg Slash are uniform 7px stroke
+ * - Pure gold flame styling
+ */
+export function QuantoraEmblemSvg({ size = 180, isDark = true, showText = true, tagline = "PROMPT TO ACTION" }) {
+  return (
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+      <img 
+        src="/quantora-logo-transparent.png" 
+        alt="Quantora Emblem" 
+        style={{
+          height: `${size}px`,
+          width: 'auto',
+          maxWidth: '100%',
+          objectFit: 'contain',
+          filter: isDark ? 'drop-shadow(0 0 24px rgba(245, 158, 11, 0.45))' : 'none'
+        }} 
+        onError={(e) => {
+          e.target.onerror = null;
+          e.target.src = '/quantora-logo.png';
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * QuantoraFullLogoSvg: Header Logo (Icon + Text)
+ */
+export function QuantoraFullLogoSvg({ height = 40, isDark = true, tagline = "PROMPT TO ACTION" }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-      <svg
-        width={height}
-        height={height}
-        viewBox="0 0 200 200"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.5))' }}
-      >
-        <g style={{ transformOrigin: '100px 100px' }}>
-          <animateTransform
-            attributeName="transform"
-            type="scale"
-            values="1; 1.05; 1"
-            dur="4s"
-            repeatCount="indefinite"
-            additive="sum"
-          />
-          <defs>
-            <linearGradient id="navGoldenGlow" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#ea580c">
-                <animate attributeName="stop-color" values="#ea580c;#dc2626;#ea580c" dur="3s" repeatCount="indefinite" />
-              </stop>
-              <stop offset="50%" stopColor="#f59e0b">
-                <animate attributeName="stop-color" values="#f59e0b;#ea580c;#f59e0b" dur="3s" repeatCount="indefinite" />
-              </stop>
-              <stop offset="100%" stopColor="#fef08a">
-                <animate attributeName="stop-color" values="#fef08a;#f59e0b;#fef08a" dur="3s" repeatCount="indefinite" />
-              </stop>
-            </linearGradient>
-          </defs>
-          <circle
-            cx="100"
-            cy="90"
-            r="66"
-            stroke="url(#navGoldenGlow)"
-            strokeWidth="12"
-            fill="none"
-            strokeDasharray="415"
-            strokeDashoffset="0"
-          >
-             <animate attributeName="stroke-dashoffset" values="415;0" dur="8s" repeatCount="indefinite" />
-          </circle>
-          <line
-            x1="124"
-            y1="114"
-            x2="168"
-            y2="158"
-            stroke="url(#navGoldenGlow)"
-            strokeWidth="14"
-            strokeLinecap="round"
-          />
-        </g>
-      </svg>
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <span style={{
-          fontSize: `${height * 0.52}px`,
-          fontWeight: '800',
-          fontFamily: 'var(--font-heading)',
-          letterSpacing: '0.08em',
-          color: isDark ? '#ffffff' : '#0f172a',
-          lineHeight: 1
-        }}>
-          QUANTORA
-        </span>
-        <span style={{
-          fontSize: `${height * 0.22}px`,
-          color: '#fbbf24',
-          fontWeight: '800',
-          letterSpacing: '0.28em',
-          marginTop: '2px'
-        }}>
-          PROMPT TO ACTION
-        </span>
-      </div>
+      <img 
+        src="/quantora-logo-transparent.png" 
+        alt="Quantora Logo" 
+        style={{
+          height: `${height}px`,
+          width: 'auto',
+          objectFit: 'contain',
+          filter: isDark ? 'drop-shadow(0 0 12px rgba(245, 158, 11, 0.35))' : 'none'
+        }} 
+        onError={(e) => {
+          e.target.onerror = null;
+          e.target.src = '/quantora-logo.png';
+        }}
+      />
     </div>
   );
 }
