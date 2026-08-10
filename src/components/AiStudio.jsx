@@ -822,6 +822,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const [isMagicWandModalOpen, setIsMagicWandModalOpen] = useState(false);
   const [magicWandResultText, setMagicWandResultText] = useState('');
+  
+  // Intent Command Palette State
+  const [showIntentPalette, setShowIntentPalette] = useState(false);
+  const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
   const handleMagicWandEnhance = async () => {
     if (!inputText.trim()) {
@@ -1958,58 +1962,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               ))}
             </div>
 
-            {/* Glossy Project Type Selector Card */}
-            <div style={{
-              background: isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(30, 41, 59, 0.4)',
-              backdropFilter: 'blur(12px)',
-              border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '24px',
-              padding: '24px',
-              maxWidth: '500px',
-              margin: '0 auto 40px auto',
-              boxShadow: isLight ? '0 20px 40px rgba(0,0,0,0.05)' : '0 20px 40px rgba(0,0,0,0.3)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px'
-            }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: textColor, display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                <Sparkles size={18} color="#f97316" /> Choose your target platform
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <button 
-                  onClick={() => setInputValue("I want to build a responsive Website. ")}
-                  style={{
-                    background: isLight ? 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
-                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.05)',
-                    padding: '16px', borderRadius: '16px', cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
-                    transition: 'all 0.2s',
-                    color: textColor
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.05)'; e.currentTarget.style.transform = 'none'; }}
-                >
-                  <Monitor size={28} color="#3b82f6" />
-                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Web App</span>
-                </button>
-                <button 
-                  onClick={() => setInputValue("I want to build a Mobile-first PWA. ")}
-                  style={{
-                    background: isLight ? 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
-                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.05)',
-                    padding: '16px', borderRadius: '16px', cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
-                    transition: 'all 0.2s',
-                    color: textColor
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.05)'; e.currentTarget.style.transform = 'none'; }}
-                >
-                  <Smartphone size={28} color="#f97316" />
-                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>Mobile App</span>
-                </button>
-              </div>
-            </div>
+
 
           </div>
         ) : (
@@ -2159,6 +2112,55 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
 
+          {/* Intent Command Palette */}
+          {showIntentPalette && (
+            <div style={{
+              position: 'absolute',
+              bottom: 'calc(100% + 12px)',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(30, 41, 59, 0.95)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '16px',
+              padding: '8px',
+              width: '320px',
+              boxShadow: isLight ? '0 10px 40px rgba(0,0,0,0.1)' : '0 10px 40px rgba(0,0,0,0.5)',
+              zIndex: 100,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: subtextColor, padding: '8px 12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Confirm Intent
+              </div>
+              {[
+                { label: 'Build as Web App', icon: <Globe size={16} /> },
+                { label: 'Build as Mobile PWA', icon: <Smartphone size={16} /> }
+              ].map((option, idx) => (
+                <div 
+                  key={idx}
+                  onMouseEnter={() => setIntentSelectedIndex(idx)}
+                  onClick={() => {
+                    setInputText(inputText + (inputText.endsWith(' ') ? '' : ' ') + `(Target Architecture: ${option.label})`);
+                    setShowIntentPalette(false);
+                    textareaRef.current?.focus();
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '10px',
+                    background: intentSelectedIndex === idx ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+                    color: intentSelectedIndex === idx ? (isLight ? '#0f172a' : '#ffffff') : subtextColor,
+                    cursor: 'pointer', transition: 'all 0.1s'
+                  }}
+                >
+                  {option.icon}
+                  <span style={{ fontSize: '0.9rem', fontWeight: '500' }}>{option.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '12px 18px' }}>
             <textarea
@@ -2167,6 +2169,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               value={inputText}
               onChange={handleInputTextChange}
               onKeyDown={(e) => {
+                if (showIntentPalette) {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setShowIntentPalette(false);
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setIntentSelectedIndex(prev => (prev + 1) % 2);
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setIntentSelectedIndex(prev => (prev - 1 + 2) % 2);
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const option = intentSelectedIndex === 0 ? 'Web App' : 'Mobile PWA';
+                    setInputText(inputText + (inputText.endsWith(' ') ? '' : ' ') + `(Target Architecture: ${option})`);
+                    setShowIntentPalette(false);
+                  }
+                  return;
+                }
+
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
@@ -2878,10 +2899,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onClick={() => {
                   setInputText(magicWandResultText);
                   setIsMagicWandModalOpen(false);
+                  setShowIntentPalette(true);
                   if (textareaRef.current) {
                     textareaRef.current.style.height = 'auto';
                     setTimeout(() => {
                        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
+                       textareaRef.current.focus();
                     }, 50);
                   }
                 }}
