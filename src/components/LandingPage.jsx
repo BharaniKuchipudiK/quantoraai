@@ -178,7 +178,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
 
 
         {/* Quantora Masterpiece Emblem */}
-        <div style={{ marginBottom: '24px', display: 'inline-block' }}>
+        <div style={{ marginBottom: '64px', display: 'inline-block', width: '100%' }}>
           <QuantoraEmblemSvg size={140} isDark={!isLight} tagline="PROMPT TO ACTION" />
         </div>
 

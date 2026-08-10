@@ -101,15 +101,26 @@ export function QuantoraIconSvg({ size = 36, isDark = true }) {
 }
 
 /**
- * QuantoraEmblemSvg: Centered Hero Symbol (Icon + Centered Brand Text)
+ * QuantoraEmblemSvg: Centered Hero Symbol using the user-provided glowing image.
+ * Employs CSS mix-blend-mode and filters to dynamically remove the baked-in black background
+ * in dark mode, and invert it seamlessly for light mode.
  */
-export function QuantoraEmblemSvg({ size = 100, isDark = true, showText = true, tagline = "PROMPT TO ACTION" }) {
+export function QuantoraEmblemSvg({ size = 180, isDark = true }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '14px', width: '100%' }}>
-      <QuantoraIconSvg size={size} isDark={isDark} />
-      {showText && (
-        <QuantoraBrandText isDark={isDark} fontSize={`${Math.max(22, size * 0.24)}px`} tagline={tagline} />
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', width: '100%' }}>
+      <img 
+        src="/quantora-logo-image.png" 
+        alt="Quantora" 
+        style={{
+          width: size,
+          height: size,
+          objectFit: 'contain',
+          filter: isDark ? 'none' : 'invert(1) hue-rotate(180deg) brightness(1.2) contrast(1.1)',
+          mixBlendMode: isDark ? 'screen' : 'multiply',
+          pointerEvents: 'none',
+          userSelect: 'none'
+        }}
+      />
     </div>
   );
 }

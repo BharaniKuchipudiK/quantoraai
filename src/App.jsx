@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
 import AuroraBackground from './components/AuroraBackground';
+import Footer from './components/Footer';
 
 /*
  * The heavy surfaces load on demand.
@@ -414,32 +415,11 @@ export default function App() {
       )}
 
       {/* Global Footer */}
-      <footer style={{
-        borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-        background: isLight ? '#ffffff' : '#05070f',
-        padding: '30px 24px',
-        textAlign: 'center',
-        fontSize: '0.85rem',
-        color: isLight ? '#64748b' : 'var(--text-secondary)',
-        position: 'relative',
-        zIndex: 10,
-        transition: 'background 0.3s ease, border-color 0.3s ease'
-      }}>
-        <div style={{ maxWidth: '1240px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <QuantoraFullLogoSvg height={22} isDark={!isLight} tagline="" />
-            <span style={{ marginLeft: '4px' }}>• © 2026 Quantora AI. All rights reserved.</span>
-          </div>
-          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', fontWeight: '500' }}>
-            <span onClick={() => handleTabChange('landing')} style={{ cursor: 'pointer', color: activeTab === 'landing' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Home</span>
-            <span onClick={() => handleTabChange('studio')} style={{ cursor: 'pointer', color: activeTab === 'studio' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">AI Studio</span>
-            <span onClick={() => handleTabChange('canvas')} style={{ cursor: 'pointer', color: activeTab === 'canvas' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Dream Canvas</span>
-            <span onClick={() => handleTabChange('quantum')} style={{ cursor: 'pointer', color: activeTab === 'quantum' ? '#f97316' : 'currentColor' }} className="hover:text-amber-500 transition-colors">Quantum</span>
-            <span style={{ cursor: 'pointer', opacity: 0.6 }} className="hover:opacity-100 transition-opacity">Privacy</span>
-            <span style={{ cursor: 'pointer', opacity: 0.6 }} className="hover:opacity-100 transition-opacity">Terms</span>
-          </div>
-        </div>
-      </footer>
+      <Footer 
+        isLight={themeMode === 'light'} 
+        activeTab={activeTab} 
+        handleTabChange={handleTabChange} 
+      />
     </div>
     </GoogleOAuthProvider>
     </ErrorBoundary>
