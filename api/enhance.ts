@@ -1,7 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { fetchApiGatewayKey } from "./autocomplete.js";
 
 const SYSTEM_INSTRUCTION = `You are an expert product manager and software architect. Your job is to take a user's rough idea or vague prompt and rewrite it into a highly comprehensive, clear, and actionable specification for an AI to build.
 
@@ -34,9 +33,13 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Missing or invalid prompt in request body' });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-       return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+    const apiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+       return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server or Supabase API Gateway.' });
     }
+
+    const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
