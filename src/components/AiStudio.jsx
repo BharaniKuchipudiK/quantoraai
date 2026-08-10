@@ -822,9 +822,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const [isMagicWandModalOpen, setIsMagicWandModalOpen] = useState(false);
   const [magicWandResultText, setMagicWandResultText] = useState('');
-  
-  // Intent Command Palette State
-  const [showIntentPalette, setShowIntentPalette] = useState(false);
   const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
   const handleMagicWandEnhance = async () => {
@@ -2168,56 +2165,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
 
-          {/* Intent Command Palette */}
-          {showIntentPalette && (
-            <div style={{
-              position: 'absolute',
-              bottom: 'calc(100% + 12px)',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(15, 23, 42, 0.85)',
-              backdropFilter: 'blur(24px) saturate(150%)',
-              WebkitBackdropFilter: 'blur(24px) saturate(150%)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '16px',
-              padding: '8px',
-              width: '320px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)',
-              zIndex: 100,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px'
-            }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'rgba(255,255,255,0.5)', padding: '8px 12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Confirm Intent
-              </div>
-              {[
-                { label: 'Build as Web App', icon: <Globe size={16} /> },
-                { label: 'Build as Mobile PWA', icon: <Smartphone size={16} /> }
-              ].map((option, idx) => (
-                <div 
-                  key={idx}
-                  onMouseEnter={() => setIntentSelectedIndex(idx)}
-                  onClick={() => {
-                    setInputText(inputText + (inputText.endsWith(' ') ? '' : ' ') + `(Target Architecture: ${option.label})`);
-                    setShowIntentPalette(false);
-                    textareaRef.current?.focus();
-                  }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '10px',
-                    background: intentSelectedIndex === idx ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                    color: intentSelectedIndex === idx ? '#ffffff' : 'rgba(255, 255, 255, 0.6)',
-                    border: intentSelectedIndex === idx ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
-                    boxShadow: intentSelectedIndex === idx ? '0 0 20px rgba(255,255,255,0.05)' : 'none',
-                    cursor: 'pointer', transition: 'all 0.1s'
-                  }}
-                >
-                  {option.icon}
-                  <span style={{ fontSize: '0.9rem', fontWeight: '500' }}>{option.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
+
 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '12px 18px' }}>
@@ -2227,25 +2175,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               value={inputText}
               onChange={handleInputTextChange}
               onKeyDown={(e) => {
-                if (showIntentPalette) {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setShowIntentPalette(false);
-                  } else if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setIntentSelectedIndex(prev => (prev + 1) % 2);
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setIntentSelectedIndex(prev => (prev - 1 + 2) % 2);
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const option = intentSelectedIndex === 0 ? 'Web App' : 'Mobile PWA';
-                    setInputText(inputText + (inputText.endsWith(' ') ? '' : ' ') + `(Target Architecture: ${option})`);
-                    setShowIntentPalette(false);
-                  }
-                  return;
+                if (e.key === 'Escape') {
+                  setShowMentionsList(false);
                 }
-
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSendMessage();
@@ -2349,20 +2281,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               {/* Magic Wand Enhancer */}
               <button
                 onClick={handleMagicWandEnhance}
+                disabled={isEnhancingPrompt}
                 title="AI Magic Wand - Enhance & Expand Prompt"
                 style={{
-                  background: isEnhancingPrompt ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)' : 'transparent',
+                  background: isEnhancingPrompt ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
                   border: 'none',
-                  color: '#f97316',
-                  padding: '6px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
+                  color: isEnhancingPrompt ? '#f97316' : subtextColor,
+                  padding: isEnhancingPrompt ? '4px 12px' : '6px',
+                  borderRadius: '12px',
+                  cursor: isEnhancingPrompt ? 'wait' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
+                  gap: '6px',
                   justifyContent: 'center',
+                  transition: 'all 0.2s ease',
+                  fontWeight: '600',
+                  fontSize: '0.8rem'
                 }}
               >
-                <Wand2 size={18} color={isEnhancingPrompt ? "#f97316" : subtextColor} className={isEnhancingPrompt ? "animate-spin" : ""} />
+                {isEnhancingPrompt ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    Enhancing Prompt...
+                  </>
+                ) : (
+                  <Wand2 size={18} color={subtextColor} />
+                )}
               </button>
 
               {/* Engine Settings Popover */}
@@ -2954,40 +2898,63 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               />
             </div>
 
-            <div style={{ padding: '24px 32px', borderTop: isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255, 255, 255, 0.1)', background: isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)' }}>
-              <button
-                onClick={() => {
-                  setInputText(magicWandResultText);
-                  setIsMagicWandModalOpen(false);
-                  setShowIntentPalette(true);
-                  if (textareaRef.current) {
-                    textareaRef.current.style.height = 'auto';
-                    setTimeout(() => {
-                       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
-                       textareaRef.current.focus();
-                    }, 50);
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  fontWeight: '700',
-                  fontSize: '1rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 14px rgba(249, 115, 22, 0.3)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Sparkles size={18} /> Apply to Prompt
-              </button>
+            <div style={{ padding: '24px 32px', borderTop: isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255, 255, 255, 0.1)', background: isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)', display: 'flex', gap: '12px' }}>
+              
+              {/* Smart Auto-Apply (Intelligent parsing) */}
+              {(() => {
+                const lowerText = magicWandResultText.toLowerCase();
+                const impliesWeb = lowerText.includes('web-based') || lowerText.includes('website') || lowerText.includes('web app') || lowerText.includes('dashboard') || lowerText.includes('react');
+                const impliesMobile = lowerText.includes('mobile pwa') || lowerText.includes('ios') || lowerText.includes('android') || lowerText.includes('mobile app');
+                
+                if (impliesWeb && !impliesMobile) {
+                  return (
+                    <button
+                      onClick={() => {
+                        setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Web App)`);
+                        setIsMagicWandModalOpen(false);
+                      }}
+                      style={{ flex: 1, background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
+                    >
+                      <Globe size={18} /> Apply (Auto-Detected: Web App)
+                    </button>
+                  );
+                } else if (impliesMobile && !impliesWeb) {
+                   return (
+                    <button
+                      onClick={() => {
+                        setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Mobile PWA)`);
+                        setIsMagicWandModalOpen(false);
+                      }}
+                      style={{ flex: 1, background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)' }}
+                    >
+                      <Smartphone size={18} /> Apply (Auto-Detected: Mobile PWA)
+                    </button>
+                  );
+                } else {
+                  return (
+                    <>
+                      <button
+                        onClick={() => {
+                          setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Web App)`);
+                          setIsMagicWandModalOpen(false);
+                        }}
+                        style={{ flex: 1, background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
+                      >
+                        <Globe size={18} /> Apply as Web App
+                      </button>
+                      <button
+                        onClick={() => {
+                          setInputText(magicWandResultText + `\n\n(Target Architecture: Build as Mobile PWA)`);
+                          setIsMagicWandModalOpen(false);
+                        }}
+                        style={{ flex: 1, background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: '#fff', border: 'none', padding: '14px 24px', borderRadius: '12px', fontSize: '1rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)' }}
+                      >
+                        <Smartphone size={18} /> Apply as Mobile PWA
+                      </button>
+                    </>
+                  );
+                }
+              })()}
             </div>
           </div>
         </div>
