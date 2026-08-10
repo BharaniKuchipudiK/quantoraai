@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Workflow, Atom, ArrowRight } from 'lucide-react';
+import { Sparkles, Network, Atom, ArrowRight } from 'lucide-react';
 
 export default function WelcomeHub({ user, onNavigate, isLight }) {
   const cardBg = isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(30, 41, 59, 0.4)';
@@ -10,7 +10,7 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
 
   return (
     <div style={{
-      maxWidth: '1100px',
+      maxWidth: '1200px',
       margin: '0 auto',
       padding: '80px 20px',
       minHeight: 'calc(100vh - 70px)'
@@ -36,7 +36,7 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
           fontSize: '1.25rem',
           color: subtextColor,
           fontWeight: '500',
-          maxWidth: '600px',
+          maxWidth: '800px',
           lineHeight: '1.6'
         }}>
           Welcome to Quantora. Select a module below to start building, analyzing, or exploring.
@@ -45,8 +45,8 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-        gap: '30px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+        gap: '40px'
       }}>
         {/* AI Studio Card */}
         <div
@@ -66,38 +66,38 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
             backdropFilter: 'blur(16px)',
             border: cardBorder,
             borderRadius: '24px',
-            padding: '40px 32px',
+            padding: '48px 40px',
             cursor: 'pointer',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '20px',
+            gap: '24px',
             position: 'relative',
-            minHeight: '280px'
+            minHeight: '340px'
           }}
         >
           <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
+            width: '72px',
+            height: '72px',
+            borderRadius: '20px',
             background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#f97316'
           }}>
-            <Sparkles size={28} />
+            <Sparkles size={36} />
           </div>
           <div>
-            <h3 style={{ fontSize: '1.5rem', fontWeight: '700', color: textColor, marginBottom: '12px' }}>
+            <h3 style={{ fontSize: '1.75rem', fontWeight: '800', color: textColor, marginBottom: '16px' }}>
               AI Studio
             </h3>
-            <p style={{ color: subtextColor, fontSize: '1rem', lineHeight: '1.6' }}>
+            <p style={{ color: subtextColor, fontSize: '1.1rem', lineHeight: '1.6' }}>
               Chat with free top-tier AI models. Ask complex scientific or research questions, solve math problems, or instantly <strong style={{ color: isLight ? '#f97316' : '#fb923c' }}>build Websites, PWAs, or Mobile Apps from scratch!</strong>
             </p>
           </div>
-          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#8b5cf6', fontWeight: '700', fontSize: '1rem' }}>
-            Launch Studio <ArrowRight size={16} />
+          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#8b5cf6', fontWeight: '700', fontSize: '1.1rem' }}>
+            Launch Studio <ArrowRight size={18} />
           </div>
         </div>
 
@@ -119,38 +119,38 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
             backdropFilter: 'blur(16px)',
             border: cardBorder,
             borderRadius: '24px',
-            padding: '40px 32px',
+            padding: '48px 40px',
             cursor: 'pointer',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '20px',
+            gap: '24px',
             position: 'relative',
-            minHeight: '280px'
+            minHeight: '340px'
           }}
         >
           <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
+            width: '72px',
+            height: '72px',
+            borderRadius: '20px',
             background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#38bdf8'
           }}>
-            <Workflow size={28} />
+            <Network size={36} />
           </div>
           <div>
-            <h3 style={{ fontSize: '1.5rem', fontWeight: '700', color: textColor, marginBottom: '12px' }}>
+            <h3 style={{ fontSize: '1.75rem', fontWeight: '800', color: textColor, marginBottom: '16px' }}>
               Dream-to-Action Canvas
             </h3>
-            <p style={{ color: subtextColor, fontSize: '1rem', lineHeight: '1.6' }}>
+            <p style={{ color: subtextColor, fontSize: '1.1rem', lineHeight: '1.6' }}>
               Visually map out software architectures and turn abstract thoughts into concrete, executable nodes.
             </p>
           </div>
-          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontWeight: '700', fontSize: '1rem' }}>
-            Open Canvas <ArrowRight size={16} />
+          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontWeight: '700', fontSize: '1.1rem' }}>
+            Open Canvas <ArrowRight size={18} />
           </div>
         </div>
 
@@ -172,38 +172,38 @@ export default function WelcomeHub({ user, onNavigate, isLight }) {
             backdropFilter: 'blur(16px)',
             border: cardBorder,
             borderRadius: '24px',
-            padding: '40px 32px',
+            padding: '48px 40px',
             cursor: 'pointer',
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '20px',
+            gap: '24px',
             position: 'relative',
-            minHeight: '280px'
+            minHeight: '340px'
           }}
         >
           <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
+            width: '72px',
+            height: '72px',
+            borderRadius: '20px',
             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: '#10b981'
           }}>
-            <Atom size={28} />
+            <Atom size={36} />
           </div>
           <div>
-            <h3 style={{ fontSize: '1.5rem', fontWeight: '700', color: textColor, marginBottom: '12px' }}>
+            <h3 style={{ fontSize: '1.75rem', fontWeight: '800', color: textColor, marginBottom: '16px' }}>
               Quantum Playground
             </h3>
-            <p style={{ color: subtextColor, fontSize: '1rem', lineHeight: '1.6' }}>
+            <p style={{ color: subtextColor, fontSize: '1.1rem', lineHeight: '1.6' }}>
               Simulate advanced Qiskit circuits and explore quantum states directly in your browser.
             </p>
           </div>
-          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontWeight: '700', fontSize: '1rem' }}>
-            Launch Simulator <ArrowRight size={16} />
+          <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontWeight: '700', fontSize: '1.1rem' }}>
+            Launch Simulator <ArrowRight size={18} />
           </div>
         </div>
 
