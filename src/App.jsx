@@ -163,7 +163,7 @@ export default function App() {
     setActiveTab(tabName);
   };
 
-  const availableModels = [
+  const fallbackModels = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google AI', available: true },
     { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'OpenRouter', available: true },
     { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B (Google)', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'OpenRouter', available: true },
@@ -173,7 +173,35 @@ export default function App() {
     { id: 'openai/gpt-4o-mini', name: 'ChatGPT 4o-Mini', specialty: 'General Assistant & Fast Queries', badge: 'API Offline', provider: 'OpenRouter', available: false }
   ];
 
-  const [selectedModel, setSelectedModel] = useState(availableModels[0]);
+  const [availableModels, setAvailableModels] = useState(fallbackModels);
+  const [selectedModel, setSelectedModel] = useState(fallbackModels[0]);
+
+  useEffect(() => {
+    // Dynamically fetch model registry
+    fetch('/api/models')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.models && data.models.length > 0) {
+          // Map dynamic schema back to our UI expectations
+          const dynamicModels = data.models.map(m => ({
+            id: m.id,
+            name: m.name,
+            specialty: m.description,
+            badge: m.tag || (m.available ? 'Online' : m.unavailableReason || 'Offline'),
+            provider: m.provider,
+            available: m.available
+          }));
+          setAvailableModels(dynamicModels);
+          
+          // Only change selected model if current is no longer available or we just booted
+          setSelectedModel(current => {
+            const stillExists = dynamicModels.find(d => d.id === current.id);
+            return stillExists ? stillExists : dynamicModels[0];
+          });
+        }
+      })
+      .catch(err => console.error("Failed to fetch dynamic model registry:", err));
+  }, []);
   const [activeCanvasNode, setActiveCanvasNode] = useState(null);
   const [dreamNodes, setDreamNodes] = useState(() => {
     try {

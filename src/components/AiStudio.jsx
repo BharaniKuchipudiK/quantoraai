@@ -948,6 +948,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setAttachments([]);
     setIsGenerating(true);
 
+    try {
+      const modRes = await fetch('/api/moderate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text.trim() })
+      });
+      const modData = await modRes.json();
+      
+      if (modData.flagged) {
+        updateActiveMessages(prev => [...prev, {
+          id: Date.now() + 1,
+          sender: 'ai',
+          text: `🚨 **Policy Violation Detected**\n\n${modData.reason}\n\n*Flagged Pattern: \`${modData.matchedPattern}\`*`,
+          isError: true
+        }]);
+        setIsGenerating(false);
+        return;
+      }
+    } catch (e) {
+      console.error("Moderation API failed, failing open...", e);
+    }
+
+
     const targetModel = selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
