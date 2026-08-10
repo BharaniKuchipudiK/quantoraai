@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1660,6 +1660,55 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 32px 0', color: subtextColor }}>
               What would you like to build today?
             </p>
+
+            {/* 4 Clean Starter Cards Grid on Initial Empty View */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '12px',
+              marginTop: '20px'
+            }}>
+              {[
+                { title: 'Task Manager App', desc: 'Build a task tracker with status filters & categories', icon: <FileText size={18} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
+                { title: 'iOS Calculator', desc: 'Build an interactive calculator with conversion history', icon: <Calculator size={18} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
+                { title: 'AI Beat Synthesizer', desc: 'Create a drum machine with multi-track BPM controls', icon: <Music size={18} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
+                { title: 'Quantum Simulator', desc: 'Simulate Bell state entanglement & Hadamard gates', icon: <Atom size={18} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
+              ].map((card, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => handleSendMessage(card.prompt)}
+                  style={{
+                    background: isLight ? '#ffffff' : 'rgba(13, 17, 39, 0.6)',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#f97316';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = isLight ? '0 6px 16px rgba(249, 115, 22, 0.12)' : '0 6px 20px rgba(0,0,0,0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {card.icon}
+                    <span style={{ fontSize: '0.88rem', fontWeight: '700', color: textColor }}>{card.title}</span>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: subtextColor, lineHeight: '1.4' }}>{card.desc}</span>
+                </div>
+              ))}
+            </div>
+
           </div>
         ) : (
           /* Active Chat Thread */
@@ -1897,6 +1946,24 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Paperclip size={18} />
               </button>
 
+              <button
+                onClick={() => alert("GitHub integration coming soon!")}
+                title="Import from GitHub repository"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: subtextColor,
+                  padding: '6px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Github size={18} />
+              </button>
+
 
               {/* Magic Wand Enhancer */}
               <button
@@ -2128,54 +2195,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         </div>
 
-        {/* 4 Clean Starter Cards Grid on Initial Empty View */}
-        {messages.length <= 1 && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: '12px',
-            marginTop: '20px'
-          }}>
-            {[
-              { title: 'Task Manager App', desc: 'Build a task tracker with status filters & categories', icon: <FileText size={18} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
-              { title: 'iOS Calculator', desc: 'Build an interactive calculator with conversion history', icon: <Calculator size={18} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
-              { title: 'AI Beat Synthesizer', desc: 'Create a drum machine with multi-track BPM controls', icon: <Music size={18} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
-              { title: 'Quantum Simulator', desc: 'Simulate Bell state entanglement & Hadamard gates', icon: <Atom size={18} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
-            ].map((card, idx) => (
-              <div
-                key={idx}
-                onClick={() => handleSendMessage(card.prompt)}
-                style={{
-                  background: isLight ? '#ffffff' : 'rgba(13, 17, 39, 0.6)',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '14px',
-                  padding: '14px 16px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#f97316';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = isLight ? '0 6px 16px rgba(249, 115, 22, 0.12)' : '0 6px 20px rgba(0,0,0,0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.transform = 'none';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {card.icon}
-                  <span style={{ fontSize: '0.88rem', fontWeight: '700', color: textColor }}>{card.title}</span>
-                </div>
-                <span style={{ fontSize: '0.78rem', color: subtextColor, lineHeight: '1.4' }}>{card.desc}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
       </div>
 
