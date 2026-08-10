@@ -498,7 +498,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const text = e.target.value;
     setInputText(text);
     e.target.style.height = 'auto';
-    e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+    e.target.style.height = Math.min(e.target.scrollHeight, 400) + 'px';
     
     // Trigger context menu on '@' typed at end or after space
     const mentionMatch = text.match(/(^|\s)@(\w*)$/);
@@ -1815,8 +1815,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 fontFamily: 'inherit',
                 lineHeight: '1.5',
                 minHeight: '24px',
-                maxHeight: '150px',
-                overflowY: 'auto'
+                maxHeight: '400px',
+                overflow: 'auto'
               }}
             />
           </div>
