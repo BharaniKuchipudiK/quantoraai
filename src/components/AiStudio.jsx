@@ -2018,54 +2018,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Github size={18} />
               </button>
 
-              {/* Quick Language Badges */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '2px', marginRight: '4px', paddingLeft: '10px', borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)' }}>
-                {['React', 'Java', 'Python'].map(lang => (
-                  <button
-                    key={lang}
-                    onClick={() => {
-                      const newText = inputText ? `${inputText} using ${lang}` : `Build a ${lang} app that `;
-                      setInputText(newText);
-                      if (textareaRef.current) {
-                        textareaRef.current.style.height = 'auto';
-                        setTimeout(() => {
-                           textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
-                        }, 50);
-                      }
-                    }}
-                    title={`Add ${lang} context`}
-                    style={{
-                      background: 'transparent',
-                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)',
-                      color: subtextColor,
-                      padding: '4px 10px',
-                      borderRadius: '12px',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)';
-                      e.currentTarget.style.color = textColor;
-                      e.currentTarget.style.borderColor = isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.3)';
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = subtextColor;
-                      e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.15)';
-                    }}
-                  >
-                    {lang === 'React' && <Atom size={12} />}
-                    {lang === 'Java' && <Code2 size={12} />}
-                    {lang === 'Python' && <Activity size={12} />}
-                    {lang}
-                  </button>
-                ))}
-              </div>
               {/* Magic Wand Enhancer */}
               <button
                 onClick={handleMagicWandEnhance}
@@ -2205,6 +2157,50 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Sleek Firebase-style Language Icons */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '4px', borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)', paddingLeft: '10px' }}>
+                {['React', 'Java', 'Python'].map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => {
+                      const newText = inputText ? `${inputText} using ${lang}` : `Build a ${lang} app that `;
+                      setInputText(newText);
+                      if (textareaRef.current) {
+                        textareaRef.current.style.height = 'auto';
+                        setTimeout(() => {
+                           textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
+                        }, 50);
+                      }
+                    }}
+                    title={`${lang}`}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: subtextColor,
+                      padding: '6px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.color = textColor;
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = subtextColor;
+                    }}
+                  >
+                    {lang === 'React' && <Atom size={16} />}
+                    {lang === 'Java' && <Code2 size={16} />}
+                    {lang === 'Python' && <Activity size={16} />}
+                  </button>
+                ))}
               </div>
 
               {/* Web Grounding Toggle */}
