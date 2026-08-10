@@ -1743,10 +1743,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <Sparkles size={20} color="#f97316" />
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
-              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {activeSession ? activeSession.title : 'Quantora Open AI Studio'}
+              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
+                {activeSession && messages.length > 1 ? activeSession.title : 'New Workspace'}
               </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
                 <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
                   Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong>
                 </span>
@@ -2179,16 +2179,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
+                    gap: '6px',
                     background: showInBarModelDropdown ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
                     border: 'none',
-                    color: subtextColor,
-                    padding: '6px',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
+                    color: showInBarModelDropdown ? '#f97316' : subtextColor,
+                    padding: '4px 10px',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: '600'
                   }}
                 >
-                  <Settings size={18} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
+                  <Cpu size={15} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
+                  <span>{selectedModel ? selectedModel.name.split(' ')[0] : 'Engine'}</span>
                 </button>
 
                 {showInBarModelDropdown && (
