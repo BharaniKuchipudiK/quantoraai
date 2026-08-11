@@ -245,8 +245,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
-    <div style={{
-      minHeight: '100vh',
+    <div className={activeTab === 'studio' ? 'app-shell app-shell--studio' : 'app-shell'} style={{
+      minHeight: '100dvh',
+      height: activeTab === 'studio' ? '100dvh' : 'auto',
+      overflow: activeTab === 'studio' ? 'hidden' : 'visible',
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
@@ -282,7 +284,7 @@ export default function App() {
             isLight={isLight}
           />
 
-          <main style={{
+          <main className={activeTab === 'studio' ? 'app-main app-main--studio' : 'app-main'} style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
@@ -290,7 +292,8 @@ export default function App() {
             maxWidth: '1400px',
             width: '100%',
             margin: '0 auto',
-            padding: '24px',
+            padding: activeTab === 'studio' ? '16px 24px' : '24px',
+            overflow: activeTab === 'studio' ? 'hidden' : 'visible',
             position: 'relative',
             zIndex: 10
           }}>

@@ -1501,7 +1501,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth]);
 
   return (
-    <div style={{
+    <div className="ai-studio-shell" style={{
       display: 'flex',
       gap: '20px',
       maxWidth: isWorkspaceMode ? '100%' : '1400px',
@@ -1515,7 +1515,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
       {/* Left Navigation Sidebar - Chat History */}
-      <div style={{
+      <div className="ai-studio-sidebar" style={{
         width: sidebarOpen ? (isWorkspaceMode ? '220px' : '260px') : '0px',
         opacity: sidebarOpen ? 1 : 0,
         pointerEvents: sidebarOpen ? 'auto' : 'none',
@@ -1688,7 +1688,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
-      <div style={{
+      <div className="ai-studio-main" style={{
         flex: isWorkspaceMode ? '0 0 42%' : 1,
         display: 'flex',
         flexDirection: 'column',
@@ -1699,7 +1699,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Top Header Bar */}
-        <div style={{
+        <div className="ai-studio-toolbar" style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -1892,14 +1892,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Messages Stream / Initial Hero State */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px' }}>
+      <div className={`ai-studio-messages ${messages.length <= 1 ? 'ai-studio-messages--empty' : ''}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '16px' }}>
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
-          <div style={{ 
-            textAlign: 'center', 
-            padding: '48px 32px 32px 32px', 
-            maxWidth: '720px', 
-            margin: '40px auto 0 auto', 
+          <div className="ai-studio-empty-state" style={{
+            textAlign: 'center',
+            padding: '32px 28px 24px',
+            maxWidth: '720px',
+            margin: '0 auto',
             width: '100%',
             background: isLight ? 'linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.85))' : 'rgba(255, 255, 255, 0.06)',
             backdropFilter: 'blur(40px) saturate(200%)',
@@ -1908,7 +1908,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             borderRadius: '32px',
             boxShadow: isLight ? '0 32px 64px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255,255,255,0.6) inset' : '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)'
           }}>
-            <div style={{
+            <div className="ai-studio-empty-icon" style={{
               width: '56px',
               height: '56px',
               borderRadius: '16px',
@@ -1923,15 +1923,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <Sparkles size={28} color="#f97316" />
             </div>
 
-            <h1 style={{ fontSize: '2.6rem', fontWeight: '800', margin: '0 0 8px 0', color: textColor, letterSpacing: '-0.03em' }}>
+            <h1 className="ai-studio-empty-title" style={{ fontSize: '2.4rem', fontWeight: '800', margin: '0 0 6px 0', color: textColor, letterSpacing: '-0.03em' }}>
               Hello, {user?.name ? user.name.split(' ')[0] : 'Bharani'}
             </h1>
-            <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 40px 0', color: subtextColor }}>
+            <p className="ai-studio-empty-subtitle" style={{ fontSize: '1.1rem', fontWeight: '400', margin: '0 0 24px 0', color: subtextColor }}>
               What would you like to build today?
             </p>
 
             {/* AI Models Highlight Cards */}
-            <div style={{
+            <div className="ai-studio-model-cards" style={{
               display: 'flex',
               flexWrap: 'wrap',
               justifyContent: 'center',
@@ -1945,7 +1945,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 { name: "Claude 3.5 Sonnet", desc: "Ultra-fast coding via OpenRouter integration.", icon: <Sparkles size={20} color="#8b5cf6"/>, badge: "HOT", color: "#8b5cf6" },
                 { name: "Llama 3 70B", desc: "Open-source powerhouse with zero filters.", icon: <Layers size={20} color="#10b981"/>, badge: "UPDATED", color: "#10b981" }
               ].map((model, idx) => (
-                <div key={idx} style={{
+                <div key={idx} className="ai-studio-model-card" style={{
                   flex: '1 1 200px',
                   maxWidth: '280px',
                   background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.05)',
@@ -2006,7 +2006,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Clean Prompt Console Input Area */}
-      <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+      <div className="ai-studio-prompt" style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto', flexShrink: 0 }}>
         {/* Attachment Files Badge Bar */}
         {attachments.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', paddingLeft: '4px' }}>

@@ -53,6 +53,103 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* AI Studio behaves like an application shell: the chrome and prompt remain
+   visible while only the conversation area scrolls as content grows. */
+.app-shell--studio,
+.app-shell--studio .app-main--studio,
+.app-shell--studio .ai-studio-shell,
+.app-shell--studio .ai-studio-main {
+  min-height: 0;
+}
+
+@media (min-width: 768px) {
+  .app-shell--studio {
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  .app-shell--studio .app-main--studio {
+    overflow: hidden !important;
+  }
+
+  .app-shell--studio .ai-studio-shell,
+  .app-shell--studio .ai-studio-sidebar,
+  .app-shell--studio .ai-studio-main {
+    height: 100%;
+  }
+
+  .app-shell--studio .ai-studio-messages:not(.ai-studio-messages--empty) {
+    overscroll-behavior: contain;
+  }
+}
+
+@media (min-width: 768px) and (max-height: 900px) {
+  .app-shell--studio .app-main--studio {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .app-shell--studio .ai-studio-main {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .app-shell--studio .ai-studio-toolbar {
+    margin-bottom: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .app-shell--studio .ai-studio-messages {
+    margin-bottom: 10px !important;
+  }
+
+  .app-shell--studio .ai-studio-empty-state {
+    padding: 22px 24px 18px !important;
+  }
+
+  .app-shell--studio .ai-studio-empty-icon {
+    width: 48px !important;
+    height: 48px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .app-shell--studio .ai-studio-empty-title {
+    font-size: 2rem !important;
+  }
+
+  .app-shell--studio .ai-studio-empty-subtitle {
+    font-size: 1rem !important;
+    margin-bottom: 16px !important;
+  }
+
+  .app-shell--studio .ai-studio-model-cards {
+    gap: 10px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .app-shell--studio .ai-studio-model-card {
+    padding: 12px !important;
+  }
+
+  .app-shell--studio .app-footer {
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-shell--studio {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow: visible !important;
+  }
+
+  .app-shell--studio .app-main--studio {
+    overflow: visible !important;
+    padding: 12px !important;
+  }
+}
+
 /* Markdown Typography */
 .markdown-prose p {
   margin-bottom: 1em;

@@ -11,14 +11,15 @@ export default function Footer() {
   const legalLinks = ['Privacy Statement', 'Terms & Conditions', 'Cookie Policy'];
 
   return (
-    <footer style={{
+    <footer className="app-footer" style={{
       background: footerBg,
       color: textColor,
       fontFamily: "'Inter', sans-serif",
       position: 'relative',
       zIndex: 10,
       borderTop: '1px solid rgba(255,255,255,0.1)',
-      padding: '28px 5%'
+      padding: '18px 5%',
+      flexShrink: 0
     }}>
       <div style={{
         width: '100%',
