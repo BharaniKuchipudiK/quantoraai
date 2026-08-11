@@ -72,7 +72,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   return (
     <>
-    <header style={{
+    <header className="app-header" style={{
       position: 'sticky',
       top: 0,
       zIndex: 100,
@@ -82,8 +82,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       padding: '12px 24px',
       transition: 'all 0.3s ease'
     }}>
-      <div style={{
-        maxWidth: '1400px',
+      <div className="app-header-inner" style={{
+        maxWidth: activeTab === 'studio' ? '1800px' : '1400px',
         margin: '0 auto',
         display: 'flex',
         alignItems: 'center',
@@ -98,7 +98,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
         {/* Clean Navigation Tabs */}
         {user ? (
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '6px', background: navBg, padding: '4px', borderRadius: '12px', border: `1px solid ${navBorder}` }}>
+          <nav className="app-primary-nav" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: navBg, padding: '4px', borderRadius: '12px', border: `1px solid ${navBorder}` }}>
             <button
               onClick={() => setActiveTab('studio')}
               style={{

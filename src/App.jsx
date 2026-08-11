@@ -294,10 +294,10 @@ export default function App() {
             display: 'flex',
             flexDirection: 'column',
             minHeight: 0,
-            maxWidth: '1400px',
+            maxWidth: activeTab === 'studio' ? '1800px' : '1400px',
             width: '100%',
             margin: '0 auto',
-            padding: activeTab === 'studio' ? '16px 24px' : '24px',
+            padding: activeTab === 'studio' ? 'clamp(8px, 1vw, 16px) clamp(10px, 1.5vw, 24px)' : '24px',
             overflow: activeTab === 'studio' ? 'hidden' : 'visible',
             position: 'relative',
             zIndex: 10
