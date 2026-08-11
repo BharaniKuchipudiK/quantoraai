@@ -211,10 +211,11 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
       {/* Flagship Hero Section */}
       <section style={{
         width: '100%',
-        height: 'calc(100vh - 67px)', // Fits perfectly within viewport accounting for header
-        minHeight: '600px', // Fallback for very small screens
+        height: 'calc(100vh - 67px)',
+        minHeight: '550px',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
         padding: '0 5%',
         position: 'relative',
         zIndex: 10,
@@ -250,16 +251,18 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
           textAlign: 'left',
           position: 'relative',
           zIndex: 10,
-          marginTop: '-40px' // Nudge up slightly to balance bottom carousel
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center'
         }}>
           <div style={{ maxWidth: '900px' }} key={heroSlide} className="animate-fade-in-up">
             {/* Headline */}
             <h1 style={{
-              fontSize: 'clamp(4rem, 7vw, 7.5rem)',
+              fontSize: 'clamp(2.8rem, 5.5vw, 5.5rem)',
               fontWeight: '900',
               lineHeight: 1.05,
-              color: isLight ? '#0f172a' : '#ffffff', // Ensure high contrast against the subtle gradient
-              marginBottom: '24px',
+              color: isLight ? '#0f172a' : '#ffffff',
+              marginBottom: '20px',
               letterSpacing: '-0.02em',
               textTransform: 'uppercase'
             }}>
@@ -277,7 +280,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             <div style={{
               borderLeft: '5px solid #f97316',
               paddingLeft: '24px',
-              marginBottom: '40px',
+              marginBottom: '28px',
               maxWidth: '700px'
             }}>
               <p style={{
@@ -305,8 +308,8 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
                 }}
               >
                 <div style={{
-                  padding: '20px 36px',
-                  fontSize: '1.25rem',
+                  padding: '16px 30px',
+                  fontSize: '1.1rem',
                   fontWeight: '800',
                   background: '#000000',
                   color: '#ffffff',
@@ -333,18 +336,16 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
 
         {/* Bottom Interactive Navigation / Carousel Controls (EY Style) */}
         <div style={{
-          position: 'absolute',
-          bottom: '30px',
-          left: '5%',
-          right: '5%',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           borderTop: isLight ? '1px solid rgba(0,0,0,0.2)' : '1px solid rgba(255,255,255,0.2)',
           paddingTop: '20px',
+          paddingBottom: '30px',
           zIndex: 10,
           flexWrap: 'wrap',
-          gap: '16px'
+          gap: '16px',
+          position: 'relative'
         }}>
           {/* Link List */}
           <div style={{ display: 'flex', gap: '40px', overflowX: 'auto', paddingBottom: '4px' }}>
