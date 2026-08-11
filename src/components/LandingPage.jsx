@@ -28,12 +28,14 @@ import {
   Globe2,
   Atom
 } from 'lucide-react';
+import './FlagshipShowcase.css';
 
 export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMode, setThemeMode }) {
   const [activeDemoTab, setActiveDemoTab] = useState('app-builder'); // 'app-builder', 'quantum', 'multi-model', 'vault'
   const [selectedPrompt, setSelectedPrompt] = useState('Create a real-time crypto portfolio tracker with dark glassmorphic charts');
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationComplete, setSimulationComplete] = useState(false);
+  const [activeCapability, setActiveCapability] = useState('studio');
 
   // Hero Carousel State
   const [heroSlide, setHeroSlide] = useState(0);
@@ -92,6 +94,56 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
     'Build an AI research assistant with autonomous DuckDuckGo web search',
     'Design a responsive Kanban board with drag-and-drop local persistence'
   ];
+
+  const flagshipCapabilities = [
+    {
+      id: 'studio',
+      number: '01',
+      label: 'Create',
+      title: 'Build from a conversation.',
+      description: 'Turn a natural-language idea into a working interface, then refine it with an AI partner that explains what it is doing.',
+      action: 'Open AI Studio',
+      image: '/card-bg-ai.jpg',
+      color: '#f97316',
+      icon: Code2
+    },
+    {
+      id: 'canvas',
+      number: '02',
+      label: 'Shape',
+      title: 'See the system before you build it.',
+      description: 'Map ideas, decisions and architecture into a visual canvas that keeps complex work understandable.',
+      action: 'Launch Dream Canvas',
+      image: '/card-bg-canvas.jpg',
+      color: '#f59e0b',
+      icon: Workflow
+    },
+    {
+      id: 'quantum',
+      number: '03',
+      label: 'Explore',
+      title: 'Make quantum ideas tangible.',
+      description: 'Simulate circuits, inspect state probabilities and learn by interacting instead of starting with a wall of mathematics.',
+      action: 'Explore Quantum Horizon',
+      image: '/card-bg-quantum.jpg',
+      color: '#06b6d4',
+      icon: Atom
+    },
+    {
+      id: 'vault',
+      number: '04',
+      label: 'Protect',
+      title: 'Keep access under your control.',
+      description: 'Connect your own model keys through a privacy-minded gateway without turning security into another complicated workflow.',
+      action: 'Open Privacy Vault',
+      image: '/card-bg-vault.jpg',
+      color: '#10b981',
+      icon: ShieldCheck
+    }
+  ];
+
+  const selectedCapability = flagshipCapabilities.find((item) => item.id === activeCapability) || flagshipCapabilities[0];
+  const SelectedCapabilityIcon = selectedCapability.icon;
 
   const handleRunSimulation = () => {
     setIsSimulating(true);
@@ -708,188 +760,68 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         </div>
       </section>
 
-      {/* Four customer-facing products, followed by quieter platform capabilities. */}
-      <section style={{ maxWidth: '1350px', margin: '0 auto 72px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <h2 style={{ fontSize: 'clamp(2rem, 3vw, 2.55rem)', fontWeight: '850', marginBottom: '12px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
-            Flagship Capabilities
-          </h2>
-          <p style={{ color: subtextColor, fontSize: '1rem', maxWidth: '680px', margin: '0 auto', fontWeight: '500' }}>
-            Engineered for developers, creators, and quantum researchers looking for unmatched speed, security, and multi-model intelligence.
-          </p>
+      <section className="flagship-experience" aria-labelledby="flagship-experience-title">
+        <div className="flagship-experience-heading">
+          <span>The Quantora experience</span>
+          <h2 id="flagship-experience-title">Choose where your idea goes next.</h2>
+          <p>One intelligent workspace. Four distinct ways to move from curiosity to action.</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: '20px' }}>
-
-          {/* Module 1: AI Studio */}
+        <div
+          className="flagship-stage"
+          style={{ '--flagship-accent': selectedCapability.color }}
+        >
           <div
-            className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            {/* Background Image that scales on hover */}
-            <div
-              className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110"
-              style={{ backgroundImage: 'url(/card-bg-ai.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
-            />
-            {/* Gradient Overlay for text readability */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
+            key={selectedCapability.id}
+            className="flagship-stage-image"
+            style={{ backgroundImage: `url(${selectedCapability.image})` }}
+          />
+          <div className="flagship-stage-shade" />
 
-            {/* Frosted Glass Content Panel */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
-              <div style={{ borderLeft: '3px solid #f97316', paddingLeft: '10px', marginBottom: '10px' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#f97316', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Interactive</span>
-              </div>
-              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>AI Studio & Live Web Builder</h3>
-              <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
-                <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                    Generate complete, functional React & HTML applications from natural language prompts with real-time SSE streaming.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Open AI Studio <ArrowRight size={15} color="#f97316" />
-              </div>
+          <div key={`${selectedCapability.id}-content`} className="flagship-stage-content">
+            <div className="flagship-stage-label">
+              <SelectedCapabilityIcon size={18} />
+              <span>{selectedCapability.number} / {selectedCapability.label}</span>
             </div>
-          </div>
-
-          {/* Module 2: Canvas */}
-          <div
-            className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            <div
-              className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110"
-              style={{ backgroundImage: 'url(/card-bg-canvas.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
-
-            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
-              <div style={{ borderLeft: '3px solid #f59e0b', paddingLeft: '10px', marginBottom: '10px' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#f59e0b', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Visualizer</span>
-              </div>
-              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>Dream-to-Action Canvas</h3>
-              <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
-                <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                    Map out software architecture visually. Convert abstract concepts into structured, executable nodes.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Launch Canvas <ArrowRight size={15} color="#f59e0b" />
-              </div>
-            </div>
-          </div>
-
-          {/* Module 3: Quantum */}
-          <div
-            className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            <div
-              className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110"
-              style={{ backgroundImage: 'url(/card-bg-quantum.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
-
-            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
-              <div style={{ borderLeft: '3px solid #06b6d4', paddingLeft: '10px', marginBottom: '10px' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#06b6d4', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Simulator</span>
-              </div>
-              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>Quantum Horizon & 3D Qubits</h3>
-              <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
-                <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                    Simulate quantum logic gates, compute state vector matrices, and visualize 3D Bloch Spheres in real-time.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Simulate Circuits <ArrowRight size={15} color="#06b6d4" />
-              </div>
-            </div>
-          </div>
-
-          {/* Module 4: Vault */}
-          <div
-            className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            <div
-              className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110"
-              style={{ backgroundImage: 'url(/card-bg-vault.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
-
-            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
-              <div style={{ borderLeft: '3px solid #10b981', paddingLeft: '10px', marginBottom: '10px' }}>
-                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#10b981', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Security</span>
-              </div>
-              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>Privacy Vault & API Gateway</h3>
-              <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
-                <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
-                    Store custom API keys securely using enterprise-grade encryption with zero log exposure.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Configure Vault <ArrowRight size={15} color="#10b981" />
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-          {[
-            {
-              icon: <Search size={18} color="#ec4899" />,
-              label: 'Research & automation',
-              title: 'Agent-assisted web research',
-              text: 'Multi-step reasoning, live search and prompt optimization when a task needs more than a single response.',
-              color: '#ec4899'
-            },
-            {
-              icon: <BarChart3 size={18} color="#8b5cf6" />,
-              label: 'Operational insight',
-              title: 'Usage and reliability metrics',
-              text: 'Understand latency, model availability and token usage without making analytics the centre of the product.',
-              color: '#8b5cf6'
-            }
-          ].map((item) => (
-            <button
-              key={item.title}
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{
-                padding: '18px 20px',
-                display: 'grid',
-                gridTemplateColumns: '38px 1fr auto',
-                alignItems: 'center',
-                gap: '14px',
-                borderRadius: '14px',
-                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                background: isLight ? '#ffffff' : 'rgba(15,23,42,0.74)',
-                color: textColor,
-                textAlign: 'left',
-                cursor: 'pointer',
-                boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.05)' : '0 10px 28px rgba(0,0,0,0.25)'
-              }}
-            >
-              <span style={{ width: '38px', height: '38px', display: 'grid', placeItems: 'center', borderRadius: '11px', background: `${item.color}14` }}>{item.icon}</span>
-              <span>
-                <span style={{ display: 'block', marginBottom: '4px', color: item.color, fontSize: '0.64rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{item.label}</span>
-                <strong style={{ display: 'block', fontSize: '0.95rem', marginBottom: '3px' }}>{item.title}</strong>
-                <span style={{ display: 'block', color: subtextColor, fontSize: '0.76rem', lineHeight: 1.45 }}>{item.text}</span>
-              </span>
-              <ArrowRight size={16} color={item.color} />
+            <h3>{selectedCapability.title}</h3>
+            <p>{selectedCapability.description}</p>
+            <button onClick={() => user ? onLaunchStudio() : onOpenAuth()}>
+              {selectedCapability.action} <ArrowRight size={17} />
             </button>
-          ))}
+          </div>
+
+          <div className="flagship-stage-nav" role="tablist" aria-label="Quantora experiences">
+            {flagshipCapabilities.map((item) => {
+              const ItemIcon = item.icon;
+              const isActive = item.id === selectedCapability.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  className={isActive ? 'is-active' : ''}
+                  style={{ '--item-accent': item.color }}
+                  onClick={() => setActiveCapability(item.id)}
+                >
+                  <span>{item.number}</span>
+                  <ItemIcon size={16} />
+                  <strong>{item.label}</strong>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flagship-supporting-strip">
+          <div>
+            <Search size={17} color="#ec4899" />
+            <span><strong>Agent-assisted research</strong><small>Search and multi-step reasoning when the task demands it.</small></span>
+          </div>
+          <div>
+            <BarChart3 size={17} color="#8b5cf6" />
+            <span><strong>Live model intelligence</strong><small>Availability, reliability and usage without operational clutter.</small></span>
+          </div>
         </div>
       </section>
 
