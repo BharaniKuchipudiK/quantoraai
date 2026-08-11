@@ -4,26 +4,24 @@ import {
   isFreeModel,
   metadataFingerprint,
   providerFromId,
-} from './_lib/model-catalog.js';
+} from './model-catalog.js';
 import {
   isModelStoreConfigured,
   readModelRegistry,
   writeModelEvents,
   writeModelRegistry,
-} from './_lib/model-store.js';
+} from './model-store.js';
 
-function authorized(req) {
+export function isAuthorizedModelScan(req) {
   const secret = process.env.CRON_SECRET;
   return Boolean(secret && req.headers.authorization === `Bearer ${secret}`);
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-  if (!authorized(req)) return res.status(401).json({ error: 'Unauthorized' });
-  if (!isModelStoreConfigured()) return res.status(503).json({ error: 'Model registry storage is not configured' });
+export async function scanModelCatalog() {
+  if (!isModelStoreConfigured()) return { status: 503, body: { error: 'Model registry storage is not configured' } };
 
   const catalog = await fetchOpenRouterCatalog();
-  if (!catalog) return res.status(503).json({ error: 'OpenRouter catalogue unavailable' });
+  if (!catalog) return { status: 503, body: { error: 'OpenRouter catalogue unavailable' } };
 
   const now = new Date().toISOString();
   const previousRows = await readModelRegistry();
@@ -79,15 +77,18 @@ export default async function handler(req, res) {
   }
 
   const stored = await writeModelRegistry(rows);
-  if (!stored) return res.status(503).json({ error: 'Could not update model registry' });
+  if (!stored) return { status: 503, body: { error: 'Could not update model registry' } };
   await writeModelEvents(events);
 
-  return res.status(200).json({
-    ok: true,
-    scannedAt: now,
-    catalogSize: catalog.size,
-    freeModels: freeModels.length,
-    changes: events.length,
-    events: events.reduce((counts, event) => ({ ...counts, [event.event_type]: (counts[event.event_type] || 0) + 1 }), {}),
-  });
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      scannedAt: now,
+      catalogSize: catalog.size,
+      freeModels: freeModels.length,
+      changes: events.length,
+      events: events.reduce((counts, event) => ({ ...counts, [event.event_type]: (counts[event.event_type] || 0) + 1 }), {}),
+    },
+  };
 }

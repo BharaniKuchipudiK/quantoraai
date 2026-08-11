@@ -17,6 +17,7 @@ import {
   providerFromId,
 } from './_lib/model-catalog.js';
 import { readModelRegistry } from './_lib/model-store.js';
+import { isAuthorizedModelScan, scanModelCatalog } from './_lib/model-scanner.js';
 
 const NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -48,6 +49,15 @@ function candidateFromLive(model, stored) {
 
 export default async function handler(req, res) {
   if (req.method && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Reuse this existing serverless function for the scheduled persistence job.
+  // This keeps Quantora within Vercel Hobby's function limit; ordinary public
+  // GET requests continue to receive the read-only dashboard response below.
+  if (isAuthorizedModelScan(req)) {
+    res.setHeader('Cache-Control', 'no-store');
+    const result = await scanModelCatalog();
+    return res.status(result.status).json(result.body);
+  }
 
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
