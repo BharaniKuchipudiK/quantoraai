@@ -663,7 +663,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const response = await fetch('/api/github/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: githubRepoUrl, task: githubChangeRequest.trim() })
+        body: JSON.stringify({
+          targetStage: 'repository-preview',
+          repoUrl: githubRepoUrl,
+          task: githubChangeRequest.trim()
+        })
       });
 
       const data = await response.json();

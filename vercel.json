@@ -40,6 +40,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/github/preview",
+      "destination": "/api/pipeline"
+    },
+    {
       "source": "/api/chat",
       "destination": "/api/chat"
     },

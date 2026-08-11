@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
+import { buildRepositoryPreview } from "./_lib/repository-preview.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 
@@ -23,7 +24,22 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { node, targetStage } = req.body || {};
+    const { node, targetStage, repoUrl, task } = req.body || {};
+
+    /*
+     * Keep this read-only workflow inside the existing pipeline function.
+     * Vercel Hobby permits twelve serverless functions; a dedicated endpoint
+     * would make thirteen. The URL is rewritten here in vercel.json, while the
+     * local Express server keeps its friendly /api/github/preview route.
+     */
+    if (targetStage === 'repository-preview') {
+      try {
+        const preview = await buildRepositoryPreview(repoUrl, task);
+        return res.status(200).json(preview);
+      } catch (error: any) {
+        return res.status(400).json({ error: error?.message || "Could not prepare the repository preview." });
+      }
+    }
     
     // Auth Check
     const mayUseServerKeys = Boolean(sessionUser);
