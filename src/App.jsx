@@ -196,7 +196,8 @@ export default function App() {
             badge: m.tag || (m.available ? 'Online' : m.unavailableReason || 'Offline'),
             provider: m.provider,
             available: m.available,
-            pricingKind: m.pricingKind
+            pricingKind: m.pricingKind,
+            quality: m.quality || null
           }));
 
           /*

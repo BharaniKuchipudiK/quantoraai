@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import ModelDashboard from './ModelDashboard';
+import { chooseBestFreeModel, classifyTask, rankFreeModels } from '../lib/model-routing.js';
 // Interactive iOS Calculator Sub-Component
 function LiveIosCalculator() {
   const [display, setDisplay] = useState('0');
@@ -620,6 +621,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [showCodeMap, setShowCodeMap] = useState({});
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
   const [suggestedModel, setSuggestedModel] = useState(null);
+  const [autoSelectEnabled, setAutoSelectEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('quantora_auto_select_free_model');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('quantora_auto_select_free_model', String(autoSelectEnabled));
+    } catch { /* preference persistence is best effort */ }
+  }, [autoSelectEnabled]);
 
   const [showMentionMenu, setShowMentionMenu] = useState(false);
 
@@ -902,29 +917,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
 
-  // Intelligent Router Logic
+  // Preview the same deterministic free-model choice that will be used when
+  // the message is sent. No extra AI call, cost, or delay is introduced.
   useEffect(() => {
-    const text = inputText.toLowerCase();
-    if (!text.trim()) {
+    if (!autoSelectEnabled || !inputText.trim()) {
       setSuggestedModel(null);
       return;
     }
-    const isCode = /react|function|const|python|api|bug|error|html|css|javascript|code|app|component/.test(text);
-    const isResearch = /analyze|summarize|explain|compare|theory|architecture|research/.test(text);
-
-    // Only ever suggest a model the live registry reports as available — never
-    // fall back to a hardcoded id, which could route to a model OpenRouter has
-    // dropped and produce the exact 400 the registry is meant to prevent.
-    if (isCode && selectedModel?.name !== 'Qwen 2.5 Coder 32B') {
-      const qwen = availableModels?.find(m => m.name.includes('Qwen 2.5 Coder') && m.available !== false);
-      setSuggestedModel(qwen || null);
-    } else if (isResearch && selectedModel?.name !== 'DeepSeek V3') {
-      const ds = availableModels?.find(m => m.name.includes('DeepSeek V3') && m.available !== false);
-      setSuggestedModel(ds || null);
-    } else {
-      setSuggestedModel(null);
-    }
-  }, [inputText, selectedModel, availableModels]);
+    setSuggestedModel(chooseBestFreeModel(availableModels, inputText));
+  }, [inputText, availableModels, autoSelectEnabled]);
 
   const saveKeyAndRetry = (keyType) => {
     if (!keyInputValue.trim()) return;
@@ -1003,7 +1004,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
 
-    const targetModel = selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+    const taskCategory = classifyTask(visibleText);
+    const autoChoice = autoSelectEnabled ? chooseBestFreeModel(availableModels, visibleText) : null;
+    const targetModel = autoChoice?.model || selectedModel || { id: 'gemini-flash-latest', name: 'Gemini Flash', pricingKind: 'free-tier', available: true };
+    const rankedFreeFallbacks = rankFreeModels(availableModels, visibleText)
+      .filter((model) => model.id !== targetModel.id);
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
@@ -1102,6 +1107,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       text: '',
       componentType: 'formatted_text',
       thoughtProcess: `Connecting to ${targetModel.name}...`,
+      routingNote: autoChoice?.model
+        ? `Quantora chose ${targetModel.name} because ${autoChoice.reason}.`
+        : null,
+      taskCategory,
       latencyMs: 0,
       provider: targetModel.name,
       liveConnected: true
@@ -1109,25 +1118,71 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveMessages(prev => [...prev, initialAiMsg]);
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: text,
-          modelId: targetModel.id,
-          modelName: targetModel.name,
-          history: cleanMessages,
-          userKey: geminiApiKey,
-          openRouterKey: openRouterApiKey,
-          cognitiveLevel: cognitiveLevel,
-          // Build mode: the code canvas is open, or the message clearly asks
-          // for a runnable artifact. Pins the model to a self-contained HTML
-          // document so the live preview + self-heal loop get clean input.
-          buildMode: isWorkspaceMode || detectBuildIntent(text)
-        })
-      });
+      const candidateModels = [targetModel, ...rankedFreeFallbacks].slice(0, 3);
+      const buildMode = isWorkspaceMode || detectBuildIntent(text);
+      let res = null;
+      let errData = {};
+      let respondingModel = targetModel;
+      let fallbackFrom = null;
+
+      for (let index = 0; index < candidateModels.length; index += 1) {
+        const candidate = candidateModels[index];
+        respondingModel = candidate;
+        const hasAnotherCandidate = index < candidateModels.length - 1;
+        try {
+          res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: text,
+              modelId: candidate.id,
+              modelName: candidate.name,
+              history: cleanMessages,
+              userKey: geminiApiKey,
+              openRouterKey: openRouterApiKey,
+              cognitiveLevel,
+              buildMode,
+              taskCategory,
+              fallbackFrom,
+            })
+          });
+        } catch (networkError) {
+          if (!hasAnotherCandidate) throw networkError;
+          fallbackFrom ||= targetModel.id;
+          continue;
+        }
+
+        if (res.ok) {
+          respondingModel = candidate;
+          if (candidate.id !== targetModel.id) {
+            fallbackFrom ||= targetModel.id;
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              modelUsed: candidate.name,
+              provider: candidate.name,
+              routingNote: `${targetModel.name} was unavailable, so Quantora continued with ${candidate.name}.`,
+              thoughtProcess: `Fallback connected to ${candidate.name}...`,
+              fallbackFrom: targetModel.id,
+            } : m));
+          }
+          break;
+        }
+
+        errData = await res.json().catch(() => ({}));
+        const retryable = res.status >= 500
+          || [400, 404, 408, 409, 422].includes(res.status)
+          || Boolean(errData.requiresKey);
+        if (!hasAnotherCandidate || !retryable || errData.requiresAuth || res.status === 429) break;
+
+        fallbackFrom ||= targetModel.id;
+        const nextModel = candidateModels[index + 1];
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          thoughtProcess: `${candidate.name} is unavailable; trying ${nextModel.name}...`,
+        } : m));
+      }
+
+      if (!res) throw new Error('Quantora could not reach an available AI provider.');
 
       if (res.ok) {
         const reader = res.body.getReader();
@@ -1159,6 +1214,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     provider: parsed.provider,
+                    modelUsed: respondingModel.name,
+                    modelId: parsed.modelId || respondingModel.id,
+                    requestId: parsed.requestId || m.requestId,
                     latencyMs: parsed.latencyMs || 0,
                     thoughtProcess: `Processed live via ${parsed.provider} (${parsed.latencyMs || 0}ms)`
                   } : m));
@@ -1169,8 +1227,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
       } else {
-        const errData = await res.json().catch(() => ({}));
-
         /*
          * "You need to sign in" and "you need an API key" are different
          * problems with different fixes. Collapsing both into the key prompt
@@ -1191,12 +1247,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             thoughtProcess: 'Rate limited'
           } : m));
         } else {
-          const errText = errData.error || `The backend server encountered an error with ${targetModel.name}.`;
+          const errText = errData.error || `The backend server encountered an error with ${respondingModel.name}.`;
 
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
             text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment. Please try again later or select a different model.`,
-            thoughtProcess: `Error processing request via ${targetModel.name}`
+            thoughtProcess: `Error processing request via ${respondingModel.name}`
           } : m));
         }
       }
@@ -1209,6 +1265,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       } : m));
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const submitModelFeedback = async (message, outcome) => {
+    if (!message?.requestId || !message?.modelId || message.qualityFeedback) return;
+    updateActiveMessages(prev => prev.map(item => item.id === message.id ? { ...item, qualityFeedback: outcome } : item));
+    try {
+      await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: 'feedback',
+          requestId: message.requestId,
+          modelId: message.modelId,
+          taskCategory: message.taskCategory || 'general',
+          outcome,
+        }),
+      });
+    } catch (error) {
+      console.warn('Anonymous model feedback could not be recorded:', error);
     }
   };
 
@@ -1366,6 +1442,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                       )}
 
+                      {msg.routingNote && (
+                        <div style={{ marginBottom: '9px', padding: '7px 10px', borderRadius: '9px', background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.1)', color: isLight ? '#9a3412' : '#fdba74', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Sparkles size={13} /> {msg.routingNote}
+                        </div>
+                      )}
+
                       {/* Render Ollama Style "Thought for a moment" Header */}
                       {msg.thoughtProcess && (
                         <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
@@ -1446,6 +1528,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         <>
                           <span>•</span>
                           <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
+                        </>
+                      )}
+                      {msg.requestId && (
+                        <>
+                          <span>•</span>
+                          <span>Helpful?</span>
+                          <button type="button" onClick={() => submitModelFeedback(msg, 'helpful')} aria-label="Mark this response helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'helpful' ? '#059669' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsUp size={13} /></button>
+                          <button type="button" onClick={() => submitModelFeedback(msg, 'not_helpful')} aria-label="Mark this response not helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'not_helpful' ? '#dc2626' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsDown size={13} /></button>
                         </>
                       )}
                       <span>•</span>
@@ -1764,7 +1854,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               data={modelDashboard}
               availableModels={availableModels}
               selectedModel={selectedModel}
+              autoSelectEnabled={autoSelectEnabled}
+              onToggleAutoSelect={setAutoSelectEnabled}
               onSelectModel={(model) => {
+                setAutoSelectEnabled(false);
                 setSelectedModel(availableModels?.find((candidate) => candidate.id === model.id) || model);
                 setShowModelDashboard(false);
               }}
@@ -2133,7 +2226,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           padding: '4px'
         }}>
           {/* Intelligent Router Suggestion Pill */}
-          {suggestedModel && !showMentionMenu && (
+          {suggestedModel?.model && !showMentionMenu && (
             <div style={{
               position: 'absolute',
               top: '-35px',
@@ -2150,13 +2243,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               zIndex: 10
             }}>
               <span style={{ fontSize: '0.75rem', color: '#e2e8f0', fontWeight: '500' }}>
-                🧠 Looks like you're {suggestedModel.name.includes('Qwen') ? 'coding' : 'researching'}. Recommend: <strong style={{color: '#f97316'}}>{suggestedModel.name}</strong>
+                🧠 Auto Select: <strong style={{color: '#f97316'}}>{suggestedModel.model.name}</strong> is the best ready free model for this request.
               </span>
-              <button 
-                onClick={() => { setSelectedModel(suggestedModel); setSuggestedModel(null); }}
-                style={{ background: '#f97316', color: '#fff', border: 'none', padding: '3px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                Switch
-              </button>
             </div>
           )}
 
@@ -2451,7 +2539,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   }}
                 >
                   <Cpu size={15} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
-                  <span>{selectedModel ? selectedModel.name.split(' ')[0] : 'Engine'}</span>
+                  <span>{autoSelectEnabled ? 'Auto' : (selectedModel ? selectedModel.name.split(' ')[0] : 'Engine')}</span>
                 </button>
 
                 {showInBarModelDropdown && (
@@ -2516,6 +2604,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             key={model.id}
                             onClick={() => {
                               if (isAvailable) {
+                                setAutoSelectEnabled(false);
                                 setSelectedModel(model);
                                 setShowInBarModelDropdown(false);
                               }

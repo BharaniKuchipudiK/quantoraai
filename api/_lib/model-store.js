@@ -43,6 +43,17 @@ export async function readModelRegistry() {
   }
 }
 
+export async function readModelQualitySummary() {
+  const response = await request('model_quality_summary?select=*', { method: 'GET' });
+  if (!response) return [];
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function writeModelRegistry(rows) {
   if (!rows.length) return false;
   const response = await request('model_registry?on_conflict=id', {

@@ -133,6 +133,33 @@ export function recordUsage(entry: {
   });
 }
 
+/*
+ * Anonymous model-quality signal. No account id, prompt, response, API key or
+ * IP address is stored. This is intentionally operational data only: did a
+ * model complete, was a fallback needed, and did the user mark it useful?
+ */
+export function recordModelQualityEvent(entry: {
+  requestId: string;
+  modelId: string;
+  taskCategory: string;
+  outcome: "success" | "failure" | "helpful" | "not_helpful";
+  latencyMs?: number | null;
+  fallbackFrom?: string | null;
+}): void {
+  void request("model_quality_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      request_id: entry.requestId,
+      model_id: entry.modelId,
+      task_category: entry.taskCategory,
+      outcome: entry.outcome,
+      latency_ms: entry.latencyMs ?? null,
+      fallback_from: entry.fallbackFrom || null,
+    }]),
+  });
+}
+
 /* Real counts for the admin dashboard, replacing fabricated values. */
 export async function getGrowthSummary(): Promise<{
   totalUsers: number; newUsers7d: number; activeUsers7d: number;
