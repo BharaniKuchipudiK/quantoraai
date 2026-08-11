@@ -264,7 +264,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, task, fallbackFrom } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -289,13 +289,15 @@ export default async function handler(req: any, res: any) {
     } else if (cognitiveLevel === 'Deep Think') {
       dynamicTemperature = 0.2;
     }
-    // Build requests want deterministic, runnable code over prose variety.
-    if (buildMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
+    // Build requests want deterministic, runnable code over prose variety. A
+    // guided intake is conversational until it builds, so keep it a bit warmer.
+    if (buildMode && !guidedBuild) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
 
     const finalSystemPrompt = buildConversationSystemPrompt({
       cognitiveLevel,
       modelName: modelName || modelId,
       buildMode: Boolean(buildMode),
+      guided: Boolean(guidedBuild),
     });
 
     // The self-heal endpoint reuses this handler (via task: "repair") so it

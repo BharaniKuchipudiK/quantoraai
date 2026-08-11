@@ -718,7 +718,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // never declared — clicking "Open Live Canvas Mode" threw a ReferenceError,
   // so the canvas never opened. Declaring it restores the whole preview flow.
   const [previewCode, setPreviewCode] = useState('');
-  
+  // Guided build intake is active from a fresh "build me a site" request until a
+  // site is produced. It persists the designer-style Q&A across turns; once a
+  // preview exists we drop it so further messages behave normally.
+  const [guidedSession, setGuidedSession] = useState(false);
+  useEffect(() => {
+    if (previewCode && previewCode.trim()) setGuidedSession(false);
+  }, [previewCode]);
+
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
   const [cursorPos, setCursorPos] = useState(0);
@@ -1199,6 +1206,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     try {
       const candidateModels = [targetModel, ...rankedFreeFallbacks].slice(0, 3);
       const buildMode = isWorkspaceMode || detectBuildIntent(text);
+      /*
+       * Guided build: a fresh "make me a website/app" request (no site yet)
+       * starts a designer-style intake — Quantora asks for the essentials and
+       * confirms before building. The session persists across the follow-up
+       * answers (which don't read as build intent on their own) until a site is
+       * produced, at which point an effect clears it.
+       */
+      const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode;
+      const guidedBuild = (startingGuided || guidedSession) && !previewCode;
+      if (guidedBuild && !guidedSession) setGuidedSession(true);
       let res = null;
       let errData = {};
       let respondingModel = targetModel;
@@ -1221,6 +1238,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               openRouterKey: openRouterApiKey,
               cognitiveLevel,
               buildMode,
+              guidedBuild,
               taskCategory,
               fallbackFrom,
             })
