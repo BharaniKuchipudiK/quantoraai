@@ -255,7 +255,7 @@ export default async function handler(req: any, res: any) {
   const startTime = Date.now();
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode } = req.body || {};
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') {
@@ -263,10 +263,13 @@ export default async function handler(req: any, res: any) {
     } else if (cognitiveLevel === 'Deep Think') {
       dynamicTemperature = 0.2;
     }
+    // Build requests want deterministic, runnable code over prose variety.
+    if (buildMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
 
     const finalSystemPrompt = buildConversationSystemPrompt({
       cognitiveLevel,
       modelName: modelName || modelId,
+      buildMode: Boolean(buildMode),
     });
 
     if (!message || typeof message !== "string" || !message.trim()) {

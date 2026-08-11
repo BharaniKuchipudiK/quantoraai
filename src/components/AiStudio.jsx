@@ -352,6 +352,22 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
   );
 }
 
+/*
+ * Conservative build-intent detector. Returns true only for clear "make me a
+ * runnable thing" requests, so /api/chat's BUILD MODE (single self-contained
+ * HTML document) engages for exactly those — and normal chat, including
+ * questions *about* building, is left untouched. Questions are excluded up
+ * front to avoid turning "how do I build an app?" into a generated artifact.
+ */
+function detectBuildIntent(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim().toLowerCase();
+  if (/^(how|what|why|when|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)/.test(t)) return false;
+  const verb = /\b(build|create|make|generate|design|develop|code|prototype|clone|scaffold)\b/;
+  const noun = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone)\b/;
+  return verb.test(t) && noun.test(t);
+}
+
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
@@ -1105,7 +1121,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           history: cleanMessages,
           userKey: geminiApiKey,
           openRouterKey: openRouterApiKey,
-          cognitiveLevel: cognitiveLevel
+          cognitiveLevel: cognitiveLevel,
+          // Build mode: the code canvas is open, or the message clearly asks
+          // for a runnable artifact. Pins the model to a self-contained HTML
+          // document so the live preview + self-heal loop get clean input.
+          buildMode: isWorkspaceMode || detectBuildIntent(text)
         })
       });
 

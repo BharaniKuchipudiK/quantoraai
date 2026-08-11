@@ -47,15 +47,33 @@ Examine important edge cases and tradeoffs carefully. Present only the useful co
 Use enough explanation to make the recommendation clear and trustworthy, without unnecessary detail.`;
 }
 
+/*
+ * Build directive. Appended ONLY when the caller sets buildMode, i.e. the user
+ * clearly wants a runnable artifact (a website/app/component), not a chat
+ * answer. It pins the output to a single self-contained HTML document so the
+ * live preview can render it and the verification loop has clean, runnable
+ * input every time. Kept off by default so ordinary conversation is untouched.
+ */
+const BUILD_DIRECTIVE = `BUILD MODE
+The user wants a working, runnable artifact — not a description of one.
+- Respond with EXACTLY ONE complete, self-contained HTML document inside a single \`\`\`html code block.
+- Inline all CSS and JavaScript. It must run as a single .html file opened in a browser: no build step, no bundler, no server, and no bare module imports (never \`import x from "pkg"\`).
+- If you need a library, include it only via a public CDN <script>/<link> tag.
+- Make it polished and complete: real content, a responsive layout, and sensible interactivity. No TODOs, lorem ipsum, or placeholder comments standing in for functionality.
+- Keep any prose to at most one short sentence before the code block, and add nothing after it.`;
+
 export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
   modelName?: string;
+  buildMode?: boolean;
 } = {}): string {
   const modelContext = options.modelName
     ? `\n\nYou are currently using ${options.modelName} as the underlying model. Preserve its useful expertise while following the Quantora policy above.`
     : "";
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${modelContext}`;
+  const build = options.buildMode ? `\n\n${BUILD_DIRECTIVE}` : "";
+
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${build}${modelContext}`;
 }
 
-export { SENIOR_PARTNER_POLICY };
+export { SENIOR_PARTNER_POLICY, BUILD_DIRECTIVE };
