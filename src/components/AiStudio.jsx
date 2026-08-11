@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
+import ModelDashboard from './ModelDashboard';
 // Interactive iOS Calculator Sub-Component
 function LiveIosCalculator() {
   const [display, setDisplay] = useState('0');
@@ -350,7 +351,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
   );
 }
 
-export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
     id: 1,
@@ -385,6 +386,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showModelDashboard, setShowModelDashboard] = useState(false);
 
   // Derive current session and messages
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0] || {
@@ -1619,6 +1621,46 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           ))}
         </div>
+
+        {/* Live model catalogue and lifecycle dashboard */}
+        <button
+          onClick={() => setShowModelDashboard((open) => !open)}
+          aria-expanded={showModelDashboard}
+          style={{
+            border: showModelDashboard ? '1px solid rgba(249, 115, 22, 0.35)' : '1px solid transparent',
+            background: showModelDashboard ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
+            borderRadius: '9px',
+            padding: '8px 10px',
+            marginBottom: showModelDashboard ? '8px' : '16px',
+            color: showModelDashboard ? '#f97316' : textColor,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.78rem',
+            fontWeight: '700',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Activity size={15} /> AI Models
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#059669', fontSize: '0.65rem' }}>{modelDashboard?.summary?.available ?? availableModels?.filter((model) => model.available !== false).length ?? 0} ready</span>
+            <ChevronDown size={13} style={{ transform: showModelDashboard ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+          </span>
+        </button>
+
+        {showModelDashboard && (
+          <div style={{ marginBottom: '14px', minHeight: 0 }}>
+            <ModelDashboard
+              data={modelDashboard}
+              availableModels={availableModels}
+              selectedModel={selectedModel}
+              onSelectModel={(model) => setSelectedModel(availableModels?.find((candidate) => candidate.id === model.id) || model)}
+              isLight={isLight}
+            />
+          </div>
+        )}
 
         {/* History Section Title */}
         <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>

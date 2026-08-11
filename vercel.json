@@ -1,6 +1,12 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/model-scan",
+      "schedule": "15 3 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
