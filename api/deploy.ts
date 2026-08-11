@@ -15,67 +15,26 @@ export default async function handler(req: any, res: any) {
       return res.status(401).json({ error: "Missing VERCEL_ACCESS_TOKEN in API Gateway." });
     }
 
-    // Prepare Vercel deployment payload
+    /*
+     * Quantora builds self-contained HTML documents, so we publish them as a
+     * STATIC site (a single index.html) rather than wrapping the code in a
+     * Create-React-App project. Static deploys need no build step, are on
+     * Vercel's free tier, and — critically — actually render what the user saw
+     * in the preview. (The old CRA payload dropped an HTML document into
+     * src/App.js, which cannot compile as a React component.)
+     */
+    const safeName = String(projectName).substring(0, 50).replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase() || 'quantora-app';
     const payload = {
-      name: projectName.substring(0, 50).replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase(),
+      name: safeName,
       files: [
         {
-          file: "package.json",
-          data: JSON.stringify({
-            name: projectName,
-            version: "1.0.0",
-            scripts: {
-              "start": "react-scripts start",
-              "build": "react-scripts build",
-            },
-            dependencies: {
-              "react": "^18.2.0",
-              "react-dom": "^18.2.0",
-              "react-scripts": "5.0.1"
-            }
-          })
+          file: "index.html",
+          data: code,
         },
-        {
-          file: "public/index.html",
-          data: `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${projectName}</title>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-  </body>
-</html>`
-        },
-        {
-          file: "src/index.js",
-          data: `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import './styles.css';
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);`
-        },
-        {
-          file: "src/App.js",
-          data: code
-        },
-        {
-          file: "src/styles.css",
-          data: "body { font-family: sans-serif; margin: 0; padding: 20px; background: #f8fafc; }"
-        }
       ],
       projectSettings: {
-        framework: "create-react-app"
-      }
+        framework: null,
+      },
     };
 
     // Make the Vercel API Request
