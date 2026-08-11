@@ -405,6 +405,36 @@ function CopyableCodeBlock({ code, language }) {
 // + live preview, not a code editor. Flip to true to bring back a dev mode.
 const SHOW_WORKSPACE = false;
 
+// Downscale an uploaded image to a bounded dimension and return a JPEG data URI.
+// Keeps embedded photos small enough to inline directly into the generated,
+// self-contained HTML (so the site — and its published copy — carry the real
+// images, not placeholders) without bloating the document.
+function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+          else { width = Math.round((width * maxDim) / height); height = maxDim; }
+        }
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (err) { reject(err); }
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
@@ -726,10 +756,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // place instead of building from scratch. Auto-on when a site appears; the
   // user can switch it off to start fresh.
   const [refineActive, setRefineActive] = useState(true);
+  // Photos uploaded during the intake persist here (data URIs) so they survive
+  // the per-send attachment reset and are still available when the build runs.
+  const [sessionImages, setSessionImages] = useState([]);
   useEffect(() => {
     if (previewCode && previewCode.trim()) {
       setGuidedSession(false); // a site now exists — intake is over
       setRefineActive(true);   // and further messages refine it
+      setSessionImages([]);    // photos are now embedded in the site
     }
   }, [previewCode]);
 
@@ -876,15 +910,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
   const bubbleAiBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-    const newAttachments = files.map(file => ({
-      name: file.name,
-      size: (file.size / 1024).toFixed(1) + ' KB',
-      type: file.type.includes('image') ? 'image' : 'file'
+    const processed = await Promise.all(files.map(async (file) => {
+      const att = {
+        name: file.name,
+        size: (file.size / 1024).toFixed(1) + ' KB',
+        type: file.type.includes('image') ? 'image' : 'file'
+      };
+      // Capture the actual image (downscaled) so the build can embed it as a
+      // real product/gallery photo instead of a placeholder.
+      if (att.type === 'image') {
+        try { att.dataUrl = await downscaleImageToDataUrl(file); } catch (err) { /* keep as metadata only */ }
+      }
+      return att;
     }));
-    setAttachments(prev => [...prev, ...newAttachments]);
+    setAttachments(prev => [...prev, ...processed]);
+    // Persist the actual photos across the intake (attachments reset each send).
+    const newImages = processed.filter(a => a.dataUrl).map(a => a.dataUrl);
+    if (newImages.length) setSessionImages(prev => [...prev, ...newImages].slice(-8));
   };
 
   const removeAttachment = (index) => {
@@ -1233,6 +1278,24 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode;
       const guidedBuild = (startingGuided || guidedSession) && !previewCode;
       if (guidedBuild && !guidedSession) setGuidedSession(true);
+
+      /*
+       * Photo uploads: inline the user's real images into the build via stable
+       * placeholder tokens, then swap the actual (downscaled) data URIs back in
+       * after generation — so the model never has to echo huge base64 strings,
+       * yet the rendered/published site carries the real photos.
+       */
+      const imageMap = new Map();
+      let outboundMessage = apiMessage;
+      if (sessionImages.length && (buildMode || guidedBuild)) {
+        const tokens = sessionImages.map((dataUrl, i) => {
+          const token = `{{QUANTORA_IMAGE_${i + 1}}}`;
+          imageMap.set(token, dataUrl);
+          return token;
+        });
+        outboundMessage += `\n\n[The user uploaded ${tokens.length} photo(s) to use in the site. When you build, use them as the real product/gallery images by putting these EXACT placeholder strings inside <img src="..."> attributes (one per image, reused where it makes sense): ${tokens.join(', ')}. Do not substitute stock image URLs for these.]`;
+      }
+
       let res = null;
       let errData = {};
       let respondingModel = targetModel;
@@ -1247,7 +1310,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              message: apiMessage,
+              message: outboundMessage,
               modelId: candidate.id,
               modelName: candidate.name,
               history: cleanMessages,
@@ -1342,8 +1405,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         // Outcome-first: if the reply is a complete website/app, open the Live
         // Canvas automatically so the user sees the running result — not code.
+        // Swap any image placeholders for the real uploaded photos first, so the
+        // previewed (and published) site carries the actual images.
         if (/<!DOCTYPE html>/i.test(currentText) || /<html[\s>]/i.test(currentText)) {
-          openCanvasWithCode(currentText);
+          let finalHtml = currentText;
+          if (imageMap.size) {
+            for (const [token, dataUrl] of imageMap) finalHtml = finalHtml.split(token).join(dataUrl);
+          }
+          openCanvasWithCode(finalHtml);
         }
 
       } else {
