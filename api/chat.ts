@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
+import { randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
-import { recordUsage } from "./_lib/store.js";
+import { recordModelQualityEvent, recordUsage } from "./_lib/store.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
 import { repairArtifact } from "./_lib/repair.js";
@@ -14,6 +15,11 @@ import { repairArtifact } from "./_lib/repair.js";
 const MAX_MESSAGE_LENGTH = 50_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
+const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
+
+function normaliseTaskCategory(value: unknown): string {
+  return typeof value === "string" && TASK_CATEGORIES.has(value) ? value : "general";
+}
 
 /*
  * OpenRouter requires every model id to be a fully namespaced `vendor/model`
@@ -254,9 +260,28 @@ export default async function handler(req: any, res: any) {
   }
 
   const startTime = Date.now();
+  const requestId = randomUUID();
+  const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, task } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, task, fallbackFrom } = req.body || {};
+
+    if (task === "feedback") {
+      const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
+      const outcome = req.body?.outcome;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(feedbackRequestId)
+          || typeof modelId !== "string"
+          || !["helpful", "not_helpful"].includes(outcome)) {
+        return res.status(400).json({ error: "Invalid anonymous feedback signal." });
+      }
+      recordModelQualityEvent({
+        requestId: feedbackRequestId,
+        modelId,
+        taskCategory,
+        outcome,
+      });
+      return res.status(202).json({ recorded: true });
+    }
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') {
@@ -360,8 +385,9 @@ export default async function handler(req: any, res: any) {
         
         const latencyMs = Date.now() - startTime;
         logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys);
+        recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
-        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, liveConnected: true })}\n\n`);
+        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true })}\n\n`);
         res.write('data: [DONE]\n\n');
         return res.end();
       } catch (geminiErr: any) {
@@ -468,17 +494,29 @@ export default async function handler(req: any, res: any) {
       const latencyMs = Date.now() - startTime;
       logTelemetry(openRouterModelId, latencyMs, fullReply.length, "OpenRouter",
         sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys);
+      recordModelQualityEvent({ requestId, modelId: openRouterModelId, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
-      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, liveConnected: true })}\n\n`);
+      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, requestId, liveConnected: true })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
 
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
+    if (req.body?.task !== "repair" && req.body?.task !== "feedback" && typeof req.body?.modelId === "string") {
+      recordModelQualityEvent({
+        requestId,
+        modelId: req.body.modelId,
+        taskCategory,
+        outcome: "failure",
+        latencyMs: Date.now() - startTime,
+        fallbackFrom: req.body?.fallbackFrom,
+      });
+    }
     return res.status(500).json({
       error: err.message || "Failed to communicate with AI model.",
-      modelName: req.body?.modelName || req.body?.modelId
+      modelName: req.body?.modelName || req.body?.modelId,
+      requestId,
     });
   }
 }

@@ -16,7 +16,7 @@ import {
   isFreeModel,
   providerFromId,
 } from './_lib/model-catalog.js';
-import { readModelRegistry } from './_lib/model-store.js';
+import { readModelQualitySummary, readModelRegistry } from './_lib/model-store.js';
 import { isAuthorizedModelScan, scanModelCatalog } from './_lib/model-scanner.js';
 
 const NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
@@ -47,6 +47,30 @@ function candidateFromLive(model, stored) {
   };
 }
 
+function aggregateQuality(rows) {
+  const result = new Map();
+  for (const row of rows) {
+    const current = result.get(row.model_id) || { successes: 0, failures: 0, helpful: 0, notHelpful: 0, fallbacks: 0 };
+    current.successes += Number(row.successful_responses) || 0;
+    current.failures += Number(row.failed_responses) || 0;
+    current.helpful += Number(row.helpful_votes) || 0;
+    current.notHelpful += Number(row.not_helpful_votes) || 0;
+    current.fallbacks += Number(row.fallback_rescues) || 0;
+    result.set(row.model_id, current);
+  }
+  for (const quality of result.values()) {
+    const reliabilitySamples = quality.successes + quality.failures;
+    const feedbackSamples = quality.helpful + quality.notHelpful;
+    const reliability = reliabilitySamples ? quality.successes / reliabilitySamples : null;
+    const usefulness = feedbackSamples ? quality.helpful / feedbackSamples : null;
+    quality.sampleSize = reliabilitySamples;
+    quality.score = reliabilitySamples >= 5
+      ? Math.round(100 * ((reliability ?? 0.5) * 0.7 + (usefulness ?? reliability ?? 0.5) * 0.3))
+      : null;
+  }
+  return result;
+}
+
 export default async function handler(req, res) {
   if (req.method && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -61,15 +85,18 @@ export default async function handler(req, res) {
 
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
 
-  const [catalog, storedRows] = await Promise.all([
+  const [catalog, storedRows, qualityRows] = await Promise.all([
     fetchOpenRouterCatalog(),
     readModelRegistry(),
+    readModelQualitySummary(),
   ]);
   const stored = new Map(storedRows.map((row) => [row.id, row]));
+  const quality = aggregateQuality(qualityRows);
   const fetchedAt = new Date().toISOString();
-  const models = DIRECT_MODELS.map((model) => ({ ...model }));
+  const models = DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null }));
   const dashboardModels = DIRECT_MODELS.map((model) => ({
     ...model,
+    quality: quality.get(model.id) || null,
     status: 'available',
     health: 'untested',
     event: 'listed',
@@ -86,6 +113,7 @@ export default async function handler(req, res) {
     const pricingKind = live ? (isFreeModel(live) ? 'free' : 'paid') : 'unknown';
     const model = {
       ...curated,
+      quality: quality.get(curated.id) || null,
       available,
       unavailableReason: available ? undefined : 'No longer listed by OpenRouter',
       contextWindow: live?.context_length ? formatContext(live.context_length, curated.contextWindow) : curated.contextWindow,
@@ -109,7 +137,7 @@ export default async function handler(req, res) {
   const dashboardIds = new Set(dashboardModels.map((model) => model.id));
   for (const model of liveFree) {
     if (dashboardIds.has(model.id)) continue;
-    dashboardModels.push({ ...candidateFromLive(model, stored.get(model.id)), category: 'candidate' });
+    dashboardModels.push({ ...candidateFromLive(model, stored.get(model.id)), quality: quality.get(model.id) || null, category: 'candidate' });
     dashboardIds.add(model.id);
   }
 

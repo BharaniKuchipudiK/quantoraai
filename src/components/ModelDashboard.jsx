@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clock3, Cpu, Sparkles } from 'lucide-react';
 
 const FILTERS = [
-  { id: 'all', label: 'All' },
+  { id: 'ready', label: 'Ready' },
   { id: 'free', label: 'Free' },
   { id: 'new', label: 'New' },
   { id: 'offline', label: 'Offline' },
@@ -15,8 +15,8 @@ function statusTheme(status) {
   return { label: status === 'retired' ? 'Retired' : 'Offline', color: '#dc2626', bg: 'rgba(239, 68, 68, 0.1)', icon: AlertTriangle };
 }
 
-export default function ModelDashboard({ data, availableModels, selectedModel, onSelectModel, isLight }) {
-  const [filter, setFilter] = useState('free');
+export default function ModelDashboard({ data, availableModels, selectedModel, onSelectModel, autoSelectEnabled, onToggleAutoSelect, isLight }) {
+  const [filter, setFilter] = useState('ready');
   const [showAll, setShowAll] = useState(false);
   const textColor = isLight ? '#0f172a' : '#f8fafc';
   const subtextColor = isLight ? '#64748b' : '#94a3b8';
@@ -34,6 +34,7 @@ export default function ModelDashboard({ data, availableModels, selectedModel, o
   const models = data?.models?.length ? data.models : fallback;
   const visibleModels = models
     .filter((model) => {
+      if (filter === 'ready') return model.status === 'available';
       if (filter === 'free') return model.pricingKind === 'free' || model.pricingKind === 'free-tier';
       if (filter === 'new') return model.isNew || model.isUpdated;
       if (filter === 'offline') return ['offline', 'retired'].includes(model.status);
@@ -62,16 +63,30 @@ export default function ModelDashboard({ data, availableModels, selectedModel, o
   return (
     <div style={{ border: `1px solid ${borderColor}`, borderRadius: '12px', background: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.035)', overflow: 'hidden' }}>
       <div style={{ padding: '10px', borderBottom: `1px solid ${borderColor}` }}>
+        <button
+          type="button"
+          onClick={() => onToggleAutoSelect?.(!autoSelectEnabled)}
+          aria-pressed={autoSelectEnabled}
+          style={{ width: '100%', marginBottom: '9px', padding: '9px 10px', borderRadius: '10px', border: autoSelectEnabled ? '1px solid rgba(249,115,22,0.45)' : `1px solid ${borderColor}`, background: autoSelectEnabled ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)') : 'transparent', color: textColor, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '9px', textAlign: 'left' }}
+        >
+          <Sparkles size={15} color="#f97316" />
+          <span style={{ flex: 1 }}>
+            <span style={{ display: 'block', fontSize: '0.7rem', fontWeight: '800' }}>Best Free Model — Auto Select</span>
+            <span style={{ display: 'block', marginTop: '2px', color: subtextColor, fontSize: '0.58rem' }}>Quantora chooses a ready free model for each request.</span>
+          </span>
+          <span style={{ color: autoSelectEnabled ? '#059669' : subtextColor, fontSize: '0.6rem', fontWeight: '800' }}>{autoSelectEnabled ? 'ON' : 'OFF'}</span>
+        </button>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
           {[
-            { label: 'Ready', value: summary.available || 0, color: '#059669' },
-            { label: 'Free', value: summary.free || 0, color: '#0284c7' },
-            { label: 'New', value: summary.new || 0, color: '#7c3aed' },
+            { id: 'ready', label: 'Ready', value: summary.available || 0, color: '#059669' },
+            { id: 'free', label: 'Free', value: summary.free || 0, color: '#0284c7' },
+            { id: 'new', label: 'New', value: summary.new || 0, color: '#7c3aed' },
           ].map((item) => (
-            <div key={item.label} style={{ padding: '7px 4px', borderRadius: '9px', textAlign: 'center', background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.05)' }}>
+            <button type="button" key={item.label} onClick={() => { setFilter(item.id); setShowAll(false); }} aria-label={`Show ${item.value} ${item.label.toLowerCase()} models`} style={{ padding: '7px 4px', borderRadius: '9px', textAlign: 'center', border: filter === item.id ? `1px solid ${item.color}` : '1px solid transparent', cursor: 'pointer', background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.05)' }}>
               <div style={{ fontSize: '0.9rem', lineHeight: 1, fontWeight: '800', color: item.color }}>{item.value}</div>
               <div style={{ marginTop: '4px', fontSize: '0.58rem', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{item.label}</div>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -111,6 +126,7 @@ export default function ModelDashboard({ data, availableModels, selectedModel, o
                   <span>•</span>
                   <span>{model.pricingKind === 'free-tier' ? 'Free tier' : model.pricingKind || 'Unknown cost'}</span>
                   {model.contextWindow && <><span>•</span><span>{model.contextWindow}</span></>}
+                  {model.quality?.score != null && <><span>•</span><span title={`Based on ${model.quality.sampleSize} anonymous completed requests`}>{model.quality.score}% quality</span></>}
                 </div>
               </div>
             </button>
