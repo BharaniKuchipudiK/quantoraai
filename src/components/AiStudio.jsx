@@ -871,12 +871,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const isCode = /react|function|const|python|api|bug|error|html|css|javascript|code|app|component/.test(text);
     const isResearch = /analyze|summarize|explain|compare|theory|architecture|research/.test(text);
 
+    // Only ever suggest a model the live registry reports as available — never
+    // fall back to a hardcoded id, which could route to a model OpenRouter has
+    // dropped and produce the exact 400 the registry is meant to prevent.
     if (isCode && selectedModel?.name !== 'Qwen 2.5 Coder 32B') {
-      const qwen = availableModels?.find(m => m.name.includes('Qwen 2.5 Coder')) || { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' };
-      setSuggestedModel(qwen);
+      const qwen = availableModels?.find(m => m.name.includes('Qwen 2.5 Coder') && m.available !== false);
+      setSuggestedModel(qwen || null);
     } else if (isResearch && selectedModel?.name !== 'DeepSeek V3') {
-      const ds = availableModels?.find(m => m.name.includes('DeepSeek V3')) || { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' };
-      setSuggestedModel(ds);
+      const ds = availableModels?.find(m => m.name.includes('DeepSeek V3') && m.available !== false);
+      setSuggestedModel(ds || null);
     } else {
       setSuggestedModel(null);
     }
@@ -1844,29 +1847,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '4px 8px', fontWeight: '700', textTransform: 'uppercase' }}>
                     Select Competitor Model (Model B)
                   </div>
-                  {availableModels && availableModels.map(m => (
+                  {availableModels && availableModels.map(m => {
+                    const isAvailable = m.available !== false;
+                    return (
                     <div
                       key={m.id}
                       onClick={() => {
+                        if (!isAvailable) return;
                         setSecondModel(m);
                         setShowSecondModelDropdown(false);
                       }}
                       style={{
                         padding: '8px 10px',
                         borderRadius: '8px',
-                        cursor: 'pointer',
+                        cursor: isAvailable ? 'pointer' : 'not-allowed',
                         background: secondModel?.id === m.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         fontSize: '0.8rem',
-                        color: secondModel?.id === m.id ? '#f97316' : textColor,
-                        fontWeight: secondModel?.id === m.id ? '700' : '500'
+                        color: !isAvailable ? subtextColor : (secondModel?.id === m.id ? '#f97316' : textColor),
+                        fontWeight: secondModel?.id === m.id ? '700' : '500',
+                        opacity: isAvailable ? 1 : 0.6
                       }}
                     >
-                      <span>{m.name}</span>
+                      <span style={{ textDecoration: !isAvailable ? 'line-through' : 'none' }}>{m.name}</span>
+                      {!isAvailable && (
+                        <span style={{ fontSize: '0.65rem', background: isLight ? '#cbd5e1' : '#334155', color: isLight ? '#64748b' : '#94a3b8', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Unavailable</span>
+                      )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>
