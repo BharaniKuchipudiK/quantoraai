@@ -12,7 +12,11 @@ import { repairArtifact } from "./_lib/repair.js";
 // truncated to the most recent items rather than rejected outright, so an
 // existing long-running session never breaks — it just loses very old
 // context, the same tradeoff every chat app with a context window makes.
-const MAX_MESSAGE_LENGTH = 50_000;
+//
+// Refining a built site sends the WHOLE HTML document back for editing, which
+// legitimately runs well past a typed-message size — so the ceiling has to fit
+// a full self-contained page, not just a chat line. Rate limiting bounds abuse.
+const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
