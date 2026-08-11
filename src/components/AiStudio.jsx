@@ -722,8 +722,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // site is produced. It persists the designer-style Q&A across turns; once a
   // preview exists we drop it so further messages behave normally.
   const [guidedSession, setGuidedSession] = useState(false);
+  // Conversational iteration: once a site exists, the next message refines it in
+  // place instead of building from scratch. Auto-on when a site appears; the
+  // user can switch it off to start fresh.
+  const [refineActive, setRefineActive] = useState(true);
   useEffect(() => {
-    if (previewCode && previewCode.trim()) setGuidedSession(false);
+    if (previewCode && previewCode.trim()) {
+      setGuidedSession(false); // a site now exists — intake is over
+      setRefineActive(true);   // and further messages refine it
+    }
   }, [previewCode]);
 
   // Pillar 4: Predictive Code Assist State
@@ -1205,13 +1212,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     try {
       const candidateModels = [targetModel, ...rankedFreeFallbacks].slice(0, 3);
-      const buildMode = isWorkspaceMode || detectBuildIntent(text);
+      /*
+       * Conversational iteration: if a site already exists and this isn't a
+       * fresh "build me a new X", treat the message as an edit — hand the model
+       * the current document and ask for the COMPLETE updated one back. The user
+       * sees only their words in chat; the code rides in the API payload, and
+       * the returned HTML flows into the preview via the auto-open.
+       */
+      const isRefine = refineActive && Boolean(previewCode && previewCode.trim()) && !detectBuildIntent(text);
+      const apiMessage = isRefine
+        ? `${text}\n\n[You are editing the existing app below. Apply the requested change and return the COMPLETE updated, self-contained HTML document — not a diff, not an explanation.]\n\`\`\`html\n${previewCode}\n\`\`\``
+        : text;
+      const buildMode = isRefine || isWorkspaceMode || detectBuildIntent(text);
       /*
        * Guided build: a fresh "make me a website/app" request (no site yet)
        * starts a designer-style intake — Quantora asks for the essentials and
-       * confirms before building. The session persists across the follow-up
-       * answers (which don't read as build intent on their own) until a site is
-       * produced, at which point an effect clears it.
+       * confirms before building. Persists across the follow-up answers (which
+       * don't read as build intent on their own) until a site is produced.
        */
       const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode;
       const guidedBuild = (startingGuided || guidedSession) && !previewCode;
@@ -1230,7 +1247,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              message: text,
+              message: apiMessage,
               modelId: candidate.id,
               modelName: candidate.name,
               history: cleanMessages,
@@ -2425,6 +2442,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           )}
 
 
+
+          {/* Iteration hint: next message edits the existing website in place. */}
+          {refineActive && previewCode && previewCode.trim() && (
+            <div style={{ margin: '0 18px 2px', display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 12px', borderRadius: '10px', background: isLight ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', fontSize: '0.76rem' }}>
+              <Wand2 size={14} color="#f97316" />
+              <span style={{ color: isLight ? '#9a3412' : '#fdba74', fontWeight: 600 }}>Editing your website — your next message refines it.</span>
+              <button onClick={() => setRefineActive(false)} title="Start a new build instead" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: isLight ? '#9a3412' : '#fdba74', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>Start fresh</button>
+            </div>
+          )}
 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '12px 18px' }}>
