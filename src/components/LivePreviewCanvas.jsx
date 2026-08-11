@@ -82,10 +82,12 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
   const requestRepair = useCallback(async (brokenCode, message) => {
     const openRouterApiKey = (() => { try { return localStorage.getItem('openRouterApiKey'); } catch { return null; } })();
     const geminiApiKey = (() => { try { return localStorage.getItem('geminiApiKey'); } catch { return null; } })();
-    const res = await fetch('/api/repair', {
+    // Routed through /api/chat (task: 'repair') so it adds no serverless
+    // function against Vercel's plan limit.
+    const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: brokenCode, error: message, framework: 'html', openRouterKey: openRouterApiKey, userKey: geminiApiKey })
+      body: JSON.stringify({ task: 'repair', code: brokenCode, error: message, framework: 'html', openRouterKey: openRouterApiKey, userKey: geminiApiKey })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Repair failed (${res.status})`);

@@ -4,6 +4,7 @@ import { getSessionUser } from "./_lib/session.js";
 import { recordUsage } from "./_lib/store.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
+import { repairArtifact } from "./_lib/repair.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -255,7 +256,7 @@ export default async function handler(req: any, res: any) {
   const startTime = Date.now();
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, task } = req.body || {};
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') {
@@ -272,10 +273,14 @@ export default async function handler(req: any, res: any) {
       buildMode: Boolean(buildMode),
     });
 
-    if (!message || typeof message !== "string" || !message.trim()) {
+    // The self-heal endpoint reuses this handler (via task: "repair") so it
+    // adds no serverless function. It carries code+error instead of a message.
+    const isRepairTask = task === "repair";
+
+    if (!isRepairTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
     }
-    if (message.length > MAX_MESSAGE_LENGTH) {
+    if (!isRepairTask && message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
     }
     // Bound, never reject: an over-long history just loses its oldest turns.
@@ -300,6 +305,28 @@ export default async function handler(req: any, res: any) {
         error: "Please sign in to use Quantora's built-in AI, or add your own API key.",
         requiresAuth: true,
       });
+    }
+
+    // Self-heal branch: fix a broken generated artifact and return the corrected
+    // code as JSON. Reuses the keys resolved above; adds no serverless function.
+    if (isRepairTask) {
+      const { code, error, framework } = req.body || {};
+      if (!code || typeof code !== "string" || !code.trim()) {
+        return res.status(400).json({ error: "No code provided to repair." });
+      }
+      try {
+        const result = await repairArtifact({
+          code,
+          error: typeof error === "string" ? error : "",
+          framework: framework === "react" ? "react" : "html",
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
+        return res.status(200).json(result);
+      } catch (err: any) {
+        console.error("Error in /api/chat repair task:", err);
+        return res.status(500).json({ error: err?.message || "Auto-repair failed." });
+      }
     }
 
     const isGeminiModel = modelId && modelId.startsWith("gemini");
