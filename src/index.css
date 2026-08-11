@@ -406,3 +406,81 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* AI models live in a focused drawer so the chat-history rail never reflows. */
+.model-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(3px);
+  animation: model-drawer-fade 160ms ease-out;
+}
+
+.model-drawer {
+  box-sizing: border-box;
+  width: min(410px, calc(100vw - 32px));
+  height: 100%;
+  padding: 22px;
+  overflow-y: auto;
+  border-left: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: -18px 0 50px rgba(15, 23, 42, 0.18);
+  animation: model-drawer-slide 220ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.model-drawer.is-light { background: #f8fafc; color: #0f172a; }
+.model-drawer.is-dark { background: #0b1020; color: #f8fafc; }
+
+.model-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.model-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.model-drawer-subtitle {
+  margin-top: 5px;
+  max-width: 300px;
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.model-drawer-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+@keyframes model-drawer-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes model-drawer-slide { from { transform: translateX(32px); opacity: 0.7; } to { transform: translateX(0); opacity: 1; } }
+
+@media (max-width: 640px) {
+  .model-drawer-backdrop { align-items: flex-end; }
+  .model-drawer {
+    width: 100%;
+    height: min(82vh, 720px);
+    padding: 18px;
+    border-top: 1px solid rgba(148, 163, 184, 0.24);
+    border-left: none;
+    border-radius: 20px 20px 0 0;
+  }
+}

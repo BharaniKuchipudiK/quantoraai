@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -387,6 +388,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModelDashboard, setShowModelDashboard] = useState(false);
+
+  useEffect(() => {
+    if (!showModelDashboard) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setShowModelDashboard(false);
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [showModelDashboard]);
 
   // Derive current session and messages
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0] || {
@@ -909,22 +924,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const handlePushToDream = (msg) => {
-    if (!setDreamNodes || !dreamNodes) return;
-    const newNode = {
-      id: Date.now().toString(),
-      stage: 'dream',
-      dreamText: msg.text,
-      ideaSpec: null,
-      thoughtCode: null,
-      actionUrl: null,
-      isExecuting: false,
-      timestamp: Date.now()
-    };
-    setDreamNodes([...dreamNodes, newNode]);
-    if (setActiveTab) setActiveTab('canvas');
-  };
-
   const handleSendMessage = async (textToSend) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
@@ -1375,23 +1374,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {/* Standard Message Action Buttons */}
-                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {msg.sender === 'ai' && msg.text?.includes('```') && (
+                      {/* Code actions appear only when the response contains code. */}
+                      {msg.sender === 'ai' && msg.text?.includes('```') && (
+                        <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <button
                             onClick={() => openCanvasWithCode(msg.text)}
                             style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
                             <Play size={13} /> Open Live Canvas Mode
                           </button>
-                        )}
-                        <button
-                          onClick={() => handlePushToDream(msg)}
-                          style={{ background: 'rgba(139, 92, 246, 0.15)', border: '1px solid rgba(139, 92, 246, 0.4)', color: '#8b5cf6', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <Workflow size={13} /> Push to Dream Canvas
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1636,14 +1629,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         {/* Live model catalogue and lifecycle dashboard */}
         <button
-          onClick={() => setShowModelDashboard((open) => !open)}
-          aria-expanded={showModelDashboard}
+          onClick={() => setShowModelDashboard(true)}
+          aria-haspopup="dialog"
           style={{
             border: showModelDashboard ? '1px solid rgba(249, 115, 22, 0.35)' : '1px solid transparent',
             background: showModelDashboard ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
             borderRadius: '9px',
             padding: '8px 10px',
-            marginBottom: showModelDashboard ? '8px' : '16px',
+            marginBottom: '16px',
             color: showModelDashboard ? '#f97316' : textColor,
             cursor: 'pointer',
             display: 'flex',
@@ -1658,21 +1651,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ color: '#059669', fontSize: '0.65rem' }}>{modelDashboard?.summary?.available ?? availableModels?.filter((model) => model.available !== false).length ?? 0} ready</span>
-            <ChevronDown size={13} style={{ transform: showModelDashboard ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+            <ChevronDown size={13} style={{ transform: 'rotate(-90deg)' }} />
           </span>
         </button>
-
-        {showModelDashboard && (
-          <div style={{ marginBottom: '14px', minHeight: 0 }}>
-            <ModelDashboard
-              data={modelDashboard}
-              availableModels={availableModels}
-              selectedModel={selectedModel}
-              onSelectModel={(model) => setSelectedModel(availableModels?.find((candidate) => candidate.id === model.id) || model)}
-              isLight={isLight}
-            />
-          </div>
-        )}
 
         {/* History Section Title */}
         <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
@@ -1740,6 +1721,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           })}
         </div>
       </div>
+
+      {showModelDashboard && createPortal((
+        <div className="model-drawer-backdrop" onMouseDown={() => setShowModelDashboard(false)}>
+          <section
+            className={`model-drawer ${isLight ? 'is-light' : 'is-dark'}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI model catalogue"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="model-drawer-header">
+              <div>
+                <div className="model-drawer-title"><Activity size={18} /> AI Models</div>
+                <div className="model-drawer-subtitle">Choose a ready model or review newly discovered free options.</div>
+              </div>
+              <button className="model-drawer-close" onClick={() => setShowModelDashboard(false)} aria-label="Close AI models">
+                <X size={18} />
+              </button>
+            </div>
+            <ModelDashboard
+              data={modelDashboard}
+              availableModels={availableModels}
+              selectedModel={selectedModel}
+              onSelectModel={(model) => {
+                setSelectedModel(availableModels?.find((candidate) => candidate.id === model.id) || model);
+                setShowModelDashboard(false);
+              }}
+              isLight={isLight}
+            />
+          </section>
+        </div>
+      ), document.body)}
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div className="ai-studio-main" style={{
@@ -2566,45 +2579,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </button>
             </div>
 
-            {/* Right Control: Send & Push Buttons */}
+            {/* Right Control: Send */}
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => {
-                  if (!inputText.trim()) return;
-                  if (setDreamNodes && dreamNodes) {
-                    const newNode = {
-                      id: Date.now().toString(),
-                      stage: 'dream',
-                      dreamText: inputText,
-                      ideaSpec: null,
-                      thoughtCode: null,
-                      actionUrl: null,
-                      isExecuting: false,
-                      timestamp: Date.now()
-                    };
-                    setDreamNodes([...dreamNodes, newNode]);
-                    if (setActiveTab) setActiveTab('canvas');
-                  }
-                }}
-                disabled={!inputText.trim()}
-                title="Push raw prompt to Dream Canvas"
-                style={{
-                  background: inputText.trim() ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                  border: inputText.trim() ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid transparent',
-                  color: inputText.trim() ? '#8b5cf6' : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '12px',
-                  cursor: inputText.trim() ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <Workflow size={16} />
-              </button>
-
               <button
                 onClick={() => handleSendMessage()}
                 disabled={(!inputText.trim() && !attachments.length) || isGenerating}

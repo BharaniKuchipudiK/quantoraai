@@ -16,7 +16,8 @@ function statusTheme(status) {
 }
 
 export default function ModelDashboard({ data, availableModels, selectedModel, onSelectModel, isLight }) {
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('free');
+  const [showAll, setShowAll] = useState(false);
   const textColor = isLight ? '#0f172a' : '#f8fafc';
   const subtextColor = isLight ? '#64748b' : '#94a3b8';
   const borderColor = isLight ? '#dbe4ee' : 'rgba(255,255,255,0.1)';
@@ -39,9 +40,17 @@ export default function ModelDashboard({ data, availableModels, selectedModel, o
       return true;
     })
     .sort((a, b) => {
-      const rank = (model) => model.isNew ? 0 : model.isUpdated ? 1 : model.status === 'available' ? 2 : model.status === 'discovered' ? 3 : 4;
+      const rank = (model) => {
+        if (model.id === selectedModel?.id) return 0;
+        if (model.status === 'available' && (model.pricingKind === 'free' || model.pricingKind === 'free-tier')) return 1;
+        if (model.status === 'available') return 2;
+        if (model.isNew || model.isUpdated) return 3;
+        if (model.status === 'discovered') return 4;
+        return 5;
+      };
       return rank(a) - rank(b) || a.name.localeCompare(b.name);
     });
+  const displayedModels = showAll ? visibleModels : visibleModels.slice(0, 6);
 
   const summary = data?.summary || {
     available: models.filter((model) => model.status === 'available').length,
@@ -68,17 +77,17 @@ export default function ModelDashboard({ data, availableModels, selectedModel, o
 
         <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
           {FILTERS.map((item) => (
-            <button key={item.id} onClick={() => setFilter(item.id)} style={{ flex: 1, border: 'none', borderRadius: '7px', padding: '5px 3px', fontSize: '0.64rem', fontWeight: '700', cursor: 'pointer', color: filter === item.id ? '#ffffff' : subtextColor, background: filter === item.id ? '#f97316' : 'transparent' }}>
+            <button key={item.id} onClick={() => { setFilter(item.id); setShowAll(false); }} style={{ flex: 1, border: 'none', borderRadius: '7px', padding: '7px 3px', fontSize: '0.68rem', fontWeight: '700', cursor: 'pointer', color: filter === item.id ? '#ffffff' : subtextColor, background: filter === item.id ? '#f97316' : 'transparent' }}>
               {item.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div style={{ maxHeight: '230px', overflowY: 'auto', padding: '6px' }}>
+      <div style={{ maxHeight: 'min(440px, calc(100vh - 320px))', overflowY: 'auto', padding: '8px' }}>
         {visibleModels.length === 0 ? (
           <div style={{ padding: '18px 8px', color: subtextColor, fontSize: '0.72rem', textAlign: 'center' }}>No models in this category.</div>
-        ) : visibleModels.map((model) => {
+        ) : displayedModels.map((model) => {
           const theme = statusTheme(model.status);
           const StatusIcon = theme.icon;
           const selectable = model.selectable !== false && model.status === 'available';
@@ -108,6 +117,15 @@ export default function ModelDashboard({ data, availableModels, selectedModel, o
           );
         })}
       </div>
+
+      {visibleModels.length > 6 && (
+        <button
+          onClick={() => setShowAll((current) => !current)}
+          style={{ width: '100%', border: 'none', borderTop: `1px solid ${borderColor}`, background: 'transparent', color: '#0284c7', padding: '9px', fontSize: '0.68rem', fontWeight: '700', cursor: 'pointer' }}
+        >
+          {showAll ? 'Show recommended only' : `View ${visibleModels.length - 6} more`}
+        </button>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 10px', borderTop: `1px solid ${borderColor}`, color: subtextColor, fontSize: '0.58rem' }}>
         <Clock3 size={10} />

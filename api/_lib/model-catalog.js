@@ -3,6 +3,15 @@ const FETCH_TIMEOUT_MS = 4_000;
 
 export const CURATED_MODELS = [
   {
+    id: 'nvidia/nemotron-3-super-120b-a12b:free',
+    name: 'Nemotron 3 Super 120B',
+    provider: 'NVIDIA',
+    description: 'Free large reasoning model for complex planning, analysis and coding.',
+    contextWindow: '262k',
+    tag: 'FREE',
+    icon: 'brain',
+  },
+  {
     id: 'deepseek/deepseek-chat',
     name: 'DeepSeek V3',
     provider: 'DeepSeek',
