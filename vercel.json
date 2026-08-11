@@ -3,7 +3,7 @@
   "outputDirectory": "dist",
   "crons": [
     {
-      "path": "/api/model-scan",
+      "path": "/api/models",
       "schedule": "15 3 * * *"
     }
   ],
