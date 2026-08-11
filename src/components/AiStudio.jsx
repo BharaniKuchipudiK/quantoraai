@@ -401,6 +401,10 @@ function CopyableCodeBlock({ code, language }) {
   );
 }
 
+// Workspace (Code Canvas) is hidden: Quantora is outcome-first — conversation
+// + live preview, not a code editor. Flip to true to bring back a dev mode.
+const SHOW_WORKSPACE = false;
+
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
@@ -988,13 +992,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [lastPrompt, setLastPrompt] = useState('');
 
   // Preview the same deterministic free-model choice that will be used when
-  // the message is sent. No extra AI call, cost, or delay is introduced.
+  // the message is sent. Debounced and length-gated so the banner doesn't
+  // flicker on every keystroke or fire on a two-word fragment like "Can you".
   useEffect(() => {
-    if (!autoSelectEnabled || !inputText.trim()) {
-      setSuggestedModel(null);
-      return;
-    }
-    setSuggestedModel(chooseBestFreeModel(availableModels, inputText));
+    if (!autoSelectEnabled) { setSuggestedModel(null); return; }
+    const trimmed = inputText.trim();
+    if (trimmed.length < 15) { setSuggestedModel(null); return; }
+    const timer = setTimeout(() => {
+      setSuggestedModel(chooseBestFreeModel(availableModels, trimmed));
+    }, 600);
+    return () => clearTimeout(timer);
   }, [inputText, availableModels, autoSelectEnabled]);
 
   const saveKeyAndRetry = (keyType) => {
@@ -1983,6 +1990,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </button>
             )}
 
+            {SHOW_WORKSPACE && (
             <button
               onClick={() => setIsWorkspaceMode(!isWorkspaceMode)}
               title={isWorkspaceMode ? "Close Code Canvas" : "Open Code Canvas"}
@@ -2005,6 +2013,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <Layout size={14} />
               <span className="hidden md:inline">Workspace</span>
             </button>
+            )}
 
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sparkles size={20} color="#f97316" />
@@ -2322,6 +2331,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <span style={{ fontSize: '0.75rem', color: '#e2e8f0', fontWeight: '500' }}>
                 🧠 Auto Select: <strong style={{color: '#f97316'}}>{suggestedModel.model.name}</strong> is the best ready free model for this request.
               </span>
+              <button
+                onClick={() => { setSelectedModel(suggestedModel.model); setAutoSelectEnabled(false); setSuggestedModel(null); }}
+                title={`Switch to ${suggestedModel.model.name} and pin it`}
+                style={{ background: '#f97316', color: '#fff', border: 'none', borderRadius: '10px', padding: '3px 10px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                Change
+              </button>
             </div>
           )}
 
