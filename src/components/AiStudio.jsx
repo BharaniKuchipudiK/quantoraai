@@ -1667,7 +1667,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Activity size={15} /> AI Models
+            <Activity size={15} /> Model Dashboard
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ color: '#059669', fontSize: '0.65rem' }}>{modelDashboard?.summary?.available ?? availableModels?.filter((model) => model.available !== false).length ?? 0} ready</span>
@@ -1753,7 +1753,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           >
             <div className="model-drawer-header">
               <div>
-                <div className="model-drawer-title"><Activity size={18} /> AI Models</div>
+                <div className="model-drawer-title"><Activity size={18} /> Model Dashboard</div>
                 <div className="model-drawer-subtitle">Choose a ready model or review newly discovered free options.</div>
               </div>
               <button className="model-drawer-close" onClick={() => setShowModelDashboard(false)} aria-label="Close AI models">
