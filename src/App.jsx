@@ -163,14 +163,18 @@ export default function App() {
     setActiveTab(tabName);
   };
 
+  // Offline-safe defaults used until /api/models resolves (and if it fails).
+  // Every OpenRouter id here MUST be a valid `vendor/model` slug — a bare id
+  // like "deepseek-coder-v2" gets a 400 Bad Request from OpenRouter. Keep this
+  // in sync with api/models.js so the app behaves identically whether or not
+  // the registry endpoint responds.
   const fallbackModels = [
-    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google AI', available: true },
-    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'OpenRouter', available: true },
-    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B (Google)', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'OpenRouter', available: true },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'OpenRouter', available: true },
-    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Capacity Full', provider: 'OpenRouter', available: false },
-    { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra', specialty: 'High-Fidelity Reward & Alignment', badge: 'Nvidia SOTA', provider: 'OpenRouter', available: true },
-    { id: 'openai/gpt-4o-mini', name: 'ChatGPT 4o-Mini', specialty: 'General Assistant & Fast Queries', badge: 'API Offline', provider: 'OpenRouter', available: false }
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google', available: true },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'DeepSeek', available: true },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'Qwen', available: true },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Open Source', provider: 'Meta', available: true },
+    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'Google', available: true },
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', specialty: 'General Assistant & Fast Queries', badge: 'Fast', provider: 'OpenAI', available: true }
   ];
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);
@@ -183,7 +187,7 @@ export default function App() {
       .then(data => {
         if (data && data.models && data.models.length > 0) {
           // Map dynamic schema back to our UI expectations
-          const dynamicModels = data.models.map(m => ({
+          const mapped = data.models.map(m => ({
             id: m.id,
             name: m.name,
             specialty: m.description,
@@ -191,12 +195,28 @@ export default function App() {
             provider: m.provider,
             available: m.available
           }));
+
+          /*
+           * Defensive guard: only trust registry entries whose id is a slug the
+           * chat backend can actually route — a namespaced OpenRouter id
+           * (contains "/") or a Google model ("gemini"/"gemma"). This keeps a
+           * malformed or stale registry response from ever poisoning the picker
+           * with a bare id that would 400 at OpenRouter. If nothing valid comes
+           * back, we keep the offline-safe fallback list instead.
+           */
+          const dynamicModels = mapped.filter(
+            m => typeof m.id === 'string' && (m.id.includes('/') || m.id.startsWith('gemini') || m.id.startsWith('gemma'))
+          );
+          if (dynamicModels.length === 0) return;
+
           setAvailableModels(dynamicModels);
-          
-          // Only change selected model if current is no longer available or we just booted
+
+          // Preserve the user's current selection if it still exists; otherwise
+          // fall back to the first available model, then the first overall.
           setSelectedModel(current => {
-            const stillExists = dynamicModels.find(d => d.id === current.id);
-            return stillExists ? stillExists : dynamicModels[0];
+            const stillExists = dynamicModels.find(d => d.id === current?.id);
+            if (stillExists) return stillExists;
+            return dynamicModels.find(d => d.available) || dynamicModels[0];
           });
         }
       })

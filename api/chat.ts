@@ -13,6 +13,53 @@ const MAX_MESSAGE_LENGTH = 50_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
 
+/*
+ * OpenRouter requires every model id to be a fully namespaced `vendor/model`
+ * slug. A bare id such as "deepseek-coder-v2" is rejected with a 400 Bad
+ * Request. Older registry data and any cached frontend bundle can still send
+ * those legacy bare ids, so we self-heal here: map the known legacy names onto
+ * their correct slugs, and reject anything that still isn't namespaced with a
+ * clear, actionable message instead of forwarding a doomed request to
+ * OpenRouter and surfacing an opaque "400 Bad Request".
+ */
+const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
+  "gpt-4o": "openai/gpt-4o",
+  "gpt-4o-mini": "openai/gpt-4o-mini",
+  "gpt-4": "openai/gpt-4o",
+  "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
+  "claude-3-5-sonnet": "anthropic/claude-3.5-sonnet",
+  "deepseek-coder-v2": "deepseek/deepseek-chat",
+  "deepseek-coder": "deepseek/deepseek-chat",
+  "deepseek-chat": "deepseek/deepseek-chat",
+  "deepseek-v3": "deepseek/deepseek-chat",
+  "llama-3.3-70b": "meta-llama/llama-3.3-70b-instruct",
+  "llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct",
+  "gemma-2-9b": "google/gemma-2-9b-it",
+  "gemma-2-9b-it": "google/gemma-2-9b-it",
+  "qwen-2.5-coder-32b": "qwen/qwen-2.5-coder-32b-instruct",
+  "qwen-2.5-coder-32b-instruct": "qwen/qwen-2.5-coder-32b-instruct",
+};
+
+function resolveOpenRouterModelId(modelId: string): { slug?: string; error?: string } {
+  if (!modelId || typeof modelId !== "string" || !modelId.trim()) {
+    return { error: "No model was selected. Please pick a model and try again." };
+  }
+
+  const trimmed = modelId.trim();
+
+  // Already a valid namespaced slug (e.g. "deepseek/deepseek-chat").
+  if (trimmed.includes("/")) return { slug: trimmed };
+
+  // Known legacy bare id -> correct slug.
+  const alias = OPENROUTER_MODEL_ALIASES[trimmed.toLowerCase()];
+  if (alias) return { slug: alias };
+
+  // Unknown bare id: fail loudly and usefully rather than 400-ing at OpenRouter.
+  return {
+    error: `"${modelId}" is not a valid OpenRouter model id. Model ids must be namespaced (e.g. "deepseek/deepseek-chat"). Please select a different model.`,
+  };
+}
+
 function buildGeminiContents(history: any[], currentMessage: string) {
   const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
 
@@ -305,10 +352,19 @@ Rules:
         });
       }
 
+      // Guard the model id BEFORE spending a network round trip. This turns the
+      // old opaque "OpenRouter API failed: 400 Bad Request" into either a
+      // corrected slug (legacy ids self-heal) or a clear, actionable message.
+      const resolved = resolveOpenRouterModelId(modelId);
+      if (resolved.error) {
+        return res.status(400).json({ error: resolved.error, modelName: modelName || modelId });
+      }
+      const openRouterModelId = resolved.slug as string;
+
       const formattedHistory = [
-        { 
-          role: "system", 
-          content: finalSystemPrompt 
+        {
+          role: "system",
+          content: finalSystemPrompt
         },
         ...(boundedHistory || []).map((m: any) => ({
           role: m.role === "model" || m.role === "assistant" || m.sender === "ai" ? "assistant" : "user",
@@ -326,7 +382,7 @@ Rules:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: modelId,
+          model: openRouterModelId,
           messages: formattedHistory,
           temperature: dynamicTemperature,
           stream: true
@@ -335,8 +391,20 @@ Rules:
 
       if (!response.ok) {
         const errText = await response.text();
-        console.warn("OpenRouter API error:", errText);
-        throw new Error(`OpenRouter API failed: ${response.status} ${response.statusText}`);
+        console.warn(`OpenRouter API error (${response.status}) for model '${openRouterModelId}':`, errText);
+
+        // Surface OpenRouter's own explanation so failures are diagnosable
+        // instead of a bare status. OpenRouter returns JSON like
+        // { error: { message, code } } — pull that message out when present.
+        let detail = "";
+        try {
+          const parsed = JSON.parse(errText);
+          detail = parsed?.error?.message || parsed?.message || "";
+        } catch {
+          detail = errText?.slice(0, 300) || "";
+        }
+        const suffix = detail ? `: ${detail}` : "";
+        throw new Error(`OpenRouter request for "${modelName || openRouterModelId}" failed (${response.status})${suffix}`);
       }
 
       res.writeHead(200, {
@@ -374,10 +442,10 @@ Rules:
       }
 
       const latencyMs = Date.now() - startTime;
-      logTelemetry(modelId, latencyMs, fullReply.length, "OpenRouter",
+      logTelemetry(openRouterModelId, latencyMs, fullReply.length, "OpenRouter",
         sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys);
-      
-      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || modelId})`, latencyMs, modelId: modelId, liveConnected: true })}\n\n`);
+
+      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, liveConnected: true })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
