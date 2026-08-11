@@ -757,6 +757,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const fileInputRef = useRef(null);
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
+  const messageViewportRef = useRef(null);
+  const shouldFollowLatestRef = useRef(true);
+  const scrollFrameRef = useRef(null);
+
+  const scrollToLatest = (behavior = 'auto') => {
+    if (!shouldFollowLatestRef.current || !messageViewportRef.current) return;
+    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      const viewport = messageViewportRef.current;
+      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+    });
+  };
+
+  const handleMessageScroll = () => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) return;
+    const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    shouldFollowLatestRef.current = distanceFromLatest < 96;
+  };
+
+  // Follow new and streaming content only while the reader remains near the
+  // latest message. Sending a prompt deliberately re-enables this behaviour.
+  useEffect(() => {
+    scrollToLatest();
+  }, [messages, isGenerating]);
+
+  useEffect(() => {
+    shouldFollowLatestRef.current = true;
+    scrollToLatest();
+  }, [activeSessionId]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   // Auto-resize textarea when inputText changes programmatically (e.g., Magic Wand)
   useEffect(() => {
@@ -976,7 +1010,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       attachments: [...attachments]
     };
 
+    shouldFollowLatestRef.current = true;
     updateActiveMessages(prev => [...prev, userMsg]);
+    scrollToLatest('smooth');
     if (!textToSend) setInputText('');
     setAttachments([]);
     setIsGenerating(true);
@@ -1621,7 +1657,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     <div className="ai-studio-shell" style={{
       display: 'flex',
       gap: '20px',
-      maxWidth: isWorkspaceMode ? '100%' : '1400px',
+      maxWidth: isWorkspaceMode ? '100%' : '1800px',
       padding: isWorkspaceMode ? '20px' : '0',
       margin: '0 auto',
       flex: 1,
@@ -1632,7 +1668,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
       {/* Left Navigation Sidebar - Chat History */}
-      <div className="ai-studio-sidebar" style={{
+      <div className={`ai-studio-sidebar ${sidebarOpen ? 'is-open' : ''}`} style={{
         width: sidebarOpen ? (isWorkspaceMode ? '220px' : '260px') : '0px',
         opacity: sidebarOpen ? 1 : 0,
         pointerEvents: sidebarOpen ? 'auto' : 'none',
@@ -1874,7 +1910,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         flexDirection: 'column',
         maxWidth: isWorkspaceMode ? '42%' : '100%',
         margin: '0 auto',
-        padding: isWorkspaceMode ? '0 10px 0 0' : '20px 40px',
+        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(12px, 1.6vw, 24px) clamp(14px, 2.2vw, 36px)',
         minHeight: 0,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
@@ -2072,7 +2108,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Messages Stream / Initial Hero State */}
-      <div className={`ai-studio-messages ${messages.length <= 1 ? 'ai-studio-messages--empty' : ''}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '16px' }}>
+      <div
+        ref={messageViewportRef}
+        onScroll={handleMessageScroll}
+        className={`ai-studio-messages ${messages.length <= 1 ? 'ai-studio-messages--empty' : ''}`}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '16px', scrollBehavior: 'smooth' }}
+      >
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
           <div className="ai-studio-empty-state" style={{
@@ -2173,7 +2214,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         ) : (
           /* Active Chat Thread */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
+          <div className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
           </div>
         )}
@@ -2186,7 +2227,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Clean Prompt Console Input Area */}
-      <div className="ai-studio-prompt" style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto', flexShrink: 0 }}>
+      <div className="ai-studio-prompt" style={{ position: 'relative', width: '100%', maxWidth: '1120px', margin: '0 auto', flexShrink: 0 }}>
         {/* Attachment Files Badge Bar */}
         {attachments.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', paddingLeft: '4px' }}>

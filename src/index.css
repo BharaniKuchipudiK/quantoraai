@@ -138,15 +138,100 @@ body {
 }
 
 @media (max-width: 767px) {
+  .app-header {
+    padding: 8px 12px !important;
+  }
+
+  .app-header-inner {
+    gap: 8px !important;
+  }
+
+  .app-header-inner > div:first-child svg {
+    height: 32px;
+    width: auto;
+  }
+
+  .app-primary-nav {
+    order: 3;
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .app-primary-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-primary-nav button {
+    flex: 0 0 auto;
+    padding: 6px 10px !important;
+    font-size: 0.76rem !important;
+  }
+
   .app-shell--studio {
-    height: auto !important;
-    min-height: 100dvh !important;
-    overflow: visible !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
   }
 
   .app-shell--studio .app-main--studio {
-    overflow: visible !important;
-    padding: 12px !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+
+  .app-shell--studio .ai-studio-shell {
+    height: 100%;
+    gap: 0 !important;
+    overflow: hidden;
+  }
+
+  .app-shell--studio .ai-studio-sidebar {
+    position: absolute !important;
+    inset: 0 auto 0 0;
+    z-index: 210;
+    width: 0 !important;
+    max-width: min(86vw, 320px);
+    border-radius: 0 20px 20px 0 !important;
+    box-shadow: none;
+  }
+
+  .app-shell--studio .ai-studio-sidebar.is-open {
+    width: min(86vw, 320px) !important;
+    box-shadow: 18px 0 50px rgba(15, 23, 42, 0.22);
+  }
+
+  .app-shell--studio .ai-studio-main {
+    width: 100%;
+    max-width: 100% !important;
+    padding: 10px 12px calc(8px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .app-shell--studio .ai-studio-toolbar {
+    gap: 8px !important;
+    margin-bottom: 8px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .app-shell--studio .ai-studio-messages {
+    margin-bottom: 8px !important;
+    overscroll-behavior: contain;
+  }
+
+  .app-shell--studio .ai-studio-thread {
+    gap: 14px !important;
+  }
+
+  .app-shell--studio .ai-studio-prompt {
+    max-width: 100% !important;
+  }
+}
+
+@media (min-width: 1600px) {
+  .app-shell--studio .ai-studio-main {
+    padding-left: clamp(24px, 3vw, 56px) !important;
+    padding-right: clamp(24px, 3vw, 56px) !important;
   }
 }
 
