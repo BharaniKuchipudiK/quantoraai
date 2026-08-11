@@ -369,6 +369,38 @@ function detectBuildIntent(text) {
   return verb.test(t) && noun.test(t);
 }
 
+// Syntax-highlighted code block with a one-click Copy button in the corner.
+function CopyableCodeBlock({ code, language }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) { /* clipboard unavailable */ }
+  };
+  return (
+    <div style={{ position: 'relative', margin: '10px 0' }}>
+      <button
+        onClick={onCopy}
+        title="Copy code"
+        style={{
+          position: 'absolute', top: '8px', right: '8px', zIndex: 2,
+          background: copied ? 'rgba(16,185,129,0.9)' : 'rgba(255,255,255,0.12)',
+          border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
+          borderRadius: '6px', padding: '4px 9px', fontSize: '0.7rem', fontWeight: 700,
+          cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px'
+        }}
+      >
+        <Copy size={12} /> {copied ? 'Copied' : 'Copy'}
+      </button>
+      <SyntaxHighlighter style={vscDarkPlus} language={language} PreTag="div" customStyle={{ borderRadius: '8px', margin: 0, fontSize: '0.85rem', paddingTop: '34px' }}>
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  );
+}
+
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
@@ -678,6 +710,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
+  // The HTML shown in the Live Canvas preview. Was referenced throughout but
+  // never declared — clicking "Open Live Canvas Mode" threw a ReferenceError,
+  // so the canvas never opened. Declaring it restores the whole preview flow.
+  const [previewCode, setPreviewCode] = useState('');
   
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
@@ -1262,6 +1298,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
         }
 
+        // Outcome-first: if the reply is a complete website/app, open the Live
+        // Canvas automatically so the user sees the running result — not code.
+        if (/<!DOCTYPE html>/i.test(currentText) || /<html[\s>]/i.test(currentText)) {
+          openCanvasWithCode(currentText);
+        }
+
       } else {
         /*
          * "You need to sign in" and "you need an API key" are different
@@ -1376,9 +1418,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return !inline && match ? (
-                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
+                                    <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
                                   ) : (
                                     <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
                                   )
@@ -1429,9 +1469,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return !inline && match ? (
-                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
+                                    <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
                                   ) : (
                                     <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
                                   )
@@ -1499,9 +1537,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             code({node, inline, className, children, ...props}) {
                               const match = /language-(\w+)/.exec(className || '')
                               return !inline && match ? (
-                                <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                  {String(children).replace(/\n$/, '')}
-                                </SyntaxHighlighter>
+                                <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
                               ) : (
                                 <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
                               )
