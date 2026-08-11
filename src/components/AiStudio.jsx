@@ -1091,6 +1091,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           modelId: targetModel.id,
           modelName: targetModel.name,
           history: cleanMessages,
+          userKey: geminiApiKey,
           openRouterKey: openRouterApiKey,
           cognitiveLevel: cognitiveLevel
         })
