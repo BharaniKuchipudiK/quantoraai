@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatContext, isFreeModel, metadataFingerprint, providerFromId } from './model-catalog.js';
+import { CURATED_MODELS, formatContext, isFreeModel, metadataFingerprint, providerFromId } from './model-catalog.js';
 
 test('recognizes explicit free slugs and zero-priced models', () => {
   assert.equal(isFreeModel({ id: 'vendor/model:free', pricing: { prompt: '1', completion: '1' } }), true);
@@ -25,4 +25,10 @@ test('fingerprints change when operational metadata changes', () => {
 test('derives readable provider names from namespaced ids', () => {
   assert.equal(providerFromId('deepseek/deepseek-chat'), 'Deepseek');
   assert.equal(providerFromId(''), 'Unknown');
+});
+
+test('keeps one qualified free Nemotron in the selectable catalogue', () => {
+  const nemotron = CURATED_MODELS.filter((model) => model.id.includes('nemotron'));
+  assert.equal(nemotron.length, 1);
+  assert.equal(nemotron[0].id, 'nvidia/nemotron-3-super-120b-a12b:free');
 });
