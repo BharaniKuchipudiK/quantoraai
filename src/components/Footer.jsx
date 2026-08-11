@@ -34,7 +34,7 @@ export default function Footer() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <QuantoraFullLogoSvg height={22} isDark={true} tagline="" />
           <span style={{ fontSize: '0.8rem', color: textColor }}>
-            © {new Date().getFullYear()} Quantora Inc.
+            © {new Date().getFullYear()} Quantora
           </span>
         </div>
 
