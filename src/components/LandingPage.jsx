@@ -708,23 +708,23 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         </div>
       </section>
 
-      {/* Flagship Platform Capabilities (6 Core Modules) */}
-      <section style={{ maxWidth: '1350px', margin: '0 auto 100px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
-        <div style={{ textAlign: 'center', marginBottom: '60px' }}>
-          <h2 style={{ fontSize: '2.8rem', fontWeight: '900', marginBottom: '16px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
+      {/* Four customer-facing products, followed by quieter platform capabilities. */}
+      <section style={{ maxWidth: '1350px', margin: '0 auto 72px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <h2 style={{ fontSize: 'clamp(2rem, 3vw, 2.55rem)', fontWeight: '850', marginBottom: '12px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
             Flagship Capabilities
           </h2>
-          <p style={{ color: subtextColor, fontSize: '1.15rem', maxWidth: '700px', margin: '0 auto', fontWeight: '500' }}>
+          <p style={{ color: subtextColor, fontSize: '1rem', maxWidth: '680px', margin: '0 auto', fontWeight: '500' }}>
             Engineered for developers, creators, and quantum researchers looking for unmatched speed, security, and multi-model intelligence.
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '32px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: '20px' }}>
 
           {/* Module 1: AI Studio */}
           <div
             className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}
+            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
             onClick={() => user ? onLaunchStudio() : onOpenAuth()}
           >
             {/* Background Image that scales on hover */}
@@ -736,20 +736,20 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
 
             {/* Frosted Glass Content Panel */}
-            <div className="absolute bottom-0 left-0 right-0 p-8 transition-transform duration-500 ease-out group-hover:-translate-y-4">
-              <div style={{ borderLeft: '4px solid #f97316', paddingLeft: '12px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#f97316', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Interactive</span>
+            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
+              <div style={{ borderLeft: '3px solid #f97316', paddingLeft: '10px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#f97316', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Interactive</span>
               </div>
-              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff', margin: '0 0 12px 0', lineHeight: 1.15 }}>AI Studio & Live Web Builder</h3>
+              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>AI Studio & Live Web Builder</h3>
               <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
                 <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
                     Generate complete, functional React & HTML applications from natural language prompts with real-time SSE streaming.
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Open AI Studio <ArrowRight size={18} color="#f97316" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Open AI Studio <ArrowRight size={15} color="#f97316" />
               </div>
             </div>
           </div>
@@ -757,7 +757,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
           {/* Module 2: Canvas */}
           <div
             className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}
+            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
             onClick={() => user ? onLaunchStudio() : onOpenAuth()}
           >
             <div
@@ -766,20 +766,20 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
 
-            <div className="absolute bottom-0 left-0 right-0 p-8 transition-transform duration-500 ease-out group-hover:-translate-y-4">
-              <div style={{ borderLeft: '4px solid #f59e0b', paddingLeft: '12px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#f59e0b', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Visualizer</span>
+            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
+              <div style={{ borderLeft: '3px solid #f59e0b', paddingLeft: '10px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#f59e0b', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Visualizer</span>
               </div>
-              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff', margin: '0 0 12px 0', lineHeight: 1.15 }}>Dream-to-Action Canvas</h3>
+              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>Dream-to-Action Canvas</h3>
               <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
                 <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
                     Map out software architecture visually. Convert abstract concepts into structured, executable nodes.
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Launch Canvas <ArrowRight size={18} color="#f59e0b" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Launch Canvas <ArrowRight size={15} color="#f59e0b" />
               </div>
             </div>
           </div>
@@ -787,7 +787,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
           {/* Module 3: Quantum */}
           <div
             className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}
+            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
             onClick={() => user ? onLaunchStudio() : onOpenAuth()}
           >
             <div
@@ -796,20 +796,20 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
 
-            <div className="absolute bottom-0 left-0 right-0 p-8 transition-transform duration-500 ease-out group-hover:-translate-y-4">
-              <div style={{ borderLeft: '4px solid #06b6d4', paddingLeft: '12px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#06b6d4', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Simulator</span>
+            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
+              <div style={{ borderLeft: '3px solid #06b6d4', paddingLeft: '10px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#06b6d4', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Simulator</span>
               </div>
-              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff', margin: '0 0 12px 0', lineHeight: 1.15 }}>Quantum Horizon & 3D Qubits</h3>
+              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>Quantum Horizon & 3D Qubits</h3>
               <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
                 <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
                     Simulate quantum logic gates, compute state vector matrices, and visualize 3D Bloch Spheres in real-time.
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Simulate Circuits <ArrowRight size={18} color="#06b6d4" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Simulate Circuits <ArrowRight size={15} color="#06b6d4" />
               </div>
             </div>
           </div>
@@ -817,7 +817,7 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
           {/* Module 4: Vault */}
           <div
             className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}
+            style={{ minHeight: 'clamp(290px, 28vw, 340px)', boxShadow: '0 14px 30px rgba(0,0,0,0.22)' }}
             onClick={() => user ? onLaunchStudio() : onOpenAuth()}
           >
             <div
@@ -826,84 +826,70 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
 
-            <div className="absolute bottom-0 left-0 right-0 p-8 transition-transform duration-500 ease-out group-hover:-translate-y-4">
-              <div style={{ borderLeft: '4px solid #10b981', paddingLeft: '12px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#10b981', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Security</span>
+            <div className="absolute bottom-0 left-0 right-0 p-6 transition-transform duration-500 ease-out group-hover:-translate-y-2">
+              <div style={{ borderLeft: '3px solid #10b981', paddingLeft: '10px', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: '800', color: '#10b981', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Security</span>
               </div>
-              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff', margin: '0 0 12px 0', lineHeight: 1.15 }}>Privacy Vault & API Gateway</h3>
+              <h3 style={{ fontSize: 'clamp(1.25rem, 1.7vw, 1.55rem)', fontWeight: '800', color: '#ffffff', margin: '0 0 8px 0', lineHeight: 1.15 }}>Privacy Vault & API Gateway</h3>
               <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
                 <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, margin: '0 0 10px 0' }}>
                     Store custom API keys securely using enterprise-grade encryption with zero log exposure.
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Configure Vault <ArrowRight size={18} color="#10b981" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '7px', fontSize: '0.76rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Configure Vault <ArrowRight size={15} color="#10b981" />
               </div>
             </div>
           </div>
 
-          {/* Module 5: Langchain */}
-          <div
-            className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            <div
-              className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110"
-              style={{ backgroundImage: 'url(/card-bg-langchain.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
+        </div>
 
-            <div className="absolute bottom-0 left-0 right-0 p-8 transition-transform duration-500 ease-out group-hover:-translate-y-4">
-              <div style={{ borderLeft: '4px solid #ec4899', paddingLeft: '12px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#ec4899', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Autonomous</span>
-              </div>
-              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff', margin: '0 0 12px 0', lineHeight: 1.15 }}>LangChain Agent & Web Search</h3>
-              <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
-                <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
-                    Multi-step reasoning powered by LangChain tools, live DuckDuckGo web search integration, and prompt optimization.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Try Agent <ArrowRight size={18} color="#ec4899" />
-              </div>
-            </div>
-          </div>
-
-          {/* Module 6: Metrics */}
-          <div
-            className="group relative overflow-hidden rounded-2xl cursor-pointer"
-            style={{ minHeight: '450px', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            <div
-              className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-110"
-              style={{ backgroundImage: 'url(/card-bg-metrics.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent" />
-
-            <div className="absolute bottom-0 left-0 right-0 p-8 transition-transform duration-500 ease-out group-hover:-translate-y-4">
-              <div style={{ borderLeft: '4px solid #8b5cf6', paddingLeft: '12px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#8b5cf6', letterSpacing: '0.15em', textTransform: 'uppercase' }}>Analytics</span>
-              </div>
-              <h3 style={{ fontSize: '1.8rem', fontWeight: '800', color: '#ffffff', margin: '0 0 12px 0', lineHeight: 1.15 }}>Enterprise Metrics & Token Audit</h3>
-              <div className="grid transition-all duration-500 ease-in-out grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
-                <div className="overflow-hidden">
-                  <p style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
-                    Real-time API latency tracking, token usage breakdowns, user session management, and system status health checks.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', fontSize: '0.95rem', fontWeight: '800', color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                View Analytics <ArrowRight size={18} color="#8b5cf6" />
-              </div>
-            </div>
-          </div>
-
+        <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+          {[
+            {
+              icon: <Search size={18} color="#ec4899" />,
+              label: 'Research & automation',
+              title: 'Agent-assisted web research',
+              text: 'Multi-step reasoning, live search and prompt optimization when a task needs more than a single response.',
+              color: '#ec4899'
+            },
+            {
+              icon: <BarChart3 size={18} color="#8b5cf6" />,
+              label: 'Operational insight',
+              title: 'Usage and reliability metrics',
+              text: 'Understand latency, model availability and token usage without making analytics the centre of the product.',
+              color: '#8b5cf6'
+            }
+          ].map((item) => (
+            <button
+              key={item.title}
+              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
+              style={{
+                padding: '18px 20px',
+                display: 'grid',
+                gridTemplateColumns: '38px 1fr auto',
+                alignItems: 'center',
+                gap: '14px',
+                borderRadius: '14px',
+                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                background: isLight ? '#ffffff' : 'rgba(15,23,42,0.74)',
+                color: textColor,
+                textAlign: 'left',
+                cursor: 'pointer',
+                boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.05)' : '0 10px 28px rgba(0,0,0,0.25)'
+              }}
+            >
+              <span style={{ width: '38px', height: '38px', display: 'grid', placeItems: 'center', borderRadius: '11px', background: `${item.color}14` }}>{item.icon}</span>
+              <span>
+                <span style={{ display: 'block', marginBottom: '4px', color: item.color, fontSize: '0.64rem', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{item.label}</span>
+                <strong style={{ display: 'block', fontSize: '0.95rem', marginBottom: '3px' }}>{item.title}</strong>
+                <span style={{ display: 'block', color: subtextColor, fontSize: '0.76rem', lineHeight: 1.45 }}>{item.text}</span>
+              </span>
+              <ArrowRight size={16} color={item.color} />
+            </button>
+          ))}
         </div>
       </section>
 
