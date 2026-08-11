@@ -2617,6 +2617,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 >
                   <Cpu size={15} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
                   <span>{autoSelectEnabled ? 'Auto' : (selectedModel ? selectedModel.name.split(' ')[0] : 'Engine')}</span>
+                  <ChevronDown size={13} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
                 </button>
 
                 {showInBarModelDropdown && (
@@ -2671,6 +2672,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     <div>
                       <div style={{ fontSize: '0.7rem', color: subtextColor, marginBottom: '8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         AI Model
+                      </div>
+                      {/* Explicit Auto-Select toggle: on = pick best free model
+                          per request; off = use the model chosen below. Picking
+                          any model also flips this off. */}
+                      <div
+                        onClick={() => setAutoSelectEnabled(v => !v)}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', marginBottom: '6px', borderRadius: '8px', cursor: 'pointer', background: autoSelectEnabled ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)') }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: autoSelectEnabled ? '#f97316' : textColor }}>Auto-Select</span>
+                          <span style={{ fontSize: '0.66rem', color: subtextColor }}>Best ready free model per request</span>
+                        </div>
+                        <div style={{ width: '34px', height: '20px', borderRadius: '999px', background: autoSelectEnabled ? '#f97316' : (isLight ? '#cbd5e1' : '#334155'), position: 'relative', transition: 'all 0.2s', flexShrink: 0 }}>
+                          <div style={{ position: 'absolute', top: '2px', left: autoSelectEnabled ? '16px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'all 0.2s' }} />
+                        </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {availableModels && availableModels.map(model => {
@@ -2891,10 +2907,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                onClick={() => { try { navigator.clipboard.writeText(workspaceCode || ''); } catch (e) {} }}
+                title="Copy code"
+                style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Copy size={12} /> Copy
+              </button>
+              <button
+                onClick={() => { if (workspaceCode && workspaceCode.trim()) openCanvasWithCode(workspaceCode); }}
+                title="Render this code in the Live Canvas"
+                style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: workspaceCode && workspaceCode.trim() ? 'pointer' : 'not-allowed', opacity: workspaceCode && workspaceCode.trim() ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
                 <Play size={12} /> Preview App
               </button>
-              <button 
+              <button
                 onClick={() => setIsWorkspaceMode(false)}
                 style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
               >
