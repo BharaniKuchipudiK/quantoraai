@@ -179,6 +179,7 @@ export default function App() {
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0]);
+  const [modelDashboard, setModelDashboard] = useState(null);
 
   useEffect(() => {
     // Dynamically fetch model registry
@@ -210,6 +211,7 @@ export default function App() {
           if (dynamicModels.length === 0) return;
 
           setAvailableModels(dynamicModels);
+          if (data.dashboard) setModelDashboard(data.dashboard);
 
           // Preserve the user's current selection if it still exists; otherwise
           // fall back to the first available model, then the first overall.
@@ -322,6 +324,7 @@ export default function App() {
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 availableModels={availableModels}
+                modelDashboard={modelDashboard}
                 onPushToCanvas={handleSendToCanvas}
                 onSendToCanvas={handleSendToCanvas}
                 user={user}

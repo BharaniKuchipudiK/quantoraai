@@ -1,6 +1,12 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/models",
+      "schedule": "15 3 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -33,6 +39,10 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/github/preview",
+      "destination": "/api/pipeline"
+    },
     {
       "source": "/api/chat",
       "destination": "/api/chat"

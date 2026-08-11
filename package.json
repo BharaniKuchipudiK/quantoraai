@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test:conversation": "tsx --test api/_lib/conversation-policy.test.ts",
+    "test:models": "node --test api/_lib/model-catalog.test.js",
+    "test:repository-preview": "tsx --test api/_lib/repository-preview.test.ts",
     "test:quantum": "node --test src/lib/quantum/*.test.js"
   },
   "dependencies": {
