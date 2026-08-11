@@ -30,7 +30,7 @@ export default async function handler(req: any, res: any) {
   try {
     const { prefix, suffix } = req.body;
     
-    const apiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI');
     if (!apiKey) return res.status(401).json({ error: "No API key available for Autocomplete." });
     
     const client = new GoogleGenAI({ apiKey });

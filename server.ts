@@ -91,7 +91,7 @@ async function startServer() {
   wss.on('connection', async (ws, req) => {
     console.log("Client connected to /api/live WebSocket");
     
-    const geminiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI');
     if (!geminiKey) {
        console.error("No Gemini API key found for Voice mode");
        ws.close();
@@ -325,8 +325,8 @@ Make complex topics easy to understand. Structure responses with clear headings,
       const gatewayGeminiKey = mayUseServerKeys ? await fetchApiGatewayKey('GEMINI') : null;
       const gatewayOpenRouterKey = mayUseServerKeys ? await fetchApiGatewayKey('OPENROUTER') : null;
       
-      const effectiveGeminiKey = req.headers["x-gemini-key"] as string || gatewayGeminiKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined);
-      const effectiveOpenRouterKey = req.headers["x-openrouter-key"] as string || gatewayOpenRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined);
+      const effectiveGeminiKey = req.headers["x-gemini-key"] as string || (mayUseServerKeys ? process.env.GEMINI_API_KEY : undefined) || gatewayGeminiKey;
+      const effectiveOpenRouterKey = req.headers["x-openrouter-key"] as string || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY : undefined) || gatewayOpenRouterKey;
 
       if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
         return res.status(401).json({
@@ -562,7 +562,7 @@ Make complex topics easy to understand. Structure responses with clear headings,
   app.post("/api/autocomplete", async (req, res) => {
     try {
        const { prefix, suffix, modelId } = req.body;
-       const apiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
+       const apiKey = process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI');
        if (!apiKey) return res.status(401).json({ error: "No API key" });
        
        const client = new GoogleGenAI({ apiKey });

@@ -247,9 +247,9 @@ Rules:
      */
     const mayUseServerKeys = Boolean(sessionUser);
     const effectiveOpenRouterKey =
-      openRouterKey || (mayUseServerKeys ? await fetchApiGatewayKey('OPENROUTER') || process.env.OPENROUTER_API_KEY : undefined);
+      openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY || await fetchApiGatewayKey('OPENROUTER') : undefined);
     const effectiveGeminiKey =
-      userKey || (mayUseServerKeys ? await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY : undefined);
+      userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
 
     if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
       return res.status(401).json({
