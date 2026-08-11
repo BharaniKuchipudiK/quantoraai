@@ -2,13 +2,37 @@ import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 
-const SYSTEM_INSTRUCTION = `You are an expert product manager and software architect. Your job is to take a user's rough idea or vague prompt and rewrite it into a highly comprehensive, clear, and actionable specification for an AI to build.
+const SYSTEM_INSTRUCTION = `You are Quantora's Prompt Engineer. Improve the user's prompt so an AI produces a better result — WITHOUT inflating it. Match your effort to the prompt; a simple ask must stay simple.
 
-Follow these rules:
-1. Output ONLY the rewritten prompt. Do not include introductory or concluding conversational text (e.g. "Here is your enhanced prompt").
-2. Make intelligent assumptions to fill in the blanks, BUT if critical architectural decisions are missing (like whether they want a Mobile App, a Website, or a Desktop App), you must append a short "Clarifying Questions" section at the end of the prompt for the user to answer before they submit it.
-3. Include specific recommendations for UI/UX (e.g., clean interface, dark/light mode), core features, and data flow based on the context.
-4. Keep the rewritten prompt professional, direct, and concise enough to fit in a text box, but detailed enough to guide a developer perfectly.`;
+Pick exactly ONE tier and apply only that much:
+- "Polish": the prompt is already clear, or is a small/simple ask. Fix wording, tighten it, add at most one or two concrete specifics. Keep it to a sentence or two. Never expand a simple prompt into a spec.
+- "Enrich": the prompt is a bit vague but still simple. Add the few details that materially help (audience, key features, style, platform) in a short paragraph — no headings, no requirement lists.
+- "Blueprint": ONLY for a genuinely complex, under-specified build. Produce a fuller, structured brief.
+
+Rules:
+- Preserve the user's intent, scope, voice and language. Never turn what they asked for into something bigger than they wanted.
+- Add only what materially improves the outcome. When unsure, do less.
+- Do NOT ask clarifying questions and do NOT add a "Clarifying Questions" section. Make one sensible assumption and keep going.
+- If a depth hint is provided: "lighter" = go one tier shallower (do less); "deeper" = go one tier richer (do more).
+- Output STRICT JSON and nothing else — no markdown, no code fences: {"tier":"Polish"|"Enrich"|"Blueprint","prompt":"the improved prompt"}.`;
+
+// Pull the {tier, prompt} object out of the model's reply, tolerating stray
+// prose or code fences. Falls back to treating the whole reply as the prompt.
+function parseEnhancement(raw: string): { tier: string; prompt: string } {
+  const text = (raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  try {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      const obj = JSON.parse(text.slice(start, end + 1));
+      const tier = ["Polish", "Enrich", "Blueprint"].includes(obj.tier) ? obj.tier : "Enrich";
+      if (obj.prompt && typeof obj.prompt === "string") return { tier, prompt: obj.prompt.trim() };
+    }
+  } catch { /* fall through */ }
+  let prompt = text;
+  if (prompt.startsWith('"') && prompt.endsWith('"')) prompt = prompt.slice(1, -1);
+  return { tier: "Enrich", prompt };
+}
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "POST,OPTIONS");
@@ -27,7 +51,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { prompt } = req.body;
+    const { prompt, depth } = req.body;
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid prompt in request body' });
@@ -39,27 +63,25 @@ export default async function handler(req: any, res: any) {
        return res.status(503).json({ error: 'GEMINI_API_KEY is not configured on the server or Supabase API Gateway.' });
     }
 
+    const depthHint = depth === 'lighter' || depth === 'deeper'
+      ? `\n\n[Depth hint: ${depth} — ${depth === 'lighter' ? 'do less than you normally would' : 'do a bit more than you normally would'}.]`
+      : '';
+
     const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: [
-        { role: "user", parts: [{ text: prompt }] }
+        { role: "user", parts: [{ text: prompt + depthHint }] }
       ],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0.7,
+        temperature: 0.5,
       }
     });
 
-    let enhancedPrompt = response.text || "";
-    // Clean up markdown formatting if the model wraps it in quotes or markdown block
-    enhancedPrompt = enhancedPrompt.trim();
-    if (enhancedPrompt.startsWith('"') && enhancedPrompt.endsWith('"')) {
-      enhancedPrompt = enhancedPrompt.slice(1, -1);
-    }
-
-    return res.status(200).json({ enhancedPrompt });
+    const { tier, prompt: enhancedPrompt } = parseEnhancement(response.text || "");
+    return res.status(200).json({ enhancedPrompt, tier });
 
   } catch (error: any) {
     console.error("Enhance API Error:", error);

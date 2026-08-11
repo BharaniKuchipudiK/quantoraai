@@ -967,6 +967,35 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const [showHeroCardModal, setShowHeroCardModal] = useState(false);
   const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
+  // Prompt Engineer review card: { original, prompt, tier, model } | null.
+  // Enhancement is shown here for the user to edit/finalize before it lands in
+  // the input — never silently overwritten.
+  const [enhanceResult, setEnhanceResult] = useState(null);
+
+  const runEnhance = async (sourcePrompt, depth) => {
+    const source = (sourcePrompt || '').trim();
+    if (!source) return;
+    setIsEnhancingPrompt(true);
+    try {
+      const res = await fetch('/api/enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: source, depth })
+      });
+      const data = await res.json();
+      if (res.ok && data.enhancedPrompt) {
+        let model = null;
+        try { model = chooseBestFreeModel(availableModels, data.enhancedPrompt)?.model || null; } catch (e) {}
+        setEnhanceResult({ original: source, prompt: data.enhancedPrompt, tier: data.tier || 'Enrich', model });
+      } else {
+        console.error("Magic Wand failed:", data.error);
+      }
+    } catch (e) {
+      console.error("Magic Wand network error:", e);
+    } finally {
+      setIsEnhancingPrompt(false);
+    }
+  };
 
   const handleMagicWandEnhance = async () => {
     if (!inputText.trim()) {
@@ -980,26 +1009,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setInputText(samplePrompts[Math.floor(Math.random() * samplePrompts.length)]);
       return;
     }
+    // Enhance from the current input at auto depth, then open the review card.
+    runEnhance(inputText, 'auto');
+  };
 
-    setIsEnhancingPrompt(true);
-    try {
-      const res = await fetch('/api/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: inputText })
-      });
-      const data = await res.json();
-      if (res.ok && data.enhancedPrompt) {
-        setInputText(data.enhancedPrompt);
-        setShowHeroCardModal(true);
-      } else {
-        console.error("Magic Wand failed:", data.error);
-      }
-    } catch (e) {
-      console.error("Magic Wand network error:", e);
-    } finally {
-      setIsEnhancingPrompt(false);
+  // Apply the (possibly edited) enhancement to the input, adopt the suggested
+  // model, and close the card.
+  const applyEnhancement = () => {
+    if (!enhanceResult) return;
+    setInputText(enhanceResult.prompt);
+    if (enhanceResult.model) {
+      setSelectedModel(enhanceResult.model);
+      setAutoSelectEnabled(false);
     }
+    setEnhanceResult(null);
   };
 
   const [keyInputValue, setKeyInputValue] = useState('');
@@ -2442,6 +2465,37 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           )}
 
 
+
+          {/* Prompt Engineer review card — edit & finalize before it hits the input. */}
+          {enhanceResult && (
+            <div style={{ margin: '0 18px 8px', borderRadius: '14px', border: '1px solid rgba(249,115,22,0.35)', background: isLight ? '#fffaf5' : 'rgba(249,115,22,0.06)', boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.06)' : '0 8px 30px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)' }}>
+                <Wand2 size={15} color="#f97316" />
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor }}>Prompt Engineer</span>
+                <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#f97316', background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '999px', padding: '2px 8px' }}>{enhanceResult.tier}</span>
+                {enhanceResult.model && (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: subtextColor }}>
+                    <Cpu size={12} color="#f97316" /> Suggested: <strong style={{ color: textColor }}>{enhanceResult.model.name}</strong>
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={enhanceResult.prompt}
+                onChange={(e) => setEnhanceResult(r => ({ ...r, prompt: e.target.value }))}
+                rows={Math.min(10, Math.max(3, (enhanceResult.prompt.match(/\n/g) || []).length + 2))}
+                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', resize: 'vertical', background: 'transparent', color: textColor, fontSize: '0.9rem', lineHeight: 1.5, padding: '12px 14px', fontFamily: 'inherit' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderTop: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
+                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'lighter')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↓ Lighter</button>
+                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'deeper')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↑ Deeper</button>
+                {isEnhancingPrompt && <span style={{ fontSize: '0.72rem', color: subtextColor }}>Re-thinking…</span>}
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                  <button onClick={() => setEnhanceResult(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>Discard</button>
+                  <button onClick={applyEnhancement} style={{ background: '#f97316', border: 'none', color: '#fff', borderRadius: '8px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}>Use it</button>
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Iteration hint: next message edits the existing website in place. */}
           {refineActive && previewCode && previewCode.trim() && (
