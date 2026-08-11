@@ -2891,10 +2891,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                onClick={() => { try { navigator.clipboard.writeText(workspaceCode || ''); } catch (e) {} }}
+                title="Copy code"
+                style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Copy size={12} /> Copy
+              </button>
+              <button
+                onClick={() => { if (workspaceCode && workspaceCode.trim()) openCanvasWithCode(workspaceCode); }}
+                title="Render this code in the Live Canvas"
+                style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: workspaceCode && workspaceCode.trim() ? 'pointer' : 'not-allowed', opacity: workspaceCode && workspaceCode.trim() ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
                 <Play size={12} /> Preview App
               </button>
-              <button 
+              <button
                 onClick={() => setIsWorkspaceMode(false)}
                 style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
               >
