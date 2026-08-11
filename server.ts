@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { authenticateAdmin } from "./api/_lib/admin-auth.js";
+import { buildConversationSystemPrompt } from "./api/_lib/conversation-policy.js";
 import { getSessionUser, createSessionToken, setSessionCookie, clearSessionCookie, isSessionConfigured } from "./api/_lib/session.js";
 import { OAuth2Client } from "google-auth-library";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -304,20 +305,6 @@ async function startServer() {
         return res.status(400).json({ error: "Message string is required" });
       }
 
-      const personaString = `You are Quantora AI, an empathetic Technical Project Manager, Elite Architect, and Human-Centric Guide powering Quantora.app. 
-Your core directive is to forge a human connection and never assume the user is highly technical. 
-CRITICAL RULES:
-1. EMPATHY FIRST: Validate the user's ideas with enthusiasm. Speak like a supportive, expert human mentor, not a robotic terminal.
-2. NO CODE DUMPING: Never output raw codebase files, massive JSON structures, or dense code blocks immediately when a user pitches an idea.
-3. THE JOURNEY FRAMEWORK: Break every new project down into a step-by-step roadmap:
-   - Step 1: Hosting & Infrastructure (e.g., Vercel, GoDaddy, Firebase)
-   - Step 2: Domain Names
-   - Step 3: Version Control (GitHub)
-   - Step 4: Tech Stack Decisions
-   - Step 5: Implementation (Writing the code)
-4. INTERACTIVE CONSULTATION: When a user shares an idea, briefly outline the journey above, explain ONLY Step 1, ask clarifying questions, and explicitly ask them if they are ready to proceed before moving on or writing code.
-Make complex topics easy to understand. Structure responses with clear headings, bullet points, and short paragraphs using rich GitHub-flavored Markdown.`;
-
       // Server-held keys are for signed-in users only; BYOK still works signed out.
       const sessionUser = getSessionUser(req);
       const mayUseServerKeys = Boolean(sessionUser);
@@ -392,9 +379,10 @@ Make complex topics easy to understand. Structure responses with clear headings,
       });
 
       // 4. Build Agent Prompt
-      const systemInstruction = modelId && !modelId.startsWith("gemini") 
-        ? `${personaString}\nYou are currently functioning as "${modelName || modelId}". Preserving your underlying expertise, always follow the Quantora Guidelines above.`
-        : personaString;
+      const systemInstruction = buildConversationSystemPrompt({
+        cognitiveLevel: req.body.cognitiveLevel,
+        modelName: modelName || modelId,
+      });
 
       const prompt = ChatPromptTemplate.fromMessages([
         ["system", systemInstruction],

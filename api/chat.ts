@@ -3,6 +3,7 @@ import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib
 import { getSessionUser } from "./_lib/session.js";
 import { recordUsage } from "./_lib/store.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
+import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -257,23 +258,16 @@ export default async function handler(req: any, res: any) {
     const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel } = req.body || {};
 
     let dynamicTemperature = 0.7;
-    let cognitiveDirective = "";
     if (cognitiveLevel === 'Lightning') {
       dynamicTemperature = 0.3;
-      cognitiveDirective = "\n\nCognitive Directive: Provide the final answer immediately. Be ruthlessly concise. No explanations.";
     } else if (cognitiveLevel === 'Deep Think') {
       dynamicTemperature = 0.2;
-      cognitiveDirective = "\n\nCognitive Directive: Think step-by-step. Analyze all edge cases, consider architectural impacts, and provide an exhaustive, research-grade explanation before concluding.";
     }
 
-    const baseSystemPrompt = `You are Quantora AI, an elite Senior Developer and Technical Architect pair-programming with the user.
-Rules:
-1. Speak like a human peer engineer. Never use robotic intros like "As an AI..." or "Here is the code". Jump straight into the solution.
-2. Be concise, authoritative, and highly analytical.
-3. Provide clean, production-ready code with no fluff.
-4. When discussing architecture, speak casually but brilliantly about tradeoffs.`;
-    
-    const finalSystemPrompt = baseSystemPrompt + cognitiveDirective;
+    const finalSystemPrompt = buildConversationSystemPrompt({
+      cognitiveLevel,
+      modelName: modelName || modelId,
+    });
 
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Message string is required" });
