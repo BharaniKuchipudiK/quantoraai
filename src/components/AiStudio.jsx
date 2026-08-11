@@ -623,7 +623,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
   const [arenaMode, setArenaMode] = useState(false);
-  const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
+  const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
@@ -982,7 +982,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // 1. Dual Model Arena Execution Mode
     if (arenaMode) {
       const modelA = targetModel;
-      const modelB = secondModel || { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' };
+      const modelB = secondModel || { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' };
 
       const dualMsgId = Date.now() + 1;
       const dualMsg = {
@@ -1824,7 +1824,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   gap: '6px'
                 }}
               >
-                <span>VS: {secondModel ? secondModel.name : 'Nvidia Nemotron 3'}</span>
+                <span>VS: {secondModel ? secondModel.name : 'Qwen 2.5 Coder 32B'}</span>
                 <ChevronDown size={12} />
               </button>
 
