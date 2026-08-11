@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { authenticateAdmin } from "./api/_lib/admin-auth.js";
 import { buildConversationSystemPrompt } from "./api/_lib/conversation-policy.js";
+import { buildRepositoryPreview } from "./api/_lib/repository-preview.js";
 import { getSessionUser, createSessionToken, setSessionCookie, clearSessionCookie, isSessionConfigured } from "./api/_lib/session.js";
 import { OAuth2Client } from "google-auth-library";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -458,6 +459,17 @@ async function startServer() {
   });
 
   // API route for GitHub Context Fetching
+  app.post("/api/github/preview", async (req, res) => {
+    try {
+      // Keep the preview public-only until GitHub access is tied to the
+      // signed-in user's own OAuth grant.
+      const preview = await buildRepositoryPreview(req.body?.repoUrl, req.body?.task);
+      return res.status(200).json(preview);
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message || "Could not prepare the repository preview." });
+    }
+  });
+
   app.post("/api/github/fetch-repo", async (req, res) => {
     try {
       const { repoUrl } = req.body;

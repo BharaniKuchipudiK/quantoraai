@@ -646,12 +646,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
+  const [githubChangeRequest, setGithubChangeRequest] = useState('');
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubError, setGithubError] = useState('');
 
   const handleImportGithub = async () => {
-    if (!githubRepoUrl) {
-      setGithubError("Please enter a valid GitHub URL");
+    if (!githubRepoUrl || !githubChangeRequest.trim()) {
+      setGithubError("Enter the repository URL and describe the change you want to review.");
       return;
     }
     
@@ -659,10 +660,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setGithubError('');
 
     try {
-      const response = await fetch('/api/github/fetch-repo', {
+      const response = await fetch('/api/github/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: githubRepoUrl })
+        body: JSON.stringify({ repoUrl: githubRepoUrl, task: githubChangeRequest.trim() })
       });
 
       const data = await response.json();
@@ -672,12 +673,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       setAttachments(prev => [...prev, {
         type: 'context',
-        name: data.name,
+        contextType: 'repository',
+        name: `${data.name} · ${data.relevantFiles.length} files · ${data.risk} risk`,
         content: data.content
       }]);
-      
+
+      setInputText(prev => prev.trim() ? prev : githubChangeRequest.trim());
       setIsGithubModalOpen(false);
       setGithubRepoUrl('');
+      setGithubChangeRequest('');
     } catch (err) {
       setGithubError(err.message);
     } finally {
@@ -921,6 +925,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
+    const visibleText = text.trim() || "Review the attached repository context.";
 
     // Inject Context Chips
     const contextChips = attachments.filter(a => a.type === 'context');
@@ -935,6 +940,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
              const stringifiedHistory = prevSession.messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
              contextString += `\n\n[CONTEXT: PREVIOUS SESSION (${prevSession.title})]\n${stringifiedHistory.substring(0, 5000)}...`;
            }
+        } else if (chip.contextType === 'repository' && chip.content) {
+          contextString += `\n\n${chip.content}`;
         }
       }
       text = text + contextString;
@@ -945,7 +952,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const userMsg = {
       id: Date.now(),
       sender: 'user',
-      text: text.trim(),
+      text: visibleText,
       attachments: [...attachments]
     };
 
@@ -2836,8 +2843,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Github size={24} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Import Repository</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Load codebase context directly into AI Studio.</p>
+                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Safe Change Preview</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Understand a repository change before touching any code.</p>
               </div>
             </div>
 
@@ -2864,12 +2871,33 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onFocus={(e) => e.target.style.borderColor = '#f97316'}
                 onBlur={(e) => e.target.style.borderColor = isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.2)'}
               />
+            </div>
+
+            <div style={{ marginBottom: '18px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: textColor, marginBottom: '8px' }}>What would you like to change?</label>
+              <textarea
+                value={githubChangeRequest}
+                onChange={(e) => setGithubChangeRequest(e.target.value)}
+                placeholder="For example: Keep the footer visible without making the page scroll"
+                disabled={isFetchingGithub}
+                rows={4}
+                maxLength={2000}
+                style={{
+                  width: '100%', padding: '14px 16px', borderRadius: '12px', resize: 'vertical',
+                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
+                  background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)', color: textColor,
+                  fontSize: '0.95rem', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#10b981', fontWeight: '600' }}>
+                Read-only preview — Quantora will not modify your repository.
+              </div>
               {githubError && <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
             </div>
 
             <button
               onClick={handleImportGithub}
-              disabled={isFetchingGithub || !githubRepoUrl}
+              disabled={isFetchingGithub || !githubRepoUrl || !githubChangeRequest.trim()}
               style={{
                 width: '100%',
                 padding: '14px',
@@ -2879,19 +2907,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 border: 'none',
                 fontWeight: '700',
                 fontSize: '1rem',
-                cursor: (isFetchingGithub || !githubRepoUrl) ? 'not-allowed' : 'pointer',
+                cursor: (isFetchingGithub || !githubRepoUrl || !githubChangeRequest.trim()) ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: (isFetchingGithub || !githubRepoUrl) ? 'none' : '0 4px 14px rgba(249, 115, 22, 0.3)',
+                boxShadow: (isFetchingGithub || !githubRepoUrl || !githubChangeRequest.trim()) ? 'none' : '0 4px 14px rgba(249, 115, 22, 0.3)',
                 transition: 'all 0.2s ease'
               }}
             >
               {isFetchingGithub ? (
-                <><RefreshCw size={18} className="animate-spin" /> Fetching Codebase...</>
+                <><RefreshCw size={18} className="animate-spin" /> Finding Relevant Files...</>
               ) : (
-                <><Github size={18} /> Import to Context</>
+                <><Github size={18} /> Prepare Change Preview</>
               )}
             </button>
           </div>
