@@ -252,13 +252,16 @@ export default function App() {
     handleTabChange('canvas');
   };
 
+  const isStudioShell = activeTab === 'studio';
+  const isFramedShell = !isStudioShell && activeTab !== 'landing';
+
   return (
     <ErrorBoundary>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
-    <div className={activeTab === 'studio' ? 'app-shell app-shell--studio' : 'app-shell'} style={{
+    <div className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}`} style={{
       minHeight: '100dvh',
-      height: activeTab === 'studio' ? '100dvh' : 'auto',
-      overflow: activeTab === 'studio' ? 'hidden' : 'visible',
+      height: isStudioShell || isFramedShell ? '100dvh' : 'auto',
+      overflow: isStudioShell || isFramedShell ? 'hidden' : 'visible',
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
@@ -296,16 +299,20 @@ export default function App() {
             isLight={isLight}
           />
 
-          <main className={activeTab === 'studio' ? 'app-main app-main--studio' : 'app-main'} style={{
+          <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
             minHeight: 0,
-            maxWidth: activeTab === 'studio' ? '1800px' : '1400px',
+            maxWidth: isStudioShell ? '1800px' : '1400px',
             width: '100%',
             margin: '0 auto',
-            padding: activeTab === 'studio' ? 'clamp(6px, 0.8vw, 12px) clamp(8px, 1.2vw, 20px)' : '24px',
-            overflow: activeTab === 'studio' ? 'hidden' : 'visible',
+            padding: isStudioShell
+              ? 'clamp(6px, 0.8vw, 12px) clamp(8px, 1.2vw, 20px)'
+              : isFramedShell
+                ? 'clamp(12px, 2vh, 20px) clamp(16px, 2vw, 24px)'
+                : '24px',
+            overflow: isStudioShell ? 'hidden' : undefined,
             position: 'relative',
             zIndex: 10
           }}>

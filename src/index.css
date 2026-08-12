@@ -53,6 +53,177 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Framed app views (hub, vault, etc.): header + scrollable main + footer in one viewport. */
+.app-shell--framed {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.app-shell--framed .app-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: clamp(12px, 2vh, 20px) !important;
+  padding-bottom: clamp(12px, 2vh, 20px) !important;
+}
+
+.app-shell--framed .app-footer {
+  flex-shrink: 0;
+}
+
+/* Welcome hub — compact module picker that fits above the global footer. */
+.welcome-hub {
+  max-width: 1120px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2.5vh, 28px);
+  min-height: 0;
+}
+
+.welcome-hub__intro {
+  flex-shrink: 0;
+}
+
+.welcome-hub__eyebrow {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.welcome-hub__title {
+  font-family: var(--font-heading);
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+
+.welcome-hub__name {
+  color: #ea580c;
+}
+
+.welcome-hub__subtitle {
+  font-size: clamp(0.9rem, 1.1vw, 1rem);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 520px;
+}
+
+.welcome-hub__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(12px, 1.8vw, 18px);
+  align-items: stretch;
+}
+
+.welcome-hub__card {
+  appearance: none;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--bg-card);
+  padding: clamp(16px, 2.2vw, 22px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  box-shadow: var(--card-shadow);
+  min-height: 0;
+}
+
+.welcome-hub__card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(249, 115, 22, 0.35);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.welcome-hub__card.is-light:hover {
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.welcome-hub__card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.welcome-hub__card-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.welcome-hub__card-body h2 {
+  font-size: clamp(1rem, 1.4vw, 1.15rem);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.welcome-hub__card-body p {
+  font-size: clamp(0.8rem, 1vw, 0.88rem);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.welcome-hub__card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+@media (max-width: 960px) {
+  .welcome-hub__grid {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+  }
+}
+
+@media (max-height: 780px) {
+  .welcome-hub {
+    gap: 12px;
+  }
+
+  .welcome-hub__card-body p {
+    -webkit-line-clamp: 2;
+  }
+
+  .welcome-hub__card {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .welcome-hub__card-icon {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 /* AI Studio behaves like an application shell: the chrome and prompt remain
    visible while only the conversation area scrolls as content grows. */
 .app-shell--studio,
