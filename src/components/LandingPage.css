@@ -54,7 +54,14 @@
 
 /* Hero */
 .landing-hero {
-  padding-block: clamp(32px, 5vh, 56px) clamp(36px, 5vh, 52px);
+  padding-block: clamp(40px, 6vh, 72px) clamp(44px, 6vh, 64px);
+}
+
+.landing-hero__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .landing-hero__eyebrow {
@@ -65,7 +72,7 @@
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .landing-hero__eyebrow-dot {
@@ -77,36 +84,45 @@
 
 .landing-hero__title {
   font-family: var(--font-heading);
-  font-size: clamp(2.2rem, 4.8vw, 3.75rem);
+  font-size: clamp(2.25rem, 4.5vw, 3.85rem);
   font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
-  margin: 0 0 16px;
-  max-width: 14ch;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  margin: 0 0 18px;
+  max-width: none;
+  text-wrap: balance;
+}
+
+@media (min-width: 768px) {
+  .landing-hero__title {
+    white-space: nowrap;
+  }
 }
 
 .landing-hero__subtitle {
   font-size: clamp(1rem, 1.2vw, 1.125rem);
   line-height: 1.65;
-  margin: 0 0 28px;
-  max-width: 520px;
+  margin: 0 0 32px;
+  max-width: 540px;
 }
 
 .landing-hero__prompt {
-  max-width: 640px;
-  border-radius: 14px;
-  padding: 8px 8px 8px 16px;
+  width: min(100%, 680px);
+  border-radius: 16px;
+  padding: 10px 10px 10px 18px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  text-align: left;
 }
 
 .landing-hero__models {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 28px;
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -165,6 +181,77 @@
   color: #f97316;
   margin-bottom: 8px;
   letter-spacing: -0.02em;
+}
+
+/* Success stories — placeholder cards until real quotes ship */
+.landing-stories__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 2vw, 20px);
+}
+
+.landing-story-card {
+  position: relative;
+  border-radius: 16px;
+  padding: clamp(20px, 2.5vw, 26px);
+  height: 100%;
+  text-align: left;
+}
+
+.landing-story-card__status {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.12);
+  color: #ea580c;
+  border: 1px solid rgba(249, 115, 22, 0.25);
+}
+
+.landing-story-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.landing-story-card__category {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.landing-story-card h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+  padding-right: 72px;
+}
+
+.landing-story-card p {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.landing-stories__footnote {
+  margin: clamp(28px, 4vh, 36px) auto 0;
+  max-width: 560px;
+  text-align: center;
+  font-size: 0.92rem;
+  line-height: 1.6;
 }
 
 /* Card grids — journey + platform + capabilities share one system */
@@ -278,12 +365,9 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .landing-outcomes__grid {
+  .landing-outcomes__grid,
+  .landing-stories__grid {
     grid-template-columns: 1fr;
-  }
-
-  .landing-hero__title {
-    max-width: none;
   }
 }
 
