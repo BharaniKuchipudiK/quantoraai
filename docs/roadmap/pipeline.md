@@ -1,6 +1,6 @@
 # Quantora Work Pipeline
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 Track what shipped, what’s in progress, and what’s next. Architecture detail: [`../architecture/studio-platform-v2.md`](../architecture/studio-platform-v2.md).
 
@@ -14,6 +14,7 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 | 🔄 Deploy | Code ready; needs Supabase migration or config |
 | 📋 Next | Prioritized upcoming work |
 | 💡 Later | Valuable but not blocking |
+| 🧠 Ideas vault | Captured thoughts — don’t lose between sessions |
 
 ---
 
@@ -34,6 +35,25 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 - [x] Collapsible studio header (`StudioChromeBar`)
 - [x] Choice cards protocol (`quantora-choices` markers)
 - [x] Real admin analytics (`ProductAnalyticsPanel`)
+- [x] Floating choice card above prompt — PR #71
+- [x] Travel + Build choice card templates — PR #71
+- [x] Arena hidden from default chrome (overflow menu) — PR #71
+- [x] Continuation chips after AI replies (ChatGPT-style) — PR #76
+
+### Ship & publish
+- [x] Publish to Vercel from Live Preview overlay — PR #72
+- [x] Project name dialog, copy link, session auth on `/api/deploy`
+- [x] `product_events` + `/api/product-event` (`preview_opened`, `publish_completed`) — PR #72
+
+### Analytics & admin
+- [x] Admin Technical & Telemetry tab (cost split, P95, model latency, preview/publish) — PR #74
+- [x] Migration 0011: technical analytics views
+- [x] Geo capture from Vercel edge headers — PR #75
+- [x] Migration 0012: `user_geo` + country charts in User Analytics
+- [x] Vercel Web Analytics + Speed Insights in app — PR #73
+
+### Landing & positioning
+- [x] Success stories placeholders + broader studio positioning (not website builder) — PR #77
 
 ### Model trust pipeline
 - [x] Daily OpenRouter cron discovers free models
@@ -41,12 +61,13 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 - [x] Unapproved models hidden from regular users
 - [x] Approved models appear in public picker
 - [x] Rejected models stay rejected on cron rescan
+- [x] Admin smoke-test before approve (3 fixed prompts per model)
 
-### Telemetry
+### Telemetry migrations
 - [x] Migration 0007: `studio_mode`, `studio_domain`, `choice_selected` on usage
 - [x] SQL views for 7-day model/mode/domain analytics
-- [x] Migration 0010: `product_events` (`preview_opened`, `publish_completed`)
-- [x] Vercel Web Analytics + Speed Insights (`@vercel/analytics`, `@vercel/speed-insights`) — PR pending
+- [x] Migration 0010: `product_events`
+- [x] Migration 0008–0009: smoke test + product views security
 
 ---
 
@@ -63,21 +84,21 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
    supabase/migrations/0011_technical_analytics_views.sql
    supabase/migrations/0012_user_geo.sql
    ```
+   ✅ Bharani confirmed 0007–0012 run (2026-08-12)
 
 2. **Verify after deploy**
-   - [ ] Homepage copy + flagship spacing (corporate refresh)
-   - [ ] Image paste → Gemini vision in Build and Ask mode
-   - [ ] Arena Prefer-this buttons
-   - [ ] Studio header collapses via chevron
-   - [ ] Admin → Product Engagement panel
-   - [ ] Live Preview → Publish toolbar + copy link (signed-in)
+   - [x] Homepage copy + flagship spacing (corporate refresh) — PR #77
+   - [ ] Image paste → Gemini vision in Build and Ask mode (code fixed PR #66; prod smoke test)
+   - [x] Arena Prefer-this buttons
+   - [x] Studio header collapses via chevron
+   - [x] Admin → Product Engagement panel
+   - [x] Live Preview → Publish toolbar + copy link (signed-in)
 
-3. **Vercel Analytics & Observability** (dashboard toggles — no extra migration)
-   - [ ] **Web Analytics** — Vercel → `quantora-platform` → **Analytics** → Enable
-   - [ ] **Speed Insights** — Vercel → **Speed Insights** → Enable (Core Web Vitals; complements Supabase time-on-site)
-   - [ ] **Observability** — already live on Pro (Edge Requests, Functions, Compute — see project dashboard)
-   - [ ] After deploy: visit production site → confirm network requests to `vitals.vercel-insights.com`
-   - Code: `@vercel/analytics` + `@vercel/speed-insights` in `src/App.jsx`; CSP allows analytics endpoints in `vercel.json`
+3. **Vercel Analytics & Observability** (dashboard toggles)
+   - [x] **Web Analytics** — enabled on `quantora-platform`
+   - [x] **Speed Insights** — enabled
+   - [x] **Observability** — live on Pro
+   - [ ] After deploy: confirm network requests to `vitals.vercel-insights.com` (disable ad blockers if empty)
 
 ---
 
@@ -86,66 +107,119 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 ### P0 — Reliability & trust
 | # | Task | Why |
 |---|------|-----|
-| 1 | ~~**Admin smoke-test before approve**~~ ✅ | 3 fixed prompts per discovered model |
-| 2 | ~~**Verify migration 0007 KPIs**~~ ✅ | Mode/domain tiles + tracking health banner |
+| 1 | ~~Admin smoke-test before approve~~ ✅ | 3 fixed prompts per discovered model |
+| 2 | ~~Verify migration 0007 KPIs~~ ✅ | Mode/domain tiles + tracking health banner |
+| 3 | **Prod smoke: image paste vision** | Code shipped; needs one manual Ask + Build test |
 
-### P1 — Conversation UX
-| # | Task | Why |
-|---|------|-----|
-| 3 | ~~**Floating choice card above prompt**~~ ✅ | Pending options visible without scrolling |
-| 4 | ~~**Travel + Build choice templates**~~ ✅ | Budget, dates, site type as model hints |
-| 5 | ~~**Hide Arena from default chrome**~~ ✅ | Power feature; overflow menu only |
+### P1 — Build Journey (Dream Canvas v2) — **current focus**
+| # | Task | Why | Status |
+|---|------|-----|--------|
+| 4 | **Outcome board (3 lanes)** | Captured → In progress → Done — tied to north star, not dev JSON stages | ✅ v1 shipped 2026-08-13 |
+| 5 | **Fix Push to Journey from Studio** | Was broken: pushed raw code string, never created card | ✅ `Save to Journey` + `createJourneyNode` |
+| 6 | **Drag cards across lanes** | Manual progress users understand; no fake “Execute” AI pipeline | ✅ HTML5 drag + Advance button |
+| 7 | **Continue in Studio** | Card opens Studio with original prompt — one click back to work | ✅ wired in `App.jsx` |
+| 8 | **Auto-advance on preview/publish** | `preview_opened` → In progress; `publish_completed` → Done | ✅ wired 2026-08-13 |
 
-### P2 — Ship & monetize (differentiation)
+### P2 — Ship & monetize
 | # | Task | Why | Existing code |
 |---|------|-----|---------------|
-| 6 | ~~**Publish to Vercel — studio UX**~~ ✅ | One-click from Live Preview → live URL | `api/deploy.ts`, `LivePreviewCanvas.jsx` |
-| 7 | **Stripe Connect — user payments** | Accept payments on user-built sites; funds go to *their* Stripe | Draft PR #39 foundation |
-| 8 | ~~**Preview-opened KPI**~~ ✅ | Measure build completion, not just prompts | `product_events` + `/api/product-event` |
-| 9 | ~~**Vercel Web Analytics**~~ ✅ | Time-on-site + Web Vitals complement Supabase KPIs | `@vercel/analytics`, `@vercel/speed-insights` |
+| 9 | **Stripe Connect — user payments** | Accept payments on user-built sites; funds go to *their* Stripe | Draft PR #39 |
 | 10 | **North-star dashboard tile** | “Weekly users who completed something meaningful” | Admin dashboard |
 
-#### P2 detail: Publish to Vercel
-- [x] **Surface in preview toolbar** — Publish + Download in overlay compact toolbar
-- [x] **User flow** — name project → deploy → show `*.vercel.app` URL + copy link
-- [x] **Custom domain** — wire existing `api/domains.ts` connect flow in UI
-- [x] **Auth** — signed-in users only; session cookie on deploy
-- [x] **Telemetry** — log `publish_completed` + `preview_opened` for north-star KPI
-
-#### P2 detail: Vercel Analytics & Observability
-- [x] **Install packages** — `@vercel/analytics` + `@vercel/speed-insights` (React/Vite, not Next.js)
-- [x] **Wire in app** — `<Analytics />` + `<SpeedInsights />` in `src/App.jsx`
-- [x] **CSP** — allow `vitals.vercel-insights.com` (+ dev `va.vercel-scripts.com`) in `vercel.json`
-- [ ] **Dashboard: Web Analytics** — Vercel → Analytics → Enable on `quantora-platform`
-- [ ] **Dashboard: Speed Insights** — Vercel → Speed Insights → Enable
-- [ ] **Verify** — deploy → visit site → data in Analytics within ~30s (disable ad blockers if empty)
-- **Observability** (Edge Requests, Fast Data Transfer, Vercel Functions, Compute) — built-in on Vercel; no app code
-
 #### P2 detail: Stripe Payment Gateway
-- [ ] **Merge/adapt PR #39** — Stripe Connect onboarding backend
-- [ ] **Build-mode directive** — when user wants a shop, embed Stripe Checkout (Connect)
-- [ ] **Onboarding UI** — “Connect Stripe” in preview or guided build intake
-- [ ] **Demo vs live** — keep client-side demo cart until Stripe connected
-- [ ] **Choice card template** — “Payment: Stripe / demo / none” in guided build
-- [ ] **Compliance copy** — “Your Stripe account, your funds, Quantora does not hold money”
+- [ ] Merge/adapt PR #39 — Stripe Connect onboarding backend
+- [ ] Build-mode directive — when user wants a shop, embed Stripe Checkout (Connect)
+- [ ] Onboarding UI — “Connect Stripe” in preview or guided build
+- [ ] Demo vs live — keep client-side demo cart until Stripe connected
+- [ ] Choice card template — “Payment: Stripe / demo / none” in guided build
+- [ ] Compliance copy — “Your Stripe account, your funds, Quantora does not hold money”
 
 ### P3 — Quantora differentiation
-| # | Task | Why |
-|---|------|-----|
-| 11 | **Build Journey strip** | Fold Dream-to-Action into Studio session progress |
-| 12 | **Share preview URL** | User shows someone their result without deploy |
-| 13 | **Starter templates** | Bakery, tuition center, portfolio, travel blog |
-| 14 | **Hindi / regional language bias** | Accessibility for target audience |
+| # | Task | Why | Status |
+|---|------|-----|--------|
+| 11 | ~~**Listening Layer v0.2**~~ | Central event bus + working notes | ✅ 2026-08-13 |
+| 12 | **Domain anticipation** | Travel → budget → dates in continue chips | ✅ v0.3 2026-08-13 |
+| 13 | **Journey strip in Studio** | Progress without switching tabs | ✅ v0.3 2026-08-13 |
+| 14 | **Idle return prompt** | Welcome back after 24h | ✅ v0.3 2026-08-13 |
+| 15 | ~~**Share preview URL**~~ | One-click link copy from Live Preview (auto preview name) | ✅ 2026-08-13 |
+| 16 | ~~**Choice dock dismiss/collapse**~~ | Non-intrusive suggestions above prompt | ✅ 2026-08-13 |
+| 17 | **Starter templates** | Bakery, tuition center, portfolio, travel blog | 📋 Next |
+| 18 | **Server-side session_signals** | Cross-device listener log + admin | 📋 v0.4 |
+
+---
+
+## 🧠 Ideas vault (don’t lose these)
+
+Captured between sessions — not yet scheduled.
+
+### Quantora Listening Layer (emerging architecture)
+
+**What it is:** A passive intelligence layer that watches what the user *does* (not just what they type) and keeps session state, journey cards, and next suggestions in sync — without the user managing a dashboard.
+
+**Why now:** Build Journey auto-advance (preview → In progress, publish → Done) is **Listening Layer v0.1** — the first event hooks.
+
+| Signal (event) | Listener action | User-visible effect |
+|----------------|-----------------|---------------------|
+| `preview_opened` | Upsert journey card → In progress | Board updates without “Save to Journey” |
+| `publish_completed` | Move card → Done + store URL | Proof of completion on board |
+| Choice selected | Enrich `conversationContext` | Fewer re-asks (already partial) |
+| Continue chip clicked | Log intent + steer prompt | Peer conversation (shipped) |
+| Session idle 24h | Surface “Continue where you left off” | Return visit KPI |
+| Plan mode finished (no preview) | Move to Done with `outcomeType: plan` | Non-build outcomes count |
+
+**Layers (conceptual stack):**
+
+```
+┌─────────────────────────────────────────┐
+│  Surfaces: Studio · Journey · Admin KPIs │
+├─────────────────────────────────────────┤
+│  Listening Layer — event bus + rules     │
+│  (client today → Supabase queue later)   │
+├─────────────────────────────────────────┤
+│  Session memory · domain · mode context  │
+└─────────────────────────────────────────┘
+```
+
+**v0.3 shipped (2026-08-13):**
+- [x] `src/lib/domain-anticipation.js` — client-side continue chip enrichment per domain
+- [x] API domain continue hints in `studio-continues.ts` + `conversation-policy.ts`
+- [x] `StudioJourneyStrip` — Captured / In progress / Done in Studio header area
+- [x] `StudioIdleReturnBanner` — welcome back after 24h idle
+
+**v0.4 candidates:**
+- [ ] Server-side event log (`session_signals` table)
+- [ ] Share preview URL
+- [ ] Starter templates
+
+**Principle:** Listen → infer intent → update state → suggest next beat. Never require the user to maintain the system manually.
+
+### Conversation layer
+- **Working notes** — visible, editable `conversationContext` in Studio chrome (not buried in session state)
+- **Domain anticipation** — after Travel/Finance/Research reply, continuation chips enriched with domain-specific “next beats” (budget → dates → bookings)
+- **Session export / share link** — send someone your plan or preview without publishing
+
+### Build Journey / Dream Canvas
+- **So what:** users care about *finishing something*, not moving cards for fun. Kanban only works if lanes = real outcomes.
+- **Old 4-stage model was wrong:** Dream → Idea → Thought → Action = dev pipeline jargon; showed JSON/code; “Production Ready” was misleading
+- **New framing:** Build Journey — **Captured | In progress | Done** linked to Studio session
+- **Actions that matter:** Continue in Studio, Open Preview, View live URL — not “Execute to JSON” via `/api/pipeline`
+- **Future:** fold a slim progress strip into Studio header; full board for power users / return visits
+- **Deprecate:** standalone `/api/pipeline` Gemini JSON→React path (duplicates Live Preview flow)
+
+### Investor / positioning (honest notes)
+- Not serious-VC ready until ~20 strangers complete a meaningful outcome + return within 7 days
+- Pitch: *“Free outcomes studio that measures completion, not prompt volume”*
+- Differentiation stack: session memory + domain focus + verify/preview + completion KPIs + peer conversation (choices + continue chips)
 
 ---
 
 ## 💡 Later (backlog)
 
-- Conversation export / share link
 - POS / hosting setup guidance in Build flow
 - Model quality auto-scoring from Arena + thumbs feedback
 - Rate limits per user tier (when monetization exists)
-- Dream-to-Action Canvas deprecation or merge into Build Journey
+- Persist Build Journey cards to Supabase (cross-device), not just localStorage
+- Build Journey strip inside Studio (mini 3-dot progress)
 
 ---
 
@@ -153,9 +227,9 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 
 **Weekly users who complete something meaningful** — preview opened, site published, plan finished, or 3+ prompts with return visit.
 
-Quantora is **not** free Cursor or Fello. It is:
+Quantora is **not** free Cursor or a website builder. It is:
 
-> *Free AI studio where curious builders go from idea → visible outcome → published site, in one session.*
+> *Free AI outcomes studio — research, apps, plans, travel, finance — publish a page only when that’s the outcome.*
 
 ---
 
@@ -163,4 +237,5 @@ Quantora is **not** free Cursor or Fello. It is:
 
 1. Pick the top unchecked item in **Next up**
 2. When done, move it to **Accomplished** with date
-3. Update **Deploy checklist** if new migrations/config needed
+3. Drop new thoughts in **Ideas vault** immediately — they get scheduled into **Next up** when ready
+4. Update **Deploy checklist** if new migrations/config needed

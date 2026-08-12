@@ -20,9 +20,14 @@ import {
   stripPartialAssistantMarkers,
 } from '../lib/studio-choices.js';
 import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
+import { createQuantoraListener, mergeSessionListeningSignals, QUANTORA_EVENTS } from '../lib/listening-layer.js';
+import { enrichContinueSet } from '../lib/domain-anticipation.js';
 import StudioChoiceCards from './StudioChoiceCards';
 import StudioContinueChips from './StudioContinueChips';
 import StudioChromeBar from './StudioChromeBar';
+import StudioWorkingNotes from './StudioWorkingNotes';
+import StudioJourneyStrip from './StudioJourneyStrip';
+import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner';
 import {
   STUDIO_DOMAINS,
   STUDIO_OUTPUT_MODES,
@@ -662,6 +667,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModelDashboard, setShowModelDashboard] = useState(false);
+  const [idleReturnDismissed, setIdleReturnDismissed] = useState(false);
 
   useEffect(() => {
     if (!showModelDashboard) return undefined;
@@ -684,10 +690,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages: [defaultGreetingMsg]
   };
   const messages = activeSession.messages || [defaultGreetingMsg];
+  const showIdleReturn = !idleReturnDismissed
+    && messages.length > 1
+    && isSessionIdle(activeSession.lastActiveAt);
+
+  useEffect(() => {
+    setIdleReturnDismissed(false);
+  }, [activeSessionId]);
   const pendingChoiceMessage = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
       if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual) {
+        if (m.choiceDockState === 'dismissed') return null;
+        return m;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const dismissedChoiceMessage = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual && m.choiceDockState === 'dismissed') {
         return m;
       }
     }
@@ -697,7 +721,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const studioDomain = activeSession.studioDomain || null;
   const boundRepo = activeSession.boundRepo || null;
   const conversationContext = activeSession.conversationContext || {};
+  const listeningSignals = activeSession.listeningSignals || [];
   const repoContextCache = useRef({});
+  const emitQuantoraRef = useRef(() => {});
+
+  const enrichContinues = useCallback((continueSet) => (
+    enrichContinueSet(continueSet, {
+      domain: studioDomain,
+      mode: studioMode,
+      conversationContext,
+    })
+  ), [studioDomain, studioMode, conversationContext]);
 
   const setStudioMode = (mode) => {
     updateActiveSession({ studioMode: mode });
@@ -882,6 +916,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   };
 
+  const setChoiceDockState = useCallback((messageId, choiceDockState) => {
+    updateActiveMessages((prev) => prev.map((m) => (
+      m.id === messageId ? { ...m, choiceDockState } : m
+    )));
+  }, [activeSessionId]);
+
   // --- Pillar 4: Predictive Code Assist Logic ---
   const handleCodeChange = (e) => {
     const val = e.target.value;
@@ -1033,12 +1073,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (pendingChoiceMessage || isGenerating) return null;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
-      if (m?.sender === 'ai' && m.continueSet?.items?.length && !m.continueUsed && !m.isDual) {
-        return m.id;
-      }
+      if (m?.sender !== 'ai' || m.continueUsed || m.isDual) continue;
+      const enriched = enrichContinues(m.continueSet);
+      if (enriched?.items?.length) return m.id;
     }
     return null;
-  }, [messages, pendingChoiceMessage, isGenerating]);
+  }, [messages, pendingChoiceMessage, isGenerating, enrichContinues]);
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
   const [showCodeMap, setShowCodeMap] = useState({});
@@ -1211,14 +1251,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setCanvasFullscreen(false);
     setCanvasOpen(true);
     setBackgroundVerify(null);
-    if (user?.sub) {
-      fetch('/api/product-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ eventType: 'preview_opened' }),
-      }).catch(() => {});
-    }
+    emitQuantoraRef.current(QUANTORA_EVENTS.PREVIEW_OPENED);
   };
 
   const queuePreviewVerification = (messageId, html) => {
@@ -1601,6 +1634,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
 
     shouldFollowLatestRef.current = true;
+    updateActiveSession({ lastActiveAt: Date.now() });
     updateActiveMessages(prev => prev.map((m) => (
       m.sender === 'ai' && m.continueSet && !m.continueUsed ? { ...m, continueUsed: true } : m
     )).concat(userMsg));
@@ -2019,12 +2053,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             }
             return updated;
           });
+          emitQuantoraRef.current(QUANTORA_EVENTS.CONTEXT_UPDATED, contextUpdate);
         }
 
         if (apiStudioMode === 'plan') {
           const planSpec = parsePlanSpec(currentText);
           if (planSpec) {
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, planSpec, type: 'plan_spec' } : m));
+            emitQuantoraRef.current(QUANTORA_EVENTS.PLAN_RECEIVED);
           }
         }
 
@@ -2133,6 +2169,80 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setAutoSelectEnabled(false);
     }
   }, [availableModels, setSelectedModel]);
+
+  const getSessionJourneyContext = useCallback(() => {
+    const userMsg = [...messages].reverse().find((m) => m.sender === 'user');
+    const userText = userMsg?.text || '';
+    const fallbackTitle = userText.split('\n')[0]?.slice(0, 80) || 'Studio build';
+    return {
+      sessionId: activeSessionId,
+      title: activeSession.title && !['New Chat', 'Welcome to Quantora'].includes(activeSession.title)
+        ? activeSession.title
+        : fallbackTitle,
+      brief: userText.slice(0, 300) || activeSession.title || fallbackTitle,
+      studioPrompt: userText || activeSession.title || fallbackTitle,
+      domain: studioDomain,
+      mode: studioMode,
+    };
+  }, [messages, activeSessionId, activeSession.title, studioDomain, studioMode]);
+
+  const recordListeningSignal = useCallback((type, payload) => {
+    setChatSessions((prev) => {
+      const updated = prev.map((session) => (
+        session.id === activeSessionId
+          ? mergeSessionListeningSignals(session, type, payload)
+          : session
+      ));
+      try {
+        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    const listener = createQuantoraListener({
+      setDreamNodes,
+      user,
+      getJourneyContext: getSessionJourneyContext,
+      onSessionSignals: recordListeningSignal,
+    });
+    emitQuantoraRef.current = (type, payload = {}) => listener.emit(type, payload);
+  }, [setDreamNodes, user, getSessionJourneyContext, recordListeningSignal]);
+
+  const emitQuantora = useCallback((type, payload = {}) => {
+    emitQuantoraRef.current(type, payload);
+  }, []);
+
+  const handleWorkingNotesUpdate = useCallback((patch) => {
+    updateActiveSession({
+      conversationContext: mergeSessionContext(conversationContext, patch),
+    });
+  }, [conversationContext, updateActiveSession]);
+
+  const saveToJourney = useCallback((msg) => {
+    if (!onPushToCanvas) return;
+    const msgIndex = messages.findIndex((m) => m.id === msg.id);
+    const priorUser = msgIndex > 0
+      ? [...messages.slice(0, msgIndex)].reverse().find((m) => m.sender === 'user')
+      : null;
+    const userText = priorUser?.text || '';
+    const title = userText.split('\n')[0]?.slice(0, 80)
+      || msg.text?.split('\n')[0]?.slice(0, 80)
+      || 'Saved outcome';
+    onPushToCanvas({
+      title,
+      brief: userText.slice(0, 300) || msg.text?.slice(0, 300) || title,
+      studioPrompt: userText || title,
+      sessionId: activeSessionId,
+      domain: studioDomain,
+      mode: studioMode,
+      hasPreview: Boolean(msg.codeSnippet || hasPreviewableContent(msg.text)),
+    });
+    emitQuantora(QUANTORA_EVENTS.JOURNEY_SAVED, { title });
+  }, [onPushToCanvas, messages, activeSessionId, studioDomain, studioMode, emitQuantora]);
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.slice(1).map(msg => {
@@ -2416,9 +2526,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {msg.sender === 'ai' && msg.id === latestContinueMessageId && (
+                      {msg.sender === 'ai' && msg.id === latestContinueMessageId && enrichContinues(msg.continueSet)?.items?.length > 0 && (
                         <StudioContinueChips
-                          continueSet={msg.continueSet}
+                          continueSet={enrichContinues(msg.continueSet)}
                           isLight={isLight}
                           textColor={textColor}
                           subtextColor={subtextColor}
@@ -2427,6 +2537,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             updateActiveMessages((prev) => prev.map((m) => (
                               m.id === msg.id ? { ...m, continueUsed: true } : m
                             )));
+                            emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
                             handleSendMessage(item.value);
                           }}
                         />
@@ -2448,6 +2559,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             meta={getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId })}
                             onOpen={openCanvasWithCode}
                           />
+                        )}
+                        {msg.sender === 'ai' && onPushToCanvas && (
+                          <button
+                            type="button"
+                            onClick={() => saveToJourney(msg)}
+                            style={{ background: isLight ? '#f0f9ff' : 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.35)', color: '#0284c7', padding: '6px 14px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <Workflow size={13} /> Save to Journey
+                          </button>
                         )}
                       </div>
                     </div>
@@ -2533,10 +2653,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       </button>
 
                       <button
-                        onClick={() => onPushToCanvas && onPushToCanvas(msg.codeSnippet)}
-                        style={{ background: isLight ? '#f3e8ff' : 'rgba(139, 92, 246, 0.2)', border: isLight ? '1px solid #d8b4fe' : '1px solid rgba(139, 92, 246, 0.4)', color: isLight ? '#7c3aed' : '#a78bfa', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => saveToJourney(msg)}
+                        style={{ background: isLight ? '#f0f9ff' : 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.35)', color: '#0284c7', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                       >
-                        <Workflow size={12} /> Push to Canvas
+                        <Workflow size={12} /> Save to Journey
                       </button>
                     </div>
                   )}
@@ -2553,7 +2673,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
     });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference, saveToJourney, onPushToCanvas, emitQuantora, enrichContinues, latestContinueMessageId]);
 
   return (
     <div className="ai-studio-shell" style={{
@@ -2848,6 +2968,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           onSelectSecondModel={(m) => setSecondModel(m)}
           availableModels={availableModels}
           onResetChat={() => updateActiveMessages([])}
+        />
+
+        {messages.length > 1 && (
+          <StudioJourneyStrip
+            sessionId={activeSessionId}
+            dreamNodes={dreamNodes}
+            isLight={isLight}
+            onOpenJourney={() => setActiveTab?.('canvas')}
+          />
+        )}
+
+        {showIdleReturn && (
+          <StudioIdleReturnBanner
+            sessionTitle={activeSession.title}
+            isLight={isLight}
+            onContinue={() => {
+              setIdleReturnDismissed(true);
+              updateActiveSession({ lastActiveAt: Date.now() });
+              textareaRef.current?.focus();
+            }}
+            onDismiss={() => {
+              setIdleReturnDismissed(true);
+              updateActiveSession({ lastActiveAt: Date.now() });
+            }}
+          />
+        )}
+
+        <StudioWorkingNotes
+          isLight={isLight}
+          textColor={textColor}
+          subtextColor={subtextColor}
+          conversationContext={conversationContext}
+          listeningSignals={listeningSignals}
+          onUpdateContext={handleWorkingNotesUpdate}
         />
 
         {arenaMode && !arenaHintDismissed && (
@@ -3299,16 +3453,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div className="studio-choice-dock">
               <StudioChoiceCards
                 variant="floating"
+                dockState={pendingChoiceMessage.choiceDockState || 'open'}
                 choiceSet={pendingChoiceMessage.choiceSet}
                 isLight={isLight}
                 disabled={isGenerating}
+                onCollapse={() => setChoiceDockState(pendingChoiceMessage.id, 'collapsed')}
+                onExpand={() => setChoiceDockState(pendingChoiceMessage.id, 'open')}
+                onDismiss={() => {
+                  setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
+                  emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
+                }}
                 onSelect={(choice) => {
                   updateActiveMessages((prev) => prev.map((m) => (
                     m.id === pendingChoiceMessage.id ? { ...m, choiceUsed: true } : m
                   )));
+                  emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
                   handleSendMessage(choice.value, { choiceSelected: true });
                 }}
               />
+            </div>
+          )}
+
+          {!pendingChoiceMessage && dismissedChoiceMessage && (
+            <div className="studio-choice-dock-restore">
+              <button
+                type="button"
+                className="studio-choice-dock-restore__btn"
+                onClick={() => setChoiceDockState(dismissedChoiceMessage.id, 'open')}
+              >
+                Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
+              </button>
             </div>
           )}
 
@@ -3782,6 +3956,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 suggestedProjectName={activeSession?.title || 'quantora-app'}
                 onToggleFullscreen={togglePreviewFullscreen}
                 onClose={closePreviewModal}
+                onPublishComplete={(result) => {
+                  if (result?.url) {
+                    emitQuantora(QUANTORA_EVENTS.PUBLISH_COMPLETED, { publishUrl: result.url });
+                  }
+                }}
+                onShareComplete={(result) => {
+                  if (result?.url) {
+                    emitQuantora(QUANTORA_EVENTS.PREVIEW_SHARED, { shareUrl: result.url });
+                  }
+                }}
               />
             </div>
           </div>

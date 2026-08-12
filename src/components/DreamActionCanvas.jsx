@@ -1,210 +1,379 @@
-import React, { useState } from 'react';
-import { Workflow, Sparkles, Code, Play, ArrowRight, Layers, Cpu, Terminal, Smartphone, Trash2, Edit2, Save, X } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import {
+  Workflow, Sparkles, Play, ArrowRight, Trash2, ExternalLink, MessageSquare,
+  CheckCircle2, GripVertical, Plus
+} from 'lucide-react';
+import { normalizeJourneyStage, normalizeJourneyNode, STAGE_ORDER } from '../lib/build-journey';
 
-export default function DreamActionCanvas({ dreamNodes = [], setDreamNodes, isLight }) {
+const COLUMNS = [
+  {
+    id: 'captured',
+    title: 'Captured',
+    icon: Sparkles,
+    color: '#f97316',
+    desc: 'Ideas saved from Studio or typed here',
+  },
+  {
+    id: 'in_progress',
+    title: 'In progress',
+    icon: Play,
+    color: '#0284c7',
+    desc: 'Preview opened or actively building',
+  },
+  {
+    id: 'done',
+    title: 'Done',
+    icon: CheckCircle2,
+    color: '#10b981',
+    desc: 'Published or outcome finished',
+  },
+];
+
+function domainLabel(domain) {
+  const labels = {
+    travel: 'Travel',
+    finance: 'Finance',
+    research: 'Research',
+    education: 'Education',
+  };
+  return labels[domain] || domain;
+}
+
+export default function DreamActionCanvas({
+  dreamNodes = [],
+  setDreamNodes,
+  isLight,
+  onContinueInStudio,
+}) {
   const textColor = isLight ? '#0f172a' : '#ffffff';
   const subtextColor = isLight ? '#475569' : '#94a3b8';
-  const itemBg = isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)';
+  const itemBg = isLight ? '#ffffff' : 'rgba(255,255,255,0.03)';
   const borderSubtle = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)';
 
-  const columns = [
-    { id: 'dream', title: '1. Dream', icon: Sparkles, color: '#f97316', desc: 'Raw Sparks & Ideas' },
-    { id: 'idea', title: '2. Idea', icon: Layers, color: '#8b5cf6', desc: 'Architecture Spec' },
-    { id: 'thought', title: '3. Thought', icon: Cpu, color: '#06b6d4', desc: 'Component Logic' },
-    { id: 'action', title: '4. Action', icon: Play, color: '#10b981', desc: 'Live Prototype' }
-  ];
+  const [draggingId, setDraggingId] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
 
-  const [editingNodeId, setEditingNodeId] = useState(null);
-  const [editValue, setEditValue] = useState("");
+  const nodes = useMemo(
+    () => dreamNodes.map(normalizeJourneyNode).filter(Boolean),
+    [dreamNodes],
+  );
 
-  const startEditing = (node) => {
-    setEditingNodeId(node.id);
-    if (node.stage === 'idea') {
-      setEditValue(node.ideaSpec ? JSON.stringify(node.ideaSpec, null, 2) : "");
-    } else if (node.stage === 'thought') {
-      setEditValue(node.thoughtCode || "");
-    } else if (node.stage === 'action') {
-      setEditValue(node.actionSpec ? JSON.stringify(node.actionSpec, null, 2) : "");
-    }
-  };
-
-  const saveEditing = (node) => {
-    let updates = {};
-    try {
-      if (node.stage === 'idea' || node.stage === 'action') {
-        const parsed = JSON.parse(editValue);
-        if (node.stage === 'idea') updates.ideaSpec = parsed;
-        if (node.stage === 'action') updates.actionSpec = parsed;
-      } else if (node.stage === 'thought') {
-        updates.thoughtCode = editValue;
-      }
-      setDreamNodes(prev => prev.map(n => n.id === node.id ? { ...n, ...updates } : n));
-      setEditingNodeId(null);
-    } catch(e) {
-      alert("Invalid JSON format. Please fix before saving.");
-    }
-  };
-
-  const moveNode = async (nodeId, currentStage) => {
-    if (!setDreamNodes) return;
-    const stageOrder = ['dream', 'idea', 'thought', 'action'];
-    const currentIndex = stageOrder.indexOf(currentStage);
-    if (currentIndex < stageOrder.length - 1) {
-      const nextStage = stageOrder[currentIndex + 1];
-      
-      setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: true, error: null } : n));
-      
-      try {
-        const nodeToExecute = dreamNodes.find(n => n.id === nodeId);
-        const res = await fetch('/api/pipeline', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ node: nodeToExecute, targetStage: nextStage })
-        });
-        
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Pipeline execution failed');
-        
-        setDreamNodes(prev => prev.map(n => 
-          n.id === nodeId 
-            ? { ...n, stage: nextStage, ...data, isExecuting: false, error: null }
-            : n
-        ));
-      } catch (e) {
-        console.error(e);
-        setDreamNodes(prev => prev.map(n => n.id === nodeId ? { ...n, isExecuting: false, error: e.message } : n));
-      }
-    }
+  const updateNodeStage = (nodeId, nextStage) => {
+    if (!setDreamNodes || !STAGE_ORDER.includes(nextStage)) return;
+    setDreamNodes((prev) =>
+      prev.map((n) =>
+        n.id === nodeId
+          ? { ...n, stage: nextStage, updatedAt: new Date().toISOString() }
+          : n,
+      ),
+    );
   };
 
   const deleteNode = (nodeId) => {
     if (!setDreamNodes) return;
-    setDreamNodes(dreamNodes.filter(n => n.id !== nodeId));
+    setDreamNodes((prev) => prev.filter((n) => n.id !== nodeId));
+  };
+
+  const addCaptured = () => {
+    const title = newTitle.trim();
+    if (!title || !setDreamNodes) return;
+    const now = new Date().toISOString();
+    setDreamNodes((prev) => [
+      {
+        id: `journey-${Date.now()}`,
+        title,
+        brief: title,
+        studioPrompt: title,
+        stage: 'captured',
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...prev,
+    ]);
+    setNewTitle('');
+  };
+
+  const handleDrop = (columnId, e) => {
+    e.preventDefault();
+    const nodeId = e.dataTransfer.getData('text/journey-node-id');
+    if (nodeId) updateNodeStage(nodeId, columnId);
+    setDraggingId(null);
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%', minHeight: '80vh' }}>
-      {/* Header Banner */}
-      <div className="glass-card" style={{ padding: '24px', background: isLight ? 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+      <div
+        className="glass-card"
+        style={{
+          padding: '24px',
+          background: isLight
+            ? 'linear-gradient(135deg, #fff7ed 0%, #f0f9ff 100%)'
+            : 'linear-gradient(135deg, rgba(249, 115, 22, 0.12) 0%, rgba(2, 132, 199, 0.1) 100%)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <Workflow size={22} color="#0284c7" />
               <h2 style={{ fontSize: '1.4rem', margin: 0 }} className="gradient-text">
-                Dream-to-Action Visual Pipeline
+                Build Journey
               </h2>
             </div>
-            <p style={{ fontSize: '0.88rem', color: subtextColor, margin: 0 }}>
-              Push ideas from AI Studio and execute them through the 4-stage engine.
+            <p style={{ fontSize: '0.88rem', color: subtextColor, margin: '0 0 8px 0', maxWidth: '640px' }}>
+              Track outcomes from idea to finished work — not a dev pipeline. Save from AI Studio, drag across lanes, continue building anytime.
             </p>
+            <p style={{ fontSize: '0.78rem', color: subtextColor, margin: 0, opacity: 0.85 }}>
+              <strong>So what?</strong> You see what you started, what is live, and what you shipped — without losing context between sessions.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCaptured()}
+              placeholder="Quick capture an idea…"
+              style={{
+                padding: '8px 12px',
+                borderRadius: '10px',
+                border: `1px solid ${borderSubtle}`,
+                background: isLight ? '#fff' : 'rgba(0,0,0,0.25)',
+                color: textColor,
+                fontSize: '0.85rem',
+                minWidth: '220px',
+              }}
+            />
+            <button
+              type="button"
+              onClick={addCaptured}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#0284c7',
+                color: '#fff',
+                border: 'none',
+                padding: '8px 14px',
+                borderRadius: '10px',
+                fontSize: '0.82rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={14} /> Add
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Kanban Board */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', flex: 1 }}>
-        {columns.map(col => {
-          const colNodes = dreamNodes.filter(n => n.stage === col.id);
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gap: '16px',
+          flex: 1,
+        }}
+      >
+        {COLUMNS.map((col) => {
+          const colNodes = nodes.filter((n) => normalizeJourneyStage(n.stage) === col.id);
           const IconComp = col.icon;
-          
+
           return (
-            <div key={col.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: `1px solid ${borderSubtle}` }}>
-              {/* Column Header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <div
+              key={col.id}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleDrop(col.id, e)}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)',
+                padding: '16px',
+                borderRadius: '16px',
+                border: draggingId ? `2px dashed ${col.color}55` : `1px solid ${borderSubtle}`,
+                minHeight: '320px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                 <IconComp size={18} color={col.color} />
                 <div>
                   <div style={{ fontSize: '0.9rem', fontWeight: '700', color: textColor }}>{col.title}</div>
                   <div style={{ fontSize: '0.7rem', color: subtextColor }}>{col.desc}</div>
                 </div>
-                <div style={{ marginLeft: 'auto', background: `${col.color}22`, color: col.color, padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700' }}>
+                <div
+                  style={{
+                    marginLeft: 'auto',
+                    background: `${col.color}22`,
+                    color: col.color,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                  }}
+                >
                   {colNodes.length}
                 </div>
               </div>
 
-              {/* Cards Container */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
-                {colNodes.map(node => (
-                  <div key={node.id} className="glass-card" style={{ padding: '14px', borderLeft: `3px solid ${col.color}`, position: 'relative', background: itemBg, opacity: node.isExecuting ? 0.6 : 1 }}>
-                    <div style={{ fontSize: '0.8rem', color: textColor, marginBottom: '12px', whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                      {node.error && (
-                        <div style={{ padding: '8px', background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', color: '#ef4444', fontSize: '0.75rem', marginBottom: '12px' }}>
-                          <strong>Error:</strong> {node.error}
+                {colNodes.map((node) => (
+                  <div
+                    key={node.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/journey-node-id', node.id);
+                      setDraggingId(node.id);
+                    }}
+                    onDragEnd={() => setDraggingId(null)}
+                    className="glass-card"
+                    style={{
+                      padding: '14px',
+                      borderLeft: `3px solid ${col.color}`,
+                      background: itemBg,
+                      cursor: 'grab',
+                      opacity: draggingId === node.id ? 0.55 : 1,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                      <GripVertical size={14} color={subtextColor} style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.88rem', fontWeight: '700', color: textColor, marginBottom: '4px' }}>
+                          {node.title}
                         </div>
-                      )}
-                      {editingNodeId === node.id ? (
-                        <textarea
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          style={{ width: '100%', minHeight: '150px', background: 'rgba(0,0,0,0.1)', color: textColor, border: `1px solid ${col.color}`, borderRadius: '8px', padding: '8px', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none' }}
-                        />
-                      ) : (
-                        <>
-                          {node.stage === 'dream' && (node.dreamText || node.sourceText) && (
-                            (node.dreamText || node.sourceText).length > 200 ? (node.dreamText || node.sourceText).substring(0, 200) + '...' : (node.dreamText || node.sourceText)
-                          )}
-                          {node.stage === 'idea' && (node.ideaSpec ? (
-                            <pre style={{ margin: 0, fontSize: '0.7rem', color: '#38bdf8', fontFamily: 'monospace' }}>
-                              {JSON.stringify(node.ideaSpec, null, 2)}
-                            </pre>
-                          ) : (
-                            <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
-                          ))}
-                          {node.stage === 'thought' && (node.thoughtCode ? (
-                            <pre style={{ margin: 0, fontSize: '0.7rem', color: '#a78bfa', fontFamily: 'monospace' }}>
-                              {node.thoughtCode.substring(0, 300)}...
-                            </pre>
-                          ) : (
-                            <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
-                          ))}
-                          {node.stage === 'action' && (node.actionSpec ? (
-                            <pre style={{ margin: 0, fontSize: '0.7rem', color: '#10b981', fontFamily: 'monospace' }}>
-                              {JSON.stringify(node.actionSpec, null, 2)}
-                            </pre>
-                          ) : (
-                            <div style={{ opacity: 0.5 }}>{(node.dreamText || node.sourceText)}</div>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${borderSubtle}`, paddingTop: '8px' }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => deleteNode(node.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
-                          <Trash2 size={14} />
-                        </button>
-                        {col.id !== 'dream' && (
-                          editingNodeId === node.id ? (
-                            <>
-                              <button onClick={() => saveEditing(node)} style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', padding: '4px' }}>
-                                <Save size={14} />
-                              </button>
-                              <button onClick={() => setEditingNodeId(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px' }}>
-                                <X size={14} />
-                              </button>
-                            </>
-                          ) : (
-                            <button onClick={() => startEditing(node)} style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px' }}>
-                              <Edit2 size={14} />
-                            </button>
-                          )
+                        {node.brief && node.brief !== node.title && (
+                          <div style={{ fontSize: '0.78rem', color: subtextColor, lineHeight: 1.45 }}>
+                            {node.brief.length > 140 ? `${node.brief.slice(0, 140)}…` : node.brief}
+                          </div>
                         )}
                       </div>
-                      
-                      {col.id !== 'action' && (
-                        <button onClick={() => moveNode(node.id, col.id)} disabled={node.isExecuting} style={{ background: `${col.color}15`, border: `1px solid ${col.color}44`, color: col.color, padding: '4px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '600', cursor: node.isExecuting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          {node.isExecuting ? 'Executing...' : 'Execute'} <ArrowRight size={12} />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                      {node.domain && (
+                        <span
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: '700',
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            background: `${col.color}18`,
+                            color: col.color,
+                          }}
+                        >
+                          {domainLabel(node.domain)}
+                        </span>
+                      )}
+                      {node.publishUrl && (
+                        <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: '700' }}>Published</span>
+                      )}
+                      {!node.publishUrl && node.previewOpenedAt && (
+                        <span style={{ fontSize: '0.68rem', color: '#0284c7', fontWeight: '700' }}>Preview opened</span>
+                      )}
+                      {!node.publishUrl && !node.previewOpenedAt && node.previewUrl && (
+                        <span style={{ fontSize: '0.68rem', color: '#0284c7', fontWeight: '700' }}>Has preview</span>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        borderTop: `1px solid ${borderSubtle}`,
+                        paddingTop: '8px',
+                        gap: '8px',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => deleteNode(node.id)}
+                          title="Remove"
+                          style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                        >
+                          <Trash2 size={14} />
                         </button>
-                      )}
-                      {col.id === 'action' && (
-                        <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: '700' }}>Production Ready</span>
-                      )}
+                        {node.publishUrl && (
+                          <a
+                            href={node.publishUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open live site"
+                            style={{ color: '#10b981', display: 'inline-flex', padding: '4px' }}
+                          >
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {onContinueInStudio && node.studioPrompt && (
+                          <button
+                            type="button"
+                            onClick={() => onContinueInStudio(node)}
+                            style={{
+                              background: isLight ? '#eff6ff' : 'rgba(2, 132, 199, 0.15)',
+                              border: '1px solid rgba(2, 132, 199, 0.35)',
+                              color: '#0284c7',
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              fontSize: '0.72rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <MessageSquare size={12} /> Continue
+                          </button>
+                        )}
+                        {col.id !== 'done' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const idx = STAGE_ORDER.indexOf(col.id);
+                              if (idx >= 0 && idx < STAGE_ORDER.length - 1) {
+                                updateNodeStage(node.id, STAGE_ORDER[idx + 1]);
+                              }
+                            }}
+                            style={{
+                              background: `${col.color}15`,
+                              border: `1px solid ${col.color}44`,
+                              color: col.color,
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              fontSize: '0.72rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            Advance <ArrowRight size={12} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
-                
+
                 {colNodes.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '20px', color: subtextColor, fontSize: '0.8rem', border: `1px dashed ${borderSubtle}`, borderRadius: '12px', opacity: 0.5 }}>
-                    No items here
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '28px 16px',
+                      color: subtextColor,
+                      fontSize: '0.8rem',
+                      border: `1px dashed ${borderSubtle}`,
+                      borderRadius: '12px',
+                      opacity: 0.65,
+                    }}
+                  >
+                    {col.id === 'captured' && 'Save from AI Studio or add an idea above'}
+                    {col.id === 'in_progress' && 'Drag here when preview is open or you are building'}
+                    {col.id === 'done' && 'Drag here when published or the outcome is finished'}
                   </div>
                 )}
               </div>

@@ -1225,14 +1225,14 @@ body {
   box-shadow: 0 -6px 24px rgba(249, 115, 22, 0.08);
 }
 
-.studio-choice-cards--floating .studio-choice-cards__eyebrow {
+.studio-choice-cards--floating .studio-choice-cards__toolbar .studio-choice-cards__eyebrow {
   display: block;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #f97316;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .studio-choice-cards--floating .studio-choice-cards__title {
@@ -1268,6 +1268,73 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.studio-choice-cards--floating.studio-choice-cards--collapsed {
+  padding: 6px 10px;
+}
+
+.studio-choice-cards--floating.studio-choice-cards--collapsed .studio-choice-cards__grid {
+  margin-top: 4px;
+}
+
+.studio-choice-cards__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.studio-choice-cards__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.studio-choice-cards__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.studio-choice-cards__icon-btn:hover {
+  background: rgba(148, 163, 184, 0.15);
+  color: #f97316;
+}
+
+.studio-choice-cards__collapsed-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.studio-choice-dock-restore {
+  padding: 4px 14px 0;
+}
+
+.studio-choice-dock-restore__btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #f97316;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.studio-choice-dock-restore__btn:hover {
+  color: #ea580c;
 }
 
 /* Continuation chips — peer-style follow-ups after an answer */
