@@ -18,6 +18,7 @@ export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
         document.open();
         document.write(html);
         document.close();
+        bindEscape();
       }
       function bindEscape() {
         document.addEventListener('keydown', function (e) {

@@ -30,6 +30,7 @@ export default function LivePreviewCanvas({
   onVerificationStatusChange,
   headless = false,
   verifyOnly = false,
+  hideHeader = false,
 }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -377,6 +378,8 @@ export default function LivePreviewCanvas({
     );
   }
 
+  const showHeader = !hideHeader;
+
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%', width: '100%',
@@ -384,6 +387,7 @@ export default function LivePreviewCanvas({
       background: isLight ? '#f8fafc' : '#0f172a',
       borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)'
     }}>
+      {showHeader && (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '12px 16px',
@@ -423,6 +427,7 @@ export default function LivePreviewCanvas({
           </button>
         </div>
       </div>
+      )}
 
       {statusUI && (
         <div style={{
