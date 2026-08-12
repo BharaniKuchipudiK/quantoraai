@@ -52,7 +52,8 @@ ENDING THE TURN
 const SESSION_MEMORY_DIRECTIVE = `SESSION MEMORY UPDATE
 When you have materially new continuity worth remembering across turns, append ONE HTML comment as the very last line of your reply (after all user-visible text). Users never see this line:
 <!-- quantora-ctx:{"goal":"short goal phrase","understanding":"one sentence on where things stand","facts":["short fact","another fact"]} -->
-Rules: update only what changed; max 12 facts; each fact under 25 words; never invent facts the user did not state or clearly imply; omit the comment entirely if nothing meaningful changed.`;
+Rules: update only what changed; max 12 facts; each fact under 25 words; never invent facts the user did not state or clearly imply; omit the comment entirely if nothing meaningful changed.
+CRITICAL: When the user answers a question you asked (dates, budget, preferences, name, etc.), you MUST record their answer in facts on this turn and move forward — never ask for the same detail again unless they contradict themselves.`;
 
 function cognitiveDirective(level: CognitiveLevel): string {
   if (level === "Lightning") {

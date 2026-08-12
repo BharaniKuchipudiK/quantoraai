@@ -217,24 +217,42 @@ const UserAnalyticsTab = ({ metrics }) => {
             <Activity size={18} color="#0ea5e9" /> 14-Day Growth History (Authentic)
           </h3>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '240px', width: '100%' }}>
-            {metrics.daily && metrics.daily.growth && metrics.daily.growth.length > 0 ? metrics.daily.growth.slice().reverse().map((day, i) => {
-              const max = Math.max(...metrics.daily.growth.map(d => d.signups), 1);
-              const heightPct = (day.signups / max) * 100;
-              return (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
-                  <div style={{
-                    width: '100%',
-                    height: `${Math.max(heightPct, 2)}%`,
-                    background: 'linear-gradient(to top, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.6))',
-                    borderRadius: '4px 4px 0 0',
-                    transition: 'height 0.5s ease-out'
-                  }}></div>
-                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
-                </div>
-              );
-            }) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No historical data yet.</div>
-            )}
+            {(() => {
+              const growthDays = metrics.daily?.growth || [];
+              const maxSignups = growthDays.length
+                ? Math.max(...growthDays.map((d) => Number(d.signups) || 0))
+                : 0;
+              if (!growthDays.length) {
+                return (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '0 24px' }}>
+                    No signup history yet. Bars appear as new users register via Google sign-in.
+                  </div>
+                );
+              }
+              if (maxSignups === 0) {
+                return (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '0 24px', gap: '8px' }}>
+                    <span>0 new signups in the last 14 days — chart is connected but empty.</span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>Use Product Engagement above for prompt volume until registrations grow.</span>
+                  </div>
+                );
+              }
+              return growthDays.slice().reverse().map((day, i) => {
+                const heightPct = (Number(day.signups) / maxSignups) * 100;
+                return (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                    <div style={{
+                      width: '100%',
+                      height: `${Math.max(heightPct, 8)}%`,
+                      background: 'linear-gradient(to top, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.6))',
+                      borderRadius: '4px 4px 0 0',
+                      transition: 'height 0.5s ease-out',
+                    }} />
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       </div>

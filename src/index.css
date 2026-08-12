@@ -688,15 +688,72 @@ body {
 
 /* Collapsible studio chrome */
 .studio-chrome {
-  margin-bottom: 12px;
-  padding-bottom: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--border-color);
   transition: margin 0.2s ease, padding 0.2s ease;
 }
 
 .studio-chrome.is-collapsed {
-  margin-bottom: 6px;
-  padding-bottom: 6px;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+}
+
+.studio-arena-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  color: var(--text-secondary);
+}
+
+.studio-arena-hint strong {
+  color: #f97316;
+}
+
+.studio-arena-hint__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 6px;
+}
+
+.studio-arena-hint__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.studio-arena-hint__step span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.studio-arena-hint__dismiss {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  flex-shrink: 0;
 }
 
 .studio-chrome__main {

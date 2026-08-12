@@ -92,3 +92,21 @@ export function extractContextFromAssistantText(text: string): {
     contextUpdate: normalizeSessionContext(parsed),
   };
 }
+
+/** When the assistant asked a clarifying question, record the user's reply as a fact immediately. */
+export function captureUserAnswerAsContext(userText: string, messages: Array<{ sender?: string; text?: string; choiceSet?: unknown; choiceUsed?: boolean }> | undefined): string | null {
+  const trimmed = userText.trim();
+  if (!trimmed || trimmed.length > MAX_FIELD_LEN) return null;
+
+  const recentAi = [...(messages || [])]
+    .reverse()
+    .find((m) => m?.sender === "ai" && (m.text || m.choiceSet));
+  if (!recentAi) return null;
+
+  const aiText = typeof recentAi.text === "string" ? recentAi.text : "";
+  const hadPendingChoices = Boolean(recentAi.choiceSet && !recentAi.choiceUsed);
+  const aiAskedQuestion = hadPendingChoices || /\?/.test(aiText.slice(-600));
+
+  if (!aiAskedQuestion) return null;
+  return trimmed;
+}

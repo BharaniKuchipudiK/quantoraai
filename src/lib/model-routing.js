@@ -1,3 +1,5 @@
+import { applyArenaPreferenceBoost } from './arena-preferences.js';
+
 const FREE_KINDS = new Set(['free', 'free-tier']);
 
 const TASK_PATTERNS = [
@@ -20,11 +22,14 @@ export function isFreeReadyModel(model) {
   return Boolean(model && model.available !== false && FREE_KINDS.has(model.pricingKind));
 }
 
-function modelScore(model, task) {
+function modelScore(model, task, arenaPrefs) {
   const haystack = `${model.id || ''} ${model.name || ''} ${model.specialty || ''}`.toLowerCase();
   let score = model.pricingKind === 'free' ? 30 : 25;
   if (model.quality?.sampleSize >= 5 && Number.isFinite(model.quality?.score)) {
     score += Math.max(0, Math.min(10, model.quality.score / 10));
+  }
+  if (arenaPrefs) {
+    score = applyArenaPreferenceBoost(score, model.id, task, arenaPrefs);
   }
 
   if (task === 'coding') {
@@ -48,18 +53,18 @@ function modelScore(model, task) {
   return score;
 }
 
-export function rankFreeModels(models = [], message = '') {
+export function rankFreeModels(models = [], message = '', arenaPrefs = null) {
   const task = classifyTask(message);
   return models
     .filter(isFreeReadyModel)
-    .map((model, index) => ({ model, index, score: modelScore(model, task) }))
+    .map((model, index) => ({ model, index, score: modelScore(model, task, arenaPrefs) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map(({ model }) => model);
 }
 
-export function chooseBestFreeModel(models = [], message = '') {
+export function chooseBestFreeModel(models = [], message = '', arenaPrefs = null) {
   const task = classifyTask(message);
-  const model = rankFreeModels(models, message)[0] || null;
+  const model = rankFreeModels(models, message, arenaPrefs)[0] || null;
   if (!model) return { model: null, task, reason: 'No free model is currently ready.' };
 
   const reasons = {
@@ -71,5 +76,13 @@ export function chooseBestFreeModel(models = [], message = '') {
     general: 'it is the best balanced free option currently ready',
   };
 
-  return { model, task, reason: reasons[task] };
+  let reason = reasons[task];
+  if (arenaPrefs && model.id) {
+    const wins = arenaPrefs?.byTask?.[task]?.[model.id];
+    if (wins >= 2) {
+      reason = `you preferred ${model.name} for ${task} questions in Arena (${wins} wins)`;
+    }
+  }
+
+  return { model, task, reason };
 }

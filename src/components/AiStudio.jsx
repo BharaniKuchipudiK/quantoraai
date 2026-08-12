@@ -8,8 +8,10 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import ModelDashboard from './ModelDashboard';
 import { chooseBestFreeModel, classifyTask, rankFreeModels } from '../lib/model-routing.js';
+import { loadArenaPreferences, recordArenaWin } from '../lib/arena-preferences.js';
 import {
   extractContextFromAssistantText,
+  captureUserAnswerAsContext,
   hasSessionMemory,
   mergeSessionContext,
 } from '../lib/session-context.js';
@@ -540,7 +542,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
 function detectBuildIntent(text) {
   if (!text || typeof text !== 'string') return false;
   const t = text.trim().toLowerCase();
-  if (/^(how|what|why|when|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)/.test(t)) return false;
+  if (/^(how|what|why|when|where|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)/.test(t)) return false;
   const verb = /\b(build|create|make|generate|design|develop|code|prototype|clone|scaffold)\b/;
   const noun = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone)\b/;
   return verb.test(t) && noun.test(t);
@@ -1084,6 +1086,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [showStudioToolsMenu]);
 
   const [arenaMode, setArenaMode] = useState(false);
+  const [arenaPrefs, setArenaPrefs] = useState(() => loadArenaPreferences());
+  const [arenaHintDismissed, setArenaHintDismissed] = useState(() => {
+    try { return localStorage.getItem('quantora_arena_hint_dismissed') === '1'; } catch { return false; }
+  });
   const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
@@ -1506,10 +1512,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handleSendMessage = async (textToSend, options = {}) => {
     let text = textToSend || inputText;
+    const pendingImages = attachments.filter((a) => a.type === 'image');
     if (!text.trim() && !attachments.length) return;
+    if (pendingImages.length && !pendingImages.some((a) => a.dataUrl)) {
+      updateActiveMessages((prev) => [...prev, {
+        id: Date.now(),
+        sender: 'ai',
+        text: '⚠️ **Image not ready** — the photo could not be processed. Try pasting again or use the paperclip to attach a JPG/PNG.',
+        type: 'system',
+      }]);
+      return;
+    }
     if (isGenerating) return;
     const effectiveStudioMode = options.studioMode || studioMode;
-    const visibleText = text.trim() || "Review the attached repository context.";
+    const visibleText = text.trim()
+      || (pendingImages.length ? 'Describe what you see in the attached image(s).' : "Review the attached repository context.");
     const apiStudioMode = effectiveStudioMode === 'plan' && !isSoftwarePlanningRequest(visibleText)
       ? 'ask'
       : effectiveStudioMode;
@@ -1541,11 +1558,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setLastPrompt(text.trim());
 
-    const taskCategory = classifyTask(visibleText);
-    const autoChoice = autoSelectEnabled ? chooseBestFreeModel(availableModels, visibleText) : null;
+    const taskCategory = pendingImages.length ? 'vision' : classifyTask(visibleText);
+    const autoChoice = autoSelectEnabled ? chooseBestFreeModel(availableModels, visibleText, arenaPrefs) : null;
     const targetModel = autoChoice?.model || selectedModel || { id: 'gemini-flash-latest', name: 'Gemini Flash', pricingKind: 'free-tier', available: true };
     setActiveGeneratingModel({ id: targetModel.id, name: targetModel.name });
-    const rankedFreeFallbacks = rankFreeModels(availableModels, visibleText)
+    const rankedFreeFallbacks = rankFreeModels(availableModels, visibleText, arenaPrefs)
       .filter((model) => model.id !== targetModel.id);
 
     const userMsg = {
@@ -1561,6 +1578,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (!textToSend) setInputText('');
     setAttachments([]);
     setIsGenerating(true);
+
+    let sessionContextForRequest = conversationContext;
+    if (options.choiceSelected) {
+      sessionContextForRequest = mergeSessionContext(conversationContext, { facts: [visibleText] });
+      updateActiveSession({ conversationContext: sessionContextForRequest });
+    } else {
+      const answerFact = captureUserAnswerAsContext(visibleText, [...messages, userMsg]);
+      if (answerFact) {
+        sessionContextForRequest = mergeSessionContext(conversationContext, { facts: [answerFact] });
+        updateActiveSession({ conversationContext: sessionContextForRequest });
+      }
+    }
 
     try {
       const modRes = await fetch('/api/moderate', {
@@ -1590,16 +1619,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
 
+    const arenaImageUrls = userMsg.attachments
+      ?.filter((a) => a.type === 'image' && a.dataUrl)
+      .map((a) => a.dataUrl)
+      .slice(0, 4) || [];
+
     // 1. Dual Model Arena Execution Mode
     if (arenaMode) {
       const modelA = targetModel;
       const modelB = secondModel || { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' };
+      const arenaTaskCategory = arenaImageUrls.length ? 'vision' : taskCategory;
 
       const dualMsgId = Date.now() + 1;
       const dualMsg = {
         id: dualMsgId, sender: 'ai', type: 'arena_battle', isDual: true, prompt: text,
-        modelA: { modelName: modelA.name, text: '', provider: modelA.name, latencyMs: 0 },
-        modelB: { modelName: modelB.name, text: '', provider: modelB.name, latencyMs: 0 }
+        taskCategory: arenaTaskCategory,
+        modelA: { modelId: modelA.id, modelName: modelA.name, text: '', provider: modelA.name, latencyMs: 0, requestId: null },
+        modelB: { modelId: modelB.id, modelName: modelB.name, text: '', provider: modelB.name, latencyMs: 0, requestId: null }
       };
       updateActiveMessages(prev => [...prev, dualMsg]);
 
@@ -1608,7 +1644,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, modelId: mod.id, modelName: mod.name, history: cleanMessages, userKey: geminiApiKey, openRouterKey: openRouterApiKey })
+            body: JSON.stringify({
+              message: visibleText,
+              modelId: mod.id,
+              modelName: mod.name,
+              history: cleanMessages,
+              userKey: geminiApiKey,
+              openRouterKey: openRouterApiKey,
+              taskCategory: arenaTaskCategory,
+              attachedImages: arenaImageUrls,
+              studioMode: arenaImageUrls.length ? 'ask' : studioMode,
+            })
           });
           
           if (!res.ok) throw new Error('API Error');
@@ -1636,7 +1682,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     currentText += parsed.text;
                     updateActiveMessages(prev => prev.map(m => {
                       if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: currentText, provider: finalProvider, latencyMs: finalLatency };
+                        const updatedModelInfo = {
+                          modelId: mod.id,
+                          modelName: mod.name,
+                          text: currentText,
+                          provider: finalProvider,
+                          latencyMs: finalLatency,
+                          requestId: parsed.requestId || null,
+                        };
                         return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
                       }
                       return m;
@@ -1647,7 +1700,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     finalLatency = parsed.latencyMs || 0;
                     updateActiveMessages(prev => prev.map(m => {
                       if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: currentText, provider: finalProvider, latencyMs: finalLatency };
+                        const updatedModelInfo = {
+                          modelId: mod.id,
+                          modelName: mod.name,
+                          text: currentText,
+                          provider: finalProvider,
+                          latencyMs: finalLatency,
+                          requestId: parsed.requestId || m[isModelA ? 'modelA' : 'modelB']?.requestId || null,
+                        };
                         return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
                       }
                       return m;
@@ -1695,7 +1755,33 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveMessages(prev => [...prev, initialAiMsg]);
 
     try {
-      const candidateModels = [targetModel, ...rankedFreeFallbacks].slice(0, 3);
+      const sessionImages = userMsg.attachments
+        ? userMsg.attachments.filter((a) => a.type === 'image' && a.dataUrl).map((a) => a.dataUrl)
+        : [];
+
+      const imageDataUrls = sessionImages.slice(0, 4);
+      const isVisionQuestion = imageDataUrls.length > 0 && !detectBuildIntent(visibleText);
+
+      /*
+       * Vision: send pasted/attached images whenever the user included them.
+       * Previously blocked in Build mode — so screenshots attached but the model
+       * could not see them. Prefer Gemini when images are present (reliable vision).
+       */
+      const attachedImages = imageDataUrls;
+      let visionModel = targetModel;
+      if (imageDataUrls.length > 0) {
+        const geminiVision = availableModels?.find(
+          (m) => typeof m.id === 'string' && m.id.startsWith('gemini') && m.available !== false,
+        );
+        if (geminiVision) visionModel = geminiVision;
+      }
+
+      const candidateModels = imageDataUrls.length > 0
+        ? [visionModel].filter((m) => m?.id?.startsWith('gemini'))
+        : [
+            visionModel,
+            ...rankedFreeFallbacks.filter((m) => m.id !== visionModel.id),
+          ].slice(0, 3);
       /*
        * Conversational iteration: if a site already exists and this isn't a
        * fresh "build me a new X", treat the message as an edit — hand the model
@@ -1708,19 +1794,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         ? `${text}\n\n[You are editing the existing app below. Apply the requested change and return the COMPLETE updated, self-contained HTML document — not a diff, not an explanation.]\n\`\`\`html\n${previewCode}\n\`\`\``
         : text;
       const autoBuildMode = isRefine || isWorkspaceMode || detectBuildIntent(text);
-      const buildMode = apiStudioMode === 'build'
-        ? true
-        : apiStudioMode === 'ask' || apiStudioMode === 'plan'
-          ? false
-          : autoBuildMode;
+      let buildMode = isVisionQuestion
+        ? false
+        : apiStudioMode === 'build'
+          ? true
+          : apiStudioMode === 'ask' || apiStudioMode === 'plan'
+            ? false
+            : autoBuildMode;
       /*
        * Guided build: a fresh "make me a website/app" request (no site yet)
        * starts a designer-style intake — Quantora asks for the essentials and
        * confirms before building. Persists across the follow-up answers (which
        * don't read as build intent on their own) until a site is produced.
        */
-      const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode && apiStudioMode !== 'build';
-      const guidedBuild = (startingGuided || guidedSession) && !previewCode && apiStudioMode !== 'build' && apiStudioMode !== 'plan';
+      const startingGuided = !isVisionQuestion && detectBuildIntent(text) && !previewCode && !isWorkspaceMode && apiStudioMode !== 'build';
+      const guidedBuild = !isVisionQuestion && (startingGuided || guidedSession) && !previewCode && apiStudioMode !== 'build' && apiStudioMode !== 'plan';
       if (guidedBuild && !guidedSession) setGuidedSession(true);
 
       /*
@@ -1740,13 +1828,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         outboundMessage += `\n\n[The user uploaded ${tokens.length} photo(s) to use in the site. When you build, use them as the real product/gallery images by putting these EXACT placeholder strings inside <img src="..."> attributes (one per image, reused where it makes sense): ${tokens.join(', ')}. Do not substitute stock image URLs for these.]`;
       }
 
-      const attachedImages = (!buildMode && !guidedBuild)
-        ? attachments.filter((a) => a.type === 'image' && a.dataUrl).map((a) => a.dataUrl).slice(0, 4)
-        : [];
+      if (imageDataUrls.length > 0 && candidateModels.length === 0) {
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: '⚠️ **Vision requires Gemini** — attach images are supported, but no Gemini model is available. Sign in or check that Gemini Flash is approved in the model list.',
+          thoughtProcess: 'Vision routing failed',
+        } : m));
+        setIsGenerating(false);
+        setActiveGeneratingModel(null);
+        setStreamingMessageId(null);
+        return;
+      }
 
       let res = null;
       let errData = {};
-      let respondingModel = targetModel;
+      let respondingModel = imageDataUrls.length > 0 ? visionModel : targetModel;
       let fallbackFrom = null;
 
       for (let index = 0; index < candidateModels.length; index += 1) {
@@ -1769,8 +1865,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               guidedBuild,
               taskCategory,
               fallbackFrom,
-              studioMode: apiStudioMode,
-              sessionContext: conversationContext,
+              studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
+              sessionContext: sessionContextForRequest,
               studioDomain,
               attachedImages,
               choiceSelected: options.choiceSelected === true,
@@ -1946,7 +2042,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const submitModelFeedback = async (message, outcome) => {
     if (!message?.requestId || !message?.modelId || message.qualityFeedback) return;
-    updateActiveMessages(prev => prev.map(item => item.id === message.id ? { ...item, qualityFeedback: outcome } : item));
+    if (message.id) {
+      updateActiveMessages(prev => prev.map(item => item.id === message.id ? { ...item, qualityFeedback: outcome } : item));
+    }
     try {
       await fetch('/api/chat', {
         method: 'POST',
@@ -1963,6 +2061,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       console.warn('Anonymous model feedback could not be recorded:', error);
     }
   };
+
+  const handleArenaPreference = useCallback(async (msg, side) => {
+    if (msg.arenaWinner) return;
+    const winner = side === 'a' ? msg.modelA : msg.modelB;
+    const loser = side === 'a' ? msg.modelB : msg.modelA;
+    if (!winner?.modelId) return;
+
+    const task = msg.taskCategory || classifyTask(msg.prompt || '');
+    const nextPrefs = recordArenaWin(task, winner.modelId, loser?.modelId);
+    setArenaPrefs(nextPrefs);
+
+    updateActiveMessages((prev) => prev.map((m) => (
+      m.id === msg.id ? { ...m, arenaWinner: side } : m
+    )));
+
+    if (winner.requestId) {
+      submitModelFeedback(
+        { requestId: winner.requestId, modelId: winner.modelId, taskCategory: task },
+        'helpful',
+      );
+    }
+    if (loser?.requestId) {
+      submitModelFeedback(
+        { requestId: loser.requestId, modelId: loser.modelId, taskCategory: task },
+        'not_helpful',
+      );
+    }
+
+    const winnerModel = availableModels?.find((m) => m.id === winner.modelId);
+    if (winnerModel) {
+      setSelectedModel(winnerModel);
+      setAutoSelectEnabled(false);
+    }
+  }, [availableModels, setSelectedModel]);
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.slice(1).map(msg => {
@@ -1997,17 +2129,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   style={{ flex: isUser ? '0 1 auto' : 1, minWidth: 0 }}
                 >
                   {msg.isDual ? (
+                    <div style={{ width: '100%' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
                       {/* Model A Card */}
                       <div style={{
                         background: isLight ? '#ffffff' : '#0d1127',
-                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
+                        border: msg.arenaWinner === 'a'
+                          ? '2px solid #f97316'
+                          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)'),
                         borderRadius: '16px',
                         padding: '16px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
-                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
+                        boxShadow: msg.arenaWinner === 'a'
+                          ? '0 0 0 1px rgba(249,115,22,0.35), 0 8px 24px rgba(249,115,22,0.15)'
+                          : (isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'),
+                        opacity: msg.arenaWinner === 'b' ? 0.72 : 1,
                       }}>
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
@@ -2036,32 +2174,61 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </ReactMarkdown>
                           </div>
                         </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
-                          {hasPreviewableContent(msg.modelA.text) && (
-                            <LivePreviewActionButton
-                              msg={{ ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus }}
-                              meta={getLivePreviewButtonMeta(
-                                { ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus },
-                                { isGenerating, streamingMessageId }
-                              )}
-                              onOpen={openCanvasWithCode}
-                              compact
-                            />
-                          )}
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            {msg.modelA.text && !isGenerating && (
+                              <button
+                                type="button"
+                                onClick={() => handleArenaPreference(msg, 'a')}
+                                disabled={Boolean(msg.arenaWinner)}
+                                style={{
+                                  background: msg.arenaWinner === 'a' ? 'rgba(249,115,22,0.2)' : 'rgba(249,115,22,0.1)',
+                                  border: '1px solid rgba(249,115,22,0.45)',
+                                  color: '#f97316',
+                                  padding: '4px 10px',
+                                  borderRadius: '8px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: msg.arenaWinner ? 'default' : 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <ThumbsUp size={12} /> {msg.arenaWinner === 'a' ? 'Preferred' : 'Prefer this'}
+                              </button>
+                            )}
+                            {hasPreviewableContent(msg.modelA.text) && (
+                              <LivePreviewActionButton
+                                msg={{ ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus }}
+                                meta={getLivePreviewButtonMeta(
+                                  { ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus },
+                                  { isGenerating, streamingMessageId }
+                                )}
+                                onOpen={openCanvasWithCode}
+                                compact
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
 
                       {/* Model B Card */}
                       <div style={{
                         background: isLight ? '#ffffff' : '#0d1127',
-                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)',
+                        border: msg.arenaWinner === 'b'
+                          ? '2px solid #3b82f6'
+                          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)'),
                         borderRadius: '16px',
                         padding: '16px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
-                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
+                        boxShadow: msg.arenaWinner === 'b'
+                          ? '0 0 0 1px rgba(59,130,246,0.35), 0 8px 24px rgba(59,130,246,0.15)'
+                          : (isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'),
+                        opacity: msg.arenaWinner === 'a' ? 0.72 : 1,
                       }}>
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
@@ -2090,21 +2257,51 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </ReactMarkdown>
                           </div>
                         </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
-                          {hasPreviewableContent(msg.modelB.text) && (
-                            <LivePreviewActionButton
-                              msg={{ ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus }}
-                              meta={getLivePreviewButtonMeta(
-                                { ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus },
-                                { isGenerating, streamingMessageId }
-                              )}
-                              onOpen={openCanvasWithCode}
-                              compact
-                            />
-                          )}
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            {msg.modelB.text && !isGenerating && (
+                              <button
+                                type="button"
+                                onClick={() => handleArenaPreference(msg, 'b')}
+                                disabled={Boolean(msg.arenaWinner)}
+                                style={{
+                                  background: msg.arenaWinner === 'b' ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.1)',
+                                  border: '1px solid rgba(59,130,246,0.45)',
+                                  color: '#3b82f6',
+                                  padding: '4px 10px',
+                                  borderRadius: '8px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: msg.arenaWinner ? 'default' : 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                <ThumbsUp size={12} /> {msg.arenaWinner === 'b' ? 'Preferred' : 'Prefer this'}
+                              </button>
+                            )}
+                            {hasPreviewableContent(msg.modelB.text) && (
+                              <LivePreviewActionButton
+                                msg={{ ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus }}
+                                meta={getLivePreviewButtonMeta(
+                                  { ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus },
+                                  { isGenerating, streamingMessageId }
+                                )}
+                                onOpen={openCanvasWithCode}
+                                compact
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
+                    </div>
+                    {msg.arenaWinner && (
+                      <p style={{ margin: '10px 0 0', fontSize: '0.74rem', color: subtextColor, textAlign: 'center' }}>
+                        Saved — Auto-select will prefer {(msg.arenaWinner === 'a' ? msg.modelA : msg.modelB).modelName} for similar {msg.taskCategory || 'general'} questions.
+                      </p>
+                    )}
                     </div>
                   ) : (
                     <div className={`prose chat-message-bubble${isUser ? ' chat-message-bubble--user' : ' chat-message-bubble--ai'}`} style={{
@@ -2316,7 +2513,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
     });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference]);
 
   return (
     <div className="ai-studio-shell" style={{
@@ -2587,7 +2784,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         flexDirection: 'column',
         maxWidth: isWorkspaceMode ? '42%' : '100%',
         margin: '0 auto',
-        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(12px, 1.6vw, 24px) clamp(14px, 2.2vw, 36px)',
+        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(6px, 1vw, 12px) clamp(12px, 1.6vw, 24px)',
         minHeight: 0,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
@@ -2659,12 +2856,35 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           )}
         />
 
+        {arenaMode && !arenaHintDismissed && (
+          <div className="studio-arena-hint" role="note">
+            <div style={{ flex: 1 }}>
+              <strong>Arena mode</strong> — compare two models on the same prompt, side by side.
+              <div className="studio-arena-hint__steps">
+                <span className="studio-arena-hint__step"><span>1</span> Turn Arena on</span>
+                <span className="studio-arena-hint__step"><span>2</span> Pick Model B via VS dropdown</span>
+                <span className="studio-arena-hint__step"><span>3</span> Send one prompt — both answer in parallel</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="studio-arena-hint__dismiss"
+              onClick={() => {
+                setArenaHintDismissed(true);
+                try { localStorage.setItem('quantora_arena_hint_dismissed', '1'); } catch { /* best effort */ }
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        )}
+
       {/* Messages Stream / Initial Hero State */}
       <div
         ref={messageViewportRef}
         onScroll={handleMessageScroll}
         className={`ai-studio-messages ${messages.length <= 1 ? 'ai-studio-messages--empty' : ''}`}
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '16px', scrollBehavior: 'smooth' }}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '12px', scrollBehavior: 'smooth' }}
       >
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
@@ -2853,7 +3073,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               >
                 {att.type === 'context' ? <Layers size={12} color="#8b5cf6" /> : att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
                 <span>{att.name}</span>
-                {att.type === 'image' && att.dataUrl && studioMode === 'ask' && (
+                {att.type === 'image' && att.dataUrl && (
                   <span style={{ fontSize: '0.65rem', opacity: 0.75 }}>· vision</span>
                 )}
                 <X
