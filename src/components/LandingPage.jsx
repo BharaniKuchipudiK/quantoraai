@@ -67,13 +67,25 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   // The hero's real prompt box — the same idea a build starts from. Not a
   // simulation: submitting it drops the visitor straight into a live build.
   const [heroPrompt, setHeroPrompt] = useState('');
+  const [phIdx, setPhIdx] = useState(0);
 
   const heroExamples = [
-    'A cozy cafe website with an online menu and ordering',
-    'A portfolio site for a photographer with a booking form',
-    'A landing page for my app with a waitlist signup',
-    'An online boutique to sell handmade jewelry'
+    'A cozy cafe website with an online menu…',
+    'A portfolio for a photographer with booking…',
+    'A landing page for my app with a waitlist…',
+    'An online boutique to sell handmade jewelry…',
+    'A booking site for a yoga studio…',
+    'A one-page site for our new restaurant…'
   ];
+
+  // Cycle the prompt placeholder so ideas suggest themselves as gentle motion,
+  // instead of a static block of example chips sitting on the page. Pauses
+  // while the visitor is actually typing.
+  useEffect(() => {
+    if (heroPrompt) return;
+    const t = setInterval(() => setPhIdx((i) => (i + 1) % heroExamples.length), 2600);
+    return () => clearInterval(t);
+  }, [heroPrompt, heroExamples.length]);
 
   const startBuild = (prompt) => {
     const text = (prompt ?? heroPrompt ?? '').toString();
@@ -301,16 +313,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             Let's build it <span style={{ color: '#ea580c' }}>together.</span>
           </h1>
 
-          {/* Subcopy */}
+          {/* Subcopy — one line, deliberately brief */}
           <p style={{
             fontSize: 'clamp(1.05rem, 1.35vw, 1.28rem)',
             color: isLight ? '#475569' : '#cbd5e1',
             lineHeight: 1.6, fontWeight: '400',
-            maxWidth: '580px', margin: '0 auto 42px'
+            maxWidth: '520px', margin: '0 auto 40px'
           }}>
-            The best things start as an idea said out loud. Bring yours — and
-            Quantora becomes the partner that turns imagination into something
-            real, one step at a time.
+            Say it in plain words. We'll build it together.
           </p>
 
           {/* Real prompt box — the product, front and centre */}
@@ -329,7 +339,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               onChange={(e) => setHeroPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
               rows={1}
-              placeholder="A cozy cafe website with an online menu and ordering…"
+              placeholder={heroExamples[phIdx]}
               style={{
                 flex: 1, resize: 'none', border: 'none', outline: 'none',
                 background: 'transparent', color: textColor,
@@ -347,18 +357,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             </button>
           </div>
 
-          {/* Example chips — quiet, ghost style */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', margin: '18px auto 0', maxWidth: '700px' }}>
-            {heroExamples.map((ex, i) => (
-              <button key={i} onClick={() => setHeroPrompt(ex)} style={{
-                fontSize: '0.82rem', fontWeight: '500',
-                padding: '7px 14px', borderRadius: '9999px', cursor: 'pointer',
-                background: 'transparent',
-                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.14)',
-                color: isLight ? '#475569' : '#94a3b8'
-              }}>{ex}</button>
-            ))}
-          </div>
         </div>
 
         {/* Live model strip — muted, sourced from the real registry */}
