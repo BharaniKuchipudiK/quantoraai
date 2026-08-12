@@ -3,6 +3,7 @@ import { formatSessionContextForPrompt } from "./session-context.js";
 import { buildDomainDirective } from "./studio-domains.js";
 import { CHOICES_DIRECTIVE } from "./studio-choices.js";
 import { buildChoiceTemplateDirective } from "./studio-choice-templates.js";
+import { CONTINUE_DIRECTIVE } from "./studio-continues.js";
 
 export type CognitiveLevel = "Lightning" | "Balanced" | "Deep Think" | string | undefined;
 
@@ -48,7 +49,7 @@ PROGRESSIVE DISCLOSURE
 ENDING THE TURN
 - Stop when the user's immediate need is met.
 - If clarification is required, end with the single question and wait.
-- Otherwise, end with the most useful next step only when one naturally exists. Do not append generic offers such as "Let me know if you need anything else."`;
+- Otherwise offer 2–3 continuation chips (quantora-continues) so the user can keep going with one tap — peer-style, not generic closers.`;
 
 const SESSION_MEMORY_DIRECTIVE = `SESSION MEMORY UPDATE
 When you have materially new continuity worth remembering across turns, append ONE HTML comment as the very last line of your reply (after all user-visible text). Users never see this line:
@@ -152,7 +153,7 @@ export function buildConversationSystemPrompt(options: {
     ? `\n\n${CHOICES_DIRECTIVE}${choiceTemplates}`
     : "";
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${choices}${build}${plan}${modelContext}`;
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${build}${plan}${modelContext}`;
 }
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)

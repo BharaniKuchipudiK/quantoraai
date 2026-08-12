@@ -1270,6 +1270,63 @@ body {
   white-space: nowrap;
 }
 
+/* Continuation chips — peer-style follow-ups after an answer */
+.studio-continue-chips {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.studio-continue-chips__prompt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+.studio-continue-chips__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.studio-continue-chips__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  background: rgba(249, 115, 22, 0.08);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.studio-continue-chips__chip.is-light {
+  background: rgba(249, 115, 22, 0.06);
+  border-color: rgba(249, 115, 22, 0.22);
+}
+
+.studio-continue-chips__chip:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(249, 115, 22, 0.45);
+  transform: translateY(-1px);
+}
+
+.studio-continue-chips__chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.studio-continue-chips__arrow {
+  color: #f97316;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 /* Product analytics panel (admin) */
 .product-analytics-panel {
   margin-top: 24px;

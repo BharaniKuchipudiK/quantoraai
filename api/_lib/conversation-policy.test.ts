@@ -23,6 +23,12 @@ test("injects stored session memory into the system prompt", () => {
   assert.match(prompt, /5 nights in March/);
 });
 
+test("includes continuation chips directive in every mode", () => {
+  const prompt = buildConversationSystemPrompt();
+  assert.match(prompt, /CONTINUATION CHIPS/);
+  assert.match(prompt, /quantora-continues/);
+});
+
 test("scopes plan mode to software architecture only", () => {
   const prompt = buildConversationSystemPrompt({ planMode: true });
   assert.match(prompt, /software \/ application architecture ONLY/);

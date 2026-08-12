@@ -19,7 +19,9 @@ import {
   extractChoicesFromAssistantText,
   stripPartialAssistantMarkers,
 } from '../lib/studio-choices.js';
+import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
 import StudioChoiceCards from './StudioChoiceCards';
+import StudioContinueChips from './StudioContinueChips';
 import StudioChromeBar from './StudioChromeBar';
 import {
   STUDIO_DOMAINS,
@@ -1027,6 +1029,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const inputText = externalInputText !== undefined ? externalInputText : localInputText;
   const setInputText = setExternalInputText || setLocalInputText;
   const [isGenerating, setIsGenerating] = useState(false);
+  const latestContinueMessageId = React.useMemo(() => {
+    if (pendingChoiceMessage || isGenerating) return null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m?.sender === 'ai' && m.continueSet?.items?.length && !m.continueUsed && !m.isDual) {
+        return m.id;
+      }
+    }
+    return null;
+  }, [messages, pendingChoiceMessage, isGenerating]);
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
   const [showCodeMap, setShowCodeMap] = useState({});
@@ -1589,7 +1601,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
 
     shouldFollowLatestRef.current = true;
-    updateActiveMessages(prev => [...prev, userMsg]);
+    updateActiveMessages(prev => prev.map((m) => (
+      m.sender === 'ai' && m.continueSet && !m.continueUsed ? { ...m, continueUsed: true } : m
+    )).concat(userMsg));
     scrollToLatest('smooth');
     if (!textToSend) setInputText('');
     setAttachments([]);
@@ -1971,15 +1985,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         const { displayText: afterChoices, choiceSet } = extractChoicesFromAssistantText(currentText);
-        const { displayText, contextUpdate } = extractContextFromAssistantText(afterChoices);
+        const { displayText: afterContinues, continueSet } = extractContinuesFromAssistantText(afterChoices);
+        const { displayText, contextUpdate } = extractContextFromAssistantText(afterContinues);
         if (displayText !== currentText) {
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
             text: displayText,
             ...(choiceSet ? { choiceSet } : {}),
+            ...(continueSet ? { continueSet } : {}),
           } : m));
-        } else if (choiceSet) {
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, choiceSet } : m));
+        } else {
+          if (choiceSet || continueSet) {
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              ...(choiceSet ? { choiceSet } : {}),
+              ...(continueSet ? { continueSet } : {}),
+            } : m));
+          }
         }
         if (contextUpdate && (contextUpdate.goal || contextUpdate.understanding || contextUpdate.facts?.length)) {
           setChatSessions(prevSessions => {
@@ -2394,7 +2416,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {/* Choice cards render in floating dock above prompt */}
+                      {msg.sender === 'ai' && msg.id === latestContinueMessageId && (
+                        <StudioContinueChips
+                          continueSet={msg.continueSet}
+                          isLight={isLight}
+                          textColor={textColor}
+                          subtextColor={subtextColor}
+                          disabled={isGenerating}
+                          onSelect={(item) => {
+                            updateActiveMessages((prev) => prev.map((m) => (
+                              m.id === msg.id ? { ...m, continueUsed: true } : m
+                            )));
+                            handleSendMessage(item.value);
+                          }}
+                        />
+                      )}
 
                       {/* Plan / code actions */}
                       <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
