@@ -551,6 +551,22 @@ body {
   overflow: hidden;
 }
 
+.studio-domain-row {
+  scrollbar-width: none;
+}
+
+.studio-domain-row::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .studio-domain-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+}
+
 /* AI models live in a focused drawer so the chat-history rail never reflows. */
 .model-drawer-backdrop {
   position: fixed;

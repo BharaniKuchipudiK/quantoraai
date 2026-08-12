@@ -5,8 +5,11 @@ export function normalizeStudioMode(value: unknown): StudioMode {
   return "ask";
 }
 
-export const PLAN_DIRECTIVE = `PLAN MODE
-The user wants an architecture plan before implementation — not code yet.
+export const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)
+Use this directive ONLY when the user is planning a software application, feature, or technical system to build.
+If they are planning something else — travel, finance, events, career, research, etc. — ignore this JSON schema completely and follow the normal conversation loop instead.
+
+When this directive applies:
 - Output ONLY valid JSON (no markdown fences, no commentary before or after).
 - Schema:
 {

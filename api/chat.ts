@@ -5,7 +5,9 @@ import { getSessionUser } from "./_lib/session.js";
 import { recordModelQualityEvent, recordUsage } from "./_lib/store.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
+import { normalizeSessionContext } from "./_lib/session-context.js";
 import { normalizeStudioMode } from "./_lib/studio-modes.js";
+import { buildDomainDirective, normalizeStudioDomain } from "./_lib/studio-domains.js";
 import { repairArtifact } from "./_lib/repair.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
@@ -73,8 +75,9 @@ function resolveOpenRouterModelId(modelId: string): { slug?: string; error?: str
   };
 }
 
-function buildGeminiContents(history: any[], currentMessage: string) {
-  const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+function buildGeminiContents(history: any[], currentMessage: string, attachedImages: string[] = []) {
+  type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+  const contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }> = [];
 
   if (Array.isArray(history)) {
     for (const msg of history) {
@@ -90,7 +93,8 @@ function buildGeminiContents(history: any[], currentMessage: string) {
       } else {
         const lastIndex = contents.length - 1;
         if (contents[lastIndex].role === role) {
-          contents[lastIndex].parts[0].text += `\n\n${msg.text}`;
+          const textPart = contents[lastIndex].parts.find((p): p is { text: string } => "text" in p);
+          if (textPart) textPart.text += `\n\n${msg.text}`;
         } else {
           contents.push({ role, parts: [{ text: msg.text }] });
         }
@@ -98,10 +102,28 @@ function buildGeminiContents(history: any[], currentMessage: string) {
     }
   }
 
+  const imageParts: GeminiPart[] = attachedImages
+    .slice(0, 4)
+    .map((dataUrl) => {
+      const match = typeof dataUrl === "string" ? dataUrl.match(/^data:([^;]+);base64,(.+)$/) : null;
+      if (!match) return null;
+      return { inlineData: { mimeType: match[1], data: match[2] } };
+    })
+    .filter((part): part is { inlineData: { mimeType: string; data: string } } => Boolean(part));
+
+  const userParts: GeminiPart[] = [...imageParts, { text: currentMessage }];
+
   if (contents.length > 0 && contents[contents.length - 1].role === "user") {
-    contents[contents.length - 1].parts[0].text += `\n\n${currentMessage}`;
+    const last = contents[contents.length - 1];
+    last.parts.push(...imageParts);
+    const textPart = last.parts.find((p): p is { text: string } => "text" in p);
+    if (textPart) {
+      textPart.text += `\n\n${currentMessage}`;
+    } else {
+      last.parts.push({ text: currentMessage });
+    }
   } else {
-    contents.push({ role: "user", parts: [{ text: currentMessage }] });
+    contents.push({ role: "user", parts: userParts });
   }
 
   return contents;
@@ -269,7 +291,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode, sessionContext, studioDomain, attachedImages } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -311,7 +333,13 @@ export default async function handler(req: any, res: any) {
       buildMode: effectiveBuildMode,
       guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
       planMode,
+      sessionContext: normalizeSessionContext(sessionContext),
+      studioDomain: normalizeStudioDomain(studioDomain),
     });
+
+    const visionImages = Array.isArray(attachedImages)
+      ? attachedImages.filter((url: unknown): url is string => typeof url === "string" && url.startsWith("data:image/")).slice(0, 4)
+      : [];
 
     // The self-heal endpoint reuses this handler (via task: "repair") so it
     // adds no serverless function. It carries code+error instead of a message.
@@ -380,7 +408,7 @@ export default async function handler(req: any, res: any) {
       }
 
       try {
-        const contents = buildGeminiContents(boundedHistory, message);
+        const contents = buildGeminiContents(boundedHistory, message, visionImages);
         const { stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature);
         
         res.writeHead(200, {
@@ -436,7 +464,15 @@ export default async function handler(req: any, res: any) {
           content: m.text || m.content || "",
         }))
       ];
-      formattedHistory.push({ role: "user", content: message });
+      formattedHistory.push({
+        role: "user",
+        content: visionImages.length
+          ? [
+              ...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })),
+              { type: "text", text: message },
+            ]
+          : message,
+      });
 
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
