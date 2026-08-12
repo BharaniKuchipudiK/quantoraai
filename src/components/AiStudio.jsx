@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -20,6 +20,77 @@ function extractHtmlFromResponse(rawText) {
     return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
   }
   return '';
+}
+
+function hasPreviewableContent(rawText) {
+  if (!rawText || typeof rawText !== 'string') return false;
+  return Boolean(extractHtmlFromResponse(rawText) || /```/.test(rawText));
+}
+
+function preparePreviewHtml(rawText, imageMap = new Map()) {
+  let html = extractHtmlFromResponse(rawText);
+  if (!html && (/<!DOCTYPE html>/i.test(rawText) || /<html[\s>]/i.test(rawText))) {
+    html = rawText.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
+  }
+  if (!html) return '';
+  if (imageMap.size) {
+    for (const [token, dataUrl] of imageMap) html = html.split(token).join(dataUrl);
+  }
+  return html;
+}
+
+function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {
+  if (!hasPreviewableContent(msg.text)) return null;
+  if (isGenerating && msg.id === streamingMessageId) {
+    return { disabled: true, label: 'Building…', title: 'Still generating the response' };
+  }
+  const status = msg.previewStatus;
+  if (!status) {
+    return { disabled: false, label: 'Open Live Preview', title: 'Open the sandbox preview' };
+  }
+  if (status === 'running' || status === 'verifying' || status === 'healing') {
+    return { disabled: true, label: 'Verifying preview…', title: 'Running sandbox checks before preview opens' };
+  }
+  if (status === 'clean') {
+    return { disabled: false, label: 'Open Live Preview', title: 'Verified — runs clean' };
+  }
+  if (status === 'degraded') {
+    return { disabled: false, label: 'Open Live Preview', title: 'Preview ready — styling may be incomplete' };
+  }
+  if (status === 'failed') {
+    return { disabled: false, label: 'Open Live Preview', title: 'Preview may have runtime errors' };
+  }
+  return { disabled: false, label: 'Open Live Preview', title: 'Open the sandbox preview' };
+}
+
+function LivePreviewActionButton({ msg, meta, onOpen, compact = false }) {
+  if (!meta) return null;
+  const iconSize = compact ? 10 : 13;
+  return (
+    <button
+      type="button"
+      disabled={meta.disabled}
+      title={meta.title}
+      onClick={() => !meta.disabled && onOpen(msg.text)}
+      style={{
+        background: meta.disabled ? 'rgba(148, 163, 184, 0.12)' : 'rgba(249, 115, 22, 0.15)',
+        border: meta.disabled ? '1px solid rgba(148, 163, 184, 0.35)' : '1px solid rgba(249, 115, 22, 0.4)',
+        color: meta.disabled ? '#94a3b8' : '#f97316',
+        padding: compact ? '4px 8px' : '6px 12px',
+        borderRadius: '8px',
+        fontSize: compact ? '0.72rem' : '0.78rem',
+        fontWeight: '700',
+        cursor: meta.disabled ? 'not-allowed' : 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: compact ? '4px' : '6px',
+        opacity: meta.disabled ? 0.85 : 1,
+      }}
+    >
+      {meta.disabled ? <Loader size={iconSize} className="animate-spin" /> : <Play size={iconSize} />}
+      {meta.label}
+    </button>
+  );
 }
 // Interactive iOS Calculator Sub-Component
 function LiveIosCalculator() {
@@ -870,6 +941,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
+  const [streamingMessageId, setStreamingMessageId] = useState(null);
+  const [backgroundVerify, setBackgroundVerify] = useState(null);
+  const backgroundVerifyRef = useRef(null);
+  useEffect(() => { backgroundVerifyRef.current = backgroundVerify; }, [backgroundVerify]);
   // The HTML shown in the Live Canvas preview. Was referenced throughout but
   // never declared — clicking "Open Live Canvas Mode" threw a ReferenceError,
   // so the canvas never opened. Declaring it restores the whole preview flow.
@@ -921,7 +996,57 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setPreviewCode(cleanCode);
     setCanvasFullscreen(false);
     setCanvasOpen(true);
+    setBackgroundVerify(null);
   };
+
+  const queuePreviewVerification = (messageId, html) => {
+    if (!html?.trim()) return;
+    setPreviewCode(html);
+    setBackgroundVerify({ messageId, code: html });
+    updateActiveMessages((prev) => prev.map((m) => (
+      m.id === messageId ? { ...m, previewStatus: 'verifying' } : m
+    )));
+    // #region agent log
+    const payload = { sessionId: 'd0f2b5', runId: 'preview-fix-v3', location: 'AiStudio:queuePreviewVerification', message: 'background verify queued', data: { messageId, htmlLength: html.length }, timestamp: Date.now(), hypothesisId: 'verify-flow' };
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
+    fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+    // #endregion
+  };
+
+  const handleBackgroundVerificationStatus = React.useCallback((status) => {
+    const job = backgroundVerifyRef.current;
+    if (!job) return;
+    updateActiveMessages((prev) => prev.map((m) => (
+      m.id === job.messageId ? { ...m, previewStatus: status } : m
+    )));
+    // #region agent log
+    const payload = { sessionId: 'd0f2b5', runId: 'preview-fix-v3', location: 'AiStudio:backgroundVerifyStatus', message: 'background verify status', data: { messageId: job.messageId, status }, timestamp: Date.now(), hypothesisId: 'verify-flow' };
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
+    fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+    // #endregion
+    if (status === 'clean' || status === 'degraded' || status === 'failed') {
+      setBackgroundVerify(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!backgroundVerify) return undefined;
+    const job = backgroundVerify;
+    const timer = setTimeout(() => {
+      updateActiveMessages((prev) => prev.map((m) => (
+        m.id === job.messageId && ['verifying', 'running', 'healing'].includes(m.previewStatus)
+          ? { ...m, previewStatus: 'degraded' }
+          : m
+      )));
+      setBackgroundVerify(null);
+      // #region agent log
+      const payload = { sessionId: 'd0f2b5', runId: 'preview-fix-v3', location: 'AiStudio:verifyTimeout', message: 'background verify timed out', data: { messageId: job.messageId }, timestamp: Date.now(), hypothesisId: 'verify-timeout' };
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
+      fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+      // #endregion
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [backgroundVerify]);
 
 
   const fileInputRef = useRef(null);
@@ -1375,6 +1500,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     // 2. Standard Single Model Execution Mode
     const aiMsgId = Date.now() + 1;
+    setStreamingMessageId(aiMsgId);
     const initialAiMsg = {
       id: aiMsgId,
       sender: 'ai',
@@ -1554,16 +1680,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
         }
 
-        // Outcome-first: if the reply is a complete website/app, open the Live
-        // Canvas automatically so the user sees the running result — not code.
-        // Swap any image placeholders for the real uploaded photos first, so the
-        // previewed (and published) site carries the actual images.
-        if (/<!DOCTYPE html>/i.test(currentText) || /<html[\s>]/i.test(currentText)) {
-          let finalHtml = currentText;
-          if (imageMap.size) {
-            for (const [token, dataUrl] of imageMap) finalHtml = finalHtml.split(token).join(dataUrl);
-          }
-          openCanvasWithCode(finalHtml);
+        // Store preview HTML and verify in the background — do not auto-open the modal.
+        const finalHtml = preparePreviewHtml(currentText, imageMap);
+        if (finalHtml) {
+          queuePreviewVerification(aiMsgId, finalHtml);
         }
 
       } else {
@@ -1606,6 +1726,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     } finally {
       setIsGenerating(false);
       setActiveGeneratingModel(null);
+      setStreamingMessageId(null);
     }
   };
 
@@ -1694,13 +1815,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                         <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
-                          {msg.modelA.text?.includes('```') && (
-                            <button
-                              onClick={() => openCanvasWithCode(msg.modelA.text)}
-                              style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Play size={10} /> Live Sandbox
-                            </button>
+                          {hasPreviewableContent(msg.modelA.text) && (
+                            <LivePreviewActionButton
+                              msg={{ ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus }}
+                              meta={getLivePreviewButtonMeta(
+                                { ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus },
+                                { isGenerating, streamingMessageId }
+                              )}
+                              onOpen={openCanvasWithCode}
+                              compact
+                            />
                           )}
                         </div>
                       </div>
@@ -1745,13 +1869,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                         <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
-                          {msg.modelB.text?.includes('```') && (
-                            <button
-                              onClick={() => openCanvasWithCode(msg.modelB.text)}
-                              style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Play size={10} /> Live Sandbox
-                            </button>
+                          {hasPreviewableContent(msg.modelB.text) && (
+                            <LivePreviewActionButton
+                              msg={{ ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus }}
+                              meta={getLivePreviewButtonMeta(
+                                { ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus },
+                                { isGenerating, streamingMessageId }
+                              )}
+                              onOpen={openCanvasWithCode}
+                              compact
+                            />
                           )}
                         </div>
                       </div>
@@ -1842,13 +1969,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             <Code2 size={13} /> Build this →
                           </button>
                         )}
-                        {msg.sender === 'ai' && msg.text?.includes('```') && (
-                          <button
-                            onClick={() => openCanvasWithCode(msg.text)}
-                            style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                          >
-                            <Play size={13} /> Open Live Canvas Mode
-                          </button>
+                        {msg.sender === 'ai' && hasPreviewableContent(msg.text) && (
+                          <LivePreviewActionButton
+                            msg={msg}
+                            meta={getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId })}
+                            onOpen={openCanvasWithCode}
+                          />
                         )}
                       </div>
                     </div>
@@ -1953,7 +2079,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
               </div>
             ));
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel]);
 
   return (
     <div className="ai-studio-shell" style={{
@@ -2534,12 +2660,41 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           /* Active Chat Thread */
           <div className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
-          </div>
-        )}
-
-        {isGenerating && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f97316', fontSize: '0.88rem', paddingLeft: '50px', marginTop: '16px' }}>
-            <Sparkles size={16} className="animate-spin" /> {autoSelectEnabled ? 'Working on your request...' : `${activeGeneratingModel?.name || selectedModel?.name || 'Qwen 2.5 Coder'} is thinking...`}
+            {isGenerating && (
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: isLight ? '#ffffff' : 'transparent',
+                  border: isLight ? '1px solid var(--border-color)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <Sparkles size={18} color="#f97316" className="animate-spin" />
+                </div>
+                <div style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: '16px',
+                  background: isLight ? '#ffffff' : '#0d1127',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                  color: '#f97316',
+                  fontSize: '0.88rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}>
+                  <Loader size={15} className="animate-spin" />
+                  {autoSelectEnabled
+                    ? 'Working on your request…'
+                    : `${activeGeneratingModel?.name || selectedModel?.name || 'Qwen 2.5 Coder'} is thinking…`}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2735,12 +2890,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
 
-          {/* Iteration hint: next message edits the existing website in place. */}
-          {refineActive && previewCode && previewCode.trim() && (
+          {/* Refine mode: next message edits the existing site in place instead of rebuilding. */}
+          {refineActive && previewCode && previewCode.trim() && !isGenerating && (
             <div style={{ margin: '0 18px 2px', display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 12px', borderRadius: '10px', background: isLight ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', fontSize: '0.76rem' }}>
               <Wand2 size={14} color="#f97316" />
-              <span style={{ color: isLight ? '#9a3412' : '#fdba74', fontWeight: 600 }}>Editing your website — your next message refines it.</span>
-              <button onClick={() => setRefineActive(false)} title="Start a new build instead" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: isLight ? '#9a3412' : '#fdba74', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>Start fresh</button>
+              <span style={{ color: isLight ? '#9a3412' : '#fdba74', fontWeight: 600 }}>
+                Refine mode — your next message updates the live site.
+              </span>
+              <button type="button" onClick={() => setRefineActive(false)} title="Start a new build instead of editing the current site" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: isLight ? '#9a3412' : '#fdba74', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>New build</button>
             </div>
           )}
 
@@ -3212,6 +3369,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       </div>
       </div>
+
+      {/* Background sandbox verification — runs before the preview button unlocks. */}
+      {backgroundVerify && !canvasOpen && (
+        <div style={{ position: 'fixed', left: '-10000px', top: 0, width: '480px', height: '480px', overflow: 'hidden', pointerEvents: 'none' }} aria-hidden="true">
+          <LivePreviewCanvas
+            headless
+            verifyOnly
+            code={backgroundVerify.code}
+            isLight={isLight}
+            onVerificationStatusChange={handleBackgroundVerificationStatus}
+            onClose={() => setBackgroundVerify(null)}
+          />
+        </div>
+      )}
 
       {/* Live Preview Canvas Overlay Modal */}
       {canvasOpen && (

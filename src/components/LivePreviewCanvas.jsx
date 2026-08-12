@@ -18,7 +18,16 @@ import {
 
 const MAX_HEAL_ATTEMPTS = 3;
 
-export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen, onToggleFullscreen }) {
+export default function LivePreviewCanvas({
+  code,
+  isLight,
+  onClose,
+  isFullscreen,
+  onToggleFullscreen,
+  onVerificationStatusChange,
+  headless = false,
+  verifyOnly = false,
+}) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
   const [status, setStatus] = useState('running'); // running | healing | clean | degraded | failed
@@ -40,6 +49,17 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
 
   useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
   useEffect(() => { attemptRef.current = attempt; }, [attempt]);
+
+  const onVerificationStatusChangeRef = useRef(onVerificationStatusChange);
+  onVerificationStatusChangeRef.current = onVerificationStatusChange;
+
+  useEffect(() => {
+    onVerificationStatusChangeRef.current?.(status);
+    // #region agent log
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v3',location:'LivePreviewCanvas:status',message:'verification status changed',data:{status,headless,verifyOnly},timestamp:Date.now(),hypothesisId:'verify-flow'})}).catch(()=>{});
+    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v3',location:'LivePreviewCanvas:status',message:'verification status changed',data:{status,headless,verifyOnly},timestamp:Date.now(),hypothesisId:'verify-flow'})}).catch(()=>{});
+    // #endregion
+  }, [status, headless, verifyOnly]);
 
   useEffect(() => {
     setEmbedReady(false);
@@ -91,6 +111,20 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
   const handleRuntimeError = useCallback(async (message) => {
     if (healingRef.current || errorSeenRef.current) return;
 
+    if (verifyOnly) {
+      if (isCriticalResourceError(message)) {
+        stylingFailedRef.current = true;
+        setLastError(message);
+        setStatus('degraded');
+        return;
+      }
+      if (isIgnorableRuntimeError(message)) return;
+      errorSeenRef.current = true;
+      setLastError(message);
+      setStatus('failed');
+      return;
+    }
+
     if (isCriticalResourceError(message)) {
       stylingFailedRef.current = true;
       setLastError(message);
@@ -138,7 +172,7 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
       setStatus('failed');
       healingRef.current = false;
     }
-  }, [requestRepair]);
+  }, [requestRepair, verifyOnly]);
 
   useEffect(() => {
     const onMessage = (e) => {
@@ -159,6 +193,10 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
       }
       if (d.kind === 'loaded') {
         if (healingRef.current) return;
+        // #region agent log
+        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v2',location:'LivePreviewCanvas:loaded',message:'preview loaded probe',data:{usesTailwind:d.usesTailwind,stylingOk:d.stylingOk,embedReady,statusBefore:status},timestamp:Date.now(),hypothesisId:'CSP-probe-fix'})}).catch(()=>{});
+        fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v2',location:'LivePreviewCanvas:loaded',message:'preview loaded probe',data:{usesTailwind:d.usesTailwind,stylingOk:d.stylingOk},timestamp:Date.now(),hypothesisId:'CSP-probe-fix'})}).catch(()=>{});
+        // #endregion
         if (d.usesTailwind && d.stylingOk === false) {
           stylingFailedRef.current = true;
           setStatus('degraded');
@@ -252,6 +290,33 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
     failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
+  const previewFrame = currentCode ? (
+    <iframe
+      ref={iframeRef}
+      key={attempt}
+      title="Live Preview"
+      src={PREVIEW_EMBED_PATH}
+      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: headless ? '480px' : viewportStyles[viewport].height,
+        border: 'none',
+        background: '#ffffff',
+      }}
+    />
+  ) : (
+    <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b' }}>Building…</div>
+  );
+
+  if (headless) {
+    return (
+      <div aria-hidden="true" style={{ width: '100%', height: '480px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
+        {previewFrame}
+      </div>
+    );
+  }
+
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%', width: '100%',
@@ -324,18 +389,7 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
           boxShadow: viewport === 'desktop' ? 'none' : '0 10px 40px rgba(0,0,0,0.2)',
           transition: 'all 0.3s ease', position: 'relative'
         }}>
-          {currentCode ? (
-            <iframe
-              ref={iframeRef}
-              key={attempt}
-              title="Live Preview"
-              src={PREVIEW_EMBED_PATH}
-              sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
-              style={{ width: '100%', height: '100%', minHeight: viewportStyles[viewport].height, border: 'none', background: '#ffffff' }}
-            />
-          ) : (
-            <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b' }}>Building…</div>
-          )}
+          {previewFrame}
         </div>
       </div>
 

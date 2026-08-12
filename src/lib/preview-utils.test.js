@@ -4,6 +4,7 @@ import {
   injectPreviewHarness,
   isCriticalResourceError,
   isIgnorableRuntimeError,
+  PREVIEW_TAILWIND_PROBE_ID,
   usesTailwindCdn,
 } from './preview-utils.js';
 
@@ -17,6 +18,8 @@ test('injects harness into head', () => {
   const out = injectPreviewHarness(html);
   assert.match(out, /__quantora:true/);
   assert.match(out, /kind:'loaded'/);
+  assert.match(out, new RegExp(`id="${PREVIEW_TAILWIND_PROBE_ID}"`));
+  assert.match(out, new RegExp(`getElementById\\('${PREVIEW_TAILWIND_PROBE_ID}'\\)`));
 });
 
 test('treats Tailwind script load failures as critical', () => {
