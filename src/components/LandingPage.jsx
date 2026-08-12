@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import AuroraBackground from './AuroraBackground';
 import { QuantoraEmblemSvg, QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import {
@@ -30,53 +30,90 @@ import {
 } from 'lucide-react';
 import './FlagshipShowcase.css';
 
-export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMode, setThemeMode }) {
-  const [activeDemoTab, setActiveDemoTab] = useState('app-builder'); // 'app-builder', 'quantum', 'multi-model', 'vault'
-  const [selectedPrompt, setSelectedPrompt] = useState('Create a real-time crypto portfolio tracker with dark glassmorphic charts');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simulationComplete, setSimulationComplete] = useState(false);
+/*
+ * Reveal-on-scroll wrapper. Content starts slightly lowered and transparent,
+ * then eases into place the first time it enters the viewport — so the page
+ * unfolds as you scroll instead of presenting a static wall of text. Honors
+ * reduced-motion and degrades to "always visible" without IntersectionObserver.
+ */
+function Reveal({ children, delay = 0, style, className }) {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || typeof IntersectionObserver === 'undefined') { setShown(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { setShown(true); io.disconnect(); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={className} style={{
+      ...style,
+      opacity: shown ? 1 : 0,
+      transform: shown ? 'none' : 'translateY(30px)',
+      transition: `opacity 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms, transform 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms`,
+      willChange: 'opacity, transform'
+    }}>{children}</div>
+  );
+}
+
+export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
   const [activeCapability, setActiveCapability] = useState('studio');
 
-  // Hero Carousel State
-  const [heroSlide, setHeroSlide] = useState(0);
+  // The hero's real prompt box — the same idea a build starts from. Not a
+  // simulation: submitting it drops the visitor straight into a live build.
+  const [heroPrompt, setHeroPrompt] = useState('');
+  const [phIdx, setPhIdx] = useState(0);
 
-  const heroSlides = [
-    {
-      bg: '/hero-bg.jpg',
-      headline: <>Confidence to reimagine.<br/></>,
-      gradientText: 'Power to realize.',
-      sub: 'Quantora gives you the power to unleash your ideas. Transform your dreams into live software, scale your vision, and shape the future.',
-      cta: 'Start here',
-      nav: 'AI Studio'
-    },
-    {
-      bg: '/hero-bg.jpg',
-      headline: <>Visualize architecture.<br/></>,
-      gradientText: 'Architect the future.',
-      sub: 'Map out your software architecture visually. Convert abstract concepts into structured, executable nodes in real-time.',
-      cta: 'Launch Canvas',
-      nav: 'Dream Canvas'
-    },
-    {
-      bg: '/hero-bg.jpg',
-      headline: <>Simulate logic.<br/></>,
-      gradientText: 'Command the quantum realm.',
-      sub: 'Simulate 2-Qubit logic gates, compute exact state vector matrices, and synthesize IBM Qiskit code.',
-      cta: 'Simulate Circuits',
-      nav: 'Quantum Horizon'
-    }
+  const heroExamples = [
+    'A research assistant that searches papers and summarizes them…',
+    'A study planner that turns my syllabus into daily goals…',
+    'A dashboard to track weekly metrics for my team…',
+    'A tool that turns my lecture notes into flashcards…',
+    'An invoice generator for my consulting clients…',
+    'A cozy cafe website with online ordering…',
+    'A literature-review helper for my thesis…',
+    'A portfolio for a photographer with a booking form…'
   ];
 
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setHeroSlide((prev) => (prev + 1) % heroSlides.length);
-    }, 6000);
-    return () => clearInterval(timer);
-  }, [heroSlides.length]);
+  // Cycle the prompt placeholder so ideas suggest themselves as gentle motion,
+  // instead of a static block of example chips sitting on the page. Pauses
+  // while the visitor is actually typing.
+  useEffect(() => {
+    if (heroPrompt) return;
+    const t = setInterval(() => setPhIdx((i) => (i + 1) % heroExamples.length), 2600);
+    return () => clearInterval(t);
+  }, [heroPrompt, heroExamples.length]);
 
-  const nextSlide = () => setHeroSlide((prev) => (prev + 1) % heroSlides.length);
-  const prevSlide = () => setHeroSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length);
+  const startBuild = (prompt) => {
+    const text = (prompt ?? heroPrompt ?? '').toString();
+    if (onStartBuild) onStartBuild(text);
+    else if (user) onLaunchStudio();
+    else onOpenAuth();
+  };
 
+  // The four steps that make Quantora outcome-first — all real product
+  // behaviour, no mock. This is the journey, told as a filmstrip.
+  const journey = [
+    { icon: Sparkles, color: '#f97316', step: '01', title: 'Say it out loud', body: 'Describe what you imagine in plain words — no templates, no setup, no code.' },
+    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'A real conversation', body: 'Brief it like a teammate. It listens, asks, and reshapes the living result as you talk — a natural back-and-forth, not a form.' },
+    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'It verifies itself', body: 'Every build runs in a live sandbox and repairs its own errors before it ever reaches you.' },
+    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Out into the world', body: 'Publish to your own domain and take real payments — your accounts, your money, entirely yours.' }
+  ];
+
+  // What makes this more than a prompt box with a logo — every claim maps to
+  // real code in this repo (LangChain orchestration, the repair loop, the
+  // bring-your-own-key gateway), so the story stays honest.
+  const techPillars = [
+    { icon: Layers, color: '#f97316', title: 'Multi-model orchestration', body: 'LangChain routes each request across frontier models — Gemini, GPT-4o, DeepSeek, Llama, Qwen — and picks the right mind for the job.' },
+    { icon: ShieldCheck, color: '#10b981', title: 'A self-healing build loop', body: 'Every result runs in a live sandbox and repairs its own runtime errors before it ever reaches your screen.' },
+    { icon: Workflow, color: '#8b5cf6', title: 'Human-to-AI conversation', body: 'No forms, no settings. You talk, it reasons and iterates — a natural loop between you and the machine.' },
+    { icon: Lock, color: '#06b6d4', title: 'Privacy-first by design', body: 'Bring your own keys. They live in a secure API gateway — your data and your models stay yours.' }
+  ];
 
   // Use global theme
   const isLight = themeMode === 'light';
@@ -88,12 +125,11 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
   const cardBorder = isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)';
   const navBg = isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 9, 19, 0.88)';
 
-  const samplePrompts = [
-    'Create a real-time crypto portfolio tracker with dark glassmorphic charts',
-    'Simulate a Bell State quantum entanglement circuit with Hadamard and CNOT gates',
-    'Build an AI research assistant with autonomous DuckDuckGo web search',
-    'Design a responsive Kanban board with drag-and-drop local persistence'
-  ];
+  // Live model facts for the trust strip — sourced from the real registry the
+  // app already fetched, so nothing here can drift out of date.
+  const onlineModels = (availableModels || []).filter((m) => m && m.available !== false);
+  const liveModelCount = onlineModels.length;
+  const liveModelNames = onlineModels.slice(0, 5).map((m) => m.name).filter(Boolean);
 
   const flagshipCapabilities = [
     {
@@ -145,14 +181,22 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
   const selectedCapability = flagshipCapabilities.find((item) => item.id === activeCapability) || flagshipCapabilities[0];
   const SelectedCapabilityIcon = selectedCapability.icon;
 
-  const handleRunSimulation = () => {
-    setIsSimulating(true);
-    setSimulationComplete(false);
-    setTimeout(() => {
-      setIsSimulating(false);
-      setSimulationComplete(true);
-    }, 1200);
-  };
+  // Cinematic auto-advance through the four experiences, like a film reel.
+  // Re-armed on every change, so a manual tap resets the countdown rather than
+  // yanking the viewer forward. The progress bar (keyed in the JSX) fills over
+  // the same interval, so the motion reads as intentional, not restless.
+  const FLAGSHIP_INTERVAL = 5200;
+  useEffect(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const t = setTimeout(() => {
+      setActiveCapability((prev) => {
+        const idx = flagshipCapabilities.findIndex((c) => c.id === prev);
+        return flagshipCapabilities[(idx + 1) % flagshipCapabilities.length].id;
+      });
+    }, FLAGSHIP_INTERVAL);
+    return () => clearTimeout(t);
+  }, [activeCapability]);
 
   return (
     <div style={{
@@ -260,517 +304,220 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
         </div>
       </header>
 
-      {/* Flagship Hero Section */}
+      {/* Hero — clean editorial canvas, no competing photography */}
       <section style={{
-        width: '100%',
-        height: 'calc(100vh - 67px)',
-        minHeight: '550px',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        padding: '0 5%',
         position: 'relative',
         zIndex: 10,
-        backgroundImage: `url(${heroSlides[heroSlide].bg})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        transition: 'background-image 0.5s ease-in-out'
+        minHeight: 'calc(100vh - 67px)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        padding: 'clamp(48px, 9vh, 120px) 6% 48px',
+        background: isLight
+          ? 'radial-gradient(1100px 520px at 50% -8%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
+          : 'radial-gradient(1000px 560px at 50% -6%, rgba(249,115,22,0.16), rgba(7,9,19,0) 60%), #070913'
       }}>
-        {/* Subtle gradient behind text instead of washing out the entire image */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '50%',
-          height: '100%',
-          background: 'linear-gradient(90deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 100%)',
-          zIndex: 0,
-          opacity: isLight ? 1 : 0
-        }} />
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '60%',
-          height: '100%',
-          background: 'linear-gradient(90deg, rgba(7,9,19,0.9) 0%, rgba(7,9,19,0) 100%)',
-          zIndex: 0,
-          opacity: isLight ? 0 : 1
-        }} />
-
-        <div style={{
-          width: '100%',
-          textAlign: 'left',
-          position: 'relative',
-          zIndex: 10,
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          <div style={{ maxWidth: '900px' }} key={heroSlide} className="animate-fade-in-up">
-            {/* Headline */}
-            <h1 style={{
-              fontSize: 'clamp(2.8rem, 5.5vw, 5.5rem)',
-              fontWeight: '900',
-              lineHeight: 1.05,
-              color: isLight ? '#0f172a' : '#ffffff',
-              marginBottom: '20px',
-              letterSpacing: '-0.02em',
-              textTransform: 'uppercase'
-            }}>
-              {heroSlides[heroSlide].headline}
-              <span style={{
-                background: 'linear-gradient(135deg, #fde047 0%, #ea580c 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}>
-                {heroSlides[heroSlide].gradientText}
-              </span>
-            </h1>
-
-            {/* Subtitle */}
-            <div style={{
-              borderLeft: '5px solid #f97316',
-              paddingLeft: '24px',
-              marginBottom: '28px',
-              maxWidth: '700px'
-            }}>
-              <p style={{
-                fontSize: 'clamp(1.15rem, 1.5vw, 1.4rem)',
-                color: isLight ? '#334155' : '#e2e8f0',
-                lineHeight: 1.6,
-                fontWeight: '600'
-              }}>
-                {heroSlides[heroSlide].sub}
-              </p>
-            </div>
-
-            {/* Primary Call to Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-              <button
-                onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-                style={{
-                  display: 'flex',
-                  alignItems: 'stretch',
-                  cursor: 'pointer',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  boxShadow: '0 12px 30px rgba(0,0,0,0.15)'
-                }}
-              >
-                <div style={{
-                  padding: '16px 30px',
-                  fontSize: '1.1rem',
-                  fontWeight: '800',
-                  background: '#000000',
-                  color: '#ffffff',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}>
-                  {heroSlides[heroSlide].cta}
-                </div>
-                <div style={{
-                  padding: '0 24px',
-                  background: '#ea580c',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#ffffff',
-                  transition: 'background 0.2s'
-                }} className="hover:bg-amber-500">
-                  <ChevronRight size={28} strokeWidth={3} />
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Interactive Navigation / Carousel Controls (EY Style) */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          borderTop: isLight ? '1px solid rgba(0,0,0,0.2)' : '1px solid rgba(255,255,255,0.2)',
-          paddingTop: '20px',
-          paddingBottom: '30px',
-          zIndex: 10,
-          flexWrap: 'wrap',
-          gap: '16px',
-          position: 'relative'
-        }}>
-          {/* Link List */}
-          <div style={{ display: 'flex', gap: '40px', overflowX: 'auto', paddingBottom: '4px' }}>
-            {heroSlides.map((slide, index) => (
-              <span
-                key={index}
-                onClick={() => setHeroSlide(index)}
-                style={{
-                  fontSize: '1.05rem',
-                  fontWeight: heroSlide === index ? '800' : '600',
-                  color: isLight ? '#0f172a' : '#ffffff',
-                  opacity: heroSlide === index ? 1 : 0.6,
-                  borderBottom: heroSlide === index ? '3px solid #ea580c' : '3px solid transparent',
-                  paddingBottom: '6px',
-                  cursor: 'pointer',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  transition: 'all 0.2s ease'
-                }}
-                className="hover:opacity-100"
-              >
-                {slide.nav}
-              </span>
-            ))}
-          </div>
-
-          {/* Circular Controls */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={prevSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: isLight ? '#000000' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#ffffff' : '#000000', transition: 'transform 0.2s, background 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }} className="hover:scale-105 hover:bg-amber-600">
-              <ArrowLeft size={20} strokeWidth={2} />
-            </button>
-            <button onClick={nextSlide} style={{ width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: isLight ? '#000000' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: isLight ? '#ffffff' : '#000000', transition: 'transform 0.2s, background 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }} className="hover:scale-105 hover:bg-amber-600">
-              <ArrowRight size={20} strokeWidth={2} />
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Interactive Platform Sandbox Window Showcase */}
-      <section style={{ maxWidth: '1180px', margin: '20px auto 80px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
-        <div style={{
-          background: isLight ? '#ffffff' : '#0b0f19',
-          border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.3)',
-          borderRadius: '24px',
-          overflow: 'hidden',
-          boxShadow: isLight ? '0 20px 50px rgba(0,0,0,0.08)' : '0 20px 60px rgba(0,0,0,0.6)',
-        }}>
-          {/* Mac Top Window Controls Bar */}
+        <div style={{ maxWidth: '940px', margin: '0 auto', width: '100%', textAlign: 'center' }} className="animate-fade-in-up">
+          {/* Eyebrow */}
           <div style={{
-            background: isLight ? '#f1f5f9' : '#070a12',
-            padding: '14px 24px',
-            borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '12px'
+            display: 'inline-flex', alignItems: 'center', gap: '9px',
+            fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em',
+            textTransform: 'uppercase', color: isLight ? '#9a3412' : '#fdba74',
+            marginBottom: '30px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444' }} />
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#f59e0b' }} />
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#10b981' }} />
-              <span style={{ marginLeft: '12px', fontSize: '0.82rem', fontWeight: '700', color: subtextColor, fontFamily: 'monospace' }}>
-                quantora-sandbox://studio-v3.2
-              </span>
-            </div>
-
-            {/* Sandbox Tabs */}
-            <div style={{ display: 'flex', gap: '6px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '10px' }}>
-              <button
-                onClick={() => setActiveDemoTab('app-builder')}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeDemoTab === 'app-builder' ? (isLight ? '#ffffff' : '#f97316') : 'transparent',
-                  color: activeDemoTab === 'app-builder' ? (isLight ? '#0f172a' : '#ffffff') : subtextColor,
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <Code2 size={14} /> Live App Generator
-              </button>
-              <button
-                onClick={() => setActiveDemoTab('quantum')}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeDemoTab === 'quantum' ? (isLight ? '#ffffff' : '#06b6d4') : 'transparent',
-                  color: activeDemoTab === 'quantum' ? (isLight ? '#0f172a' : '#ffffff') : subtextColor,
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <Atom size={14} /> Quantum 3D Bloch
-              </button>
-              <button
-                onClick={() => setActiveDemoTab('multi-model')}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: activeDemoTab === 'multi-model' ? (isLight ? '#ffffff' : '#8b5cf6') : 'transparent',
-                  color: activeDemoTab === 'multi-model' ? (isLight ? '#0f172a' : '#ffffff') : subtextColor,
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <Cpu size={14} /> AI Orchestrator
-              </button>
-            </div>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
+            Possibility, built together
           </div>
 
-          {/* Interactive Tab Contents */}
-          <div style={{ padding: '28px' }}>
-            {activeDemoTab === 'app-builder' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: '700', color: subtextColor }}>
-                    Select or Type a Natural Language Prompt:
-                  </label>
-                  <textarea
-                    value={selectedPrompt}
-                    onChange={(e) => setSelectedPrompt(e.target.value)}
-                    rows={3}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      borderRadius: '12px',
-                      background: isLight ? '#f8fafc' : '#131927',
-                      border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.15)',
-                      color: textColor,
-                      fontSize: '0.92rem',
-                      outline: 'none',
-                      resize: 'none',
-                      fontFamily: 'inherit'
-                    }}
-                  />
+          {/* Headline — solid ink, a single accent, tight editorial tracking */}
+          <h1 style={{
+            fontSize: 'clamp(2.7rem, 6vw, 5.2rem)',
+            fontWeight: '800',
+            lineHeight: 1.02,
+            letterSpacing: '-0.035em',
+            color: isLight ? '#0b1220' : '#ffffff',
+            margin: '0 0 24px'
+          }}>
+            Dream bigger.<br/>
+            Let's build it <span style={{ color: '#ea580c' }}>together.</span>
+          </h1>
 
-                  {/* Preset prompt pills */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {samplePrompts.map((p, idx) => (
-                      <span
-                        key={idx}
-                        onClick={() => setSelectedPrompt(p)}
-                        style={{
-                          fontSize: '0.75rem',
-                          padding: '5px 12px',
-                          borderRadius: '9999px',
-                          background: selectedPrompt === p ? 'rgba(249, 115, 22, 0.2)' : (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'),
-                          border: selectedPrompt === p ? '1px solid #f97316' : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)'),
-                          color: selectedPrompt === p ? '#f59e0b' : subtextColor,
-                          cursor: 'pointer',
-                          fontWeight: '600'
-                        }}
-                      >
-                        Prompt #{idx + 1}
-                      </span>
-                    ))}
-                  </div>
+          {/* Subcopy — one line, deliberately brief */}
+          <p style={{
+            fontSize: 'clamp(1.05rem, 1.35vw, 1.28rem)',
+            color: isLight ? '#475569' : '#cbd5e1',
+            lineHeight: 1.6, fontWeight: '400',
+            maxWidth: '520px', margin: '0 auto 40px'
+          }}>
+            Say it in plain words. We'll build it together.
+          </p>
 
-                  <button
-                    onClick={handleRunSimulation}
-                    disabled={isSimulating}
-                    style={{
-                      padding: '12px 24px',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                      color: '#ffffff',
-                      border: 'none',
-                      fontWeight: '800',
-                      fontSize: '0.92rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      marginTop: '8px'
-                    }}
-                  >
-                    {isSimulating ? <RotateCcw className="animate-spin" size={16} /> : <Play size={16} />}
-                    {isSimulating ? 'Streaming React Code...' : 'Simulate Prompt-to-Code Generation'}
-                  </button>
-                </div>
-
-                {/* Simulated Output Preview Box */}
-                <div style={{
-                  background: isLight ? '#f8fafc' : '#05070f',
-                  borderRadius: '16px',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                  padding: '20px',
-                  fontFamily: 'monospace',
-                  fontSize: '0.82rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  position: 'relative'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', color: '#f59e0b' }}>
-                    <span>App.jsx • Output Console</span>
-                    <span style={{ color: '#10b981' }}>● SSE Live Stream</span>
-                  </div>
-
-                  {isSimulating ? (
-                    <div style={{ color: subtextColor, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <span style={{ color: '#3b82f6' }}>[1/3] Parsing intent with Gemini 1.5 Pro...</span>
-                      <span style={{ color: '#8b5cf6' }}>[2/3] Generating React components & Tailwind styles...</span>
-                      <span style={{ color: '#f59e0b' }}>[3/3] Compiling Vite bundle...</span>
-                    </div>
-                  ) : simulationComplete ? (
-                    <div style={{ color: '#10b981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <span>✓ Application compiled in 0.82s</span>
-                      <div style={{
-                        background: isLight ? '#ffffff' : '#0f172a',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: '1px dashed #10b981',
-                        color: textColor
-                      }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>🚀 Live Preview Rendered</div>
-                        <p style={{ margin: 0, fontSize: '0.78rem', color: subtextColor }}>
-                          "{selectedPrompt}" is ready! Click below to open in full Studio mode.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-                        style={{
-                          background: '#f97316',
-                          color: '#fff',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontWeight: '700',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          alignSelf: 'flex-start'
-                        }}
-                      >
-                        Open Live App in Studio <ArrowRight size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ color: subtextColor, lineHeight: 1.6 }}>
-                      <code>
-                        import React from 'react';<br/>
-                        // QUANTORA Prompt-to-Action Engine<br/>
-                        // Click 'Simulate Prompt' to see live SSE output<br/>
-                        export default function GeneratedApp() &#123;<br/>
-                        &nbsp;&nbsp;return &lt;div className="p-8 bg-slate-900"&gt;Ready&lt;/div&gt;<br/>
-                        &#125;
-                      </code>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeDemoTab === 'quantum' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#06b6d4' }}>
-                    2-Qubit Quantum Circuit Simulator
-                  </h3>
-                  <p style={{ fontSize: '0.9rem', color: subtextColor, lineHeight: 1.6, margin: 0 }}>
-                    Construct Hadamard (H), CNOT, and Pauli rotation gates. Compute exact state vector probability distributions |Ψ⟩ = α|00⟩ + β|01⟩ + γ|10⟩ + δ|11⟩.
-                  </p>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <span style={{ padding: '6px 12px', background: 'rgba(6, 182, 212, 0.15)', border: '1px solid #06b6d4', borderRadius: '8px', fontSize: '0.8rem', color: '#06b6d4', fontWeight: '700' }}>
-                      |q0⟩ ──[ H ]──■──
-                    </span>
-                    <span style={{ padding: '6px 12px', background: 'rgba(6, 182, 212, 0.15)', border: '1px solid #06b6d4', borderRadius: '8px', fontSize: '0.8rem', color: '#06b6d4', fontWeight: '700' }}>
-                      |q1⟩ ─────────┼──
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-                    style={{
-                      background: '#06b6d4',
-                      color: '#ffffff',
-                      border: 'none',
-                      padding: '10px 20px',
-                      borderRadius: '10px',
-                      fontWeight: '800',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      marginTop: '8px',
-                      alignSelf: 'flex-start'
-                    }}
-                  >
-                    Open 3D Bloch Simulator <ArrowRight size={16} />
-                  </button>
-                </div>
-
-                <div style={{
-                  background: isLight ? '#f8fafc' : '#05070f',
-                  borderRadius: '16px',
-                  padding: '20px',
-                  textAlign: 'center',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(6, 182, 212, 0.3)'
-                }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: '700', color: subtextColor, marginBottom: '12px' }}>
-                    Entangled State Vector: (|00⟩ + |11⟩) / √2
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', height: '100px', padding: '0 20px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ width: '32px', height: '60px', background: '#06b6d4', borderRadius: '6px 6px 0 0' }} />
-                      <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>|00⟩ 50%</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ width: '32px', height: '0px', background: '#334155', borderRadius: '6px 6px 0 0' }} />
-                      <span style={{ fontSize: '0.75rem', color: subtextColor }}>|01⟩ 0%</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ width: '32px', height: '0px', background: '#334155', borderRadius: '6px 6px 0 0' }} />
-                      <span style={{ fontSize: '0.75rem', color: subtextColor }}>|10⟩ 0%</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                      <div style={{ width: '32px', height: '60px', background: '#06b6d4', borderRadius: '6px 6px 0 0' }} />
-                      <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>|11⟩ 50%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeDemoTab === 'multi-model' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-                <div style={{ background: isLight ? '#f8fafc' : '#131927', padding: '16px', borderRadius: '14px', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
-                  <div style={{ fontWeight: '800', color: '#f59e0b', marginBottom: '6px' }}>Gemini 1.5 Pro (Primary)</div>
-                  <p style={{ fontSize: '0.82rem', color: subtextColor, margin: 0 }}>2M token context window for full-stack code synthesis and file mapping.</p>
-                </div>
-                <div style={{ background: isLight ? '#f8fafc' : '#131927', padding: '16px', borderRadius: '14px', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-                  <div style={{ fontWeight: '800', color: '#8b5cf6', marginBottom: '6px' }}>GPT-4o & DeepSeek-V3</div>
-                  <p style={{ fontSize: '0.82rem', color: subtextColor, margin: 0 }}>Multi-model fallback routing for logic optimization & security checks.</p>
-                </div>
-                <div style={{ background: isLight ? '#f8fafc' : '#131927', padding: '16px', borderRadius: '14px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                  <div style={{ fontWeight: '800', color: '#10b981', marginBottom: '6px' }}>Zero Latency SSE</div>
-                  <p style={{ fontSize: '0.82rem', color: subtextColor, margin: 0 }}>Real-time code streaming directly to live container iframe.</p>
-                </div>
-              </div>
-            )}
+          {/* Real prompt box — the product, front and centre */}
+          <div style={{
+            maxWidth: '700px', margin: '0 auto',
+            background: isLight ? '#ffffff' : 'rgba(17,23,38,0.92)',
+            border: isLight ? '1px solid #e5e7eb' : '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '16px',
+            padding: '10px 10px 10px 18px',
+            display: 'flex', alignItems: 'center', gap: '12px',
+            boxShadow: isLight ? '0 14px 44px rgba(15,23,42,0.10)' : '0 14px 48px rgba(0,0,0,0.5)',
+            textAlign: 'left'
+          }}>
+            <textarea
+              value={heroPrompt}
+              onChange={(e) => setHeroPrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
+              rows={1}
+              placeholder={heroExamples[phIdx]}
+              style={{
+                flex: 1, resize: 'none', border: 'none', outline: 'none',
+                background: 'transparent', color: textColor,
+                fontSize: '1.02rem', lineHeight: 1.5, fontFamily: 'inherit',
+                padding: '11px 0', maxHeight: '120px'
+              }}
+            />
+            <button onClick={() => startBuild()} style={{
+              flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '8px',
+              background: '#ea580c', color: '#ffffff', border: 'none',
+              padding: '13px 24px', borderRadius: '11px',
+              fontSize: '0.98rem', fontWeight: '700', cursor: 'pointer'
+            }}>
+              Build free <ArrowRight size={17} strokeWidth={2.5} />
+            </button>
           </div>
+
+        </div>
+
+        {/* Live model strip — muted, sourced from the real registry */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: '14px', flexWrap: 'wrap',
+          margin: '58px auto 0', maxWidth: '940px', width: '100%'
+        }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: isLight ? '#94a3b8' : '#64748b' }}>
+            {liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}
+          </span>
+          {liveModelNames.map((name, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', fontSize: '0.8rem', fontWeight: '600', color: isLight ? '#64748b' : '#94a3b8' }}>
+              <span style={{ opacity: 0.4 }}>·</span> {name}
+            </span>
+          ))}
         </div>
       </section>
 
-      <section className="flagship-experience" aria-labelledby="flagship-experience-title">
-        <div className="flagship-experience-heading">
-          <span>The Quantora experience</span>
-          <h2 id="flagship-experience-title">Choose where your idea goes next.</h2>
-          <p>One intelligent workspace. Four distinct ways to move from curiosity to action.</p>
-        </div>
+      {/* Belief statement — one bold line, the way great brands lead */}
+      <section style={{
+        padding: 'clamp(70px, 12vh, 140px) 6%',
+        position: 'relative', zIndex: 10,
+        background: isLight ? '#0b1220' : 'rgba(255,255,255,0.02)',
+        borderTop: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        borderBottom: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)'
+      }}>
+        <Reveal>
+          <div style={{ maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
+            <span style={{ fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#fdba74' }}>
+              What we believe
+            </span>
+            <p style={{
+              fontSize: 'clamp(1.7rem, 3.4vw, 3rem)',
+              fontWeight: '700',
+              lineHeight: 1.22,
+              letterSpacing: '-0.02em',
+              color: '#ffffff',
+              margin: '24px auto 0',
+              maxWidth: '940px'
+            }}>
+              The distance between an idea and something real should be a
+              <span style={{ color: '#f97316' }}> conversation</span> — not a budget,
+              a team, or a year of waiting. So we set out to close it, <span style={{ color: '#f97316' }}>together</span>.
+            </p>
+          </div>
+        </Reveal>
+      </section>
 
+      {/* How it works — the real journey, no simulation */}
+      <section style={{ maxWidth: '1180px', margin: '90px auto 90px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+        <Reveal>
+          <div style={{ textAlign: 'center', marginBottom: '44px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>From idea to reality</span>
+            <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Four steps from a sentence to something live.</h2>
+            <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '640px', margin: '0 auto', lineHeight: 1.6 }}>No code, no setup, no templates. The value is the finished thing you can share and act on — not the code behind it.</p>
+          </div>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+          {journey.map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
+              <div style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', position: 'relative', overflow: 'hidden', height: '100%' }}>
+                <div style={{ position: 'absolute', top: '14px', right: '18px', fontSize: '2.4rem', fontWeight: '900', color: s.color, opacity: 0.14, lineHeight: 1 }}>{s.step}</div>
+                <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: `${s.color}1f`, border: `1px solid ${s.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                  <Icon size={22} color={s.color} />
+                </div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: '0 0 8px', color: textColor }}>{s.title}</h3>
+                <p style={{ fontSize: '0.92rem', color: subtextColor, lineHeight: 1.55, margin: 0 }}>{s.body}</p>
+              </div>
+              </Reveal>
+            );
+          })}
+        </div>
+        <Reveal delay={120}>
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <button onClick={() => startBuild()} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '15px 32px', borderRadius: '14px', fontSize: '1.05rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 10px 28px rgba(249,115,22,0.4)' }}>
+              Start building free <ArrowRight size={19} strokeWidth={2.5} />
+            </button>
+          </div>
+        </Reveal>
+      </section>
+      {/* Under the hood — the real engineering, honestly stated */}
+      <section style={{ maxWidth: '1180px', margin: '0 auto 96px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+        <Reveal>
+          <div style={{ textAlign: 'center', marginBottom: '44px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>Under the hood</span>
+            <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Not another AI wrapper.</h2>
+            <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '680px', margin: '0 auto', lineHeight: 1.6 }}>Quantora is a system, not a prompt box with a logo. Frontier models, a self-correcting build loop, and a privacy-first core — engineered to turn a conversation into something real, reliably.</p>
+          </div>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+          {techPillars.map((t, i) => {
+            const Icon = t.icon;
+            return (
+              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
+              <div style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', height: '100%' }}>
+                <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: `${t.color}1f`, border: `1px solid ${t.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                  <Icon size={22} color={t.color} />
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 8px', color: textColor }}>{t.title}</h3>
+                <p style={{ fontSize: '0.92rem', color: subtextColor, lineHeight: 1.55, margin: 0 }}>{t.body}</p>
+              </div>
+              </Reveal>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="flagship-band" style={{
+        background: isLight ? '#070b16' : '#04060d',
+        '--page-bg': isLight ? '#f8fafc' : '#070913'
+      }}>
+      <section className="flagship-experience" aria-labelledby="flagship-experience-title">
+        <Reveal>
+          <div className="flagship-experience-heading flagship-heading-ondark">
+            <span>Our belief</span>
+            <h2 id="flagship-experience-title">Together, there's no limit to what you can make real.</h2>
+            <p style={{ fontStyle: 'italic', opacity: 0.9 }}>
+              “Dream, dream, dream. Dreams transform into thoughts, and thoughts result in action.” — Dr. A.P.J. Abdul Kalam
+            </p>
+            <p>We're not here to sell you software. We're here to stand beside your imagination — to help an idea become a thought, and a thought become action. What you build is yours. The possibilities are endless.</p>
+          </div>
+        </Reveal>
+
+        <Reveal delay={80}>
         <div
           className="flagship-stage"
           style={{ '--flagship-accent': selectedCapability.color }}
         >
+          <div key={`${selectedCapability.id}-bar`} className="flagship-progress" style={{ background: selectedCapability.color }} />
           <div
             key={selectedCapability.id}
             className="flagship-stage-image"
@@ -812,7 +559,9 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             })}
           </div>
         </div>
+        </Reveal>
 
+        <Reveal delay={120}>
         <div className="flagship-supporting-strip">
           <div>
             <Search size={17} color="#ec4899" />
@@ -823,7 +572,9 @@ export default function LandingPage({ onLaunchStudio, onOpenAuth, user, themeMod
             <span><strong>Live model intelligence</strong><small>Availability, reliability and usage without operational clutter.</small></span>
           </div>
         </div>
+        </Reveal>
       </section>
+      </div>
 
       {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
     </div>

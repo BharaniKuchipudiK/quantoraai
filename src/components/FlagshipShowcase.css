@@ -54,7 +54,26 @@
   z-index: -2;
   background-position: center;
   background-size: cover;
-  animation: flagship-image-in 600ms cubic-bezier(.16, 1, .3, 1);
+  /* Enter with a soft crossfade, then drift forever (Ken Burns) so the frame
+     always feels alive rather than a static screenshot. */
+  animation:
+    flagship-image-in 900ms cubic-bezier(.16, 1, .3, 1),
+    flagship-kenburns 22s ease-in-out 900ms infinite alternate;
+}
+
+/* Thin progress bar across the top of the stage; re-keyed on each change so it
+   refills over exactly one auto-advance interval — the cinematic "reel" cue. */
+.flagship-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  z-index: 6;
+  opacity: 0.9;
+  animation: flagship-progress 5200ms linear forwards;
 }
 
 .flagship-stage-shade {
@@ -172,14 +191,75 @@
 .flagship-supporting-strip small { color: var(--text-secondary); font-size: 0.68rem; line-height: 1.4; }
 
 @keyframes flagship-image-in {
-  from { opacity: 0.55; transform: scale(1.035); }
+  from { opacity: 0.5; transform: scale(1.06); }
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes flagship-kenburns {
+  from { transform: scale(1); }
+  to { transform: scale(1.09); }
+}
+
+@keyframes flagship-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
 @keyframes flagship-content-in {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/*
+ * Full-bleed cinematic band. The section used to be a hard dark rectangle
+ * floating on the light page; now it sits inside a band whose top and bottom
+ * fade THROUGH the page colour into deep space and back, so the dark emerges
+ * and dissolves seamlessly instead of cutting a seam. (Background gradient is
+ * set inline so it can follow the active theme.)
+ */
+.flagship-band {
+  position: relative;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  padding: clamp(118px, 12vw, 160px) 0;
+  overflow: hidden;
+}
+/* Short, fixed-height fades at the two edges only — a crisp transition into
+   and out of the dark, instead of a tall grey gradient smeared across the
+   whole (very tall) section. */
+.flagship-band::before,
+.flagship-band::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 104px;
+  pointer-events: none;
+  z-index: 3;
+}
+.flagship-band::before { top: 0; background: linear-gradient(180deg, var(--page-bg) 0%, transparent 100%); }
+.flagship-band::after { bottom: 0; background: linear-gradient(0deg, var(--page-bg) 0%, transparent 100%); }
+.flagship-band .flagship-experience { position: relative; z-index: 1; margin-bottom: 0; }
+
+/* Heading now sits on the dark band — lift its text to light. */
+.flagship-heading-ondark h2 { color: #ffffff; }
+.flagship-heading-ondark p { color: rgba(255, 255, 255, 0.74); }
+
+/* Soften the stage so it belongs to the band rather than reading as a card. */
+.flagship-band .flagship-stage {
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 44px 120px rgba(0, 0, 0, 0.55);
+}
+
+/* Supporting strip cards, restyled for the dark band. */
+.flagship-band .flagship-supporting-strip > div {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.flagship-band .flagship-supporting-strip strong { color: #ffffff; }
+.flagship-band .flagship-supporting-strip small { color: rgba(255, 255, 255, 0.6); }
+
+.flagship-stage-content { animation: flagship-content-in 650ms cubic-bezier(.16, 1, .3, 1); }
 
 @media (max-width: 760px) {
   .flagship-experience { width: calc(100% - 28px); margin-bottom: 58px; }
@@ -201,4 +281,5 @@
 @media (prefers-reduced-motion: reduce) {
   .flagship-stage-image,
   .flagship-stage-content { animation: none; }
+  .flagship-progress { animation: none; transform: scaleX(1); opacity: 0.5; }
 }
