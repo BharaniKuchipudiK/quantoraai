@@ -2,6 +2,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
 import { createSessionToken, setSessionCookie, isSessionConfigured } from '../_lib/session.js';
 import { isAdminUser, recordSignIn } from '../_lib/store.js';
+import { getRequestGeo } from '../_lib/geo.js';
 
 /*
  * The client ID is read strictly from the environment, with no placeholder
@@ -95,6 +96,7 @@ export default async function handler(req: any, res: any) {
       email: payload.email,
       name: payload.name || payload.email.split('@')[0],
       picture: payload.picture || '',
+      geo: getRequestGeo(req),
     });
 
     if (stored?.blocked_at) {

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { recordModelQualityEvent, recordUsage } from "./_lib/store.js";
+import { getRequestGeo } from "./_lib/geo.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
 import { normalizeSessionContext } from "./_lib/session-context.js";
@@ -202,7 +203,9 @@ function logTelemetry(
   userSub: string | null = null,
   usedServerKey: boolean = false,
   context: { studioMode?: string | null; studioDomain?: string | null; choiceSelected?: boolean } = {},
+  req: any = null,
 ) {
+  const geo = getRequestGeo(req);
   recordUsage({
     userSub,
     provider,
@@ -213,6 +216,7 @@ function logTelemetry(
     studioMode: context.studioMode ?? null,
     studioDomain: context.studioDomain ?? null,
     choiceSelected: context.choiceSelected === true,
+    countryCode: geo?.countryCode ?? null,
   });
 
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -431,7 +435,7 @@ export default async function handler(req: any, res: any) {
         }
         
         const latencyMs = Date.now() - startTime;
-        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext);
+        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
         recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
         res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true })}\n\n`);
@@ -548,7 +552,7 @@ export default async function handler(req: any, res: any) {
 
       const latencyMs = Date.now() - startTime;
       logTelemetry(openRouterModelId, latencyMs, fullReply.length, "OpenRouter",
-        sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext);
+        sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
       recordModelQualityEvent({ requestId, modelId: openRouterModelId, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
       res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, requestId, liveConnected: true })}\n\n`);

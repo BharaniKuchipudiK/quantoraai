@@ -61,6 +61,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
    supabase/migrations/0009_product_views_security.sql
    supabase/migrations/0010_product_events.sql
    supabase/migrations/0011_technical_analytics_views.sql
+   supabase/migrations/0012_user_geo.sql
    ```
 
 2. **Verify after deploy**
