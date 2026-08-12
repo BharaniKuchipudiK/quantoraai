@@ -16,7 +16,7 @@ const escapeMatch = harnessed.match(/preview-close-request/);
 
 appendFileSync(logPath, `${JSON.stringify({
   sessionId: 'd0f2b5',
-  runId: 'preview-close-v7',
+  runId: 'preview-close-v9',
   location: 'scripts/verify-preview-flow.mjs',
   message: 'harness escape check',
   data: {
