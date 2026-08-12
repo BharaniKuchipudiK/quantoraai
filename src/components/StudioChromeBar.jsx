@@ -27,6 +27,7 @@ export function writeStudioChromeCollapsed(collapsed) {
 
 /**
  * Collapsible studio header — expanded for session context, compact for chat real estate.
+ * Arena mode lives in the overflow menu (power feature, not default chrome).
  */
 export default function StudioChromeBar({
   isLight,
@@ -45,12 +46,9 @@ export default function StudioChromeBar({
   arenaMode,
   onToggleArena,
   secondModel,
-  showSecondModelDropdown,
-  onToggleSecondModelDropdown,
   onSelectSecondModel,
   availableModels,
   onResetChat,
-  arenaDropdown,
 }) {
   const [collapsed, setCollapsed] = useState(() => readStudioChromeCollapsed());
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -62,6 +60,8 @@ export default function StudioChromeBar({
       return next;
     });
   };
+
+  const closeOverflow = () => setOverflowOpen(false);
 
   const modelLabel = isGenerating
     ? (activeGeneratingModel?.name || 'Preparing…')
@@ -102,6 +102,11 @@ export default function StudioChromeBar({
                     {hasMemory && (
                       <span className="studio-chrome__memory-pill" title={memoryLabel}>{memoryLabel}</span>
                     )}
+                    {arenaMode && (
+                      <span className="studio-chrome__arena-pill" title="Arena mode — comparing two models">
+                        Arena
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -110,53 +115,57 @@ export default function StudioChromeBar({
         </div>
 
         <div className="studio-chrome__actions">
-          {!collapsed && (
-            <>
-              <button
-                type="button"
-                className={`studio-chrome__pill${arenaMode ? ' is-active' : ''}`}
-                onClick={onToggleArena}
-                title="Compare two models side-by-side"
-              >
-                <Layers size={14} />
-                {arenaMode ? 'Arena on' : 'Arena'}
-              </button>
-              {arenaMode && (
-                <div className="studio-chrome__arena-select">
-                  <button
-                    type="button"
-                    className="studio-chrome__pill is-outline"
-                    onClick={onToggleSecondModelDropdown}
-                  >
-                    VS: {secondModel?.name?.split(' ')[0] || 'Model B'}
-                    <ChevronDown size={12} />
-                  </button>
-                  {showSecondModelDropdown && arenaDropdown}
-                </div>
-              )}
-            </>
-          )}
-
           <div className="studio-chrome__overflow-wrap">
             <button
               type="button"
-              className="studio-chrome__icon-btn"
+              className={`studio-chrome__icon-btn${arenaMode ? ' is-active' : ''}`}
               onClick={() => setOverflowOpen((v) => !v)}
               aria-expanded={overflowOpen}
-              title="More actions"
+              title={arenaMode ? 'More actions (Arena on)' : 'More actions'}
             >
               <MoreHorizontal size={17} />
             </button>
             {overflowOpen && (
               <>
-                <div className="studio-chrome__backdrop" onClick={() => setOverflowOpen(false)} />
-                <div className="studio-chrome__overflow-menu">
-                  {collapsed && (
-                    <button type="button" onClick={() => { onToggleArena(); setOverflowOpen(false); }}>
-                      {arenaMode ? 'Disable arena mode' : 'Enable arena mode'}
-                    </button>
+                <div className="studio-chrome__backdrop" onClick={closeOverflow} />
+                <div className={`studio-chrome__overflow-menu${arenaMode ? ' is-wide' : ''}`}>
+                  <button
+                    type="button"
+                    className={arenaMode ? 'is-active' : ''}
+                    onClick={() => { onToggleArena(); if (arenaMode) closeOverflow(); }}
+                  >
+                    <Layers size={14} />
+                    {arenaMode ? 'Disable arena mode' : 'Compare models (Arena)'}
+                  </button>
+
+                  {arenaMode && (
+                    <div className="studio-chrome__overflow-section">
+                      <div className="studio-chrome__overflow-label">Model B</div>
+                      <div className="studio-chrome__overflow-models">
+                        {(availableModels || []).map((m) => {
+                          const isAvailable = m.available !== false;
+                          const isSelected = secondModel?.id === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              disabled={!isAvailable}
+                              className={isSelected ? 'is-selected' : ''}
+                              onClick={() => {
+                                if (!isAvailable) return;
+                                onSelectSecondModel?.(m);
+                              }}
+                            >
+                              <span style={{ textDecoration: !isAvailable ? 'line-through' : 'none' }}>{m.name}</span>
+                              {isSelected && <span className="studio-chrome__overflow-check">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                  <button type="button" onClick={() => { onResetChat(); setOverflowOpen(false); }}>
+
+                  <button type="button" onClick={() => { onResetChat(); closeOverflow(); }}>
                     <RefreshCw size={14} /> Reset chat
                   </button>
                 </div>

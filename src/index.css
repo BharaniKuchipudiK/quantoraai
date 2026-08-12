@@ -1039,6 +1039,76 @@ body {
   color: #f97316;
 }
 
+.studio-chrome__icon-btn.is-active {
+  background: rgba(249, 115, 22, 0.18);
+  color: #f97316;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.35);
+}
+
+.studio-chrome__arena-pill {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.15);
+  color: #fdba74;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
+.studio-chrome__overflow-menu.is-wide {
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
+}
+
+.studio-chrome__overflow-menu button.is-active {
+  background: rgba(249, 115, 22, 0.12);
+  color: #f97316;
+}
+
+.studio-chrome__overflow-section {
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  margin: 4px 0;
+  padding: 6px 0;
+}
+
+.studio-chrome__overflow-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 4px 10px 6px;
+}
+
+.studio-chrome__overflow-models {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.studio-chrome__overflow-models button {
+  font-size: 0.74rem;
+  justify-content: space-between;
+}
+
+.studio-chrome__overflow-models button.is-selected {
+  background: rgba(249, 115, 22, 0.12);
+  color: #f97316;
+  font-weight: 700;
+}
+
+.studio-chrome__overflow-models button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.studio-chrome__overflow-check {
+  font-size: 0.72rem;
+  color: #f97316;
+}
+
 .studio-chrome__arena-select { position: relative; }
 
 .studio-chrome__overflow-wrap { position: relative; }

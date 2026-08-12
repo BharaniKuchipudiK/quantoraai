@@ -1100,7 +1100,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     try { return localStorage.getItem('quantora_arena_hint_dismissed') === '1'; } catch { return false; }
   });
   const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
-  const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
 
   useEffect(() => {
@@ -2802,55 +2801,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           arenaMode={arenaMode}
           onToggleArena={() => setArenaMode(!arenaMode)}
           secondModel={secondModel}
-          showSecondModelDropdown={showSecondModelDropdown}
-          onToggleSecondModelDropdown={() => setShowSecondModelDropdown(!showSecondModelDropdown)}
+          onSelectSecondModel={(m) => setSecondModel(m)}
+          availableModels={availableModels}
           onResetChat={() => updateActiveMessages([])}
-          arenaDropdown={showSecondModelDropdown && (
-            <div style={{
-              position: 'absolute',
-              top: '120%',
-              right: 0,
-              width: '240px',
-              background: isLight ? '#ffffff' : '#0d1127',
-              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
-              borderRadius: '14px',
-              padding: '8px',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-              zIndex: 300,
-            }}>
-              <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '4px 8px', fontWeight: '700', textTransform: 'uppercase' }}>
-                Select competitor (Model B)
-              </div>
-              {availableModels && availableModels.map((m) => {
-                const isAvailable = m.available !== false;
-                return (
-                  <div
-                    key={m.id}
-                    onClick={() => {
-                      if (!isAvailable) return;
-                      setSecondModel(m);
-                      setShowSecondModelDropdown(false);
-                    }}
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '8px',
-                      cursor: isAvailable ? 'pointer' : 'not-allowed',
-                      background: secondModel?.id === m.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.8rem',
-                      color: !isAvailable ? subtextColor : (secondModel?.id === m.id ? '#f97316' : textColor),
-                      fontWeight: secondModel?.id === m.id ? '700' : '500',
-                      opacity: isAvailable ? 1 : 0.6,
-                    }}
-                  >
-                    <span style={{ textDecoration: !isAvailable ? 'line-through' : 'none' }}>{m.name}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         />
 
         {arenaMode && !arenaHintDismissed && (
@@ -2858,8 +2811,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div style={{ flex: 1 }}>
               <strong>Arena mode</strong> — compare two models on the same prompt, side by side.
               <div className="studio-arena-hint__steps">
-                <span className="studio-arena-hint__step"><span>1</span> Turn Arena on</span>
-                <span className="studio-arena-hint__step"><span>2</span> Pick Model B via VS dropdown</span>
+                <span className="studio-arena-hint__step"><span>1</span> ⋯ menu → Compare models (Arena)</span>
+                <span className="studio-arena-hint__step"><span>2</span> Pick Model B in the ⋯ menu</span>
                 <span className="studio-arena-hint__step"><span>3</span> Send one prompt — both answer in parallel</span>
               </div>
             </div>
