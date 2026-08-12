@@ -234,6 +234,13 @@ export default function LivePreviewCanvas({
         setEmbedReady(true);
         return;
       }
+      if (d.kind === 'preview-close-request') {
+        // #region agent log
+        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v2',location:'LivePreviewCanvas:preview-close-request',message:'iframe escape forwarded close',data:{isFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-iframe'})}).catch(()=>{});
+        // #endregion
+        onClose?.();
+        return;
+      }
       if (d.kind === 'resource-error') {
         handleRuntimeError(String(d.message || 'Resource load error'));
         return;
@@ -262,7 +269,7 @@ export default function LivePreviewCanvas({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRuntimeError]);
+  }, [handleRuntimeError, onClose, isFullscreen]);
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
@@ -416,34 +423,6 @@ export default function LivePreviewCanvas({
           </button>
         </div>
       </div>
-
-      {isFullscreen && onClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close preview (Esc)"
-          aria-label="Close preview"
-          style={{
-            position: 'absolute',
-            top: '12px',
-            right: '12px',
-            zIndex: 100,
-            width: '40px',
-            height: '40px',
-            borderRadius: '12px',
-            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
-            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-            cursor: 'pointer',
-            color: isLight ? '#334155' : '#e2e8f0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <X size={20} />
-        </button>
-      )}
 
       {statusUI && (
         <div style={{

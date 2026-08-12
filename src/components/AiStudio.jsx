@@ -941,6 +941,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
 
+  const closePreviewModal = () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v2',location:'AiStudio:closePreviewModal',message:'preview modal closed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-ui'})}).catch(()=>{});
+    // #endregion
+    setCanvasOpen(false);
+    setCanvasFullscreen(false);
+  };
+
   useEffect(() => {
     if (!canvasOpen) return undefined;
     const onKeyDown = (event) => {
@@ -948,13 +956,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       event.preventDefault();
       event.stopPropagation();
       // #region agent log
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-fix',location:'AiStudio:canvas-escape',message:'preview escape pressed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v2',location:'AiStudio:canvas-escape',message:'preview escape pressed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close'})}).catch(()=>{});
       // #endregion
-      if (canvasFullscreen) {
-        setCanvasFullscreen(false);
-      } else {
-        setCanvasOpen(false);
-      }
+      closePreviewModal();
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
@@ -3419,6 +3423,33 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           justifyContent: 'center',
           padding: canvasFullscreen ? 0 : '24px'
         }}>
+          {canvasFullscreen && (
+            <button
+              type="button"
+              onClick={closePreviewModal}
+              title="Close preview (Esc)"
+              aria-label="Close preview"
+              style={{
+                position: 'fixed',
+                top: '16px',
+                right: '16px',
+                zIndex: 10001,
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                background: isLight ? '#ffffff' : 'rgba(15,23,42,0.95)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                cursor: 'pointer',
+                color: isLight ? '#334155' : '#e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={22} />
+            </button>
+          )}
           <div style={{
             width: '100%',
             maxWidth: canvasFullscreen ? '100%' : '1200px',
@@ -3436,7 +3467,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               isLight={isLight} 
               isFullscreen={canvasFullscreen}
               onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
-              onClose={() => { setCanvasOpen(false); setCanvasFullscreen(false); }} 
+              onClose={closePreviewModal} 
             />
           </div>
         </div>
