@@ -47,6 +47,34 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
   const [domainInput, setDomainInput] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [connectResult, setConnectResult] = useState(null); // { domain, records, verified } | { error }
+  const [stripeAccount, setStripeAccount] = useState(() => { try { return localStorage.getItem('quantoraStripeAccount') || ''; } catch { return ''; } });
+  const [stripeBusy, setStripeBusy] = useState(false);
+  const [stripeError, setStripeError] = useState('');
+
+  const handleConnectStripe = async () => {
+    if (stripeBusy) return;
+    setStripeBusy(true);
+    setStripeError('');
+    try {
+      const res = await fetch('/api/deploy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: 'stripe-onboard' })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || 'Could not start Stripe onboarding.');
+      // Open Stripe onboarding; on completion it returns to the app, which
+      // captures the account id. Owner clicks "I've connected" to refresh here.
+      window.open(data.url, '_blank', 'noopener');
+    } catch (err) {
+      setStripeError(err.message || 'Stripe onboarding failed.');
+    } finally {
+      setStripeBusy(false);
+    }
+  };
+
+  const refreshStripeAccount = () => {
+    try { setStripeAccount(localStorage.getItem('quantoraStripeAccount') || ''); } catch { /* ignore */ }
+  };
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
@@ -323,6 +351,31 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
                 </div>
               </div>
             )}
+            {/* Accept real payments (Stripe Connect) */}
+            <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
+              <h3 style={{ fontSize: '0.9rem', color: isLight ? '#334155' : '#cbd5e1', marginBottom: '10px' }}>💳 Accept payments</h3>
+              {stripeAccount ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#10b981', fontWeight: 600 }}>
+                  ✓ Stripe connected — checkout on your store pays into your account.
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: '0.78rem', color: isLight ? '#475569' : '#94a3b8', margin: '0 0 10px' }}>
+                    Connect your own Stripe account so sales go straight to you. Opens Stripe in a new tab; come back and click “I’ve connected”.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={handleConnectStripe} disabled={stripeBusy} style={{ background: stripeBusy ? '#94a3b8' : '#635bff', border: 'none', color: '#fff', padding: '9px 14px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', cursor: stripeBusy ? 'not-allowed' : 'pointer' }}>
+                      {stripeBusy ? 'Opening…' : 'Connect Stripe'}
+                    </button>
+                    <button onClick={refreshStripeAccount} style={{ background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', padding: '9px 14px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                      I’ve connected
+                    </button>
+                  </div>
+                  {stripeError && <p style={{ color: '#ef4444', fontSize: '0.76rem', marginTop: '8px' }}>{stripeError}</p>}
+                </div>
+              )}
+            </div>
+
             {/* Connect a custom domain */}
             <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
               <h3 style={{ fontSize: '0.9rem', color: isLight ? '#334155' : '#cbd5e1', marginBottom: '10px' }}>🌐 Connect your own domain</h3>

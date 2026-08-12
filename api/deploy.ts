@@ -1,4 +1,8 @@
 import { fetchApiGatewayKey } from './autocomplete';
+import { createConnectOnboarding, createCheckoutSession } from './_lib/stripe.js';
+
+// Configurable platform fee (%). 0 = the boutique owner keeps 100% of a sale.
+const PLATFORM_FEE_PERCENT = Number(process.env.QUANTORA_PLATFORM_FEE_PERCENT || 0);
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -6,7 +10,42 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { code, projectName = 'quantora-app' } = req.body;
+    const { code, projectName = 'quantora-app', task } = req.body;
+
+    /*
+     * Stripe Connect (folded in to stay within the serverless function limit).
+     * Inert until STRIPE_SECRET_KEY is configured.
+     *   - stripe-onboard: the owner attaches their own Stripe; payments land in
+     *     their account, not the platform's.
+     *   - stripe-checkout: a customer on the published site pays; the session is
+     *     created ON the owner's connected account.
+     */
+    if (task === 'stripe-onboard' || task === 'stripe-checkout') {
+      const stripeKey = await fetchApiGatewayKey('STRIPE') || process.env.STRIPE_SECRET_KEY;
+      if (!stripeKey) {
+        return res.status(501).json({ error: 'Payments are not enabled yet. Add a STRIPE_SECRET_KEY to the API Gateway to accept real payments.' });
+      }
+      const appUrl = process.env.APP_URL || 'https://quantoraai.app';
+      try {
+        if (task === 'stripe-onboard') {
+          const result = await createConnectOnboarding(stripeKey, appUrl);
+          return res.status(200).json(result); // { accountId, url }
+        }
+        const { stripeAccount, items, successUrl, cancelUrl } = req.body;
+        const result = await createCheckoutSession(stripeKey, {
+          connectedAccount: stripeAccount,
+          items,
+          successUrl,
+          cancelUrl,
+          applicationFeePercent: PLATFORM_FEE_PERCENT,
+        });
+        return res.status(200).json(result); // { url, id }
+      } catch (stripeErr: any) {
+        console.error('Stripe error:', stripeErr);
+        return res.status(400).json({ error: stripeErr?.message || 'Payment step failed.' });
+      }
+    }
+
     if (!code) return res.status(400).json({ error: "No code provided for deployment" });
 
     // Fetch Vercel token from Supabase vault

@@ -114,6 +114,21 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // When Stripe finishes onboarding it returns to /?stripe=connected&account=…
+  // Capture the connected account id so published shops can charge into it,
+  // then clean the URL.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('stripe') === 'connected' && params.get('account')) {
+        localStorage.setItem('quantoraStripeAccount', params.get('account'));
+        params.delete('stripe'); params.delete('account');
+        const clean = window.location.pathname + (params.toString() ? `?${params}` : '');
+        window.history.replaceState({}, '', clean);
+      }
+    } catch (e) { /* ignore */ }
+  }, []);
+
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
       setIsVerifyingLogin(true);
