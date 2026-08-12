@@ -3,6 +3,12 @@ export const PREVIEW_EMBED_PATH = '/preview/embed.html';
 export const PREVIEW_RELAXED_CSP =
   "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';";
 
+export const PREVIEW_TAILWIND_PROBE_ID = '__quantora_tailwind_probe';
+
+// Dedicated probe element — do not reuse `.hidden`; generated navs use `hidden md:flex`.
+export const PREVIEW_TAILWIND_PROBE =
+  `<div id="${PREVIEW_TAILWIND_PROBE_ID}" class="hidden" aria-hidden="true" style="display:none"></div>`;
+
 // Harness injected into generated HTML inside the preview iframe document.
 export const PREVIEW_ERROR_HARNESS = `<script>(function(){
   function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
@@ -26,7 +32,7 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
   window.addEventListener('load', function(){
     setTimeout(function(){
       var tailwindScript = document.querySelector('script[src*="tailwindcss"]');
-      var probe = document.querySelector('.hidden');
+      var probe = document.getElementById('${PREVIEW_TAILWIND_PROBE_ID}');
       var stylingOk = true;
       if (tailwindScript && probe) {
         stylingOk = window.getComputedStyle(probe).display === 'none';
@@ -38,9 +44,10 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
 
 export function injectPreviewHarness(html) {
   const safe = html || '';
-  if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + PREVIEW_ERROR_HARNESS);
-  if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + PREVIEW_ERROR_HARNESS + '</head>');
-  return PREVIEW_ERROR_HARNESS + safe;
+  const bundle = PREVIEW_ERROR_HARNESS + PREVIEW_TAILWIND_PROBE;
+  if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + bundle);
+  if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + bundle + '</head>');
+  return bundle + safe;
 }
 
 export function usesTailwindCdn(html) {
