@@ -20,7 +20,9 @@ function buildRepairPrompt(code: string, error: string, framework: string) {
   const system =
     `You are a precise code-repair engine. You are given a ${kind} that failed at runtime and the error it produced. ` +
     `Return the COMPLETE corrected ${framework === "react" ? "module" : "document"} and NOTHING else — no explanation, no commentary, no markdown code fences. ` +
-    `Preserve the original design, content and intent; change only what is necessary to fix the error. ` +
+    `Preserve the original design, content and intent EXACTLY; change only the single thing that causes the error. ` +
+    `Do NOT simplify, restyle, or "clean up" the code. Keep every <style> block, inline style, CSS class, layout, color, font and image byte-for-byte unless it is the direct cause of the error. ` +
+    `The corrected output must be at least as long as the input. ` +
     (framework === "react"
       ? `The module must default-export a React component and must not import anything that is not available.`
       : `The document must remain fully self-contained: all CSS and JS inline, no external build step, no bare module imports.`);
