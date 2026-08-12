@@ -28,7 +28,12 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 - [x] Live Preview fullscreen close fix (portal overlay)
 - [x] Conversation memory loop (`quantora-ctx` markers)
 - [x] Travel/life queries clarify-first (not dump itinerary)
-- [x] Vision in Chat mode (pasted images)
+- [x] Vision attachments (Gemini routing, Build-mode bypass) — PR #66
+- [x] Arena “Prefer this” + auto-select learning — PR #66
+- [x] Session memory client-side capture (clarify answers) — PR #66
+- [x] Collapsible studio header (`StudioChromeBar`)
+- [x] Choice cards protocol (`quantora-choices` markers)
+- [x] Real admin analytics (`ProductAnalyticsPanel`)
 
 ### Model trust pipeline
 - [x] Daily OpenRouter cron discovers free models
@@ -37,12 +42,8 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 - [x] Approved models appear in public picker
 - [x] Rejected models stay rejected on cron rescan
 
-### Studio Platform v2 (code complete — see Deploy checklist)
-- [x] Collapsible studio header (`StudioChromeBar`)
-- [x] Free model count fix (`free` + `free-tier`)
-- [x] Fake live map removed; real `ProductAnalyticsPanel`
-- [x] Choice cards protocol (`quantora-choices` markers)
-- [x] Telemetry: `studio_mode`, `studio_domain`, `choice_selected` on usage rows
+### Telemetry
+- [x] Migration 0007: `studio_mode`, `studio_domain`, `choice_selected` on usage
 - [x] SQL views for 7-day model/mode/domain analytics
 
 ---
@@ -51,26 +52,19 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 
 After merge to `main`, Vercel auto-deploys the app. You still need:
 
-1. **Supabase migration 0007**
+1. **Supabase migration 0007** (if not yet run)
    ```bash
-   # In Supabase SQL editor, run:
    supabase/migrations/0007_usage_product_context.sql
    ```
-   Adds `studio_mode`, `studio_domain`, `choice_selected` + analytics views.
 
-2. **Admin access** (if not already set)
-   ```sql
-   UPDATE public.users SET is_admin = true WHERE email = 'your@email.com';
-   ```
-
-3. **Verify after deploy**
+2. **Verify after deploy**
+   - [ ] Homepage copy + flagship spacing (corporate refresh)
+   - [ ] Image paste → Gemini vision in Build and Ask mode
+   - [ ] Arena Prefer-this buttons
    - [ ] Studio header collapses via chevron
-   - [ ] Model Dashboard Free count matches list (2 = Gemini + Nemotron)
-   - [ ] Admin → Product Engagement panel (no fake map)
-   - [ ] Build mode: AI may show choice cards on clarify questions
-   - [ ] Admin Discovered tab still works
+   - [ ] Admin → Product Engagement panel
 
-4. **Optional: Vercel Web Analytics** (time-on-site — not wired yet)
+3. **Optional: Vercel Web Analytics**
    - Enable in Vercel project → Analytics
    - Add `@vercel/analytics` in a future PR
 
@@ -81,33 +75,47 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 ### P0 — Reliability & trust
 | # | Task | Why |
 |---|------|-----|
-| 1 | **Fix Bali / session memory re-ask bug** | User answers get ignored; breaks clarify-first promise |
-| 2 | **Apply migration 0007 in Supabase** | Mode/domain KPIs stay empty without it |
-| 3 | **Admin smoke-test before approve** | 3 fixed prompts per discovered model |
+| 1 | **Admin smoke-test before approve** | 3 fixed prompts per discovered model |
+| 2 | **Verify migration 0007 KPIs** | Mode/domain tiles populate after usage |
 
-### P1 — Conversation UX (your Claude-style vision)
+### P1 — Conversation UX
 | # | Task | Why |
 |---|------|-----|
-| 4 | **Floating choice card above prompt** | Pending options visible without scrolling chat |
-| 5 | **Travel choice templates** | Budget, dates, group size as cards |
-| 6 | **Build choice templates** | Site type, cart, payment gateway, domain name |
-| 7 | **Hide Arena Mode from default UI** | Power feature; tuck in overflow only |
+| 3 | **Floating choice card above prompt** | Pending options visible without scrolling |
+| 4 | **Travel + Build choice templates** | Budget, dates, site type as model hints |
+| 5 | **Hide Arena from default chrome** | Power feature; overflow menu only |
 
-### P2 — Product proof (KPIs that matter)
-| # | Task | Why |
-|---|------|-----|
-| 8 | **Preview-opened event** | Measure build completion, not just prompts |
-| 9 | **Session ID on usage rows** | True prompts-per-session metric |
-| 10 | **Vercel Web Analytics** | Time on site complements Supabase |
-| 11 | **North-star dashboard tile** | “Weekly users who completed something meaningful” |
+### P2 — Ship & monetize (differentiation)
+| # | Task | Why | Existing code |
+|---|------|-----|---------------|
+| 6 | **Publish to Vercel — studio UX** | One-click from Live Preview → live URL | `api/deploy.ts`, `LivePreviewCanvas.jsx` (partial) |
+| 7 | **Stripe Connect — user payments** | Accept payments on user-built sites; funds go to *their* Stripe | Draft PR #39 foundation |
+| 8 | **Preview-opened KPI** | Measure build completion, not just prompts | Telemetry hook needed |
+| 9 | **Vercel Web Analytics** | Time-on-site complements Supabase | Not wired |
+| 10 | **North-star dashboard tile** | “Weekly users who completed something meaningful” | Admin dashboard |
+
+#### P2 detail: Publish to Vercel
+- [ ] **Surface in preview toolbar** — “Publish” button next to Full screen / Download
+- [ ] **User flow** — name project → deploy → show `*.vercel.app` URL + copy link
+- [ ] **Custom domain** — wire existing `api/domains.ts` connect flow in UI
+- [ ] **Auth** — signed-in users only; optional BYO Vercel token in Privacy Vault
+- [ ] **Telemetry** — log `publish_completed` for north-star KPI
+
+#### P2 detail: Stripe Payment Gateway
+- [ ] **Merge/adapt PR #39** — Stripe Connect onboarding backend
+- [ ] **Build-mode directive** — when user wants a shop, embed Stripe Checkout (Connect)
+- [ ] **Onboarding UI** — “Connect Stripe” in preview or guided build intake
+- [ ] **Demo vs live** — keep client-side demo cart until Stripe connected
+- [ ] **Choice card template** — “Payment: Stripe / demo / none” in guided build
+- [ ] **Compliance copy** — “Your Stripe account, your funds, Quantora does not hold money”
 
 ### P3 — Quantora differentiation
 | # | Task | Why |
 |---|------|-----|
-| 12 | **Share / export preview URL** | User can show someone their result |
-| 13 | **One-click deploy** (Vercel/Netlify) | Idea → live site for Indian youth |
-| 14 | **Starter templates** | Bakery, tuition center, portfolio, travel blog |
-| 15 | **Hindi / regional language bias** | Accessibility for target audience |
+| 11 | **Build Journey strip** | Fold Dream-to-Action into Studio session progress |
+| 12 | **Share preview URL** | User shows someone their result without deploy |
+| 13 | **Starter templates** | Bakery, tuition center, portfolio, travel blog |
+| 14 | **Hindi / regional language bias** | Accessibility for target audience |
 
 ---
 
@@ -115,19 +123,19 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 
 - Conversation export / share link
 - POS / hosting setup guidance in Build flow
-- Dual Arena Mode polish or removal
-- Model quality auto-scoring from production feedback
+- Model quality auto-scoring from Arena + thumbs feedback
 - Rate limits per user tier (when monetization exists)
+- Dream-to-Action Canvas deprecation or merge into Build Journey
 
 ---
 
 ## North star (reminder)
 
-**Weekly users who complete something meaningful** — preview opened, plan finished, or 3+ prompts with return visit.
+**Weekly users who complete something meaningful** — preview opened, site published, plan finished, or 3+ prompts with return visit.
 
 Quantora is **not** free Cursor or Fello. It is:
 
-> *Free AI studio where curious builders go from idea → visible outcome in one session.*
+> *Free AI studio where curious builders go from idea → visible outcome → published site, in one session.*
 
 ---
 
