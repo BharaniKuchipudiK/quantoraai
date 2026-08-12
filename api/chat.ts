@@ -5,6 +5,7 @@ import { getSessionUser } from "./_lib/session.js";
 import { recordModelQualityEvent, recordUsage } from "./_lib/store.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
+import { normalizeSessionContext } from "./_lib/session-context.js";
 import { normalizeStudioMode } from "./_lib/studio-modes.js";
 import { repairArtifact } from "./_lib/repair.js";
 
@@ -269,7 +270,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode, sessionContext } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -311,6 +312,7 @@ export default async function handler(req: any, res: any) {
       buildMode: effectiveBuildMode,
       guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
       planMode,
+      sessionContext: normalizeSessionContext(sessionContext),
     });
 
     // The self-heal endpoint reuses this handler (via task: "repair") so it

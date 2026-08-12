@@ -8,6 +8,12 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import ModelDashboard from './ModelDashboard';
 import { chooseBestFreeModel, classifyTask, rankFreeModels } from '../lib/model-routing.js';
+import {
+  extractContextFromAssistantText,
+  hasSessionMemory,
+  mergeSessionContext,
+  stripPartialContextMarker,
+} from '../lib/session-context.js';
 
 function extractHtmlFromResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
@@ -579,6 +585,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const messages = activeSession.messages || [defaultGreetingMsg];
   const studioMode = activeSession.studioMode || 'ask';
   const boundRepo = activeSession.boundRepo || null;
+  const conversationContext = activeSession.conversationContext || {};
   const repoContextCache = useRef({});
 
   const setStudioMode = (mode) => {
@@ -837,7 +844,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       createdAt: Date.now(),
       messages: [defaultGreetingMsg],
       studioMode: 'ask',
-      boundRepo: null
+      boundRepo: null,
+      conversationContext: {}
     };
 
     setChatSessions(prev => {
@@ -936,6 +944,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
+
+  useEffect(() => {
+    if (isWorkspaceMode) setSidebarOpen(false);
+  }, [isWorkspaceMode]);
+
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
@@ -1607,6 +1620,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               taskCategory,
               fallbackFrom,
               studioMode: effectiveStudioMode,
+              sessionContext: conversationContext,
             })
           });
         } catch (networkError) {
@@ -1668,9 +1682,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 const parsed = JSON.parse(dataStr);
                 if (parsed.text) {
                   currentText += parsed.text;
+                  const visibleText = stripPartialContextMarker(currentText);
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
-                    text: currentText,
+                    text: visibleText,
                     thoughtProcess: 'Generating live...'
                   } : m));
                 }
@@ -1690,6 +1705,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
         }
 
+        const { displayText, contextUpdate } = extractContextFromAssistantText(currentText);
+        if (displayText !== currentText) {
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: displayText } : m));
+        }
+        if (contextUpdate && (contextUpdate.goal || contextUpdate.understanding || contextUpdate.facts?.length)) {
+          setChatSessions(prevSessions => {
+            const updated = prevSessions.map(session => {
+              if (session.id !== activeSessionId) return session;
+              return {
+                ...session,
+                conversationContext: mergeSessionContext(session.conversationContext, contextUpdate),
+              };
+            });
+            try {
+              localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
+            } catch (e) {
+              console.error(e);
+            }
+            return updated;
+          });
+        }
+
         if (effectiveStudioMode === 'plan') {
           const planSpec = parsePlanSpec(currentText);
           if (planSpec) {
@@ -1698,7 +1735,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         // Store preview HTML and verify in the background — do not auto-open the modal.
-        const finalHtml = preparePreviewHtml(currentText, imageMap);
+        const finalHtml = preparePreviewHtml(displayText, imageMap);
         if (finalHtml) {
           queuePreviewVerification(aiMsgId, finalHtml);
         }
@@ -2457,6 +2494,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
                   Ready
                 </span>
+                {hasSessionMemory(conversationContext) && (
+                  <span
+                    title={conversationContext.understanding || conversationContext.goal || 'Conversation memory active'}
+                    style={{
+                      fontSize: '0.68rem',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: isLight ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.15)',
+                      color: isLight ? '#2563eb' : '#93c5fd',
+                      border: isLight ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(59, 130, 246, 0.35)',
+                      fontWeight: '600',
+                      maxWidth: '220px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {conversationContext.goal || conversationContext.understanding || 'Remembering context'}
+                  </span>
+                )}
               </div>
             </div>
           </div>
