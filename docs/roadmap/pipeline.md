@@ -57,6 +57,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
    supabase/migrations/0007_usage_product_context.sql
    supabase/migrations/0008_model_smoke_test.sql
    supabase/migrations/0009_product_views_security.sql
+   supabase/migrations/0010_product_events.sql
    ```
 
 2. **Verify after deploy**
@@ -90,18 +91,18 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 ### P2 — Ship & monetize (differentiation)
 | # | Task | Why | Existing code |
 |---|------|-----|---------------|
-| 6 | **Publish to Vercel — studio UX** | One-click from Live Preview → live URL | `api/deploy.ts`, `LivePreviewCanvas.jsx` (partial) |
+| 6 | ~~**Publish to Vercel — studio UX**~~ ✅ | One-click from Live Preview → live URL | `api/deploy.ts`, `LivePreviewCanvas.jsx` |
 | 7 | **Stripe Connect — user payments** | Accept payments on user-built sites; funds go to *their* Stripe | Draft PR #39 foundation |
-| 8 | **Preview-opened KPI** | Measure build completion, not just prompts | Telemetry hook needed |
+| 8 | ~~**Preview-opened KPI**~~ ✅ | Measure build completion, not just prompts | `product_events` + `/api/product-event` |
 | 9 | **Vercel Web Analytics** | Time-on-site complements Supabase | Not wired |
 | 10 | **North-star dashboard tile** | “Weekly users who completed something meaningful” | Admin dashboard |
 
 #### P2 detail: Publish to Vercel
-- [ ] **Surface in preview toolbar** — “Publish” button next to Full screen / Download
-- [ ] **User flow** — name project → deploy → show `*.vercel.app` URL + copy link
-- [ ] **Custom domain** — wire existing `api/domains.ts` connect flow in UI
-- [ ] **Auth** — signed-in users only; optional BYO Vercel token in Privacy Vault
-- [ ] **Telemetry** — log `publish_completed` for north-star KPI
+- [x] **Surface in preview toolbar** — Publish + Download in overlay compact toolbar
+- [x] **User flow** — name project → deploy → show `*.vercel.app` URL + copy link
+- [x] **Custom domain** — wire existing `api/domains.ts` connect flow in UI
+- [x] **Auth** — signed-in users only; session cookie on deploy
+- [x] **Telemetry** — log `publish_completed` + `preview_opened` for north-star KPI
 
 #### P2 detail: Stripe Payment Gateway
 - [ ] **Merge/adapt PR #39** — Stripe Connect onboarding backend

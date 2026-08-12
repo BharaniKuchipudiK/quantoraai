@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
+import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check } from 'lucide-react';
 import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
@@ -30,6 +30,9 @@ export default function LivePreviewCanvas({
   headless = false,
   verifyOnly = false,
   hideHeader = false,
+  user = null,
+  onRequireAuth,
+  suggestedProjectName = 'quantora-app',
 }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -38,6 +41,9 @@ export default function LivePreviewCanvas({
   const [lastError, setLastError] = useState(null);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState(null);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [projectNameInput, setProjectNameInput] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
   const [domainInput, setDomainInput] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [connectResult, setConnectResult] = useState(null);
@@ -272,28 +278,64 @@ export default function LivePreviewCanvas({
     URL.revokeObjectURL(url);
   };
 
+  const handlePublishClick = () => {
+    if (isDeploying) return;
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
+    const suggested = String(suggestedProjectName || 'quantora-app')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'quantora-app';
+    setProjectNameInput(suggested);
+    setShowPublishDialog(true);
+  };
+
   const handlePublish = async () => {
     if (isDeploying) return;
+    setShowPublishDialog(false);
     setIsDeploying(true);
     setDeployResult(null);
+    setLinkCopied(false);
     try {
       const deployRes = await fetch('/api/deploy', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: currentCode })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ code: currentCode, projectName: projectNameInput || 'quantora-app' }),
       });
       const deployData = await deployRes.json();
       if (!deployRes.ok) throw new Error(deployData.error || 'Deploy failed');
 
       const domainRes = await fetch('/api/domains', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: currentCode.substring(0, 1000) })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ context: currentCode.substring(0, 1000) }),
       });
       const domainData = await domainRes.json();
       setDeployResult({ url: deployData.url, domains: domainData.domains || [], projectName: deployData.projectName });
     } catch (err) {
-      alert('Deployment failed: ' + err.message + '\n\nPlease ensure your VERCEL_ACCESS_TOKEN is added to the Supabase Vault.');
+      const message = err.message || 'Deployment failed';
+      if (message.toLowerCase().includes('sign in')) {
+        onRequireAuth?.();
+      }
+      alert(`Deployment failed: ${message}\n\nPublishing requires sign-in and a Vercel token in the API Gateway.`);
     } finally {
       setIsDeploying(false);
+    }
+  };
+
+  const handleCopyDeployUrl = async () => {
+    if (!deployResult?.url) return;
+    try {
+      await navigator.clipboard.writeText(deployResult.url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      /* clipboard blocked */
     }
   };
 
@@ -343,6 +385,29 @@ export default function LivePreviewCanvas({
     );
   }
 
+  const viewportSwitcher = (
+    <div style={{ display: 'flex', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '2px' }}>
+      {[['mobile', <Smartphone size={16} key="m" />], ['tablet', <Tablet size={16} key="t" />], ['desktop', <Monitor size={16} key="d" />]].map(([v, icon]) => (
+        <button key={v} onClick={() => setViewport(v)} style={{
+          padding: '6px', borderRadius: '6px', cursor: 'pointer', border: 'none',
+          background: viewport === v ? (isLight ? '#ffffff' : '#334155') : 'transparent',
+          color: viewport === v ? '#3b82f6' : (isLight ? '#64748b' : '#94a3b8'),
+          boxShadow: viewport === v ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+        }}>{icon}</button>
+      ))}
+    </div>
+  );
+
+  const publishButton = (
+    <button onClick={handlePublishClick} disabled={isDeploying} title="Publish to Vercel" style={{
+      background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+      border: 'none', cursor: isDeploying ? 'not-allowed' : 'pointer', color: '#ffffff',
+      display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 'bold'
+    }}>
+      <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying…' : 'Publish'}
+    </button>
+  );
+
   const showHeader = !hideHeader;
 
   return (
@@ -362,16 +427,7 @@ export default function LivePreviewCanvas({
       }}>
         <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1', flexShrink: 0 }}>Live Preview</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <div style={{ display: 'flex', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '2px' }}>
-            {[['mobile', <Smartphone size={16} key="m" />], ['tablet', <Tablet size={16} key="t" />], ['desktop', <Monitor size={16} key="d" />]].map(([v, icon]) => (
-              <button key={v} onClick={() => setViewport(v)} style={{
-                padding: '6px', borderRadius: '6px', cursor: 'pointer', border: 'none',
-                background: viewport === v ? (isLight ? '#ffffff' : '#334155') : 'transparent',
-                color: viewport === v ? '#3b82f6' : (isLight ? '#64748b' : '#94a3b8'),
-                boxShadow: viewport === v ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-              }}>{icon}</button>
-            ))}
-          </div>
+          {viewportSwitcher}
           <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
             <Download size={18} />
           </button>
@@ -380,18 +436,27 @@ export default function LivePreviewCanvas({
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
           )}
-          <button onClick={handlePublish} disabled={isDeploying} title="Publish to Vercel" style={{
-            background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-            border: 'none', cursor: isDeploying ? 'not-allowed' : 'pointer', color: '#ffffff',
-            display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 'bold'
-          }}>
-            <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying...' : 'Publish'}
-          </button>
+          {publishButton}
           <button onClick={onClose} title="Close preview (Esc)" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <X size={18} />
           </button>
         </div>
       </div>
+      )}
+
+      {hideHeader && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px',
+          padding: '10px 14px', flexShrink: 0,
+          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+          background: isLight ? '#ffffff' : '#1e293b',
+        }}>
+          {viewportSwitcher}
+          <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
+            <Download size={18} />
+          </button>
+          {publishButton}
+        </div>
       )}
 
       {statusUI && (
@@ -433,9 +498,14 @@ export default function LivePreviewCanvas({
             </div>
             <h2 style={{ textAlign: 'center', color: isLight ? '#0f172a' : '#ffffff', marginTop: 0 }}>Successfully Deployed!</h2>
             <p style={{ textAlign: 'center', color: isLight ? '#64748b' : '#94a3b8' }}>Your application is now live on Vercel's global edge network.</p>
-            <div style={{ background: isLight ? '#f1f5f9' : '#1e293b', padding: '12px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-              <a href={deployResult.url} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{deployResult.url}</a>
-              <a href={deployResult.url} target="_blank" rel="noreferrer" style={{ background: '#3b82f6', color: '#fff', padding: '6px 12px', borderRadius: '8px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold' }}>Visit</a>
+            <div style={{ background: isLight ? '#f1f5f9' : '#1e293b', padding: '12px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', gap: '8px' }}>
+              <a href={deployResult.url} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{deployResult.url}</a>
+              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <button type="button" onClick={handleCopyDeployUrl} title="Copy link" style={{ background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#cbd5e1', padding: '6px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {linkCopied ? <Check size={14} /> : <Copy size={14} />} {linkCopied ? 'Copied' : 'Copy'}
+                </button>
+                <a href={deployResult.url} target="_blank" rel="noreferrer" style={{ background: '#3b82f6', color: '#fff', padding: '6px 12px', borderRadius: '8px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold' }}>Visit</a>
+              </div>
             </div>
             {deployResult.domains.length > 0 && (
               <div style={{ marginTop: '24px' }}>
@@ -472,7 +542,28 @@ export default function LivePreviewCanvas({
                 </div>
               )}
             </div>
-            <button onClick={() => { setDeployResult(null); setConnectResult(null); setDomainInput(''); }} style={{ width: '100%', padding: '12px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '12px', marginTop: '24px', cursor: 'pointer', fontWeight: 'bold' }}>Close</button>
+            <button onClick={() => { setDeployResult(null); setConnectResult(null); setDomainInput(''); setLinkCopied(false); }} style={{ width: '100%', padding: '12px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '12px', marginTop: '24px', cursor: 'pointer', fontWeight: 'bold' }}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {showPublishDialog && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
+          <div style={{ background: isLight ? '#ffffff' : '#0f172a', padding: '28px', borderRadius: '20px', width: '90%', maxWidth: '420px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: isLight ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: '1.15rem', color: isLight ? '#0f172a' : '#ffffff' }}>Publish to Vercel</h2>
+            <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8' }}>Choose a project name for your live URL.</p>
+            <input
+              value={projectNameInput}
+              onChange={(e) => setProjectNameInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handlePublish(); }}
+              placeholder="my-bakery-site"
+              autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: '10px', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', background: isLight ? '#fff' : '#0f172a', color: isLight ? '#0f172a' : '#fff', fontSize: '0.9rem', outline: 'none' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button type="button" onClick={() => setShowPublishDialog(false)} style={{ flex: 1, padding: '10px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '10px', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+              <button type="button" onClick={handlePublish} disabled={isDeploying} style={{ flex: 1, padding: '10px', background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', borderRadius: '10px', cursor: isDeploying ? 'not-allowed' : 'pointer', fontWeight: 700 }}>{isDeploying ? 'Deploying…' : 'Publish'}</button>
+            </div>
           </div>
         </div>
       )}
