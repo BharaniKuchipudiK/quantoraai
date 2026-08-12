@@ -45,6 +45,8 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 ### Telemetry
 - [x] Migration 0007: `studio_mode`, `studio_domain`, `choice_selected` on usage
 - [x] SQL views for 7-day model/mode/domain analytics
+- [x] Migration 0010: `product_events` (`preview_opened`, `publish_completed`)
+- [x] Vercel Web Analytics + Speed Insights (`@vercel/analytics`, `@vercel/speed-insights`) — PR pending
 
 ---
 
@@ -66,10 +68,14 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
    - [ ] Arena Prefer-this buttons
    - [ ] Studio header collapses via chevron
    - [ ] Admin → Product Engagement panel
+   - [ ] Live Preview → Publish toolbar + copy link (signed-in)
 
-3. **Optional: Vercel Web Analytics**
-   - Enable in Vercel project → Analytics
-   - Add `@vercel/analytics` in a future PR
+3. **Vercel Analytics & Observability** (dashboard toggles — no extra migration)
+   - [ ] **Web Analytics** — Vercel → `quantora-platform` → **Analytics** → Enable
+   - [ ] **Speed Insights** — Vercel → **Speed Insights** → Enable (Core Web Vitals; complements Supabase time-on-site)
+   - [ ] **Observability** — already live on Pro (Edge Requests, Functions, Compute — see project dashboard)
+   - [ ] After deploy: visit production site → confirm network requests to `vitals.vercel-insights.com`
+   - Code: `@vercel/analytics` + `@vercel/speed-insights` in `src/App.jsx`; CSP allows analytics endpoints in `vercel.json`
 
 ---
 
@@ -94,7 +100,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 | 6 | ~~**Publish to Vercel — studio UX**~~ ✅ | One-click from Live Preview → live URL | `api/deploy.ts`, `LivePreviewCanvas.jsx` |
 | 7 | **Stripe Connect — user payments** | Accept payments on user-built sites; funds go to *their* Stripe | Draft PR #39 foundation |
 | 8 | ~~**Preview-opened KPI**~~ ✅ | Measure build completion, not just prompts | `product_events` + `/api/product-event` |
-| 9 | **Vercel Web Analytics** | Time-on-site complements Supabase | Not wired |
+| 9 | ~~**Vercel Web Analytics**~~ ✅ | Time-on-site + Web Vitals complement Supabase KPIs | `@vercel/analytics`, `@vercel/speed-insights` |
 | 10 | **North-star dashboard tile** | “Weekly users who completed something meaningful” | Admin dashboard |
 
 #### P2 detail: Publish to Vercel
@@ -103,6 +109,15 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 - [x] **Custom domain** — wire existing `api/domains.ts` connect flow in UI
 - [x] **Auth** — signed-in users only; session cookie on deploy
 - [x] **Telemetry** — log `publish_completed` + `preview_opened` for north-star KPI
+
+#### P2 detail: Vercel Analytics & Observability
+- [x] **Install packages** — `@vercel/analytics` + `@vercel/speed-insights` (React/Vite, not Next.js)
+- [x] **Wire in app** — `<Analytics />` + `<SpeedInsights />` in `src/App.jsx`
+- [x] **CSP** — allow `vitals.vercel-insights.com` (+ dev `va.vercel-scripts.com`) in `vercel.json`
+- [ ] **Dashboard: Web Analytics** — Vercel → Analytics → Enable on `quantora-platform`
+- [ ] **Dashboard: Speed Insights** — Vercel → Speed Insights → Enable
+- [ ] **Verify** — deploy → visit site → data in Analytics within ~30s (disable ad blockers if empty)
+- **Observability** (Edge Requests, Fast Data Transfer, Vercel Functions, Compute) — built-in on Vercel; no app code
 
 #### P2 detail: Stripe Payment Gateway
 - [ ] **Merge/adapt PR #39** — Stripe Connect onboarding backend
