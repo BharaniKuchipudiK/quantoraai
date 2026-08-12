@@ -1,71 +1,179 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  PREVIEW_EMBED_PATH,
+  injectPreviewHarness,
+  isIgnorableRuntimeError,
+  isCriticalResourceError,
+} from '../lib/preview-utils.js';
 
 /*
  * Live preview + verification loop.
  *
- * The generated artifact is a self-contained HTML document. We render it in a
- * sandboxed iframe with a small injected harness that reports runtime errors
- * back to us. When the document throws, we send it and the error to
- * /api/repair, swap in the corrected document, and re-run — up to a few
- * attempts — so the user is shown something that actually runs instead of a
- * broken page. This is the difference between "impressive demo that breaks"
- * and "a system that quietly guarantees the thing works."
+ * Generated HTML renders in /preview/embed.html — a dedicated shell whose CSP
+ * allows common CDNs (Tailwind, unpkg, Stripe). The main app keeps a strict CSP;
+ * srcDoc inherited that CSP and blocked styling CDNs, which caused unstyled previews
+ * falsely marked "Verified — runs clean".
  */
 
 const MAX_HEAL_ATTEMPTS = 3;
 
-// Errors that look scary in the console but must NOT trigger a repair pass — doing
-// so often strips Tailwind/CDN styling and leaves bare blue links.
-const IGNORABLE_ERROR = /(?:Script error\.?|Failed to load resource|Loading chunk|tailwind|googleapis|gstatic|font|stylesheet|net::ERR|CORS|Non-Error promise rejection|ResizeObserver loop|Unable to preload|integrity|MIME type)/i;
-
-function isIgnorableRuntimeError(message) {
-  return !message || IGNORABLE_ERROR.test(String(message));
-}
-
-// Injected into the previewed document so runtime failures surface to us.
-const ERROR_HARNESS = `<script>(function(){
-  function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
-  window.addEventListener('error', function(e){
-    // Resource-load failures (a product image, font, or stylesheet that 404s
-    // or is blocked in the sandbox) also fire 'error' in the capture phase,
-    // but they are NOT runtime script errors. A broken image must never
-    // trigger a self-heal that could rewrite — and strip the styling from —
-    // the whole page. Ignore anything whose target is a DOM element.
-    var t = e && e.target;
-    if (t && t !== window && (t.tagName || t.nodeType === 1)) return;
-    // Genuine script error: require a real message. Cross-origin scripts
-    // surface an opaque "Script error." with no detail — ignore those too.
-    var msg = e && e.message;
-    if (!msg || msg === 'Script error.' || msg === 'Script error') return;
-    var where = e.filename ? (' @ ' + e.filename + ':' + (e.lineno||0)) : '';
-    report({ kind:'error', message: msg + where });
-  }, true);
-  window.addEventListener('unhandledrejection', function(e){
-    var r = e && e.reason; var m = (r && (r.message || r.toString && r.toString())) || 'unknown';
-    report({ kind:'error', message: 'Unhandled promise rejection: ' + m });
-  });
-  window.addEventListener('load', function(){ setTimeout(function(){ report({ kind:'loaded' }); }, 350); });
-})();</script>`;
-
-function injectHarness(html) {
-  const safe = html || '';
-  if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + ERROR_HARNESS);
-  if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + ERROR_HARNESS + '</head>');
-  return ERROR_HARNESS + safe;
-}
-
 export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen, onToggleFullscreen }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
-  const [status, setStatus] = useState('running'); // running | healing | clean | failed
+  const [status, setStatus] = useState('running'); // running | healing | clean | degraded | failed
   const [attempt, setAttempt] = useState(0);
   const [lastError, setLastError] = useState(null);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState(null);
   const [domainInput, setDomainInput] = useState('');
   const [connecting, setConnecting] = useState(false);
-  const [connectResult, setConnectResult] = useState(null); // { domain, records, verified } | { error }
+  const [connectResult, setConnectResult] = useState(null);
+  const [embedReady, setEmbedReady] = useState(false);
+
+  const iframeRef = useRef(null);
+  const currentCodeRef = useRef(currentCode);
+  const attemptRef = useRef(0);
+  const healingRef = useRef(false);
+  const errorSeenRef = useRef(false);
+  const stylingFailedRef = useRef(false);
+
+  useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
+  useEffect(() => { attemptRef.current = attempt; }, [attempt]);
+
+  useEffect(() => {
+    setEmbedReady(false);
+  }, [attempt]);
+
+  const pushHtmlToEmbed = useCallback((html) => {
+    const frame = iframeRef.current;
+    if (!frame?.contentWindow || !html) return;
+    frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(html) }, '*');
+    // #region agent log
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:pushHtmlToEmbed',message:'html pushed to embed shell',data:{htmlLength:html.length,usesTailwind:/cdn\\.tailwindcss\\.com/i.test(html),embedPath:PREVIEW_EMBED_PATH},timestamp:Date.now(),hypothesisId:'CSP-embed'})}).catch(()=>{});
+    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:pushHtmlToEmbed',message:'html pushed to embed shell',data:{htmlLength:html.length,usesTailwind:/cdn\\.tailwindcss\\.com/i.test(html)},timestamp:Date.now(),hypothesisId:'CSP-embed'})}).catch(()=>{});
+    // #endregion
+  }, []);
+
+  useEffect(() => {
+    setCurrentCode(code || '');
+    setStatus(code ? 'running' : 'clean');
+    setAttempt(0);
+    setLastError(null);
+    setEmbedReady(false);
+    healingRef.current = false;
+    errorSeenRef.current = false;
+    stylingFailedRef.current = false;
+  }, [code]);
+
+  useEffect(() => {
+    if (!currentCode || !embedReady) return;
+    errorSeenRef.current = false;
+    stylingFailedRef.current = false;
+    healingRef.current = false;
+    setStatus('running');
+    pushHtmlToEmbed(currentCode);
+  }, [currentCode, embedReady, pushHtmlToEmbed]);
+
+  const requestRepair = useCallback(async (brokenCode, message) => {
+    const openRouterApiKey = (() => { try { return localStorage.getItem('openRouterApiKey'); } catch { return null; } })();
+    const geminiApiKey = (() => { try { return localStorage.getItem('geminiApiKey'); } catch { return null; } })();
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'repair', code: brokenCode, error: message, framework: 'html', openRouterKey: openRouterApiKey, userKey: geminiApiKey })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Repair failed (${res.status})`);
+    return data;
+  }, []);
+
+  const handleRuntimeError = useCallback(async (message) => {
+    if (healingRef.current || errorSeenRef.current) return;
+
+    if (isCriticalResourceError(message)) {
+      stylingFailedRef.current = true;
+      setLastError(message);
+      setStatus('degraded');
+      // #region agent log
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:resource-error',message:'critical CDN resource failure',data:{message},timestamp:Date.now(),hypothesisId:'CSP-resource'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
+
+    if (isIgnorableRuntimeError(message)) return;
+
+    errorSeenRef.current = true;
+    setLastError(message);
+
+    if (attemptRef.current >= MAX_HEAL_ATTEMPTS) {
+      setStatus('failed');
+      return;
+    }
+
+    healingRef.current = true;
+    setStatus('healing');
+    try {
+      const data = await requestRepair(currentCodeRef.current, message);
+      if (data.unchanged || !data.code || data.code.trim() === currentCodeRef.current.trim()) {
+        setStatus('failed');
+        healingRef.current = false;
+        return;
+      }
+      const original = currentCodeRef.current || '';
+      const fixed = data.code || '';
+      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=/i.test(original) || /class\s*=/i.test(original);
+      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=/i.test(fixed) || /class\s*=/i.test(fixed);
+      const shrankTooMuch = fixed.length < original.length * 0.55;
+      if ((hadStyle && !keepsStyle) || shrankTooMuch) {
+        setLastError(null);
+        setStatus(stylingFailedRef.current ? 'degraded' : 'clean');
+        healingRef.current = false;
+        return;
+      }
+      setAttempt((a) => a + 1);
+      setCurrentCode(data.code);
+    } catch (err) {
+      setLastError(err.message || 'Auto-repair failed.');
+      setStatus('failed');
+      healingRef.current = false;
+    }
+  }, [requestRepair]);
+
+  useEffect(() => {
+    const onMessage = (e) => {
+      const d = e.data;
+      if (!d || d.__quantora !== true) return;
+
+      if (d.kind === 'embed-ready') {
+        setEmbedReady(true);
+        return;
+      }
+      if (d.kind === 'resource-error') {
+        handleRuntimeError(String(d.message || 'Resource load error'));
+        return;
+      }
+      if (d.kind === 'error') {
+        handleRuntimeError(String(d.message || 'Runtime error'));
+        return;
+      }
+      if (d.kind === 'loaded') {
+        if (healingRef.current) return;
+        if (d.usesTailwind && d.stylingOk === false) {
+          stylingFailedRef.current = true;
+          setStatus('degraded');
+          setLastError('Tailwind CSS did not apply — styling may look broken.');
+          // #region agent log
+          fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:styling-probe',message:'tailwind probe failed',data:{usesTailwind:d.usesTailwind,stylingOk:d.stylingOk},timestamp:Date.now(),hypothesisId:'CSP-probe'})}).catch(()=>{});
+          // #endregion
+          return;
+        }
+        if (!errorSeenRef.current) setStatus('clean');
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [handleRuntimeError]);
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
@@ -87,120 +195,11 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
     }
   };
 
-  // Refs so the message handler always sees current values (no stale closures).
-  const currentCodeRef = useRef(currentCode);
-  const attemptRef = useRef(0);
-  const healingRef = useRef(false);
-  const errorSeenRef = useRef(false);
-  useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
-  useEffect(() => { attemptRef.current = attempt; }, [attempt]);
-
   const viewportStyles = {
     mobile: { width: '375px', height: '667px' },
     tablet: { width: '768px', height: '1024px' },
     desktop: { width: '100%', height: '100%' }
   };
-
-  // A brand-new artifact resets the whole verification run.
-  useEffect(() => {
-    setCurrentCode(code || '');
-    setStatus(code ? 'running' : 'clean');
-    setAttempt(0);
-    setLastError(null);
-    healingRef.current = false;
-    errorSeenRef.current = false;
-  }, [code]);
-
-  // Each time the rendered code changes, a fresh verification pass begins.
-  useEffect(() => {
-    if (!currentCode) return;
-    errorSeenRef.current = false;
-    healingRef.current = false;
-    setStatus('running');
-  }, [currentCode]);
-
-  const srcDoc = useMemo(() => (currentCode ? injectHarness(currentCode) : ''), [currentCode]);
-
-  const requestRepair = useCallback(async (brokenCode, message) => {
-    const openRouterApiKey = (() => { try { return localStorage.getItem('openRouterApiKey'); } catch { return null; } })();
-    const geminiApiKey = (() => { try { return localStorage.getItem('geminiApiKey'); } catch { return null; } })();
-    // Routed through /api/chat (task: 'repair') so it adds no serverless
-    // function against Vercel's plan limit.
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task: 'repair', code: brokenCode, error: message, framework: 'html', openRouterKey: openRouterApiKey, userKey: geminiApiKey })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Repair failed (${res.status})`);
-    return data; // { code, unchanged }
-  }, []);
-
-  const handleRuntimeError = useCallback(async (message) => {
-    if (healingRef.current) return;
-    if (errorSeenRef.current) return;
-    if (isIgnorableRuntimeError(message)) {
-      // Benign CDN/font/image noise — page still renders with its CSS intact.
-      setStatus('clean');
-      return;
-    }
-    errorSeenRef.current = true;
-    setLastError(message);
-
-    if (attemptRef.current >= MAX_HEAL_ATTEMPTS) {
-      setStatus('failed');
-      return;
-    }
-
-    healingRef.current = true;
-    setStatus('healing');
-    try {
-      const data = await requestRepair(currentCodeRef.current, message);
-      if (data.unchanged || !data.code || data.code.trim() === currentCodeRef.current.trim()) {
-        // The model couldn't improve it — stop rather than loop on the same code.
-        setStatus('failed');
-        healingRef.current = false;
-        return;
-      }
-      // Safety net: a repair must PRESERVE the design. A weaker repair model
-      // sometimes returns a simplified, unstyled document — that would turn an
-      // elegant page into bare HTML. If the fix drops the CSS the original had,
-      // or shrinks the document drastically, refuse it and keep the original;
-      // the page already renders, so the "error" was almost certainly benign.
-      const original = currentCodeRef.current || '';
-      const fixed = data.code || '';
-      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=/i.test(original) || /class\s*=/i.test(original);
-      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=/i.test(fixed) || /class\s*=/i.test(fixed);
-      const shrankTooMuch = fixed.length < original.length * 0.55;
-      if ((hadStyle && !keepsStyle) || shrankTooMuch) {
-        setLastError(null);
-        setStatus('clean');
-        healingRef.current = false;
-        return;
-      }
-      setAttempt((a) => a + 1);
-      setCurrentCode(data.code); // triggers a fresh verification pass
-    } catch (err) {
-      setLastError(err.message || 'Auto-repair failed.');
-      setStatus('failed');
-      healingRef.current = false;
-    }
-  }, [requestRepair]);
-
-  // Listen for reports from the sandboxed iframe.
-  useEffect(() => {
-    const onMessage = (e) => {
-      const d = e.data;
-      if (!d || d.__quantora !== true) return;
-      if (d.kind === 'error') {
-        handleRuntimeError(String(d.message || 'Runtime error'));
-      } else if (d.kind === 'loaded') {
-        if (!errorSeenRef.current && !healingRef.current) setStatus('clean');
-      }
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [handleRuntimeError]);
 
   const handleDownload = () => {
     const blob = new Blob([currentCode], { type: 'text/html' });
@@ -240,16 +239,16 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
     setLastError(null);
     errorSeenRef.current = false;
     healingRef.current = false;
-    // Re-run the current code by nudging the srcDoc (append a harmless comment).
-    setCurrentCode((c) => (c.endsWith('\n<!--r-->') ? c.slice(0, -9) : c + '\n<!--r-->'));
+    stylingFailedRef.current = false;
     setStatus('running');
+    pushHtmlToEmbed(currentCodeRef.current + '\n<!-- retry -->');
   };
 
-  // ---- Status strip presentation ----
   const statusUI = {
     running: { icon: <Loader size={14} className="animate-spin" />, label: 'Verifying — running the preview…', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
     healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? `Verified — auto-fixed and running clean` : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+    degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
     failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
@@ -259,7 +258,6 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
       background: isLight ? '#f8fafc' : '#0f172a',
       borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)'
     }}>
-      {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '12px 16px',
@@ -282,11 +280,7 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
             <Download size={18} />
           </button>
           {onToggleFullscreen && (
-            <button
-              onClick={onToggleFullscreen}
-              title={isFullscreen ? 'Exit full screen' : 'Full screen'}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}
-            >
+            <button onClick={onToggleFullscreen} title={isFullscreen ? 'Exit full screen' : 'Full screen'} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
           )}
@@ -303,7 +297,6 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
         </div>
       </div>
 
-      {/* Verification status strip */}
       {statusUI && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px',
@@ -312,19 +305,18 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
         }}>
           {statusUI.icon}
           <span>{statusUI.label}</span>
-          {status === 'failed' && (
+          {(status === 'failed' || status === 'degraded') && (
             <button onClick={retryVerification} style={{
               marginLeft: 'auto', background: 'transparent', border: `1px solid ${statusUI.color}`,
               color: statusUI.color, borderRadius: '8px', padding: '3px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer'
             }}>Retry</button>
           )}
-          {status === 'failed' && lastError && (
-            <span title={lastError} style={{ marginLeft: status === 'failed' ? '10px' : 'auto', maxWidth: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, opacity: 0.85 }}>{lastError}</span>
+          {(status === 'failed' || status === 'degraded') && lastError && (
+            <span title={lastError} style={{ marginLeft: status === 'failed' ? '10px' : '8px', maxWidth: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, opacity: 0.85 }}>{lastError}</span>
           )}
         </div>
       )}
 
-      {/* Canvas Area */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: viewport === 'desktop' ? '0' : '20px' }}>
         <div style={{
           ...viewportStyles[viewport], background: '#ffffff',
@@ -334,9 +326,10 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
         }}>
           {currentCode ? (
             <iframe
+              ref={iframeRef}
               key={attempt}
               title="Live Preview"
-              srcDoc={srcDoc}
+              src={PREVIEW_EMBED_PATH}
               sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
               style={{ width: '100%', height: '100%', minHeight: viewportStyles[viewport].height, border: 'none', background: '#ffffff' }}
             />
@@ -346,7 +339,6 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
         </div>
       </div>
 
-      {/* Deployment Success Modal */}
       {deployResult && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: isLight ? '#ffffff' : '#0f172a', padding: '30px', borderRadius: '24px', width: '90%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: isLight ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
@@ -372,31 +364,18 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
                 </div>
               </div>
             )}
-            {/* Connect a custom domain */}
             <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
               <h3 style={{ fontSize: '0.9rem', color: isLight ? '#334155' : '#cbd5e1', marginBottom: '10px' }}>🌐 Connect your own domain</h3>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  value={domainInput}
-                  onChange={(e) => setDomainInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleConnectDomain(); }}
-                  placeholder="my-boutique.com"
-                  style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', background: isLight ? '#fff' : '#0f172a', color: isLight ? '#0f172a' : '#fff', fontSize: '0.85rem', outline: 'none' }}
-                />
+                <input value={domainInput} onChange={(e) => setDomainInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleConnectDomain(); }} placeholder="my-boutique.com" style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', background: isLight ? '#fff' : '#0f172a', color: isLight ? '#0f172a' : '#fff', fontSize: '0.85rem', outline: 'none' }} />
                 <button onClick={handleConnectDomain} disabled={connecting || !domainInput.trim()} style={{ background: connecting ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '0 16px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', cursor: connecting ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
                   {connecting ? 'Connecting…' : 'Connect'}
                 </button>
               </div>
-
-              {connectResult?.error && (
-                <p style={{ color: '#ef4444', fontSize: '0.78rem', marginTop: '10px' }}>{connectResult.error}</p>
-              )}
-
+              {connectResult?.error && <p style={{ color: '#ef4444', fontSize: '0.78rem', marginTop: '10px' }}>{connectResult.error}</p>}
               {connectResult?.records && (
                 <div style={{ marginTop: '12px', background: isLight ? '#f8fafc' : '#0f172a', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px 14px' }}>
-                  <p style={{ fontSize: '0.78rem', color: isLight ? '#475569' : '#94a3b8', margin: '0 0 10px' }}>
-                    Add {connectResult.records.length > 1 ? 'these records' : 'this record'} at your domain registrar (GoDaddy, Namecheap, …). It goes live once DNS updates (usually minutes, up to a few hours).
-                  </p>
+                  <p style={{ fontSize: '0.78rem', color: isLight ? '#475569' : '#94a3b8', margin: '0 0 10px' }}>Add {connectResult.records.length > 1 ? 'these records' : 'this record'} at your domain registrar.</p>
                   {connectResult.records.map((r, i) => (
                     <div key={i} style={{ display: 'flex', gap: '10px', fontFamily: 'monospace', fontSize: '0.74rem', color: isLight ? '#0f172a' : '#e2e8f0', padding: '6px 0', borderTop: i ? (isLight ? '1px solid #eef2f6' : '1px solid rgba(255,255,255,0.06)') : 'none' }}>
                       <span style={{ minWidth: '54px', color: '#f97316', fontWeight: 700 }}>{r.type}</span>
@@ -404,13 +383,9 @@ export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen
                       <span style={{ wordBreak: 'break-all' }}>{r.value}</span>
                     </div>
                   ))}
-                  <p style={{ fontSize: '0.72rem', color: connectResult.verified ? '#10b981' : (isLight ? '#94a3b8' : '#64748b'), marginTop: '8px', marginBottom: 0 }}>
-                    {connectResult.verified ? '✓ Verified — your domain is live.' : 'Waiting for DNS — re-open Publish to re-check after you add the record.'}
-                  </p>
                 </div>
               )}
             </div>
-
             <button onClick={() => { setDeployResult(null); setConnectResult(null); setDomainInput(''); }} style={{ width: '100%', padding: '12px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '12px', marginTop: '24px', cursor: 'pointer', fontWeight: 'bold' }}>Close</button>
           </div>
         </div>
