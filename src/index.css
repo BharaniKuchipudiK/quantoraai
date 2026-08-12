@@ -1315,6 +1315,10 @@ body {
 .prose p {
   margin-bottom: 1em;
 }
+
+.chat-message-bubble--user.prose p {
+  margin-bottom: 0;
+}
 .prose pre {
   background: var(--bg-secondary);
   padding: 16px;
@@ -1493,19 +1497,34 @@ body {
 
 .chat-message-body--user {
   margin-left: auto;
+  flex: 0 0 auto;
+  width: auto;
+  max-width: min(85%, 640px);
+  min-width: 0;
 }
 
 .chat-message-bubble--user {
-  width: fit-content;
-  max-width: min(85%, 640px);
+  display: inline-block;
+  width: max-content;
+  max-width: min(85vw, 640px);
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: pre-wrap;
+}
+
+.chat-message-bubble--user .markdown-prose,
+.chat-message-bubble--user .markdown-prose p {
+  margin: 0;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .chat-message-bubble--ai {
   max-width: min(92%, 720px);
 }
 
-.chat-message-bubble,
-.markdown-prose {
+.chat-message-bubble:not(.chat-message-bubble--user),
+.markdown-prose:not(.chat-message-bubble--user) {
   overflow-wrap: anywhere;
   word-break: break-word;
 }

@@ -2126,7 +2126,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 {/* Content Bubble */}
                 <div
                   className={isUser ? 'chat-message-body chat-message-body--user' : 'chat-message-body chat-message-body--ai'}
-                  style={{ flex: isUser ? '0 1 auto' : 1, minWidth: 0 }}
+                  style={{ flex: isUser ? '0 0 auto' : 1, minWidth: isUser ? undefined : 0 }}
                 >
                   {msg.isDual ? (
                     <div style={{ width: '100%' }}>
@@ -2360,7 +2360,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                       )}
 
-                      <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
+                      <div className="markdown-prose" style={{ width: isUser ? 'auto' : '100%', overflowX: 'hidden' }}>
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
                           components={{
