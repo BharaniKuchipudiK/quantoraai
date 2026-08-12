@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -940,63 +940,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
-  const previewDialogRef = useRef(null);
-  const closingDialogRef = useRef(false);
-
   const closePreviewModal = useCallback(() => {
-    // #region agent log
-    const payload = { sessionId: 'd0f2b5', runId: 'preview-close-v8', location: 'AiStudio:closePreviewModal', message: 'preview modal closed', data: { canvasFullscreen, dialogOpen: Boolean(previewDialogRef.current?.open) }, timestamp: Date.now(), hypothesisId: 'preview-close-ui' };
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
-    fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
-    // #endregion
     setCanvasOpen(false);
     setCanvasFullscreen(false);
-  }, [canvasFullscreen]);
+  }, []);
 
-  const handlePreviewDialogClose = useCallback(() => {
-    if (closingDialogRef.current) return;
-    closePreviewModal();
-  }, [closePreviewModal]);
-
-  useLayoutEffect(() => {
-    if (!canvasOpen) return undefined;
-    const dialog = previewDialogRef.current;
-    if (!dialog) return undefined;
-    if (!dialog.open) {
-      try {
-        dialog.showModal();
-        // #region agent log
-        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v8',location:'AiStudio:preview-dialog-open',message:'preview dialog showModal',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
-        // #endregion
-      } catch (err) {
-        // #region agent log
-        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v8',location:'AiStudio:preview-dialog-error',message:'showModal failed',data:{error:String(err?.message || err)},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
-        // #endregion
-      }
-    }
-    return () => {
-      if (dialog.open) {
-        closingDialogRef.current = true;
-        dialog.close();
-        queueMicrotask(() => { closingDialogRef.current = false; });
-      }
-    };
-  }, [canvasOpen]);
+  const togglePreviewFullscreen = useCallback(() => {
+    setCanvasFullscreen((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     if (!canvasOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closePreviewModal();
+    };
     const onPreviewMessage = (event) => {
       const data = event.data;
       if (data?.__quantora === true && data.kind === 'preview-close-request') {
-        // #region agent log
-        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v7',location:'AiStudio:iframe-escape',message:'iframe escape close',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-iframe'})}).catch(()=>{});
-        // #endregion
         closePreviewModal();
       }
     };
+    document.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('message', onPreviewMessage);
-    return () => window.removeEventListener('message', onPreviewMessage);
-  }, [canvasOpen, canvasFullscreen, closePreviewModal]);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('message', onPreviewMessage);
+    };
+  }, [canvasOpen, closePreviewModal]);
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [backgroundVerify, setBackgroundVerify] = useState(null);
@@ -1063,11 +1038,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveMessages((prev) => prev.map((m) => (
       m.id === messageId ? { ...m, previewStatus: 'verifying' } : m
     )));
-    // #region agent log
-    const payload = { sessionId: 'd0f2b5', runId: 'preview-fix-v3', location: 'AiStudio:queuePreviewVerification', message: 'background verify queued', data: { messageId, htmlLength: html.length }, timestamp: Date.now(), hypothesisId: 'verify-flow' };
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
-    fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
-    // #endregion
   };
 
   const handleBackgroundVerificationStatus = React.useCallback((status) => {
@@ -1076,11 +1046,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveMessages((prev) => prev.map((m) => (
       m.id === job.messageId ? { ...m, previewStatus: status } : m
     )));
-    // #region agent log
-    const payload = { sessionId: 'd0f2b5', runId: 'preview-fix-v3', location: 'AiStudio:backgroundVerifyStatus', message: 'background verify status', data: { messageId: job.messageId, status }, timestamp: Date.now(), hypothesisId: 'verify-flow' };
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
-    fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
-    // #endregion
     if (status === 'clean' || status === 'degraded' || status === 'failed') {
       setBackgroundVerify(null);
     }
@@ -1096,11 +1061,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           : m
       )));
       setBackgroundVerify(null);
-      // #region agent log
-      const payload = { sessionId: 'd0f2b5', runId: 'preview-fix-v3', location: 'AiStudio:verifyTimeout', message: 'background verify timed out', data: { messageId: job.messageId }, timestamp: Date.now(), hypothesisId: 'verify-timeout' };
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
-      fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
-      // #endregion
     }, 30000);
     return () => clearTimeout(timer);
   }, [backgroundVerify]);
@@ -3441,103 +3401,52 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
       )}
 
-      {/* Live Preview — native dialog top layer (above header z-index 100). */}
+      {/* Live Preview — fixed overlay above app chrome (z-index 20000). */}
       {canvasOpen && createPortal((
-        <dialog
-          ref={previewDialogRef}
-          className={`preview-dialog ${canvasFullscreen ? 'preview-dialog--fullscreen' : 'preview-dialog--windowed'}`}
+        <div
+          role="dialog"
+          aria-modal="true"
           aria-label="Live Preview"
-          onClose={handlePreviewDialogClose}
-          onCancel={() => {
-            // #region agent log
-            fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v8',location:'AiStudio:preview-dialog-cancel',message:'preview dialog cancel (Esc)',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
-            // #endregion
+          className={`preview-overlay${canvasFullscreen ? ' preview-overlay--fullscreen' : ''}`}
+          style={{
+            background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : undefined,
           }}
         >
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100%',
-            width: '100%',
-            minHeight: 0,
+          <div className={`preview-overlay-panel${canvasFullscreen ? ' preview-overlay-panel--fullscreen' : ''}`} style={{
             background: isLight ? '#f8fafc' : '#0d1127',
             borderRadius: canvasFullscreen ? 0 : '20px',
             border: canvasFullscreen ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)'),
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            overflow: 'hidden',
           }}>
-            <form
-              method="dialog"
-              className={`preview-dialog-chrome${canvasFullscreen ? ' preview-dialog-chrome--fullscreen' : ''}`}
+            <div
+              className="preview-overlay-chrome"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                padding: '12px 16px',
-                flexShrink: 0,
-                margin: 0,
-                border: 'none',
-                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                background: isLight ? '#ffffff' : '#1e293b',
-              }}
-              onSubmit={() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v9',location:'AiStudio:close-form-submit',message:'native dialog close submit',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-native'})}).catch(()=>{});
-                // #endregion
-              }}
-            >
+              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+              background: isLight ? '#ffffff' : '#1e293b',
+            }}>
               <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isLight ? '#334155' : '#e2e8f0' }}>
                 Live Preview
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {canvasFullscreen ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // #region agent log
-                      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v8',location:'AiStudio:exit-fullscreen',message:'exit fullscreen clicked',data:{},timestamp:Date.now(),hypothesisId:'preview-close-fullscreen'})}).catch(()=>{});
-                      // #endregion
-                      setCanvasFullscreen(false);
-                    }}
-                    style={{
-                      background: 'transparent',
-                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
-                      color: isLight ? '#64748b' : '#cbd5e1',
-                      borderRadius: '10px',
-                      padding: '6px 12px',
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Exit full screen
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // #region agent log
-                      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v8',location:'AiStudio:enter-fullscreen',message:'enter fullscreen clicked',data:{},timestamp:Date.now(),hypothesisId:'preview-close-fullscreen'})}).catch(()=>{});
-                      // #endregion
-                      setCanvasFullscreen(true);
-                    }}
-                    style={{
-                      background: 'transparent',
-                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
-                      color: isLight ? '#64748b' : '#cbd5e1',
-                      borderRadius: '10px',
-                      padding: '6px 12px',
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Full screen
-                  </button>
-                )}
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={togglePreviewFullscreen}
+                  style={{
+                    background: 'transparent',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                    color: isLight ? '#64748b' : '#cbd5e1',
+                    borderRadius: '10px',
+                    padding: '6px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {canvasFullscreen ? 'Exit full screen' : 'Full screen'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePreviewModal}
                   title="Close preview (Esc)"
                   aria-label="Close preview"
                   style={{
@@ -3558,19 +3467,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <X size={16} /> Close
                 </button>
               </div>
-            </form>
-            <div className={canvasFullscreen ? 'preview-dialog-body--fullscreen' : 'preview-dialog-body'} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            </div>
+            <div className="preview-overlay-body">
               <LivePreviewCanvas
                 code={previewCode}
                 isLight={isLight}
                 isFullscreen={canvasFullscreen}
                 hideHeader
-                onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
+                onToggleFullscreen={togglePreviewFullscreen}
                 onClose={closePreviewModal}
               />
             </div>
           </div>
-        </dialog>
+        </div>
       ), document.body)}
 
       {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
