@@ -54,10 +54,13 @@ export default async function handler(req: any, res: any) {
       return res.status(response.status).json({ error: data.error?.message || "Deployment failed" });
     }
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       url: `https://${data.url}`,
       deploymentId: data.id,
-      readyState: data.readyState
+      readyState: data.readyState,
+      // The Vercel project the deployment landed in — needed to attach a
+      // custom domain to it later (see the "connect" action in api/domains).
+      projectName: safeName
     });
 
   } catch (error: any) {

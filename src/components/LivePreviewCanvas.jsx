@@ -44,6 +44,29 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
   const [lastError, setLastError] = useState(null);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState(null);
+  const [domainInput, setDomainInput] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [connectResult, setConnectResult] = useState(null); // { domain, records, verified } | { error }
+
+  const handleConnectDomain = async () => {
+    const domain = domainInput.trim();
+    if (!domain || connecting) return;
+    setConnecting(true);
+    setConnectResult(null);
+    try {
+      const res = await fetch('/api/domains', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: 'connect', domain, projectName: deployResult?.projectName })
+      });
+      const data = await res.json();
+      if (!res.ok) setConnectResult({ error: data.error || 'Could not connect the domain.' });
+      else setConnectResult({ domain: data.domain, records: data.records || [], verified: data.verified });
+    } catch (err) {
+      setConnectResult({ error: err.message || 'Network error connecting the domain.' });
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   // Refs so the message handler always sees current values (no stale closures).
   const currentCodeRef = useRef(currentCode);
@@ -164,7 +187,7 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
         body: JSON.stringify({ context: currentCode.substring(0, 1000) })
       });
       const domainData = await domainRes.json();
-      setDeployResult({ url: deployData.url, domains: domainData.domains || [] });
+      setDeployResult({ url: deployData.url, domains: domainData.domains || [], projectName: deployData.projectName });
     } catch (err) {
       alert('Deployment failed: ' + err.message + '\n\nPlease ensure your VERCEL_ACCESS_TOKEN is added to the Supabase Vault.');
     } finally {
@@ -300,7 +323,46 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
                 </div>
               </div>
             )}
-            <button onClick={() => setDeployResult(null)} style={{ width: '100%', padding: '12px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '12px', marginTop: '24px', cursor: 'pointer', fontWeight: 'bold' }}>Close</button>
+            {/* Connect a custom domain */}
+            <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)' }}>
+              <h3 style={{ fontSize: '0.9rem', color: isLight ? '#334155' : '#cbd5e1', marginBottom: '10px' }}>🌐 Connect your own domain</h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  value={domainInput}
+                  onChange={(e) => setDomainInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConnectDomain(); }}
+                  placeholder="my-boutique.com"
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', background: isLight ? '#fff' : '#0f172a', color: isLight ? '#0f172a' : '#fff', fontSize: '0.85rem', outline: 'none' }}
+                />
+                <button onClick={handleConnectDomain} disabled={connecting || !domainInput.trim()} style={{ background: connecting ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '0 16px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', cursor: connecting ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {connecting ? 'Connecting…' : 'Connect'}
+                </button>
+              </div>
+
+              {connectResult?.error && (
+                <p style={{ color: '#ef4444', fontSize: '0.78rem', marginTop: '10px' }}>{connectResult.error}</p>
+              )}
+
+              {connectResult?.records && (
+                <div style={{ marginTop: '12px', background: isLight ? '#f8fafc' : '#0f172a', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px 14px' }}>
+                  <p style={{ fontSize: '0.78rem', color: isLight ? '#475569' : '#94a3b8', margin: '0 0 10px' }}>
+                    Add {connectResult.records.length > 1 ? 'these records' : 'this record'} at your domain registrar (GoDaddy, Namecheap, …). It goes live once DNS updates (usually minutes, up to a few hours).
+                  </p>
+                  {connectResult.records.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '10px', fontFamily: 'monospace', fontSize: '0.74rem', color: isLight ? '#0f172a' : '#e2e8f0', padding: '6px 0', borderTop: i ? (isLight ? '1px solid #eef2f6' : '1px solid rgba(255,255,255,0.06)') : 'none' }}>
+                      <span style={{ minWidth: '54px', color: '#f97316', fontWeight: 700 }}>{r.type}</span>
+                      <span style={{ minWidth: '60px' }}>{r.name}</span>
+                      <span style={{ wordBreak: 'break-all' }}>{r.value}</span>
+                    </div>
+                  ))}
+                  <p style={{ fontSize: '0.72rem', color: connectResult.verified ? '#10b981' : (isLight ? '#94a3b8' : '#64748b'), marginTop: '8px', marginBottom: 0 }}>
+                    {connectResult.verified ? '✓ Verified — your domain is live.' : 'Waiting for DNS — re-open Publish to re-check after you add the record.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => { setDeployResult(null); setConnectResult(null); setDomainInput(''); }} style={{ width: '100%', padding: '12px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '12px', marginTop: '24px', cursor: 'pointer', fontWeight: 'bold' }}>Close</button>
           </div>
         </div>
       )}
