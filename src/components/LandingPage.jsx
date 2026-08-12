@@ -285,7 +285,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             marginBottom: '30px'
           }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
-            Dreams into action
+            Possibility, built together
           </div>
 
           {/* Headline — solid ink, a single accent, tight editorial tracking */}
@@ -297,8 +297,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             color: isLight ? '#0b1220' : '#ffffff',
             margin: '0 0 24px'
           }}>
-            Dream it. See it.<br/>
-            <span style={{ color: '#ea580c' }}>Make it real.</span>
+            Dream bigger.<br/>
+            Let's build it <span style={{ color: '#ea580c' }}>together.</span>
           </h1>
 
           {/* Subcopy */}
@@ -306,10 +306,11 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             fontSize: 'clamp(1.05rem, 1.35vw, 1.28rem)',
             color: isLight ? '#475569' : '#cbd5e1',
             lineHeight: 1.6, fontWeight: '400',
-            maxWidth: '560px', margin: '0 auto 42px'
+            maxWidth: '580px', margin: '0 auto 42px'
           }}>
-            Describe your idea in plain words. Quantora turns it into something
-            live and real — refined as you talk, ready for the world.
+            The best things start as an idea said out loud. Bring yours — and
+            Quantora becomes the partner that turns imagination into something
+            real, one step at a time.
           </p>
 
           {/* Real prompt box — the product, front and centre */}
@@ -377,8 +378,38 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </section>
 
+      {/* Belief statement — one bold line, the way great brands lead */}
+      <section style={{
+        padding: 'clamp(70px, 12vh, 140px) 6%',
+        position: 'relative', zIndex: 10,
+        background: isLight ? '#0b1220' : 'rgba(255,255,255,0.02)',
+        borderTop: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        borderBottom: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)'
+      }}>
+        <Reveal>
+          <div style={{ maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
+            <span style={{ fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#fdba74' }}>
+              What we believe
+            </span>
+            <p style={{
+              fontSize: 'clamp(1.7rem, 3.4vw, 3rem)',
+              fontWeight: '700',
+              lineHeight: 1.22,
+              letterSpacing: '-0.02em',
+              color: '#ffffff',
+              margin: '24px auto 0',
+              maxWidth: '940px'
+            }}>
+              The distance between an idea and something real should be a
+              <span style={{ color: '#f97316' }}> conversation</span> — not a budget,
+              a team, or a year of waiting. So we set out to close it, <span style={{ color: '#f97316' }}>together</span>.
+            </p>
+          </div>
+        </Reveal>
+      </section>
+
       {/* How it works — the real journey, no simulation */}
-      <section style={{ maxWidth: '1180px', margin: '10px auto 90px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+      <section style={{ maxWidth: '1180px', margin: '90px auto 90px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: '44px' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>From idea to reality</span>
@@ -414,12 +445,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
         <Reveal>
           <div className="flagship-experience-heading">
-            <span>The Quantora philosophy</span>
-            <h2 id="flagship-experience-title">Dream it. Visualize it. Make it happen.</h2>
+            <span>Our belief</span>
+            <h2 id="flagship-experience-title">Together, there's no limit to what you can make real.</h2>
             <p style={{ fontStyle: 'italic', opacity: 0.9 }}>
               “Dream, dream, dream. Dreams transform into thoughts, and thoughts result in action.” — Dr. A.P.J. Abdul Kalam
             </p>
-            <p>Quantora isn't a website tool — it's where an idea becomes something real. Build it, map it out, explore what's possible, and keep it all under your own control.</p>
+            <p>We're not here to sell you software. We're here to stand beside your imagination — to help an idea become a thought, and a thought become action. What you build is yours. The possibilities are endless.</p>
           </div>
         </Reveal>
 
