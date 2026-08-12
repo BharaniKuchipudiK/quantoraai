@@ -954,7 +954,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v3',location:'AiStudio:preview-portal-open',message:'preview modal portaled to body',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-portal'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v4',location:'AiStudio:preview-portal-open',message:'preview modal portaled to body',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-portal'})}).catch(()=>{});
     // #endregion
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
@@ -3421,65 +3421,98 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           role="dialog"
           aria-modal="true"
           aria-label="Live Preview"
+          tabIndex={-1}
           style={{
             position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: canvasFullscreen ? 'none' : 'blur(8px)',
+            inset: 0,
             zIndex: 15000,
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            flexDirection: 'column',
+            background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: canvasFullscreen ? 'none' : 'blur(8px)',
             padding: canvasFullscreen ? 0 : '24px',
           }}
         >
-          <button
-            type="button"
-            onClick={closePreviewModal}
-            title="Close preview (Esc)"
-            aria-label="Close preview"
-            style={{
-              position: 'fixed',
-              top: '16px',
-              right: '16px',
-              zIndex: 15001,
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
-              background: isLight ? '#ffffff' : 'rgba(15,23,42,0.95)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-              cursor: 'pointer',
-              color: isLight ? '#334155' : '#e2e8f0',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <X size={22} />
-          </button>
           <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
             width: '100%',
             maxWidth: canvasFullscreen ? '100%' : '1200px',
-            height: canvasFullscreen ? '100vh' : '90vh',
+            height: canvasFullscreen ? '100%' : '90vh',
+            margin: canvasFullscreen ? 0 : 'auto',
             background: isLight ? '#f8fafc' : '#0d1127',
             borderRadius: canvasFullscreen ? 0 : '20px',
             border: canvasFullscreen ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)'),
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            flexDirection: 'column',
             overflow: 'hidden',
           }}>
-            <LivePreviewCanvas
-              code={previewCode}
-              isLight={isLight}
-              isFullscreen={canvasFullscreen}
-              onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
-              onClose={closePreviewModal}
-            />
+            {canvasFullscreen && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                padding: '12px 16px',
+                flexShrink: 0,
+                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                background: isLight ? '#ffffff' : '#1e293b',
+              }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isLight ? '#334155' : '#e2e8f0' }}>
+                  Live Preview
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setCanvasFullscreen(false)}
+                    style={{
+                      background: 'transparent',
+                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                      color: isLight ? '#64748b' : '#cbd5e1',
+                      borderRadius: '10px',
+                      padding: '6px 12px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Exit full screen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closePreviewModal}
+                    title="Close preview (Esc)"
+                    aria-label="Close preview"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      borderRadius: '10px',
+                      padding: '8px 14px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(249, 115, 22, 0.35)',
+                    }}
+                  >
+                    <X size={16} /> Close
+                  </button>
+                </div>
+              </div>
+            )}
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <LivePreviewCanvas
+                code={previewCode}
+                isLight={isLight}
+                isFullscreen={canvasFullscreen}
+                onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
+                onClose={closePreviewModal}
+              />
+            </div>
           </div>
         </div>
       ), document.body)}
