@@ -201,15 +201,8 @@ function logTelemetry(
   provider: string,
   userSub: string | null = null,
   usedServerKey: boolean = false,
+  context: { studioMode?: string | null; studioDomain?: string | null; choiceSelected?: boolean } = {},
 ) {
-  /*
-   * Per-user usage, alongside the existing anonymous telemetry.
-   *
-   * usedServerKey is the column that matters: it separates requests this
-   * deployment paid for from requests a user funded with their own key.
-   * Without that split, "what is this costing me" cannot be answered, and
-   * that is the number that decides whether free stays free.
-   */
   recordUsage({
     userSub,
     provider,
@@ -217,6 +210,9 @@ function logTelemetry(
     latencyMs,
     tokensEst: Math.ceil(textLength / 4),
     usedServerKey,
+    studioMode: context.studioMode ?? null,
+    studioDomain: context.studioDomain ?? null,
+    choiceSelected: context.choiceSelected === true,
   });
 
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -291,7 +287,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode, sessionContext, studioDomain, attachedImages } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode, sessionContext, studioDomain, attachedImages, choiceSelected } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -336,6 +332,12 @@ export default async function handler(req: any, res: any) {
       sessionContext: normalizeSessionContext(sessionContext),
       studioDomain: normalizeStudioDomain(studioDomain),
     });
+
+    const telemetryContext = {
+      studioMode: mode,
+      studioDomain: normalizeStudioDomain(studioDomain),
+      choiceSelected: choiceSelected === true,
+    };
 
     const visionImages = Array.isArray(attachedImages)
       ? attachedImages.filter((url: unknown): url is string => typeof url === "string" && url.startsWith("data:image/")).slice(0, 4)
@@ -427,7 +429,7 @@ export default async function handler(req: any, res: any) {
         }
         
         const latencyMs = Date.now() - startTime;
-        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys);
+        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext);
         recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
         res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true })}\n\n`);
@@ -544,7 +546,7 @@ export default async function handler(req: any, res: any) {
 
       const latencyMs = Date.now() - startTime;
       logTelemetry(openRouterModelId, latencyMs, fullReply.length, "OpenRouter",
-        sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys);
+        sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext);
       recordModelQualityEvent({ requestId, modelId: openRouterModelId, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
       res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, requestId, liveConnected: true })}\n\n`);

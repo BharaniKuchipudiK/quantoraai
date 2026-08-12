@@ -1,6 +1,7 @@
 import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
 import { authenticateAdminRequest } from "../_lib/admin-auth.js";
 import { getGrowthSummary, getDailySeries, isStoreConfigured } from "../_lib/store.js";
+import { getProductInsights } from "../_lib/product-analytics.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -91,6 +92,7 @@ export default async function handler(req: any, res: any) {
    * whole window rather than over whatever happened to be fetched.
    */
   const [growth, series] = await Promise.all([getGrowthSummary(), getDailySeries(14)]);
+  const product = await getProductInsights(growth);
 
   const usageDays = series?.usage ?? [];
   const measured = {
@@ -119,6 +121,8 @@ export default async function handler(req: any, res: any) {
     },
 
     daily: series ? { growth: series.growth, usage: series.usage } : null,
+
+    product: product ?? null,
 
     /* Legacy telemetry table, kept while it still holds history. */
     legacyTelemetry: { totalRequests, avgLatency, tokensGenerated, activeSessions },

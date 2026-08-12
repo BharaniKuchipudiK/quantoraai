@@ -191,7 +191,7 @@ export default async function handler(req, res) {
 
   const summary = {
     available: dashboardModels.filter((model) => model.status === 'available').length,
-    free: dashboardModels.filter((model) => model.pricingKind === 'free' && model.status !== 'retired').length,
+    free: dashboardModels.filter((model) => (model.pricingKind === 'free' || model.pricingKind === 'free-tier') && model.status !== 'retired').length,
     new: dashboardModels.filter((model) => model.isNew).length,
     updated: dashboardModels.filter((model) => model.isUpdated).length,
     offline: dashboardModels.filter((model) => ['offline', 'retired'].includes(model.status)).length,

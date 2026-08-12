@@ -118,6 +118,9 @@ export function recordUsage(entry: {
   latencyMs: number;
   tokensEst: number;
   usedServerKey: boolean;
+  studioMode?: string | null;
+  studioDomain?: string | null;
+  choiceSelected?: boolean;
 }): void {
   void request("usage", {
     method: "POST",
@@ -129,6 +132,9 @@ export function recordUsage(entry: {
       latency_ms: entry.latencyMs,
       tokens_est: entry.tokensEst,
       used_server_key: entry.usedServerKey,
+      studio_mode: entry.studioMode || null,
+      studio_domain: entry.studioDomain || null,
+      choice_selected: entry.choiceSelected === true,
     }]),
   });
 }
