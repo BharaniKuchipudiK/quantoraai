@@ -60,6 +60,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
    supabase/migrations/0008_model_smoke_test.sql
    supabase/migrations/0009_product_views_security.sql
    supabase/migrations/0010_product_events.sql
+   supabase/migrations/0011_technical_analytics_views.sql
    ```
 
 2. **Verify after deploy**

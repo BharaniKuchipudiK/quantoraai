@@ -2,6 +2,7 @@ import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
 import { authenticateAdminRequest } from "../_lib/admin-auth.js";
 import { getGrowthSummary, getDailySeries, isStoreConfigured } from "../_lib/store.js";
 import { getProductInsights } from "../_lib/product-analytics.js";
+import { getTechnicalInsights } from "../_lib/technical-analytics.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -22,77 +23,9 @@ export default async function handler(req: any, res: any) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY;
-
-  // Base fallback synthetic data
-  let totalRequests = 0;
-  let tokensGenerated = 0;
-  let avgLatency = 0;
-  let activeSessions = [];
-
-  if (supabaseUrl && supabaseKey) {
-    try {
-      // Fetch exact count of requests
-      const countRes = await fetch(`${supabaseUrl}/rest/v1/telemetry?select=id`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'count=exact'
-        }
-      });
-      
-      const countHeader = countRes.headers.get('content-range');
-      const dbCount = countHeader ? parseInt(countHeader.split('/')[1]) : 0;
-      
-      // Fetch latest 50 requests for aggregation
-      const dataRes = await fetch(`${supabaseUrl}/rest/v1/telemetry?select=*&order=created_at.desc&limit=50`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
-      });
-      const latestData = await dataRes.json();
-
-      if (Array.isArray(latestData) && latestData.length > 0) {
-        totalRequests = dbCount;
-        
-        // Sum up tokens from db
-        const recentTokens = latestData.reduce((acc, row) => acc + (row.tokens_generated || 0), 0);
-        tokensGenerated = recentTokens; // We can only accurately sum the fetched rows. An estimate for all rows could be dbCount * 150, but we want real numbers. Let's just sum recent for now or rely on a DB aggregation.
-        // For genuine numbers without a view, we'll just sum the 50 we fetched. This is a compromise without a heavy DB query.
-        
-        // Avg latency of last 50 requests
-        avgLatency = Math.floor(latestData.reduce((acc, row) => acc + (row.latency_ms || 0), 0) / latestData.length);
-        
-        // Map to active sessions (real data only)
-        activeSessions = latestData.slice(0, 10).map((row) => ({
-          id: `req_${row.id}`,
-          model: row.model_id || 'Unknown',
-          duration: 'complete',
-          tokens: row.tokens_generated || 0,
-          latency: row.latency_ms || 0
-        }));
-      }
-    } catch (e) {
-      console.error("Supabase telemetry fetch failed:", e);
-    }
-  }
-
-  /*
-   * Everything below is measured or absent. Nothing is invented.
-   *
-   * Two things were still being reported dishonestly here. systemUptime was the
-   * literal string '99.99%' — never measured, and exactly the sort of number an
-   * operator would quote to someone. And tokensGenerated summed only the fifty
-   * most recent rows while being displayed as a lifetime total, so it silently
-   * stopped growing once the table passed fifty entries.
-   *
-   * Aggregates now come from the daily views, computed in Postgres over the
-   * whole window rather than over whatever happened to be fetched.
-   */
   const [growth, series] = await Promise.all([getGrowthSummary(), getDailySeries(14)]);
   const product = await getProductInsights(growth);
+  const technical = await getTechnicalInsights(growth?.requests7d ?? 0);
 
   const usageDays = series?.usage ?? [];
   const measured = {
@@ -124,8 +57,7 @@ export default async function handler(req: any, res: any) {
 
     product: product ?? null,
 
-    /* Legacy telemetry table, kept while it still holds history. */
-    legacyTelemetry: { totalRequests, avgLatency, tokensGenerated, activeSessions },
+    technical: technical ?? null,
 
     /*
      * Deliberately absent rather than fabricated: uptime, CPU, memory and
