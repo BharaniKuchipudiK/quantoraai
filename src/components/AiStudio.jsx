@@ -493,6 +493,114 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages: [defaultGreetingMsg]
   };
   const messages = activeSession.messages || [defaultGreetingMsg];
+  const studioMode = activeSession.studioMode || 'ask';
+  const boundRepo = activeSession.boundRepo || null;
+  const repoContextCache = useRef({});
+
+  const setStudioMode = (mode) => {
+    updateActiveSession({ studioMode: mode });
+  };
+
+  const updateActiveSession = (updates) => {
+    setChatSessions(prevSessions => {
+      const updated = prevSessions.map(session => {
+        if (session.id !== activeSessionId) return session;
+        return { ...session, ...updates };
+      });
+      try {
+        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+      return updated;
+    });
+  };
+
+  const fetchRepoPreview = async (repoUrl, task = 'Understand this codebase and its architecture') => {
+    const response = await fetch('/api/github/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetStage: 'repository-preview',
+        repoUrl: repoUrl.trim(),
+        task: task.trim()
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to load repository');
+    }
+    return { url: repoUrl.trim(), name: data.name, content: data.content, relevantFiles: data.relevantFiles || [] };
+  };
+
+  const bindRepoToSession = async (repoUrl, task) => {
+    if (!repoUrl?.trim()) {
+      setGithubError('Please enter a valid GitHub URL');
+      return;
+    }
+    setIsFetchingGithub(true);
+    setGithubError('');
+    try {
+      const bound = await fetchRepoPreview(repoUrl, task || githubChangeRequest.trim() || 'Understand this codebase');
+      repoContextCache.current[activeSessionId] = bound.content;
+      updateActiveSession({ boundRepo: { url: bound.url, name: bound.name, relevantFiles: bound.relevantFiles } });
+      if (task?.trim() || githubChangeRequest.trim()) {
+        setInputText(prev => prev.trim() ? prev : (task?.trim() || githubChangeRequest.trim()));
+      }
+      setIsGithubModalOpen(false);
+      setGithubRepoUrl('');
+      setGithubChangeRequest('');
+    } catch (err) {
+      setGithubError(err.message);
+    } finally {
+      setIsFetchingGithub(false);
+    }
+  };
+
+  const clearBoundRepo = () => {
+    delete repoContextCache.current[activeSessionId];
+    updateActiveSession({ boundRepo: null });
+  };
+
+  const parsePlanSpec = (text) => {
+    if (!text || typeof text !== 'string') return null;
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = (fenced?.[1] || text).trim();
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && parsed.title) return parsed;
+    } catch {
+      const objectMatch = candidate.match(/\{[\s\S]*\}/);
+      if (objectMatch) {
+        try {
+          const parsed = JSON.parse(objectMatch[0]);
+          if (parsed && typeof parsed === 'object' && parsed.title) return parsed;
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleBuildFromPlan = (planSpec) => {
+    const specText = typeof planSpec === 'string' ? planSpec : JSON.stringify(planSpec, null, 2);
+    setStudioMode('build');
+    handleSendMessage(
+      `Build this application based on the architecture plan below. Follow the tech stack and features closely.\n\n${specText}`,
+      { studioMode: 'build' }
+    );
+  };
+
+  useEffect(() => {
+    const repo = activeSession.boundRepo;
+    if (!repo?.url || repoContextCache.current[activeSessionId]) return;
+    fetchRepoPreview(repo.url)
+      .then((bound) => {
+        repoContextCache.current[activeSessionId] = bound.content;
+      })
+      .catch((err) => console.error('Failed to refresh repo context:', err));
+  }, [activeSessionId, activeSession.boundRepo?.url]);
 
   /*
    * Tell the ambient background to step back once there is work on screen.
@@ -643,7 +751,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       id: newId,
       title: 'New Chat',
       createdAt: Date.now(),
-      messages: [defaultGreetingMsg]
+      messages: [defaultGreetingMsg],
+      studioMode: 'ask',
+      boundRepo: null
     };
 
     setChatSessions(prev => {
@@ -785,46 +895,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [githubError, setGithubError] = useState('');
 
   const handleImportGithub = async () => {
-    if (!githubRepoUrl || !githubChangeRequest.trim()) {
-      setGithubError("Enter the repository URL and describe the change you want to review.");
-      return;
-    }
-    
-    setIsFetchingGithub(true);
-    setGithubError('');
-
-    try {
-      const response = await fetch('/api/github/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetStage: 'repository-preview',
-          repoUrl: githubRepoUrl,
-          task: githubChangeRequest.trim()
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import repository');
-      }
-
-      setAttachments(prev => [...prev, {
-        type: 'context',
-        contextType: 'repository',
-        name: `${data.name} · ${data.relevantFiles.length} files · ${data.risk} risk`,
-        content: data.content
-      }]);
-
-      setInputText(prev => prev.trim() ? prev : githubChangeRequest.trim());
-      setIsGithubModalOpen(false);
-      setGithubRepoUrl('');
-      setGithubChangeRequest('');
-    } catch (err) {
-      setGithubError(err.message);
-    } finally {
-      setIsFetchingGithub(false);
-    }
+    await bindRepoToSession(githubRepoUrl, githubChangeRequest.trim());
   };
 
   const openCanvasWithCode = (rawText) => {
@@ -1124,11 +1195,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const handleSendMessage = async (textToSend) => {
+  const handleSendMessage = async (textToSend, options = {}) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
+    const effectiveStudioMode = options.studioMode || studioMode;
     const visibleText = text.trim() || "Review the attached repository context.";
+
+    const repoContent = repoContextCache.current[activeSessionId];
+    if (repoContent && boundRepo?.name) {
+      text = `${text}\n\n${repoContent}`;
+    }
 
     // Inject Context Chips
     const contextChips = attachments.filter(a => a.type === 'context');
@@ -1315,15 +1392,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const apiMessage = isRefine
         ? `${text}\n\n[You are editing the existing app below. Apply the requested change and return the COMPLETE updated, self-contained HTML document — not a diff, not an explanation.]\n\`\`\`html\n${previewCode}\n\`\`\``
         : text;
-      const buildMode = isRefine || isWorkspaceMode || detectBuildIntent(text);
+      const autoBuildMode = isRefine || isWorkspaceMode || detectBuildIntent(text);
+      const buildMode = effectiveStudioMode === 'build'
+        ? true
+        : effectiveStudioMode === 'ask' || effectiveStudioMode === 'plan'
+          ? false
+          : autoBuildMode;
       /*
        * Guided build: a fresh "make me a website/app" request (no site yet)
        * starts a designer-style intake — Quantora asks for the essentials and
        * confirms before building. Persists across the follow-up answers (which
        * don't read as build intent on their own) until a site is produced.
        */
-      const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode;
-      const guidedBuild = (startingGuided || guidedSession) && !previewCode;
+      const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode && effectiveStudioMode !== 'build';
+      const guidedBuild = (startingGuided || guidedSession) && !previewCode && effectiveStudioMode !== 'build' && effectiveStudioMode !== 'plan';
       if (guidedBuild && !guidedSession) setGuidedSession(true);
 
       /*
@@ -1368,6 +1450,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               guidedBuild,
               taskCategory,
               fallbackFrom,
+              studioMode: effectiveStudioMode,
             })
           });
         } catch (networkError) {
@@ -1447,6 +1530,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 }
               } catch (e) {}
             }
+          }
+        }
+
+        if (effectiveStudioMode === 'plan') {
+          const planSpec = parsePlanSpec(currentText);
+          if (planSpec) {
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, planSpec, type: 'plan_spec' } : m));
           }
         }
 
@@ -1706,17 +1796,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {/* Code actions appear only when the response contains code. */}
-                      {msg.sender === 'ai' && msg.text?.includes('```') && (
-                        <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {/* Plan / code actions */}
+                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {msg.sender === 'ai' && msg.planSpec && (
+                          <button
+                            onClick={() => handleBuildFromPlan(msg.planSpec)}
+                            style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <Code2 size={13} /> Build this →
+                          </button>
+                        )}
+                        {msg.sender === 'ai' && msg.text?.includes('```') && (
                           <button
                             onClick={() => openCanvasWithCode(msg.text)}
                             style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                           >
                             <Play size={13} /> Open Live Canvas Mode
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -1902,15 +2000,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', marginBottom: '24px' }}>
           {[
-            { title: 'Task Manager App', icon: <FileText size={15} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
-            { title: 'iOS Calculator', icon: <Calculator size={15} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
-            { title: 'AI Beat Synthesizer', icon: <Music size={15} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
-            { title: 'Quantum Simulator', icon: <Atom size={15} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
+            { title: 'Analyze my repository', icon: <Github size={15} color="#24292f" />, action: 'github', mode: 'ask' },
+            { title: 'Plan before you build', icon: <Layout size={15} color="#8b5cf6" />, prompt: 'Help me plan a new web app. Ask one clarifying question, then output the architecture plan.', mode: 'plan' },
+            { title: 'Task Manager App', icon: <FileText size={15} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking', mode: 'build' },
+            { title: 'Quantum Simulator', icon: <Atom size={15} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator', mode: 'build' }
           ].map((card, idx) => (
             <div
               key={idx}
               onClick={() => {
-                handleSendMessage(card.prompt);
+                if (card.mode) setStudioMode(card.mode);
+                if (card.action === 'github') {
+                  setIsGithubModalOpen(true);
+                } else if (card.prompt) {
+                  handleSendMessage(card.prompt, { studioMode: card.mode || studioMode });
+                }
                 if (window.innerWidth < 768) setSidebarOpen(false);
               }}
               style={{
@@ -2008,6 +2111,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {session.title || 'New Chat'}
                   </span>
+                  {session.boundRepo?.name && (
+                    <Github size={11} color={isActive ? '#f97316' : subtextColor} style={{ flexShrink: 0, opacity: 0.8 }} title={session.boundRepo.name} />
+                  )}
                 </div>
 
                 <button
@@ -2398,6 +2504,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div className="ai-studio-prompt" style={{ position: 'relative', width: '100%', maxWidth: '1120px', margin: '0 auto', flexShrink: 0 }}>
+        {boundRepo?.name && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', paddingLeft: '4px' }}>
+            <span style={{
+              fontSize: '0.75rem',
+              background: isLight ? '#f0fdf4' : 'rgba(34, 197, 94, 0.12)',
+              border: isLight ? '1px solid #bbf7d0' : '1px solid rgba(34, 197, 94, 0.35)',
+              color: isLight ? '#166534' : '#86efac',
+              padding: '5px 12px',
+              borderRadius: '999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: '600'
+            }}>
+              <Github size={13} />
+              {boundRepo.name}
+              <span style={{ opacity: 0.7, fontWeight: '500' }}>· repo context active</span>
+              <button type="button" onClick={clearBoundRepo} title="Disconnect repository" style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                <X size={12} />
+              </button>
+            </span>
+          </div>
+        )}
         {/* Attachment Files Badge Bar */}
         {attachments.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', paddingLeft: '4px' }}>
@@ -2591,7 +2720,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 }
               }}
               onPaste={handlePaste}
-              placeholder="Ask Quantora to code an app, analyze data, or generate ideas..."
+              placeholder={
+                studioMode === 'build'
+                  ? 'Describe what you want to build — Quantora will generate runnable HTML...'
+                  : studioMode === 'plan'
+                    ? 'Describe your app idea — Quantora will output an architecture plan...'
+                    : boundRepo?.name
+                      ? `Ask about ${boundRepo.name} — code, architecture, or changes...`
+                      : 'Ask Quantora to code an app, analyze data, or generate ideas...'
+              }
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -2620,7 +2757,46 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexWrap: 'wrap'
           }}>
             {/* Left Toolbar Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.06)',
+                borderRadius: '12px',
+                padding: '3px',
+                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)'
+              }}>
+                {[
+                  { id: 'ask', label: 'Ask', icon: MessageSquare },
+                  { id: 'build', label: 'Build', icon: Code2 },
+                  { id: 'plan', label: 'Plan', icon: Layout }
+                ].map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setStudioMode(id)}
+                    title={id === 'ask' ? 'Chat and advice' : id === 'build' ? 'Generate runnable HTML' : 'Architecture plan first'}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: studioMode === id ? (isLight ? '#ffffff' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
+                      color: studioMode === id ? '#f97316' : subtextColor,
+                      border: 'none',
+                      padding: '5px 10px',
+                      borderRadius: '9px',
+                      fontSize: '0.72rem',
+                      fontWeight: studioMode === id ? '700' : '600',
+                      cursor: 'pointer',
+                      boxShadow: studioMode === id && isLight ? '0 1px 4px rgba(0,0,0,0.06)' : 'none'
+                    }}
+                  >
+                    <Icon size={13} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <input
                 type="file"
                 ref={fileInputRef}
@@ -3218,8 +3394,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Github size={24} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Safe Change Preview</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Understand a repository change before touching any code.</p>
+                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Connect Repository</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Bind this repo to the chat — every message will include relevant codebase context.</p>
               </div>
             </div>
 
@@ -3249,11 +3425,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
 
             <div style={{ marginBottom: '18px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: textColor, marginBottom: '8px' }}>What would you like to change?</label>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: textColor, marginBottom: '8px' }}>Focus area <span style={{ fontWeight: 500, color: subtextColor }}>(optional)</span></label>
               <textarea
                 value={githubChangeRequest}
                 onChange={(e) => setGithubChangeRequest(e.target.value)}
-                placeholder="For example: Keep the footer visible without making the page scroll"
+                placeholder="For example: Explain the auth flow, or review the API layer"
                 disabled={isFetchingGithub}
                 rows={4}
                 maxLength={2000}
@@ -3272,7 +3448,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
             <button
               onClick={handleImportGithub}
-              disabled={isFetchingGithub || !githubRepoUrl || !githubChangeRequest.trim()}
+              disabled={isFetchingGithub || !githubRepoUrl}
               style={{
                 width: '100%',
                 padding: '14px',
@@ -3282,19 +3458,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 border: 'none',
                 fontWeight: '700',
                 fontSize: '1rem',
-                cursor: (isFetchingGithub || !githubRepoUrl || !githubChangeRequest.trim()) ? 'not-allowed' : 'pointer',
+                cursor: (isFetchingGithub || !githubRepoUrl) ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: (isFetchingGithub || !githubRepoUrl || !githubChangeRequest.trim()) ? 'none' : '0 4px 14px rgba(249, 115, 22, 0.3)',
+                boxShadow: (isFetchingGithub || !githubRepoUrl) ? 'none' : '0 4px 14px rgba(249, 115, 22, 0.3)',
                 transition: 'all 0.2s ease'
               }}
             >
               {isFetchingGithub ? (
-                <><RefreshCw size={18} className="animate-spin" /> Finding Relevant Files...</>
+                <><RefreshCw size={18} className="animate-spin" /> Connecting repository...</>
               ) : (
-                <><Github size={18} /> Prepare Change Preview</>
+                <><Github size={18} /> Connect to this chat</>
               )}
             </button>
           </div>

@@ -90,6 +90,7 @@ export function buildConversationSystemPrompt(options: {
   modelName?: string;
   buildMode?: boolean;
   guided?: boolean;
+  planMode?: boolean;
 } = {}): string {
   const modelContext = options.modelName
     ? `\n\nYou are currently using ${options.modelName} as the underlying model. Preserve its useful expertise while following the Quantora policy above.`
@@ -102,7 +103,24 @@ export function buildConversationSystemPrompt(options: {
     ? `\n\n${BUILD_DIRECTIVE}`
     : "";
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${build}${modelContext}`;
+  const plan = options.planMode
+    ? `\n\n${PLAN_DIRECTIVE}`
+    : "";
+
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${build}${plan}${modelContext}`;
 }
+
+const PLAN_DIRECTIVE = `PLAN MODE
+The user wants an architecture plan before implementation — not code yet.
+- Output ONLY valid JSON (no markdown fences, no commentary before or after).
+- Schema:
+{
+  "title": "App or feature name",
+  "techStack": ["React", "Vite", "etc"],
+  "keyFeatures": ["feature 1", "feature 2"],
+  "dataModels": [{"name": "EntityName", "fields": ["id", "name"]}],
+  "risks": ["risk or tradeoff 1"],
+  "nextStep": "One clear sentence on what to build first"
+}`;
 
 export { SENIOR_PARTNER_POLICY, BUILD_DIRECTIVE, GUIDED_BUILD_DIRECTIVE };
