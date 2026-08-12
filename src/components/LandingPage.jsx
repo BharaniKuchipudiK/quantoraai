@@ -26,7 +26,10 @@ import {
   ChevronRight,
   Gauge,
   Globe2,
-  Atom
+  Atom,
+  BookOpen,
+  GraduationCap,
+  Smartphone,
 } from 'lucide-react';
 import './LandingPage.css';
 
@@ -101,8 +104,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const journey = [
     { icon: Sparkles, color: '#f97316', step: '01', title: 'Define the outcome', body: 'State what you need in plain language — no templates, configuration, or code required.' },
     { icon: Workflow, color: '#8b5cf6', step: '02', title: 'Refine through dialogue', body: 'Quantora clarifies requirements, proposes options, and iterates with you until the result is right.' },
-    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'Validate before delivery', body: 'Every build runs in a live sandbox and self-corrects errors before it reaches you.' },
-    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Deploy and transact', body: 'Publish to your domain on Vercel and accept payments through your own Stripe account.' }
+    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'Validate before delivery', body: 'Apps and builds run in a live sandbox; research and plans are checked for gaps before you commit.' },
+    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Finish and share', body: 'Submit a thesis section, ship an app, publish a page when you need to — or keep iterating in the same thread.' }
   ];
 
   const techPillars = [
@@ -129,9 +132,37 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const liveModelNames = onlineModels.slice(0, 5).map((m) => m.name).filter(Boolean);
 
   const outcomes = [
-    { metric: 'Preview', title: 'Working builds in minutes', body: 'Open runnable HTML in the live canvas — see, test, and refine before you ship.' },
-    { metric: 'Publish', title: 'Live on your domain', body: 'Deploy to Vercel in one click. You own the site, the code, and the deployment.' },
-    { metric: 'Transact', title: 'Payments on sites you build', body: 'Connect Stripe and accept payments directly — infrastructure we provide, revenue you keep.' }
+    { metric: 'Ask', title: 'Research & writing', body: 'Thesis chapters, literature reviews, study plans, and project submissions — clarified and drafted through dialogue.' },
+    { metric: 'Build', title: 'Apps & tools', body: 'Interactive apps, dashboards, and utilities you can preview, refine, and use — not just describe.' },
+    { metric: 'Ship', title: 'When the web fits', body: 'Publish a page or shop when that is the outcome. Quantora is an AI studio, not a website builder with a chat box.' }
+  ];
+
+  // Placeholder slots — swap for real quotes, metrics, and names as stories arrive.
+  const successStorySlots = [
+    {
+      category: 'Research',
+      icon: BookOpen,
+      color: '#8b5cf6',
+      title: 'Thesis chapter, structured',
+      teaser: 'A graduate student turns a vague topic into an outline, draft sections, and a submission checklist — in one week of sessions.',
+      status: 'Coming soon',
+    },
+    {
+      category: 'App',
+      icon: Smartphone,
+      color: '#06b6d4',
+      title: 'Study planner app',
+      teaser: 'A syllabus becomes a daily goal tracker with flashcards — built, previewed, and shared with classmates.',
+      status: 'Coming soon',
+    },
+    {
+      category: 'Plan',
+      icon: GraduationCap,
+      color: '#10b981',
+      title: 'Research project intake',
+      teaser: 'Scope, methodology, and milestones clarified before writing — so the first draft is intentional, not generic.',
+      status: 'Coming soon',
+    },
   ];
 
   const flagshipCapabilities = [
@@ -140,7 +171,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       number: '01',
       label: 'Create',
       title: 'Build from a conversation.',
-      description: 'Turn a natural-language idea into a working interface, then refine it with an AI partner that explains what it is doing.',
+      description: 'Turn an idea into a working artifact — an app, a research draft, a plan, or a page when you need one. Refine with an AI partner that remembers context.',
       action: 'Open AI Studio',
       color: '#f97316',
       icon: Code2
@@ -215,6 +246,13 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               className="hover:text-amber-500"
             >
               AI Studio
+            </span>
+            <span
+              onClick={() => document.getElementById('success-stories')?.scrollIntoView({ behavior: 'smooth' })}
+              style={{ cursor: 'pointer', transition: 'color 0.2s' }}
+              className="hover:text-amber-500"
+            >
+              Success stories
             </span>
             <span
               onClick={() => user ? onLaunchStudio() : onOpenAuth()}
@@ -293,11 +331,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           position: 'relative',
           zIndex: 10,
           background: isLight
-            ? 'radial-gradient(900px 420px at 18% -8%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
-            : 'radial-gradient(900px 460px at 18% -6%, rgba(249,115,22,0.14), rgba(7,9,19,0) 60%), #070913'
+            ? 'radial-gradient(1000px 480px at 50% -10%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
+            : 'radial-gradient(1000px 520px at 50% -8%, rgba(249,115,22,0.14), rgba(7,9,19,0) 60%), #070913'
         }}
       >
         <div className="landing-container animate-fade-in-up">
+          <div className="landing-hero__inner">
           <div className="landing-hero__eyebrow" style={{ color: isLight ? '#9a3412' : '#fdba74' }}>
             <span className="landing-hero__eyebrow-dot" />
             Possibility, built with purpose
@@ -308,7 +347,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           </h1>
 
           <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-            Describe what you need in plain language. Quantora orchestrates frontier models to deliver working results — in one conversation.
+            An AI studio for curious builders — research a thesis, shape a project, build an app, or ship a page when that is the outcome. One conversation, something finished.
           </p>
 
           <div
@@ -350,6 +389,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               </span>
             ))}
           </div>
+          </div>
         </div>
       </section>
 
@@ -357,11 +397,11 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section className={`landing-section landing-outcomes ${isLight ? 'is-light' : ''}`}>
         <div className="landing-container">
           <Reveal>
-            <div className="landing-section__header">
+            <div className="landing-section__header is-center">
               <span className="landing-section__eyebrow" style={{ color: '#fdba74' }}>What you get</span>
               <h2 className="landing-section__title" style={{ color: '#ffffff' }}>Real outcomes, not chat logs.</h2>
               <p className="landing-section__lead" style={{ color: 'rgba(255,255,255,0.72)' }}>
-                Every session is designed to finish with something you can open, share, or operate — a live preview, a published page, or a plan you can execute tomorrow.
+                Every session aims to finish with something you can use — a draft, a preview, a plan, or a live link when the web is the right medium.
               </p>
             </div>
             <div className="landing-outcomes__grid">
@@ -374,14 +414,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               ))}
             </div>
             <p style={{
-              margin: 'clamp(28px, 4vh, 36px) 0 0',
-              paddingLeft: '18px',
-              borderLeft: '3px solid #f97316',
+              margin: 'clamp(28px, 4vh, 36px) auto 0',
               fontSize: 'clamp(1.05rem, 1.6vw, 1.25rem)',
               lineHeight: 1.55,
               fontWeight: 500,
               color: 'rgba(255,255,255,0.88)',
-              maxWidth: '720px'
+              maxWidth: '680px',
+              textAlign: 'center',
+              textWrap: 'balance'
             }}>
               The distance between an idea and a deployed outcome should be measured in conversation — not in quarters, headcount, or capital.
             </p>
@@ -396,7 +436,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <div className="landing-section__header is-center">
             <span className="landing-section__eyebrow">How it works</span>
             <h2 className="landing-section__title" style={{ color: textColor }}>Four stages. One continuous workflow.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>From first prompt to published site — every step is designed to produce a result you can use, share, and operate.</p>
+            <p className="landing-section__lead" style={{ color: subtextColor }}>From first prompt to a finished artifact — research, apps, plans, or a published page when you need one.</p>
           </div>
         </Reveal>
         <div className="landing-card-grid">
@@ -423,6 +463,55 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             </button>
           </div>
         </Reveal>
+        </div>
+      </section>
+
+      {/* Success stories — placeholder until real builder quotes land */}
+      <section id="success-stories" className="landing-section landing-stories" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header is-center">
+              <span className="landing-section__eyebrow">Success stories</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>Builders who finished something meaningful.</h2>
+              <p className="landing-section__lead" style={{ color: subtextColor }}>
+                Researchers, students, and curious makers — not just web designers. Real stories from early Quantora sessions will live here.
+              </p>
+            </div>
+          </Reveal>
+          <div className="landing-stories__grid">
+            {successStorySlots.map((story, i) => {
+              const StoryIcon = story.icon;
+              return (
+                <Reveal key={story.title} delay={i * 80} style={{ height: '100%' }}>
+                  <article
+                    className={`landing-story-card${isLight ? ' is-light' : ''}`}
+                    style={{ background: cardBg, border: cardBorder }}
+                  >
+                    <span className="landing-story-card__status">{story.status}</span>
+                    <div className="landing-story-card__icon" style={{ background: `${story.color}18`, border: `1px solid ${story.color}44` }}>
+                      <StoryIcon size={20} color={story.color} />
+                    </div>
+                    <span className="landing-story-card__category" style={{ color: story.color }}>{story.category}</span>
+                    <h3 style={{ color: textColor }}>{story.title}</h3>
+                    <p style={{ color: subtextColor }}>{story.teaser}</p>
+                  </article>
+                </Reveal>
+              );
+            })}
+          </div>
+          <Reveal delay={120}>
+            <p className="landing-stories__footnote" style={{ color: subtextColor }}>
+              Early access is open. When you finish a thesis section, app, or project with Quantora,{' '}
+              <button
+                type="button"
+                onClick={() => (user ? onLaunchStudio() : onOpenAuth())}
+                style={{ background: 'none', border: 'none', padding: 0, color: '#ea580c', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}
+              >
+                your story could be featured here
+              </button>
+              .
+            </p>
+          </Reveal>
         </div>
       </section>
 
