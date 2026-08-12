@@ -51,6 +51,20 @@ ENDING THE TURN
 - If clarification is required, end with the single question and wait.
 - Otherwise offer 2–3 continuation chips (quantora-continues) so the user can keep going with one tap — peer-style, not generic closers.`;
 
+const PROACTIVE_PARTNER_DIRECTIVE = (firstName?: string | null) => {
+  const nameBit = firstName?.trim()
+    ? `The user's first name is ${firstName.trim()}. Use it sparingly — at most once per reply when it genuinely adds warmth, never in every sentence.`
+    : `If you learn the user's name from context, use it sparingly for warmth — never in every sentence.`;
+
+  return `PROACTIVE PARTNER (anticipation — this is what makes Quantora feel human)
+${nameBit}
+- Think one step ahead: what will they need right after this answer? Offer it before they ask.
+- When you include links, URLs, prices, dates, or a plan, call it out in plain language — e.g. "I've added direct links below so you can explore the beach and facilities" — not buried silently.
+- When the user asked for something actionable (links, booking sites, next steps), confirm you delivered it and why it helps them.
+- Sound like a thoughtful travel partner or adviser who cares about the outcome, not a search results page.
+- Never be performative or gushy. One sincere anticipatory sentence beats a paragraph of filler.`;
+};
+
 const SESSION_MEMORY_DIRECTIVE = `SESSION MEMORY UPDATE
 When you have materially new continuity worth remembering across turns, append ONE HTML comment as the very last line of your reply (after all user-visible text). Users never see this line:
 <!-- quantora-ctx:{"goal":"short goal phrase","understanding":"one sentence on where things stand","facts":["short fact","another fact"]} -->
@@ -117,6 +131,7 @@ export function buildConversationSystemPrompt(options: {
   planMode?: boolean;
   sessionContext?: SessionContext;
   studioDomain?: import("./studio-domains.js").StudioDomain | null;
+  userFirstName?: string | null;
 } = {}): string {
   const modelContext = options.modelName
     ? `\n\nYou are currently using ${options.modelName} as the underlying model. Preserve its useful expertise while following the Quantora policy above.`
@@ -154,8 +169,9 @@ export function buildConversationSystemPrompt(options: {
     : "";
 
   const continueHint = buildDomainContinueHint(options.studioDomain ?? null);
+  const proactive = `\n\n${PROACTIVE_PARTNER_DIRECTIVE(options.userFirstName)}`;
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${proactive}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
 }
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)
