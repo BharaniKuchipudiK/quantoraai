@@ -940,37 +940,43 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
+  const previewDialogRef = useRef(null);
 
   const closePreviewModal = () => {
     // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v2',location:'AiStudio:closePreviewModal',message:'preview modal closed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-ui'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v6',location:'AiStudio:closePreviewModal',message:'preview modal closed',data:{canvasFullscreen,dialogOpen:Boolean(previewDialogRef.current?.open)},timestamp:Date.now(),hypothesisId:'preview-close-ui'})}).catch(()=>{});
     // #endregion
+    if (previewDialogRef.current?.open) {
+      previewDialogRef.current.close();
+      return;
+    }
     setCanvasOpen(false);
     setCanvasFullscreen(false);
   };
 
   useEffect(() => {
-    if (!canvasOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v5',location:'AiStudio:preview-portal-open',message:'preview modal portaled to body',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-portal'})}).catch(()=>{});
-    // #endregion
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      event.stopPropagation();
+    const dialog = previewDialogRef.current;
+    if (!dialog) return undefined;
+    const onDialogClose = () => {
+      setCanvasOpen(false);
+      setCanvasFullscreen(false);
+    };
+    dialog.addEventListener('close', onDialogClose);
+    return () => dialog.removeEventListener('close', onDialogClose);
+  }, []);
+
+  useEffect(() => {
+    const dialog = previewDialogRef.current;
+    if (!dialog) return;
+    if (canvasOpen && !dialog.open) {
+      dialog.showModal();
       // #region agent log
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v3',location:'AiStudio:canvas-escape',message:'preview escape pressed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v6',location:'AiStudio:preview-dialog-open',message:'preview dialog showModal',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
       // #endregion
-      closePreviewModal();
-    };
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [canvasOpen, canvasFullscreen]);
+    } else if (!canvasOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [canvasOpen]);
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [backgroundVerify, setBackgroundVerify] = useState(null);
@@ -3415,33 +3421,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
       )}
 
-      {/* Live Preview Canvas Overlay Modal — portaled above app header (z-index 100). */}
-      {canvasOpen && createPortal((
-        <div
-          role="dialog"
-          aria-modal="true"
+      {/* Live Preview — native dialog top layer (above header z-index 100). */}
+      {createPortal((
+        <dialog
+          ref={previewDialogRef}
+          className={`preview-dialog ${canvasFullscreen ? 'preview-dialog--fullscreen' : 'preview-dialog--windowed'}`}
           aria-label="Live Preview"
-          tabIndex={-1}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 15000,
-            display: 'flex',
-            flexDirection: 'column',
-            background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : 'rgba(0, 0, 0, 0.8)',
-            backdropFilter: canvasFullscreen ? 'none' : 'blur(8px)',
-            padding: canvasFullscreen ? 0 : '24px',
+          onCancel={(event) => {
+            event.preventDefault();
+            // #region agent log
+            fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v6',location:'AiStudio:preview-dialog-cancel',message:'preview dialog cancel (Esc)',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
+            // #endregion
+            closePreviewModal();
           }}
         >
           <div style={{
-            flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            minHeight: 0,
+            height: '100%',
             width: '100%',
-            maxWidth: canvasFullscreen ? '100%' : '1200px',
-            height: canvasFullscreen ? '100%' : '90vh',
-            margin: canvasFullscreen ? 0 : 'auto',
+            minHeight: 0,
             background: isLight ? '#f8fafc' : '#0d1127',
             borderRadius: canvasFullscreen ? 0 : '20px',
             border: canvasFullscreen ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)'),
@@ -3532,7 +3531,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               />
             </div>
           </div>
-        </div>
+        </dialog>
       ), document.body)}
 
       {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
