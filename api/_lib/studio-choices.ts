@@ -50,12 +50,13 @@ export function normalizeStudioChoiceSet(value: unknown): StudioChoiceSet | null
 
 const CHOICES_MARKER = /<!--\s*quantora-choices:\s*(\{[\s\S]*?\})\s*-->/i;
 const PARTIAL_CHOICES = /<!--\s*quantora-choices:[\s\S]*$/i;
+const PARTIAL_CONTINUES = /<!--\s*quantora-continues:[\s\S]*$/i;
 const PARTIAL_CTX = /<!--\s*quantora-ctx:[\s\S]*$/i;
 
 /** Hide incomplete markers during SSE streaming. */
 export function stripPartialAssistantMarkers(text: string): string {
   let out = text;
-  for (const re of [PARTIAL_CHOICES, PARTIAL_CTX]) {
+  for (const re of [PARTIAL_CHOICES, PARTIAL_CONTINUES, PARTIAL_CTX]) {
     const idx = out.search(re);
     if (idx !== -1) out = out.slice(0, idx).trimEnd();
   }
