@@ -28,7 +28,7 @@ import {
   Globe2,
   Atom
 } from 'lucide-react';
-import './FlagshipShowcase.css';
+import './LandingPage.css';
 
 /*
  * Reveal-on-scroll wrapper. Content starts slightly lowered and transparent,
@@ -128,6 +128,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const liveModelCount = onlineModels.length;
   const liveModelNames = onlineModels.slice(0, 5).map((m) => m.name).filter(Boolean);
 
+  const outcomes = [
+    { metric: 'Preview', title: 'Working builds in minutes', body: 'Open runnable HTML in the live canvas — see, test, and refine before you ship.' },
+    { metric: 'Publish', title: 'Live on your domain', body: 'Deploy to Vercel in one click. You own the site, the code, and the deployment.' },
+    { metric: 'Transact', title: 'Payments on sites you build', body: 'Connect Stripe and accept payments directly — infrastructure we provide, revenue you keep.' }
+  ];
+
   const flagshipCapabilities = [
     {
       id: 'studio',
@@ -136,7 +142,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       title: 'Build from a conversation.',
       description: 'Turn a natural-language idea into a working interface, then refine it with an AI partner that explains what it is doing.',
       action: 'Open AI Studio',
-      image: '/card-bg-ai.jpg',
       color: '#f97316',
       icon: Code2
     },
@@ -147,7 +152,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       title: 'See the system before you build it.',
       description: 'Map ideas, decisions and architecture into a visual canvas that keeps complex work understandable.',
       action: 'Launch Dream Canvas',
-      image: '/card-bg-canvas.jpg',
       color: '#f59e0b',
       icon: Workflow
     },
@@ -158,7 +162,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       title: 'Make quantum ideas tangible.',
       description: 'Simulate circuits, inspect state probabilities and learn by interacting instead of starting with a wall of mathematics.',
       action: 'Explore Quantum Horizon',
-      image: '/card-bg-quantum.jpg',
       color: '#06b6d4',
       icon: Atom
     },
@@ -169,7 +172,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       title: 'Keep access under your control.',
       description: 'Connect your own model keys through a privacy-minded gateway without turning security into another complicated workflow.',
       action: 'Open Privacy Vault',
-      image: '/card-bg-vault.jpg',
       color: '#10b981',
       icon: ShieldCheck
     }
@@ -178,25 +180,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const selectedCapability = flagshipCapabilities.find((item) => item.id === activeCapability) || flagshipCapabilities[0];
   const SelectedCapabilityIcon = selectedCapability.icon;
 
-  // Cinematic auto-advance through the four experiences, like a film reel.
-  // Re-armed on every change, so a manual tap resets the countdown rather than
-  // yanking the viewer forward. The progress bar (keyed in the JSX) fills over
-  // the same interval, so the motion reads as intentional, not restless.
-  const FLAGSHIP_INTERVAL = 5200;
-  useEffect(() => {
-    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) return;
-    const t = setTimeout(() => {
-      setActiveCapability((prev) => {
-        const idx = flagshipCapabilities.findIndex((c) => c.id === prev);
-        return flagshipCapabilities[(idx + 1) % flagshipCapabilities.length].id;
-      });
-    }, FLAGSHIP_INTERVAL);
-    return () => clearTimeout(t);
-  }, [activeCapability]);
-
   return (
-    <div style={{
+    <div className="landing-page" style={{
       minHeight: '100vh',
       background: bgColor,
       color: textColor,
@@ -301,63 +286,39 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </header>
 
-      {/* Hero — clean editorial canvas, no competing photography */}
-      <section style={{
-        position: 'relative',
-        zIndex: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'flex-start',
-        padding: 'clamp(24px, 4vh, 48px) 6% clamp(40px, 6vh, 64px)',
-        background: isLight
-          ? 'radial-gradient(1100px 520px at 50% -8%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
-          : 'radial-gradient(1000px 560px at 50% -6%, rgba(249,115,22,0.16), rgba(7,9,19,0) 60%), #070913'
-      }}>
-        <div style={{ maxWidth: '940px', margin: '0 auto', width: '100%', textAlign: 'center' }} className="animate-fade-in-up">
-          {/* Eyebrow */}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '9px',
-            fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em',
-            textTransform: 'uppercase', color: isLight ? '#9a3412' : '#fdba74',
-            marginBottom: '20px'
-          }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
+      {/* Hero — same column width as every section below */}
+      <section
+        className="landing-hero"
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          background: isLight
+            ? 'radial-gradient(900px 420px at 18% -8%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
+            : 'radial-gradient(900px 460px at 18% -6%, rgba(249,115,22,0.14), rgba(7,9,19,0) 60%), #070913'
+        }}
+      >
+        <div className="landing-container animate-fade-in-up">
+          <div className="landing-hero__eyebrow" style={{ color: isLight ? '#9a3412' : '#fdba74' }}>
+            <span className="landing-hero__eyebrow-dot" />
             Possibility, built with purpose
           </div>
 
-          {/* Headline — solid ink, a single accent, tight editorial tracking */}
-          <h1 style={{
-            fontSize: 'clamp(2.5rem, 5.5vw, 4.5rem)',
-            fontWeight: '700',
-            lineHeight: 1.08,
-            letterSpacing: '-0.025em',
-            color: isLight ? '#0b1220' : '#ffffff',
-            margin: '0 0 20px'
-          }}>
-            From intent<br/>
-            to <span style={{ color: '#ea580c' }}>outcome.</span>
+          <h1 className="landing-hero__title" style={{ color: isLight ? '#0b1220' : '#ffffff' }}>
+            From intent to <span style={{ color: '#ea580c' }}>outcome.</span>
           </h1>
 
-          <p style={{
-            fontSize: 'clamp(1.05rem, 1.25vw, 1.2rem)',
-            color: isLight ? '#475569' : '#cbd5e1',
-            lineHeight: 1.65, fontWeight: '400',
-            maxWidth: '560px', margin: '0 auto 36px'
-          }}>
+          <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
             Describe what you need in plain language. Quantora orchestrates frontier models to deliver working results — in one conversation.
           </p>
 
-          {/* Real prompt box — the product, front and centre */}
-          <div style={{
-            maxWidth: '700px', margin: '0 auto',
-            background: isLight ? '#ffffff' : 'rgba(17,23,38,0.92)',
-            border: isLight ? '1px solid #e5e7eb' : '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '16px',
-            padding: '10px 10px 10px 18px',
-            display: 'flex', alignItems: 'center', gap: '12px',
-            boxShadow: isLight ? '0 14px 44px rgba(15,23,42,0.10)' : '0 14px 48px rgba(0,0,0,0.5)',
-            textAlign: 'left'
-          }}>
+          <div
+            className="landing-hero__prompt"
+            style={{
+              background: isLight ? '#ffffff' : 'rgba(17,23,38,0.92)',
+              border: isLight ? '1px solid #e5e7eb' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: isLight ? '0 14px 44px rgba(15,23,42,0.10)' : '0 14px 48px rgba(0,0,0,0.5)'
+            }}
+          >
             <textarea
               value={heroPrompt}
               onChange={(e) => setHeroPrompt(e.target.value)}
@@ -381,185 +342,176 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             </button>
           </div>
 
-        </div>
-
-        {/* Live model strip — muted, sourced from the real registry */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '14px', flexWrap: 'wrap',
-          margin: '28px auto 0', maxWidth: '940px', width: '100%'
-        }}>
-          <span style={{ fontSize: '0.72rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: isLight ? '#94a3b8' : '#64748b' }}>
-            {liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}
-          </span>
-          {liveModelNames.map((name, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', fontSize: '0.8rem', fontWeight: '600', color: isLight ? '#64748b' : '#94a3b8' }}>
-              <span style={{ opacity: 0.4 }}>·</span> {name}
-            </span>
-          ))}
+          <div className="landing-hero__models" style={{ color: isLight ? '#64748b' : '#94a3b8' }}>
+            <span>{liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}</span>
+            {liveModelNames.map((name, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ opacity: 0.4 }}>·</span> {name}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Belief statement — one bold line, the way great brands lead */}
-      <section style={{
-        padding: 'clamp(48px, 7vh, 88px) 6%',
-        position: 'relative', zIndex: 10,
-        background: isLight ? '#0b1220' : 'rgba(255,255,255,0.02)',
-        borderTop: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)',
-        borderBottom: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)'
-      }}>
-        <Reveal>
-          <div style={{ maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: '600', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#fdba74' }}>
-              Our conviction
-            </span>
+      {/* Outcomes — value-first, same width rhythm as hero */}
+      <section className={`landing-section landing-outcomes ${isLight ? 'is-light' : ''}`}>
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header">
+              <span className="landing-section__eyebrow" style={{ color: '#fdba74' }}>What you get</span>
+              <h2 className="landing-section__title" style={{ color: '#ffffff' }}>Real outcomes, not chat logs.</h2>
+              <p className="landing-section__lead" style={{ color: 'rgba(255,255,255,0.72)' }}>
+                Every session is designed to finish with something you can open, share, or operate — a live preview, a published page, or a plan you can execute tomorrow.
+              </p>
+            </div>
+            <div className="landing-outcomes__grid">
+              {outcomes.map((item) => (
+                <div key={item.metric} className="landing-outcome-card">
+                  <em>{item.metric}</em>
+                  <strong>{item.title}</strong>
+                  <span>{item.body}</span>
+                </div>
+              ))}
+            </div>
             <p style={{
-              fontSize: 'clamp(1.5rem, 2.8vw, 2.35rem)',
-              fontWeight: '600',
-              lineHeight: 1.35,
-              letterSpacing: '-0.015em',
-              color: '#ffffff',
-              margin: '20px auto 0',
-              maxWidth: '820px',
-              textWrap: 'balance'
+              margin: 'clamp(28px, 4vh, 36px) 0 0',
+              paddingLeft: '18px',
+              borderLeft: '3px solid #f97316',
+              fontSize: 'clamp(1.05rem, 1.6vw, 1.25rem)',
+              lineHeight: 1.55,
+              fontWeight: 500,
+              color: 'rgba(255,255,255,0.88)',
+              maxWidth: '720px'
             }}>
               The distance between an idea and a deployed outcome should be measured in conversation — not in quarters, headcount, or capital.
             </p>
-          </div>
-        </Reveal>
+          </Reveal>
+        </div>
       </section>
 
-      {/* How it works — the real journey, no simulation */}
-      <section style={{ maxWidth: '1180px', margin: 'clamp(56px, 8vh, 80px) auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+      {/* How it works */}
+      <section className="landing-section" style={{ position: 'relative', zIndex: 10 }}>
+        <div className="landing-container">
         <Reveal>
-          <div style={{ textAlign: 'center', marginBottom: '44px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ea580c' }}>How it works</span>
-            <h2 style={{ fontSize: 'clamp(1.75rem, 2.8vw, 2.4rem)', fontWeight: '700', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.015em' }}>Four stages. One continuous workflow.</h2>
-            <p style={{ fontSize: '1.02rem', color: subtextColor, maxWidth: '640px', margin: '0 auto', lineHeight: 1.65 }}>From first prompt to published site — every step is designed to produce a result you can use, share, and operate.</p>
+          <div className="landing-section__header is-center">
+            <span className="landing-section__eyebrow">How it works</span>
+            <h2 className="landing-section__title" style={{ color: textColor }}>Four stages. One continuous workflow.</h2>
+            <p className="landing-section__lead" style={{ color: subtextColor }}>From first prompt to published site — every step is designed to produce a result you can use, share, and operate.</p>
           </div>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+        <div className="landing-card-grid">
           {journey.map((s, i) => {
             const Icon = s.icon;
             return (
               <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
-              <div style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', position: 'relative', overflow: 'hidden', height: '100%' }}>
-                <div style={{ position: 'absolute', top: '14px', right: '18px', fontSize: '2.4rem', fontWeight: '900', color: s.color, opacity: 0.14, lineHeight: 1 }}>{s.step}</div>
-                <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: `${s.color}1f`, border: `1px solid ${s.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+              <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
+                <div className="landing-card__step" style={{ color: s.color }}>{s.step}</div>
+                <div className="landing-card__icon" style={{ background: `${s.color}1f`, border: `1px solid ${s.color}55` }}>
                   <Icon size={22} color={s.color} />
                 </div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: '0 0 8px', color: textColor }}>{s.title}</h3>
-                <p style={{ fontSize: '0.92rem', color: subtextColor, lineHeight: 1.55, margin: 0 }}>{s.body}</p>
+                <h3 style={{ color: textColor }}>{s.title}</h3>
+                <p style={{ color: subtextColor }}>{s.body}</p>
               </div>
               </Reveal>
             );
           })}
         </div>
         <Reveal delay={120}>
-          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+          <div style={{ textAlign: 'center', marginTop: '36px' }}>
             <button onClick={() => startBuild()} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '15px 32px', borderRadius: '14px', fontSize: '1.05rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 10px 28px rgba(249,115,22,0.4)' }}>
               Start building free <ArrowRight size={19} strokeWidth={2.5} />
             </button>
           </div>
         </Reveal>
+        </div>
       </section>
-      {/* Under the hood — the real engineering, honestly stated */}
-      <section style={{ maxWidth: '1180px', margin: '0 auto clamp(40px, 6vh, 56px)', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+
+      {/* Platform */}
+      <section className="landing-section" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
+        <div className="landing-container">
         <Reveal>
-          <div style={{ textAlign: 'center', marginBottom: '44px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ea580c' }}>Platform</span>
-            <h2 style={{ fontSize: 'clamp(1.75rem, 2.8vw, 2.4rem)', fontWeight: '700', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.015em' }}>Engineered for reliability, not hype.</h2>
-            <p style={{ fontSize: '1.02rem', color: subtextColor, maxWidth: '680px', margin: '0 auto', lineHeight: 1.65 }}>Quantora is a production system — model routing, automated verification, and a privacy-first gateway — built to turn dialogue into dependable outcomes.</p>
+          <div className="landing-section__header is-center">
+            <span className="landing-section__eyebrow">Platform</span>
+            <h2 className="landing-section__title" style={{ color: textColor }}>Engineered for reliability, not hype.</h2>
+            <p className="landing-section__lead" style={{ color: subtextColor }}>Model routing, automated verification, and a privacy-first gateway — built to turn dialogue into dependable outcomes.</p>
           </div>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+        <div className="landing-card-grid">
           {techPillars.map((t, i) => {
             const Icon = t.icon;
             return (
               <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
-              <div style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', height: '100%' }}>
-                <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: `${t.color}1f`, border: `1px solid ${t.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+              <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
+                <div className="landing-card__icon" style={{ background: `${t.color}1f`, border: `1px solid ${t.color}55` }}>
                   <Icon size={22} color={t.color} />
                 </div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 8px', color: textColor }}>{t.title}</h3>
-                <p style={{ fontSize: '0.92rem', color: subtextColor, lineHeight: 1.55, margin: 0 }}>{t.body}</p>
+                <h3 style={{ color: textColor }}>{t.title}</h3>
+                <p style={{ color: subtextColor }}>{t.body}</p>
               </div>
               </Reveal>
             );
           })}
         </div>
+        </div>
       </section>
 
-      <div className="flagship-band" style={{
-        background: isLight
-          ? 'radial-gradient(1100px 440px at 50% 0%, rgba(249,115,22,0.12), transparent 72%), #070b16'
-          : 'radial-gradient(1100px 440px at 50% 0%, rgba(249,115,22,0.10), transparent 72%), #04060d',
-        '--page-bg': isLight ? '#f8fafc' : '#070913'
-      }}>
-      <section className="flagship-experience" aria-labelledby="flagship-experience-title">
+      {/* Studio modules — text-first, no heavy photography */}
+      <section className="landing-section" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
+        <div className="landing-container">
         <Reveal>
-          <div className="flagship-experience-heading flagship-heading-ondark">
-            <span>Our purpose</span>
-            <h2 id="flagship-experience-title">
-              Together,<br />
-              there is no limit to what you can make real.
-            </h2>
-            <p>
-              Everything you create remains yours. We provide the intelligence and infrastructure to move from initial concept to a deliverable you can publish, share, and operate — on your terms.
+          <div className="landing-section__header">
+            <span className="landing-section__eyebrow">The studio</span>
+            <h2 className="landing-section__title" style={{ color: textColor }}>Four surfaces. One build loop.</h2>
+            <p className="landing-section__lead" style={{ color: subtextColor }}>
+              Create, shape, explore, and protect — each module connects back to the same conversation, so you never lose context between idea and delivery.
             </p>
           </div>
         </Reveal>
 
-        <Reveal delay={80}>
-        <div
-          className="flagship-stage"
-          style={{ '--flagship-accent': selectedCapability.color }}
-        >
-          <div key={`${selectedCapability.id}-bar`} className="flagship-progress" style={{ background: selectedCapability.color }} />
-          <div
-            key={selectedCapability.id}
-            className="flagship-stage-image"
-            style={{ backgroundImage: `url(${selectedCapability.image})` }}
-          />
-          <div className="flagship-stage-shade" />
+        <div className="landing-card-grid">
+          {flagshipCapabilities.map((item) => {
+            const ItemIcon = item.icon;
+            const isActive = item.id === selectedCapability.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`landing-capability ${isLight ? 'is-light' : ''}${isActive ? ' is-active' : ''}`}
+                style={{ '--cap-accent': item.color, color: textColor }}
+                onClick={() => setActiveCapability(item.id)}
+              >
+                <div className="landing-capability__label">{item.number} · {item.label}</div>
+                <h3>{item.title}</h3>
+                <p style={{ color: subtextColor }}>{item.description}</p>
+                <ItemIcon size={16} style={{ position: 'absolute', top: 16, right: 16, opacity: 0.35, color: item.color }} />
+              </button>
+            );
+          })}
+        </div>
 
-          <div key={`${selectedCapability.id}-content`} className="flagship-stage-content">
-            <div className="flagship-stage-label">
-              <SelectedCapabilityIcon size={18} />
-              <span>{selectedCapability.number} / {selectedCapability.label}</span>
+        <Reveal delay={60}>
+          <div className={`landing-capability-panel ${isLight ? 'is-light' : ''}`} style={{ '--panel-accent': selectedCapability.color }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', color: selectedCapability.color, fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+              <SelectedCapabilityIcon size={16} />
+              {selectedCapability.number} / {selectedCapability.label}
             </div>
-            <h3>{selectedCapability.title}</h3>
-            <p>{selectedCapability.description}</p>
-            <button onClick={() => user ? onLaunchStudio() : onOpenAuth()}>
-              {selectedCapability.action} <ArrowRight size={17} />
+            <h3 style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', fontWeight: 600, margin: '0 0 10px', color: textColor }}>{selectedCapability.title}</h3>
+            <p style={{ margin: '0 0 20px', maxWidth: '560px', lineHeight: 1.6, color: subtextColor }}>{selectedCapability.description}</p>
+            <button
+              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: selectedCapability.color, color: '#fff', border: 'none',
+                padding: '12px 22px', borderRadius: '10px',
+                fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              {selectedCapability.action} <ArrowRight size={16} />
             </button>
           </div>
-
-          <div className="flagship-stage-nav" role="tablist" aria-label="Quantora experiences">
-            {flagshipCapabilities.map((item) => {
-              const ItemIcon = item.icon;
-              const isActive = item.id === selectedCapability.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  className={isActive ? 'is-active' : ''}
-                  style={{ '--item-accent': item.color }}
-                  onClick={() => setActiveCapability(item.id)}
-                >
-                  <span>{item.number}</span>
-                  <ItemIcon size={16} />
-                  <strong>{item.label}</strong>
-                </button>
-              );
-            })}
-          </div>
-        </div>
         </Reveal>
+        </div>
       </section>
-      </div>
 
       {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
     </div>
