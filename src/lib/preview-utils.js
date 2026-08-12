@@ -19,12 +19,20 @@ export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
         document.write(html);
         document.close();
       }
+      function bindEscape() {
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') {
+            try { parent.postMessage({ __quantora: true, kind: 'preview-close-request' }, '*'); } catch (err) {}
+          }
+        }, true);
+      }
       window.addEventListener('message', function (e) {
         var d = e.data;
         if (d && Object.prototype.hasOwnProperty.call(d, '__quantoraPreviewHtml')) {
           render(d.__quantoraPreviewHtml);
         }
       });
+      bindEscape();
       try {
         parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
       } catch (err) { /* cross-origin guard */ }
@@ -89,6 +97,12 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
       report({ kind:'loaded', stylingOk: stylingOk, usesTailwind: Boolean(tailwindScript) });
     }, 500);
   });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      report({ kind:'preview-close-request' });
+    }
+  }, true);
 })();<\/script>`;
 
 export function injectPreviewHarness(html) {

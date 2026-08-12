@@ -14,12 +14,20 @@
         document.write(html);
         document.close();
       }
+      function bindEscape() {
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') {
+            try { parent.postMessage({ __quantora: true, kind: 'preview-close-request' }, '*'); } catch (err) {}
+          }
+        }, true);
+      }
       window.addEventListener('message', function (e) {
         var d = e.data;
         if (d && Object.prototype.hasOwnProperty.call(d, '__quantoraPreviewHtml')) {
           render(d.__quantoraPreviewHtml);
         }
       });
+      bindEscape();
       try {
         parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
       } catch (err) { /* cross-origin guard */ }
