@@ -8,6 +8,19 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import ModelDashboard from './ModelDashboard';
 import { chooseBestFreeModel, classifyTask, rankFreeModels } from '../lib/model-routing.js';
+
+function extractHtmlFromResponse(rawText) {
+  if (!rawText || typeof rawText !== 'string') return '';
+  const trimmed = rawText.trim();
+  const htmlFence = trimmed.match(/```html\s*\n?([\s\S]*?)```/i);
+  if (htmlFence?.[1]) return htmlFence[1].trim();
+  const genericFence = trimmed.match(/```\s*\n?([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)```/i);
+  if (genericFence?.[1]) return genericFence[1].trim();
+  if (/<!DOCTYPE html>/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
+    return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
+  }
+  return '';
+}
 // Interactive iOS Calculator Sub-Component
 function LiveIosCalculator() {
   const [display, setDisplay] = useState('0');
@@ -853,6 +866,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasFullscreen, setCanvasFullscreen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
   // The HTML shown in the Live Canvas preview. Was referenced throughout but
   // never declared — clicking "Open Live Canvas Mode" threw a ReferenceError,
@@ -899,16 +913,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const openCanvasWithCode = (rawText) => {
-    let cleanCode = '';
-    const htmlMatch = rawText.match(/```html\n([\s\S]*?)```/i) || rawText.match(/```\n([\s\S]*?<html[\s\S]*?)```/i);
-    if (htmlMatch && htmlMatch[1]) {
-      cleanCode = htmlMatch[1];
-    } else {
-      cleanCode = rawText.includes('<!DOCTYPE html>') || rawText.includes('<html')
-        ? rawText.replace(/```(?:html|javascript|js|css)?\n([\s\S]*?)```/gi, '$1')
-        : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
-    }
+    const cleanCode = extractHtmlFromResponse(rawText) || (rawText.includes('<!DOCTYPE html>') || rawText.includes('<html')
+      ? rawText.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim()
+      : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`);
     setPreviewCode(cleanCode);
+    setCanvasFullscreen(false);
     setCanvasOpen(true);
   };
 
@@ -3179,22 +3188,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: 'blur(8px)',
+          background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: canvasFullscreen ? 'none' : 'blur(8px)',
           zIndex: 9999,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '24px'
+          padding: canvasFullscreen ? 0 : '24px'
         }}>
           <div style={{
             width: '100%',
-            maxWidth: '1200px',
-            height: '90vh',
+            maxWidth: canvasFullscreen ? '100%' : '1200px',
+            height: canvasFullscreen ? '100vh' : '90vh',
             background: isLight ? '#f8fafc' : '#0d1127',
-            borderRadius: '20px',
-            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            borderRadius: canvasFullscreen ? 0 : '20px',
+            border: canvasFullscreen ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)'),
+            boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'
@@ -3202,7 +3211,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <LivePreviewCanvas 
               code={previewCode} 
               isLight={isLight} 
-              onClose={() => setCanvasOpen(false)} 
+              isFullscreen={canvasFullscreen}
+              onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
+              onClose={() => { setCanvasOpen(false); setCanvasFullscreen(false); }} 
             />
           </div>
         </div>
