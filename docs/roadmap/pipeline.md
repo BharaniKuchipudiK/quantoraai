@@ -84,7 +84,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 | # | Task | Why |
 |---|------|-----|
 | 3 | ~~**Floating choice card above prompt**~~ ✅ | Pending options visible without scrolling |
-| 4 | **Travel + Build choice templates** | Budget, dates, site type as model hints |
+| 4 | ~~**Travel + Build choice templates**~~ ✅ | Budget, dates, site type as model hints |
 | 5 | **Hide Arena from default chrome** | Power feature; overflow menu only |
 
 ### P2 — Ship & monetize (differentiation)
