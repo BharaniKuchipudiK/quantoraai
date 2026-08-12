@@ -951,17 +951,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   useEffect(() => {
     if (!canvasOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    // #region agent log
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v3',location:'AiStudio:preview-portal-open',message:'preview modal portaled to body',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-portal'})}).catch(()=>{});
+    // #endregion
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
       // #region agent log
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v2',location:'AiStudio:canvas-escape',message:'preview escape pressed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v3',location:'AiStudio:canvas-escape',message:'preview escape pressed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close'})}).catch(()=>{});
       // #endregion
       closePreviewModal();
     };
     document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
   }, [canvasOpen, canvasFullscreen]);
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
@@ -3407,49 +3415,52 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
       )}
 
-      {/* Live Preview Canvas Overlay Modal */}
-      {canvasOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: canvasFullscreen ? 'none' : 'blur(8px)',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: canvasFullscreen ? 0 : '24px'
-        }}>
-          {canvasFullscreen && (
-            <button
-              type="button"
-              onClick={closePreviewModal}
-              title="Close preview (Esc)"
-              aria-label="Close preview"
-              style={{
-                position: 'fixed',
-                top: '16px',
-                right: '16px',
-                zIndex: 10001,
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
-                background: isLight ? '#ffffff' : 'rgba(15,23,42,0.95)',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-                cursor: 'pointer',
-                color: isLight ? '#334155' : '#e2e8f0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <X size={22} />
-            </button>
-          )}
+      {/* Live Preview Canvas Overlay Modal — portaled above app header (z-index 100). */}
+      {canvasOpen && createPortal((
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Live Preview"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: canvasFullscreen ? (isLight ? '#f8fafc' : '#0d1127') : 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: canvasFullscreen ? 'none' : 'blur(8px)',
+            zIndex: 15000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: canvasFullscreen ? 0 : '24px',
+          }}
+        >
+          <button
+            type="button"
+            onClick={closePreviewModal}
+            title="Close preview (Esc)"
+            aria-label="Close preview"
+            style={{
+              position: 'fixed',
+              top: '16px',
+              right: '16px',
+              zIndex: 15001,
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+              background: isLight ? '#ffffff' : 'rgba(15,23,42,0.95)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+              cursor: 'pointer',
+              color: isLight ? '#334155' : '#e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <X size={22} />
+          </button>
           <div style={{
             width: '100%',
             maxWidth: canvasFullscreen ? '100%' : '1200px',
@@ -3460,18 +3471,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
           }}>
-            <LivePreviewCanvas 
-              code={previewCode} 
-              isLight={isLight} 
+            <LivePreviewCanvas
+              code={previewCode}
+              isLight={isLight}
               isFullscreen={canvasFullscreen}
               onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
-              onClose={closePreviewModal} 
+              onClose={closePreviewModal}
             />
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
       {isWorkspaceMode && (
