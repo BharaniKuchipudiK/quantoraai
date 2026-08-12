@@ -12,8 +12,13 @@ import {
   extractContextFromAssistantText,
   hasSessionMemory,
   mergeSessionContext,
-  stripPartialContextMarker,
 } from '../lib/session-context.js';
+import {
+  extractChoicesFromAssistantText,
+  stripPartialAssistantMarkers,
+} from '../lib/studio-choices.js';
+import StudioChoiceCards from './StudioChoiceCards';
+import StudioChromeBar from './StudioChromeBar';
 import {
   STUDIO_DOMAINS,
   STUDIO_OUTPUT_MODES,
@@ -1768,6 +1773,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               sessionContext: conversationContext,
               studioDomain,
               attachedImages,
+              choiceSelected: options.choiceSelected === true,
             })
           });
         } catch (networkError) {
@@ -1829,7 +1835,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 const parsed = JSON.parse(dataStr);
                 if (parsed.text) {
                   currentText += parsed.text;
-                  const visibleText = stripPartialContextMarker(currentText);
+                  const visibleText = stripPartialAssistantMarkers(currentText);
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     text: visibleText,
@@ -1852,9 +1858,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
         }
 
-        const { displayText, contextUpdate } = extractContextFromAssistantText(currentText);
+        const { displayText: afterChoices, choiceSet } = extractChoicesFromAssistantText(currentText);
+        const { displayText, contextUpdate } = extractContextFromAssistantText(afterChoices);
         if (displayText !== currentText) {
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: displayText } : m));
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: displayText,
+            ...(choiceSet ? { choiceSet } : {}),
+          } : m));
+        } else if (choiceSet) {
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, choiceSet } : m));
         }
         if (contextUpdate && (contextUpdate.goal || contextUpdate.understanding || contextUpdate.facts?.length)) {
           setChatSessions(prevSessions => {
@@ -2167,6 +2180,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           {msg.text}
                         </ReactMarkdown>
                       </div>
+
+                      {msg.sender === 'ai' && msg.choiceSet && !msg.choiceUsed && (
+                        <StudioChoiceCards
+                          choiceSet={msg.choiceSet}
+                          isLight={isLight}
+                          disabled={isGenerating}
+                          onSelect={(choice) => {
+                            updateActiveMessages((prev) => prev.map((m) => (
+                              m.id === msg.id ? { ...m, choiceUsed: true } : m
+                            )));
+                            handleSendMessage(choice.value, { choiceSelected: true });
+                          }}
+                        />
+                      )}
 
                       {/* Plan / code actions */}
                       <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -2564,226 +2591,73 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         minHeight: 0,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
-        {/* Top Header Bar */}
-        <div className="ai-studio-toolbar" style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-          marginBottom: '20px',
-          paddingBottom: '16px',
-          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {!sidebarOpen && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                title="Open Chat History Sidebar"
-                style={{
-                  background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)',
-                  color: textColor,
-                  padding: '8px',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: '4px'
-                }}
-              >
-                <PanelLeft size={18} />
-              </button>
-            )}
-
-            {SHOW_WORKSPACE && (
-            <button
-              onClick={() => setIsWorkspaceMode(!isWorkspaceMode)}
-              title={isWorkspaceMode ? "Close Code Canvas" : "Open Code Canvas"}
-              style={{
-                background: isWorkspaceMode ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' : (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)'),
-                color: isWorkspaceMode ? '#fff' : subtextColor,
-                border: 'none',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                transition: 'all 0.2s ease',
-                boxShadow: isWorkspaceMode ? '0 4px 12px rgba(249, 115, 22, 0.3)' : 'none'
-              }}
-            >
-              <Layout size={14} />
-              <span className="hidden md:inline">Workspace</span>
-            </button>
-            )}
-
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Sparkles size={20} color="#f97316" />
-            </div>
-            <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
-              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
-                {activeSession && messages.length > 1 ? activeSession.title : 'New Workspace'}
-              </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
-                <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
-                  {isGenerating ? (
-                    <>Active model: <strong style={{ color: '#f97316' }}>{activeGeneratingModel?.name || 'Preparing...'}</strong></>
-                  ) : autoSelectEnabled ? (
-                    <>Routing: <strong style={{ color: '#f97316' }}>Auto-select</strong></>
-                  ) : (
-                    <>Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong></>
-                  )}
-                </span>
-                <span style={{
-                  fontSize: '0.7rem',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  background: 'rgba(16, 185, 129, 0.12)',
-                  color: '#10b981',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  fontWeight: '600',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-                  Ready
-                </span>
-                {hasSessionMemory(conversationContext) && (
-                  <span
-                    title={conversationContext.understanding || conversationContext.goal || 'Conversation memory active'}
+        <StudioChromeBar
+          isLight={isLight}
+          textColor={textColor}
+          subtextColor={subtextColor}
+          sidebarOpen={sidebarOpen}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          sessionTitle={activeSession?.title}
+          showSessionMeta={messages.length > 1}
+          isGenerating={isGenerating}
+          activeGeneratingModel={activeGeneratingModel}
+          autoSelectEnabled={autoSelectEnabled}
+          selectedModel={selectedModel}
+          hasMemory={hasSessionMemory(conversationContext)}
+          memoryLabel={conversationContext.goal || conversationContext.understanding || 'Remembering context'}
+          arenaMode={arenaMode}
+          onToggleArena={() => setArenaMode(!arenaMode)}
+          secondModel={secondModel}
+          showSecondModelDropdown={showSecondModelDropdown}
+          onToggleSecondModelDropdown={() => setShowSecondModelDropdown(!showSecondModelDropdown)}
+          onResetChat={() => updateActiveMessages([])}
+          arenaDropdown={showSecondModelDropdown && (
+            <div style={{
+              position: 'absolute',
+              top: '120%',
+              right: 0,
+              width: '240px',
+              background: isLight ? '#ffffff' : '#0d1127',
+              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
+              borderRadius: '14px',
+              padding: '8px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+              zIndex: 300,
+            }}>
+              <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '4px 8px', fontWeight: '700', textTransform: 'uppercase' }}>
+                Select competitor (Model B)
+              </div>
+              {availableModels && availableModels.map((m) => {
+                const isAvailable = m.available !== false;
+                return (
+                  <div
+                    key={m.id}
+                    onClick={() => {
+                      if (!isAvailable) return;
+                      setSecondModel(m);
+                      setShowSecondModelDropdown(false);
+                    }}
                     style={{
-                      fontSize: '0.68rem',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      background: isLight ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.15)',
-                      color: isLight ? '#2563eb' : '#93c5fd',
-                      border: isLight ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(59, 130, 246, 0.35)',
-                      fontWeight: '600',
-                      maxWidth: '220px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      cursor: isAvailable ? 'pointer' : 'not-allowed',
+                      background: secondModel?.id === m.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.8rem',
+                      color: !isAvailable ? subtextColor : (secondModel?.id === m.id ? '#f97316' : textColor),
+                      fontWeight: secondModel?.id === m.id ? '700' : '500',
+                      opacity: isAvailable ? 1 : 0.6,
                     }}
                   >
-                    {conversationContext.goal || conversationContext.understanding || 'Remembering context'}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
-          {/* Dual Model Arena Toggle Button */}
-          <button
-            onClick={() => setArenaMode(!arenaMode)}
-            title="Compare two AI models side-by-side in real time"
-            style={{
-              background: arenaMode ? 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)' : (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)'),
-              border: arenaMode ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)'),
-              color: arenaMode ? '#ffffff' : textColor,
-              padding: '6px 14px',
-              borderRadius: '20px',
-              fontSize: '0.8rem',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: arenaMode ? '0 4px 12px rgba(249, 115, 22, 0.3)' : 'none',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <Layers size={14} /> {arenaMode ? '⚔️ Arena Mode Active' : '⚔️ Dual Arena Mode'}
-          </button>
-
-          {/* Model B Selector Dropdown in Arena Mode */}
-          {arenaMode && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowSecondModelDropdown(!showSecondModelDropdown)}
-                style={{
-                  background: isLight ? '#ffffff' : '#0d1127',
-                  border: '1px solid #f97316',
-                  color: '#f97316',
-                  padding: '6px 12px',
-                  borderRadius: '18px',
-                  fontSize: '0.78rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <span>VS: {secondModel ? secondModel.name : 'Qwen 2.5 Coder 32B'}</span>
-                <ChevronDown size={12} />
-              </button>
-
-              {showSecondModelDropdown && (
-                <div style={{
-                  position: 'absolute',
-                  top: '120%',
-                  right: 0,
-                  width: '240px',
-                  background: isLight ? '#ffffff' : '#0d1127',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
-                  borderRadius: '14px',
-                  padding: '8px',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-                  zIndex: 300
-                }}>
-                  <div style={{ fontSize: '0.7rem', color: subtextColor, padding: '4px 8px', fontWeight: '700', textTransform: 'uppercase' }}>
-                    Select Competitor Model (Model B)
+                    <span style={{ textDecoration: !isAvailable ? 'line-through' : 'none' }}>{m.name}</span>
                   </div>
-                  {availableModels && availableModels.map(m => {
-                    const isAvailable = m.available !== false;
-                    return (
-                    <div
-                      key={m.id}
-                      onClick={() => {
-                        if (!isAvailable) return;
-                        setSecondModel(m);
-                        setShowSecondModelDropdown(false);
-                      }}
-                      style={{
-                        padding: '8px 10px',
-                        borderRadius: '8px',
-                        cursor: isAvailable ? 'pointer' : 'not-allowed',
-                        background: secondModel?.id === m.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        fontSize: '0.8rem',
-                        color: !isAvailable ? subtextColor : (secondModel?.id === m.id ? '#f97316' : textColor),
-                        fontWeight: secondModel?.id === m.id ? '700' : '500',
-                        opacity: isAvailable ? 1 : 0.6
-                      }}
-                    >
-                      <span style={{ textDecoration: !isAvailable ? 'line-through' : 'none' }}>{m.name}</span>
-                      {!isAvailable && (
-                        <span style={{ fontSize: '0.65rem', background: isLight ? '#cbd5e1' : '#334155', color: isLight ? '#64748b' : '#94a3b8', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Unavailable</span>
-                      )}
-                    </div>
-                  )})}
-                </div>
-              )}
+                );
+              })}
             </div>
           )}
-
-          <button
-            onClick={() => updateActiveMessages([])}
-            style={{ background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)', color: subtextColor, padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <RefreshCw size={13} /> Reset Chat
-          </button>
-        </div>
-      </div>
+        />
 
       {/* Messages Stream / Initial Hero State */}
       <div

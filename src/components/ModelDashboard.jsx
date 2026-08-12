@@ -121,7 +121,7 @@ export default function ModelDashboard({
 
   const summary = data?.summary || {
     available: models.filter((model) => model.status === 'available').length,
-    free: models.filter((model) => model.pricingKind === 'free' || model.pricingKind === 'free-tier').length,
+    free: models.filter((model) => (model.pricingKind === 'free' || model.pricingKind === 'free-tier') && model.status !== 'retired').length,
     new: 0,
     offline: models.filter((model) => model.status === 'offline').length,
   };

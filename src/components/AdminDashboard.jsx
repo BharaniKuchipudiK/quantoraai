@@ -181,7 +181,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
   </button>
 );
 
-import LiveUsersMap from './LiveUsersMap';
+import ProductAnalyticsPanel from './ProductAnalyticsPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
   const g = metrics.growth || {};
@@ -209,7 +209,7 @@ const UserAnalyticsTab = ({ metrics }) => {
         <MiniKpi title="Billable Requests (7d)" value={(g.billableRequests7d || 0).toLocaleString()} sparklineColor="#8b5cf6" icon={<Fingerprint size={16}/>} />
       </div>
       
-      <LiveUsersMap isLight={isLight} />
+      <ProductAnalyticsPanel product={metrics.product} growth={metrics.growth} isLight={isLight} />
       <div style={{ marginBottom: '24px' }}></div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
         <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>

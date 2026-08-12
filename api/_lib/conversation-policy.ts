@@ -1,6 +1,7 @@
 import type { SessionContext } from "./session-context.js";
 import { formatSessionContextForPrompt } from "./session-context.js";
 import { buildDomainDirective } from "./studio-domains.js";
+import { CHOICES_DIRECTIVE } from "./studio-choices.js";
 
 export type CognitiveLevel = "Lightning" | "Balanced" | "Deep Think" | string | undefined;
 
@@ -137,7 +138,11 @@ export function buildConversationSystemPrompt(options: {
 
   const domain = buildDomainDirective(options.studioDomain ?? null);
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${build}${plan}${modelContext}`;
+  const choices = (options.guided || options.studioDomain)
+    ? `\n\n${CHOICES_DIRECTIVE}`
+    : "";
+
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${choices}${build}${plan}${modelContext}`;
 }
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)
