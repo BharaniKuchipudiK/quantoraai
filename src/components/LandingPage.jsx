@@ -61,14 +61,6 @@ function Reveal({ children, delay = 0, style, className }) {
   );
 }
 
-// Per-capability cinematic canvas — a rich indigo base with two ambient
-// accent glows. The bright focal object is a separate luminous orb element
-// (see .flagship-stage-orb) so the right side reads as a composed visual, not
-// empty space. On-brand per experience, and it can never 404.
-function stageBackground(c) {
-  return `radial-gradient(1100px 520px at 100% 0%, ${c}26, transparent 60%), radial-gradient(760px 640px at 16% 118%, ${c}24, transparent 58%), linear-gradient(120deg, #0a0f22 0%, #121a3a 54%, #0a1026 100%)`;
-}
-
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
   const [activeCapability, setActiveCapability] = useState('studio');
 
@@ -531,9 +523,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <div
             key={selectedCapability.id}
             className="flagship-stage-image"
-            style={{ backgroundImage: stageBackground(selectedCapability.color) }}
+            style={{ backgroundImage: `url(${selectedCapability.image})` }}
           />
-          <div key={`${selectedCapability.id}-orb`} className="flagship-stage-orb" style={{ '--orb': selectedCapability.color }} />
           <div className="flagship-stage-shade" />
 
           <div key={`${selectedCapability.id}-content`} className="flagship-stage-content">
