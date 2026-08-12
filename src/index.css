@@ -496,6 +496,21 @@ body {
   position: sticky;
   top: 0;
   z-index: 2;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.preview-dialog-chrome--fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.preview-dialog-body--fullscreen {
+  padding-top: 56px;
+  box-sizing: border-box;
 }
 
 .preview-dialog::backdrop {

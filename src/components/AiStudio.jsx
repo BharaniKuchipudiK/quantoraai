@@ -978,7 +978,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       if (dialog.open) {
         closingDialogRef.current = true;
         dialog.close();
-        closingDialogRef.current = false;
+        queueMicrotask(() => { closingDialogRef.current = false; });
       }
     };
   }, [canvasOpen]);
@@ -3466,16 +3466,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             overflow: 'hidden',
           }}>
-            <div className="preview-dialog-chrome" style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              padding: '12px 16px',
-              flexShrink: 0,
-              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-              background: isLight ? '#ffffff' : '#1e293b',
-            }}>
+            <form
+              method="dialog"
+              className={`preview-dialog-chrome${canvasFullscreen ? ' preview-dialog-chrome--fullscreen' : ''}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                padding: '12px 16px',
+                flexShrink: 0,
+                margin: 0,
+                border: 'none',
+                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                background: isLight ? '#ffffff' : '#1e293b',
+              }}
+              onSubmit={() => {
+                // #region agent log
+                fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v9',location:'AiStudio:close-form-submit',message:'native dialog close submit',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-native'})}).catch(()=>{});
+                // #endregion
+              }}
+            >
               <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isLight ? '#334155' : '#e2e8f0' }}>
                 Live Preview
               </span>
@@ -3526,8 +3537,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   </button>
                 )}
                 <button
-                  type="button"
-                  onClick={closePreviewModal}
+                  type="submit"
                   title="Close preview (Esc)"
                   aria-label="Close preview"
                   style={{
@@ -3548,13 +3558,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <X size={16} /> Close
                 </button>
               </div>
-            </div>
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            </form>
+            <div className={canvasFullscreen ? 'preview-dialog-body--fullscreen' : 'preview-dialog-body'} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <LivePreviewCanvas
                 code={previewCode}
                 isLight={isLight}
                 isFullscreen={canvasFullscreen}
-                hideHeader={canvasFullscreen}
+                hideHeader
                 onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
                 onClose={closePreviewModal}
               />
