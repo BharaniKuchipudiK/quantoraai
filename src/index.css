@@ -559,11 +559,44 @@ body {
   display: none;
 }
 
+.chat-message-row--user {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.chat-message-body--user {
+  margin-left: auto;
+}
+
+.chat-message-bubble--user {
+  width: fit-content;
+  max-width: min(85%, 640px);
+}
+
+.chat-message-bubble--ai {
+  max-width: min(92%, 720px);
+}
+
+.chat-message-bubble,
+.markdown-prose {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ai-studio-thread .markdown-prose p {
+  margin-top: 0.35em;
+  margin-bottom: 0.35em;
+}
+
 @media (max-width: 640px) {
   .studio-domain-row {
     flex-wrap: nowrap;
     overflow-x: auto;
     padding-bottom: 6px;
+  }
+
+  .chat-message-bubble--user {
+    max-width: 92%;
   }
 }
 

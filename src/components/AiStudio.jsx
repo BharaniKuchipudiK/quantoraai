@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader, Plane, BookOpen, DollarSign, Search, Check } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -17,6 +17,7 @@ import {
 import {
   STUDIO_DOMAINS,
   STUDIO_OUTPUT_MODES,
+  getDomainById,
   getOutputModeLabel,
   getPromptPlaceholder,
 } from '../lib/studio-domains.js';
@@ -620,8 +621,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession({ studioDomain: domain });
   };
 
-  const toggleStudioDomain = (domainId) => {
-    setStudioDomain(studioDomain === domainId ? null : domainId);
+  const activeDomainMeta = getDomainById(studioDomain);
+  const ActiveDomainIcon = studioDomain ? DOMAIN_ICONS[studioDomain] : Compass;
+
+  const [dismissedModelSpotlights, setDismissedModelSpotlights] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('quantora_dismissed_model_spotlights') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const spotlightModel = React.useMemo(() => {
+    const list = modelDashboard?.models || [];
+    return list.find(
+      (m) => (m.isNew || m.isUpdated) && m.status === 'available' && !dismissedModelSpotlights.includes(m.id),
+    ) || null;
+  }, [modelDashboard, dismissedModelSpotlights]);
+
+  const dismissModelSpotlight = (modelId) => {
+    setDismissedModelSpotlights((prev) => {
+      const next = [...prev, modelId];
+      try {
+        localStorage.setItem('quantora_dismissed_model_spotlights', JSON.stringify(next));
+      } catch { /* best effort */ }
+      return next;
+    });
   };
 
   const updateActiveSession = (updates) => {
@@ -974,17 +999,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
   const [showOutputModeMenu, setShowOutputModeMenu] = useState(false);
+  const [showDomainMenu, setShowDomainMenu] = useState(false);
   const outputModeMenuRef = useRef(null);
+  const domainMenuRef = useRef(null);
   useEffect(() => {
-    if (!showOutputModeMenu) return undefined;
+    if (!showOutputModeMenu && !showDomainMenu) return undefined;
     const onDocClick = (event) => {
-      if (outputModeMenuRef.current && !outputModeMenuRef.current.contains(event.target)) {
+      if (showOutputModeMenu && outputModeMenuRef.current && !outputModeMenuRef.current.contains(event.target)) {
         setShowOutputModeMenu(false);
+      }
+      if (showDomainMenu && domainMenuRef.current && !domainMenuRef.current.contains(event.target)) {
+        setShowDomainMenu(false);
       }
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [showOutputModeMenu]);
+  }, [showOutputModeMenu, showDomainMenu]);
 
   const [arenaMode, setArenaMode] = useState(false);
   const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
@@ -1860,8 +1890,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const renderedChatFeed = React.useMemo(() => {
-    return messages.slice(1).map(msg => (
-              <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+    return messages.slice(1).map(msg => {
+      const isUser = msg.sender === 'user';
+      return (
+              <div
+                key={msg.id}
+                className={`chat-message-row${isUser ? ' chat-message-row--user' : ' chat-message-row--ai'}`}
+                style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}
+              >
                 {/* Avatar */}
                 <div style={{
                   width: '36px',
@@ -1881,7 +1917,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
 
                 {/* Content Bubble */}
-                <div style={{ flex: 1 }}>
+                <div
+                  className={isUser ? 'chat-message-body chat-message-body--user' : 'chat-message-body chat-message-body--ai'}
+                  style={{ flex: isUser ? '0 1 auto' : 1, minWidth: 0 }}
+                >
                   {msg.isDual ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
                       {/* Model A Card */}
@@ -1993,16 +2032,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       </div>
                     </div>
                   ) : (
-                    <div className="prose" style={{
-                      background: msg.sender === 'user' ? (isLight ? '#f0f4f9' : '#1e1f20') : 'transparent',
+                    <div className={`prose chat-message-bubble${isUser ? ' chat-message-bubble--user' : ' chat-message-bubble--ai'}`} style={{
+                      background: isUser ? (isLight ? '#f0f4f9' : '#1e1f20') : 'transparent',
                       border: 'none',
-                      padding: msg.sender === 'user' ? '12px 18px' : '4px 0',
+                      padding: isUser ? '12px 18px' : '4px 0',
                       borderRadius: '20px',
                       color: textColor,
                       fontSize: '1rem',
                       lineHeight: 1.65,
                       boxShadow: 'none',
-                      width: '100%'
                     }}>
                       {/* Render Attachments if present on user message */}
                       {msg.attachments && msg.attachments.length > 0 && (
@@ -2187,7 +2225,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   )}
                 </div>
               </div>
-            ));
+            );
+    });
   }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel]);
 
   return (
@@ -2888,6 +2927,75 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         )}
 
+        {spotlightModel && (
+          <div className="model-spotlight-card" style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+            marginBottom: '10px',
+            padding: '12px 14px',
+            borderRadius: '16px',
+            background: isLight
+              ? 'linear-gradient(135deg, #faf5ff 0%, #fff7ed 100%)'
+              : 'linear-gradient(135deg, rgba(124,58,237,0.12) 0%, rgba(249,115,22,0.1) 100%)',
+            border: isLight ? '1px solid #e9d5ff' : '1px solid rgba(167,139,250,0.35)',
+          }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '12px',
+              background: isLight ? '#ffffff' : 'rgba(255,255,255,0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Sparkles size={18} color="#a855f7" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {spotlightModel.isUpdated ? 'Model updated' : 'New model'}
+              </div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 700, color: textColor, marginTop: '2px' }}>
+                {spotlightModel.name}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: subtextColor, marginTop: '4px', lineHeight: 1.45 }}>
+                {spotlightModel.description || spotlightModel.specialty || 'Now available in Quantora\'s free model lineup.'}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (spotlightModel.selectable !== false) {
+                    setSelectedModel(availableModels?.find((c) => c.id === spotlightModel.id) || spotlightModel);
+                    setAutoSelectEnabled(false);
+                  }
+                  dismissModelSpotlight(spotlightModel.id);
+                }}
+                style={{
+                  marginTop: '8px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#f97316',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                Try it →
+              </button>
+            </div>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => dismissModelSpotlight(spotlightModel.id)}
+              style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '2px' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
@@ -3066,56 +3174,129 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 resize: 'none',
                 fontFamily: 'inherit',
                 lineHeight: '1.5',
-                minHeight: '24px',
+                minHeight: '56px',
                 maxHeight: '400px',
                 overflow: 'auto'
               }}
             />
           </div>
 
-          {/* Domain focus — what you're working on (separate from Chat/Build/Plan app) */}
-          <div className="studio-domain-row" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            flexWrap: 'wrap',
-            padding: '6px 14px 2px',
-          }}>
-            {STUDIO_DOMAINS.map(({ id, label, description }) => {
-              const Icon = DOMAIN_ICONS[id];
-              const active = studioDomain === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  title={description}
-                  aria-pressed={active}
-                  onClick={() => toggleStudioDomain(id)}
-                  className={`studio-domain-chip${active ? ' studio-domain-chip--active' : ''}`}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '999px',
-                    border: active
-                      ? '1px solid rgba(249, 115, 22, 0.55)'
-                      : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)'),
-                    background: active
-                      ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.18)')
-                      : (isLight ? '#ffffff' : 'rgba(255,255,255,0.04)'),
-                    color: active ? '#f97316' : subtextColor,
-                    fontSize: '0.74rem',
-                    fontWeight: active ? 700 : 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {Icon ? <Icon size={14} /> : null}
-                  {label}
-                </button>
-              );
-            })}
+          {/* Domain focus — Fello-style compact picker */}
+          <div style={{ padding: '4px 14px 2px' }}>
+            <div ref={domainMenuRef} style={{ position: 'relative', display: 'inline-block' }}>
+              <button
+                type="button"
+                onClick={() => setShowDomainMenu((v) => !v)}
+                title="Choose a focus area for this conversation"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '999px',
+                  border: studioDomain
+                    ? '1px solid rgba(249, 115, 22, 0.55)'
+                    : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)'),
+                  background: studioDomain
+                    ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.18)')
+                    : (isLight ? '#ffffff' : 'rgba(255,255,255,0.04)'),
+                  color: studioDomain ? '#f97316' : subtextColor,
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                <ActiveDomainIcon size={14} />
+                {activeDomainMeta ? activeDomainMeta.label : 'Focus'}
+                <ChevronDown size={13} />
+              </button>
+              {showDomainMenu && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: 'calc(100% + 8px)',
+                  left: 0,
+                  width: 'min(320px, calc(100vw - 32px))',
+                  background: isLight ? '#ffffff' : '#0f172a',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '16px',
+                  boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
+                  padding: '8px',
+                  zIndex: 130,
+                }}>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: subtextColor, padding: '6px 10px 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Focus area
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setStudioDomain(null); setShowDomainMenu(false); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      textAlign: 'left',
+                      border: 'none',
+                      background: !studioDomain ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)') : 'transparent',
+                      borderRadius: '10px',
+                      padding: '8px 10px',
+                      cursor: 'pointer',
+                      color: textColor,
+                    }}
+                  >
+                    <span>
+                      <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700 }}>General</span>
+                      <span style={{ display: 'block', fontSize: '0.68rem', color: subtextColor, marginTop: '2px' }}>No specific domain bias</span>
+                    </span>
+                    {!studioDomain ? <Check size={14} color="#f97316" /> : null}
+                  </button>
+                  {STUDIO_DOMAINS.map(({ id, label, description }) => {
+                    const Icon = DOMAIN_ICONS[id];
+                    const active = studioDomain === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => { setStudioDomain(id); setShowDomainMenu(false); }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                          width: '100%',
+                          textAlign: 'left',
+                          border: 'none',
+                          background: active ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)') : 'transparent',
+                          borderRadius: '10px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          color: textColor,
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                          <span style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '8px',
+                            background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.06)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            {Icon ? <Icon size={15} color={active ? '#f97316' : subtextColor} /> : null}
+                          </span>
+                          <span>
+                            <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: active ? '#f97316' : textColor }}>{label}</span>
+                            <span style={{ display: 'block', fontSize: '0.68rem', color: subtextColor, marginTop: '2px' }}>{description}</span>
+                          </span>
+                        </span>
+                        {active ? <Check size={14} color="#f97316" style={{ flexShrink: 0 }} /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Bottom Action Toolbar */}
