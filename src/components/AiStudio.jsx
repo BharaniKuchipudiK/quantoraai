@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -940,31 +940,82 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
-  const closePreviewModal = useCallback(() => {
-    // #region agent log
-    const payload = { sessionId: 'd0f2b5', runId: 'preview-close-v10', location: 'AiStudio:closePreviewModal', message: 'preview overlay closed', data: { canvasFullscreen }, timestamp: Date.now(), hypothesisId: 'preview-close-ui' };
+  const previewChromeRef = useRef(null);
+  const canvasFullscreenRef = useRef(false);
+  const canvasOpenRef = useRef(false);
+  useEffect(() => { canvasFullscreenRef.current = canvasFullscreen; }, [canvasFullscreen]);
+  useEffect(() => { canvasOpenRef.current = canvasOpen; }, [canvasOpen]);
+
+  const emitPreviewDebugLog = useCallback((location, message, data, hypothesisId) => {
+    const payload = { sessionId: 'd0f2b5', runId: 'preview-close-v11', location, message, data, timestamp: Date.now(), hypothesisId };
     fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd0f2b5' }, body: JSON.stringify(payload) }).catch(() => {});
     fetch('/api/debug-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).catch(() => {});
+  }, []);
+
+  const logChromeVisibility = useCallback((trigger) => {
+    const el = previewChromeRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    emitPreviewDebugLog('AiStudio:chrome-visibility', 'chrome layout probe', {
+      trigger,
+      canvasFullscreen: canvasFullscreenRef.current,
+      top: Math.round(rect.top),
+      height: Math.round(rect.height),
+      display: style.display,
+      visibility: style.visibility,
+      zIndex: style.zIndex,
+      inViewport: rect.height > 0 && rect.top >= 0 && rect.top < window.innerHeight,
+    }, 'H3-chrome-hidden');
+  }, [emitPreviewDebugLog]);
+
+  const closePreviewModal = useCallback(() => {
+    // #region agent log
+    emitPreviewDebugLog('AiStudio:closePreviewModal', 'preview overlay closed', {
+      canvasFullscreen: canvasFullscreenRef.current,
+      canvasOpen: canvasOpenRef.current,
+    }, 'H2-unexpected-close');
     // #endregion
     setCanvasOpen(false);
     setCanvasFullscreen(false);
-  }, [canvasFullscreen]);
+  }, [emitPreviewDebugLog]);
+
+  const togglePreviewFullscreen = useCallback(() => {
+    setCanvasFullscreen((prev) => {
+      const next = !prev;
+      // #region agent log
+      emitPreviewDebugLog('AiStudio:toggle-fullscreen', 'fullscreen toggled', { from: prev, to: next }, 'H1-fullscreen-toggle');
+      // #endregion
+      return next;
+    });
+  }, [emitPreviewDebugLog]);
+
+  useLayoutEffect(() => {
+    if (!canvasOpen) return;
+    logChromeVisibility(canvasFullscreen ? 'fullscreen-on' : 'windowed');
+  }, [canvasOpen, canvasFullscreen, logChromeVisibility]);
 
   useEffect(() => {
     if (!canvasOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v10',location:'AiStudio:preview-overlay-open',message:'preview overlay opened',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-overlay'})}).catch(()=>{});
+    emitPreviewDebugLog('AiStudio:preview-overlay-open', 'preview overlay opened', { canvasFullscreen: canvasFullscreenRef.current }, 'H4-overlay-lifecycle');
     // #endregion
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      // #region agent log
+      emitPreviewDebugLog('AiStudio:escape-key', 'escape pressed on overlay', { canvasFullscreen: canvasFullscreenRef.current }, 'H5-escape-blocked');
+      // #endregion
       closePreviewModal();
     };
     const onPreviewMessage = (event) => {
       const data = event.data;
       if (data?.__quantora === true && data.kind === 'preview-close-request') {
+        // #region agent log
+        emitPreviewDebugLog('AiStudio:iframe-escape', 'iframe escape close', { canvasFullscreen: canvasFullscreenRef.current }, 'H5-escape-blocked');
+        // #endregion
         closePreviewModal();
       }
     };
@@ -975,7 +1026,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       document.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('message', onPreviewMessage);
     };
-  }, [canvasOpen, canvasFullscreen, closePreviewModal]);
+  }, [canvasOpen, closePreviewModal, emitPreviewDebugLog]);
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [backgroundVerify, setBackgroundVerify] = useState(null);
@@ -1033,6 +1084,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setCanvasFullscreen(false);
     setCanvasOpen(true);
     setBackgroundVerify(null);
+    // #region agent log
+    emitPreviewDebugLog('AiStudio:openCanvasWithCode', 'preview opened', { htmlLength: cleanCode.length }, 'H4-overlay-lifecycle');
+    // #endregion
   };
 
   const queuePreviewVerification = (messageId, html) => {
@@ -3437,7 +3491,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             border: canvasFullscreen ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)'),
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
           }}>
-            <div className="preview-overlay-chrome" style={{
+            <div
+              ref={previewChromeRef}
+              className="preview-overlay-chrome"
+              style={{
               borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
               background: isLight ? '#ffffff' : '#1e293b',
             }}>
@@ -3447,7 +3504,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setCanvasFullscreen((v) => !v)}
+                  onClick={togglePreviewFullscreen}
                   style={{
                     background: 'transparent',
                     border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
@@ -3463,7 +3520,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </button>
                 <button
                   type="button"
-                  onClick={closePreviewModal}
+                  onClick={() => {
+                    // #region agent log
+                    emitPreviewDebugLog('AiStudio:close-button', 'close button clicked', { canvasFullscreen: canvasFullscreenRef.current }, 'H2-unexpected-close');
+                    // #endregion
+                    closePreviewModal();
+                  }}
                   title="Close preview (Esc)"
                   aria-label="Close preview"
                   style={{
@@ -3491,7 +3553,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 isLight={isLight}
                 isFullscreen={canvasFullscreen}
                 hideHeader
-                onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
+                onToggleFullscreen={togglePreviewFullscreen}
                 onClose={closePreviewModal}
               />
             </div>

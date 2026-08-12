@@ -237,7 +237,8 @@ export default function LivePreviewCanvas({
       }
       if (d.kind === 'preview-close-request') {
         // #region agent log
-        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v2',location:'LivePreviewCanvas:preview-close-request',message:'iframe escape forwarded close',data:{isFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-iframe'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v11',location:'LivePreviewCanvas:preview-close-request',message:'iframe escape forwarded close',data:{isFullscreen},timestamp:Date.now(),hypothesisId:'H5-escape-blocked'})}).catch(()=>{});
+        fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v11',location:'LivePreviewCanvas:preview-close-request',message:'iframe escape forwarded close',data:{isFullscreen},timestamp:Date.now(),hypothesisId:'H5-escape-blocked'})}).catch(()=>{});
         // #endregion
         onClose?.();
         return;
