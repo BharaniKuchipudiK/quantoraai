@@ -954,7 +954,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v4',location:'AiStudio:preview-portal-open',message:'preview modal portaled to body',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-portal'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v5',location:'AiStudio:preview-portal-open',message:'preview modal portaled to body',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-portal'})}).catch(()=>{});
     // #endregion
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
@@ -3448,21 +3448,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             overflow: 'hidden',
           }}>
-            {canvasFullscreen && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                padding: '12px 16px',
-                flexShrink: 0,
-                borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-                background: isLight ? '#ffffff' : '#1e293b',
-              }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isLight ? '#334155' : '#e2e8f0' }}>
-                  Live Preview
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              padding: '12px 16px',
+              flexShrink: 0,
+              borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+              background: isLight ? '#ffffff' : '#1e293b',
+            }}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isLight ? '#334155' : '#e2e8f0' }}>
+                Live Preview
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {canvasFullscreen ? (
                   <button
                     type="button"
                     onClick={() => setCanvasFullscreen(false)}
@@ -3479,36 +3479,54 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   >
                     Exit full screen
                   </button>
+                ) : (
                   <button
                     type="button"
-                    onClick={closePreviewModal}
-                    title="Close preview (Esc)"
-                    aria-label="Close preview"
+                    onClick={() => setCanvasFullscreen(true)}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                      border: 'none',
-                      color: '#ffffff',
+                      background: 'transparent',
+                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                      color: isLight ? '#64748b' : '#cbd5e1',
                       borderRadius: '10px',
-                      padding: '8px 14px',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
+                      padding: '6px 12px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
                       cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(249, 115, 22, 0.35)',
                     }}
                   >
-                    <X size={16} /> Close
+                    Full screen
                   </button>
-                </div>
+                )}
+                <button
+                  type="button"
+                  onClick={closePreviewModal}
+                  title="Close preview (Esc)"
+                  aria-label="Close preview"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 14px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(249, 115, 22, 0.35)',
+                  }}
+                >
+                  <X size={16} /> Close
+                </button>
               </div>
-            )}
+            </div>
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <LivePreviewCanvas
                 code={previewCode}
                 isLight={isLight}
                 isFullscreen={canvasFullscreen}
+                hideHeader={canvasFullscreen}
                 onToggleFullscreen={() => setCanvasFullscreen(v => !v)}
                 onClose={closePreviewModal}
               />
