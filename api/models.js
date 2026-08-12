@@ -137,8 +137,32 @@ export default async function handler(req, res) {
   const dashboardIds = new Set(dashboardModels.map((model) => model.id));
   for (const model of liveFree) {
     if (dashboardIds.has(model.id)) continue;
-    dashboardModels.push({ ...candidateFromLive(model, stored.get(model.id)), quality: quality.get(model.id) || null, category: 'candidate' });
+    const storedRow = stored.get(model.id);
+    const candidate = {
+      ...candidateFromLive(model, storedRow),
+      quality: quality.get(model.id) || null,
+      category: 'candidate',
+    };
     dashboardIds.add(model.id);
+    if (storedRow?.approved !== true) continue;
+    dashboardModels.push({
+      ...candidate,
+      status: 'available',
+      selectable: true,
+      category: 'approved',
+    });
+    models.push({
+      id: model.id,
+      name: candidate.name,
+      provider: candidate.provider,
+      description: candidate.description,
+      contextWindow: candidate.contextWindow,
+      tag: 'FREE',
+      icon: 'sparkles',
+      available: true,
+      pricingKind: 'free',
+      quality: quality.get(model.id) || null,
+    });
   }
 
   // Preserve recently retired free models so users can see what disappeared.
@@ -178,7 +202,7 @@ export default async function handler(req, res) {
     models,
     source: catalog ? 'live' : 'fallback',
     catalogSize: catalog ? catalog.size : 0,
-    freeModelsAvailable: dashboardModels.filter((model) => model.category === 'candidate').slice(0, 25),
+    freeModelsAvailable: dashboardModels.filter((model) => model.category === 'approved').slice(0, 25),
     fetchedAt,
     dashboard: {
       source: catalog ? 'live' : 'fallback',

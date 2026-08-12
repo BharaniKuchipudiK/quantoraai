@@ -47,7 +47,13 @@ export async function scanModelCatalog() {
       pricing: model.pricing || {},
       is_free: true,
       approved: old?.approved === true,
-      lifecycle: old?.approved ? 'available' : (old?.lifecycle === 'testing' ? 'testing' : 'discovered'),
+      lifecycle: old?.approved
+        ? 'available'
+        : (old?.lifecycle === 'testing'
+          ? 'testing'
+          : old?.lifecycle === 'rejected'
+            ? 'rejected'
+            : 'discovered'),
       health_status: 'listed',
       metadata_fingerprint: fingerprint,
       last_event: eventType || old?.last_event || 'discovered',

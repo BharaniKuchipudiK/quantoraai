@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
 import AuroraBackground from './components/AuroraBackground';
@@ -103,7 +103,8 @@ export default function App() {
               || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
             authProvider: 'Google OAuth 2.0 (Verified)',
             tier: 'Indie Creator ($0 / mo)',
-            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+            isAdmin: data.user.isAdmin === true,
           });
         } else {
           // No valid server session — clear any leftover local profile.
@@ -190,51 +191,47 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0]);
   const [modelDashboard, setModelDashboard] = useState(null);
 
-  useEffect(() => {
-    // Dynamically fetch model registry
-    fetch('/api/models')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.models && data.models.length > 0) {
-          // Map dynamic schema back to our UI expectations
-          const mapped = data.models.map(m => ({
-            id: m.id,
-            name: m.name,
-            specialty: m.description,
-            badge: m.tag || (m.available ? 'Online' : m.unavailableReason || 'Offline'),
-            provider: m.provider,
-            available: m.available,
-            pricingKind: m.pricingKind,
-            quality: m.quality || null
-          }));
-
-          /*
-           * Defensive guard: only trust registry entries whose id is a slug the
-           * chat backend can actually route — a namespaced OpenRouter id
-           * (contains "/") or a Google model ("gemini"/"gemma"). This keeps a
-           * malformed or stale registry response from ever poisoning the picker
-           * with a bare id that would 400 at OpenRouter. If nothing valid comes
-           * back, we keep the offline-safe fallback list instead.
-           */
-          const dynamicModels = mapped.filter(
-            m => typeof m.id === 'string' && (m.id.includes('/') || m.id.startsWith('gemini') || m.id.startsWith('gemma'))
-          );
-          if (dynamicModels.length === 0) return;
-
-          setAvailableModels(dynamicModels);
-          if (data.dashboard) setModelDashboard(data.dashboard);
-
-          // Preserve the user's current selection if it still exists; otherwise
-          // fall back to the first available model, then the first overall.
-          setSelectedModel(current => {
-            const stillExists = dynamicModels.find(d => d.id === current?.id);
-            if (stillExists) return stillExists;
-            return dynamicModels.find(d => d.available) || dynamicModels[0];
-          });
-        }
-      })
-      .catch(err => console.error("Failed to fetch dynamic model registry:", err));
+  const applyModelRegistry = useCallback((data) => {
+    if (!data?.models?.length) return;
+    const mapped = data.models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      specialty: m.description,
+      badge: m.tag || (m.available ? 'Online' : m.unavailableReason || 'Offline'),
+      provider: m.provider,
+      available: m.available,
+      pricingKind: m.pricingKind,
+      quality: m.quality || null,
+    }));
+    const dynamicModels = mapped.filter(
+      (m) => typeof m.id === 'string' && (m.id.includes('/') || m.id.startsWith('gemini') || m.id.startsWith('gemma'))
+    );
+    if (dynamicModels.length === 0) return;
+    setAvailableModels(dynamicModels);
+    if (data.dashboard) setModelDashboard(data.dashboard);
+    setSelectedModel((current) => {
+      const stillExists = dynamicModels.find((d) => d.id === current?.id);
+      if (stillExists) return stillExists;
+      return dynamicModels.find((d) => d.available) || dynamicModels[0];
+    });
   }, []);
+
+  const refreshModels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+      applyModelRegistry(data);
+    } catch (err) {
+      console.error('Failed to refresh model registry:', err);
+    }
+  }, [applyModelRegistry]);
+
+  useEffect(() => {
+    fetch('/api/models')
+      .then((res) => res.json())
+      .then((data) => applyModelRegistry(data))
+      .catch((err) => console.error('Failed to fetch dynamic model registry:', err));
+  }, [applyModelRegistry]);
   const [activeCanvasNode, setActiveCanvasNode] = useState(null);
   const [dreamNodes, setDreamNodes] = useState(() => {
     try {
@@ -341,6 +338,8 @@ export default function App() {
                 onPushToCanvas={handleSendToCanvas}
                 onSendToCanvas={handleSendToCanvas}
                 user={user}
+                isAdmin={user?.isAdmin === true}
+                onModelsRefresh={refreshModels}
                 isLight={isLight}
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}

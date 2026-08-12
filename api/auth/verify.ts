@@ -1,7 +1,7 @@
 import { OAuth2Client } from 'google-auth-library';
 import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
 import { createSessionToken, setSessionCookie, isSessionConfigured } from '../_lib/session.js';
-import { recordSignIn } from '../_lib/store.js';
+import { isAdminUser, recordSignIn } from '../_lib/store.js';
 
 /*
  * The client ID is read strictly from the environment, with no placeholder
@@ -115,6 +115,8 @@ export default async function handler(req: any, res: any) {
     }
     setSessionCookie(res, token);
 
+    const isAdmin = await isAdminUser(payload.sub);
+
     // 7. Format the verified user object
     const verifiedUser = {
       name: payload.name || 'Creator',
@@ -122,7 +124,8 @@ export default async function handler(req: any, res: any) {
       avatar: payload.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(payload.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
       authProvider: "Google OAuth 2.0 (Verified)",
       tier: "Indie Creator ($0 / mo)",
-      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      isAdmin: isAdmin === true,
     };
 
     // 8. Return the secure user payload back to the frontend

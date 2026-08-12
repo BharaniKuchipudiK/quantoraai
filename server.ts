@@ -7,6 +7,7 @@ import { authenticateAdmin } from "./api/_lib/admin-auth.js";
 import { buildConversationSystemPrompt } from "./api/_lib/conversation-policy.js";
 import { buildRepositoryPreview } from "./api/_lib/repository-preview.js";
 import { getSessionUser, createSessionToken, setSessionCookie, clearSessionCookie, isSessionConfigured } from "./api/_lib/session.js";
+import { isAdminUser } from "./api/_lib/store.js";
 import { OAuth2Client } from "google-auth-library";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
@@ -258,6 +259,7 @@ async function startServer() {
       });
       if (!token) return res.status(503).json({ error: "Sign-in is not configured on this deployment." });
       setSessionCookie(res, token);
+      const isAdmin = await isAdminUser(payload.sub);
       return res.status(200).json({
         name: payload.name || "Creator",
         email: payload.email,
@@ -265,6 +267,7 @@ async function startServer() {
         authProvider: "Google OAuth 2.0 (Verified)",
         tier: "Indie Creator ($0 / mo)",
         joinedDate: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        isAdmin: isAdmin === true,
       });
     } catch (err: any) {
       console.warn("Google credential verification failed:", err?.message || err);
@@ -272,9 +275,19 @@ async function startServer() {
     }
   });
 
-  app.get("/api/auth/session", (req, res) => {
+  app.get("/api/auth/session", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
-    return res.status(200).json({ user: getSessionUser(req) ?? null });
+    const sessionUser = getSessionUser(req);
+    if (!sessionUser) {
+      return res.status(200).json({ user: null });
+    }
+    const isAdmin = await isAdminUser(sessionUser.sub);
+    return res.status(200).json({
+      user: {
+        ...sessionUser,
+        isAdmin: isAdmin === true,
+      },
+    });
   });
 
   app.post("/api/auth/logout", (req, res) => {
