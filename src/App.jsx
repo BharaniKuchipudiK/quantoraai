@@ -163,6 +163,14 @@ export default function App() {
     setActiveTab(tabName);
   };
 
+  // Start a real build from the landing hero: prefill the studio prompt, then
+  // drop the visitor straight into the Studio (or the auth gate if signed out).
+  // No simulation — the same box that runs every real build.
+  const handleStartBuild = (prompt) => {
+    if (typeof prompt === 'string' && prompt.trim()) setStudioInputText(prompt.trim());
+    handleTabChange('studio');
+  };
+
   // Offline-safe defaults used until /api/models resolves (and if it fails).
   // Every OpenRouter id here MUST be a valid `vendor/model` slug — a bare id
   // like "deepseek-coder-v2" gets a 400 Bad Request from OpenRouter. Keep this
@@ -268,8 +276,10 @@ export default function App() {
       {activeTab === 'landing' ? (
         <LandingPage
           onLaunchStudio={() => handleTabChange('studio')}
+          onStartBuild={handleStartBuild}
           onOpenAuth={() => setShowAuthModal(true)}
           user={user}
+          availableModels={availableModels}
           themeMode={themeMode}
           setThemeMode={setThemeMode}
         />
