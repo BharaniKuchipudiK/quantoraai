@@ -57,8 +57,10 @@ Use enough explanation to make the recommendation clear and trustworthy, without
 const BUILD_DIRECTIVE = `BUILD MODE
 The user wants a working, runnable artifact — not a description of one.
 - Respond with EXACTLY ONE complete, self-contained HTML document inside a single \`\`\`html code block.
-- Inline all CSS and JavaScript. It must run as a single .html file opened in a browser: no build step, no bundler, no server, and no bare module imports (never \`import x from "pkg"\`).
-- If you need a library, include it only via a public CDN <script>/<link> tag.
+- Put ALL visual styling in a comprehensive <style> block in <head> (layout, typography, colors, spacing, responsive @media rules). Do NOT rely on Tailwind CDN or other CSS-in-JS frameworks loaded from external scripts — utility-class frameworks fail when CSS never loads.
+- Inline all JavaScript. It must run as a single .html file: no build step, no bundler, no server, and no bare module imports (never \`import x from "pkg"\`).
+- External <script> tags are allowed only for payment SDKs (e.g. Stripe) or icon libraries when strictly needed; never for page styling.
+- Google Fonts via <link> are fine.
 - Make it polished and complete: real content, a responsive layout, and sensible interactivity. No TODOs, lorem ipsum, or placeholder comments standing in for functionality.
 - Keep any prose to at most one short sentence before the code block, and add nothing after it.`;
 
@@ -81,7 +83,8 @@ Run the intake conversationally, ONE small step at a time — never ask for ever
 4. any preferred domain name.
 
 Keep each message short, friendly and specific, and end with a single clear question. When you have enough (or the user tells you to proceed), STOP asking and output the COMPLETE website as ONE self-contained HTML document in a single \`\`\`html code block:
-- Inline all CSS and JavaScript; it must run as a single .html file (no build step, no bundler, no bare imports; libraries only via a public CDN tag).
+- Put ALL visual styling in a comprehensive <style> block (responsive @media included). Do NOT use Tailwind CDN or external CSS frameworks.
+- Inline all JavaScript; external scripts only for Stripe/icons when needed.
 - Polished, responsive, real content built from what the user told you. No lorem ipsum or TODOs.
 - If they wanted a shop, include a WORKING client-side demo cart and checkout: add-to-cart buttons, a cart drawer with quantities and a running total, and a mock checkout screen — clearly a demo, with no real payment.
 - Use tasteful placeholder imagery where the user has not supplied photos.

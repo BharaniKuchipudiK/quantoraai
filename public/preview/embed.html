@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Relaxed CSP for preview shell only (mirrors vercel.json /preview/* rule). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';">
+  <title>Quantora Preview</title>
+  <script>
+    (function () {
+      function render(html) {
+        if (!html) return;
+        document.open();
+        document.write(html);
+        document.close();
+      }
+      window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (d && Object.prototype.hasOwnProperty.call(d, '__quantoraPreviewHtml')) {
+          render(d.__quantoraPreviewHtml);
+        }
+      });
+      try {
+        parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
+      } catch (err) { /* cross-origin guard */ }
+    })();
+  </script>
+</head>
+<body style="margin:0;font-family:system-ui,sans-serif;color:#64748b;padding:16px">Loading preview…</body>
+</html>
