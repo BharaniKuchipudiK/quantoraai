@@ -459,6 +459,16 @@ function detectBuildIntent(text) {
   return verb.test(t) && noun.test(t);
 }
 
+/** Plan mode is for software architecture — route life/travel planning to Ask. */
+function isSoftwarePlanningRequest(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim().toLowerCase();
+  const softwareSignals = /\b(app|website|web app|pwa|api|feature|architecture|tech stack|database|frontend|backend|saas|platform|codebase|microservice|fullstack|full-stack|software|system design)\b/;
+  const lifePlanning = /\b(trip|travel|vacation|holiday|itinerary|flight|hotel|visit|tour|getaway|wedding|meal plan|workout plan|career path)\b|\bplan a (trip|vacation|holiday|visit)\b/;
+  if (lifePlanning.test(t) && !softwareSignals.test(t)) return false;
+  return softwareSignals.test(t);
+}
+
 // Syntax-highlighted code block with a one-click Copy button in the corner.
 function CopyableCodeBlock({ code, language }) {
   const [copied, setCopied] = useState(false);
@@ -1367,6 +1377,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (isGenerating) return;
     const effectiveStudioMode = options.studioMode || studioMode;
     const visibleText = text.trim() || "Review the attached repository context.";
+    const apiStudioMode = effectiveStudioMode === 'plan' && !isSoftwarePlanningRequest(visibleText)
+      ? 'ask'
+      : effectiveStudioMode;
 
     const repoContent = repoContextCache.current[activeSessionId];
     if (repoContent && boundRepo?.name) {
@@ -1562,9 +1575,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         ? `${text}\n\n[You are editing the existing app below. Apply the requested change and return the COMPLETE updated, self-contained HTML document — not a diff, not an explanation.]\n\`\`\`html\n${previewCode}\n\`\`\``
         : text;
       const autoBuildMode = isRefine || isWorkspaceMode || detectBuildIntent(text);
-      const buildMode = effectiveStudioMode === 'build'
+      const buildMode = apiStudioMode === 'build'
         ? true
-        : effectiveStudioMode === 'ask' || effectiveStudioMode === 'plan'
+        : apiStudioMode === 'ask' || apiStudioMode === 'plan'
           ? false
           : autoBuildMode;
       /*
@@ -1573,8 +1586,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
        * confirms before building. Persists across the follow-up answers (which
        * don't read as build intent on their own) until a site is produced.
        */
-      const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode && effectiveStudioMode !== 'build';
-      const guidedBuild = (startingGuided || guidedSession) && !previewCode && effectiveStudioMode !== 'build' && effectiveStudioMode !== 'plan';
+      const startingGuided = detectBuildIntent(text) && !previewCode && !isWorkspaceMode && apiStudioMode !== 'build';
+      const guidedBuild = (startingGuided || guidedSession) && !previewCode && apiStudioMode !== 'build' && apiStudioMode !== 'plan';
       if (guidedBuild && !guidedSession) setGuidedSession(true);
 
       /*
@@ -1619,7 +1632,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               guidedBuild,
               taskCategory,
               fallbackFrom,
-              studioMode: effectiveStudioMode,
+              studioMode: apiStudioMode,
               sessionContext: conversationContext,
             })
           });
@@ -1727,7 +1740,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           });
         }
 
-        if (effectiveStudioMode === 'plan') {
+        if (apiStudioMode === 'plan') {
           const planSpec = parsePlanSpec(currentText);
           if (planSpec) {
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, planSpec, type: 'plan_spec' } : m));
@@ -2997,10 +3010,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 studioMode === 'build'
                   ? 'Describe what you want to build — Quantora will generate runnable HTML...'
                   : studioMode === 'plan'
-                    ? 'Describe your app idea — Quantora will output an architecture plan...'
+                    ? 'Describe your app or feature — Quantora will output an architecture plan (JSON)...'
                     : boundRepo?.name
                       ? `Ask about ${boundRepo.name} — code, architecture, or changes...`
-                      : 'Ask Quantora to code an app, analyze data, or generate ideas...'
+                      : 'Ask anything — plan a trip, research an idea, or build an app...'
               }
               style={{
                 width: '100%',
@@ -3042,7 +3055,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 {[
                   { id: 'ask', label: 'Ask', icon: MessageSquare },
                   { id: 'build', label: 'Build', icon: Code2 },
-                  { id: 'plan', label: 'Plan', icon: Layout }
+                  { id: 'plan', label: 'Plan app', icon: Layout }
                 ].map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}

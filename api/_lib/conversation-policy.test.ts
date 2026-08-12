@@ -23,6 +23,18 @@ test("injects stored session memory into the system prompt", () => {
   assert.match(prompt, /5 nights in March/);
 });
 
+test("scopes plan mode to software architecture only", () => {
+  const prompt = buildConversationSystemPrompt({ planMode: true });
+  assert.match(prompt, /software \/ application architecture ONLY/);
+  assert.match(prompt, /travel, finance, events/);
+});
+
+test("asks to clarify before detailed personalized plans", () => {
+  const prompt = buildConversationSystemPrompt();
+  assert.match(prompt, /PERSONALIZED PLANNING/);
+  assert.match(prompt, /ask ONE natural question before delivering a detailed plan/);
+});
+
 test("an explicit implementation request is allowed to proceed", () => {
   const prompt = buildConversationSystemPrompt();
 
