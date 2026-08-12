@@ -62,6 +62,7 @@ export async function scanModelCatalog() {
       last_changed_at: eventType ? now : (old?.last_changed_at || now),
       removed_at: null,
       provider_created_at: catalogCreatedAt(model),
+      smoke_test: old?.smoke_test ?? null,
     });
 
     if (eventType) {

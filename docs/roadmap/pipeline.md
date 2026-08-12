@@ -52,9 +52,10 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 
 After merge to `main`, Vercel auto-deploys the app. You still need:
 
-1. **Supabase migration 0007** (if not yet run)
+1. **Supabase migrations** (if not yet run)
    ```bash
    supabase/migrations/0007_usage_product_context.sql
+   supabase/migrations/0008_model_smoke_test.sql
    ```
 
 2. **Verify after deploy**
@@ -75,7 +76,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 ### P0 — Reliability & trust
 | # | Task | Why |
 |---|------|-----|
-| 1 | **Admin smoke-test before approve** | 3 fixed prompts per discovered model |
+| 1 | ~~**Admin smoke-test before approve**~~ ✅ | 3 fixed prompts per discovered model |
 | 2 | **Verify migration 0007 KPIs** | Mode/domain tiles populate after usage |
 
 ### P1 — Conversation UX

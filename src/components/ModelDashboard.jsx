@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clock3, Cpu, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Clock3, Cpu, FlaskConical, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 const BASE_FILTERS = [
   { id: 'ready', label: 'Ready' },
@@ -31,6 +31,7 @@ export default function ModelDashboard({
   const [adminQueue, setAdminQueue] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [actionPending, setActionPending] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const textColor = isLight ? '#0f172a' : '#f8fafc';
   const subtextColor = isLight ? '#64748b' : '#94a3b8';
   const borderColor = isLight ? '#dbe4ee' : 'rgba(255,255,255,0.1)';
@@ -66,6 +67,7 @@ export default function ModelDashboard({
   const handleApprovalAction = async (modelId, action, event) => {
     event.stopPropagation();
     event.preventDefault();
+    setActionError(null);
     setActionPending(`${modelId}:${action}`);
     try {
       const res = await fetch('/api/admin/models', {
@@ -73,12 +75,41 @@ export default function ModelDashboard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelId, action }),
       });
+      const payload = await res.json().catch(() => ({}));
       if (res.ok) {
         await fetchAdminQueue();
         onModelsRefresh?.();
+      } else {
+        setActionError(payload.error || `Action failed (${res.status})`);
       }
     } catch (error) {
       console.error('Model approval action failed:', error);
+      setActionError('Network error — try again.');
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleSmokeTest = async (modelId, event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    setActionError(null);
+    setActionPending(`${modelId}:smoke-test`);
+    try {
+      const res = await fetch('/api/admin/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId, action: 'smoke-test' }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await fetchAdminQueue();
+      } else {
+        setActionError(payload.error || `Smoke test failed (${res.status})`);
+      }
+    } catch (error) {
+      console.error('Model smoke test failed:', error);
+      setActionError('Smoke test network error — try again.');
     } finally {
       setActionPending(null);
     }
@@ -178,6 +209,10 @@ export default function ModelDashboard({
           const selectable = model.selectable !== false && model.status === 'available';
           const isSelected = selectedModel?.id === model.id;
           const isDiscoveredTab = filter === 'discovered';
+          const smokePassed = model.smokeTest?.passed === true;
+          const smokeResults = model.smokeTest?.results || [];
+          const smokePending = actionPending === `${model.id}:smoke-test`;
+          const approvePending = actionPending === `${model.id}:approve`;
           return (
             <button
               key={`${model.category || 'model'}:${model.id}`}
@@ -200,12 +235,39 @@ export default function ModelDashboard({
                   {model.quality?.score != null && <><span>•</span><span title={`Based on ${model.quality.sampleSize} anonymous completed requests`}>{model.quality.score}% quality</span></>}
                 </div>
                 {isDiscoveredTab && (
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                  <>
+                    {model.smokeTest && (
+                      <div style={{ marginTop: '6px', fontSize: '0.58rem', color: smokePassed ? '#059669' : '#dc2626', fontWeight: '700' }}>
+                        {smokePassed
+                          ? `Smoke test passed (${smokeResults.filter((item) => item.passed).length}/3)`
+                          : `Smoke test failed (${smokeResults.filter((item) => item.passed).length}/3)`}
+                        {model.smokeTest.ranAt && ` · ${new Date(model.smokeTest.ranAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                      </div>
+                    )}
+                    {smokeResults.length > 0 && (
+                      <div style={{ marginTop: '4px', display: 'grid', gap: '3px' }}>
+                        {smokeResults.map((item) => (
+                          <div key={item.id} style={{ fontSize: '0.56rem', color: item.passed ? '#059669' : '#dc2626' }}>
+                            {item.passed ? '✓' : '✗'} {item.label}{item.latencyMs != null ? ` · ${item.latencyMs}ms` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       disabled={Boolean(actionPending)}
+                      onClick={(event) => handleSmokeTest(model.id, event)}
+                      style={{ flex: '1 1 100%', border: `1px solid ${borderColor}`, borderRadius: '7px', padding: '6px 8px', fontSize: '0.62rem', fontWeight: '700', cursor: actionPending ? 'wait' : 'pointer', color: textColor, background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.06)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px', opacity: smokePending ? 0.7 : 1 }}
+                    >
+                      <FlaskConical size={11} /> {smokePending ? 'Running 3 prompts…' : 'Run smoke test'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(actionPending) || !smokePassed}
+                      title={smokePassed ? 'Approve for user routing' : 'Run a passing smoke test first'}
                       onClick={(event) => handleApprovalAction(model.id, 'approve', event)}
-                      style={{ flex: 1, border: 'none', borderRadius: '7px', padding: '6px 8px', fontSize: '0.62rem', fontWeight: '700', cursor: actionPending ? 'wait' : 'pointer', color: '#ffffff', background: '#059669', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      style={{ flex: 1, border: 'none', borderRadius: '7px', padding: '6px 8px', fontSize: '0.62rem', fontWeight: '700', cursor: (actionPending || !smokePassed) ? 'not-allowed' : 'pointer', color: '#ffffff', background: smokePassed ? '#059669' : '#64748b', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px', opacity: approvePending ? 0.7 : 1 }}
                     >
                       <ThumbsUp size={11} /> Approve
                     </button>
@@ -218,12 +280,19 @@ export default function ModelDashboard({
                       <ThumbsDown size={11} /> Reject
                     </button>
                   </div>
+                  </>
                 )}
               </div>
             </button>
           );
         })}
       </div>
+
+      {filter === 'discovered' && actionError && (
+        <div style={{ padding: '8px 10px', borderTop: `1px solid ${borderColor}`, color: '#dc2626', fontSize: '0.62rem', fontWeight: '600' }}>
+          {actionError}
+        </div>
+      )}
 
       {visibleModels.length > 6 && (
         <button
