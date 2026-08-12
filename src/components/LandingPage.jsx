@@ -232,187 +232,118 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </header>
 
-      {/* Flagship Hero Section */}
+      {/* Hero — clean editorial canvas, no competing photography */}
       <section style={{
-        width: '100%',
-        height: 'calc(100vh - 67px)',
-        minHeight: '550px',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        padding: '0 5%',
         position: 'relative',
         zIndex: 10,
-        backgroundImage: `url('/hero-bg.jpg')`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center'
+        minHeight: 'calc(100vh - 67px)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        padding: 'clamp(48px, 9vh, 120px) 6% 48px',
+        background: isLight
+          ? 'radial-gradient(1100px 520px at 50% -8%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
+          : 'radial-gradient(1000px 560px at 50% -6%, rgba(249,115,22,0.16), rgba(7,9,19,0) 60%), #070913'
       }}>
-        {/* Subtle gradient behind text instead of washing out the entire image */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '50%',
-          height: '100%',
-          background: 'linear-gradient(90deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 100%)',
-          zIndex: 0,
-          opacity: isLight ? 1 : 0
-        }} />
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '60%',
-          height: '100%',
-          background: 'linear-gradient(90deg, rgba(7,9,19,0.9) 0%, rgba(7,9,19,0) 100%)',
-          zIndex: 0,
-          opacity: isLight ? 0 : 1
-        }} />
+        <div style={{ maxWidth: '940px', margin: '0 auto', width: '100%', textAlign: 'center' }} className="animate-fade-in-up">
+          {/* Eyebrow */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '9px',
+            fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em',
+            textTransform: 'uppercase', color: isLight ? '#9a3412' : '#fdba74',
+            marginBottom: '30px'
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
+            Prompt to published website
+          </div>
 
-        <div style={{
-          width: '100%',
-          textAlign: 'left',
-          position: 'relative',
-          zIndex: 10,
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          <div style={{ maxWidth: '820px' }} className="animate-fade-in-up">
-            {/* Eyebrow */}
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '8px',
-              fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em',
-              textTransform: 'uppercase', color: '#ea580c',
-              background: isLight ? 'rgba(249,115,22,0.1)' : 'rgba(249,115,22,0.16)',
-              border: '1px solid rgba(249,115,22,0.35)',
-              padding: '6px 14px', borderRadius: '9999px', marginBottom: '22px'
+          {/* Headline — solid ink, a single accent, tight editorial tracking */}
+          <h1 style={{
+            fontSize: 'clamp(2.7rem, 6vw, 5.2rem)',
+            fontWeight: '800',
+            lineHeight: 1.02,
+            letterSpacing: '-0.035em',
+            color: isLight ? '#0b1220' : '#ffffff',
+            margin: '0 0 24px'
+          }}>
+            Describe your idea.<br/>
+            Get a <span style={{ color: '#ea580c' }}>real website</span> you can publish.
+          </h1>
+
+          {/* Subcopy */}
+          <p style={{
+            fontSize: 'clamp(1.05rem, 1.35vw, 1.28rem)',
+            color: isLight ? '#475569' : '#cbd5e1',
+            lineHeight: 1.6, fontWeight: '400',
+            maxWidth: '600px', margin: '0 auto 42px'
+          }}>
+            Tell Quantora what you want in plain English. It builds a live, styled site,
+            refines it as you chat, publishes to your own domain, and takes real
+            payments — on your Stripe.
+          </p>
+
+          {/* Real prompt box — the product, front and centre */}
+          <div style={{
+            maxWidth: '700px', margin: '0 auto',
+            background: isLight ? '#ffffff' : 'rgba(17,23,38,0.92)',
+            border: isLight ? '1px solid #e5e7eb' : '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '16px',
+            padding: '10px 10px 10px 18px',
+            display: 'flex', alignItems: 'center', gap: '12px',
+            boxShadow: isLight ? '0 14px 44px rgba(15,23,42,0.10)' : '0 14px 48px rgba(0,0,0,0.5)',
+            textAlign: 'left'
+          }}>
+            <textarea
+              value={heroPrompt}
+              onChange={(e) => setHeroPrompt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
+              rows={1}
+              placeholder="A cozy cafe website with an online menu and ordering…"
+              style={{
+                flex: 1, resize: 'none', border: 'none', outline: 'none',
+                background: 'transparent', color: textColor,
+                fontSize: '1.02rem', lineHeight: 1.5, fontFamily: 'inherit',
+                padding: '11px 0', maxHeight: '120px'
+              }}
+            />
+            <button onClick={() => startBuild()} style={{
+              flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '8px',
+              background: '#ea580c', color: '#ffffff', border: 'none',
+              padding: '13px 24px', borderRadius: '11px',
+              fontSize: '0.98rem', fontWeight: '700', cursor: 'pointer'
             }}>
-              <Sparkles size={14} /> Prompt to published website
-            </div>
+              Build free <ArrowRight size={17} strokeWidth={2.5} />
+            </button>
+          </div>
 
-            {/* Outcome headline */}
-            <h1 style={{
-              fontSize: 'clamp(2.6rem, 5vw, 4.8rem)',
-              fontWeight: '900',
-              lineHeight: 1.05,
-              color: isLight ? '#0f172a' : '#ffffff',
-              marginBottom: '18px',
-              letterSpacing: '-0.025em'
-            }}>
-              Describe your idea.<br/>
-              <span style={{
-                background: 'linear-gradient(135deg, #fde047 0%, #ea580c 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}>
-                Get a real website you can publish.
-              </span>
-            </h1>
-
-            {/* Subcopy */}
-            <p style={{
-              fontSize: 'clamp(1.1rem, 1.4vw, 1.3rem)',
-              color: isLight ? '#334155' : '#e2e8f0',
-              lineHeight: 1.55,
-              fontWeight: '500',
-              maxWidth: '620px',
-              marginBottom: '28px'
-            }}>
-              Tell Quantora what you want in plain English. It builds a live, styled
-              site, refines it as you chat, publishes to your own domain, and takes
-              real payments — on your Stripe.
-            </p>
-
-            {/* Real prompt box */}
-            <div style={{
-              background: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(11,15,25,0.92)',
-              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249,115,22,0.3)',
-              borderRadius: '18px',
-              padding: '14px',
-              maxWidth: '640px',
-              boxShadow: '0 18px 50px rgba(0,0,0,0.18)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-                <textarea
-                  value={heroPrompt}
-                  onChange={(e) => setHeroPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
-                  rows={2}
-                  placeholder="A cozy cafe website with an online menu and ordering…"
-                  style={{
-                    flex: 1, resize: 'none', border: 'none', outline: 'none',
-                    background: 'transparent', color: textColor,
-                    fontSize: '1rem', lineHeight: 1.5, fontFamily: 'inherit',
-                    padding: '8px 6px', maxHeight: '120px'
-                  }}
-                />
-                <button
-                  onClick={() => startBuild()}
-                  style={{
-                    flexShrink: 0,
-                    display: 'inline-flex', alignItems: 'center', gap: '8px',
-                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                    color: '#ffffff', border: 'none',
-                    padding: '12px 22px', borderRadius: '12px',
-                    fontSize: '0.98rem', fontWeight: '800', cursor: 'pointer',
-                    boxShadow: '0 6px 18px rgba(249,115,22,0.4)'
-                  }}
-                >
-                  Build free <ArrowRight size={17} strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
-
-            {/* Example chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '16px', maxWidth: '640px' }}>
-              <span style={{ fontSize: '0.82rem', color: isLight ? '#64748b' : '#94a3b8', fontWeight: '600', alignSelf: 'center' }}>Try:</span>
-              {heroExamples.map((ex, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setHeroPrompt(ex); }}
-                  style={{
-                    fontSize: '0.8rem', fontWeight: '600',
-                    padding: '6px 12px', borderRadius: '9999px', cursor: 'pointer',
-                    background: isLight ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.06)',
-                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.14)',
-                    color: isLight ? '#334155' : '#cbd5e1'
-                  }}
-                >
-                  {ex}
-                </button>
-              ))}
-            </div>
+          {/* Example chips — quiet, ghost style */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', margin: '18px auto 0', maxWidth: '700px' }}>
+            {heroExamples.map((ex, i) => (
+              <button key={i} onClick={() => setHeroPrompt(ex)} style={{
+                fontSize: '0.82rem', fontWeight: '500',
+                padding: '7px 14px', borderRadius: '9999px', cursor: 'pointer',
+                background: 'transparent',
+                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.14)',
+                color: isLight ? '#475569' : '#94a3b8'
+              }}>{ex}</button>
+            ))}
           </div>
         </div>
 
-        {/* Live model trust strip — pulled from the real registry, never hardcoded */}
+        {/* Live model strip — muted, sourced from the real registry */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '14px',
-          borderTop: isLight ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.15)',
-          paddingTop: '18px',
-          paddingBottom: '28px',
-          zIndex: 10,
-          flexWrap: 'wrap',
-          position: 'relative'
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: '14px', flexWrap: 'wrap',
+          margin: '58px auto 0', maxWidth: '940px', width: '100%'
         }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontSize: '0.85rem', fontWeight: '700', color: isLight ? '#0f172a' : '#ffffff' }}>
-            <Cpu size={15} color="#f97316" />
+          <span style={{ fontSize: '0.72rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: isLight ? '#94a3b8' : '#64748b' }}>
             {liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}
           </span>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {liveModelNames.map((name, i) => (
-              <span key={i} style={{
-                fontSize: '0.76rem', fontWeight: '600',
-                padding: '4px 11px', borderRadius: '9999px',
-                background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.07)',
-                border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255,255,255,0.12)',
-                color: isLight ? '#334155' : '#cbd5e1'
-              }}>{name}</span>
-            ))}
-          </div>
+          {liveModelNames.map((name, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', fontSize: '0.8rem', fontWeight: '600', color: isLight ? '#64748b' : '#94a3b8' }}>
+              <span style={{ opacity: 0.4 }}>·</span> {name}
+            </span>
+          ))}
         </div>
       </section>
 
