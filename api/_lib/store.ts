@@ -139,6 +139,22 @@ export function recordUsage(entry: {
   });
 }
 
+export function recordProductEvent(entry: {
+  userSub: string | null;
+  eventType: "preview_opened" | "publish_completed";
+  metadata?: Record<string, unknown>;
+}): void {
+  void request("product_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      user_sub: entry.userSub,
+      event_type: entry.eventType,
+      metadata: entry.metadata || {},
+    }]),
+  });
+}
+
 /*
  * Anonymous model-quality signal. No account id, prompt, response, API key or
  * IP address is stored. This is intentionally operational data only: did a

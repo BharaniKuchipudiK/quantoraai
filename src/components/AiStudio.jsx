@@ -1199,6 +1199,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setCanvasFullscreen(false);
     setCanvasOpen(true);
     setBackgroundVerify(null);
+    if (user?.sub) {
+      fetch('/api/product-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ eventType: 'preview_opened' }),
+      }).catch(() => {});
+    }
   };
 
   const queuePreviewVerification = (messageId, html) => {
@@ -3733,6 +3741,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 isLight={isLight}
                 isFullscreen={canvasFullscreen}
                 hideHeader
+                user={user}
+                onRequireAuth={onOpenAuth}
+                suggestedProjectName={activeSession?.title || 'quantora-app'}
                 onToggleFullscreen={togglePreviewFullscreen}
                 onClose={closePreviewModal}
               />
