@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -942,41 +942,49 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
   const previewDialogRef = useRef(null);
 
-  const closePreviewModal = () => {
+  const closePreviewModal = useCallback(() => {
     // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v6',location:'AiStudio:closePreviewModal',message:'preview modal closed',data:{canvasFullscreen,dialogOpen:Boolean(previewDialogRef.current?.open)},timestamp:Date.now(),hypothesisId:'preview-close-ui'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v7',location:'AiStudio:closePreviewModal',message:'preview modal closed',data:{canvasFullscreen,dialogOpen:Boolean(previewDialogRef.current?.open)},timestamp:Date.now(),hypothesisId:'preview-close-ui'})}).catch(()=>{});
     // #endregion
-    if (previewDialogRef.current?.open) {
-      previewDialogRef.current.close();
-      return;
-    }
     setCanvasOpen(false);
     setCanvasFullscreen(false);
-  };
+  }, [canvasFullscreen]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!canvasOpen) return undefined;
     const dialog = previewDialogRef.current;
     if (!dialog) return undefined;
-    const onDialogClose = () => {
-      setCanvasOpen(false);
-      setCanvasFullscreen(false);
+    if (!dialog.open) {
+      try {
+        dialog.showModal();
+        // #region agent log
+        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v7',location:'AiStudio:preview-dialog-open',message:'preview dialog showModal',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
+        // #endregion
+      } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v7',location:'AiStudio:preview-dialog-error',message:'showModal failed',data:{error:String(err?.message || err)},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
+        // #endregion
+      }
+    }
+    return () => {
+      if (dialog.open) dialog.close();
     };
-    dialog.addEventListener('close', onDialogClose);
-    return () => dialog.removeEventListener('close', onDialogClose);
-  }, []);
+  }, [canvasOpen, canvasFullscreen]);
 
   useEffect(() => {
-    const dialog = previewDialogRef.current;
-    if (!dialog) return;
-    if (canvasOpen && !dialog.open) {
-      dialog.showModal();
-      // #region agent log
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v6',location:'AiStudio:preview-dialog-open',message:'preview dialog showModal',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
-      // #endregion
-    } else if (!canvasOpen && dialog.open) {
-      dialog.close();
-    }
-  }, [canvasOpen]);
+    if (!canvasOpen) return undefined;
+    const onPreviewMessage = (event) => {
+      const data = event.data;
+      if (data?.__quantora === true && data.kind === 'preview-close-request') {
+        // #region agent log
+        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v7',location:'AiStudio:iframe-escape',message:'iframe escape close',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-iframe'})}).catch(()=>{});
+        // #endregion
+        closePreviewModal();
+      }
+    };
+    window.addEventListener('message', onPreviewMessage);
+    return () => window.removeEventListener('message', onPreviewMessage);
+  }, [canvasOpen, canvasFullscreen, closePreviewModal]);
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [backgroundVerify, setBackgroundVerify] = useState(null);
@@ -3422,17 +3430,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       )}
 
       {/* Live Preview — native dialog top layer (above header z-index 100). */}
-      {createPortal((
+      {canvasOpen && createPortal((
         <dialog
           ref={previewDialogRef}
           className={`preview-dialog ${canvasFullscreen ? 'preview-dialog--fullscreen' : 'preview-dialog--windowed'}`}
           aria-label="Live Preview"
-          onCancel={(event) => {
-            event.preventDefault();
+          onClose={closePreviewModal}
+          onCancel={() => {
             // #region agent log
-            fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v6',location:'AiStudio:preview-dialog-cancel',message:'preview dialog cancel (Esc)',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v7',location:'AiStudio:preview-dialog-cancel',message:'preview dialog cancel (Esc)',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close-dialog'})}).catch(()=>{});
             // #endregion
-            closePreviewModal();
           }}
         >
           <div style={{
@@ -3447,7 +3454,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             boxShadow: canvasFullscreen ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             overflow: 'hidden',
           }}>
-            <div style={{
+            <div className="preview-dialog-chrome" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
