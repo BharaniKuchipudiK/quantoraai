@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import AuroraBackground from './AuroraBackground';
 import { QuantoraEmblemSvg, QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import {
@@ -29,6 +29,37 @@ import {
   Atom
 } from 'lucide-react';
 import './FlagshipShowcase.css';
+
+/*
+ * Reveal-on-scroll wrapper. Content starts slightly lowered and transparent,
+ * then eases into place the first time it enters the viewport — so the page
+ * unfolds as you scroll instead of presenting a static wall of text. Honors
+ * reduced-motion and degrades to "always visible" without IntersectionObserver.
+ */
+function Reveal({ children, delay = 0, style, className }) {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || typeof IntersectionObserver === 'undefined') { setShown(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { setShown(true); io.disconnect(); } });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={className} style={{
+      ...style,
+      opacity: shown ? 1 : 0,
+      transform: shown ? 'none' : 'translateY(30px)',
+      transition: `opacity 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms, transform 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms`,
+      willChange: 'opacity, transform'
+    }}>{children}</div>
+  );
+}
 
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
   const [activeCapability, setActiveCapability] = useState('studio');
@@ -254,7 +285,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             marginBottom: '30px'
           }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
-            Prompt to published website
+            Dreams into action
           </div>
 
           {/* Headline — solid ink, a single accent, tight editorial tracking */}
@@ -266,8 +297,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             color: isLight ? '#0b1220' : '#ffffff',
             margin: '0 0 24px'
           }}>
-            Describe your idea.<br/>
-            Get a <span style={{ color: '#ea580c' }}>real website</span> you can publish.
+            Dream it. See it.<br/>
+            <span style={{ color: '#ea580c' }}>Make it real.</span>
           </h1>
 
           {/* Subcopy */}
@@ -275,11 +306,10 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             fontSize: 'clamp(1.05rem, 1.35vw, 1.28rem)',
             color: isLight ? '#475569' : '#cbd5e1',
             lineHeight: 1.6, fontWeight: '400',
-            maxWidth: '600px', margin: '0 auto 42px'
+            maxWidth: '560px', margin: '0 auto 42px'
           }}>
-            Tell Quantora what you want in plain English. It builds a live, styled site,
-            refines it as you chat, publishes to your own domain, and takes real
-            payments — on your Stripe.
+            Describe your idea in plain words. Quantora turns it into something
+            live and real — refined as you talk, ready for the world.
           </p>
 
           {/* Real prompt box — the product, front and centre */}
@@ -349,16 +379,19 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
 
       {/* How it works — the real journey, no simulation */}
       <section style={{ maxWidth: '1180px', margin: '10px auto 90px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
-        <div style={{ textAlign: 'center', marginBottom: '44px' }}>
-          <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>From idea to income</span>
-          <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Four steps. One sentence to a live business.</h2>
-          <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '640px', margin: '0 auto', lineHeight: 1.6 }}>No code, no setup, no templates. The value is the finished website you can share and sell on — not the code behind it.</p>
-        </div>
+        <Reveal>
+          <div style={{ textAlign: 'center', marginBottom: '44px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>From idea to reality</span>
+            <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Four steps from a sentence to something live.</h2>
+            <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '640px', margin: '0 auto', lineHeight: 1.6 }}>No code, no setup, no templates. The value is the finished thing you can share and act on — not the code behind it.</p>
+          </div>
+        </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
           {journey.map((s, i) => {
             const Icon = s.icon;
             return (
-              <div key={i} style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', position: 'relative', overflow: 'hidden' }}>
+              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
+              <div style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', position: 'relative', overflow: 'hidden', height: '100%' }}>
                 <div style={{ position: 'absolute', top: '14px', right: '18px', fontSize: '2.4rem', fontWeight: '900', color: s.color, opacity: 0.14, lineHeight: 1 }}>{s.step}</div>
                 <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: `${s.color}1f`, border: `1px solid ${s.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
                   <Icon size={22} color={s.color} />
@@ -366,22 +399,31 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: '0 0 8px', color: textColor }}>{s.title}</h3>
                 <p style={{ fontSize: '0.92rem', color: subtextColor, lineHeight: 1.55, margin: 0 }}>{s.body}</p>
               </div>
+              </Reveal>
             );
           })}
         </div>
-        <div style={{ textAlign: 'center', marginTop: '40px' }}>
-          <button onClick={() => startBuild()} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '15px 32px', borderRadius: '14px', fontSize: '1.05rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 10px 28px rgba(249,115,22,0.4)' }}>
-            Start building free <ArrowRight size={19} strokeWidth={2.5} />
-          </button>
-        </div>
+        <Reveal delay={120}>
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <button onClick={() => startBuild()} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '15px 32px', borderRadius: '14px', fontSize: '1.05rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 10px 28px rgba(249,115,22,0.4)' }}>
+              Start building free <ArrowRight size={19} strokeWidth={2.5} />
+            </button>
+          </div>
+        </Reveal>
       </section>
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
-        <div className="flagship-experience-heading">
-          <span>Also inside Quantora</span>
-          <h2 id="flagship-experience-title">Building sites is the start.</h2>
-          <p>Your workspace also lets you map ideas visually, explore quantum circuits, and keep your model keys under your own control.</p>
-        </div>
+        <Reveal>
+          <div className="flagship-experience-heading">
+            <span>The Quantora philosophy</span>
+            <h2 id="flagship-experience-title">Dream it. Visualize it. Make it happen.</h2>
+            <p style={{ fontStyle: 'italic', opacity: 0.9 }}>
+              “Dream, dream, dream. Dreams transform into thoughts, and thoughts result in action.” — Dr. A.P.J. Abdul Kalam
+            </p>
+            <p>Quantora isn't a website tool — it's where an idea becomes something real. Build it, map it out, explore what's possible, and keep it all under your own control.</p>
+          </div>
+        </Reveal>
 
+        <Reveal delay={80}>
         <div
           className="flagship-stage"
           style={{ '--flagship-accent': selectedCapability.color }}
@@ -427,7 +469,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             })}
           </div>
         </div>
+        </Reveal>
 
+        <Reveal delay={120}>
         <div className="flagship-supporting-strip">
           <div>
             <Search size={17} color="#ec4899" />
@@ -438,6 +482,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             <span><strong>Live model intelligence</strong><small>Availability, reliability and usage without operational clutter.</small></span>
           </div>
         </div>
+        </Reveal>
       </section>
 
       {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
