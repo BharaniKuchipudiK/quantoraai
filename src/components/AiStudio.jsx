@@ -910,12 +910,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
   const bubbleAiBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
 
-  const handleFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
-    const processed = await Promise.all(files.map(async (file) => {
+  // Shared ingestion for both the paperclip picker and pasted/dropped images.
+  const ingestFiles = async (files) => {
+    const list = Array.from(files || []);
+    if (!list.length) return;
+    const processed = await Promise.all(list.map(async (file) => {
       const att = {
-        name: file.name,
+        name: file.name || (file.type.includes('image') ? `pasted-image.${(file.type.split('/')[1] || 'png')}` : 'file'),
         size: (file.size / 1024).toFixed(1) + ' KB',
         type: file.type.includes('image') ? 'image' : 'file'
       };
@@ -930,6 +931,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // Persist the actual photos across the intake (attachments reset each send).
     const newImages = processed.filter(a => a.dataUrl).map(a => a.dataUrl);
     if (newImages.length) setSessionImages(prev => [...prev, ...newImages].slice(-8));
+  };
+
+  const handleFileUpload = async (e) => {
+    await ingestFiles(e.target.files);
+  };
+
+  // Paste an image straight into the prompt (Cmd/Ctrl+V) — the way Claude and
+  // ChatGPT accept screenshots. We only intercept when the clipboard carries an
+  // actual image file; plain-text pastes fall through to the textarea untouched.
+  const handlePaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles = [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length) {
+      e.preventDefault(); // don't paste the binary blob as text
+      await ingestFiles(imageFiles);
+    }
   };
 
   const removeAttachment = (index) => {
@@ -1696,56 +1720,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     </div>
                   )}
 
-                  {/* Live Model Connection Diagnostic Footer */}
-                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.provider && (
+                  {/*
+                   * Quiet feedback row. We deliberately drop the old
+                   * "Engine / Response Time / Live AI Verified / No Mock"
+                   * diagnostic strip — no serious assistant (Claude, Cursor,
+                   * ChatGPT) surfaces engine names or latency to the user. All
+                   * that remains is an unobtrusive thumbs up/down, which still
+                   * feeds the model-quality flywheel.
+                   */}
+                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.requestId && (
                     <div style={{
-                      marginTop: '14px',
-                      paddingTop: '10px',
-                      borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+                      marginTop: '10px',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '12px',
+                      gap: '4px',
                       fontSize: '0.75rem',
                       color: subtextColor,
-                      flexWrap: 'wrap',
-                      opacity: 0.25,
-                      transition: 'opacity 0.2s ease',
-                      cursor: 'default'
+                      opacity: 0.35,
+                      transition: 'opacity 0.2s ease'
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0.25}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0.35}
                     >
-                      <Info size={14} />
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        color: '#10b981',
-                        fontWeight: '700',
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(16, 185, 129, 0.25)'
-                      }}>
-                        <Activity size={12} color="#10b981" /> Live AI Verified
-                      </span>
-                      <span>Engine: <strong style={{ color: textColor }}>{msg.provider}</strong></span>
-                      {msg.latencyMs && (
-                        <>
-                          <span>•</span>
-                          <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
-                        </>
-                      )}
-                      {msg.requestId && (
-                        <>
-                          <span>•</span>
-                          <span>Helpful?</span>
-                          <button type="button" onClick={() => submitModelFeedback(msg, 'helpful')} aria-label="Mark this response helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'helpful' ? '#059669' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsUp size={13} /></button>
-                          <button type="button" onClick={() => submitModelFeedback(msg, 'not_helpful')} aria-label="Mark this response not helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'not_helpful' ? '#dc2626' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsDown size={13} /></button>
-                        </>
-                      )}
-                      <span>•</span>
-                      <span style={{ opacity: 0.8 }}>No Mock / Pre-set SOP Data</span>
+                      <button type="button" onClick={() => submitModelFeedback(msg, 'helpful')} aria-label="Mark this response helpful" title="Helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'helpful' ? '#059669' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsUp size={14} /></button>
+                      <button type="button" onClick={() => submitModelFeedback(msg, 'not_helpful')} aria-label="Mark this response not helpful" title="Not helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'not_helpful' ? '#dc2626' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsDown size={14} /></button>
                     </div>
                   )}
 
@@ -2592,6 +2590,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   e.target.style.height = 'auto';
                 }
               }}
+              onPaste={handlePaste}
               placeholder="Ask Quantora to code an app, analyze data, or generate ideas..."
               style={{
                 width: '100%',
