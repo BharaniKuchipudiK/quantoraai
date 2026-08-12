@@ -61,6 +61,13 @@ function Reveal({ children, delay = 0, style, className }) {
   );
 }
 
+// Per-capability cinematic backdrop — an on-brand aurora built from the
+// experience's accent colour over deep space, so the stage looks composed and
+// premium instead of leaning on generic stock photography.
+function stageBackground(c) {
+  return `radial-gradient(1200px 760px at 78% 20%, ${c}59, transparent 58%), radial-gradient(900px 620px at 22% 96%, ${c}30, transparent 55%), linear-gradient(120deg, #04060d 0%, #0a0f1f 52%, #05070f 100%)`;
+}
+
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
   const [activeCapability, setActiveCapability] = useState('studio');
 
@@ -497,7 +504,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       </section>
 
       <div className="flagship-band" style={{
-        background: isLight ? '#070b16' : '#04060d',
+        background: isLight
+          ? 'radial-gradient(1100px 440px at 50% 0%, rgba(249,115,22,0.12), transparent 72%), #070b16'
+          : 'radial-gradient(1100px 440px at 50% 0%, rgba(249,115,22,0.10), transparent 72%), #04060d',
         '--page-bg': isLight ? '#f8fafc' : '#070913'
       }}>
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
@@ -521,7 +530,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <div
             key={selectedCapability.id}
             className="flagship-stage-image"
-            style={{ backgroundImage: `url(${selectedCapability.image})` }}
+            style={{ backgroundImage: stageBackground(selectedCapability.color) }}
           />
           <div className="flagship-stage-shade" />
 
@@ -557,19 +566,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 </button>
               );
             })}
-          </div>
-        </div>
-        </Reveal>
-
-        <Reveal delay={120}>
-        <div className="flagship-supporting-strip">
-          <div>
-            <Search size={17} color="#ec4899" />
-            <span><strong>Agent-assisted research</strong><small>Search and multi-step reasoning when the task demands it.</small></span>
-          </div>
-          <div>
-            <BarChart3 size={17} color="#8b5cf6" />
-            <span><strong>Live model intelligence</strong><small>Availability, reliability and usage without operational clutter.</small></span>
           </div>
         </div>
         </Reveal>
