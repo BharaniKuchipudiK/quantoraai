@@ -807,6 +807,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const inputText = externalInputText !== undefined ? externalInputText : localInputText;
   const setInputText = setExternalInputText || setLocalInputText;
   const [isGenerating, setIsGenerating] = useState(false);
+  const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
+  const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
   const [showCodeMap, setShowCodeMap] = useState({});
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
   const [suggestedModel, setSuggestedModel] = useState(null);
@@ -1238,6 +1240,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setLastPrompt(text.trim());
 
+    const taskCategory = classifyTask(visibleText);
+    const autoChoice = autoSelectEnabled ? chooseBestFreeModel(availableModels, visibleText) : null;
+    const targetModel = autoChoice?.model || selectedModel || { id: 'gemini-flash-latest', name: 'Gemini Flash', pricingKind: 'free-tier', available: true };
+    setActiveGeneratingModel({ id: targetModel.id, name: targetModel.name });
+    const rankedFreeFallbacks = rankFreeModels(availableModels, visibleText)
+      .filter((model) => model.id !== targetModel.id);
+
     const userMsg = {
       id: Date.now(),
       sender: 'user',
@@ -1268,18 +1277,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           isError: true
         }]);
         setIsGenerating(false);
+        setActiveGeneratingModel(null);
         return;
       }
     } catch (e) {
       console.error("Moderation API failed, failing open...", e);
     }
-
-
-    const taskCategory = classifyTask(visibleText);
-    const autoChoice = autoSelectEnabled ? chooseBestFreeModel(availableModels, visibleText) : null;
-    const targetModel = autoChoice?.model || selectedModel || { id: 'gemini-flash-latest', name: 'Gemini Flash', pricingKind: 'free-tier', available: true };
-    const rankedFreeFallbacks = rankFreeModels(availableModels, visibleText)
-      .filter((model) => model.id !== targetModel.id);
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
@@ -1365,6 +1368,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         console.error('Arena Execution Error:', err);
       } finally {
         setIsGenerating(false);
+        setActiveGeneratingModel(null);
       }
       return;
     }
@@ -1470,6 +1474,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (res.ok) {
           respondingModel = candidate;
+          setActiveGeneratingModel({ id: candidate.id, name: candidate.name });
           if (candidate.id !== targetModel.id) {
             fallbackFrom ||= targetModel.id;
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -1600,6 +1605,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       } : m));
     } finally {
       setIsGenerating(false);
+      setActiveGeneratingModel(null);
     }
   };
 
@@ -1773,17 +1779,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                       )}
 
-                      {msg.routingNote && (
-                        <div style={{ marginBottom: '9px', padding: '7px 10px', borderRadius: '9px', background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.1)', color: isLight ? '#9a3412' : '#fdba74', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Sparkles size={13} /> {msg.routingNote}
-                        </div>
-                      )}
-
-                      {/* Render Ollama Style "Thought for a moment" Header */}
-                      {msg.thoughtProcess && (
-                        <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                          <Lightbulb size={14} color="#f97316" />
-                          <span>Thought for a moment ({msg.thoughtProcess})</span>
+                      {(msg.routingNote || msg.thoughtProcess) && (
+                        <div style={{ marginBottom: '9px' }}>
+                          {!expandedMessageDetails[msg.id] ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedMessageDetails((prev) => ({ ...prev, [msg.id]: true }))}
+                              style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.74rem', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: '2px' }}
+                            >
+                              Details
+                            </button>
+                          ) : (
+                            <>
+                              {msg.routingNote && (
+                                <div style={{ marginBottom: '9px', padding: '7px 10px', borderRadius: '9px', background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.1)', color: isLight ? '#9a3412' : '#fdba74', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Sparkles size={13} /> {msg.routingNote}
+                                </div>
+                              )}
+                              {msg.thoughtProcess && (
+                                <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                  <Lightbulb size={14} color="#f97316" />
+                                  <span>Thought for a moment ({msg.thoughtProcess})</span>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setExpandedMessageDetails((prev) => ({ ...prev, [msg.id]: false }))}
+                                style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.74rem', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: '2px' }}
+                              >
+                                Hide details
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -1926,7 +1953,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
               </div>
             ));
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails]);
 
   return (
     <div className="ai-studio-shell" style={{
@@ -2264,7 +2291,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
                 <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
-                  Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong>
+                  {isGenerating ? (
+                    <>Active model: <strong style={{ color: '#f97316' }}>{activeGeneratingModel?.name || 'Preparing...'}</strong></>
+                  ) : autoSelectEnabled ? (
+                    <>Routing: <strong style={{ color: '#f97316' }}>Auto-select</strong></>
+                  ) : (
+                    <>Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong></>
+                  )}
                 </span>
                 <span style={{
                   fontSize: '0.7rem',
@@ -2279,7 +2312,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   gap: '4px'
                 }}>
                   <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-                  Live API Engine Active
+                  Ready
                 </span>
               </div>
             </div>
@@ -2506,7 +2539,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         {isGenerating && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f97316', fontSize: '0.88rem', paddingLeft: '50px', marginTop: '16px' }}>
-            <Sparkles size={16} className="animate-spin" /> {selectedModel ? selectedModel.name : 'Qwen 2.5 Coder'} is thinking...
+            <Sparkles size={16} className="animate-spin" /> {autoSelectEnabled ? 'Working on your request...' : `${activeGeneratingModel?.name || selectedModel?.name || 'Qwen 2.5 Coder'} is thinking...`}
           </div>
         )}
       </div>
