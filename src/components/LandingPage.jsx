@@ -497,7 +497,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       </section>
 
       <div className="flagship-band" style={{
-        background: isLight ? '#070b16' : '#04060d',
+        background: isLight
+          ? 'radial-gradient(1100px 440px at 50% 0%, rgba(249,115,22,0.12), transparent 72%), #070b16'
+          : 'radial-gradient(1100px 440px at 50% 0%, rgba(249,115,22,0.10), transparent 72%), #04060d',
         '--page-bg': isLight ? '#f8fafc' : '#070913'
       }}>
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
@@ -557,19 +559,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 </button>
               );
             })}
-          </div>
-        </div>
-        </Reveal>
-
-        <Reveal delay={120}>
-        <div className="flagship-supporting-strip">
-          <div>
-            <Search size={17} color="#ec4899" />
-            <span><strong>Agent-assisted research</strong><small>Search and multi-step reasoning when the task demands it.</small></span>
-          </div>
-          <div>
-            <BarChart3 size={17} color="#8b5cf6" />
-            <span><strong>Live model intelligence</strong><small>Availability, reliability and usage without operational clutter.</small></span>
           </div>
         </div>
         </Reveal>
