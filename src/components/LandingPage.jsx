@@ -61,11 +61,12 @@ function Reveal({ children, delay = 0, style, className }) {
   );
 }
 
-// Per-capability cinematic backdrop — an on-brand aurora built from the
-// experience's accent colour over deep space, so the stage looks composed and
-// premium instead of leaning on generic stock photography.
+// Per-capability cinematic canvas — a rich indigo base with two ambient
+// accent glows. The bright focal object is a separate luminous orb element
+// (see .flagship-stage-orb) so the right side reads as a composed visual, not
+// empty space. On-brand per experience, and it can never 404.
 function stageBackground(c) {
-  return `radial-gradient(1200px 760px at 78% 20%, ${c}59, transparent 58%), radial-gradient(900px 620px at 22% 96%, ${c}30, transparent 55%), linear-gradient(120deg, #04060d 0%, #0a0f1f 52%, #05070f 100%)`;
+  return `radial-gradient(1100px 520px at 100% 0%, ${c}26, transparent 60%), radial-gradient(760px 640px at 16% 118%, ${c}24, transparent 58%), linear-gradient(120deg, #0a0f22 0%, #121a3a 54%, #0a1026 100%)`;
 }
 
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
@@ -532,6 +533,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             className="flagship-stage-image"
             style={{ backgroundImage: stageBackground(selectedCapability.color) }}
           />
+          <div key={`${selectedCapability.id}-orb`} className="flagship-stage-orb" style={{ '--orb': selectedCapability.color }} />
           <div className="flagship-stage-shade" />
 
           <div key={`${selectedCapability.id}-content`} className="flagship-stage-content">
