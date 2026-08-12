@@ -682,6 +682,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages: [defaultGreetingMsg]
   };
   const messages = activeSession.messages || [defaultGreetingMsg];
+  const pendingChoiceMessage = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual) {
+        return m;
+      }
+    }
+    return null;
+  }, [messages]);
   const studioMode = activeSession.studioMode || 'ask';
   const studioDomain = activeSession.studioDomain || null;
   const boundRepo = activeSession.boundRepo || null;
@@ -2378,19 +2387,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {msg.sender === 'ai' && msg.choiceSet && !msg.choiceUsed && (
-                        <StudioChoiceCards
-                          choiceSet={msg.choiceSet}
-                          isLight={isLight}
-                          disabled={isGenerating}
-                          onSelect={(choice) => {
-                            updateActiveMessages((prev) => prev.map((m) => (
-                              m.id === msg.id ? { ...m, choiceUsed: true } : m
-                            )));
-                            handleSendMessage(choice.value, { choiceSelected: true });
-                          }}
-                        />
-                      )}
+                      {/* Choice cards render in floating dock above prompt */}
 
                       {/* Plan / code actions */}
                       <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -3298,6 +3295,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 Refine mode — your next message updates the live site.
               </span>
               <button type="button" onClick={() => setRefineActive(false)} title="Start a new build instead of editing the current site" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: isLight ? '#9a3412' : '#fdba74', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>New build</button>
+            </div>
+          )}
+
+          {pendingChoiceMessage && (
+            <div className="studio-choice-dock">
+              <StudioChoiceCards
+                variant="floating"
+                choiceSet={pendingChoiceMessage.choiceSet}
+                isLight={isLight}
+                disabled={isGenerating}
+                onSelect={(choice) => {
+                  updateActiveMessages((prev) => prev.map((m) => (
+                    m.id === pendingChoiceMessage.id ? { ...m, choiceUsed: true } : m
+                  )));
+                  handleSendMessage(choice.value, { choiceSelected: true });
+                }}
+              />
             </div>
           )}
 

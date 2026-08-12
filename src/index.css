@@ -1141,6 +1141,65 @@ body {
   font-size: 0.68rem;
 }
 
+/* Floating dock — pinned above prompt, no scroll hunt */
+.studio-choice-dock {
+  padding: 8px 14px 0;
+}
+
+.studio-choice-cards--floating {
+  margin-top: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  box-shadow: 0 -6px 24px rgba(249, 115, 22, 0.08);
+}
+
+.studio-choice-cards--floating .studio-choice-cards__eyebrow {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f97316;
+  margin-bottom: 4px;
+}
+
+.studio-choice-cards--floating .studio-choice-cards__title {
+  font-size: 0.78rem;
+}
+
+.studio-choice-cards--floating .studio-choice-cards__prompt {
+  font-size: 0.72rem;
+}
+
+.studio-choice-cards--floating .studio-choice-cards__grid {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+  margin-top: 8px;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.studio-choice-cards--floating .studio-choice-cards__option {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 240px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.studio-choice-cards--floating .studio-choice-cards__option-label {
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Product analytics panel (admin) */
 .product-analytics-panel {
   margin-top: 24px;
