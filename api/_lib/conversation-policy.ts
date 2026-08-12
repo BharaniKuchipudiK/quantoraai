@@ -1,5 +1,6 @@
 import type { SessionContext } from "./session-context.js";
 import { formatSessionContextForPrompt } from "./session-context.js";
+import { buildDomainDirective } from "./studio-domains.js";
 
 export type CognitiveLevel = "Lightning" | "Balanced" | "Deep Think" | string | undefined;
 
@@ -111,6 +112,7 @@ export function buildConversationSystemPrompt(options: {
   guided?: boolean;
   planMode?: boolean;
   sessionContext?: SessionContext;
+  studioDomain?: import("./studio-domains.js").StudioDomain | null;
 } = {}): string {
   const modelContext = options.modelName
     ? `\n\nYou are currently using ${options.modelName} as the underlying model. Preserve its useful expertise while following the Quantora policy above.`
@@ -133,7 +135,9 @@ export function buildConversationSystemPrompt(options: {
     ? `${sessionMemory}\n\n${SESSION_MEMORY_DIRECTIVE}`
     : `\n\n${SESSION_MEMORY_DIRECTIVE}`;
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${build}${plan}${modelContext}`;
+  const domain = buildDomainDirective(options.studioDomain ?? null);
+
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${build}${plan}${modelContext}`;
 }
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader, Plane, BookOpen, DollarSign, Search, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -14,6 +14,19 @@ import {
   mergeSessionContext,
   stripPartialContextMarker,
 } from '../lib/session-context.js';
+import {
+  STUDIO_DOMAINS,
+  STUDIO_OUTPUT_MODES,
+  getOutputModeLabel,
+  getPromptPlaceholder,
+} from '../lib/studio-domains.js';
+
+const DOMAIN_ICONS = {
+  travel: Plane,
+  education: BookOpen,
+  finance: DollarSign,
+  research: Search,
+};
 
 function extractHtmlFromResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
@@ -594,12 +607,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
   const messages = activeSession.messages || [defaultGreetingMsg];
   const studioMode = activeSession.studioMode || 'ask';
+  const studioDomain = activeSession.studioDomain || null;
   const boundRepo = activeSession.boundRepo || null;
   const conversationContext = activeSession.conversationContext || {};
   const repoContextCache = useRef({});
 
   const setStudioMode = (mode) => {
     updateActiveSession({ studioMode: mode });
+  };
+
+  const setStudioDomain = (domain) => {
+    updateActiveSession({ studioDomain: domain });
+  };
+
+  const toggleStudioDomain = (domainId) => {
+    setStudioDomain(studioDomain === domainId ? null : domainId);
   };
 
   const updateActiveSession = (updates) => {
@@ -854,6 +876,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       createdAt: Date.now(),
       messages: [defaultGreetingMsg],
       studioMode: 'ask',
+      studioDomain: null,
       boundRepo: null,
       conversationContext: {}
     };
@@ -950,6 +973,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [attachments, setAttachments] = useState([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
+  const [showOutputModeMenu, setShowOutputModeMenu] = useState(false);
+  const outputModeMenuRef = useRef(null);
+  useEffect(() => {
+    if (!showOutputModeMenu) return undefined;
+    const onDocClick = (event) => {
+      if (outputModeMenuRef.current && !outputModeMenuRef.current.contains(event.target)) {
+        setShowOutputModeMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showOutputModeMenu]);
+
   const [arenaMode, setArenaMode] = useState(false);
   const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
@@ -1607,6 +1643,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         outboundMessage += `\n\n[The user uploaded ${tokens.length} photo(s) to use in the site. When you build, use them as the real product/gallery images by putting these EXACT placeholder strings inside <img src="..."> attributes (one per image, reused where it makes sense): ${tokens.join(', ')}. Do not substitute stock image URLs for these.]`;
       }
 
+      const attachedImages = (!buildMode && !guidedBuild)
+        ? attachments.filter((a) => a.type === 'image' && a.dataUrl).map((a) => a.dataUrl).slice(0, 4)
+        : [];
+
       let res = null;
       let errData = {};
       let respondingModel = targetModel;
@@ -1634,6 +1674,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               fallbackFrom,
               studioMode: apiStudioMode,
               sessionContext: conversationContext,
+              studioDomain,
+              attachedImages,
             })
           });
         } catch (networkError) {
@@ -2832,6 +2874,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               >
                 {att.type === 'context' ? <Layers size={12} color="#8b5cf6" /> : att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
                 <span>{att.name}</span>
+                {att.type === 'image' && att.dataUrl && studioMode === 'ask' && (
+                  <span style={{ fontSize: '0.65rem', opacity: 0.75 }}>· vision</span>
+                )}
                 <X
                   size={12}
                   color="#ef4444"
@@ -3006,15 +3051,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 }
               }}
               onPaste={handlePaste}
-              placeholder={
-                studioMode === 'build'
-                  ? 'Describe what you want to build — Quantora will generate runnable HTML...'
-                  : studioMode === 'plan'
-                    ? 'Describe your app or feature — Quantora will output an architecture plan (JSON)...'
-                    : boundRepo?.name
-                      ? `Ask about ${boundRepo.name} — code, architecture, or changes...`
-                      : 'Ask anything — plan a trip, research an idea, or build an app...'
-              }
+              placeholder={getPromptPlaceholder({
+                studioMode,
+                studioDomain,
+                boundRepoName: boundRepo?.name,
+              })}
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -3032,6 +3073,51 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             />
           </div>
 
+          {/* Domain focus — what you're working on (separate from Chat/Build/Plan app) */}
+          <div className="studio-domain-row" style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            flexWrap: 'wrap',
+            padding: '6px 14px 2px',
+          }}>
+            {STUDIO_DOMAINS.map(({ id, label, description }) => {
+              const Icon = DOMAIN_ICONS[id];
+              const active = studioDomain === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  title={description}
+                  aria-pressed={active}
+                  onClick={() => toggleStudioDomain(id)}
+                  className={`studio-domain-chip${active ? ' studio-domain-chip--active' : ''}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '999px',
+                    border: active
+                      ? '1px solid rgba(249, 115, 22, 0.55)'
+                      : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)'),
+                    background: active
+                      ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.18)')
+                      : (isLight ? '#ffffff' : 'rgba(255,255,255,0.04)'),
+                    color: active ? '#f97316' : subtextColor,
+                    fontSize: '0.74rem',
+                    fontWeight: active ? 700 : 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {Icon ? <Icon size={14} /> : null}
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Bottom Action Toolbar */}
           <div style={{
             display: 'flex',
@@ -3044,43 +3130,73 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }}>
             {/* Left Toolbar Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.06)',
-                borderRadius: '12px',
-                padding: '3px',
-                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)'
-              }}>
-                {[
-                  { id: 'ask', label: 'Ask', icon: MessageSquare },
-                  { id: 'build', label: 'Build', icon: Code2 },
-                  { id: 'plan', label: 'Plan app', icon: Layout }
-                ].map(({ id, label, icon: Icon }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setStudioMode(id)}
-                    title={id === 'ask' ? 'Chat and advice' : id === 'build' ? 'Generate runnable HTML' : 'Architecture plan first'}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      background: studioMode === id ? (isLight ? '#ffffff' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
-                      color: studioMode === id ? '#f97316' : subtextColor,
-                      border: 'none',
-                      padding: '5px 10px',
-                      borderRadius: '9px',
-                      fontSize: '0.72rem',
-                      fontWeight: studioMode === id ? '700' : '600',
-                      cursor: 'pointer',
-                      boxShadow: studioMode === id && isLight ? '0 1px 4px rgba(0,0,0,0.06)' : 'none'
-                    }}
-                  >
-                    <Icon size={13} />
-                    {label}
-                  </button>
-                ))}
+              <div ref={outputModeMenuRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOutputModeMenu((v) => !v)}
+                  title="How Quantora responds — chat, build, or plan an app"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.06)',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
+                    color: studioMode !== 'ask' ? '#f97316' : subtextColor,
+                    padding: '6px 10px',
+                    borderRadius: '10px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <MessageSquare size={13} />
+                  {getOutputModeLabel(studioMode)}
+                  <ChevronDown size={13} />
+                </button>
+                {showOutputModeMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 8px)',
+                    left: 0,
+                    minWidth: '220px',
+                    background: isLight ? '#ffffff' : '#0f172a',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: '14px',
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+                    padding: '6px',
+                    zIndex: 120,
+                  }}>
+                    <div style={{ fontSize: '0.65rem', fontWeight: 700, color: subtextColor, padding: '6px 10px 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Response type
+                    </div>
+                    {STUDIO_OUTPUT_MODES.map(({ id, label, description }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => { setStudioMode(id); setShowOutputModeMenu(false); }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '8px',
+                          width: '100%',
+                          textAlign: 'left',
+                          border: 'none',
+                          background: studioMode === id ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.15)') : 'transparent',
+                          borderRadius: '10px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          color: textColor,
+                        }}
+                      >
+                        <span style={{ flex: 1 }}>
+                          <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: studioMode === id ? '#f97316' : textColor }}>{label}</span>
+                          <span style={{ display: 'block', fontSize: '0.68rem', color: subtextColor, marginTop: '2px' }}>{description}</span>
+                        </span>
+                        {studioMode === id ? <Check size={14} color="#f97316" style={{ flexShrink: 0, marginTop: '2px' }} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <input
