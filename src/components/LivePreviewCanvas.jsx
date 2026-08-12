@@ -2,9 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import {
   PREVIEW_EMBED_PATH,
+  createPreviewEmbedObjectUrl,
+  getPreviewEmbedPathUrl,
   injectPreviewHarness,
   isIgnorableRuntimeError,
   isCriticalResourceError,
+  revokePreviewEmbedObjectUrl,
 } from '../lib/preview-utils.js';
 
 /*
@@ -39,6 +42,8 @@ export default function LivePreviewCanvas({
   const [connecting, setConnecting] = useState(false);
   const [connectResult, setConnectResult] = useState(null);
   const [embedReady, setEmbedReady] = useState(false);
+  const [embedSrc, setEmbedSrc] = useState('');
+  const embedModeRef = useRef('blob');
 
   const iframeRef = useRef(null);
   const currentCodeRef = useRef(currentCode);
@@ -63,7 +68,33 @@ export default function LivePreviewCanvas({
 
   useEffect(() => {
     setEmbedReady(false);
+    embedModeRef.current = 'blob';
+    let blobUrl = '';
+    try {
+      blobUrl = createPreviewEmbedObjectUrl();
+      setEmbedSrc(blobUrl);
+    } catch {
+      embedModeRef.current = 'path';
+      setEmbedSrc(getPreviewEmbedPathUrl());
+    }
+    return () => revokePreviewEmbedObjectUrl(blobUrl);
   }, [attempt]);
+
+  const handleEmbedFrameError = useCallback(() => {
+    if (embedModeRef.current === 'path') return;
+    embedModeRef.current = 'path';
+    setEmbedSrc(getPreviewEmbedPathUrl());
+    // #region agent log
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-blob-fix',location:'LivePreviewCanvas:iframe-error',message:'blob embed failed, falling back to path',data:{fallback:getPreviewEmbedPathUrl()},timestamp:Date.now(),hypothesisId:'embed-refused'})}).catch(()=>{});
+    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-blob-fix',location:'LivePreviewCanvas:iframe-error',message:'blob embed failed, falling back to path',data:{fallback:getPreviewEmbedPathUrl()},timestamp:Date.now(),hypothesisId:'embed-refused'})}).catch(()=>{});
+    // #endregion
+  }, []);
+
+  const handleEmbedFrameLoad = useCallback(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-blob-fix',location:'LivePreviewCanvas:iframe-load',message:'embed iframe loaded',data:{mode:embedModeRef.current,src:embedSrc?.slice(0,32)},timestamp:Date.now(),hypothesisId:'embed-refused'})}).catch(()=>{});
+    // #endregion
+  }, [embedSrc]);
 
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
@@ -290,12 +321,14 @@ export default function LivePreviewCanvas({
     failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
-  const previewFrame = currentCode ? (
+  const previewFrame = currentCode && embedSrc ? (
     <iframe
       ref={iframeRef}
-      key={attempt}
+      key={`${attempt}-${embedModeRef.current}`}
       title="Live Preview"
-      src={PREVIEW_EMBED_PATH}
+      src={embedSrc}
+      onLoad={handleEmbedFrameLoad}
+      onError={handleEmbedFrameError}
       sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
       style={{
         width: '100%',

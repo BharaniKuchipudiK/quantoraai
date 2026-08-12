@@ -1,7 +1,56 @@
 export const PREVIEW_EMBED_PATH = '/preview/embed.html';
 
 export const PREVIEW_RELAXED_CSP =
-  "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https:; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';";
+  "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';";
+
+/** Inline embed shell — blob/src use avoids fetching /preview/embed.html (X-Frame-Options on SPA). */
+export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="${PREVIEW_RELAXED_CSP}">
+  <title>Quantora Preview</title>
+  <script>
+    (function () {
+      function render(html) {
+        if (!html) return;
+        document.open();
+        document.write(html);
+        document.close();
+      }
+      window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (d && Object.prototype.hasOwnProperty.call(d, '__quantoraPreviewHtml')) {
+          render(d.__quantoraPreviewHtml);
+        }
+      });
+      try {
+        parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
+      } catch (err) { /* cross-origin guard */ }
+    })();
+  <\/script>
+</head>
+<body style="margin:0;font-family:system-ui,sans-serif;color:#64748b;padding:16px">Loading preview…</body>
+</html>`;
+
+export function createPreviewEmbedObjectUrl() {
+  const blob = new Blob([PREVIEW_EMBED_SHELL_HTML], { type: 'text/html;charset=utf-8' });
+  return URL.createObjectURL(blob);
+}
+
+export function revokePreviewEmbedObjectUrl(url) {
+  if (url && String(url).startsWith('blob:')) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export function getPreviewEmbedPathUrl() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${PREVIEW_EMBED_PATH}`;
+  }
+  return PREVIEW_EMBED_PATH;
+}
 
 export const PREVIEW_TAILWIND_PROBE_ID = '__quantora_tailwind_probe';
 

@@ -4,6 +4,7 @@ import {
   injectPreviewHarness,
   isCriticalResourceError,
   isIgnorableRuntimeError,
+  PREVIEW_EMBED_SHELL_HTML,
   PREVIEW_TAILWIND_PROBE_ID,
   usesTailwindCdn,
 } from './preview-utils.js';
@@ -32,4 +33,9 @@ test('treats Tailwind script load failures as critical', () => {
 
 test('still ignores opaque script errors', () => {
   assert.equal(isIgnorableRuntimeError('Script error.'), true);
+});
+
+test('embed shell html includes relaxed csp and postMessage bridge', () => {
+  assert.match(PREVIEW_EMBED_SHELL_HTML, /frame-ancestors 'self'/);
+  assert.match(PREVIEW_EMBED_SHELL_HTML, /__quantoraPreviewHtml/);
 });
