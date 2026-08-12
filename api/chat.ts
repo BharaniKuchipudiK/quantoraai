@@ -323,6 +323,10 @@ export default async function handler(req: any, res: any) {
     if (effectiveBuildMode && !guidedBuild) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
     if (planMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
 
+    const visionImages = Array.isArray(attachedImages)
+      ? attachedImages.filter((url: unknown): url is string => typeof url === "string" && url.startsWith("data:image/")).slice(0, 4)
+      : [];
+
     const finalSystemPrompt = buildConversationSystemPrompt({
       cognitiveLevel,
       modelName: modelName || modelId,
@@ -340,10 +344,6 @@ export default async function handler(req: any, res: any) {
       studioDomain: normalizeStudioDomain(studioDomain),
       choiceSelected: choiceSelected === true,
     };
-
-    const visionImages = Array.isArray(attachedImages)
-      ? attachedImages.filter((url: unknown): url is string => typeof url === "string" && url.startsWith("data:image/")).slice(0, 4)
-      : [];
 
     // The self-heal endpoint reuses this handler (via task: "repair") so it
     // adds no serverless function. It carries code+error instead of a message.
