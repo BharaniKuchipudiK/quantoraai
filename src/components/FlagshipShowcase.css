@@ -6,31 +6,36 @@
 }
 
 .flagship-experience-heading {
-  max-width: 820px;
-  margin-bottom: 34px;
+  max-width: 720px;
+  margin-bottom: 28px;
 }
 
 .flagship-experience-heading > span {
-  color: #ea580c;
-  font-size: 0.72rem;
-  font-weight: 850;
-  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .flagship-experience-heading h2 {
-  margin: 10px 0 10px;
+  margin: 14px 0 16px;
   font-family: var(--font-heading);
-  font-size: clamp(2.4rem, 4.5vw, 4.5rem);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.045em;
+  font-size: clamp(2rem, 3.6vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  font-kerning: normal;
+  text-wrap: balance;
 }
 
 .flagship-experience-heading p {
   margin: 0;
-  color: var(--text-secondary);
-  font-size: clamp(0.95rem, 1.3vw, 1.08rem);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: clamp(1rem, 1.2vw, 1.125rem);
+  line-height: 1.65;
+  max-width: 620px;
+  font-weight: 400;
 }
 
 .flagship-stage {
@@ -105,10 +110,10 @@
   max-width: 570px;
   margin: 18px 0 15px;
   font-family: var(--font-heading);
-  font-size: clamp(2.35rem, 4.2vw, 4.5rem);
-  font-weight: 700;
-  line-height: 0.98;
-  letter-spacing: -0.045em;
+  font-size: clamp(1.85rem, 3.2vw, 3rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .flagship-stage-content p {
@@ -221,7 +226,7 @@
   position: relative;
   width: 100vw;
   margin-left: calc(50% - 50vw);
-  padding: clamp(118px, 12vw, 160px) 0;
+  padding: clamp(48px, 6vw, 72px) 0 clamp(56px, 7vw, 80px);
   overflow: hidden;
 }
 /* Short, fixed-height fades at the two edges only — a crisp transition into
@@ -241,9 +246,10 @@
 .flagship-band::after { bottom: 0; background: linear-gradient(0deg, var(--page-bg) 0%, transparent 100%); }
 .flagship-band .flagship-experience { position: relative; z-index: 1; margin-bottom: 0; }
 
-/* Heading now sits on the dark band — lift its text to light. */
+/* Heading on the dark band — restrained, editorial. */
+.flagship-heading-ondark > span { color: rgba(255, 255, 255, 0.52); }
 .flagship-heading-ondark h2 { color: #ffffff; }
-.flagship-heading-ondark p { color: rgba(255, 255, 255, 0.74); }
+.flagship-heading-ondark p { color: rgba(255, 255, 255, 0.72); }
 
 /* Soften the stage so it belongs to the band rather than reading as a card. */
 .flagship-band .flagship-stage {
@@ -264,7 +270,7 @@
 @media (max-width: 760px) {
   .flagship-experience { width: calc(100% - 28px); margin-bottom: 58px; }
   .flagship-experience-heading { margin-bottom: 24px; }
-  .flagship-experience-heading h2 { font-size: clamp(2.35rem, 12vw, 3.25rem); }
+  .flagship-experience-heading h2 { font-size: clamp(1.75rem, 8vw, 2.5rem); line-height: 1.2; }
   .flagship-stage { min-height: 590px; border-radius: 18px; }
   .flagship-stage-shade {
     background: linear-gradient(0deg, rgba(2, 6, 23, 0.98) 0%, rgba(2, 6, 23, 0.83) 48%, rgba(2, 6, 23, 0.22) 100%);

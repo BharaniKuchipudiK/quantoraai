@@ -99,20 +99,17 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   // The four steps that make Quantora outcome-first — all real product
   // behaviour, no mock. This is the journey, told as a filmstrip.
   const journey = [
-    { icon: Sparkles, color: '#f97316', step: '01', title: 'Say it out loud', body: 'Describe what you imagine in plain words — no templates, no setup, no code.' },
-    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'A real conversation', body: 'Brief it like a teammate. It listens, asks, and reshapes the living result as you talk — a natural back-and-forth, not a form.' },
-    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'It verifies itself', body: 'Every build runs in a live sandbox and repairs its own errors before it ever reaches you.' },
-    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Out into the world', body: 'Publish to your own domain and take real payments — your accounts, your money, entirely yours.' }
+    { icon: Sparkles, color: '#f97316', step: '01', title: 'Define the outcome', body: 'State what you need in plain language — no templates, configuration, or code required.' },
+    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'Refine through dialogue', body: 'Quantora clarifies requirements, proposes options, and iterates with you until the result is right.' },
+    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'Validate before delivery', body: 'Every build runs in a live sandbox and self-corrects errors before it reaches you.' },
+    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Deploy and transact', body: 'Publish to your domain on Vercel and accept payments through your own Stripe account.' }
   ];
 
-  // What makes this more than a prompt box with a logo — every claim maps to
-  // real code in this repo (LangChain orchestration, the repair loop, the
-  // bring-your-own-key gateway), so the story stays honest.
   const techPillars = [
-    { icon: Layers, color: '#f97316', title: 'Multi-model orchestration', body: 'LangChain routes each request across frontier models — Gemini, GPT-4o, DeepSeek, Llama, Qwen — and picks the right mind for the job.' },
-    { icon: ShieldCheck, color: '#10b981', title: 'A self-healing build loop', body: 'Every result runs in a live sandbox and repairs its own runtime errors before it ever reaches your screen.' },
-    { icon: Workflow, color: '#8b5cf6', title: 'Human-to-AI conversation', body: 'No forms, no settings. You talk, it reasons and iterates — a natural loop between you and the machine.' },
-    { icon: Lock, color: '#06b6d4', title: 'Privacy-first by design', body: 'Bring your own keys. They live in a secure API gateway — your data and your models stay yours.' }
+    { icon: Layers, color: '#f97316', title: 'Multi-model orchestration', body: 'Requests route across approved frontier models — selecting the right capability for each task.' },
+    { icon: ShieldCheck, color: '#10b981', title: 'Self-healing build loop', body: 'Generated artifacts are executed, verified, and repaired automatically before delivery.' },
+    { icon: Workflow, color: '#8b5cf6', title: 'Conversation-first workflow', body: 'No rigid forms. Requirements emerge naturally through structured dialogue.' },
+    { icon: Lock, color: '#06b6d4', title: 'Privacy by design', body: 'Bring your own API keys. Your data, models, and outputs remain under your control.' }
   ];
 
   // Use global theme
@@ -325,30 +322,29 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             marginBottom: '20px'
           }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
-            Possibility, built together
+            Possibility, built with purpose
           </div>
 
           {/* Headline — solid ink, a single accent, tight editorial tracking */}
           <h1 style={{
-            fontSize: 'clamp(2.7rem, 6vw, 5.2rem)',
-            fontWeight: '800',
-            lineHeight: 1.02,
-            letterSpacing: '-0.035em',
+            fontSize: 'clamp(2.5rem, 5.5vw, 4.5rem)',
+            fontWeight: '700',
+            lineHeight: 1.08,
+            letterSpacing: '-0.025em',
             color: isLight ? '#0b1220' : '#ffffff',
-            margin: '0 0 24px'
+            margin: '0 0 20px'
           }}>
-            Dream bigger.<br/>
-            Let's build it <span style={{ color: '#ea580c' }}>together.</span>
+            From intent<br/>
+            to <span style={{ color: '#ea580c' }}>outcome.</span>
           </h1>
 
-          {/* Subcopy — one line, deliberately brief */}
           <p style={{
-            fontSize: 'clamp(1.05rem, 1.35vw, 1.28rem)',
+            fontSize: 'clamp(1.05rem, 1.25vw, 1.2rem)',
             color: isLight ? '#475569' : '#cbd5e1',
-            lineHeight: 1.6, fontWeight: '400',
-            maxWidth: '520px', margin: '0 auto 40px'
+            lineHeight: 1.65, fontWeight: '400',
+            maxWidth: '560px', margin: '0 auto 36px'
           }}>
-            Say it in plain words. We'll build it together.
+            Describe what you need in plain language. Quantora orchestrates frontier models to deliver working results — in one conversation.
           </p>
 
           {/* Real prompt box — the product, front and centre */}
@@ -414,21 +410,20 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       }}>
         <Reveal>
           <div style={{ maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#fdba74' }}>
-              What we believe
+            <span style={{ fontSize: '0.76rem', fontWeight: '600', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#fdba74' }}>
+              Our conviction
             </span>
             <p style={{
-              fontSize: 'clamp(1.7rem, 3.4vw, 3rem)',
-              fontWeight: '700',
-              lineHeight: 1.22,
-              letterSpacing: '-0.02em',
+              fontSize: 'clamp(1.5rem, 2.8vw, 2.35rem)',
+              fontWeight: '600',
+              lineHeight: 1.35,
+              letterSpacing: '-0.015em',
               color: '#ffffff',
-              margin: '24px auto 0',
-              maxWidth: '940px'
+              margin: '20px auto 0',
+              maxWidth: '820px',
+              textWrap: 'balance'
             }}>
-              The distance between an idea and something real should be a
-              <span style={{ color: '#f97316' }}> conversation</span> — not a budget,
-              a team, or a year of waiting. So we set out to close it, <span style={{ color: '#f97316' }}>together</span>.
+              The distance between an idea and a deployed outcome should be measured in conversation — not in quarters, headcount, or capital.
             </p>
           </div>
         </Reveal>
@@ -438,9 +433,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section style={{ maxWidth: '1180px', margin: 'clamp(56px, 8vh, 80px) auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: '44px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>From idea to reality</span>
-            <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Four steps from a sentence to something live.</h2>
-            <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '640px', margin: '0 auto', lineHeight: 1.6 }}>No code, no setup, no templates. The value is the finished thing you can share and act on — not the code behind it.</p>
+            <span style={{ fontSize: '0.82rem', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ea580c' }}>How it works</span>
+            <h2 style={{ fontSize: 'clamp(1.75rem, 2.8vw, 2.4rem)', fontWeight: '700', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.015em' }}>Four stages. One continuous workflow.</h2>
+            <p style={{ fontSize: '1.02rem', color: subtextColor, maxWidth: '640px', margin: '0 auto', lineHeight: 1.65 }}>From first prompt to published site — every step is designed to produce a result you can use, share, and operate.</p>
           </div>
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
@@ -469,12 +464,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </Reveal>
       </section>
       {/* Under the hood — the real engineering, honestly stated */}
-      <section style={{ maxWidth: '1180px', margin: '0 auto clamp(56px, 8vh, 80px)', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+      <section style={{ maxWidth: '1180px', margin: '0 auto clamp(40px, 6vh, 56px)', padding: '0 24px', position: 'relative', zIndex: 10 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: '44px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>Under the hood</span>
-            <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Not another AI wrapper.</h2>
-            <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '680px', margin: '0 auto', lineHeight: 1.6 }}>Quantora is a system, not a prompt box with a logo. Frontier models, a self-correcting build loop, and a privacy-first core — engineered to turn a conversation into something real, reliably.</p>
+            <span style={{ fontSize: '0.82rem', fontWeight: '600', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ea580c' }}>Platform</span>
+            <h2 style={{ fontSize: 'clamp(1.75rem, 2.8vw, 2.4rem)', fontWeight: '700', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.015em' }}>Engineered for reliability, not hype.</h2>
+            <p style={{ fontSize: '1.02rem', color: subtextColor, maxWidth: '680px', margin: '0 auto', lineHeight: 1.65 }}>Quantora is a production system — model routing, automated verification, and a privacy-first gateway — built to turn dialogue into dependable outcomes.</p>
           </div>
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
@@ -504,9 +499,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
         <Reveal>
           <div className="flagship-experience-heading flagship-heading-ondark">
-            <span>Our belief</span>
-            <h2 id="flagship-experience-title">Together, there's no limit to what you can make real.</h2>
-            <p>What you build is yours. We stand beside your imagination — from first idea to something you can see, use, and share.</p>
+            <span>Our purpose</span>
+            <h2 id="flagship-experience-title">
+              Together,<br />
+              there is no limit to what you can make real.
+            </h2>
+            <p>
+              Everything you create remains yours. We provide the intelligence and infrastructure to move from initial concept to a deliverable you can publish, share, and operate — on your terms.
+            </p>
           </div>
         </Reveal>
 
