@@ -12,7 +12,8 @@ const DOMAIN_DIRECTIVES: Record<StudioDomain, string> = {
 The user is thinking about travel — trips, destinations, itineraries, logistics, or experiences.
 - Follow the conversation loop naturally: understand their goal, contextualize, respond, then act when ready.
 - Ask one clarifying question when timing, budget, group, or preferences would materially change the recommendation — never a rigid checklist.
-- You do not have live booking or flight APIs yet; be honest about that while still giving useful, personalized guidance.`,
+- You do not have live booking or flight APIs yet; be honest about that while still giving useful, personalized guidance.
+- When the user asks for links, URLs, websites, or places they can click and visit, include raw https:// URLs for each recommendation — not just property or hotel names.`,
 
   education: `DOMAIN FOCUS: EDUCATION
 The user is thinking about learning — courses, study plans, concepts, curricula, or skill development.

@@ -22,6 +22,7 @@ import {
 import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
 import { createQuantoraListener, mergeSessionListeningSignals, QUANTORA_EVENTS } from '../lib/listening-layer.js';
 import { enrichContinueSet } from '../lib/domain-anticipation.js';
+import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
 import StudioChoiceCards from './StudioChoiceCards';
 import StudioContinueChips from './StudioContinueChips';
 import StudioChromeBar from './StudioChromeBar';
@@ -725,13 +726,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const repoContextCache = useRef({});
   const emitQuantoraRef = useRef(() => {});
 
-  const enrichContinues = useCallback((continueSet) => (
-    enrichContinueSet(continueSet, {
+  const enrichContinues = useCallback((continueSet, { userPrompt, aiResponse } = {}) => {
+    const gaps = userPrompt && aiResponse ? detectOutcomeGaps(userPrompt, aiResponse) : [];
+    const withGaps = gaps.length ? injectGapContinues(continueSet, gaps) : continueSet;
+    return enrichContinueSet(withGaps, {
       domain: studioDomain,
       mode: studioMode,
       conversationContext,
-    })
-  ), [studioDomain, studioMode, conversationContext]);
+    });
+  }, [studioDomain, studioMode, conversationContext]);
+
+  const getPriorUserPrompt = useCallback((messageId) => {
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx <= 0) return '';
+    return [...messages.slice(0, idx)].reverse().find((m) => m.sender === 'user')?.text || '';
+  }, [messages]);
 
   const setStudioMode = (mode) => {
     updateActiveSession({ studioMode: mode });
@@ -1074,11 +1083,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
       if (m?.sender !== 'ai' || m.continueUsed || m.isDual) continue;
-      const enriched = enrichContinues(m.continueSet);
+      const userPrompt = getPriorUserPrompt(m.id);
+      const enriched = enrichContinues(m.continueSet, { userPrompt, aiResponse: m.text });
       if (enriched?.items?.length) return m.id;
     }
     return null;
-  }, [messages, pendingChoiceMessage, isGenerating, enrichContinues]);
+  }, [messages, pendingChoiceMessage, isGenerating, enrichContinues, getPriorUserPrompt]);
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
   const [showCodeMap, setShowCodeMap] = useState({});
@@ -2064,6 +2074,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
         }
 
+        const outcomeGaps = detectOutcomeGaps(textToSend || visibleText, displayText);
+        if (outcomeGaps[0]) {
+          emitQuantoraRef.current(QUANTORA_EVENTS.OUTCOME_GAP_DETECTED, { label: outcomeGaps[0].label });
+        }
+
         // Store preview HTML and verify in the background — do not auto-open the modal.
         const finalHtml = preparePreviewHtml(displayText, imageMap);
         if (finalHtml) {
@@ -2526,9 +2541,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {msg.sender === 'ai' && msg.id === latestContinueMessageId && enrichContinues(msg.continueSet)?.items?.length > 0 && (
+                      {msg.sender === 'ai' && msg.id === latestContinueMessageId && enrichContinues(msg.continueSet, { userPrompt: getPriorUserPrompt(msg.id), aiResponse: msg.text })?.items?.length > 0 && (
                         <StudioContinueChips
-                          continueSet={enrichContinues(msg.continueSet)}
+                          continueSet={enrichContinues(msg.continueSet, { userPrompt: getPriorUserPrompt(msg.id), aiResponse: msg.text })}
                           isLight={isLight}
                           textColor={textColor}
                           subtextColor={subtextColor}
@@ -2673,7 +2688,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
     });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference, saveToJourney, onPushToCanvas, emitQuantora, enrichContinues, latestContinueMessageId]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference, saveToJourney, onPushToCanvas, emitQuantora, enrichContinues, getPriorUserPrompt, latestContinueMessageId]);
 
   return (
     <div className="ai-studio-shell" style={{

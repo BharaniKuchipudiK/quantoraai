@@ -10,6 +10,7 @@ export const QUANTORA_EVENTS = {
   CONTINUE_SELECTED: 'continue_selected',
   PLAN_RECEIVED: 'plan_received',
   CONTEXT_UPDATED: 'context_updated',
+  OUTCOME_GAP_DETECTED: 'outcome_gap_detected',
   JOURNEY_SAVED: 'journey_saved',
 };
 
@@ -33,6 +34,8 @@ function humanSignalLabel(type, payload = {}) {
       return payload.shareUrl ? `Shared preview — ${payload.shareUrl}` : 'Preview link copied';
     case QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED:
       return 'Suggestions hidden';
+    case QUANTORA_EVENTS.OUTCOME_GAP_DETECTED:
+      return payload.label ? `Gap detected: ${payload.label}` : 'Outcome gap detected';
     case QUANTORA_EVENTS.JOURNEY_SAVED:
       return payload.title ? `Saved: ${payload.title}` : 'Saved to Journey';
     default:
@@ -119,8 +122,8 @@ export function createQuantoraListener({
     [QUANTORA_EVENTS.CHOICE_SELECTED]() {},
     [QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED]() {},
     [QUANTORA_EVENTS.PREVIEW_SHARED]() {},
-    [QUANTORA_EVENTS.CONTINUE_SELECTED]() {},
     [QUANTORA_EVENTS.CONTEXT_UPDATED]() {},
+    [QUANTORA_EVENTS.OUTCOME_GAP_DETECTED]() {},
   };
 
   function emit(type, payload = {}) {
