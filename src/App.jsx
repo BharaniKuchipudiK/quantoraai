@@ -3,6 +3,7 @@ import LandingPage from './components/LandingPage';
 import Header from './components/Header';
 import AuroraBackground from './components/AuroraBackground';
 import Footer from './components/Footer';
+import { createJourneyNode } from './lib/build-journey';
 
 /*
  * The heavy surfaces load on demand.
@@ -234,7 +235,6 @@ export default function App() {
       .then((data) => applyModelRegistry(data))
       .catch((err) => console.error('Failed to fetch dynamic model registry:', err));
   }, [applyModelRegistry]);
-  const [activeCanvasNode, setActiveCanvasNode] = useState(null);
   const [dreamNodes, setDreamNodes] = useState(() => {
     try {
       const saved = localStorage.getItem('quantora_canvas_nodes');
@@ -249,9 +249,20 @@ export default function App() {
   }, [dreamNodes]);
   const [studioInputText, setStudioInputText] = useState('');
 
-  const handleSendToCanvas = (messageData) => {
-    setActiveCanvasNode(messageData);
+  const handleSendToCanvas = (payload) => {
+    const node = createJourneyNode(
+      typeof payload === 'string'
+        ? { brief: payload, studioPrompt: payload, title: payload.split('\n')[0]?.slice(0, 80) }
+        : payload,
+    );
+    setDreamNodes((prev) => [node, ...prev]);
     handleTabChange('canvas');
+  };
+
+  const handleContinueInStudio = (node) => {
+    const prompt = node?.studioPrompt || node?.brief || node?.title || '';
+    if (prompt) setStudioInputText(prompt);
+    handleTabChange('studio');
   };
 
   const isStudioShell = activeTab === 'studio';
@@ -360,11 +371,10 @@ export default function App() {
 
             {activeTab === 'canvas' && (
               <DreamActionCanvas
-                activeCanvasNode={activeCanvasNode}
-                setActiveCanvasNode={setActiveCanvasNode}
                 isLight={isLight}
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
+                onContinueInStudio={handleContinueInStudio}
               />
             )}
 

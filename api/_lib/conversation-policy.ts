@@ -3,7 +3,7 @@ import { formatSessionContextForPrompt } from "./session-context.js";
 import { buildDomainDirective } from "./studio-domains.js";
 import { CHOICES_DIRECTIVE } from "./studio-choices.js";
 import { buildChoiceTemplateDirective } from "./studio-choice-templates.js";
-import { CONTINUE_DIRECTIVE } from "./studio-continues.js";
+import { CONTINUE_DIRECTIVE, buildDomainContinueHint } from "./studio-continues.js";
 
 export type CognitiveLevel = "Lightning" | "Balanced" | "Deep Think" | string | undefined;
 
@@ -153,7 +153,9 @@ export function buildConversationSystemPrompt(options: {
     ? `\n\n${CHOICES_DIRECTIVE}${choiceTemplates}`
     : "";
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${build}${plan}${modelContext}`;
+  const continueHint = buildDomainContinueHint(options.studioDomain ?? null);
+
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
 }
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)

@@ -47,3 +47,15 @@ Rules:
 - Mode-aware: Travel → deepen dates/budget/day-plan; Build → refine a section, add a feature, or preview; Ask → compare, go deeper, or take the next action.
 - Labels: conversational, under 6 words; values: full natural user messages.
 - Max 3 items. Skip when output is pure code/HTML, PLAN JSON only, or you used quantora-choices.`;
+
+const DOMAIN_CONTINUE_HINTS: Record<string, string> = {
+  travel: `Travel anticipation beats (pick what is still missing): Pin down dates · Set a budget · Who is traveling · Day-by-day itinerary · Build trip page (Build mode).`,
+  finance: `Finance anticipation beats: Clarify goal · Rough numbers · Time horizon · Simple action plan · Build tracker (Build mode).`,
+  research: `Research anticipation beats: Narrow scope · Compare options · Audience · Executive summary · Research page (Build mode).`,
+  education: `Education anticipation beats: Match my level · Focus topic · Study plan · Quiz me · Learning app (Build mode).`,
+};
+
+export function buildDomainContinueHint(domain: import("./studio-domains.js").StudioDomain | null): string {
+  if (!domain || !DOMAIN_CONTINUE_HINTS[domain]) return "";
+  return `\n\nDOMAIN CONTINUE HINT (${domain}): ${DOMAIN_CONTINUE_HINTS[domain]}`;
+}

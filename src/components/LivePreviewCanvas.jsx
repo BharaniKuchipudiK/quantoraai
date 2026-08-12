@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check } from 'lucide-react';
+import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2 } from 'lucide-react';
 import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
@@ -33,6 +33,8 @@ export default function LivePreviewCanvas({
   user = null,
   onRequireAuth,
   suggestedProjectName = 'quantora-app',
+  onPublishComplete,
+  onShareComplete,
 }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -44,6 +46,9 @@ export default function LivePreviewCanvas({
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [projectNameInput, setProjectNameInput] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareResult, setShareResult] = useState(null);
   const [domainInput, setDomainInput] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [connectResult, setConnectResult] = useState(null);
@@ -316,7 +321,9 @@ export default function LivePreviewCanvas({
         body: JSON.stringify({ context: currentCode.substring(0, 1000) }),
       });
       const domainData = await domainRes.json();
-      setDeployResult({ url: deployData.url, domains: domainData.domains || [], projectName: deployData.projectName });
+      const result = { url: deployData.url, domains: domainData.domains || [], projectName: deployData.projectName };
+      setDeployResult(result);
+      onPublishComplete?.(result);
     } catch (err) {
       const message = err.message || 'Deployment failed';
       if (message.toLowerCase().includes('sign in')) {
@@ -336,6 +343,47 @@ export default function LivePreviewCanvas({
       setTimeout(() => setLinkCopied(false), 2000);
     } catch {
       /* clipboard blocked */
+    }
+  };
+
+  const handleSharePreview = async () => {
+    if (isSharing || isDeploying) return;
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
+    if (!currentCode?.trim()) return;
+
+    setIsSharing(true);
+    setShareCopied(false);
+    try {
+      const previewName = `preview-${Date.now().toString(36).slice(-8)}`;
+      const deployRes = await fetch('/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ code: currentCode, projectName: previewName }),
+      });
+      const deployData = await deployRes.json();
+      if (!deployRes.ok) throw new Error(deployData.error || 'Share failed');
+
+      setShareResult({ url: deployData.url, projectName: deployData.projectName });
+      try {
+        await navigator.clipboard.writeText(deployData.url);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+      } catch {
+        /* clipboard blocked */
+      }
+      onShareComplete?.({ url: deployData.url, projectName: deployData.projectName });
+    } catch (err) {
+      const message = err.message || 'Could not create share link';
+      if (message.toLowerCase().includes('sign in')) {
+        onRequireAuth?.();
+      }
+      alert(`Share preview failed: ${message}\n\nSign in is required to create a shareable link.`);
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -398,6 +446,30 @@ export default function LivePreviewCanvas({
     </div>
   );
 
+  const shareButton = (
+    <button
+      onClick={handleSharePreview}
+      disabled={isSharing || isDeploying}
+      title="Copy a shareable preview link (no custom name needed)"
+      style={{
+        background: isSharing ? 'rgba(148, 163, 184, 0.2)' : 'rgba(2, 132, 199, 0.12)',
+        border: '1px solid rgba(2, 132, 199, 0.35)',
+        cursor: isSharing || isDeploying ? 'not-allowed' : 'pointer',
+        color: '#0284c7',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 12px',
+        borderRadius: '16px',
+        fontSize: '0.75rem',
+        fontWeight: 'bold',
+      }}
+    >
+      {shareCopied ? <Check size={14} /> : <Link2 size={14} />}
+      {isSharing ? 'Sharing…' : shareCopied ? 'Link copied' : 'Share link'}
+    </button>
+  );
+
   const publishButton = (
     <button onClick={handlePublishClick} disabled={isDeploying} title="Publish to Vercel" style={{
       background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
@@ -436,6 +508,7 @@ export default function LivePreviewCanvas({
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
           )}
+          {shareButton}
           {publishButton}
           <button onClick={onClose} title="Close preview (Esc)" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <X size={18} />
@@ -455,6 +528,7 @@ export default function LivePreviewCanvas({
           <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
             <Download size={18} />
           </button>
+          {shareButton}
           {publishButton}
         </div>
       )}
