@@ -70,12 +70,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const [phIdx, setPhIdx] = useState(0);
 
   const heroExamples = [
-    'A cozy cafe website with an online menu…',
-    'A portfolio for a photographer with booking…',
-    'A landing page for my app with a waitlist…',
-    'An online boutique to sell handmade jewelry…',
-    'A booking site for a yoga studio…',
-    'A one-page site for our new restaurant…'
+    'A research assistant that searches papers and summarizes them…',
+    'A study planner that turns my syllabus into daily goals…',
+    'A dashboard to track weekly metrics for my team…',
+    'A tool that turns my lecture notes into flashcards…',
+    'An invoice generator for my consulting clients…',
+    'A cozy cafe website with online ordering…',
+    'A literature-review helper for my thesis…',
+    'A portfolio for a photographer with a booking form…'
   ];
 
   // Cycle the prompt placeholder so ideas suggest themselves as gentle motion,
@@ -97,10 +99,20 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   // The four steps that make Quantora outcome-first — all real product
   // behaviour, no mock. This is the journey, told as a filmstrip.
   const journey = [
-    { icon: Sparkles, color: '#f97316', step: '01', title: 'Describe it', body: 'Say what you want in plain English. No templates, no setup — just the idea.' },
-    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'Refine in chat', body: 'Ask for changes conversationally. Quantora edits the live site as you talk.' },
-    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'It verifies itself', body: 'Every build runs in a sandbox and self-heals runtime errors before you see it.' },
-    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Publish & sell', body: 'Go live on your own domain and take real payments — your Stripe, your money.' }
+    { icon: Sparkles, color: '#f97316', step: '01', title: 'Say it out loud', body: 'Describe what you imagine in plain words — no templates, no setup, no code.' },
+    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'A real conversation', body: 'Brief it like a teammate. It listens, asks, and reshapes the living result as you talk — a natural back-and-forth, not a form.' },
+    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'It verifies itself', body: 'Every build runs in a live sandbox and repairs its own errors before it ever reaches you.' },
+    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Out into the world', body: 'Publish to your own domain and take real payments — your accounts, your money, entirely yours.' }
+  ];
+
+  // What makes this more than a prompt box with a logo — every claim maps to
+  // real code in this repo (LangChain orchestration, the repair loop, the
+  // bring-your-own-key gateway), so the story stays honest.
+  const techPillars = [
+    { icon: Layers, color: '#f97316', title: 'Multi-model orchestration', body: 'LangChain routes each request across frontier models — Gemini, GPT-4o, DeepSeek, Llama, Qwen — and picks the right mind for the job.' },
+    { icon: ShieldCheck, color: '#10b981', title: 'A self-healing build loop', body: 'Every result runs in a live sandbox and repairs its own runtime errors before it ever reaches your screen.' },
+    { icon: Workflow, color: '#8b5cf6', title: 'Human-to-AI conversation', body: 'No forms, no settings. You talk, it reasons and iterates — a natural loop between you and the machine.' },
+    { icon: Lock, color: '#06b6d4', title: 'Privacy-first by design', body: 'Bring your own keys. They live in a secure API gateway — your data and your models stay yours.' }
   ];
 
   // Use global theme
@@ -440,6 +452,33 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           </div>
         </Reveal>
       </section>
+      {/* Under the hood — the real engineering, honestly stated */}
+      <section style={{ maxWidth: '1180px', margin: '0 auto 96px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+        <Reveal>
+          <div style={{ textAlign: 'center', marginBottom: '44px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>Under the hood</span>
+            <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.6rem)', fontWeight: '800', margin: '10px 0 12px', color: textColor, letterSpacing: '-0.02em' }}>Not another AI wrapper.</h2>
+            <p style={{ fontSize: '1.05rem', color: subtextColor, maxWidth: '680px', margin: '0 auto', lineHeight: 1.6 }}>Quantora is a system, not a prompt box with a logo. Frontier models, a self-correcting build loop, and a privacy-first core — engineered to turn a conversation into something real, reliably.</p>
+          </div>
+        </Reveal>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+          {techPillars.map((t, i) => {
+            const Icon = t.icon;
+            return (
+              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
+              <div style={{ background: cardBg, border: cardBorder, borderRadius: '20px', padding: '26px', height: '100%' }}>
+                <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: `${t.color}1f`, border: `1px solid ${t.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                  <Icon size={22} color={t.color} />
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 8px', color: textColor }}>{t.title}</h3>
+                <p style={{ fontSize: '0.92rem', color: subtextColor, lineHeight: 1.55, margin: 0 }}>{t.body}</p>
+              </div>
+              </Reveal>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
         <Reveal>
           <div className="flagship-experience-heading">
