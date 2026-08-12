@@ -282,19 +282,6 @@ async function startServer() {
     return res.status(200).json({ ok: true });
   });
 
-  app.post("/api/debug-log", (req, res) => {
-    try {
-      const entry = { ...req.body, timestamp: req.body?.timestamp || Date.now() };
-      fs.appendFileSync(
-        path.join(process.cwd(), ".cursor/debug-d0f2b5.log"),
-        `${JSON.stringify(entry)}\n`
-      );
-      return res.status(204).end();
-    } catch {
-      return res.status(500).json({ error: "debug log write failed" });
-    }
-  });
-
   // API route for real AI chat using Gemini API or OpenRouter API with SSE Streaming
   app.post("/api/chat", async (req, res) => {
     globalMetrics.totalRequests++;

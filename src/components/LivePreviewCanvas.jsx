@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import {
-  PREVIEW_EMBED_PATH,
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
   injectPreviewHarness,
@@ -64,10 +63,6 @@ export default function LivePreviewCanvas({
 
   useEffect(() => {
     onVerificationStatusChangeRef.current?.(status);
-    // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v3',location:'LivePreviewCanvas:status',message:'verification status changed',data:{status,headless,verifyOnly},timestamp:Date.now(),hypothesisId:'verify-flow'})}).catch(()=>{});
-    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v3',location:'LivePreviewCanvas:status',message:'verification status changed',data:{status,headless,verifyOnly},timestamp:Date.now(),hypothesisId:'verify-flow'})}).catch(()=>{});
-    // #endregion
   }, [status, headless, verifyOnly]);
 
   useEffect(() => {
@@ -89,9 +84,6 @@ export default function LivePreviewCanvas({
         } catch { /* keep path */ }
         return;
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-csp-fix',location:'LivePreviewCanvas:embed-timeout',message:'embed-ready timeout',data:{mode:embedModeRef.current},timestamp:Date.now(),hypothesisId:'embed-csp'})}).catch(()=>{});
-      // #endregion
     }, 4000);
     return () => clearTimeout(timer);
   }, [embedSrc, embedReady, attempt]);
@@ -105,25 +97,12 @@ export default function LivePreviewCanvas({
       embedModeRef.current = 'path';
       setEmbedSrc(getPreviewEmbedPathUrl());
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-csp-fix',location:'LivePreviewCanvas:iframe-error',message:'path embed failed, trying blob',data:{},timestamp:Date.now(),hypothesisId:'embed-csp'})}).catch(()=>{});
-    // #endregion
   }, []);
-
-  const handleEmbedFrameLoad = useCallback(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-blob-fix',location:'LivePreviewCanvas:iframe-load',message:'embed iframe loaded',data:{mode:embedModeRef.current,src:embedSrc?.slice(0,32)},timestamp:Date.now(),hypothesisId:'embed-refused'})}).catch(()=>{});
-    // #endregion
-  }, [embedSrc]);
 
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(html) }, '*');
-    // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:pushHtmlToEmbed',message:'html pushed to embed shell',data:{htmlLength:html.length,usesTailwind:/cdn\\.tailwindcss\\.com/i.test(html),embedPath:PREVIEW_EMBED_PATH},timestamp:Date.now(),hypothesisId:'CSP-embed'})}).catch(()=>{});
-    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:pushHtmlToEmbed',message:'html pushed to embed shell',data:{htmlLength:html.length,usesTailwind:/cdn\\.tailwindcss\\.com/i.test(html)},timestamp:Date.now(),hypothesisId:'CSP-embed'})}).catch(()=>{});
-    // #endregion
   }, []);
 
   useEffect(() => {
@@ -180,9 +159,6 @@ export default function LivePreviewCanvas({
       stylingFailedRef.current = true;
       setLastError(message);
       setStatus('degraded');
-      // #region agent log
-      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:resource-error',message:'critical CDN resource failure',data:{message},timestamp:Date.now(),hypothesisId:'CSP-resource'})}).catch(()=>{});
-      // #endregion
       return;
     }
 
@@ -236,10 +212,6 @@ export default function LivePreviewCanvas({
         return;
       }
       if (d.kind === 'preview-close-request') {
-        // #region agent log
-        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v11',location:'LivePreviewCanvas:preview-close-request',message:'iframe escape forwarded close',data:{isFullscreen},timestamp:Date.now(),hypothesisId:'H5-escape-blocked'})}).catch(()=>{});
-        fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-v11',location:'LivePreviewCanvas:preview-close-request',message:'iframe escape forwarded close',data:{isFullscreen},timestamp:Date.now(),hypothesisId:'H5-escape-blocked'})}).catch(()=>{});
-        // #endregion
         onClose?.();
         return;
       }
@@ -253,17 +225,10 @@ export default function LivePreviewCanvas({
       }
       if (d.kind === 'loaded') {
         if (healingRef.current) return;
-        // #region agent log
-        fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v2',location:'LivePreviewCanvas:loaded',message:'preview loaded probe',data:{usesTailwind:d.usesTailwind,stylingOk:d.stylingOk,embedReady,statusBefore:status},timestamp:Date.now(),hypothesisId:'CSP-probe-fix'})}).catch(()=>{});
-        fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix-v2',location:'LivePreviewCanvas:loaded',message:'preview loaded probe',data:{usesTailwind:d.usesTailwind,stylingOk:d.stylingOk},timestamp:Date.now(),hypothesisId:'CSP-probe-fix'})}).catch(()=>{});
-        // #endregion
         if (d.usesTailwind && d.stylingOk === false) {
           stylingFailedRef.current = true;
           setStatus('degraded');
           setLastError('Tailwind CSS did not apply — styling may look broken.');
-          // #region agent log
-          fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-fix',location:'LivePreviewCanvas:styling-probe',message:'tailwind probe failed',data:{usesTailwind:d.usesTailwind,stylingOk:d.stylingOk},timestamp:Date.now(),hypothesisId:'CSP-probe'})}).catch(()=>{});
-          // #endregion
           return;
         }
         if (!errorSeenRef.current) setStatus('clean');
@@ -271,7 +236,7 @@ export default function LivePreviewCanvas({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRuntimeError, onClose, isFullscreen]);
+  }, [handleRuntimeError, onClose]);
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
@@ -356,7 +321,6 @@ export default function LivePreviewCanvas({
       key={`${attempt}-${embedModeRef.current}`}
       title="Live Preview"
       src={embedSrc}
-      onLoad={handleEmbedFrameLoad}
       onError={handleEmbedFrameError}
       sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
       style={{
