@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle } from 'lucide-react';
+import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 
 /*
  * Live preview + verification loop.
@@ -14,6 +14,14 @@ import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, 
  */
 
 const MAX_HEAL_ATTEMPTS = 3;
+
+// Errors that look scary in the console but must NOT trigger a repair pass — doing
+// so often strips Tailwind/CDN styling and leaves bare blue links.
+const IGNORABLE_ERROR = /(?:Script error\.?|Failed to load resource|Loading chunk|tailwind|googleapis|gstatic|font|stylesheet|net::ERR|CORS|Non-Error promise rejection|ResizeObserver loop|Unable to preload|integrity|MIME type)/i;
+
+function isIgnorableRuntimeError(message) {
+  return !message || IGNORABLE_ERROR.test(String(message));
+}
 
 // Injected into the previewed document so runtime failures surface to us.
 const ERROR_HARNESS = `<script>(function(){
@@ -47,7 +55,7 @@ function injectHarness(html) {
   return ERROR_HARNESS + safe;
 }
 
-export default function LivePreviewCanvas({ code, isLight, onClose }) {
+export default function LivePreviewCanvas({ code, isLight, onClose, isFullscreen, onToggleFullscreen }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
   const [status, setStatus] = useState('running'); // running | healing | clean | failed
@@ -129,8 +137,13 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
   }, []);
 
   const handleRuntimeError = useCallback(async (message) => {
-    if (healingRef.current) return;            // a heal is already in flight
-    if (errorSeenRef.current) return;          // only heal once per render
+    if (healingRef.current) return;
+    if (errorSeenRef.current) return;
+    if (isIgnorableRuntimeError(message)) {
+      // Benign CDN/font/image noise — page still renders with its CSS intact.
+      setStatus('clean');
+      return;
+    }
     errorSeenRef.current = true;
     setLastError(message);
 
@@ -268,6 +281,15 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
           <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
             <Download size={18} />
           </button>
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          )}
           <button onClick={handlePublish} disabled={isDeploying} title="Publish to Vercel" style={{
             background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
             border: 'none', cursor: isDeploying ? 'not-allowed' : 'pointer', color: '#ffffff',
@@ -315,7 +337,7 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
               key={attempt}
               title="Live Preview"
               srcDoc={srcDoc}
-              sandbox="allow-scripts allow-forms allow-popups allow-modals"
+              sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
               style={{ width: '100%', height: '100%', minHeight: viewportStyles[viewport].height, border: 'none', background: '#ffffff' }}
             />
           ) : (

@@ -5,6 +5,7 @@ import { getSessionUser } from "./_lib/session.js";
 import { recordModelQualityEvent, recordUsage } from "./_lib/store.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
+import { normalizeStudioMode } from "./_lib/studio-modes.js";
 import { repairArtifact } from "./_lib/repair.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
@@ -268,7 +269,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -287,6 +288,12 @@ export default async function handler(req: any, res: any) {
       return res.status(202).json({ recorded: true });
     }
 
+    const mode = normalizeStudioMode(studioMode);
+    const explicitBuild = mode === "build";
+    const explicitAsk = mode === "ask";
+    const planMode = mode === "plan";
+    const effectiveBuildMode = explicitAsk ? false : explicitBuild ? true : Boolean(buildMode);
+
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') {
       dynamicTemperature = 0.3;
@@ -295,13 +302,15 @@ export default async function handler(req: any, res: any) {
     }
     // Build requests want deterministic, runnable code over prose variety. A
     // guided intake is conversational until it builds, so keep it a bit warmer.
-    if (buildMode && !guidedBuild) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
+    if (effectiveBuildMode && !guidedBuild) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
+    if (planMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
 
     const finalSystemPrompt = buildConversationSystemPrompt({
       cognitiveLevel,
       modelName: modelName || modelId,
-      buildMode: Boolean(buildMode),
-      guided: Boolean(guidedBuild),
+      buildMode: effectiveBuildMode,
+      guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      planMode,
     });
 
     // The self-heal endpoint reuses this handler (via task: "repair") so it
