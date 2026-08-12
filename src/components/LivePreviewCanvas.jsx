@@ -51,6 +51,9 @@ export default function LivePreviewCanvas({
   const healingRef = useRef(false);
   const errorSeenRef = useRef(false);
   const stylingFailedRef = useRef(false);
+  const embedReadyRef = useRef(false);
+
+  useEffect(() => { embedReadyRef.current = embedReady; }, [embedReady]);
 
   useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
   useEffect(() => { attemptRef.current = attempt; }, [attempt]);
@@ -68,25 +71,41 @@ export default function LivePreviewCanvas({
 
   useEffect(() => {
     setEmbedReady(false);
-    embedModeRef.current = 'blob';
-    let blobUrl = '';
+    embedReadyRef.current = false;
+    // Prefer same-origin path (X-Frame-Options: SAMEORIGIN on /preview/*). Blob fallback if path fails.
+    embedModeRef.current = 'path';
+    setEmbedSrc(getPreviewEmbedPathUrl());
+  }, [attempt]);
+
+  useEffect(() => {
+    if (!embedSrc || embedReady) return undefined;
+    const timer = setTimeout(() => {
+      if (embedReadyRef.current) return;
+      if (embedModeRef.current === 'path') {
+        try {
+          embedModeRef.current = 'blob';
+          setEmbedSrc(createPreviewEmbedObjectUrl());
+        } catch { /* keep path */ }
+        return;
+      }
+      // #region agent log
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-csp-fix',location:'LivePreviewCanvas:embed-timeout',message:'embed-ready timeout',data:{mode:embedModeRef.current},timestamp:Date.now(),hypothesisId:'embed-csp'})}).catch(()=>{});
+      // #endregion
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [embedSrc, embedReady, attempt]);
+
+  const handleEmbedFrameError = useCallback(() => {
+    if (embedModeRef.current === 'blob') return;
     try {
-      blobUrl = createPreviewEmbedObjectUrl();
-      setEmbedSrc(blobUrl);
+      embedModeRef.current = 'blob';
+      setEmbedSrc(createPreviewEmbedObjectUrl());
     } catch {
       embedModeRef.current = 'path';
       setEmbedSrc(getPreviewEmbedPathUrl());
     }
-    return () => revokePreviewEmbedObjectUrl(blobUrl);
-  }, [attempt]);
-
-  const handleEmbedFrameError = useCallback(() => {
-    if (embedModeRef.current === 'path') return;
-    embedModeRef.current = 'path';
-    setEmbedSrc(getPreviewEmbedPathUrl());
     // #region agent log
-    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-blob-fix',location:'LivePreviewCanvas:iframe-error',message:'blob embed failed, falling back to path',data:{fallback:getPreviewEmbedPathUrl()},timestamp:Date.now(),hypothesisId:'embed-refused'})}).catch(()=>{});
-    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-blob-fix',location:'LivePreviewCanvas:iframe-error',message:'blob embed failed, falling back to path',data:{fallback:getPreviewEmbedPathUrl()},timestamp:Date.now(),hypothesisId:'embed-refused'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'embed-csp-fix',location:'LivePreviewCanvas:iframe-error',message:'path embed failed, trying blob',data:{},timestamp:Date.now(),hypothesisId:'embed-csp'})}).catch(()=>{});
     // #endregion
   }, []);
 
@@ -211,6 +230,7 @@ export default function LivePreviewCanvas({
       if (!d || d.__quantora !== true) return;
 
       if (d.kind === 'embed-ready') {
+        embedReadyRef.current = true;
         setEmbedReady(true);
         return;
       }
