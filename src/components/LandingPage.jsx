@@ -181,6 +181,23 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const selectedCapability = flagshipCapabilities.find((item) => item.id === activeCapability) || flagshipCapabilities[0];
   const SelectedCapabilityIcon = selectedCapability.icon;
 
+  // Cinematic auto-advance through the four experiences, like a film reel.
+  // Re-armed on every change, so a manual tap resets the countdown rather than
+  // yanking the viewer forward. The progress bar (keyed in the JSX) fills over
+  // the same interval, so the motion reads as intentional, not restless.
+  const FLAGSHIP_INTERVAL = 5200;
+  useEffect(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const t = setTimeout(() => {
+      setActiveCapability((prev) => {
+        const idx = flagshipCapabilities.findIndex((c) => c.id === prev);
+        return flagshipCapabilities[(idx + 1) % flagshipCapabilities.length].id;
+      });
+    }, FLAGSHIP_INTERVAL);
+    return () => clearTimeout(t);
+  }, [activeCapability]);
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -479,9 +496,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </section>
 
+      <div className="flagship-band" style={{
+        background: isLight
+          ? 'linear-gradient(180deg, #f8fafc 0%, #060a14 15%, #060a14 85%, #f8fafc 100%)'
+          : 'linear-gradient(180deg, #070913 0%, #04060d 16%, #04060d 84%, #070913 100%)'
+      }}>
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
         <Reveal>
-          <div className="flagship-experience-heading">
+          <div className="flagship-experience-heading flagship-heading-ondark">
             <span>Our belief</span>
             <h2 id="flagship-experience-title">Together, there's no limit to what you can make real.</h2>
             <p style={{ fontStyle: 'italic', opacity: 0.9 }}>
@@ -496,6 +518,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           className="flagship-stage"
           style={{ '--flagship-accent': selectedCapability.color }}
         >
+          <div key={`${selectedCapability.id}-bar`} className="flagship-progress" style={{ background: selectedCapability.color }} />
           <div
             key={selectedCapability.id}
             className="flagship-stage-image"
@@ -552,6 +575,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
         </Reveal>
       </section>
+      </div>
 
       {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
     </div>
