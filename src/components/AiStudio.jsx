@@ -29,6 +29,9 @@ import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
 import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner';
+import StudioProactiveNudge from './StudioProactiveNudge';
+import { detectProactiveNudge } from '../lib/proactive-nudges.js';
+import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
 import {
   STUDIO_DOMAINS,
   STUDIO_OUTPUT_MODES,
@@ -669,6 +672,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModelDashboard, setShowModelDashboard] = useState(false);
   const [idleReturnDismissed, setIdleReturnDismissed] = useState(false);
+  const [proactiveNudgeDismissedId, setProactiveNudgeDismissedId] = useState(null);
+  const userFirstName = user?.name?.split(/\s+/)[0] || '';
 
   useEffect(() => {
     if (!showModelDashboard) return undefined;
@@ -1089,6 +1094,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
     return null;
   }, [messages, pendingChoiceMessage, isGenerating, enrichContinues, getPriorUserPrompt]);
+
+  const latestContinueContext = React.useMemo(() => {
+    if (!latestContinueMessageId || pendingChoiceMessage) return null;
+    const msg = messages.find((m) => m.id === latestContinueMessageId);
+    if (!msg) return null;
+    const userPrompt = getPriorUserPrompt(msg.id);
+    const continueSet = enrichContinues(msg.continueSet, { userPrompt, aiResponse: msg.text });
+    if (!continueSet?.items?.length) return null;
+    return { msg, continueSet };
+  }, [latestContinueMessageId, pendingChoiceMessage, messages, enrichContinues, getPriorUserPrompt]);
+
+  const proactiveNudge = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m?.sender !== 'ai' || m.isDual || isGenerating) continue;
+      const userPrompt = getPriorUserPrompt(m.id);
+      return detectProactiveNudge(userPrompt, m.text, userFirstName);
+    }
+    return null;
+  }, [messages, isGenerating, getPriorUserPrompt, userFirstName]);
+
+  const latestAiMessageId = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.sender === 'ai' && !messages[i]?.isDual) return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
+  const showProactiveNudge = proactiveNudge && proactiveNudgeDismissedId !== latestAiMessageId;
+
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
   const [showCodeMap, setShowCodeMap] = useState({});
@@ -2541,22 +2576,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {msg.sender === 'ai' && msg.id === latestContinueMessageId && enrichContinues(msg.continueSet, { userPrompt: getPriorUserPrompt(msg.id), aiResponse: msg.text })?.items?.length > 0 && (
-                        <StudioContinueChips
-                          continueSet={enrichContinues(msg.continueSet, { userPrompt: getPriorUserPrompt(msg.id), aiResponse: msg.text })}
-                          isLight={isLight}
-                          textColor={textColor}
-                          subtextColor={subtextColor}
-                          disabled={isGenerating}
-                          onSelect={(item) => {
-                            updateActiveMessages((prev) => prev.map((m) => (
-                              m.id === msg.id ? { ...m, continueUsed: true } : m
-                            )));
-                            emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
-                            handleSendMessage(item.value);
-                          }}
-                        />
-                      )}
+                      {/* Continue chips render in prompt dock — not inline in chat */}
 
                       {/* Plan / code actions */}
                       <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -3082,9 +3102,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <h1 className="ai-studio-empty-title" style={{ fontSize: '2.4rem', fontWeight: '800', margin: '0 0 6px 0', color: textColor, letterSpacing: '-0.03em' }}>
               Hello, {user?.name ? user.name.split(' ')[0] : 'Bharani'}
             </h1>
-            <p className="ai-studio-empty-subtitle" style={{ fontSize: '1.1rem', fontWeight: '400', margin: '0 0 24px 0', color: subtextColor }}>
+            <p className="ai-studio-empty-subtitle" style={{ fontSize: '1.1rem', fontWeight: '400', margin: '0 0 16px 0', color: subtextColor }}>
               What would you like to build today?
             </p>
+
+            <div className="studio-starter-templates">
+              {STARTER_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  className={`studio-starter-templates__chip${isLight ? ' is-light' : ''}`}
+                  onClick={() => {
+                    if (template.domain) setStudioDomain(template.domain);
+                    setStudioMode(template.mode);
+                    handleSendMessage(template.prompt, { studioMode: template.mode });
+                  }}
+                >
+                  <span aria-hidden="true">{template.emoji}</span>
+                  {template.label}
+                </button>
+              ))}
+            </div>
 
             {/* AI Models Highlight Cards */}
             <div className="ai-studio-model-cards" style={{
@@ -3464,6 +3502,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
 
+          {showProactiveNudge && (
+            <StudioProactiveNudge
+              text={proactiveNudge.text}
+              isLight={isLight}
+              onDismiss={() => setProactiveNudgeDismissedId(latestAiMessageId)}
+            />
+          )}
+
           {pendingChoiceMessage && (
             <div className="studio-choice-dock">
               <StudioChoiceCards
@@ -3498,6 +3544,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               >
                 Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
               </button>
+            </div>
+          )}
+
+          {latestContinueContext && !pendingChoiceMessage && (
+            <div className="studio-continue-dock">
+              <StudioContinueChips
+                variant="floating"
+                continueSet={latestContinueContext.continueSet}
+                isLight={isLight}
+                textColor={textColor}
+                subtextColor={subtextColor}
+                disabled={isGenerating}
+                onSelect={(item) => {
+                  const msg = latestContinueContext.msg;
+                  updateActiveMessages((prev) => prev.map((m) => (
+                    m.id === msg.id ? { ...m, continueUsed: true } : m
+                  )));
+                  emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
+                  handleSendMessage(item.value);
+                }}
+              />
             </div>
           )}
 

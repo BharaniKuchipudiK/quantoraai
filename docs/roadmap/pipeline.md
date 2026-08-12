@@ -143,8 +143,10 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 | 14 | **Idle return prompt** | Welcome back after 24h | ✅ v0.3 2026-08-13 |
 | 15 | ~~**Share preview URL**~~ | One-click link copy from Live Preview (auto preview name) | ✅ 2026-08-13 |
 | 16 | ~~**Choice dock dismiss/collapse**~~ | Non-intrusive suggestions above prompt | ✅ 2026-08-13 |
-| 17 | **Starter templates** | Bakery, tuition center, portfolio, travel blog | 📋 Next |
-| 18 | **Server-side session_signals** | Cross-device listener log + admin | 📋 v0.4 |
+| 17 | ~~**Starter templates**~~ | Bakery, tuition center, portfolio, travel blog | ✅ 2026-08-13 |
+| 18 | **Proactive partner tone + nudge** | "Hey Bharani, I've included the links…" | ✅ 2026-08-13 |
+| 19 | **Continue chips in prompt dock** | Above prompt, not in chat scroll | ✅ 2026-08-13 |
+| 20 | **Server-side session_signals** | Cross-device listener log + admin | 📋 Next |
 
 ---
 

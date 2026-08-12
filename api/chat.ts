@@ -339,6 +339,7 @@ export default async function handler(req: any, res: any) {
       planMode,
       sessionContext: normalizeSessionContext(sessionContext),
       studioDomain: normalizeStudioDomain(studioDomain),
+      userFirstName: sessionUser?.name?.split(/\s+/)[0] || null,
     }) + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
