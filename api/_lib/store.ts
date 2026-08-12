@@ -74,6 +74,7 @@ export type StoredUser = {
  */
 export async function recordSignIn(user: {
   sub: string; email: string; name: string; picture: string;
+  geo?: { countryCode: string; region?: string | null; city?: string | null } | null;
 }): Promise<StoredUser | null> {
   const now = new Date().toISOString();
 
@@ -89,6 +90,12 @@ export async function recordSignIn(user: {
       name: user.name,
       picture: user.picture,
       last_seen_at: now,
+      ...(user.geo ? {
+        country_code: user.geo.countryCode,
+        region: user.geo.region || null,
+        city: user.geo.city || null,
+        geo_updated_at: now,
+      } : {}),
     }]),
   });
   if (!response) return null;
@@ -121,6 +128,7 @@ export function recordUsage(entry: {
   studioMode?: string | null;
   studioDomain?: string | null;
   choiceSelected?: boolean;
+  countryCode?: string | null;
 }): void {
   void request("usage", {
     method: "POST",
@@ -135,6 +143,7 @@ export function recordUsage(entry: {
       studio_mode: entry.studioMode || null,
       studio_domain: entry.studioDomain || null,
       choice_selected: entry.choiceSelected === true,
+      country_code: entry.countryCode || null,
     }]),
   });
 }

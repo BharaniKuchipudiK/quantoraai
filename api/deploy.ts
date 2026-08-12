@@ -2,6 +2,7 @@ import { fetchApiGatewayKey } from './autocomplete';
 import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
 import { recordProductEvent } from './_lib/store.js';
+import { getRequestGeo } from './_lib/geo.js';
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'POST,OPTIONS');
@@ -53,6 +54,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const url = `https://${data.url}`;
+    const geo = getRequestGeo(req);
     recordProductEvent({
       userSub: sessionUser.sub,
       eventType: 'publish_completed',
@@ -61,6 +63,7 @@ export default async function handler(req: any, res: any) {
         projectName: safeName,
         deploymentId: data.id,
         readyState: data.readyState,
+        ...(geo ? { country_code: geo.countryCode, region: geo.region, city: geo.city } : {}),
       },
     });
 

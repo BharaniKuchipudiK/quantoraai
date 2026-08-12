@@ -1,6 +1,7 @@
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { recordProductEvent } from "./_lib/store.js";
+import { getRequestGeo } from "./_lib/geo.js";
 
 const ALLOWED_EVENTS = new Set(["preview_opened", "publish_completed"]);
 
@@ -23,10 +24,15 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: "Invalid eventType." });
   }
 
+  const geo = getRequestGeo(req);
+  const baseMeta = metadata && typeof metadata === "object" ? metadata : {};
+
   recordProductEvent({
     userSub: sessionUser.sub,
     eventType,
-    metadata: metadata && typeof metadata === "object" ? metadata : {},
+    metadata: geo
+      ? { ...baseMeta, country_code: geo.countryCode, region: geo.region, city: geo.city }
+      : baseMeta,
   });
 
   return res.status(202).json({ recorded: true });

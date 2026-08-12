@@ -1,5 +1,8 @@
 import { isStoreConfigured } from "./store.js";
 
+export type ProductGeoRow = { country_code: string; requests: number };
+export type ProductGeoUsersRow = { country_code: string; active_users: number };
+
 export type ProductModelRow = { model_id: string; requests: number };
 export type ProductModeRow = { studio_mode: string; requests: number };
 export type ProductDomainRow = { studio_domain: string; requests: number };
@@ -12,12 +15,15 @@ export type ProductTrackingHealth = {
   hasModeBreakdown: boolean;
   hasDomainBreakdown: boolean;
   hasChoiceEngagement: boolean;
+  hasGeoBreakdown: boolean;
 };
 
 export type ProductInsights = {
   models: ProductModelRow[];
   modes: ProductModeRow[];
   domains: ProductDomainRow[];
+  geoRequests: ProductGeoRow[];
+  geoUsers: ProductGeoUsersRow[];
   choiceEngagement: ProductChoiceEngagement | null;
   promptsPerActiveUser7d: number | null;
   tracking: ProductTrackingHealth;
@@ -52,6 +58,10 @@ function hasMeaningfulDomainRows(rows: ProductDomainRow[]) {
   return rows.some((row) => row.studio_domain && row.studio_domain !== "general" && Number(row.requests) > 0);
 }
 
+function hasMeaningfulGeoRows(rows: ProductGeoRow[]) {
+  return rows.some((row) => row.country_code && row.country_code !== "unknown" && Number(row.requests) > 0);
+}
+
 export async function getProductInsights(growth: {
   requests7d?: number;
   activeUsers7d?: number;
@@ -59,18 +69,23 @@ export async function getProductInsights(growth: {
   const configured = isStoreConfigured();
   if (!configured) return null;
 
-  const [modelResult, modeResult, domainResult, choiceResult] = await Promise.all([
+  const [modelResult, modeResult, domainResult, choiceResult, geoReqResult, geoUserResult] = await Promise.all([
     fetchView<ProductModelRow>("product_model_usage_7d"),
     fetchView<ProductModeRow>("product_mode_usage_7d"),
     fetchView<ProductDomainRow>("product_domain_usage_7d"),
     fetchView<ProductChoiceEngagement>("product_choice_engagement_7d"),
+    fetchView<ProductGeoRow>("product_geo_requests_7d"),
+    fetchView<ProductGeoUsersRow>("product_geo_users_7d"),
   ]);
 
   const models = modelResult.rows;
   const modes = modeResult.rows;
   const domains = domainResult.rows;
+  const geoRequests = geoReqResult.rows;
+  const geoUsers = geoUserResult.rows;
   const choiceEngagement = choiceResult.rows[0] ?? null;
-  const viewsReachable = modelResult.reachable && modeResult.reachable && domainResult.reachable && choiceResult.reachable;
+  const viewsReachable = modelResult.reachable && modeResult.reachable && domainResult.reachable
+    && choiceResult.reachable && geoReqResult.reachable && geoUserResult.reachable;
 
   const requests7d = growth?.requests7d ?? 0;
   const activeUsers7d = growth?.activeUsers7d ?? 0;
@@ -85,12 +100,15 @@ export async function getProductInsights(growth: {
     hasModeBreakdown: hasMeaningfulModeRows(modes),
     hasDomainBreakdown: hasMeaningfulDomainRows(domains),
     hasChoiceEngagement: Number(choiceEngagement?.choice_selections || 0) > 0,
+    hasGeoBreakdown: hasMeaningfulGeoRows(geoRequests),
   };
 
   return {
     models: models.slice(0, 10),
     modes,
     domains,
+    geoRequests: geoRequests.slice(0, 12),
+    geoUsers: geoUsers.slice(0, 12),
     choiceEngagement,
     promptsPerActiveUser7d,
     tracking,

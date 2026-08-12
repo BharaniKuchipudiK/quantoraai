@@ -1,5 +1,23 @@
 import React from 'react';
 
+function countryLabel(code) {
+  const value = String(code || 'unknown');
+  if (value === 'unknown') return 'Unknown';
+  try {
+    const name = new Intl.DisplayNames(['en'], { type: 'region' }).of(value);
+    return name ? `${name} (${value})` : value;
+  } catch {
+    return value;
+  }
+}
+
+function withCountryLabels(rows, key = 'country_code') {
+  return (rows || []).map((row) => ({
+    ...row,
+    country_label: countryLabel(row[key]),
+  }));
+}
+
 function BarChart({ title, rows, labelKey, valueKey, color, emptyLabel }) {
   if (!rows?.length) {
     return (
@@ -63,6 +81,16 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
     ? 'Product views unavailable — run migration 0007 in Supabase.'
     : 'No model usage recorded yet.';
 
+  const geoEmptyLabel = !tracking?.viewsReachable
+    ? 'Geo views unavailable — run migration 0012 in Supabase.'
+    : tracking?.hasGeoBreakdown
+      ? 'Country data appears after production traffic (Vercel edge headers).'
+      : 'No geo-tagged requests yet — local dev has no edge country headers.';
+
+  const geoRequestRows = withCountryLabels(product?.geoRequests);
+  const geoUserRows = withCountryLabels(product?.geoUsers);
+  const topCountry = geoRequestRows.find((row) => row.country_code !== 'unknown');
+
   const kpis = [
     {
       label: 'Prompts (7d)',
@@ -75,14 +103,14 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
       color: '#10b981',
     },
     {
+      label: 'Top country (7d)',
+      value: topCountry ? countryLabel(topCountry.country_code).split(' (')[0].slice(0, 14) : '—',
+      color: '#06b6d4',
+    },
+    {
       label: 'Choice card taps',
       value: choiceRate != null ? `${choiceRate}%` : '—',
       color: '#f97316',
-    },
-    {
-      label: 'Top model',
-      value: product?.models?.[0]?.model_id?.split('/').pop()?.slice(0, 18) || '—',
-      color: '#8b5cf6',
     },
   ];
 
@@ -94,7 +122,7 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
           <h3>Product Engagement</h3>
           <p>
             {tracking?.viewsReachable
-              ? 'Measured from Supabase usage — no simulated geo data.'
+              ? 'Measured from Supabase — IP-derived country via Vercel edge (no browser permission).'
               : 'Connect Supabase product views (migration 0007) to enable mode and domain KPIs.'}
           </p>
         </div>
@@ -151,6 +179,22 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
           valueKey="requests"
           color="#10b981"
           emptyLabel={domainEmptyLabel}
+        />
+        <BarChart
+          title="Requests by country (7d)"
+          rows={geoRequestRows}
+          labelKey="country_label"
+          valueKey="requests"
+          color="#06b6d4"
+          emptyLabel={geoEmptyLabel}
+        />
+        <BarChart
+          title="Active users by country (7d)"
+          rows={geoUserRows}
+          labelKey="country_label"
+          valueKey="active_users"
+          color="#8b5cf6"
+          emptyLabel={geoEmptyLabel}
         />
       </div>
     </div>
