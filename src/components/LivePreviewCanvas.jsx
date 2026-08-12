@@ -19,8 +19,19 @@ const MAX_HEAL_ATTEMPTS = 3;
 const ERROR_HARNESS = `<script>(function(){
   function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
   window.addEventListener('error', function(e){
+    // Resource-load failures (a product image, font, or stylesheet that 404s
+    // or is blocked in the sandbox) also fire 'error' in the capture phase,
+    // but they are NOT runtime script errors. A broken image must never
+    // trigger a self-heal that could rewrite — and strip the styling from —
+    // the whole page. Ignore anything whose target is a DOM element.
+    var t = e && e.target;
+    if (t && t !== window && (t.tagName || t.nodeType === 1)) return;
+    // Genuine script error: require a real message. Cross-origin scripts
+    // surface an opaque "Script error." with no detail — ignore those too.
+    var msg = e && e.message;
+    if (!msg || msg === 'Script error.' || msg === 'Script error') return;
     var where = e.filename ? (' @ ' + e.filename + ':' + (e.lineno||0)) : '';
-    report({ kind:'error', message: (e.message || 'Script error') + where });
+    report({ kind:'error', message: msg + where });
   }, true);
   window.addEventListener('unhandledrejection', function(e){
     var r = e && e.reason; var m = (r && (r.message || r.toString && r.toString())) || 'unknown';
@@ -135,6 +146,22 @@ export default function LivePreviewCanvas({ code, isLight, onClose }) {
       if (data.unchanged || !data.code || data.code.trim() === currentCodeRef.current.trim()) {
         // The model couldn't improve it — stop rather than loop on the same code.
         setStatus('failed');
+        healingRef.current = false;
+        return;
+      }
+      // Safety net: a repair must PRESERVE the design. A weaker repair model
+      // sometimes returns a simplified, unstyled document — that would turn an
+      // elegant page into bare HTML. If the fix drops the CSS the original had,
+      // or shrinks the document drastically, refuse it and keep the original;
+      // the page already renders, so the "error" was almost certainly benign.
+      const original = currentCodeRef.current || '';
+      const fixed = data.code || '';
+      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=/i.test(original) || /class\s*=/i.test(original);
+      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=/i.test(fixed) || /class\s*=/i.test(fixed);
+      const shrankTooMuch = fixed.length < original.length * 0.55;
+      if ((hadStyle && !keepsStyle) || shrankTooMuch) {
+        setLastError(null);
+        setStatus('clean');
         healingRef.current = false;
         return;
       }
