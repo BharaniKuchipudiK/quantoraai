@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass, SlidersHorizontal } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -28,6 +28,74 @@ const DOMAIN_ICONS = {
   finance: DollarSign,
   research: Search,
 };
+
+const OUTPUT_MODE_ICONS = {
+  ask: MessageSquare,
+  build: Layout,
+  plan: Workflow,
+};
+
+function StudioGlossRow({ icon: Icon, iconColor, title, description, selected, onClick, badge }) {
+  return (
+    <button type="button" className={`studio-gloss-row${selected ? ' is-selected' : ''}`} onClick={onClick}>
+      <span className="studio-gloss-row__icon" style={{ color: iconColor }}>
+        <Icon size={17} strokeWidth={2} />
+      </span>
+      <span className="studio-gloss-row__copy">
+        <span className="studio-gloss-row__title">
+          {title}
+          {badge ? <span className="studio-gloss-row__badge">{badge}</span> : null}
+        </span>
+        {description ? <span className="studio-gloss-row__desc">{description}</span> : null}
+      </span>
+      <span className={`studio-gloss-row__radio${selected ? ' is-selected' : ''}`} aria-hidden="true" />
+    </button>
+  );
+}
+
+function StudioToolsMenu({ isLight, studioDomain, studioMode, onSelectDomain, onSelectMode }) {
+  return (
+    <div className={`studio-gloss-popover${isLight ? ' is-light' : ' is-dark'}`} role="menu" aria-label="Focus and response settings">
+      <div className="studio-gloss-popover__section">
+        <div className="studio-gloss-popover__heading">Focus</div>
+        <StudioGlossRow
+          icon={Compass}
+          iconColor="#64748b"
+          title="General"
+          description="No specific domain bias"
+          selected={!studioDomain}
+          onClick={() => onSelectDomain(null)}
+        />
+        {STUDIO_DOMAINS.map(({ id, label, description }) => (
+          <StudioGlossRow
+            key={id}
+            icon={DOMAIN_ICONS[id]}
+            iconColor={studioDomain === id ? '#f97316' : '#64748b'}
+            title={label}
+            description={description}
+            selected={studioDomain === id}
+            onClick={() => onSelectDomain(id)}
+          />
+        ))}
+      </div>
+      <div className="studio-gloss-popover__divider" />
+      <div className="studio-gloss-popover__section">
+        <div className="studio-gloss-popover__heading">Response</div>
+        {STUDIO_OUTPUT_MODES.map(({ id, label, description }) => (
+          <StudioGlossRow
+            key={id}
+            icon={OUTPUT_MODE_ICONS[id]}
+            iconColor={studioMode === id ? '#f97316' : '#64748b'}
+            title={label}
+            description={description}
+            selected={studioMode === id}
+            onClick={() => onSelectMode(id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function extractHtmlFromResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
@@ -549,7 +617,7 @@ function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
   });
 }
 
-export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText, isAdmin, onModelsRefresh }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
     id: 1,
@@ -622,7 +690,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const activeDomainMeta = getDomainById(studioDomain);
-  const ActiveDomainIcon = studioDomain ? DOMAIN_ICONS[studioDomain] : Compass;
 
   const [dismissedModelSpotlights, setDismissedModelSpotlights] = useState(() => {
     try {
@@ -998,23 +1065,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [attachments, setAttachments] = useState([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
-  const [showOutputModeMenu, setShowOutputModeMenu] = useState(false);
-  const [showDomainMenu, setShowDomainMenu] = useState(false);
-  const outputModeMenuRef = useRef(null);
-  const domainMenuRef = useRef(null);
+  const [showStudioToolsMenu, setShowStudioToolsMenu] = useState(false);
+  const studioToolsMenuRef = useRef(null);
   useEffect(() => {
-    if (!showOutputModeMenu && !showDomainMenu) return undefined;
+    if (!showStudioToolsMenu) return undefined;
     const onDocClick = (event) => {
-      if (showOutputModeMenu && outputModeMenuRef.current && !outputModeMenuRef.current.contains(event.target)) {
-        setShowOutputModeMenu(false);
-      }
-      if (showDomainMenu && domainMenuRef.current && !domainMenuRef.current.contains(event.target)) {
-        setShowDomainMenu(false);
+      if (studioToolsMenuRef.current && !studioToolsMenuRef.current.contains(event.target)) {
+        setShowStudioToolsMenu(false);
       }
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [showOutputModeMenu, showDomainMenu]);
+  }, [showStudioToolsMenu]);
 
   const [arenaMode, setArenaMode] = useState(false);
   const [secondModel, setSecondModel] = useState({ id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B' });
@@ -2464,7 +2526,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div className="model-drawer-header">
               <div>
                 <div className="model-drawer-title"><Activity size={18} /> Model Dashboard</div>
-                <div className="model-drawer-subtitle">Choose a ready model or review newly discovered free options.</div>
+                <div className="model-drawer-subtitle">
+                  {isAdmin ? 'Choose a ready model or approve newly discovered free options.' : 'Choose a ready model for chat and build.'}
+                </div>
               </div>
               <button className="model-drawer-close" onClick={() => setShowModelDashboard(false)} aria-label="Close AI models">
                 <X size={18} />
@@ -2482,6 +2546,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 setShowModelDashboard(false);
               }}
               isLight={isLight}
+              isAdmin={isAdmin}
+              onModelsRefresh={onModelsRefresh}
             />
           </section>
         </div>
@@ -3181,204 +3247,37 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             />
           </div>
 
-          {/* Domain focus — Fello-style compact picker */}
-          <div style={{ padding: '4px 14px 2px' }}>
-            <div ref={domainMenuRef} style={{ position: 'relative', display: 'inline-block' }}>
-              <button
-                type="button"
-                onClick={() => setShowDomainMenu((v) => !v)}
-                title="Choose a focus area for this conversation"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  borderRadius: '999px',
-                  border: studioDomain
-                    ? '1px solid rgba(249, 115, 22, 0.55)'
-                    : (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)'),
-                  background: studioDomain
-                    ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.18)')
-                    : (isLight ? '#ffffff' : 'rgba(255,255,255,0.04)'),
-                  color: studioDomain ? '#f97316' : subtextColor,
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                <ActiveDomainIcon size={14} />
-                {activeDomainMeta ? activeDomainMeta.label : 'Focus'}
-                <ChevronDown size={13} />
-              </button>
-              {showDomainMenu && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: 'calc(100% + 8px)',
-                  left: 0,
-                  width: 'min(320px, calc(100vw - 32px))',
-                  background: isLight ? '#ffffff' : '#0f172a',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: '16px',
-                  boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
-                  padding: '8px',
-                  zIndex: 130,
-                }}>
-                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: subtextColor, padding: '6px 10px 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Focus area
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setStudioDomain(null); setShowDomainMenu(false); }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '100%',
-                      textAlign: 'left',
-                      border: 'none',
-                      background: !studioDomain ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)') : 'transparent',
-                      borderRadius: '10px',
-                      padding: '8px 10px',
-                      cursor: 'pointer',
-                      color: textColor,
-                    }}
-                  >
-                    <span>
-                      <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700 }}>General</span>
-                      <span style={{ display: 'block', fontSize: '0.68rem', color: subtextColor, marginTop: '2px' }}>No specific domain bias</span>
-                    </span>
-                    {!studioDomain ? <Check size={14} color="#f97316" /> : null}
-                  </button>
-                  {STUDIO_DOMAINS.map(({ id, label, description }) => {
-                    const Icon = DOMAIN_ICONS[id];
-                    const active = studioDomain === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => { setStudioDomain(id); setShowDomainMenu(false); }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '10px',
-                          width: '100%',
-                          textAlign: 'left',
-                          border: 'none',
-                          background: active ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)') : 'transparent',
-                          borderRadius: '10px',
-                          padding: '8px 10px',
-                          cursor: 'pointer',
-                          color: textColor,
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                          <span style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '8px',
-                            background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.06)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}>
-                            {Icon ? <Icon size={15} color={active ? '#f97316' : subtextColor} /> : null}
-                          </span>
-                          <span>
-                            <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: active ? '#f97316' : textColor }}>{label}</span>
-                            <span style={{ display: 'block', fontSize: '0.68rem', color: subtextColor, marginTop: '2px' }}>{description}</span>
-                          </span>
-                        </span>
-                        {active ? <Check size={14} color="#f97316" style={{ flexShrink: 0 }} /> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Bottom Action Toolbar */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '4px 14px 10px 14px',
-            background: 'transparent',
-            gap: '10px',
-            flexWrap: 'wrap'
-          }}>
-            {/* Left Toolbar Controls */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <div ref={outputModeMenuRef} style={{ position: 'relative' }}>
+          {/* Bottom Action Toolbar — single Fellow-style row */}
+          <div className="studio-prompt-toolbar">
+            <div className="studio-prompt-toolbar__left">
+              <div ref={studioToolsMenuRef} className="studio-tools-anchor">
                 <button
                   type="button"
-                  onClick={() => setShowOutputModeMenu((v) => !v)}
-                  title="How Quantora responds — chat, build, or plan an app"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.06)',
-                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
-                    color: studioMode !== 'ask' ? '#f97316' : subtextColor,
-                    padding: '6px 10px',
-                    borderRadius: '10px',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
+                  className={`studio-tool-trigger${(studioDomain || studioMode !== 'ask') ? ' is-active' : ''}${showStudioToolsMenu ? ' is-open' : ''}`}
+                  onClick={() => setShowStudioToolsMenu((v) => !v)}
+                  title="Focus area and response type"
+                  aria-expanded={showStudioToolsMenu}
+                  aria-haspopup="menu"
                 >
-                  <MessageSquare size={13} />
-                  {getOutputModeLabel(studioMode)}
-                  <ChevronDown size={13} />
+                  <SlidersHorizontal size={17} strokeWidth={2.2} />
+                  {(studioDomain || studioMode !== 'ask') && (
+                    <span className="studio-tool-trigger__label">
+                      {activeDomainMeta ? activeDomainMeta.label : getOutputModeLabel(studioMode)}
+                    </span>
+                  )}
                 </button>
-                {showOutputModeMenu && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 'calc(100% + 8px)',
-                    left: 0,
-                    minWidth: '220px',
-                    background: isLight ? '#ffffff' : '#0f172a',
-                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '14px',
-                    boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
-                    padding: '6px',
-                    zIndex: 120,
-                  }}>
-                    <div style={{ fontSize: '0.65rem', fontWeight: 700, color: subtextColor, padding: '6px 10px 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Response type
-                    </div>
-                    {STUDIO_OUTPUT_MODES.map(({ id, label, description }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => { setStudioMode(id); setShowOutputModeMenu(false); }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '8px',
-                          width: '100%',
-                          textAlign: 'left',
-                          border: 'none',
-                          background: studioMode === id ? (isLight ? '#fff7ed' : 'rgba(249,115,22,0.15)') : 'transparent',
-                          borderRadius: '10px',
-                          padding: '8px 10px',
-                          cursor: 'pointer',
-                          color: textColor,
-                        }}
-                      >
-                        <span style={{ flex: 1 }}>
-                          <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: studioMode === id ? '#f97316' : textColor }}>{label}</span>
-                          <span style={{ display: 'block', fontSize: '0.68rem', color: subtextColor, marginTop: '2px' }}>{description}</span>
-                        </span>
-                        {studioMode === id ? <Check size={14} color="#f97316" style={{ flexShrink: 0, marginTop: '2px' }} /> : null}
-                      </button>
-                    ))}
-                  </div>
+                {showStudioToolsMenu && (
+                  <StudioToolsMenu
+                    isLight={isLight}
+                    studioDomain={studioDomain}
+                    studioMode={studioMode}
+                    onSelectDomain={(domain) => { setStudioDomain(domain); setShowStudioToolsMenu(false); }}
+                    onSelectMode={(mode) => { setStudioMode(mode); setShowStudioToolsMenu(false); }}
+                  />
                 )}
               </div>
+
+              <span className="studio-prompt-toolbar__sep" aria-hidden="true" />
 
               <input
                 type="file"
@@ -3388,22 +3287,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 multiple
               />
 
-              {/* Attach File */}
               <button
+                type="button"
+                className={`studio-prompt-icon-btn${isListening ? ' is-recording' : ''}`}
                 onClick={toggleVoiceInput}
                 title="Voice Input"
-                style={{
-                  background: isListening ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
-                  border: 'none',
-                  color: isListening ? '#ef4444' : subtextColor,
-                  padding: '6px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  animation: isListening ? 'pulse 2s infinite' : 'none'
-                }}
+                style={isListening ? { color: '#ef4444', background: 'rgba(239, 68, 68, 0.15)', animation: 'pulse 2s infinite' } : undefined}
               >
                 {isListening ? <MicOff size={18} /> : <Mic size={18} />}
               </button>
@@ -3411,32 +3300,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               {/* Attachment Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
+                  type="button"
+                  className={`studio-prompt-icon-btn${isAttachmentMenuOpen ? ' is-active' : ''}`}
                   onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
                   title="Attach file, image, or GitHub"
-                  style={{
-                    background: isAttachmentMenuOpen ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
-                    border: 'none',
-                    color: isAttachmentMenuOpen ? textColor : subtextColor,
-                    padding: '6px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={e => {
-                    if (!isAttachmentMenuOpen) {
-                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
-                      e.currentTarget.style.color = textColor;
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isAttachmentMenuOpen) {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = subtextColor;
-                    }
-                  }}
                 >
                   <Paperclip size={18} />
                 </button>
@@ -3508,35 +3375,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
               {/* Magic Wand Enhancer */}
               <button
+                type="button"
+                className={`studio-prompt-icon-btn${isEnhancingPrompt ? ' is-active' : ''}`}
                 onClick={handleMagicWandEnhance}
                 disabled={isEnhancingPrompt}
                 title="AI Magic Wand - Enhance & Expand Prompt"
-                style={{
-                  background: isEnhancingPrompt ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
-                  border: 'none',
-                  color: isEnhancingPrompt ? '#f97316' : subtextColor,
-                  padding: isEnhancingPrompt ? '4px 12px' : '6px',
-                  borderRadius: '12px',
-                  cursor: isEnhancingPrompt ? 'wait' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease',
-                  fontWeight: '600',
-                  fontSize: '0.8rem'
-                }}
               >
-                {isEnhancingPrompt ? (
-                  <>
-                    <RefreshCw size={14} className="animate-spin" />
-                    Enhancing Prompt...
-                  </>
-                ) : (
-                  <Wand2 size={18} color={subtextColor} />
-                )}
+                {isEnhancingPrompt ? <RefreshCw size={16} className="animate-spin" /> : <Wand2 size={18} />}
               </button>
+            </div>
 
+            <div className="studio-prompt-toolbar__right">
               {/* Engine Settings Popover */}
               <div ref={inBarModelRef} style={{ position: 'relative' }}>
                 <button
@@ -3720,30 +3569,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Globe size={16} /> 
                 {webSearchEnabled ? 'Grounded' : 'Web Grounding'}
               </button>
-            </div>
 
-            {/* Right Control: Send */}
-            <div style={{ display: 'flex', gap: '8px' }}>
               <button
+                type="button"
+                className={`studio-send-btn${(inputText.trim() || attachments.length) ? ' is-ready' : ''}`}
                 onClick={() => handleSendMessage()}
                 disabled={(!inputText.trim() && !attachments.length) || isGenerating}
-                style={{
-                  background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
-                  border: 'none',
-                  color: (inputText.trim() || attachments.length)
-                    ? '#ffffff'
-                    : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '12px',
-                  cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease',
-                  fontWeight: 'bold',
-                  boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
-                }}
               >
                 <Send size={16} />
               </button>
