@@ -66,3 +66,21 @@ export function hasSessionMemory(ctx) {
   const normalized = normalizeSessionContext(ctx);
   return Boolean(normalized.goal || normalized.understanding || normalized.facts?.length);
 }
+
+/** When the assistant asked a clarifying question, record the user's reply as a fact immediately. */
+export function captureUserAnswerAsContext(userText, messages) {
+  const trimmed = typeof userText === 'string' ? userText.trim() : '';
+  if (!trimmed || trimmed.length > MAX_FIELD_LEN) return null;
+
+  const recentAi = [...(messages || [])]
+    .reverse()
+    .find((m) => m && m.sender === 'ai' && (m.text || m.choiceSet));
+  if (!recentAi) return null;
+
+  const aiText = typeof recentAi.text === 'string' ? recentAi.text : '';
+  const hadPendingChoices = Boolean(recentAi.choiceSet && !recentAi.choiceUsed);
+  const aiAskedQuestion = hadPendingChoices || /\?/.test(aiText.slice(-600));
+
+  if (!aiAskedQuestion) return null;
+  return trimmed;
+}

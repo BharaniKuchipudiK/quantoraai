@@ -308,11 +308,10 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section style={{
         position: 'relative',
         zIndex: 10,
-        minHeight: 'calc(100vh - 67px)',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center',
-        padding: 'clamp(48px, 9vh, 120px) 6% 48px',
+        justifyContent: 'flex-start',
+        padding: 'clamp(24px, 4vh, 48px) 6% clamp(40px, 6vh, 64px)',
         background: isLight
           ? 'radial-gradient(1100px 520px at 50% -8%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
           : 'radial-gradient(1000px 560px at 50% -6%, rgba(249,115,22,0.16), rgba(7,9,19,0) 60%), #070913'
@@ -323,7 +322,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             display: 'inline-flex', alignItems: 'center', gap: '9px',
             fontSize: '0.76rem', fontWeight: '700', letterSpacing: '0.16em',
             textTransform: 'uppercase', color: isLight ? '#9a3412' : '#fdba74',
-            marginBottom: '30px'
+            marginBottom: '20px'
           }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
             Possibility, built together
@@ -392,7 +391,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: '14px', flexWrap: 'wrap',
-          margin: '58px auto 0', maxWidth: '940px', width: '100%'
+          margin: '28px auto 0', maxWidth: '940px', width: '100%'
         }}>
           <span style={{ fontSize: '0.72rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: isLight ? '#94a3b8' : '#64748b' }}>
             {liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}
@@ -407,7 +406,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
 
       {/* Belief statement — one bold line, the way great brands lead */}
       <section style={{
-        padding: 'clamp(70px, 12vh, 140px) 6%',
+        padding: 'clamp(48px, 7vh, 88px) 6%',
         position: 'relative', zIndex: 10,
         background: isLight ? '#0b1220' : 'rgba(255,255,255,0.02)',
         borderTop: isLight ? 'none' : '1px solid rgba(255,255,255,0.06)',
@@ -436,7 +435,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       </section>
 
       {/* How it works — the real journey, no simulation */}
-      <section style={{ maxWidth: '1180px', margin: '90px auto 90px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+      <section style={{ maxWidth: '1180px', margin: 'clamp(56px, 8vh, 80px) auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: '44px' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>From idea to reality</span>
@@ -470,7 +469,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </Reveal>
       </section>
       {/* Under the hood — the real engineering, honestly stated */}
-      <section style={{ maxWidth: '1180px', margin: '0 auto 96px auto', padding: '0 24px', position: 'relative', zIndex: 10 }}>
+      <section style={{ maxWidth: '1180px', margin: '0 auto clamp(56px, 8vh, 80px)', padding: '0 24px', position: 'relative', zIndex: 10 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: '44px' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ea580c' }}>Under the hood</span>
@@ -507,10 +506,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <div className="flagship-experience-heading flagship-heading-ondark">
             <span>Our belief</span>
             <h2 id="flagship-experience-title">Together, there's no limit to what you can make real.</h2>
-            <p style={{ fontStyle: 'italic', opacity: 0.9 }}>
-              “Dream, dream, dream. Dreams transform into thoughts, and thoughts result in action.” — Dr. A.P.J. Abdul Kalam
-            </p>
-            <p>We're not here to sell you software. We're here to stand beside your imagination — to help an idea become a thought, and a thought become action. What you build is yours. The possibilities are endless.</p>
+            <p>What you build is yours. We stand beside your imagination — from first idea to something you can see, use, and share.</p>
           </div>
         </Reveal>
 

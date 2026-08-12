@@ -2,7 +2,7 @@
   position: relative;
   z-index: 10;
   width: min(1320px, calc(100% - 48px));
-  margin: 0 auto 86px;
+  margin: 0 auto clamp(56px, 8vh, 72px);
 }
 
 .flagship-experience-heading {

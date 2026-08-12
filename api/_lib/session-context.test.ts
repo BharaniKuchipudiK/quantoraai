@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   extractContextFromAssistantText,
+  captureUserAnswerAsContext,
   formatSessionContextForPrompt,
   mergeSessionContext,
   normalizeSessionContext,
@@ -52,4 +53,20 @@ test("stripPartialContextMarker hides streaming marker tail", () => {
     stripPartialContextMarker('Working on it.\n\n<!-- quantora-ctx:{"goal":'),
     "Working on it.",
   );
+});
+
+test("captureUserAnswerAsContext records replies to clarify questions", () => {
+  const messages = [
+    { sender: "user", text: "Plan a Bali trip" },
+    { sender: "ai", text: "What dates are you thinking?" },
+  ];
+  assert.equal(captureUserAnswerAsContext("March 10–15, 5 nights", messages), "March 10–15, 5 nights");
+});
+
+test("captureUserAnswerAsContext skips when AI did not ask", () => {
+  const messages = [
+    { sender: "user", text: "Hello" },
+    { sender: "ai", text: "Here is a full itinerary for Bali." },
+  ];
+  assert.equal(captureUserAnswerAsContext("Thanks", messages), null);
 });
