@@ -497,9 +497,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       </section>
 
       <div className="flagship-band" style={{
-        background: isLight
-          ? 'linear-gradient(180deg, #f8fafc 0%, #060a14 15%, #060a14 85%, #f8fafc 100%)'
-          : 'linear-gradient(180deg, #070913 0%, #04060d 16%, #04060d 84%, #070913 100%)'
+        background: isLight ? '#070b16' : '#04060d',
+        '--page-bg': isLight ? '#f8fafc' : '#070913'
       }}>
       <section className="flagship-experience" aria-labelledby="flagship-experience-title">
         <Reveal>

@@ -221,9 +221,25 @@
   position: relative;
   width: 100vw;
   margin-left: calc(50% - 50vw);
-  padding: clamp(72px, 10vw, 132px) 0;
+  padding: clamp(118px, 12vw, 160px) 0;
+  overflow: hidden;
 }
-.flagship-band .flagship-experience { margin-bottom: 0; }
+/* Short, fixed-height fades at the two edges only — a crisp transition into
+   and out of the dark, instead of a tall grey gradient smeared across the
+   whole (very tall) section. */
+.flagship-band::before,
+.flagship-band::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 104px;
+  pointer-events: none;
+  z-index: 3;
+}
+.flagship-band::before { top: 0; background: linear-gradient(180deg, var(--page-bg) 0%, transparent 100%); }
+.flagship-band::after { bottom: 0; background: linear-gradient(0deg, var(--page-bg) 0%, transparent 100%); }
+.flagship-band .flagship-experience { position: relative; z-index: 1; margin-bottom: 0; }
 
 /* Heading now sits on the dark band — lift its text to light. */
 .flagship-heading-ondark h2 { color: #ffffff; }
