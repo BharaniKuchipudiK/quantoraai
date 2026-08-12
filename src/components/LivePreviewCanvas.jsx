@@ -373,17 +373,19 @@ export default function LivePreviewCanvas({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%', width: '100%',
+      position: 'relative',
       background: isLight ? '#f8fafc' : '#0f172a',
       borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)'
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '12px 16px',
+        flexShrink: 0,
         borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
         background: isLight ? '#ffffff' : '#1e293b'
       }}>
-        <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1' }}>Live Preview</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1', flexShrink: 0 }}>Live Preview</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <div style={{ display: 'flex', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '2px' }}>
             {[['mobile', <Smartphone size={16} key="m" />], ['tablet', <Tablet size={16} key="t" />], ['desktop', <Monitor size={16} key="d" />]].map(([v, icon]) => (
               <button key={v} onClick={() => setViewport(v)} style={{
@@ -409,11 +411,39 @@ export default function LivePreviewCanvas({
           }}>
             <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying...' : 'Publish'}
           </button>
-          <button onClick={onClose} title="Close Canvas" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
+          <button onClick={onClose} title="Close preview (Esc)" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <X size={18} />
           </button>
         </div>
       </div>
+
+      {isFullscreen && onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          title="Close preview (Esc)"
+          aria-label="Close preview"
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            zIndex: 100,
+            width: '40px',
+            height: '40px',
+            borderRadius: '12px',
+            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            cursor: 'pointer',
+            color: isLight ? '#334155' : '#e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <X size={20} />
+        </button>
+      )}
 
       {statusUI && (
         <div style={{

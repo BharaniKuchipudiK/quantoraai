@@ -940,6 +940,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasFullscreen, setCanvasFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!canvasOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      // #region agent log
+      fetch('http://127.0.0.1:7616/ingest/64591dc2-e663-41d5-a4f2-257bd0895da5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d0f2b5'},body:JSON.stringify({sessionId:'d0f2b5',runId:'preview-close-fix',location:'AiStudio:canvas-escape',message:'preview escape pressed',data:{canvasFullscreen},timestamp:Date.now(),hypothesisId:'preview-close'})}).catch(()=>{});
+      // #endregion
+      if (canvasFullscreen) {
+        setCanvasFullscreen(false);
+      } else {
+        setCanvasOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [canvasOpen, canvasFullscreen]);
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [backgroundVerify, setBackgroundVerify] = useState(null);
