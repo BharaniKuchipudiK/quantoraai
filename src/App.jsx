@@ -52,7 +52,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('landing');
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [themeMode, setThemeMode] = useState('light'); // 'light' | 'dark' | 'system'
+  const [themeMode, setThemeMode] = useState('dark'); // 'light' | 'dark' | 'system'
 
   const [showCustomAccountInput, setShowCustomAccountInput] = useState(false);
   const [customName, setCustomName] = useState('');
