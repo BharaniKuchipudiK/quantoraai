@@ -56,6 +56,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
    ```bash
    supabase/migrations/0007_usage_product_context.sql
    supabase/migrations/0008_model_smoke_test.sql
+   supabase/migrations/0009_product_views_security.sql
    ```
 
 2. **Verify after deploy**
@@ -77,7 +78,7 @@ After merge to `main`, Vercel auto-deploys the app. You still need:
 | # | Task | Why |
 |---|------|-----|
 | 1 | ~~**Admin smoke-test before approve**~~ ✅ | 3 fixed prompts per discovered model |
-| 2 | **Verify migration 0007 KPIs** | Mode/domain tiles populate after usage |
+| 2 | ~~**Verify migration 0007 KPIs**~~ ✅ | Mode/domain tiles + tracking health banner |
 
 ### P1 — Conversation UX
 | # | Task | Why |

@@ -42,9 +42,26 @@ function BarChart({ title, rows, labelKey, valueKey, color, emptyLabel }) {
  * Measured product KPIs from Supabase usage — replaces decorative LiveUsersMap.
  */
 export default function ProductAnalyticsPanel({ product, growth, isLight }) {
+  const tracking = product?.tracking;
   const choiceRate = product?.choiceEngagement?.total_requests
     ? Math.round((product.choiceEngagement.choice_selections / product.choiceEngagement.total_requests) * 100)
     : null;
+
+  const modeEmptyLabel = !tracking?.viewsReachable
+    ? 'Product views unavailable — run migration 0007 in Supabase.'
+    : tracking?.hasUsage7d
+      ? 'Modes will appear after Ask, Build, or Plan prompts in Studio.'
+      : 'No Studio usage in the last 7 days yet.';
+
+  const domainEmptyLabel = !tracking?.viewsReachable
+    ? 'Product views unavailable — run migration 0007 in Supabase.'
+    : tracking?.hasUsage7d
+      ? 'Domains appear when users pick Travel, Education, Finance, or Research focus.'
+      : 'No Studio usage in the last 7 days yet.';
+
+  const modelEmptyLabel = !tracking?.viewsReachable
+    ? 'Product views unavailable — run migration 0007 in Supabase.'
+    : 'No model usage recorded yet.';
 
   const kpis = [
     {
@@ -75,9 +92,31 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
         <span className="product-analytics-panel__live-dot" aria-hidden="true" />
         <div>
           <h3>Product Engagement</h3>
-          <p>Measured from Supabase usage — no simulated geo data.</p>
+          <p>
+            {tracking?.viewsReachable
+              ? 'Measured from Supabase usage — no simulated geo data.'
+              : 'Connect Supabase product views (migration 0007) to enable mode and domain KPIs.'}
+          </p>
         </div>
       </div>
+
+      {tracking?.viewsReachable && tracking?.hasUsage7d && (
+        <div className="product-analytics-panel__status" style={{
+          marginBottom: '12px',
+          padding: '8px 10px',
+          borderRadius: '8px',
+          fontSize: '0.72rem',
+          fontWeight: 600,
+          color: tracking.hasModeBreakdown && tracking.hasDomainBreakdown ? '#059669' : (isLight ? '#92400e' : '#fdba74'),
+          background: tracking.hasModeBreakdown && tracking.hasDomainBreakdown
+            ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
+            : (isLight ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.12)'),
+        }}>
+          {tracking.hasModeBreakdown && tracking.hasDomainBreakdown
+            ? 'Migration 0007 KPIs active — mode and domain data is flowing.'
+            : 'Migration 0007 connected — send Build/Plan prompts or pick a domain focus to populate charts.'}
+        </div>
+      )}
 
       <div className="product-analytics-panel__kpis">
         {kpis.map((kpi) => (
@@ -95,7 +134,7 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
           labelKey="model_id"
           valueKey="requests"
           color="#0ea5e9"
-          emptyLabel="No model usage recorded yet."
+          emptyLabel={modelEmptyLabel}
         />
         <BarChart
           title="Studio modes (7d)"
@@ -103,7 +142,7 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
           labelKey="studio_mode"
           valueKey="requests"
           color="#f97316"
-          emptyLabel="Mode tracking starts after migration 0007 is applied."
+          emptyLabel={modeEmptyLabel}
         />
         <BarChart
           title="Domain focus (7d)"
@@ -111,7 +150,7 @@ export default function ProductAnalyticsPanel({ product, growth, isLight }) {
           labelKey="studio_domain"
           valueKey="requests"
           color="#10b981"
-          emptyLabel="Domain tracking starts after migration 0007 is applied."
+          emptyLabel={domainEmptyLabel}
         />
       </div>
     </div>
