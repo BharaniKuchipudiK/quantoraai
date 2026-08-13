@@ -2,15 +2,45 @@
  * Client-side proactive nudges — human "I thought of you" moments from the listening layer.
  */
 
-export function detectProactiveNudge(userPrompt = '', aiResponse = '', userFirstName = '') {
+function isHtmlBuildResponse(aiResponse = '') {
+  return /```html|<!DOCTYPE html>|<html[\s>]/i.test(aiResponse);
+}
+
+export function detectProactiveNudge(userPrompt = '', aiResponse = '', userFirstName = '', options = {}) {
+  const {
+    studioDomain = null,
+    studioMode = 'ask',
+    hasPreview = false,
+    guidedIntake = false,
+  } = options;
+
   const name = userFirstName?.trim() || 'there';
+
+  // Never show travel/link nudges during build intake or on generated HTML sites.
+  if (guidedIntake || (studioMode === 'build' && !studioDomain) || isHtmlBuildResponse(aiResponse)) {
+    if (hasPreview && studioMode === 'build') {
+      return {
+        type: 'site_ready',
+        text: `Hey ${name} — your site is ready to preview. Tell me what to change and I'll update it in place.`,
+      };
+    }
+    return null;
+  }
+
   const wantsUrls = /\b(url|urls|link|links|website|web site|click|visit|book(?:ing)?)\b/i.test(userPrompt);
   const hasUrls = /https?:\/\//i.test(aiResponse);
+
+  if (wantsUrls && hasUrls && (studioDomain === 'travel' || /\b(trip|travel|hotel|resort|destination|itinerary|beach|flight)\b/i.test(userPrompt))) {
+    return {
+      type: 'urls_included',
+      text: `Hey ${name} — I've included direct links for each option so you can explore the beach, rooms, and facilities at your own pace.`,
+    };
+  }
 
   if (wantsUrls && hasUrls) {
     return {
       type: 'urls_included',
-      text: `Hey ${name} — I've included direct links for each option so you can explore the beach, rooms, and facilities at your own pace.`,
+      text: `Hey ${name} — I've added direct links below so you can explore each option at your own pace.`,
     };
   }
 

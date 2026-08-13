@@ -291,7 +291,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, task, fallbackFrom, studioMode, sessionContext, studioDomain, attachedImages, choiceSelected } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, refineMode, featureSuggest, task, fallbackFrom, studioMode, sessionContext, studioDomain, attachedImages, choiceSelected } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -336,6 +336,8 @@ export default async function handler(req: any, res: any) {
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
       guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      refineMode: Boolean(refineMode),
+      featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
       planMode,
       sessionContext: normalizeSessionContext(sessionContext),
       studioDomain: normalizeStudioDomain(studioDomain),

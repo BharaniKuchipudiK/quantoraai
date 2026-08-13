@@ -24,7 +24,16 @@ Example marker (adapt ids/labels/values):
 <!-- quantora-choices:{"title":"When are you thinking?","prompt":"Pick one or type your dates below","choices":[{"id":"flex","label":"Flexible","value":"My dates are flexible — suggest the best window","description":"Open to your recommendation"},{"id":"month","label":"Next 1–2 months","value":"I'm planning for the next 1–2 months","description":"Rough near-term trip"},{"id":"fixed","label":"I have fixed dates","value":"I have specific travel dates — I'll share them next","description":"Already booked or locked in"}]} -->`;
 
 export const BUILD_CHOICE_HINTS = `BUILD CHOICE TEMPLATES (adapt labels/values to context)
-During guided build intake, when site type, payments, or style is still unclear, use quantora-choices instead of a text checklist.
+During guided build intake, when essentials are still unclear, use quantora-choices instead of a text checklist. Prefer these on the FIRST turn of a new build.
+
+Business name — title "What's it called?"
+choices: I'll type the name in chat | Use a placeholder name for now | Same as my business name on the sign
+
+Service model (cafes, restaurants, food) — title "How do customers order?"
+choices: Dine-in only | Takeaway / pickup | Both dine-in and takeaway | Online shop / delivery
+
+Offerings — title "What do you offer?"
+choices: Coffee & pastries | Full food menu | Services / price list | I'll describe it in chat
 
 Site type — title "What are you building?"
 choices: Business brochure | Online shop | Portfolio / personal | Landing page for one offer

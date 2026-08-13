@@ -7,7 +7,7 @@ export const STARTER_TEMPLATES = [
     emoji: '🥐',
     domain: null,
     mode: 'build',
-    prompt: 'Build a warm, modern website for a neighborhood bakery — menu, hours, location map, and a simple order form. Ask one question if needed, then generate the preview.',
+    prompt: 'Build a warm, modern website for a neighborhood bakery. Ask about the shop name and what they offer before generating the preview.',
   },
   {
     id: 'tuition',
@@ -15,7 +15,7 @@ export const STARTER_TEMPLATES = [
     emoji: '📚',
     domain: 'education',
     mode: 'build',
-    prompt: 'Create a tuition center landing page with subjects offered, class schedules, teacher bios, and a contact form for parent inquiries.',
+    prompt: 'Create a tuition center landing page. Ask about the center name, subjects, and audience before building the first draft.',
   },
   {
     id: 'portfolio',
@@ -23,7 +23,7 @@ export const STARTER_TEMPLATES = [
     emoji: '✨',
     domain: null,
     mode: 'build',
-    prompt: 'Build a clean personal portfolio site for a creative professional — hero, projects grid, about, and contact. Modern and minimal.',
+    prompt: 'Build a clean personal portfolio site. Ask what name to use, what work to showcase, and the vibe before building.',
   },
   {
     id: 'travel-blog',

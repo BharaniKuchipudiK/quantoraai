@@ -25,8 +25,8 @@ export default function StudioJourneyStrip({
     <div
       className="studio-journey-strip"
       style={{
-        margin: '0 18px 6px',
-        padding: '6px 10px',
+        margin: '0 18px 4px',
+        padding: '4px 10px',
         borderRadius: '10px',
         border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
         background: isLight ? '#fff' : 'rgba(15, 23, 42, 0.4)',
