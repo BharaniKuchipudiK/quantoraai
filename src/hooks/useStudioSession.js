@@ -128,6 +128,8 @@ export function useStudioSession({ user, selectedModel }) {
       studioDomain: null,
       boundRepo: null,
       conversationContext: {},
+      memoryConsented: false,
+      outcomeVersion: 0,
     };
     setChatSessions((prev) => {
       const updated = [newSession, ...prev];
