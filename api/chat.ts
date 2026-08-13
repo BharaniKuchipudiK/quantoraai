@@ -2,15 +2,23 @@ import { GoogleGenAI } from "@google/genai";
 import { randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
-import { recordModelQualityEvent, recordUsage } from "./_lib/store.js";
+import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./_lib/store.js";
 import { getRequestGeo } from "./_lib/geo.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
 import { normalizeSessionContext } from "./_lib/session-context.js";
+import { normalizeOutcomeSessionId } from "./_lib/outcome-state.js";
 import { normalizeStudioMode } from "./_lib/studio-modes.js";
 import { buildDomainDirective, normalizeStudioDomain } from "./_lib/studio-domains.js";
 import { repairArtifact } from "./_lib/repair.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
+import {
+  buildConversationSnapshot,
+  chooseNextConversationMove,
+  formatConversationDecisionForPrompt,
+  publicConversationMetadata,
+  verifyConversationResponse,
+} from "./_lib/conversation-engine.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -292,7 +300,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, refineMode, featureSuggest, task, fallbackFrom, studioMode, sessionContext, listeningSignals, studioDomain, attachedImages, choiceSelected } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, refineMode, featureSuggest, task, fallbackFrom, studioMode, sessionId, memoryConsented, sessionContext, listeningSignals, studioDomain, attachedImages, choiceSelected } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -331,22 +339,7 @@ export default async function handler(req: any, res: any) {
     const visionImages = Array.isArray(attachedImages)
       ? attachedImages.filter((url: unknown): url is string => typeof url === "string" && url.startsWith("data:image/")).slice(0, 4)
       : [];
-
-    const finalSystemPrompt = buildConversationSystemPrompt({
-      cognitiveLevel,
-      modelName: modelName || modelId,
-      buildMode: effectiveBuildMode,
-      guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
-      refineMode: Boolean(refineMode),
-      featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
-      planMode,
-      sessionContext: normalizeSessionContext(sessionContext),
-      listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
-      studioDomain: normalizeStudioDomain(studioDomain),
-      userFirstName: sessionUser?.name?.split(/\s+/)[0] || null,
-    }) + (visionImages.length
-      ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
-      : "");
+    const normalizedSessionContext = normalizeSessionContext(sessionContext);
 
     const telemetryContext = {
       studioMode: mode,
@@ -363,6 +356,10 @@ export default async function handler(req: any, res: any) {
     }
     if (!isRepairTask && message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
+    }
+    const normalizedSessionId = sessionId == null ? null : normalizeOutcomeSessionId(sessionId);
+    if (!isRepairTask && sessionId != null && !normalizedSessionId) {
+      return res.status(400).json({ error: "A valid sessionId is required when conversation state is supplied." });
     }
     if (!isRepairTask) {
       const safety = evaluateSafetyText(message);
@@ -426,6 +423,56 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    const authoritativeOutcome = sessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
+      ? await readOutcomeState(sessionUser.sub, normalizedSessionId)
+      : null;
+    const conversationSnapshot = buildConversationSnapshot({
+      outcomeRecord: authoritativeOutcome,
+      sessionContext: normalizedSessionContext,
+      listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
+      message,
+      taskCategory,
+      studioMode: mode,
+      studioDomain: normalizeStudioDomain(studioDomain),
+      guidedBuild: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      refineMode: Boolean(refineMode),
+      choiceSelected: choiceSelected === true,
+    });
+    const conversationDecision = chooseNextConversationMove(conversationSnapshot);
+    const navigatorDirective = formatConversationDecisionForPrompt(conversationSnapshot, conversationDecision);
+    const promptSessionContext = authoritativeOutcome
+      ? {
+          ...(conversationSnapshot.goal ? { goal: conversationSnapshot.goal.statement } : {}),
+          ...(conversationSnapshot.inferredFacts[0] ? { understanding: conversationSnapshot.inferredFacts[0] } : {}),
+          facts: conversationSnapshot.confirmedFacts,
+        }
+      : normalizedSessionContext;
+    const finalSystemPrompt = buildConversationSystemPrompt({
+      cognitiveLevel,
+      modelName: modelName || modelId,
+      buildMode: effectiveBuildMode,
+      guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      refineMode: Boolean(refineMode),
+      featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
+      planMode,
+      sessionContext: promptSessionContext,
+      listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
+      studioDomain: normalizeStudioDomain(studioDomain),
+      userFirstName: sessionUser?.name?.split(/\s+/)[0] || null,
+    }) + navigatorDirective + (visionImages.length
+      ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
+      : "");
+
+    const conversationMetadata = (response: string) => publicConversationMetadata(
+      conversationSnapshot,
+      conversationDecision,
+      verifyConversationResponse({
+        snapshot: conversationSnapshot,
+        decision: conversationDecision,
+        response,
+      }),
+    );
+
     const isGeminiModel = modelId && modelId.startsWith("gemini");
 
     if (isGeminiModel) {
@@ -459,7 +506,7 @@ export default async function handler(req: any, res: any) {
         logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
         recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
-        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true })}\n\n`);
+        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true, conversation: conversationMetadata(fullReply) })}\n\n`);
         res.write('data: [DONE]\n\n');
         return res.end();
       } catch (geminiErr: any) {
@@ -576,7 +623,7 @@ export default async function handler(req: any, res: any) {
         sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
       recordModelQualityEvent({ requestId, modelId: openRouterModelId, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
-      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, requestId, liveConnected: true })}\n\n`);
+      res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, requestId, liveConnected: true, conversation: conversationMetadata(fullReply) })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }

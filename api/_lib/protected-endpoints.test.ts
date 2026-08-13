@@ -30,6 +30,22 @@ test("chat enforces severe-content policy server-side before model execution", a
   assert.equal(state.body?.safety?.category, "sexual_exploitation_of_minors");
 });
 
+test("chat rejects an invalid conversation session before provider execution", async () => {
+  const { state, res } = responseHarness();
+  await chat({
+    method: "POST",
+    headers: {},
+    socket: {},
+    body: {
+      message: "Help me plan the next step.",
+      modelId: "gemini-test",
+      sessionId: "../another-user",
+    },
+  }, res);
+  assert.equal(state.status, 400);
+  assert.match(state.body?.error || "", /valid sessionId/);
+});
+
 test("Outcome Memory refuses anonymous access", async () => {
   const { state, res } = responseHarness();
   await pipeline({

@@ -1143,7 +1143,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
     }
     if (confirmedContextChanged) {
-      void syncOutcomeContext(sessionContextForRequest, {
+      await syncOutcomeContext(sessionContextForRequest, {
         sourceTurn: `user-${userMsg.id}`,
         confirmed: true,
       });
@@ -1211,9 +1211,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               history: cleanMessages,
               userKey: geminiApiKey,
               openRouterKey: openRouterApiKey,
+              cognitiveLevel,
               taskCategory: arenaTaskCategory,
               attachedImages: arenaImageUrls,
               studioMode: arenaImageUrls.length ? 'ask' : studioMode,
+              sessionId: activeSessionId,
+              memoryConsented,
+              sessionContext: sessionContextForRequest,
+              listeningSignals,
+              studioDomain,
+              choiceSelected: options.choiceSelected === true,
             })
           });
           
@@ -1267,6 +1274,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           provider: finalProvider,
                           latencyMs: finalLatency,
                           requestId: parsed.requestId || m[isModelA ? 'modelA' : 'modelB']?.requestId || null,
+                          ...(parsed.conversation ? {
+                            conversationMove: parsed.conversation.move,
+                            conversationPolicyVersion: parsed.conversation.policyVersion,
+                            conversationVerification: parsed.conversation.verification,
+                          } : {}),
                         };
                         return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
                       }
@@ -1433,6 +1445,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               taskCategory,
               fallbackFrom,
               studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
+              sessionId: activeSessionId,
+              memoryConsented,
               sessionContext: sessionContextForRequest,
               listeningSignals: listeningSignalsForRequest,
               studioDomain,
@@ -1519,6 +1533,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     modelId: parsed.modelId || respondingModel.id,
                     requestId: parsed.requestId || m.requestId,
                     latencyMs: parsed.latencyMs || 0,
+                    ...(parsed.conversation ? {
+                      conversationMove: parsed.conversation.move,
+                      conversationPolicyVersion: parsed.conversation.policyVersion,
+                      conversationVerification: parsed.conversation.verification,
+                    } : {}),
                     thoughtProcess: `Processed live via ${parsed.provider} (${parsed.latencyMs || 0}ms)`
                   } : m));
                 }

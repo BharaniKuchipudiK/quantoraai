@@ -157,3 +157,17 @@ may be deterministic, but must remain isolated from runtime code and analytics.
 
 The current client-side session context and regex gap detectors may remain as
 UI aids during migration, but they are untrusted hints—not the source of truth.
+
+## Implemented vertical slice
+
+Outcome Navigator v1 now provides the first server-side orchestrator slice:
+
+- canonical provider-neutral conversation snapshots;
+- authoritative Outcome State precedence over browser context;
+- an explicit next-best-conversation-move taxonomy and explainable policy;
+- a shared model contract across Gemini and OpenRouter;
+- post-generation verification metadata;
+- a policy evaluation corpus executed in CI.
+
+See [Outcome Navigator v1](./outcome-navigator-v1.md) for contracts, current
+limitations and the next delivery increments.
