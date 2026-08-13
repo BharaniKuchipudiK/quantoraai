@@ -312,6 +312,7 @@ export default function App() {
             themeMode={themeMode}
             setThemeMode={setThemeMode}
             isLight={isLight}
+            compact={isStudioShell}
           />
 
           <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{
@@ -500,12 +501,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Global Footer */}
-      <Footer 
-        isLight={themeMode === 'light'} 
-        activeTab={activeTab} 
-        handleTabChange={handleTabChange} 
-      />
+      {/* Global Footer — hidden in Studio for maximum conversation real estate (Cursor-style) */}
+      {!isStudioShell && (
+        <Footer
+          isLight={themeMode === 'light'}
+          activeTab={activeTab}
+          handleTabChange={handleTabChange}
+        />
+      )}
       <Analytics />
       <SpeedInsights />
     </div>
