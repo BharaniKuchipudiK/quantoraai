@@ -73,6 +73,64 @@ body {
   flex-shrink: 0;
 }
 
+/* Workspace chrome — auto-hide header for more vertical space (Studio, Journey, Quantum). */
+.app-header-wrap--auto-hide {
+  flex-shrink: 0;
+  max-height: 88px;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+}
+
+.app-header-wrap--auto-hide.is-hidden {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-header-reveal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  z-index: 99;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.85), rgba(2, 132, 199, 0.85));
+  opacity: 0.65;
+  transition: height 0.15s ease, opacity 0.15s ease;
+}
+
+.app-header-reveal:hover,
+.app-header-reveal:focus-visible {
+  height: 10px;
+  opacity: 1;
+  outline: none;
+}
+
+.app-shell--workspace .app-main,
+.app-shell--workspace .app-main--studio {
+  transition: padding 0.25s ease;
+}
+
+html[data-header-hidden='true'] .app-shell--workspace .app-main,
+html[data-header-hidden='true'] .app-shell--workspace .app-main--studio {
+  padding-top: clamp(4px, 0.6vh, 8px) !important;
+}
+
+@media (max-height: 900px) {
+  .app-shell--workspace .app-header-wrap--auto-hide {
+    max-height: 72px;
+  }
+
+  .app-shell--workspace .app-header--studio {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+}
+
 /* Welcome hub — compact module picker that fits above the global footer. */
 .welcome-hub {
   max-width: 1120px;

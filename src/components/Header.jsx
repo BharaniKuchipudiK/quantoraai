@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
+import { useAutoHideHeader } from '../hooks/useAutoHideHeader.js';
 
-export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false }) {
+export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false, autoHide = false }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [confirmModalType, setConfirmModalType] = useState(null);
@@ -10,6 +11,21 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   const modelRef = useRef(null);
   const profileRef = useRef(null);
+  const chromeBlocked = showModelDropdown || showProfileMenu || Boolean(confirmModalType);
+  const { hidden: headerHidden, show: showHeader } = useAutoHideHeader(autoHide, { blocked: chromeBlocked });
+
+  useEffect(() => {
+    showHeader();
+  }, [activeTab, showHeader]);
+
+  useEffect(() => {
+    if (!autoHide) {
+      document.documentElement.removeAttribute('data-header-hidden');
+      return undefined;
+    }
+    document.documentElement.toggleAttribute('data-header-hidden', headerHidden);
+    return () => document.documentElement.removeAttribute('data-header-hidden');
+  }, [autoHide, headerHidden]);
 
   // Click Outside Listener to close dropdowns automatically!
   useEffect(() => {
@@ -72,8 +88,9 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   return (
     <>
-    <header className={`app-header${compact ? ' app-header--studio' : ''}`} style={{
-      position: 'sticky',
+    <div className={`app-header-wrap${autoHide ? ' app-header-wrap--auto-hide' : ''}${headerHidden ? ' is-hidden' : ''}`}>
+    <header className={`app-header${compact ? ' app-header--studio' : ''}${autoHide ? ' app-header--auto-hide' : ''}`} style={{
+      position: 'relative',
       top: 0,
       zIndex: 100,
       background: isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 9, 19, 0.88)',
@@ -452,6 +469,17 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
         </div>
       </div>
     </header>
+    </div>
+
+    {autoHide && headerHidden && (
+      <button
+        type="button"
+        className="app-header-reveal"
+        aria-label="Show navigation"
+        title="Show navigation"
+        onClick={showHeader}
+      />
+    )}
 
       {/* Double Confirmation Security Modal */}
       {confirmModalType && (
