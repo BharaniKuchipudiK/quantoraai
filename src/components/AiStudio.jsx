@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, FileText, Image as ImageIcon, Activity, FolderPlus, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass, SlidersHorizontal, Atom } from 'lucide-react';
 import LivePreviewCanvas from './LivePreviewCanvas';
@@ -739,7 +739,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
   const messageViewportRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const shouldFollowLatestRef = useRef(true);
+  const isAutoScrollingRef = useRef(false);
   const scrollFrameRef = useRef(null);
 
   const focusPrompt = useCallback(() => {
@@ -763,32 +765,59 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   }, [prefillPrompt, resizePromptTextarea]);
 
-  const scrollToLatest = (behavior = 'auto') => {
-    if (!shouldFollowLatestRef.current || !messageViewportRef.current) return;
+  const scrollToLatest = useCallback((behavior = 'auto') => {
+    if (!shouldFollowLatestRef.current) return;
     if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
-    scrollFrameRef.current = requestAnimationFrame(() => {
+    isAutoScrollingRef.current = true;
+    const applyScroll = () => {
       const viewport = messageViewportRef.current;
-      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+      if (!viewport) return;
+      const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      if (behavior === 'smooth') {
+        viewport.scrollTo({ top: target, behavior: 'smooth' });
+      } else {
+        viewport.scrollTop = target;
+      }
+      messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+    };
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      applyScroll();
+      scrollFrameRef.current = requestAnimationFrame(() => {
+        applyScroll();
+        scrollFrameRef.current = requestAnimationFrame(() => {
+          isAutoScrollingRef.current = false;
+        });
+      });
     });
-  };
+  }, []);
 
   const handleMessageScroll = () => {
+    if (isAutoScrollingRef.current) return;
     const viewport = messageViewportRef.current;
     if (!viewport) return;
     const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    shouldFollowLatestRef.current = distanceFromLatest < 96;
+    shouldFollowLatestRef.current = distanceFromLatest < 120;
   };
 
-  // Follow new and streaming content only while the reader remains near the
-  // latest message. Sending a prompt deliberately re-enables this behaviour.
-  useEffect(() => {
-    scrollToLatest();
-  }, [messages, isGenerating]);
+  // Follow new and streaming content while the reader stays near the latest turn.
+  useLayoutEffect(() => {
+    scrollToLatest(isGenerating ? 'auto' : 'smooth');
+  }, [messages, isGenerating, streamingMessageId, scrollToLatest]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     shouldFollowLatestRef.current = true;
-    scrollToLatest();
-  }, [activeSessionId]);
+    scrollToLatest('auto');
+  }, [activeSessionId, scrollToLatest]);
+
+  // Re-anchor after the workspace header collapses (layout height changes).
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      if (shouldFollowLatestRef.current) scrollToLatest('auto');
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['data-header-hidden'] });
+    return () => observer.disconnect();
+  }, [scrollToLatest]);
 
   useEffect(() => () => {
     if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
@@ -1119,7 +1148,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       if (m.choiceSet && !m.choiceUsed && !options.choiceSelected) patch.choiceUsed = true;
       return Object.keys(patch).length ? { ...m, ...patch } : m;
     }).concat(userMsg));
-    scrollToLatest('smooth');
+    scrollToLatest('auto');
     if (!textToSend) setInputText('');
     setAttachments([]);
     setIsGenerating(true);
@@ -2362,6 +2391,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} aria-hidden="true" className="ai-studio-messages-anchor" />
           </div>
         )}
       </div>
