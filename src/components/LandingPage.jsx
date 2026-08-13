@@ -222,7 +222,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       transition: 'background 0.4s ease, color 0.4s ease'
     }}>
       {/* Header Navigation */}
-      <header style={{
+      <header className="landing-header" style={{
         position: 'sticky',
         top: 0,
         zIndex: 50,
@@ -232,54 +232,60 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         padding: '14px 5%',
         transition: 'all 0.3s ease'
       }}>
-        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        <div className="landing-header__inner" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
           {/* Brand Logo */}
-          <div style={{ cursor: 'pointer' }} onClick={() => user ? onLaunchStudio() : onOpenAuth()}>
+          <button
+            type="button"
+            className="landing-header__brand"
+            aria-label="Open Quantora AI Studio"
+            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
+          >
             <QuantoraFullLogoSvg height={38} isDark={!isLight} tagline="PROMPT TO ACTION" />
-          </div>
+          </button>
 
           {/* Navigation Links */}
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '28px', fontSize: '0.92rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1' }}>
-            <span
+          <nav className="landing-header__nav" aria-label="Primary navigation" style={{ display: 'flex', alignItems: 'center', gap: '28px', fontSize: '0.92rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1' }}>
+            <button
+              type="button"
               onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{ cursor: 'pointer', transition: 'color 0.2s' }}
-              className="hover:text-amber-500"
+              className="landing-header__link hover:text-amber-500"
             >
               AI Studio
-            </span>
-            <span
+            </button>
+            <button
+              type="button"
               onClick={() => document.getElementById('success-stories')?.scrollIntoView({ behavior: 'smooth' })}
-              style={{ cursor: 'pointer', transition: 'color 0.2s' }}
-              className="hover:text-amber-500"
+              className="landing-header__link hover:text-amber-500"
             >
               Success stories
-            </span>
-            <span
+            </button>
+            <button
+              type="button"
               onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{ cursor: 'pointer', transition: 'color 0.2s' }}
-              className="hover:text-amber-500"
+              className="landing-header__link hover:text-amber-500"
             >
               Dream Canvas
-            </span>
-            <span
+            </button>
+            <button
+              type="button"
               onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{ cursor: 'pointer', transition: 'color 0.2s' }}
-              className="hover:text-amber-500"
+              className="landing-header__link hover:text-amber-500"
             >
               Quantum Horizon
-            </span>
-            <span
+            </button>
+            <button
+              type="button"
               onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{ cursor: 'pointer', transition: 'color 0.2s' }}
-              className="hover:text-amber-500"
+              className="landing-header__link hover:text-amber-500"
             >
               Privacy Vault
-            </span>
+            </button>
           </nav>
 
           {/* Theme Switcher */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', zIndex: 60 }}>
+          <div className="landing-header__actions" style={{ display: 'flex', alignItems: 'center', gap: '14px', zIndex: 60 }}>
             <button
+              type="button"
               onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
               style={{
                 background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
@@ -295,6 +301,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 transition: 'all 0.2s ease'
               }}
               title="Toggle Theme"
+              aria-label={`Switch to ${isLight ? 'dark' : 'light'} theme`}
             >
               {isLight ? <Moon size={18} color="#8b5cf6" /> : <Sun size={18} color="#fb923c" />}
             </button>
@@ -359,6 +366,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
             }}
           >
             <textarea
+              aria-label="Describe what you want to build"
               value={heroPrompt}
               onChange={(e) => setHeroPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
@@ -371,7 +379,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 padding: '11px 0', maxHeight: '120px'
               }}
             />
-            <button onClick={() => startBuild()} style={{
+            <button type="button" className="landing-hero__submit" onClick={() => startBuild()} style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '8px',
               background: '#ea580c', color: '#ffffff', border: 'none',
               padding: '13px 24px', borderRadius: '11px',

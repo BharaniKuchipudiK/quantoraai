@@ -39,6 +39,13 @@ import {
 } from '../lib/communication-intelligence.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
 import {
+  contextToOutcomeState,
+  forgetOutcomeState,
+  loadOutcomeState,
+  outcomeStateToConversationContext,
+  persistOutcomeState,
+} from '../lib/outcome-state.js';
+import {
   getChatDisplayText,
   isExplicitArtifactProceed,
   isFeatureSuggestionRequest,
@@ -687,6 +694,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [idleReturnDismissed, setIdleReturnDismissed] = useState(false);
   const [proactiveNudgeDismissedId, setProactiveNudgeDismissedId] = useState(null);
   const userFirstName = user?.name?.split(/\s+/)[0] || '';
+  const isSignedIn = Boolean(user);
 
   useEffect(() => {
     if (!showModelDashboard) return undefined;
@@ -741,7 +749,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const boundRepo = activeSession.boundRepo || null;
   const conversationContext = activeSession.conversationContext || {};
   const listeningSignals = activeSession.listeningSignals || [];
+  const memoryConsented = activeSession.memoryConsented === true;
+  const outcomeVersion = Number.isInteger(activeSession.outcomeVersion) ? activeSession.outcomeVersion : 0;
+  const outcomeState = activeSession.outcomeState || null;
   const repoContextCache = useRef({});
+  const outcomeSyncTimerRef = useRef(null);
   const emitQuantoraRef = useRef(() => {});
   const [previewCode, setPreviewCode] = useState('');
   const [guidedSession, setGuidedSession] = useState(false);
@@ -811,7 +823,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   };
 
-  const updateActiveSession = (updates) => {
+  const updateActiveSession = useCallback((updates) => {
     setChatSessions(prevSessions => {
       const updated = prevSessions.map(session => {
         if (session.id !== activeSessionId) return session;
@@ -824,7 +836,82 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
       return updated;
     });
-  };
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!isSignedIn || !memoryConsented) return undefined;
+    let cancelled = false;
+
+    loadOutcomeState(activeSessionId).then((record) => {
+      if (cancelled) return;
+      const restored = outcomeStateToConversationContext(record.state);
+      updateActiveSession({
+        outcomeVersion: record.version,
+        outcomeState: record.state,
+        conversationContext: mergeSessionContext(conversationContext, restored),
+      });
+    }).catch((error) => {
+      if (!cancelled) console.warn('Outcome Memory could not be loaded:', error.message);
+    });
+
+    return () => { cancelled = true; };
+    // Load once when the owner, session, or consent boundary changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId, isSignedIn, memoryConsented]);
+
+  const syncOutcomeContext = useCallback(async (context, {
+    sourceTurn = null,
+    confirmed = false,
+    consentOverride = null,
+  } = {}) => {
+    const consented = consentOverride === null ? memoryConsented : consentOverride;
+    if (!isSignedIn || !consented) return null;
+
+    const save = async (version, currentState) => persistOutcomeState({
+      sessionId: activeSessionId,
+      expectedVersion: version,
+      sourceTurn,
+      state: contextToOutcomeState(context, {
+        existingState: currentState || {}, sourceTurn, confirmed, consented: true,
+      }),
+    });
+
+    try {
+      let record;
+      try {
+        record = await save(outcomeVersion, outcomeState);
+      } catch (error) {
+        if (!error.conflict) throw error;
+        const latest = await loadOutcomeState(activeSessionId);
+        record = await save(latest.version, latest.state);
+      }
+      updateActiveSession({
+        memoryConsented: true,
+        outcomeVersion: record.version,
+        outcomeState: record.state,
+      });
+      return record;
+    } catch (error) {
+      console.warn('Outcome Memory could not be saved:', error.message);
+      return null;
+    }
+  }, [activeSessionId, isSignedIn, memoryConsented, outcomeState, outcomeVersion, updateActiveSession]);
+
+  const handleMemoryConsentChange = useCallback(async (enabled) => {
+    if (enabled) {
+      updateActiveSession({ memoryConsented: true });
+      await syncOutcomeContext(conversationContext, {
+        sourceTurn: 'user-memory-consent', confirmed: false, consentOverride: true,
+      });
+      return;
+    }
+
+    if (isSignedIn) {
+      try { await forgetOutcomeState(activeSessionId); }
+      catch (error) { console.warn('Outcome Memory could not be deleted:', error.message); return; }
+    }
+    updateActiveSession({ memoryConsented: false, outcomeVersion: 0, outcomeState: null });
+  }, [activeSessionId, conversationContext, isSignedIn, syncOutcomeContext, updateActiveSession]);
 
   const fetchRepoPreview = async (repoUrl, task = 'Understand this codebase and its architecture') => {
     const response = await fetch('/api/github/preview', {
@@ -1071,7 +1158,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       studioMode: 'ask',
       studioDomain: null,
       boundRepo: null,
-      conversationContext: {}
+      conversationContext: {},
+      memoryConsented: false,
+      outcomeVersion: 0,
     };
 
     setChatSessions(prev => {
@@ -1088,6 +1177,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handleDeleteChat = (e, sessionId) => {
     e.stopPropagation();
+    const sessionToDelete = chatSessions.find((session) => session.id === sessionId);
+    if (isSignedIn && sessionToDelete?.memoryConsented) {
+      void forgetOutcomeState(sessionId).catch((error) => {
+        console.warn('Outcome Memory could not be deleted with the chat:', error.message);
+      });
+    }
     setChatSessions(prev => {
       const filtered = prev.filter(s => s.id !== sessionId);
       const fallback = filtered.length > 0 ? filtered : [{
@@ -1789,6 +1884,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsGenerating(true);
 
     let sessionContextForRequest = conversationContext;
+    let confirmedContextChanged = false;
     if (options.choiceSelected) {
       sessionContextForRequest = learnFromChipSelection(conversationContext, {
         label: visibleText,
@@ -1796,12 +1892,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         domain: studioDomain,
       });
       updateActiveSession({ conversationContext: sessionContextForRequest });
+      confirmedContextChanged = true;
     } else {
       const answerFact = captureUserAnswerAsContext(visibleText, [...messages, userMsg]);
       if (answerFact) {
         sessionContextForRequest = mergeSessionContext(conversationContext, { facts: [answerFact] });
         updateActiveSession({ conversationContext: sessionContextForRequest });
+        confirmedContextChanged = true;
       }
+    }
+    if (confirmedContextChanged) {
+      void syncOutcomeContext(sessionContextForRequest, {
+        sourceTurn: `user-${userMsg.id}`,
+        confirmed: true,
+      });
     }
 
     try {
@@ -1816,7 +1920,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         updateActiveMessages(prev => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
-          text: `🚨 **Policy Violation Detected**\n\n${modData.reason}\n\n*Flagged Pattern: \`${modData.matchedPattern}\`*`,
+          text: modData.action === 'support'
+            ? `**You don't have to handle this alone.**\n\n${modData.reason}`
+            : `**I can’t help with that request.**\n\n${modData.reason}`,
           isError: true
         }]);
         setIsGenerating(false);
@@ -2383,10 +2489,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, []);
 
   const handleWorkingNotesUpdate = useCallback((patch) => {
-    updateActiveSession({
-      conversationContext: mergeSessionContext(conversationContext, patch),
-    });
-  }, [conversationContext, updateActiveSession]);
+    const nextContext = mergeSessionContext(conversationContext, patch);
+    updateActiveSession({ conversationContext: nextContext });
+    if (outcomeSyncTimerRef.current) clearTimeout(outcomeSyncTimerRef.current);
+    outcomeSyncTimerRef.current = setTimeout(() => {
+      void syncOutcomeContext(nextContext, {
+        sourceTurn: `user-notes-${Date.now()}`,
+        confirmed: true,
+      });
+      outcomeSyncTimerRef.current = null;
+    }, 800);
+  }, [conversationContext, syncOutcomeContext, updateActiveSession]);
+
+  useEffect(() => () => {
+    if (outcomeSyncTimerRef.current) clearTimeout(outcomeSyncTimerRef.current);
+  }, []);
 
   const saveToJourney = useCallback((msg) => {
     if (!onPushToCanvas) return;
@@ -3162,6 +3279,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           conversationContext={conversationContext}
           listeningSignals={listeningSignals}
           onUpdateContext={handleWorkingNotesUpdate}
+          memoryConsented={memoryConsented}
+          onMemoryConsentChange={handleMemoryConsentChange}
         />
 
         {arenaMode && !arenaHintDismissed && (

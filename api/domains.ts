@@ -1,10 +1,29 @@
 import { GoogleGenAI } from "@google/genai";
 import { fetchApiGatewayKey } from './autocomplete';
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
+import { getSessionUser } from './_lib/session.js';
+import { isPublishedSiteOwner } from './_lib/store.js';
+import { normalizeDomainName } from './_lib/publish-policy.js';
+
+const MAX_CONTEXT_CHARS = 10_000;
+const REQUESTS_PER_MINUTE = 20;
 
 export default async function handler(req: any, res: any) {
+  applyCors(req, res, 'POST,OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
+
+  const sessionUser = getSessionUser(req);
+  if (!sessionUser) return res.status(401).json({ error: 'Sign in to use domain services.' });
+
+  const limitKey = `domains:user:${sessionUser.sub}`;
+  if (isRateLimited(limitKey, REQUESTS_PER_MINUTE, 60_000)) {
+    return res.status(429).json({ error: 'Too many domain requests. Please wait a minute.' });
+  }
+  const durable = await isRateLimitedDurable(limitKey, REQUESTS_PER_MINUTE, 60);
+  if (durable.limited) return res.status(429).json({ error: 'Too many domain requests. Please wait a minute.' });
 
   try {
     const { context, task, domain, projectName } = req.body;
@@ -16,11 +35,16 @@ export default async function handler(req: any, res: any) {
      * returns the DNS records the owner must set at their registrar.
      */
     if (task === 'connect') {
-      const name = String(domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-      if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(name)) {
+      const name = normalizeDomainName(domain);
+      if (!name) {
         return res.status(400).json({ error: 'Please enter a valid domain, e.g. my-boutique.com' });
       }
       if (!projectName) return res.status(400).json({ error: 'Publish the site first, then connect a domain.' });
+
+      const ownsProject = await isPublishedSiteOwner(sessionUser.sub, String(projectName));
+      if (ownsProject !== true) {
+        return res.status(403).json({ error: 'This Vercel project is not owned by your Quantora account.' });
+      }
 
       const vercelToken = await fetchApiGatewayKey('VERCEL') || process.env.VERCEL_ACCESS_TOKEN;
       if (!vercelToken) return res.status(401).json({ error: 'Missing VERCEL_ACCESS_TOKEN in the API Gateway.' });
@@ -51,6 +75,10 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    if (typeof context !== 'undefined' && (typeof context !== 'string' || context.length > MAX_CONTEXT_CHARS)) {
+      return res.status(400).json({ error: `Context must be text under ${MAX_CONTEXT_CHARS.toLocaleString()} characters.` });
+    }
+
     const apiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(401).json({ error: "No API key available for Domains." });
     
@@ -71,7 +99,11 @@ ${context || 'A modern web application'}`;
     try {
        domains = JSON.parse(text);
     } catch(e) {
-       domains = ["myapp.app", "myawesomeproject.com"]; // Fallback
+       return res.status(502).json({ error: 'The model did not return valid domain suggestions. Please try again.' });
+    }
+
+    if (!Array.isArray(domains) || !domains.every((item) => typeof item === 'string')) {
+      return res.status(502).json({ error: 'The model returned an invalid domain suggestion format.' });
     }
 
     return res.status(200).json({ domains });
