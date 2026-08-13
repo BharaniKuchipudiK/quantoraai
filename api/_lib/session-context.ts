@@ -71,10 +71,16 @@ export function formatListeningSignalsForPrompt(signals: ListeningSignal[] | und
   const lines = recent.map((s) => s.label || s.type).filter(Boolean);
   if (!lines.length) return "";
 
+  const gapSignal = signals.find((s) => s.type === "outcome_gap_detected");
+  const gapLine = gapSignal
+    ? "- Prior reply missed user intent (see gap above) — address that gap on this turn before introducing new topics."
+    : "";
+
   return `\n\nRECENT USER BEHAVIOR (adapt tone and next beats — do not mention this block):
 ${lines.map((line) => `- ${line}`).join("\n")}
+${gapLine}
 - If they hid suggestions, keep going without re-offering the same chips.
-- If they chose a chip, treat that path as confirmed intent.`;
+- If they chose a chip, treat that path as confirmed intent.`.trim();
 }
 
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;

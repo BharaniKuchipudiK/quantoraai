@@ -3,6 +3,8 @@
  * when the model's chips are missing or thin.
  */
 
+import { inferConversationStage } from './communication-intelligence.js';
+
 const STAGES = ['captured', 'in_progress', 'done'];
 
 function contextBlob(ctx = {}) {
@@ -142,11 +144,20 @@ function buildBeats(mode, { hasPreview = false, guidedIntake = false } = {}) {
 
 export function getAnticipatedContinues({ domain, mode, conversationContext, hasPreview = false, guidedIntake = false } = {}) {
   const text = contextBlob(conversationContext);
+  const stage = inferConversationStage(conversationContext, domain);
   let beats = [];
 
   switch (domain) {
     case 'travel':
       beats = travelBeats(text, mode);
+      if (stage === 'ready_for_itinerary') {
+        beats = beats.filter((b) => b.id === 'travel-itinerary' || (mode === 'build' && b.id === 'travel-site'));
+        if (!beats.some((b) => b.id === 'travel-itinerary')) {
+          beats.unshift(beat('travel-itinerary', 'Day-by-day plan', 'Build a day-by-day itinerary from what we know so far.'));
+        }
+      } else if (stage === 'itinerary_delivered') {
+        beats = beats.filter((b) => b.id !== 'travel-itinerary' && b.id !== 'travel-dates' && b.id !== 'travel-budget' && b.id !== 'travel-group');
+      }
       break;
     case 'finance':
       beats = financeBeats(text, mode);
@@ -170,11 +181,15 @@ export function getAnticipatedContinues({ domain, mode, conversationContext, has
   };
 
   const intakePrompt = 'What should we nail down first?';
+  const stagePrompts = {
+    ready_for_itinerary: 'Ready for a day-by-day plan?',
+    itinerary_delivered: 'Want to refine this trip?',
+  };
 
   return {
     prompt: guidedIntake && !hasPreview && mode === 'build'
       ? intakePrompt
-      : (domainPrompts[domain] || 'Where next?'),
+      : (stagePrompts[stage] || domainPrompts[domain] || 'Where next?'),
     items: beats,
   };
 }
@@ -182,6 +197,12 @@ export function getAnticipatedContinues({ domain, mode, conversationContext, has
 /** Merge model continue chips with domain-anticipated beats (deduped, max 3). */
 export function enrichContinueSet(continueSet, options = {}) {
   const { domain, mode, conversationContext, hasPreview = false, guidedIntake = false } = options;
+
+  // Ask mode is conversation-first: only show chips the model emitted.
+  if (mode === 'ask') {
+    return continueSet?.items?.length ? continueSet : null;
+  }
+
   const anticipated = getAnticipatedContinues({ domain, mode, conversationContext, hasPreview, guidedIntake });
   const existing = continueSet?.items?.length ? [...continueSet.items] : [];
   const seen = new Set(existing.map((i) => i.label.toLowerCase()));

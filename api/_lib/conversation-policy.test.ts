@@ -23,6 +23,17 @@ test("injects listening signals into the system prompt", () => {
   assert.match(prompt, /Day-by-day plan/);
 });
 
+test("injects outcome gap hint when gap signal present", () => {
+  const prompt = buildConversationSystemPrompt({
+    listeningSignals: [
+      { type: "outcome_gap_detected", label: "Gap detected: Add direct links" },
+    ],
+  });
+
+  assert.match(prompt, /missed user intent/);
+  assert.match(prompt, /Add direct links/);
+});
+
 test("injects stored session memory into the system prompt", () => {
   const prompt = buildConversationSystemPrompt({
     sessionContext: { goal: "Plan Bali", facts: ["5 nights in March"] },

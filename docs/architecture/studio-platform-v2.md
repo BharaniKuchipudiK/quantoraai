@@ -46,7 +46,7 @@ Admin Dashboard shows **only measured data**. If Supabase is unconfigured, show 
 ┌─────────────────────────────────────────────────────────────┐
 │  AiStudio.jsx                                               │
 │  ├── StudioChromeBar (collapsible header)                   │
-│  ├── Message feed + StudioChoiceCards (per AI message)      │
+│  ├── Message feed + StudioInlineSuggestions (latest AI turn only) │
 │  └── Prompt toolbar (tools, model, send)                    │
 └───────────────────────────┬─────────────────────────────────┘
                             │ POST /api/chat

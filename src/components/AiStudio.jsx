@@ -23,19 +23,17 @@ import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
 import { createQuantoraListener, mergeSessionListeningSignals, QUANTORA_EVENTS } from '../lib/listening-layer.js';
 import { enrichContinueSet } from '../lib/domain-anticipation.js';
 import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
-import StudioChoiceCards from './StudioChoiceCards';
-import StudioContinueChips from './StudioContinueChips';
+import StudioInlineSuggestions from './StudioInlineSuggestions';
+import StudioWandStatus from './StudioWandStatus';
+import { usePromptPolish } from '../hooks/usePromptPolish.js';
 import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
 import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner';
-import StudioProactiveNudge from './StudioProactiveNudge';
 import StudioWandHint from './StudioWandHint';
-import { detectProactiveNudge } from '../lib/proactive-nudges.js';
 import {
   learnFromChipSelection,
   learnFromDismissedSuggestions,
-  shouldSuppressProactiveNudge,
 } from '../lib/communication-intelligence.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
 import {
@@ -685,7 +683,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModelDashboard, setShowModelDashboard] = useState(false);
   const [idleReturnDismissed, setIdleReturnDismissed] = useState(false);
-  const [proactiveNudgeDismissedId, setProactiveNudgeDismissedId] = useState(null);
+  const [inlineSuggestionsDismissedId, setInlineSuggestionsDismissedId] = useState(null);
   const userFirstName = user?.name?.split(/\s+/)[0] || '';
 
   useEffect(() => {
@@ -715,27 +713,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   useEffect(() => {
     setIdleReturnDismissed(false);
+    setInlineSuggestionsDismissedId(null);
   }, [activeSessionId]);
-  const pendingChoiceMessage = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual) {
-        if (m.choiceDockState === 'dismissed') return null;
-        return m;
-      }
-    }
-    return null;
-  }, [messages]);
-
-  const dismissedChoiceMessage = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual && m.choiceDockState === 'dismissed') {
-        return m;
-      }
-    }
-    return null;
-  }, [messages]);
   const studioMode = activeSession.studioMode || 'ask';
   const studioDomain = activeSession.studioDomain || null;
   const boundRepo = activeSession.boundRepo || null;
@@ -1114,44 +1093,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const setInputText = setLocalInputText;
 
   const [isGenerating, setIsGenerating] = useState(false);
-  const latestContinueMessageId = React.useMemo(() => {
-    if (pendingChoiceMessage || isGenerating) return null;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender !== 'ai' || m.continueUsed || m.isDual) continue;
-      const userPrompt = getPriorUserPrompt(m.id);
-      const enriched = enrichContinues(m.continueSet, { userPrompt, aiResponse: m.text });
-      if (enriched?.items?.length) return m.id;
-    }
-    return null;
-  }, [messages, pendingChoiceMessage, isGenerating, enrichContinues, getPriorUserPrompt]);
-
-  const latestContinueContext = React.useMemo(() => {
-    if (!latestContinueMessageId || pendingChoiceMessage) return null;
-    const msg = messages.find((m) => m.id === latestContinueMessageId);
-    if (!msg) return null;
-    const userPrompt = getPriorUserPrompt(msg.id);
-    const continueSet = enrichContinues(msg.continueSet, { userPrompt, aiResponse: msg.text });
-    if (!continueSet?.items?.length) return null;
-    return { msg, continueSet };
-  }, [latestContinueMessageId, pendingChoiceMessage, messages, enrichContinues, getPriorUserPrompt]);
-
-  const proactiveNudge = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender !== 'ai' || m.isDual || isGenerating) continue;
-      const userPrompt = getPriorUserPrompt(m.id);
-      return detectProactiveNudge(userPrompt, m.text, userFirstName, {
-        studioDomain,
-        studioMode,
-        hasPreview: Boolean(previewCode?.trim()),
-        guidedIntake: guidedSession,
-        conversationContext,
-      });
-    }
-    return null;
-  }, [messages, isGenerating, getPriorUserPrompt, userFirstName, studioDomain, studioMode, previewCode, guidedSession, conversationContext]);
-
   const latestAiMessageId = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]?.sender === 'ai' && !messages[i]?.isDual) return messages[i].id;
@@ -1159,9 +1100,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return null;
   }, [messages]);
 
-  const showProactiveNudge = proactiveNudge
-    && proactiveNudgeDismissedId !== latestAiMessageId
-    && !shouldSuppressProactiveNudge(proactiveNudge, { listeningSignals, conversationContext });
+  useEffect(() => {
+    setInlineSuggestionsDismissedId(null);
+  }, [latestAiMessageId]);
+
+  const resolveInlineSuggestions = useCallback((msg) => {
+    if (!msg || msg.sender !== 'ai' || msg.isDual) return null;
+    if (msg.id !== latestAiMessageId || isGenerating) return null;
+    if (inlineSuggestionsDismissedId === msg.id) return null;
+
+    if (msg.choiceSet?.choices?.length && !msg.choiceUsed && msg.choiceDockState !== 'dismissed') {
+      return { kind: 'choices', choiceSet: msg.choiceSet, msg };
+    }
+
+    if (!msg.continueUsed) {
+      const userPrompt = getPriorUserPrompt(msg.id);
+      const continueSet = enrichContinues(msg.continueSet, { userPrompt, aiResponse: msg.text });
+      if (continueSet?.items?.length) {
+        return { kind: 'continues', continueSet, msg };
+      }
+    }
+
+    return null;
+  }, [
+    latestAiMessageId,
+    isGenerating,
+    inlineSuggestionsDismissedId,
+    getPriorUserPrompt,
+    enrichContinues,
+  ]);
+
+  const latestInlineSuggestions = React.useMemo(() => {
+    const msg = messages.find((m) => m.id === latestAiMessageId);
+    return resolveInlineSuggestions(msg);
+  }, [messages, latestAiMessageId, resolveInlineSuggestions]);
 
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
@@ -1280,55 +1252,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [canvasOpen, closePreviewModal]);
 
   useEffect(() => {
-    const hasOpenChoiceDock = pendingChoiceMessage
-      && pendingChoiceMessage.choiceDockState !== 'dismissed';
-    const hasContinueDock = Boolean(latestContinueContext);
-    const hasProactiveNudge = Boolean(showProactiveNudge);
-    if (!hasOpenChoiceDock && !hasContinueDock && !hasProactiveNudge) return undefined;
+    if (!latestInlineSuggestions) return undefined;
 
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
       if (showModelDashboard || canvasOpen) return;
 
-      if (hasOpenChoiceDock) {
-        event.preventDefault();
-        setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
-        updateActiveSession({
-          conversationContext: learnFromDismissedSuggestions(conversationContext, 'suggestions'),
-        });
-        emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-        return;
-      }
-
-      if (showProactiveNudge) {
-        event.preventDefault();
-        setProactiveNudgeDismissedId(latestAiMessageId);
-        return;
-      }
-
-      if (hasContinueDock) {
-        event.preventDefault();
+      event.preventDefault();
+      const { msg } = latestInlineSuggestions;
+      setInlineSuggestionsDismissedId(msg.id);
+      if (latestInlineSuggestions.kind === 'choices') {
+        setChoiceDockState(msg.id, 'dismissed');
+        emitQuantoraRef.current(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
+      } else {
         updateActiveMessages((prev) => prev.map((m) => (
-          m.id === latestContinueContext.msg.id ? { ...m, continueUsed: true } : m
+          m.id === msg.id ? { ...m, continueUsed: true } : m
         )));
-        updateActiveSession({
-          conversationContext: learnFromDismissedSuggestions(conversationContext, 'continue chips'),
-        });
       }
+      updateActiveSession({
+        conversationContext: learnFromDismissedSuggestions(
+          conversationContext,
+          latestInlineSuggestions.kind === 'choices' ? 'suggestions' : 'continue chips',
+        ),
+      });
     };
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [
-    pendingChoiceMessage,
-    latestContinueContext,
-    showProactiveNudge,
-    latestAiMessageId,
+    latestInlineSuggestions,
     showModelDashboard,
     canvasOpen,
     setChoiceDockState,
-    activeSessionId,
     conversationContext,
+    updateActiveSession,
   ]);
 
   const [canvasCode, setCanvasCode] = useState('');
@@ -1608,13 +1565,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
-  const [showHeroCardModal, setShowHeroCardModal] = useState(false);
-  const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
-  // Prompt Engineer review card: { original, prompt, tier, model } | null.
-  // Enhancement is shown here for the user to edit/finalize before it lands in
-  // the input — never silently overwritten.
-  const [enhanceResult, setEnhanceResult] = useState(null);
+  const {
+    isPolishing: isEnhancingPrompt,
+    undo: wandPolishUndo,
+    error: wandPolishError,
+    polish: runPromptPolish,
+    clearPolish: clearWandPolish,
+    setError: setWandPolishError,
+  } = usePromptPolish({ availableModels, chooseBestFreeModel });
   const [wandHintOpen, setWandHintOpen] = useState(false);
   const wandAnchorRef = useRef(null);
 
@@ -1624,28 +1582,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   );
 
   const runEnhance = async (sourcePrompt, depth) => {
-    const source = (sourcePrompt || '').trim();
-    if (!source) return;
-    setIsEnhancingPrompt(true);
-    try {
-      const res = await fetch('/api/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: source, depth })
-      });
-      const data = await res.json();
-      if (res.ok && data.enhancedPrompt) {
-        let model = null;
-        try { model = chooseBestFreeModel(availableModels, data.enhancedPrompt)?.model || null; } catch (e) {}
-        setEnhanceResult({ original: source, prompt: data.enhancedPrompt, tier: data.tier || 'Enrich', model });
-      } else {
-        console.error("Magic Wand failed:", data.error);
-      }
-    } catch (e) {
-      console.error("Magic Wand network error:", e);
-    } finally {
-      setIsEnhancingPrompt(false);
+    const result = await runPromptPolish(sourcePrompt, depth);
+    if (!result) return;
+    setInputText(result.prompt);
+    requestAnimationFrame(resizePromptTextarea);
+    if (result.model) {
+      setSelectedModel(result.model);
+      setAutoSelectEnabled(false);
     }
+  };
+
+  const revertWandPolish = () => {
+    if (!wandPolishUndo?.original) return;
+    setInputText(wandPolishUndo.original);
+    requestAnimationFrame(resizePromptTextarea);
+    clearWandPolish();
   };
 
   useEffect(() => {
@@ -1664,6 +1615,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handleWandTemplatePick = (template) => {
     setWandHintOpen(false);
+    clearWandPolish();
     setInputText(template.prompt);
     if (template.mode) setStudioMode(template.mode);
     if (template.domain !== undefined) setStudioDomain(template.domain);
@@ -1673,18 +1625,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   };
 
-  // Apply the (possibly edited) enhancement to the input, adopt the suggested
-  // model, and close the card.
-  const applyEnhancement = () => {
-    if (!enhanceResult) return;
-    setInputText(enhanceResult.prompt);
-    requestAnimationFrame(resizePromptTextarea);
-    if (enhanceResult.model) {
-      setSelectedModel(enhanceResult.model);
-      setAutoSelectEnabled(false);
-    }
-    setEnhanceResult(null);
-  };
+  const [showHeroCardModal, setShowHeroCardModal] = useState(false);
+  const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
@@ -1780,9 +1722,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     shouldFollowLatestRef.current = true;
     updateActiveSession({ lastActiveAt: Date.now() });
-    updateActiveMessages(prev => prev.map((m) => (
-      m.sender === 'ai' && m.continueSet && !m.continueUsed ? { ...m, continueUsed: true } : m
-    )).concat(userMsg));
+    clearWandPolish();
+    updateActiveMessages(prev => prev.map((m) => {
+      if (m.sender !== 'ai') return m;
+      const patch = {};
+      if (m.continueSet && !m.continueUsed) patch.continueUsed = true;
+      if (m.choiceSet && !m.choiceUsed && !options.choiceSelected) patch.choiceUsed = true;
+      return Object.keys(patch).length ? { ...m, ...patch } : m;
+    }).concat(userMsg));
     scrollToLatest('smooth');
     if (!textToSend) setInputText('');
     setAttachments([]);
@@ -2382,6 +2329,55 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     emitQuantoraRef.current(type, payload);
   }, []);
 
+  const dismissInlineSuggestions = useCallback((msg, suggestions) => {
+    if (!msg || !suggestions) return;
+    setInlineSuggestionsDismissedId(msg.id);
+    if (suggestions.kind === 'choices') {
+      setChoiceDockState(msg.id, 'dismissed');
+      emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
+    } else {
+      updateActiveMessages((prev) => prev.map((m) => (
+        m.id === msg.id ? { ...m, continueUsed: true } : m
+      )));
+    }
+    updateActiveSession({
+      conversationContext: learnFromDismissedSuggestions(
+        conversationContext,
+        suggestions.kind === 'choices' ? 'suggestions' : 'continue chips',
+      ),
+    });
+  }, [conversationContext, setChoiceDockState, updateActiveSession, emitQuantora]);
+
+  const handleInlineChoiceSelect = useCallback((msg, choice) => {
+    updateActiveMessages((prev) => prev.map((m) => (
+      m.id === msg.id ? { ...m, choiceUsed: true } : m
+    )));
+    updateActiveSession({
+      conversationContext: learnFromChipSelection(conversationContext, {
+        label: choice.label,
+        value: choice.value,
+        domain: studioDomain,
+      }),
+    });
+    emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
+    handleSendMessage(choice.value, { choiceSelected: true });
+  }, [conversationContext, studioDomain, updateActiveSession, emitQuantora, handleSendMessage]);
+
+  const handleInlineContinueSelect = useCallback((msg, item) => {
+    updateActiveMessages((prev) => prev.map((m) => (
+      m.id === msg.id ? { ...m, continueUsed: true } : m
+    )));
+    updateActiveSession({
+      conversationContext: learnFromChipSelection(conversationContext, {
+        label: item.label,
+        value: item.value,
+        domain: studioDomain,
+      }),
+    });
+    emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
+    handleSendMessage(item.value);
+  }, [conversationContext, studioDomain, updateActiveSession, emitQuantora, handleSendMessage]);
+
   const handleWorkingNotesUpdate = useCallback((patch) => {
     updateActiveSession({
       conversationContext: mergeSessionContext(conversationContext, patch),
@@ -2701,7 +2697,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {/* Continue chips render in prompt dock — not inline in chat */}
+                      {msg.sender === 'ai' && !msg.isDual && (() => {
+                        const suggestions = resolveInlineSuggestions(msg);
+                        if (!suggestions) return null;
+                        return (
+                          <StudioInlineSuggestions
+                            suggestions={suggestions}
+                            isLight={isLight}
+                            disabled={isGenerating}
+                            onSelectChoice={(choice) => handleInlineChoiceSelect(msg, choice)}
+                            onSelectContinue={(item) => handleInlineContinueSelect(msg, item)}
+                            onDismiss={() => dismissInlineSuggestions(msg, suggestions)}
+                          />
+                        );
+                      })()}
 
                       {/* Plan / code actions */}
                       <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -2833,7 +2842,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
     });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference, saveToJourney, onPushToCanvas, emitQuantora, enrichContinues, getPriorUserPrompt, latestContinueMessageId]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference, saveToJourney, onPushToCanvas, emitQuantora, resolveInlineSuggestions, handleInlineChoiceSelect, handleInlineContinueSelect, dismissInlineSuggestions]);
 
   return (
     <div className="ai-studio-shell" style={{
@@ -3098,14 +3107,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       ), document.body)}
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
+      <div
+        className="ai-studio-conversation"
+        style={{
+          flex: showBuildSplit || isWorkspaceMode ? '0 0 48%' : 1,
+          display: 'flex',
+          flexDirection: 'column',
+          maxWidth: showBuildSplit || isWorkspaceMode ? '48%' : '100%',
+          margin: '0 auto',
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
       <div className="ai-studio-main" style={{
-        flex: showBuildSplit || isWorkspaceMode ? '0 0 48%' : 1,
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: showBuildSplit || isWorkspaceMode ? '48%' : '100%',
         margin: '0 auto',
-        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(6px, 1vw, 12px) clamp(12px, 1.6vw, 24px)',
+        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(4px, 0.8vw, 8px) clamp(12px, 1.6vw, 24px) 0',
         minHeight: 0,
+        width: '100%',
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         <StudioChromeBar
@@ -3484,98 +3507,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         {/* Overlays — separate cards above the input pill (never inside it) */}
         <div className="studio-prompt-overlays">
-          {enhanceResult && (
-            <div className="studio-prompt-dock" style={{ margin: '0 2px', borderRadius: '14px', border: '1px solid rgba(249,115,22,0.35)', background: isLight ? '#fffaf5' : 'rgba(249,115,22,0.06)', boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.06)' : '0 8px 30px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)' }}>
-                <Wand2 size={15} color="#f97316" />
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor }}>Prompt Engineer</span>
-                <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#f97316', background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '999px', padding: '2px 8px' }}>{enhanceResult.tier}</span>
-                {enhanceResult.model && (
-                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: subtextColor }}>
-                    <Cpu size={12} color="#f97316" /> Suggested: <strong style={{ color: textColor }}>{enhanceResult.model.name}</strong>
-                  </span>
-                )}
-              </div>
-              <textarea
-                value={enhanceResult.prompt}
-                onChange={(e) => setEnhanceResult(r => ({ ...r, prompt: e.target.value }))}
-                rows={Math.min(10, Math.max(3, (enhanceResult.prompt.match(/\n/g) || []).length + 2))}
-                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', resize: 'vertical', background: 'transparent', color: textColor, fontSize: '0.9rem', lineHeight: 1.5, padding: '12px 14px', fontFamily: 'inherit' }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderTop: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
-                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'lighter')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↓ Lighter</button>
-                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'deeper')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↑ Deeper</button>
-                {isEnhancingPrompt && <span style={{ fontSize: '0.72rem', color: subtextColor }}>Re-thinking…</span>}
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-                  <button onClick={() => setEnhanceResult(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>Discard</button>
-                  <button onClick={applyEnhancement} style={{ background: '#f97316', border: 'none', color: '#fff', borderRadius: '8px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}>Use it</button>
-                </span>
-              </div>
-            </div>
-          )}
-
           {refineActive && previewCode && previewCode.trim() && !isGenerating && (
             <div className="studio-edit-site-bar studio-prompt-dock">
               <Wand2 size={13} color="#f97316" />
               <span>Editing your site — describe changes below</span>
               <button type="button" onClick={() => setRefineActive(false)}>New build</button>
-            </div>
-          )}
-
-          {showProactiveNudge && (
-            <div className="studio-prompt-dock studio-prompt-dock--center">
-              <StudioProactiveNudge
-                text={proactiveNudge.text}
-                isLight={isLight}
-                onDismiss={() => setProactiveNudgeDismissedId(latestAiMessageId)}
-              />
-            </div>
-          )}
-
-          {pendingChoiceMessage && pendingChoiceMessage.choiceDockState !== 'dismissed' && (
-            <div className="studio-choice-dock studio-prompt-dock">
-              <StudioChoiceCards
-                variant="floating"
-                dockState={pendingChoiceMessage.choiceDockState || 'open'}
-                choiceSet={pendingChoiceMessage.choiceSet}
-                isLight={isLight}
-                disabled={isGenerating}
-                onCollapse={() => setChoiceDockState(pendingChoiceMessage.id, 'collapsed')}
-                onExpand={() => setChoiceDockState(pendingChoiceMessage.id, 'open')}
-                onDismiss={() => {
-                  setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
-                  updateActiveSession({
-                    conversationContext: learnFromDismissedSuggestions(conversationContext, 'suggestions'),
-                  });
-                  emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-                }}
-                onSelect={(choice) => {
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === pendingChoiceMessage.id ? { ...m, choiceUsed: true } : m
-                  )));
-                  updateActiveSession({
-                    conversationContext: learnFromChipSelection(conversationContext, {
-                      label: choice.label,
-                      value: choice.value,
-                      domain: studioDomain,
-                    }),
-                  });
-                  emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
-                  handleSendMessage(choice.value, { choiceSelected: true });
-                }}
-              />
-            </div>
-          )}
-
-          {!pendingChoiceMessage && dismissedChoiceMessage && (
-            <div className="studio-choice-dock-restore studio-prompt-dock">
-              <button
-                type="button"
-                className="studio-choice-dock-restore__btn"
-                onClick={() => setChoiceDockState(dismissedChoiceMessage.id, 'open')}
-              >
-                Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
-              </button>
             </div>
           )}
 
@@ -3588,42 +3524,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               >
                 Open preview panel →
               </button>
-            </div>
-          )}
-
-          {latestContinueContext && !pendingChoiceMessage && (
-            <div className="studio-continue-dock studio-prompt-dock">
-              <StudioContinueChips
-                variant="floating"
-                continueSet={latestContinueContext.continueSet}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                disabled={isGenerating}
-                onDismiss={() => {
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === latestContinueContext.msg.id ? { ...m, continueUsed: true } : m
-                  )));
-                  updateActiveSession({
-                    conversationContext: learnFromDismissedSuggestions(conversationContext, 'continue chips'),
-                  });
-                }}
-                onSelect={(item) => {
-                  const msg = latestContinueContext.msg;
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === msg.id ? { ...m, continueUsed: true } : m
-                  )));
-                  updateActiveSession({
-                    conversationContext: learnFromChipSelection(conversationContext, {
-                      label: item.label,
-                      value: item.value,
-                      domain: studioDomain,
-                    }),
-                  });
-                  emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
-                  handleSendMessage(item.value);
-                }}
-              />
             </div>
           )}
 
@@ -3732,6 +3632,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '8px 14px' }}>
+            <StudioWandStatus
+              isPolishing={isEnhancingPrompt}
+              undo={wandPolishUndo}
+              error={wandPolishError}
+              isLight={isLight}
+              onUndo={revertWandPolish}
+              onShorter={wandPolishUndo ? () => runEnhance(wandPolishUndo.original, 'lighter') : undefined}
+              onMoreDetail={wandPolishUndo ? () => runEnhance(wandPolishUndo.original, 'deeper') : undefined}
+              onRetry={wandPolishError ? () => runEnhance(inputText, 'auto') : undefined}
+              onDismissError={() => setWandPolishError(null)}
+            />
             <textarea
               ref={textareaRef}
               rows={1}
@@ -3903,7 +3814,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   className={`studio-prompt-icon-btn${isEnhancingPrompt ? ' is-active' : ''}${wandHintOpen ? ' is-active' : ''}`}
                   onClick={handleMagicWandEnhance}
                   disabled={isEnhancingPrompt}
-                  title={inputText.trim() ? 'Polish and expand your prompt' : 'Type a rough idea first, then polish it'}
+                  title={inputText.trim() ? 'Polish your prompt' : 'Type a rough idea first'}
                 >
                   {isEnhancingPrompt ? <RefreshCw size={16} className="animate-spin" /> : <Wand2 size={18} />}
                 </button>
@@ -4115,6 +4026,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         </div>
 
+      </div>
       </div>
       </div>
 
@@ -4505,37 +4417,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <><Github size={18} /> Connect to this chat</>
               )}
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Magic Wand Blocking Loader Overlay */}
-      {isEnhancingPrompt && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.85)',
-          backdropFilter: 'blur(36px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(36px) saturate(200%)',
-          zIndex: 3000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-        }}>
-          <div style={{
-            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15, 23, 42, 0.9)',
-            border: isLight ? '1px solid rgba(226,232,240,1)' : '1px solid rgba(255,255,255,0.1)',
-            padding: '48px 64px',
-            borderRadius: '24px',
-            boxShadow: isLight ? '0 40px 80px rgba(0,0,0,0.06)' : '0 40px 80px rgba(0,0,0,0.6)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px',
-            minWidth: '400px'
-          }}>
-            <Wand2 size={56} color="#f97316" className="animate-spin" style={{ animationDuration: '4s' }} />
-            <h3 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: textColor, letterSpacing: '-0.02em' }}>
-              Synthesizing Architecture
-            </h3>
-            <p style={{ margin: 0, color: subtextColor, fontSize: '1.1rem', fontWeight: '400' }}>
-              Orchestrating multi-model pipelines for your prompt.
-            </p>
           </div>
         </div>
       )}
