@@ -29,6 +29,7 @@ import StudioToolsMenu from './StudioToolsMenu';
 import StudioPromptOverlays from './StudioPromptOverlays';
 import { usePromptPolish } from '../hooks/usePromptPolish.js';
 import { useStudioSession } from '../hooks/useStudioSession.js';
+import { useChatScrollFollow } from '../hooks/useChatScrollFollow.js';
 import { useInlineSuggestions } from '../hooks/useInlineSuggestions.js';
 import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
@@ -739,8 +740,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
   const messageViewportRef = useRef(null);
-  const shouldFollowLatestRef = useRef(true);
-  const scrollFrameRef = useRef(null);
+  const messageThreadRef = useRef(null);
+  const messageEndRef = useRef(null);
 
   const focusPrompt = useCallback(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -763,36 +764,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   }, [prefillPrompt, resizePromptTextarea]);
 
-  const scrollToLatest = (behavior = 'auto') => {
-    if (!shouldFollowLatestRef.current || !messageViewportRef.current) return;
-    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
-    scrollFrameRef.current = requestAnimationFrame(() => {
-      const viewport = messageViewportRef.current;
-      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior });
-    });
-  };
-
-  const handleMessageScroll = () => {
-    const viewport = messageViewportRef.current;
-    if (!viewport) return;
-    const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    shouldFollowLatestRef.current = distanceFromLatest < 96;
-  };
-
-  // Follow new and streaming content only while the reader remains near the
-  // latest message. Sending a prompt deliberately re-enables this behaviour.
-  useEffect(() => {
-    scrollToLatest();
-  }, [messages, isGenerating]);
-
-  useEffect(() => {
-    shouldFollowLatestRef.current = true;
-    scrollToLatest();
-  }, [activeSessionId]);
-
-  useEffect(() => () => {
-    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
-  }, []);
+  const { resumeFollow, handleScroll: handleMessageScroll } = useChatScrollFollow({
+    viewportRef: messageViewportRef,
+    threadRef: messageThreadRef,
+    endRef: messageEndRef,
+    messages,
+    isGenerating,
+    streamingMessageId,
+    activeSessionId,
+  });
 
   // Click outside listener for in-bar model dropdown
   useEffect(() => {
@@ -1109,7 +1089,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       attachments: [...attachments]
     };
 
-    shouldFollowLatestRef.current = true;
     updateActiveSession({ lastActiveAt: Date.now() });
     clearWandPolish();
     updateActiveMessages(prev => prev.map((m) => {
@@ -1119,7 +1098,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       if (m.choiceSet && !m.choiceUsed && !options.choiceSelected) patch.choiceUsed = true;
       return Object.keys(patch).length ? { ...m, ...patch } : m;
     }).concat(userMsg));
-    scrollToLatest('smooth');
+    resumeFollow();
     if (!textToSend) setInputText('');
     setAttachments([]);
     setIsGenerating(true);
@@ -2201,7 +2180,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         ref={messageViewportRef}
         onScroll={handleMessageScroll}
         className={`ai-studio-messages ${messages.length <= 1 ? 'ai-studio-messages--empty' : ''}`}
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '12px', scrollBehavior: 'smooth' }}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '12px' }}
       >
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
@@ -2321,7 +2300,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         ) : (
           /* Active Chat Thread */
-          <div className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
+          <div ref={messageThreadRef} className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
             <StudioChatFeed
               messages={messages}
               user={user}
@@ -2381,6 +2360,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
               </div>
             )}
+            <div ref={messageEndRef} aria-hidden="true" className="ai-studio-messages-end" />
           </div>
         )}
       </div>
