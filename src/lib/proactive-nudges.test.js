@@ -22,12 +22,12 @@ test('shows site-ready nudge after build preview exists', () => {
   assert.match(nudge.text, /site is ready to preview/i);
 });
 
-test('shows travel-specific nudge for travel URL requests', () => {
+test('does not show redundant travel URL banner when links are in chat', () => {
   const nudge = detectProactiveNudge(
     'share hotel links for Bali',
     'Try https://example.com/hotel',
     'Bharani',
     { studioDomain: 'travel', studioMode: 'ask' },
   );
-  assert.match(nudge.text, /beach, rooms, and facilities/i);
+  assert.equal(nudge, null);
 });

@@ -3099,10 +3099,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div className="ai-studio-main" style={{
-        flex: showBuildSplit || isWorkspaceMode ? '0 0 42%' : 1,
+        flex: showBuildSplit || isWorkspaceMode ? '0 0 48%' : 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: showBuildSplit || isWorkspaceMode ? '42%' : '100%',
+        maxWidth: showBuildSplit || isWorkspaceMode ? '48%' : '100%',
         margin: '0 auto',
         padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(6px, 1vw, 12px) clamp(12px, 1.6vw, 24px)',
         minHeight: 0,
@@ -3523,7 +3523,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           )}
 
           {showProactiveNudge && (
-            <div className="studio-prompt-dock">
+            <div className="studio-prompt-dock studio-prompt-dock--center">
               <StudioProactiveNudge
                 text={proactiveNudge.text}
                 isLight={isLight}
@@ -3575,6 +3575,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onClick={() => setChoiceDockState(dismissedChoiceMessage.id, 'open')}
               >
                 Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
+              </button>
+            </div>
+          )}
+
+          {previewCode?.trim() && buildSplitDismissed && (
+            <div className="studio-split-restore studio-prompt-dock">
+              <button
+                type="button"
+                className="studio-split-restore__btn"
+                onClick={() => setBuildSplitDismissed(false)}
+              >
+                Open preview panel →
               </button>
             </div>
           )}
