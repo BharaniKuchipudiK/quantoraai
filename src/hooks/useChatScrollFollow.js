@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { setProgrammaticScrollActive, isProgrammaticScrollActive } from '../lib/programmatic-scroll.js';
 
 const BOTTOM_THRESHOLD_PX = 96;
+const SCROLL_EPSILON_PX = 3;
 
 /**
- * Keeps the studio message viewport pinned to the latest turn while the user
- * is sending, streaming, or reading near the bottom.
- *
- * Three mechanisms work together:
- * 1. useLayoutEffect on message/generation changes (post-paint scroll)
- * 2. ResizeObserver on the thread (markdown/streaming height growth)
- * 3. IntersectionObserver sentinel (corrects drift if scroll falls behind)
+ * Pin the message viewport to the latest turn while sending or streaming.
+ * One coalesced scroll path — no IntersectionObserver/MutationObserver loops.
  */
 export function useChatScrollFollow({
   viewportRef,
   threadRef,
-  endRef,
   messages,
   isGenerating,
   streamingMessageId,
@@ -22,45 +18,44 @@ export function useChatScrollFollow({
 }) {
   const followRef = useRef(true);
   const userPausedRef = useRef(false);
-  const programmaticRef = useRef(false);
   const lastScrollTopRef = useRef(0);
-  const rafRef = useRef(null);
+  const scrollRafRef = useRef(null);
 
-  const tailSignature = messages.length
-    ? `${messages[messages.length - 1]?.id}:${messages[messages.length - 1]?.text?.length ?? 0}`
-    : 'empty';
-
-  const distanceFromBottom = useCallback(() => {
+  const isNearBottom = useCallback(() => {
     const viewport = viewportRef.current;
-    if (!viewport) return 0;
-    return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    if (!viewport) return true;
+    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    return distance <= BOTTOM_THRESHOLD_PX;
   }, [viewportRef]);
 
-  const scrollToBottom = useCallback((behavior = 'auto') => {
+  const scrollToBottom = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     if (userPausedRef.current) return;
     if (!followRef.current && !isGenerating) return;
 
-    programmaticRef.current = true;
     const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-
-    if (behavior === 'smooth') {
-      viewport.scrollTo({ top: target, behavior: 'smooth' });
-    } else {
-      viewport.scrollTop = target;
+    if (Math.abs(viewport.scrollTop - target) <= SCROLL_EPSILON_PX) {
+      lastScrollTopRef.current = viewport.scrollTop;
+      return;
     }
 
-    lastScrollTopRef.current = viewport.scrollTop;
+    setProgrammaticScrollActive(true);
+    viewport.scrollTop = target;
+    lastScrollTopRef.current = target;
 
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = requestAnimationFrame(() => {
-        programmaticRef.current = false;
-        rafRef.current = null;
-      });
+    requestAnimationFrame(() => {
+      setProgrammaticScrollActive(false);
     });
   }, [viewportRef, isGenerating]);
+
+  const scheduleScrollToBottom = useCallback(() => {
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      scrollToBottom();
+    });
+  }, [scrollToBottom]);
 
   const resumeFollow = useCallback(() => {
     followRef.current = true;
@@ -68,7 +63,7 @@ export function useChatScrollFollow({
   }, []);
 
   const handleScroll = useCallback(() => {
-    if (programmaticRef.current) return;
+    if (isProgrammaticScrollActive()) return;
 
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -77,7 +72,7 @@ export function useChatScrollFollow({
     const scrolledUp = currentTop < lastScrollTopRef.current - 4;
     lastScrollTopRef.current = currentTop;
 
-    const nearBottom = distanceFromBottom() <= BOTTOM_THRESHOLD_PX;
+    const nearBottom = isNearBottom();
 
     if (scrolledUp && !nearBottom) {
       userPausedRef.current = true;
@@ -89,72 +84,48 @@ export function useChatScrollFollow({
       userPausedRef.current = false;
       followRef.current = true;
     }
-  }, [distanceFromBottom, viewportRef]);
+  }, [isNearBottom, viewportRef]);
 
   useLayoutEffect(() => {
     followRef.current = true;
     userPausedRef.current = false;
     lastScrollTopRef.current = 0;
-    scrollToBottom('auto');
-  }, [activeSessionId, scrollToBottom]);
+    scheduleScrollToBottom();
+  }, [activeSessionId, scheduleScrollToBottom]);
 
   useLayoutEffect(() => {
     if (userPausedRef.current) return;
     if (isGenerating) followRef.current = true;
-    scrollToBottom('auto');
-  }, [messages, isGenerating, streamingMessageId, tailSignature, scrollToBottom]);
+    scheduleScrollToBottom();
+  }, [messages.length, isGenerating, streamingMessageId, scheduleScrollToBottom]);
 
+  // Thread height grows while tokens stream — coalesce to one scroll per frame.
   useEffect(() => {
     const thread = threadRef.current;
-    const viewport = viewportRef.current;
-    if (!thread || !viewport) return undefined;
+    if (!thread || messages.length <= 1) return undefined;
 
-    const onSizeChange = () => {
+    let resizeRaf = null;
+    const observer = new ResizeObserver(() => {
       if (userPausedRef.current) return;
       if (!followRef.current && !isGenerating) return;
-      scrollToBottom('auto');
-    };
-
-    const resizeObserver = new ResizeObserver(onSizeChange);
-    resizeObserver.observe(thread);
-    resizeObserver.observe(viewport);
-
-    return () => resizeObserver.disconnect();
-  }, [threadRef, viewportRef, isGenerating, messages.length > 1, scrollToBottom]);
-
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    const sentinel = endRef?.current;
-    if (!viewport || !sentinel || messages.length <= 1) return undefined;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) return;
-        if (userPausedRef.current) return;
-        if (!followRef.current && !isGenerating) return;
-        scrollToBottom('auto');
-      },
-      { root: viewport, threshold: 0, rootMargin: '0px 0px 48px 0px' },
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [endRef, viewportRef, isGenerating, messages.length, tailSignature, scrollToBottom]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver(() => {
-      if (!userPausedRef.current && (followRef.current || isGenerating)) {
-        scrollToBottom('auto');
-      }
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null;
+        scrollToBottom();
+      });
     });
-    observer.observe(root, { attributes: true, attributeFilter: ['data-header-hidden'] });
-    return () => observer.disconnect();
-  }, [scrollToBottom, isGenerating]);
+
+    observer.observe(thread);
+    return () => {
+      observer.disconnect();
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    };
+  }, [threadRef, messages.length > 1, isGenerating, scrollToBottom]);
 
   useEffect(() => () => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    setProgrammaticScrollActive(false);
   }, []);
 
-  return { resumeFollow, scrollToBottom, handleScroll };
+  return { resumeFollow, handleScroll };
 }

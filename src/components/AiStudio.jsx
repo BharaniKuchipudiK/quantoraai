@@ -741,7 +741,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const textareaRef = useRef(null);
   const messageViewportRef = useRef(null);
   const messageThreadRef = useRef(null);
-  const messageEndRef = useRef(null);
 
   const focusPrompt = useCallback(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -767,7 +766,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const { resumeFollow, handleScroll: handleMessageScroll } = useChatScrollFollow({
     viewportRef: messageViewportRef,
     threadRef: messageThreadRef,
-    endRef: messageEndRef,
     messages,
     isGenerating,
     streamingMessageId,
@@ -2360,7 +2358,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
               </div>
             )}
-            <div ref={messageEndRef} aria-hidden="true" className="ai-studio-messages-end" />
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isProgrammaticScrollActive } from '../lib/programmatic-scroll.js';
 
 const SCROLLABLE = '.ai-studio-messages, .app-main--studio, .app-main';
 
@@ -32,6 +33,7 @@ export function useAutoHideHeader(enabled, { blocked = false } = {}) {
 
     const onScroll = (event) => {
       if (blocked) return;
+      if (isProgrammaticScrollActive()) return;
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (!target.matches?.(SCROLLABLE) && !target.closest?.(SCROLLABLE)) return;
