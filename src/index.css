@@ -303,8 +303,91 @@ body {
   }
 
   .app-shell--studio .app-footer {
-    padding-top: 12px !important;
-    padding-bottom: 12px !important;
+    display: none !important;
+  }
+
+  .app-shell--studio .app-header--studio .app-header-inner {
+    gap: 10px !important;
+  }
+
+  .app-shell--studio .app-main--studio {
+    padding: 4px 12px 6px !important;
+  }
+
+  .app-shell--studio .ai-studio-messages {
+    margin-bottom: 6px !important;
+  }
+
+  .app-shell--studio .floating-input-pill {
+    border-radius: 20px;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 2px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .app-shell--studio .floating-input-pill:focus-within {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 4px 20px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(249, 115, 22, 0.2);
+  }
+
+  .app-shell--studio .studio-prompt-toolbar {
+    padding: 4px 10px 8px;
+  }
+
+  .app-shell--studio .studio-prompt-icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .app-shell--studio .studio-proactive-nudge {
+    margin: 0 10px 4px !important;
+    padding: 6px 10px !important;
+    border-radius: 10px !important;
+  }
+
+  .app-shell--studio .studio-proactive-nudge p {
+    font-size: 0.72rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .app-shell--studio .studio-choice-dock,
+  .app-shell--studio .studio-continue-dock,
+  .app-shell--studio .studio-choice-dock-restore {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .app-shell--studio .studio-choice-dock {
+    padding-top: 2px !important;
+  }
+
+  .app-shell--studio .studio-continue-dock {
+    padding-top: 0 !important;
+  }
+
+  .app-shell--studio .studio-choice-cards--floating {
+    padding: 8px 10px !important;
+  }
+
+  .app-shell--studio .studio-continue-chips--floating {
+    padding: 8px 10px !important;
+  }
+
+  .app-shell--studio .studio-edit-site-bar {
+    margin: 0 10px 2px !important;
+    padding: 4px 8px !important;
+  }
+
+  .app-shell--studio .studio-chrome {
+    margin-bottom: 4px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .app-shell--studio .studio-working-notes button {
+    padding: 5px 10px !important;
+    font-size: 0.72rem !important;
   }
 }
 

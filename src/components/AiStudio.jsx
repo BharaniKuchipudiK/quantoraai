@@ -1181,7 +1181,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const text = e.target.value;
     setInputText(text);
     e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 400)}px`;
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 280)}px`;
     
     // Trigger context menu on '@' typed at end or after space
     const mentionMatch = text.match(/(^|\s)@(\w*)$/);
@@ -1358,7 +1358,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 280)}px`;
   }, []);
 
   useEffect(() => {
@@ -3571,7 +3571,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div className="studio-choice-dock">
               <StudioChoiceCards
                 variant="floating"
-                dockState={pendingChoiceMessage.choiceDockState || 'open'}
+                dockState={pendingChoiceMessage.choiceDockState || 'collapsed'}
                 choiceSet={pendingChoiceMessage.choiceSet}
                 isLight={isLight}
                 disabled={isGenerating}
@@ -3626,7 +3626,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           )}
 
           {/* Text Area Input */}
-          <div style={{ position: 'relative', padding: '12px 18px' }}>
+          <div style={{ position: 'relative', padding: '8px 14px' }}>
             <textarea
               ref={textareaRef}
               rows={1}
@@ -3653,13 +3653,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 background: 'transparent',
                 border: 'none',
                 color: textColor,
-                fontSize: '1rem',
+                fontSize: '0.94rem',
                 outline: 'none',
                 resize: 'none',
                 fontFamily: 'inherit',
-                lineHeight: '1.5',
-                minHeight: '44px',
-                maxHeight: '400px',
+                lineHeight: '1.45',
+                minHeight: '36px',
+                maxHeight: '280px',
                 overflow: 'auto'
               }}
             />
