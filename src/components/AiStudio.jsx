@@ -13,10 +13,9 @@ import {
   mergeSessionContext,
 } from '../lib/session-context.js';
 import {
-  extractChoicesFromAssistantText,
-  stripPartialAssistantMarkers,
-} from '../lib/studio-choices.js';
-import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
+  normalizeAssistantResponse,
+  sanitizeAssistantStream,
+} from '../lib/assistant-response-normalizer.js';
 import {
   consumeOneShotListeningSignals,
   createQuantoraListener,
@@ -1229,7 +1228,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         const updatedModelInfo = {
                           modelId: mod.id,
                           modelName: mod.name,
-                          text: currentText,
+                          text: sanitizeAssistantStream(currentText),
                           provider: finalProvider,
                           latencyMs: finalLatency,
                           requestId: parsed.requestId || null,
@@ -1247,7 +1246,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         const updatedModelInfo = {
                           modelId: mod.id,
                           modelName: mod.name,
-                          text: currentText,
+                          text: sanitizeAssistantStream(currentText),
                           provider: finalProvider,
                           latencyMs: finalLatency,
                           requestId: parsed.requestId || m[isModelA ? 'modelA' : 'modelB']?.requestId || null,
@@ -1266,6 +1265,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               }
             }
           }
+
+          const normalized = normalizeAssistantResponse(currentText);
+          updateActiveMessages(prev => prev.map(m => {
+            if (m.id !== dualMsgId) return m;
+            const side = isModelA ? 'modelA' : 'modelB';
+            const updatedModelInfo = {
+              ...m[side],
+              text: normalized.displayText,
+              ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
+              ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
+              ...(normalized.contextUpdate ? { contextUpdate: normalized.contextUpdate } : {}),
+            };
+            return { ...m, [side]: updatedModelInfo };
+          }));
           
         } catch (e) {
           updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
@@ -1495,7 +1508,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 const parsed = JSON.parse(dataStr);
                 if (parsed.text) {
                   currentText += parsed.text;
-                  const visibleText = stripPartialAssistantMarkers(currentText);
+                  const visibleText = sanitizeAssistantStream(currentText);
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     text: visibleText,
@@ -1523,9 +1536,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
         }
 
-        const { displayText: afterChoices, choiceSet } = extractChoicesFromAssistantText(currentText);
-        const { displayText: afterContinues, continueSet } = extractContinuesFromAssistantText(afterChoices);
-        const { displayText, contextUpdate } = extractContextFromAssistantText(afterContinues);
+        const { displayText, choiceSet, continueSet, contextUpdate } = normalizeAssistantResponse(currentText);
         const finalHtml = preparePreviewHtml(displayText, imageMap);
         const chatDisplay = getChatDisplayText(displayText, { artifactHtml: finalHtml });
         if (displayText !== currentText || chatDisplay !== displayText) {
