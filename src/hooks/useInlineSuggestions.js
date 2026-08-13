@@ -14,6 +14,7 @@ export function useInlineSuggestions({
   activeSessionId,
   enrichContinues,
   getPriorUserPrompt,
+  getProactiveNudge,
   setChoiceDockState,
   updateActiveMessages,
   updateActiveSession,
@@ -57,8 +58,13 @@ export function useInlineSuggestions({
       }
     }
 
+    if (!msg.proactiveNudgeUsed) {
+      const nudge = getProactiveNudge?.(msg);
+      if (nudge?.text) return { kind: 'nudge', nudge, msg };
+    }
+
     return null;
-  }, [latestAiMessageId, isGenerating, dismissedId, getPriorUserPrompt, enrichContinues]);
+  }, [latestAiMessageId, isGenerating, dismissedId, getPriorUserPrompt, getProactiveNudge, enrichContinues]);
 
   const latestInlineSuggestions = useMemo(() => {
     const msg = messages.find((m) => m.id === latestAiMessageId);
@@ -71,15 +77,23 @@ export function useInlineSuggestions({
     if (suggestions.kind === 'choices') {
       setChoiceDockState(msg.id, 'dismissed');
       emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-    } else {
+    } else if (suggestions.kind === 'continues') {
       updateActiveMessages((prev) => prev.map((m) => (
         m.id === msg.id ? { ...m, continueUsed: true } : m
+      )));
+    } else {
+      updateActiveMessages((prev) => prev.map((m) => (
+        m.id === msg.id ? { ...m, proactiveNudgeUsed: true } : m
       )));
     }
     updateActiveSession({
       conversationContext: learnFromDismissedSuggestions(
         conversationContext,
-        suggestions.kind === 'choices' ? 'suggestions' : 'continue chips',
+        suggestions.kind === 'choices'
+          ? 'suggestions'
+          : suggestions.kind === 'continues'
+            ? 'continue chips'
+            : 'proactive hints',
       ),
     });
   }, [conversationContext, setChoiceDockState, updateActiveSession, updateActiveMessages, emitQuantora]);

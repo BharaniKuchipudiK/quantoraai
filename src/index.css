@@ -1230,6 +1230,35 @@ body {
   padding-top: 2px;
 }
 
+.studio-inline-nudge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(100%, 720px);
+  padding: 6px 10px;
+  border: 1px solid rgba(249, 115, 22, 0.18);
+  border-radius: 10px;
+  background: rgba(249, 115, 22, 0.06);
+  color: #cbd5e1;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.studio-inline-nudge > svg {
+  flex-shrink: 0;
+  color: #f97316;
+}
+
+.studio-inline-nudge > span {
+  min-width: 0;
+}
+
+.studio-inline-suggestions.is-light .studio-inline-nudge {
+  border-color: rgba(234, 88, 12, 0.18);
+  background: rgba(249, 115, 22, 0.05);
+  color: #475569;
+}
+
 .studio-inline-suggestions__row {
   display: flex;
   align-items: flex-start;

@@ -30,7 +30,7 @@ async function runLocalTests() {
   console.log('\n=== Local communication layer ===\n');
 
   const { inferConversationStage } = await import('../src/lib/communication-intelligence.js');
-  const { enrichContinueSet } = await import('../src/lib/domain-anticipation.js');
+  const { enrichContinueSet, getAnticipatedContinues } = await import('../src/lib/domain-anticipation.js');
   const { detectOutcomeGaps, injectGapContinues } = await import('../src/lib/outcome-gap-detection.js');
   const { detectProactiveNudge } = await import('../src/lib/proactive-nudges.js');
   const { extractChoicesFromAssistantText } = await import('../src/lib/studio-choices.js');
@@ -46,16 +46,17 @@ async function runLocalTests() {
   }
 
   try {
-    const enriched = enrichContinueSet(null, {
+    const anticipated = getAnticipatedContinues({
       domain: 'travel',
       mode: 'ask',
       conversationContext: { facts: ['5 nights in March', 'solo traveler'] },
     });
-    assert.ok(enriched.items.some((i) => /day-by-day/i.test(i.label)));
-    assert.equal(enriched.items.some((i) => /pin down dates/i.test(i.label)), false);
-    pass('enrichContinueSet skips date chips when itinerary-ready');
+    assert.ok(anticipated.items.some((i) => /day-by-day/i.test(i.label)));
+    assert.equal(anticipated.items.some((i) => /pin down dates/i.test(i.label)), false);
+    assert.equal(enrichContinueSet(null, { domain: 'travel', mode: 'ask' }), null);
+    pass('anticipation is stage-aware without backfilling Ask-mode chips');
   } catch (e) {
-    fail('enrichContinueSet skips date chips when itinerary-ready', e.message);
+    fail('anticipation is stage-aware without backfilling Ask-mode chips', e.message);
   }
 
   try {

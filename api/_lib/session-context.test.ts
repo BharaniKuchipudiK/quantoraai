@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   extractContextFromAssistantText,
   captureUserAnswerAsContext,
+  formatListeningSignalsForPrompt,
   formatSessionContextForPrompt,
   mergeSessionContext,
   normalizeSessionContext,
@@ -39,6 +40,25 @@ test("formatSessionContextForPrompt renders memory block", () => {
   assert.match(block, /SESSION MEMORY/);
   assert.match(block, /Plan Bali/);
   assert.match(block, /5 nights/);
+});
+
+test("formatListeningSignalsForPrompt preserves section boundaries", () => {
+  const block = formatListeningSignalsForPrompt([
+    { type: "choice_selected", label: "Chose: Day-by-day plan" },
+  ]);
+  assert.ok(block.startsWith("\n\nRECENT USER BEHAVIOR"));
+});
+
+test("formatListeningSignalsForPrompt ignores an old outcome gap", () => {
+  const block = formatListeningSignalsForPrompt([
+    { type: "choice_selected", label: "Choice 1" },
+    { type: "choice_selected", label: "Choice 2" },
+    { type: "choice_selected", label: "Choice 3" },
+    { type: "choice_selected", label: "Choice 4" },
+    { type: "choice_selected", label: "Choice 5" },
+    { type: "outcome_gap_detected", label: "Old gap" },
+  ]);
+  assert.doesNotMatch(block, /missed user intent/);
 });
 
 test("extractContextFromAssistantText strips hidden marker", () => {

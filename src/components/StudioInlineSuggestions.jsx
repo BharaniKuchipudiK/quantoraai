@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, X } from 'lucide-react';
+import { ArrowRight, Sparkles, X } from 'lucide-react';
 
 /**
  * Unified inline suggestions — lives under the latest AI message in the thread.
@@ -14,6 +14,28 @@ export default function StudioInlineSuggestions({
   onDismiss,
 }) {
   if (!suggestions) return null;
+
+  if (suggestions.kind === 'nudge') {
+    return (
+      <div className={`studio-inline-suggestions${isLight ? ' is-light' : ''}`}>
+        <div className="studio-inline-nudge" role="note">
+          <Sparkles size={13} aria-hidden="true" />
+          <span>{suggestions.nudge.text}</span>
+          {onDismiss && (
+            <button
+              type="button"
+              className="studio-inline-suggestions__dismiss"
+              onClick={onDismiss}
+              title="Hide this hint"
+              aria-label="Hide this hint"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const isChoices = suggestions.kind === 'choices';
   const items = isChoices

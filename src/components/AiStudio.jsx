@@ -17,7 +17,11 @@ import {
   stripPartialAssistantMarkers,
 } from '../lib/studio-choices.js';
 import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
-import { createQuantoraListener, QUANTORA_EVENTS } from '../lib/listening-layer.js';
+import {
+  consumeOneShotListeningSignals,
+  createQuantoraListener,
+  QUANTORA_EVENTS,
+} from '../lib/listening-layer.js';
 import { enrichContinueSet } from '../lib/domain-anticipation.js';
 import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
 import StudioWandStatus from './StudioWandStatus';
@@ -31,8 +35,11 @@ import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
 import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner';
 import StudioWandHint from './StudioWandHint';
+import { detectProactiveNudge } from '../lib/proactive-nudges.js';
+import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import {
   learnFromChipSelection,
+  shouldSuppressProactiveNudge,
 } from '../lib/communication-intelligence.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
 import {
@@ -529,6 +536,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const prefillAppliedRef = useRef(null);
   const inputText = localInputText;
   const setInputText = setLocalInputText;
+  const activeSessionIdRef = useRef(activeSessionId);
+  const inputTextRef = useRef(inputText);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+    inputTextRef.current = inputText;
+  }, [activeSessionId, inputText]);
 
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -942,8 +956,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   );
 
   const runEnhance = async (sourcePrompt, depth) => {
+    const requestSessionId = activeSessionIdRef.current;
+    const draftAtStart = inputTextRef.current;
     const result = await runPromptPolish(sourcePrompt, depth);
     if (!result) return;
+    if (!shouldApplyPromptPolishResult({
+      requestSessionId,
+      currentSessionId: activeSessionIdRef.current,
+      draftAtStart,
+      currentDraft: inputTextRef.current,
+    })) {
+      clearWandPolish();
+      return;
+    }
     setInputText(result.prompt);
     requestAnimationFrame(resizePromptTextarea);
     if (result.model) {
@@ -951,6 +976,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setAutoSelectEnabled(false);
     }
   };
+
+  useEffect(() => {
+    clearWandPolish();
+  }, [activeSessionId, clearWandPolish]);
 
   const revertWandPolish = () => {
     if (!wandPolishUndo?.original) return;
@@ -1266,6 +1295,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     // 2. Standard Single Model Execution Mode
+    const listeningSignalsForRequest = [...listeningSignals];
     const aiMsgId = Date.now() + 1;
     setStreamingMessageId(aiMsgId);
     const initialAiMsg = {
@@ -1404,7 +1434,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               fallbackFrom,
               studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
               sessionContext: sessionContextForRequest,
-              listeningSignals,
+              listeningSignals: listeningSignalsForRequest,
               studioDomain,
               attachedImages,
               choiceSelected: options.choiceSelected === true,
@@ -1450,6 +1480,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       if (!res) throw new Error('Quantora could not reach an available AI provider.');
 
       if (res.ok) {
+        const remainingListeningSignals = consumeOneShotListeningSignals(listeningSignalsForRequest);
+        if (remainingListeningSignals.length !== listeningSignalsForRequest.length) {
+          updateActiveSession({ listeningSignals: remainingListeningSignals });
+        }
+
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let currentText = "";
@@ -1688,6 +1723,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     emitQuantoraRef.current(type, payload);
   }, []);
 
+  const getProactiveNudge = useCallback((msg) => {
+    const userPrompt = getPriorUserPrompt(msg?.id);
+    const nudge = detectProactiveNudge(userPrompt, msg?.text, userFirstName, {
+      studioDomain,
+      studioMode,
+      hasPreview: Boolean(previewCode?.trim()),
+      guidedIntake: guidedSession,
+      conversationContext,
+    });
+    if (!nudge || shouldSuppressProactiveNudge(nudge, { listeningSignals, conversationContext })) {
+      return null;
+    }
+    return nudge;
+  }, [
+    conversationContext,
+    getPriorUserPrompt,
+    guidedSession,
+    listeningSignals,
+    previewCode,
+    studioDomain,
+    studioMode,
+    userFirstName,
+  ]);
+
   const {
     resolveInlineSuggestions,
     dismissInlineSuggestions,
@@ -1699,6 +1758,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     activeSessionId,
     enrichContinues,
     getPriorUserPrompt,
+    getProactiveNudge,
     setChoiceDockState,
     updateActiveMessages,
     updateActiveSession,
