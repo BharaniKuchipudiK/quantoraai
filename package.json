@@ -13,7 +13,8 @@
     "test:conversation": "tsx --test api/_lib/conversation-policy.test.ts",
     "test:models": "node --test api/_lib/model-catalog.test.js",
     "test:repository-preview": "tsx --test api/_lib/repository-preview.test.ts",
-    "test:quantum": "node --test src/lib/quantum/*.test.js"
+    "test:quantum": "node --test src/lib/quantum/*.test.js",
+    "test:all": "tsx --test api/_lib/*.test.ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",

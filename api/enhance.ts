@@ -1,6 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
-import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
+import { getSessionUser } from "./_lib/session.js";
+
+const MAX_PROMPT_CHARS = 20_000;
 
 const SYSTEM_INSTRUCTION = `You are Quantora's Prompt Engineer. Improve the user's prompt so an AI produces a better result — WITHOUT inflating it. Match your effort to the prompt; a simple ask must stay simple.
 
@@ -45,16 +48,24 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Rate limit: 30 requests per minute per IP
-  if (isRateLimited(`enhance:${clientIp(req)}`, 30, 60_000)) {
+  const sessionUser = getSessionUser(req);
+  if (!sessionUser) return res.status(401).json({ error: 'Sign in to enhance prompts.' });
+
+  const limitKey = `enhance:user:${sessionUser.sub}`;
+  if (isRateLimited(limitKey, 30, 60_000)) {
     return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
   }
+  const durable = await isRateLimitedDurable(limitKey, 30, 60);
+  if (durable.limited) return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
 
   try {
     const { prompt, depth } = req.body;
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid prompt in request body' });
+    }
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return res.status(413).json({ error: 'Prompt is too long to enhance.' });
     }
 
     const apiKey = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY;

@@ -3,6 +3,8 @@ import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
+import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
+import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 
@@ -25,6 +27,58 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { node, targetStage, repoUrl, task } = req.body || {};
+
+    if (targetStage === 'outcome-state') {
+      if (!sessionUser) return res.status(401).json({ error: 'Sign in to use Outcome Memory.' });
+      if (!isStoreConfigured()) return res.status(503).json({ error: 'Outcome Memory is not configured on this deployment.' });
+
+      const sessionId = normalizeOutcomeSessionId(req.body?.sessionId);
+      if (!sessionId) return res.status(400).json({ error: 'A valid sessionId is required.' });
+      const action = req.body?.action || 'get';
+
+      if (action === 'get') {
+        const record = await readOutcomeState(sessionUser.sub, sessionId);
+        return res.status(200).json(record || { sessionId, version: 0, state: emptyOutcomeState() });
+      }
+
+      if (action === 'delete') {
+        const deleted = await deleteOutcomeState(sessionUser.sub, sessionId);
+        return deleted
+          ? res.status(200).json({ deleted: true, sessionId })
+          : res.status(503).json({ error: 'Outcome Memory could not be deleted. Please try again.' });
+      }
+
+      if (action === 'save') {
+        const expectedVersion = req.body?.expectedVersion;
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+          return res.status(400).json({ error: 'expectedVersion must be a non-negative integer.' });
+        }
+        const state = normalizeOutcomeState(req.body?.state);
+        if (!state.memory.consented) {
+          return res.status(400).json({ error: 'Outcome Memory requires explicit consent before saving.' });
+        }
+        const sourceTurn = typeof req.body?.sourceTurn === 'string' ? req.body.sourceTurn.slice(0, 128) : null;
+        const result = await saveOutcomeState({
+          userSub: sessionUser.sub,
+          sessionId,
+          expectedVersion,
+          state,
+          sourceTurn,
+        });
+        if (result.status === 'conflict') {
+          return res.status(409).json({
+            error: 'Outcome Memory changed in another session. Reload it before retrying.',
+            conflict: true,
+          });
+        }
+        if (result.status === 'unavailable') {
+          return res.status(503).json({ error: 'Outcome Memory is temporarily unavailable. Your local conversation is unchanged.' });
+        }
+        return res.status(200).json(result.record);
+      }
+
+      return res.status(400).json({ error: 'Invalid Outcome Memory action.' });
+    }
 
     /*
      * Keep this read-only workflow inside the existing pipeline function.

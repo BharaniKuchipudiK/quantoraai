@@ -269,6 +269,8 @@ export default function App() {
 
   const isStudioShell = activeTab === 'studio';
   const isFramedShell = !isStudioShell && activeTab !== 'landing';
+  const shouldLoadVercelTelemetry = typeof window !== 'undefined'
+    && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
   return (
     <ErrorBoundary>
@@ -488,7 +490,6 @@ export default function App() {
                   <GoogleLogin
                     onSuccess={handleGoogleSuccess}
                     onError={handleGoogleError}
-                    useOneTap
                     shape="pill"
                     theme={isLight ? "outline" : "filled_black"}
                     text="signin"
@@ -509,8 +510,8 @@ export default function App() {
           handleTabChange={handleTabChange}
         />
       )}
-      <Analytics />
-      <SpeedInsights />
+      {shouldLoadVercelTelemetry && <Analytics />}
+      {shouldLoadVercelTelemetry && <SpeedInsights />}
     </div>
     </GoogleOAuthProvider>
     </ErrorBoundary>

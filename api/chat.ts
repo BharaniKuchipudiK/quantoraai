@@ -10,6 +10,7 @@ import { normalizeSessionContext } from "./_lib/session-context.js";
 import { normalizeStudioMode } from "./_lib/studio-modes.js";
 import { buildDomainDirective, normalizeStudioDomain } from "./_lib/studio-domains.js";
 import { repairArtifact } from "./_lib/repair.js";
+import { evaluateSafetyText } from "./_lib/safety-policy.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -362,6 +363,22 @@ export default async function handler(req: any, res: any) {
     }
     if (!isRepairTask && message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
+    }
+    if (!isRepairTask) {
+      const safety = evaluateSafetyText(message);
+      if (safety.action !== "allow") {
+        return res.status(422).json({
+          error: safety.userMessage,
+          safety: {
+            action: safety.action,
+            category: safety.category,
+            severity: safety.severity,
+            reasonCode: safety.reasonCode,
+            policyVersion: safety.policyVersion,
+          },
+          requestId,
+        });
+      }
     }
     // Bound, never reject: an over-long history just loses its oldest turns.
     const boundedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS) : history;
