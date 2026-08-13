@@ -15,7 +15,8 @@
     "test:repository-preview": "tsx --test api/_lib/repository-preview.test.ts",
     "test:quantum": "node --test src/lib/quantum/*.test.js",
     "test:studio-synthetic": "node scripts/studio-synthetic-test.mjs",
-    "test:all": "tsx --test api/_lib/*.test.ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js && npm run test:studio-synthetic"
+    "test:outcome-navigator": "tsx scripts/outcome-navigator-eval.ts",
+    "test:all": "tsx --test api/_lib/*.test.ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js && npm run test:studio-synthetic && npm run test:outcome-navigator"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",
