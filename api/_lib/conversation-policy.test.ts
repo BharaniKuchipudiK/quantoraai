@@ -48,6 +48,27 @@ test("an explicit implementation request is allowed to proceed", () => {
   assert.match(prompt, /without asking for permission again/);
 });
 
+test("guided build requires intake before HTML on first turn", () => {
+  const prompt = buildConversationSystemPrompt({ guided: true });
+  assert.match(prompt, /GUIDED BUILD MODE/);
+  assert.match(prompt, /FIRST-TURN RULE/);
+  assert.match(prompt, /MUST NOT output HTML/);
+  assert.match(prompt, /Never invent a business name/);
+});
+
+test("refine mode uses communication layer before code", () => {
+  const prompt = buildConversationSystemPrompt({ buildMode: true, refineMode: true });
+  assert.match(prompt, /COMMUNICATION LAYER/);
+  assert.match(prompt, /REFINE \/ ITERATE MODE/);
+  assert.match(prompt, /What do you think/);
+});
+
+test("feature suggest mode blocks html output", () => {
+  const prompt = buildConversationSystemPrompt({ featureSuggest: true });
+  assert.match(prompt, /FEATURE SUGGESTION MODE/);
+  assert.match(prompt, /Do NOT output any HTML/);
+});
+
 test("Lightning remains human rather than suppressing all explanation", () => {
   const prompt = buildConversationSystemPrompt({ cognitiveLevel: "Lightning" });
 

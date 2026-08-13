@@ -30,8 +30,16 @@ import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
 import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner';
 import StudioProactiveNudge from './StudioProactiveNudge';
+import StudioWandHint from './StudioWandHint';
 import { detectProactiveNudge } from '../lib/proactive-nudges.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
+import {
+  getChatDisplayText,
+  isExplicitArtifactProceed,
+  isFeatureSuggestionRequest,
+  stripArtifactFromChatDisplay,
+} from '../lib/build-communication.js';
+import StudioBuildSplit from './StudioBuildSplit';
 import {
   STUDIO_DOMAINS,
   STUDIO_OUTPUT_MODES,
@@ -635,7 +643,7 @@ function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
   });
 }
 
-export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText, isAdmin, onModelsRefresh }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const defaultGreetingMsg = {
     id: 1,
@@ -730,6 +738,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const listeningSignals = activeSession.listeningSignals || [];
   const repoContextCache = useRef({});
   const emitQuantoraRef = useRef(() => {});
+  const [previewCode, setPreviewCode] = useState('');
+  const [guidedSession, setGuidedSession] = useState(false);
+  const [refineActive, setRefineActive] = useState(true);
+  const [sessionImages, setSessionImages] = useState([]);
+  const [buildSplitDismissed, setBuildSplitDismissed] = useState(false);
+  const showBuildSplit = Boolean(previewCode?.trim()) && !buildSplitDismissed;
+  useEffect(() => {
+    if (previewCode && previewCode.trim()) {
+      setGuidedSession(false);
+      setRefineActive(true);
+      setSessionImages([]);
+      setBuildSplitDismissed(false);
+    }
+  }, [previewCode]);
 
   const enrichContinues = useCallback((continueSet, { userPrompt, aiResponse } = {}) => {
     const gaps = userPrompt && aiResponse ? detectOutcomeGaps(userPrompt, aiResponse) : [];
@@ -738,8 +760,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       domain: studioDomain,
       mode: studioMode,
       conversationContext,
+      hasPreview: Boolean(previewCode?.trim()),
+      guidedIntake: guidedSession,
     });
-  }, [studioDomain, studioMode, conversationContext]);
+  }, [studioDomain, studioMode, conversationContext, previewCode, guidedSession]);
 
   const getPriorUserPrompt = useCallback((messageId) => {
     const idx = messages.findIndex((m) => m.id === messageId);
@@ -1080,8 +1104,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const [localInputText, setLocalInputText] = useState('');
-  const inputText = externalInputText !== undefined ? externalInputText : localInputText;
-  const setInputText = setExternalInputText || setLocalInputText;
+  const prefillAppliedRef = useRef(null);
+  const inputText = localInputText;
+  const setInputText = setLocalInputText;
+
   const [isGenerating, setIsGenerating] = useState(false);
   const latestContinueMessageId = React.useMemo(() => {
     if (pendingChoiceMessage || isGenerating) return null;
@@ -1110,10 +1136,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const m = messages[i];
       if (m?.sender !== 'ai' || m.isDual || isGenerating) continue;
       const userPrompt = getPriorUserPrompt(m.id);
-      return detectProactiveNudge(userPrompt, m.text, userFirstName);
+      return detectProactiveNudge(userPrompt, m.text, userFirstName, {
+        studioDomain,
+        studioMode,
+        hasPreview: Boolean(previewCode?.trim()),
+        guidedIntake: guidedSession,
+      });
     }
     return null;
-  }, [messages, isGenerating, getPriorUserPrompt, userFirstName]);
+  }, [messages, isGenerating, getPriorUserPrompt, userFirstName, studioDomain, studioMode, previewCode, guidedSession]);
 
   const latestAiMessageId = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -1150,7 +1181,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const text = e.target.value;
     setInputText(text);
     e.target.style.height = 'auto';
-    e.target.style.height = Math.min(e.target.scrollHeight, 400) + 'px';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 400)}px`;
     
     // Trigger context menu on '@' typed at end or after space
     const mentionMatch = text.match(/(^|\s)@(\w*)$/);
@@ -1244,28 +1275,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [backgroundVerify, setBackgroundVerify] = useState(null);
   const backgroundVerifyRef = useRef(null);
   useEffect(() => { backgroundVerifyRef.current = backgroundVerify; }, [backgroundVerify]);
-  // The HTML shown in the Live Canvas preview. Was referenced throughout but
-  // never declared — clicking "Open Live Canvas Mode" threw a ReferenceError,
-  // so the canvas never opened. Declaring it restores the whole preview flow.
-  const [previewCode, setPreviewCode] = useState('');
-  // Guided build intake is active from a fresh "build me a site" request until a
-  // site is produced. It persists the designer-style Q&A across turns; once a
-  // preview exists we drop it so further messages behave normally.
-  const [guidedSession, setGuidedSession] = useState(false);
-  // Conversational iteration: once a site exists, the next message refines it in
-  // place instead of building from scratch. Auto-on when a site appears; the
-  // user can switch it off to start fresh.
-  const [refineActive, setRefineActive] = useState(true);
-  // Photos uploaded during the intake persist here (data URIs) so they survive
-  // the per-send attachment reset and are still available when the build runs.
-  const [sessionImages, setSessionImages] = useState([]);
-  useEffect(() => {
-    if (previewCode && previewCode.trim()) {
-      setGuidedSession(false); // a site now exists — intake is over
-      setRefineActive(true);   // and further messages refine it
-      setSessionImages([]);    // photos are now embedded in the site
-    }
-  }, [previewCode]);
 
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
@@ -1341,6 +1350,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const shouldFollowLatestRef = useRef(true);
   const scrollFrameRef = useRef(null);
 
+  useEffect(() => {
+    if (!prefillPrompt?.text || prefillAppliedRef.current === prefillPrompt.id) return;
+    prefillAppliedRef.current = prefillPrompt.id;
+    setLocalInputText(prefillPrompt.text);
+    requestAnimationFrame(() => {
+      resizePromptTextarea();
+      textareaRef.current?.focus();
+    });
+  }, [prefillPrompt, resizePromptTextarea]);
+
+  const focusPrompt = useCallback(() => {
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const resizePromptTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
+  }, []);
+
   const scrollToLatest = (behavior = 'auto') => {
     if (!shouldFollowLatestRef.current || !messageViewportRef.current) return;
     if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
@@ -1371,14 +1401,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   useEffect(() => () => {
     if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
   }, []);
-
-  // Auto-resize textarea when inputText changes programmatically (e.g., Magic Wand)
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px';
-    }
-  }, [inputText]);
 
   // Click outside listener for in-bar model dropdown
   useEffect(() => {
@@ -1532,6 +1554,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Enhancement is shown here for the user to edit/finalize before it lands in
   // the input — never silently overwritten.
   const [enhanceResult, setEnhanceResult] = useState(null);
+  const [wandHintOpen, setWandHintOpen] = useState(false);
+  const wandAnchorRef = useRef(null);
+
+  const sessionJourneyNode = React.useMemo(
+    () => dreamNodes.find((n) => n.sessionId === activeSessionId),
+    [dreamNodes, activeSessionId],
+  );
 
   const runEnhance = async (sourcePrompt, depth) => {
     const source = (sourcePrompt || '').trim();
@@ -1558,20 +1587,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
+  useEffect(() => {
+    if (inputText.trim()) setWandHintOpen(false);
+  }, [inputText]);
+
   const handleMagicWandEnhance = async () => {
     if (!inputText.trim()) {
-      const samplePrompts = [
-        "Build a full-stack AI dashboard with real-time analytics, dark theme, and interactive widgets",
-        "Create a Singapore SGD to INR currency exchange app with live charts and historical conversion rates",
-        "Build an interactive AI Beat Synthesizer with customizable BPM and multi-track audio controls",
-        "Design a sleek iOS-style calculator with currency conversion and history memory",
-        "Create an intelligent recipe finder that generates meal plans based on leftover ingredients"
-      ];
-      setInputText(samplePrompts[Math.floor(Math.random() * samplePrompts.length)]);
+      setWandHintOpen(true);
+      focusPrompt();
       return;
     }
-    // Enhance from the current input at auto depth, then open the review card.
+    setWandHintOpen(false);
     runEnhance(inputText, 'auto');
+  };
+
+  const handleWandTemplatePick = (template) => {
+    setWandHintOpen(false);
+    setInputText(template.prompt);
+    if (template.mode) setStudioMode(template.mode);
+    if (template.domain !== undefined) setStudioDomain(template.domain);
+    requestAnimationFrame(() => {
+      resizePromptTextarea();
+      focusPrompt();
+    });
   };
 
   // Apply the (possibly edited) enhancement to the input, adopt the suggested
@@ -1579,6 +1617,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const applyEnhancement = () => {
     if (!enhanceResult) return;
     setInputText(enhanceResult.prompt);
+    requestAnimationFrame(resizePromptTextarea);
     if (enhanceResult.model) {
       setSelectedModel(enhanceResult.model);
       setAutoSelectEnabled(false);
@@ -1899,10 +1938,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
        * the returned HTML flows into the preview via the auto-open.
        */
       const isRefine = refineActive && Boolean(previewCode && previewCode.trim()) && !detectBuildIntent(text);
-      const apiMessage = isRefine
-        ? `${text}\n\n[You are editing the existing app below. Apply the requested change and return the COMPLETE updated, self-contained HTML document — not a diff, not an explanation.]\n\`\`\`html\n${previewCode}\n\`\`\``
+      const featureSuggestOnly = isRefine && isFeatureSuggestionRequest(visibleText) && !isExplicitArtifactProceed(visibleText);
+      const apiMessage = isRefine && !featureSuggestOnly
+        ? `${text}\n\n[You are editing the existing site below. Explain what you are changing in warm, plain language first — name the feature and ask what the user thinks. Then return the COMPLETE updated self-contained HTML in a single \`\`\`html block.]\n\`\`\`html\n${previewCode}\n\`\`\``
         : text;
-      const autoBuildMode = isRefine || isWorkspaceMode || detectBuildIntent(text);
+      const autoBuildMode = !featureSuggestOnly && (isRefine || isWorkspaceMode || detectBuildIntent(text));
       let buildMode = isVisionQuestion
         ? false
         : apiStudioMode === 'build'
@@ -1916,8 +1956,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
        * confirms before building. Persists across the follow-up answers (which
        * don't read as build intent on their own) until a site is produced.
        */
-      const startingGuided = !isVisionQuestion && detectBuildIntent(text) && !previewCode && !isWorkspaceMode && apiStudioMode !== 'build';
-      const guidedBuild = !isVisionQuestion && (startingGuided || guidedSession) && !previewCode && apiStudioMode !== 'build' && apiStudioMode !== 'plan';
+      const startingGuided = !isVisionQuestion && detectBuildIntent(text) && !previewCode && !isWorkspaceMode;
+      const guidedBuild = !isVisionQuestion && (startingGuided || guidedSession) && !previewCode && apiStudioMode !== 'plan';
+      const userProceedsWithBuild = /\b(just build|go ahead|build it now|build now|skip questions|use defaults|build first draft|no more questions)\b/i.test(visibleText);
+      const guidedProceed = options.choiceSelected && /\b(build a first draft|build first draft|use reasonable defaults|just build|go ahead)\b/i.test(visibleText);
+      const allowPreviewFromGuided = !guidedBuild || userProceedsWithBuild || guidedProceed;
       if (guidedBuild && !guidedSession) setGuidedSession(true);
 
       /*
@@ -1972,6 +2015,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               cognitiveLevel,
               buildMode,
               guidedBuild,
+              refineMode: isRefine,
+              featureSuggest: featureSuggestOnly,
               taskCategory,
               fallbackFrom,
               studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
@@ -2066,17 +2111,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         const { displayText: afterChoices, choiceSet } = extractChoicesFromAssistantText(currentText);
         const { displayText: afterContinues, continueSet } = extractContinuesFromAssistantText(afterChoices);
         const { displayText, contextUpdate } = extractContextFromAssistantText(afterContinues);
-        if (displayText !== currentText) {
+        const finalHtml = preparePreviewHtml(displayText, imageMap);
+        const chatDisplay = getChatDisplayText(displayText, { artifactHtml: finalHtml });
+        if (displayText !== currentText || chatDisplay !== displayText) {
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: displayText,
+            text: chatDisplay,
+            ...(finalHtml ? { codeSnippet: finalHtml } : {}),
             ...(choiceSet ? { choiceSet } : {}),
             ...(continueSet ? { continueSet } : {}),
           } : m));
         } else {
-          if (choiceSet || continueSet) {
+          if (choiceSet || continueSet || finalHtml) {
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
+              ...(chatDisplay ? { text: chatDisplay } : {}),
+              ...(finalHtml ? { codeSnippet: finalHtml } : {}),
               ...(choiceSet ? { choiceSet } : {}),
               ...(continueSet ? { continueSet } : {}),
             } : m));
@@ -2114,9 +2164,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           emitQuantoraRef.current(QUANTORA_EVENTS.OUTCOME_GAP_DETECTED, { label: outcomeGaps[0].label });
         }
 
-        // Store preview HTML and verify in the background — do not auto-open the modal.
-        const finalHtml = preparePreviewHtml(displayText, imageMap);
-        if (finalHtml) {
+        // Store preview HTML and verify in the background — chat shows words only.
+        if (finalHtml && allowPreviewFromGuided) {
           queuePreviewVerification(aiMsgId, finalHtml);
         }
 
@@ -2161,6 +2210,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setIsGenerating(false);
       setActiveGeneratingModel(null);
       setStreamingMessageId(null);
+      focusPrompt();
     }
   };
 
@@ -2564,6 +2614,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           components={{
                             code({node, inline, className, children, ...props}) {
                               const match = /language-(\w+)/.exec(className || '')
+                              if (!inline && match && (match[1] === 'html' || match[1] === 'javascript' || match[1] === 'js') && msg.codeSnippet) {
+                                return (
+                                  <p style={{ fontSize: '0.82rem', color: subtextColor, fontStyle: 'italic', margin: '8px 0' }}>
+                                    Site code updated → see Live Preview panel
+                                  </p>
+                                );
+                              }
                               return !inline && match ? (
                                 <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
                               ) : (
@@ -2572,7 +2629,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             }
                           }}
                         >
-                          {msg.text}
+                          {!isUser && (msg.codeSnippet || hasPreviewableContent(msg.text))
+                            ? getChatDisplayText(msg.text, { artifactHtml: msg.codeSnippet || '' })
+                            : msg.text}
                         </ReactMarkdown>
                       </div>
 
@@ -2714,8 +2773,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     <div className="ai-studio-shell" style={{
       display: 'flex',
       gap: '20px',
-      maxWidth: isWorkspaceMode ? '100%' : '1800px',
-      padding: isWorkspaceMode ? '20px' : '0',
+      maxWidth: showBuildSplit || isWorkspaceMode ? '100%' : '1800px',
+      padding: showBuildSplit || isWorkspaceMode ? '20px' : '0',
       margin: '0 auto',
       flex: 1,
       minHeight: 0,
@@ -2974,10 +3033,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div className="ai-studio-main" style={{
-        flex: isWorkspaceMode ? '0 0 42%' : 1,
+        flex: showBuildSplit || isWorkspaceMode ? '0 0 42%' : 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isWorkspaceMode ? '42%' : '100%',
+        maxWidth: showBuildSplit || isWorkspaceMode ? '42%' : '100%',
         margin: '0 auto',
         padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(6px, 1vw, 12px) clamp(12px, 1.6vw, 24px)',
         minHeight: 0,
@@ -3005,7 +3064,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           onResetChat={() => updateActiveMessages([])}
         />
 
-        {messages.length > 1 && (
+        {sessionJourneyNode && (
           <StudioJourneyStrip
             sessionId={activeSessionId}
             dreamNodes={dreamNodes}
@@ -3493,12 +3552,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
           {/* Refine mode: next message edits the existing site in place instead of rebuilding. */}
           {refineActive && previewCode && previewCode.trim() && !isGenerating && (
-            <div style={{ margin: '0 18px 2px', display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 12px', borderRadius: '10px', background: isLight ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', fontSize: '0.76rem' }}>
-              <Wand2 size={14} color="#f97316" />
-              <span style={{ color: isLight ? '#9a3412' : '#fdba74', fontWeight: 600 }}>
-                Refine mode — your next message updates the live site.
-              </span>
-              <button type="button" onClick={() => setRefineActive(false)} title="Start a new build instead of editing the current site" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: isLight ? '#9a3412' : '#fdba74', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline' }}>New build</button>
+            <div className="studio-edit-site-bar">
+              <Wand2 size={13} color="#f97316" />
+              <span>Editing your site — describe changes below</span>
+              <button type="button" onClick={() => setRefineActive(false)}>New build</button>
             </div>
           )}
 
@@ -3601,7 +3658,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 resize: 'none',
                 fontFamily: 'inherit',
                 lineHeight: '1.5',
-                minHeight: '56px',
+                minHeight: '44px',
                 maxHeight: '400px',
                 overflow: 'auto'
               }}
@@ -3735,15 +3792,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
 
               {/* Magic Wand Enhancer */}
-              <button
-                type="button"
-                className={`studio-prompt-icon-btn${isEnhancingPrompt ? ' is-active' : ''}`}
-                onClick={handleMagicWandEnhance}
-                disabled={isEnhancingPrompt}
-                title="AI Magic Wand - Enhance & Expand Prompt"
-              >
-                {isEnhancingPrompt ? <RefreshCw size={16} className="animate-spin" /> : <Wand2 size={18} />}
-              </button>
+              <div ref={wandAnchorRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className={`studio-prompt-icon-btn${isEnhancingPrompt ? ' is-active' : ''}${wandHintOpen ? ' is-active' : ''}`}
+                  onClick={handleMagicWandEnhance}
+                  disabled={isEnhancingPrompt}
+                  title={inputText.trim() ? 'Polish and expand your prompt' : 'Type a rough idea first, then polish it'}
+                >
+                  {isEnhancingPrompt ? <RefreshCw size={16} className="animate-spin" /> : <Wand2 size={18} />}
+                </button>
+                <StudioWandHint
+                  isOpen={wandHintOpen}
+                  isLight={isLight}
+                  textColor={textColor}
+                  subtextColor={subtextColor}
+                  onClose={() => setWandHintOpen(false)}
+                  onPickTemplate={handleWandTemplatePick}
+                />
+              </div>
             </div>
 
             <div className="studio-prompt-toolbar__right">
@@ -3945,6 +4012,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       </div>
       </div>
+
+      {showBuildSplit && (
+        <StudioBuildSplit
+          code={previewCode}
+          isLight={isLight}
+          user={user}
+          onRequireAuth={onOpenAuth}
+          suggestedProjectName={activeSession?.title?.slice(0, 40) || 'quantora-app'}
+          onClose={() => setBuildSplitDismissed(true)}
+          onExpand={() => openCanvasWithCode(previewCode)}
+          onPublishComplete={() => emitQuantora(QUANTORA_EVENTS.PUBLISH_COMPLETED)}
+          onShareComplete={() => emitQuantora(QUANTORA_EVENTS.PREVIEW_SHARED)}
+        />
+      )}
 
       {/* Background sandbox verification — runs before the preview button unlocks. */}
       {backgroundVerify && !canvasOpen && (

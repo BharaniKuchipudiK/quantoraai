@@ -112,12 +112,20 @@ function educationBeats(text, mode) {
   return beats;
 }
 
-function buildBeats(mode) {
-  if (mode === 'build') {
+function buildBeats(mode, { hasPreview = false, guidedIntake = false } = {}) {
+  if (mode === 'build' && guidedIntake && !hasPreview) {
     return [
-      beat('build-refine', 'Refine design', 'Refine the layout and visual design — keep the same content.'),
-      beat('build-feature', 'Add a feature', 'Suggest one high-impact feature to add next and implement it.'),
-      beat('build-mobile', 'Mobile polish', 'Make it look great on mobile and fix spacing issues.'),
+      beat('build-name', 'Business name', 'The business name is...'),
+      beat('build-service', 'Dine-in or takeaway?', 'We offer both dine-in and takeaway.'),
+      beat('build-offerings', 'What we offer', 'We serve coffee, pastries, and light meals.'),
+      beat('build-draft', 'Build first draft', 'Build a first draft now using reasonable defaults for anything we skipped.'),
+    ];
+  }
+  if (mode === 'build' && hasPreview) {
+    return [
+      beat('build-refine', 'Refine design', 'Refine the layout and visual design — explain what you would change and ask what I think before updating the preview.'),
+      beat('build-feature', 'Add a feature', 'Suggest one high-impact feature we could add — explain why it helps and ask what I think before building.'),
+      beat('build-mobile', 'Mobile polish', 'Review mobile spacing and polish — tell me what you would fix and ask if I agree before updating the preview.'),
     ];
   }
   if (mode === 'plan') {
@@ -132,7 +140,7 @@ function buildBeats(mode) {
   ];
 }
 
-export function getAnticipatedContinues({ domain, mode, conversationContext } = {}) {
+export function getAnticipatedContinues({ domain, mode, conversationContext, hasPreview = false, guidedIntake = false } = {}) {
   const text = contextBlob(conversationContext);
   let beats = [];
 
@@ -150,7 +158,7 @@ export function getAnticipatedContinues({ domain, mode, conversationContext } = 
       beats = educationBeats(text, mode);
       break;
     default:
-      beats = buildBeats(mode);
+      beats = buildBeats(mode, { hasPreview, guidedIntake });
       break;
   }
 
@@ -161,16 +169,20 @@ export function getAnticipatedContinues({ domain, mode, conversationContext } = 
     education: 'What should we learn next?',
   };
 
+  const intakePrompt = 'What should we nail down first?';
+
   return {
-    prompt: domainPrompts[domain] || 'Where next?',
+    prompt: guidedIntake && !hasPreview && mode === 'build'
+      ? intakePrompt
+      : (domainPrompts[domain] || 'Where next?'),
     items: beats,
   };
 }
 
 /** Merge model continue chips with domain-anticipated beats (deduped, max 3). */
 export function enrichContinueSet(continueSet, options = {}) {
-  const { domain, mode, conversationContext } = options;
-  const anticipated = getAnticipatedContinues({ domain, mode, conversationContext });
+  const { domain, mode, conversationContext, hasPreview = false, guidedIntake = false } = options;
+  const anticipated = getAnticipatedContinues({ domain, mode, conversationContext, hasPreview, guidedIntake });
   const existing = continueSet?.items?.length ? [...continueSet.items] : [];
   const seen = new Set(existing.map((i) => i.label.toLowerCase()));
 

@@ -171,7 +171,9 @@ export default function App() {
   // drop the visitor straight into the Studio (or the auth gate if signed out).
   // No simulation — the same box that runs every real build.
   const handleStartBuild = (prompt) => {
-    if (typeof prompt === 'string' && prompt.trim()) setStudioInputText(prompt.trim());
+    if (typeof prompt === 'string' && prompt.trim()) {
+      setStudioPrefill({ id: Date.now(), text: prompt.trim() });
+    }
     handleTabChange('studio');
   };
 
@@ -247,7 +249,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('quantora_canvas_nodes', JSON.stringify(dreamNodes));
   }, [dreamNodes]);
-  const [studioInputText, setStudioInputText] = useState('');
+  const [studioPrefill, setStudioPrefill] = useState(null);
 
   const handleSendToCanvas = (payload) => {
     const node = createJourneyNode(
@@ -261,7 +263,7 @@ export default function App() {
 
   const handleContinueInStudio = (node) => {
     const prompt = node?.studioPrompt || node?.brief || node?.title || '';
-    if (prompt) setStudioInputText(prompt);
+    if (prompt) setStudioPrefill({ id: Date.now(), text: prompt });
     handleTabChange('studio');
   };
 
@@ -364,8 +366,7 @@ export default function App() {
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
                 setActiveTab={setActiveTab}
-                inputText={studioInputText}
-                setInputText={setStudioInputText}
+                prefillPrompt={studioPrefill}
               />
             )}
 

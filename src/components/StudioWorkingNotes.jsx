@@ -6,9 +6,9 @@ const STORAGE_KEY = 'quantora_working_notes_open';
 
 function readDefaultOpen() {
   try {
-    return localStorage.getItem(STORAGE_KEY) !== '0';
+    return localStorage.getItem(STORAGE_KEY) === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -47,7 +47,7 @@ export default function StudioWorkingNotes({
     <div
       className={`studio-working-notes${isLight ? ' is-light' : ''}`}
       style={{
-        margin: '0 18px 8px',
+        margin: '0 18px 4px',
         borderRadius: '12px',
         border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
         background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.55)',

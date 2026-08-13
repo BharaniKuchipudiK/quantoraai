@@ -13,9 +13,11 @@ const CHROME_STORAGE_KEY = 'quantora_studio_chrome_collapsed';
 
 export function readStudioChromeCollapsed() {
   try {
-    return localStorage.getItem(CHROME_STORAGE_KEY) === '1';
+    const stored = localStorage.getItem(CHROME_STORAGE_KEY);
+    if (stored === null) return true;
+    return stored === '1';
   } catch {
-    return false;
+    return true;
   }
 }
 
