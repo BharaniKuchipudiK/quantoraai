@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   Workflow, Sparkles, Play, ArrowRight, Trash2, ExternalLink, MessageSquare,
-  CheckCircle2, GripVertical, Plus
+  CheckCircle2, GripVertical, Plus, Wand2,
 } from 'lucide-react';
 import { normalizeJourneyStage, normalizeJourneyNode, STAGE_ORDER } from '../lib/build-journey';
+import { usePromptPolish } from '../hooks/usePromptPolish.js';
+import StudioWandStatus from './StudioWandStatus';
 
 const COLUMNS = [
   {
@@ -39,11 +41,17 @@ function domainLabel(domain) {
   return labels[domain] || domain;
 }
 
+function titleFromIdea(text) {
+  const firstLine = text.split('\n').find((line) => line.trim())?.trim() || text.trim();
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
+}
+
 export default function DreamActionCanvas({
   dreamNodes = [],
   setDreamNodes,
   isLight,
   onContinueInStudio,
+  user,
 }) {
   const textColor = isLight ? '#0f172a' : '#ffffff';
   const subtextColor = isLight ? '#475569' : '#94a3b8';
@@ -51,7 +59,37 @@ export default function DreamActionCanvas({
   const borderSubtle = isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)';
 
   const [draggingId, setDraggingId] = useState(null);
-  const [newTitle, setNewTitle] = useState('');
+  const [captureText, setCaptureText] = useState('');
+  const captureRef = useRef('');
+  const textareaRef = useRef(null);
+  const isSignedIn = Boolean(user);
+
+  const {
+    isPolishing,
+    undo: wandUndo,
+    error: wandError,
+    polish: runPromptPolish,
+    clearPolish: clearWandPolish,
+    setError: setWandError,
+  } = usePromptPolish({
+    availableModels: [],
+    chooseBestFreeModel: () => null,
+  });
+
+  useEffect(() => {
+    captureRef.current = captureText;
+  }, [captureText]);
+
+  const resizeCaptureTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, []);
+
+  useEffect(() => {
+    resizeCaptureTextarea();
+  }, [captureText, resizeCaptureTextarea]);
 
   const nodes = useMemo(
     () => dreamNodes.map(normalizeJourneyNode).filter(Boolean),
@@ -75,22 +113,67 @@ export default function DreamActionCanvas({
   };
 
   const addCaptured = () => {
-    const title = newTitle.trim();
-    if (!title || !setDreamNodes) return;
+    const text = captureText.trim();
+    if (!text || !setDreamNodes) return;
     const now = new Date().toISOString();
+    const title = titleFromIdea(text);
     setDreamNodes((prev) => [
       {
         id: `journey-${Date.now()}`,
         title,
-        brief: title,
-        studioPrompt: title,
+        brief: text,
+        studioPrompt: text,
         stage: 'captured',
         createdAt: now,
         updatedAt: now,
       },
       ...prev,
     ]);
-    setNewTitle('');
+    setCaptureText('');
+    clearWandPolish();
+    requestAnimationFrame(resizeCaptureTextarea);
+  };
+
+  const runEnhance = async (sourcePrompt, depth = 'auto') => {
+    const draftAtStart = captureRef.current;
+    const result = await runPromptPolish(sourcePrompt, depth);
+    if (!result) return;
+    if (captureRef.current !== draftAtStart) {
+      clearWandPolish();
+      return;
+    }
+    setCaptureText(result.prompt);
+    requestAnimationFrame(resizeCaptureTextarea);
+  };
+
+  const revertWandPolish = () => {
+    if (!wandUndo?.original) return;
+    setCaptureText(wandUndo.original);
+    requestAnimationFrame(resizeCaptureTextarea);
+    clearWandPolish();
+  };
+
+  const handleMagicWand = () => {
+    const text = captureText.trim();
+    if (!text) {
+      textareaRef.current?.focus();
+      if (!isSignedIn) {
+        setWandError('Type your idea first, then polish it. Sign in to use the wand.');
+      }
+      return;
+    }
+    if (!isSignedIn) {
+      setWandError('Sign in to polish ideas with the Magic Wand.');
+      return;
+    }
+    runEnhance(text, 'auto');
+  };
+
+  const handleCaptureKeyDown = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      addCaptured();
+    }
   };
 
   const handleDrop = (columnId, e) => {
@@ -126,41 +209,92 @@ export default function DreamActionCanvas({
               <strong>So what?</strong> You see what you started, what is live, and what you shipped — without losing context between sessions.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addCaptured()}
-              placeholder="Quick capture an idea…"
+          <div className="journey-capture" style={{ minWidth: 'min(100%, 360px)', maxWidth: '420px' }}>
+            <textarea
+              ref={textareaRef}
+              value={captureText}
+              onChange={(e) => {
+                setCaptureText(e.target.value);
+                if (wandError) setWandError(null);
+              }}
+              onKeyDown={handleCaptureKeyDown}
+              placeholder="Quick capture an idea… spell-check is on. ⌘/Ctrl+Enter to add."
+              spellCheck
+              lang="en"
+              rows={2}
+              className="journey-capture__input"
               style={{
-                padding: '8px 12px',
-                borderRadius: '10px',
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '12px',
                 border: `1px solid ${borderSubtle}`,
                 background: isLight ? '#fff' : 'rgba(0,0,0,0.25)',
                 color: textColor,
-                fontSize: '0.85rem',
-                minWidth: '220px',
+                fontSize: '0.88rem',
+                lineHeight: 1.5,
+                resize: 'none',
+                minHeight: '52px',
+                maxHeight: '140px',
+                boxSizing: 'border-box',
               }}
             />
-            <button
-              type="button"
-              onClick={addCaptured}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: '#0284c7',
-                color: '#fff',
-                border: 'none',
-                padding: '8px 14px',
-                borderRadius: '10px',
-                fontSize: '0.82rem',
-                fontWeight: '600',
-                cursor: 'pointer',
-              }}
-            >
-              <Plus size={14} /> Add
-            </button>
+            <StudioWandStatus
+              isPolishing={isPolishing}
+              undo={wandUndo}
+              error={wandError}
+              isLight={isLight}
+              onUndo={revertWandPolish}
+              onShorter={wandUndo ? () => runEnhance(wandUndo.original, 'lighter') : undefined}
+              onMoreDetail={wandUndo ? () => runEnhance(wandUndo.original, 'deeper') : undefined}
+              onRetry={wandError && captureText.trim() ? () => runEnhance(captureText, 'auto') : undefined}
+              onDismissError={() => setWandError(null)}
+            />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={handleMagicWand}
+                disabled={isPolishing || !captureText.trim()}
+                title={isSignedIn ? 'Polish this idea' : 'Sign in to polish ideas'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)',
+                  color: '#f97316',
+                  border: '1px solid rgba(249, 115, 22, 0.35)',
+                  padding: '7px 12px',
+                  borderRadius: '10px',
+                  fontSize: '0.78rem',
+                  fontWeight: '600',
+                  cursor: isPolishing || !captureText.trim() ? 'not-allowed' : 'pointer',
+                  opacity: isPolishing || !captureText.trim() ? 0.55 : 1,
+                }}
+              >
+                <Wand2 size={14} />
+                Polish
+              </button>
+              <button
+                type="button"
+                onClick={addCaptured}
+                disabled={!captureText.trim()}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#0284c7',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '7px 14px',
+                  borderRadius: '10px',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: captureText.trim() ? 'pointer' : 'not-allowed',
+                  opacity: captureText.trim() ? 1 : 0.55,
+                }}
+              >
+                <Plus size={14} /> Add
+              </button>
+            </div>
           </div>
         </div>
       </div>
