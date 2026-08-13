@@ -171,3 +171,15 @@ Outcome Navigator v1 now provides the first server-side orchestrator slice:
 
 See [Outcome Navigator v1](./outcome-navigator-v1.md) for contracts, current
 limitations and the next delivery increments.
+
+Capability Intelligence v1 now provides the governed bridge from outcome
+state to useful product actions:
+
+- proposals are ranked from lifecycle, continuity, consent and availability;
+- vendor/technology keyword matching is explicitly outside the activation path;
+- effect and risk classes determine consent or confirmation requirements;
+- the first quiet prompt rail exposes only native, reversible capabilities;
+- future integrations must return typed evidence before advancing an outcome.
+
+See [Capability Intelligence v1](./capability-intelligence-v1.md) for the
+contract, execution policy and delivery sequence.

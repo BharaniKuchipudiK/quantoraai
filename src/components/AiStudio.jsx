@@ -26,6 +26,7 @@ import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detect
 import StudioWandStatus from './StudioWandStatus';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioPromptOverlays from './StudioPromptOverlays';
+import { proposeCapabilities } from '../lib/capability-intelligence.js';
 import { usePromptPolish } from '../hooks/usePromptPolish.js';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { useChatScrollFollow } from '../hooks/useChatScrollFollow.js';
@@ -311,10 +312,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const handleMemoryConsentChange = useCallback(async (enabled) => {
     if (enabled) {
       updateActiveSession({ memoryConsented: true });
-      await syncOutcomeContext(conversationContext, {
+      const record = await syncOutcomeContext(conversationContext, {
         sourceTurn: 'user-memory-consent', confirmed: false, consentOverride: true,
       });
-      return;
+      if (!record) updateActiveSession({ memoryConsented: false });
+      return Boolean(record);
     }
 
     if (isSignedIn) {
@@ -322,6 +324,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       catch (error) { console.warn('Outcome Memory could not be deleted:', error.message); return; }
     }
     updateActiveSession({ memoryConsented: false, outcomeVersion: 0, outcomeState: null });
+    return true;
   }, [activeSessionId, conversationContext, isSignedIn, syncOutcomeContext, updateActiveSession]);
 
   const deleteChatWithMemory = useCallback((e, sessionId) => {
@@ -931,6 +934,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     () => dreamNodes.find((n) => n.sessionId === activeSessionId),
     [dreamNodes, activeSessionId],
   );
+
+  const capabilityProposals = React.useMemo(() => proposeCapabilities({
+    isSignedIn,
+    memoryConsented,
+    hasJourneyNode: Boolean(sessionJourneyNode),
+    isGenerating,
+    conversationContext,
+    messages,
+  }), [
+    conversationContext,
+    isGenerating,
+    isSignedIn,
+    memoryConsented,
+    messages,
+    sessionJourneyNode,
+  ]);
+
+  const dismissedCapabilityIds = Array.isArray(activeSession.dismissedCapabilityIds)
+    ? activeSession.dismissedCapabilityIds
+    : [];
+
+  const dismissCapability = useCallback((capabilityId) => {
+    updateActiveSession({
+      dismissedCapabilityIds: [...new Set([...dismissedCapabilityIds, capabilityId])],
+    });
+  }, [dismissedCapabilityIds, updateActiveSession]);
 
   const runEnhance = async (sourcePrompt, depth) => {
     const requestSessionId = activeSessionIdRef.current;
@@ -1815,6 +1844,41 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     emitQuantora(QUANTORA_EVENTS.JOURNEY_SAVED, { title });
   }, [onPushToCanvas, messages, activeSessionId, studioDomain, studioMode, emitQuantora]);
 
+  const activateCapability = useCallback(async (capability) => {
+    if (capability?.id === 'outcome-memory') {
+      await handleMemoryConsentChange(true);
+      return;
+    }
+
+    if (capability?.id === 'journey-track' && onPushToCanvas) {
+      const userText = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
+      const goal = conversationContext.goal || activeSession.title || userText || 'Untitled outcome';
+      onPushToCanvas({
+        title: goal.split('\n')[0].slice(0, 80),
+        brief: conversationContext.understanding || userText.slice(0, 300) || goal,
+        studioPrompt: userText || goal,
+        sessionId: activeSessionId,
+        domain: studioDomain,
+        mode: studioMode,
+        hasPreview: Boolean(previewCode?.trim()),
+        stayInStudio: true,
+      });
+      emitQuantora(QUANTORA_EVENTS.JOURNEY_SAVED, { title: goal });
+    }
+  }, [
+    activeSession.title,
+    activeSessionId,
+    conversationContext.goal,
+    conversationContext.understanding,
+    emitQuantora,
+    handleMemoryConsentChange,
+    messages,
+    onPushToCanvas,
+    previewCode,
+    studioDomain,
+    studioMode,
+  ]);
+
 
   return (
     <div className="ai-studio-shell" style={{
@@ -2508,8 +2572,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           previewCode={previewCode}
           isGenerating={isGenerating}
           buildSplitDismissed={buildSplitDismissed}
+          capabilityProposals={capabilityProposals}
+          dismissedCapabilityIds={dismissedCapabilityIds}
+          isLight={isLight}
           onNewBuild={() => setRefineActive(false)}
           onOpenSplit={() => setBuildSplitDismissed(false)}
+          onActivateCapability={activateCapability}
+          onDismissCapability={dismissCapability}
         />
 
         {/* Prompt input pill — textarea + toolbar only */}

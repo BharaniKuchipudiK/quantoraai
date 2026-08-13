@@ -252,13 +252,18 @@ export default function App() {
   const [studioPrefill, setStudioPrefill] = useState(null);
 
   const handleSendToCanvas = (payload) => {
+    const stayInStudio = Boolean(payload && typeof payload === 'object' && payload.stayInStudio);
+    const journeyPayload = payload && typeof payload === 'object'
+      ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'stayInStudio'))
+      : payload;
     const node = createJourneyNode(
-      typeof payload === 'string'
-        ? { brief: payload, studioPrompt: payload, title: payload.split('\n')[0]?.slice(0, 80) }
-        : payload,
+      typeof journeyPayload === 'string'
+        ? { brief: journeyPayload, studioPrompt: journeyPayload, title: journeyPayload.split('\n')[0]?.slice(0, 80) }
+        : journeyPayload,
     );
     setDreamNodes((prev) => [node, ...prev]);
-    handleTabChange('canvas');
+    if (!stayInStudio) handleTabChange('canvas');
+    return node;
   };
 
   const handleContinueInStudio = (node) => {
