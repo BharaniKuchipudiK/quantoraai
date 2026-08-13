@@ -2186,13 +2186,6 @@ html[data-header-hidden='true'] .app-shell--workspace .app-main--studio {
   display: none;
 }
 
-.ai-studio-messages-end {
-  height: 1px;
-  width: 100%;
-  flex-shrink: 0;
-  pointer-events: none;
-}
-
 .chat-message-row--user {
   flex-direction: row-reverse;
   justify-content: flex-start;
