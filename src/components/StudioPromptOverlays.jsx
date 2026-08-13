@@ -1,5 +1,6 @@
 import React from 'react';
 import { Wand2 } from 'lucide-react';
+import StudioCapabilityRail from './StudioCapabilityRail.jsx';
 
 /** Build-mode overlays above the prompt pill — refine bar and split restore only. */
 export default function StudioPromptOverlays({
@@ -7,13 +8,27 @@ export default function StudioPromptOverlays({
   previewCode,
   isGenerating,
   buildSplitDismissed,
+  capabilityProposals,
+  dismissedCapabilityIds,
+  isLight,
   onNewBuild,
   onOpenSplit,
+  onActivateCapability,
+  onDismissCapability,
 }) {
   const hasPreview = Boolean(previewCode?.trim());
 
   return (
     <div className="studio-prompt-overlays">
+      <StudioCapabilityRail
+        proposals={capabilityProposals}
+        dismissedIds={dismissedCapabilityIds}
+        disabled={isGenerating}
+        isLight={isLight}
+        onActivate={onActivateCapability}
+        onDismiss={onDismissCapability}
+      />
+
       {refineActive && hasPreview && !isGenerating && (
         <div className="studio-edit-site-bar studio-prompt-dock">
           <Wand2 size={13} color="#f97316" />
