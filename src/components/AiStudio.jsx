@@ -1350,16 +1350,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const shouldFollowLatestRef = useRef(true);
   const scrollFrameRef = useRef(null);
 
-  useEffect(() => {
-    if (!prefillPrompt?.text || prefillAppliedRef.current === prefillPrompt.id) return;
-    prefillAppliedRef.current = prefillPrompt.id;
-    setLocalInputText(prefillPrompt.text);
-    requestAnimationFrame(() => {
-      resizePromptTextarea();
-      textareaRef.current?.focus();
-    });
-  }, [prefillPrompt, resizePromptTextarea]);
-
   const focusPrompt = useCallback(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
@@ -1370,6 +1360,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 400)}px`;
   }, []);
+
+  useEffect(() => {
+    if (!prefillPrompt?.text || prefillAppliedRef.current === prefillPrompt.id) return;
+    prefillAppliedRef.current = prefillPrompt.id;
+    setLocalInputText(prefillPrompt.text);
+    requestAnimationFrame(() => {
+      resizePromptTextarea();
+      textareaRef.current?.focus();
+    });
+  }, [prefillPrompt, resizePromptTextarea]);
 
   const scrollToLatest = (behavior = 'auto') => {
     if (!shouldFollowLatestRef.current || !messageViewportRef.current) return;
