@@ -268,6 +268,7 @@ export default function App() {
   };
 
   const isStudioShell = activeTab === 'studio';
+  const isWorkspaceShell = ['studio', 'canvas', 'quantum'].includes(activeTab);
   const isFramedShell = !isStudioShell && activeTab !== 'landing';
   const shouldLoadVercelTelemetry = typeof window !== 'undefined'
     && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
@@ -275,7 +276,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
-    <div className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}`} style={{
+    <div className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}${isWorkspaceShell ? ' app-shell--workspace' : ''}`} style={{
       minHeight: '100dvh',
       height: isStudioShell || isFramedShell ? '100dvh' : 'auto',
       overflow: isStudioShell || isFramedShell ? 'hidden' : 'visible',
@@ -314,7 +315,8 @@ export default function App() {
             themeMode={themeMode}
             setThemeMode={setThemeMode}
             isLight={isLight}
-            compact={isStudioShell}
+            compact={isWorkspaceShell}
+            autoHide={isWorkspaceShell}
           />
 
           <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{
