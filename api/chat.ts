@@ -291,7 +291,7 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, refineMode, featureSuggest, task, fallbackFrom, studioMode, sessionContext, studioDomain, attachedImages, choiceSelected } = req.body || {};
+    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, refineMode, featureSuggest, task, fallbackFrom, studioMode, sessionContext, listeningSignals, studioDomain, attachedImages, choiceSelected } = req.body || {};
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -340,6 +340,7 @@ export default async function handler(req: any, res: any) {
       featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
       planMode,
       sessionContext: normalizeSessionContext(sessionContext),
+      listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
       studioDomain: normalizeStudioDomain(studioDomain),
       userFirstName: sessionUser?.name?.split(/\s+/)[0] || null,
     }) + (visionImages.length

@@ -30,35 +30,20 @@ export function detectProactiveNudge(userPrompt = '', aiResponse = '', userFirst
   const wantsUrls = /\b(url|urls|link|links|website|web site|click|visit|book(?:ing)?)\b/i.test(userPrompt);
   const hasUrls = /https?:\/\//i.test(aiResponse);
 
-  if (wantsUrls && hasUrls && (studioDomain === 'travel' || /\b(trip|travel|hotel|resort|destination|itinerary|beach|flight)\b/i.test(userPrompt))) {
-    return {
-      type: 'urls_included',
-      text: `Hey ${name} — I've included direct links for each option so you can explore the beach, rooms, and facilities at your own pace.`,
-    };
-  }
-
   if (wantsUrls && hasUrls) {
-    return {
-      type: 'urls_included',
-      text: `Hey ${name} — I've added direct links below so you can explore each option at your own pace.`,
-    };
+    return null;
   }
 
   const wantsPlan = /\b(plan|itinerary|trip|travel|schedule)\b/i.test(userPrompt.toLowerCase());
   const hasPlanStructure = /\bday\s+\d|day \d|morning:|afternoon:|evening:/i.test(aiResponse);
 
+  // Plan + links already live in the chat — a banner repeating "below" adds noise.
   if (wantsPlan && hasPlanStructure && hasUrls) {
-    return {
-      type: 'plan_with_links',
-      text: `Hey ${name} — your plan is below, and I've added booking links wherever they help you act faster.`,
-    };
+    return null;
   }
 
   if (wantsPlan && hasPlanStructure) {
-    return {
-      type: 'plan_ready',
-      text: `Hey ${name} — here's a plan you can refine. Tell me what to adjust and we'll tighten it together.`,
-    };
+    return null;
   }
 
   return null;

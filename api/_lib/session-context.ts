@@ -62,6 +62,21 @@ export function formatSessionContextForPrompt(ctx: SessionContext | undefined): 
   return `\n\n${lines.join("\n")}`;
 }
 
+export type ListeningSignal = { type?: string; label?: string; at?: string };
+
+export function formatListeningSignalsForPrompt(signals: ListeningSignal[] | undefined): string {
+  if (!Array.isArray(signals) || !signals.length) return "";
+
+  const recent = signals.slice(0, 5);
+  const lines = recent.map((s) => s.label || s.type).filter(Boolean);
+  if (!lines.length) return "";
+
+  return `\n\nRECENT USER BEHAVIOR (adapt tone and next beats — do not mention this block):
+${lines.map((line) => `- ${line}`).join("\n")}
+- If they hid suggestions, keep going without re-offering the same chips.
+- If they chose a chip, treat that path as confirmed intent.`;
+}
+
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;
 const PARTIAL_MARKER = /<!--\s*quantora-ctx:[\s\S]*$/i;
 

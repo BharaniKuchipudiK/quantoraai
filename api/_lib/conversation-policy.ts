@@ -1,5 +1,5 @@
 import type { SessionContext } from "./session-context.js";
-import { formatSessionContextForPrompt } from "./session-context.js";
+import { formatSessionContextForPrompt, formatListeningSignalsForPrompt, type ListeningSignal } from "./session-context.js";
 import { buildDomainDirective } from "./studio-domains.js";
 import { CHOICES_DIRECTIVE } from "./studio-choices.js";
 import { buildChoiceTemplateDirective } from "./studio-choice-templates.js";
@@ -169,6 +169,7 @@ export function buildConversationSystemPrompt(options: {
   featureSuggest?: boolean;
   planMode?: boolean;
   sessionContext?: SessionContext;
+  listeningSignals?: ListeningSignal[];
   studioDomain?: import("./studio-domains.js").StudioDomain | null;
   userFirstName?: string | null;
 } = {}): string {
@@ -177,6 +178,7 @@ export function buildConversationSystemPrompt(options: {
     : "";
 
   const sessionMemory = formatSessionContextForPrompt(options.sessionContext);
+  const listeningHints = formatListeningSignalsForPrompt(options.listeningSignals);
 
   // Guided intake wins over the direct build directive while it is active.
   let build = "";
@@ -218,7 +220,7 @@ export function buildConversationSystemPrompt(options: {
   const continueHint = buildDomainContinueHint(options.studioDomain ?? null);
   const proactive = `\n\n${PROACTIVE_PARTNER_DIRECTIVE(options.userFirstName)}`;
 
-  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${proactive}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
+  return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${listeningHints}${proactive}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
 }
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)

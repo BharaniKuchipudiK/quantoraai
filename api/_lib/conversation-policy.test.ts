@@ -14,6 +14,15 @@ test("uses the Senior Partner conversation loop by default", () => {
   assert.match(prompt, /BALANCED MODE/);
 });
 
+test("injects listening signals into the system prompt", () => {
+  const prompt = buildConversationSystemPrompt({
+    listeningSignals: [{ type: "choice_selected", label: "Chose: Day-by-day plan" }],
+  });
+
+  assert.match(prompt, /RECENT USER BEHAVIOR/);
+  assert.match(prompt, /Day-by-day plan/);
+});
+
 test("injects stored session memory into the system prompt", () => {
   const prompt = buildConversationSystemPrompt({
     sessionContext: { goal: "Plan Bali", facts: ["5 nights in March"] },
