@@ -352,11 +352,25 @@ body {
     line-height: 1.4 !important;
   }
 
+  .app-shell--studio .studio-prompt-overlays {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .app-shell--studio .studio-prompt-overlays:empty {
+    display: none;
+    margin-bottom: 0;
+  }
+
+  .app-shell--studio .studio-prompt-dock {
+    padding: 0 !important;
+  }
+
   .app-shell--studio .studio-choice-dock,
   .app-shell--studio .studio-continue-dock,
   .app-shell--studio .studio-choice-dock-restore {
-    padding-left: 10px !important;
-    padding-right: 10px !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 
   .app-shell--studio .studio-choice-dock {
@@ -1295,8 +1309,29 @@ body {
 }
 
 /* Floating dock — pinned above prompt, no scroll hunt */
+.studio-prompt-overlays {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.studio-prompt-overlays:empty {
+  display: none;
+  margin-bottom: 0;
+}
+
+.studio-prompt-dock {
+  flex-shrink: 0;
+}
+
+.studio-prompt-dock .studio-proactive-nudge {
+  margin: 0 !important;
+}
+
 .studio-choice-dock {
-  padding: 8px 14px 0;
+  padding: 0;
 }
 
 .studio-choice-cards--floating {
@@ -1401,7 +1436,7 @@ body {
 }
 
 .studio-choice-dock-restore {
-  padding: 4px 14px 0;
+  padding: 0;
 }
 
 .studio-choice-dock-restore__btn {
@@ -1478,7 +1513,7 @@ body {
 }
 
 .studio-continue-dock {
-  padding: 4px 14px 0;
+  padding: 0;
 }
 
 .studio-edit-site-bar {
@@ -1709,6 +1744,19 @@ body {
   color: #0284c7;
   margin-bottom: 6px;
   opacity: 1;
+}
+
+.studio-continue-chips__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.studio-continue-chips--floating .studio-continue-chips__toolbar .studio-continue-chips__prompt {
+  margin-bottom: 0;
+  flex: 1;
 }
 
 .studio-continue-chips--floating .studio-continue-chips__row {

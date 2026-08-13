@@ -2,6 +2,8 @@
  * Client-side proactive nudges — human "I thought of you" moments from the listening layer.
  */
 
+import { inferConversationStage } from './communication-intelligence.js';
+
 function isHtmlBuildResponse(aiResponse = '') {
   return /```html|<!DOCTYPE html>|<html[\s>]/i.test(aiResponse);
 }
@@ -12,9 +14,11 @@ export function detectProactiveNudge(userPrompt = '', aiResponse = '', userFirst
     studioMode = 'ask',
     hasPreview = false,
     guidedIntake = false,
+    conversationContext = {},
   } = options;
 
   const name = userFirstName?.trim() || 'there';
+  const stage = inferConversationStage(conversationContext, studioDomain);
 
   // Never show travel/link nudges during build intake or on generated HTML sites.
   if (guidedIntake || (studioMode === 'build' && !studioDomain) || isHtmlBuildResponse(aiResponse)) {
@@ -48,6 +52,7 @@ export function detectProactiveNudge(userPrompt = '', aiResponse = '', userFirst
   const hasPlanStructure = /\bday\s+\d|day \d|morning:|afternoon:|evening:/i.test(aiResponse);
 
   if (wantsPlan && hasPlanStructure && hasUrls) {
+    if (stage === 'itinerary_delivered') return null;
     return {
       type: 'plan_with_links',
       text: `Hey ${name} — your plan is below, and I've added booking links wherever they help you act faster.`,

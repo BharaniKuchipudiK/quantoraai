@@ -32,6 +32,11 @@ import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner'
 import StudioProactiveNudge from './StudioProactiveNudge';
 import StudioWandHint from './StudioWandHint';
 import { detectProactiveNudge } from '../lib/proactive-nudges.js';
+import {
+  learnFromChipSelection,
+  learnFromDismissedSuggestions,
+  shouldSuppressProactiveNudge,
+} from '../lib/communication-intelligence.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
 import {
   getChatDisplayText,
@@ -1141,10 +1146,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         studioMode,
         hasPreview: Boolean(previewCode?.trim()),
         guidedIntake: guidedSession,
+        conversationContext,
       });
     }
     return null;
-  }, [messages, isGenerating, getPriorUserPrompt, userFirstName, studioDomain, studioMode, previewCode, guidedSession]);
+  }, [messages, isGenerating, getPriorUserPrompt, userFirstName, studioDomain, studioMode, previewCode, guidedSession, conversationContext]);
 
   const latestAiMessageId = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -1153,7 +1159,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return null;
   }, [messages]);
 
-  const showProactiveNudge = proactiveNudge && proactiveNudgeDismissedId !== latestAiMessageId;
+  const showProactiveNudge = proactiveNudge
+    && proactiveNudgeDismissedId !== latestAiMessageId
+    && !shouldSuppressProactiveNudge(proactiveNudge, { listeningSignals, conversationContext });
 
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
@@ -1270,6 +1278,59 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       window.removeEventListener('message', onPreviewMessage);
     };
   }, [canvasOpen, closePreviewModal]);
+
+  useEffect(() => {
+    const hasOpenChoiceDock = pendingChoiceMessage
+      && pendingChoiceMessage.choiceDockState !== 'dismissed';
+    const hasContinueDock = Boolean(latestContinueContext);
+    const hasProactiveNudge = Boolean(showProactiveNudge);
+    if (!hasOpenChoiceDock && !hasContinueDock && !hasProactiveNudge) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      if (showModelDashboard || canvasOpen) return;
+
+      if (hasOpenChoiceDock) {
+        event.preventDefault();
+        setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
+        updateActiveSession({
+          conversationContext: learnFromDismissedSuggestions(conversationContext, 'suggestions'),
+        });
+        emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
+        return;
+      }
+
+      if (showProactiveNudge) {
+        event.preventDefault();
+        setProactiveNudgeDismissedId(latestAiMessageId);
+        return;
+      }
+
+      if (hasContinueDock) {
+        event.preventDefault();
+        updateActiveMessages((prev) => prev.map((m) => (
+          m.id === latestContinueContext.msg.id ? { ...m, continueUsed: true } : m
+        )));
+        updateActiveSession({
+          conversationContext: learnFromDismissedSuggestions(conversationContext, 'continue chips'),
+        });
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [
+    pendingChoiceMessage,
+    latestContinueContext,
+    showProactiveNudge,
+    latestAiMessageId,
+    showModelDashboard,
+    canvasOpen,
+    setChoiceDockState,
+    activeSessionId,
+    conversationContext,
+  ]);
+
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [backgroundVerify, setBackgroundVerify] = useState(null);
@@ -1729,7 +1790,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     let sessionContextForRequest = conversationContext;
     if (options.choiceSelected) {
-      sessionContextForRequest = mergeSessionContext(conversationContext, { facts: [visibleText] });
+      sessionContextForRequest = learnFromChipSelection(conversationContext, {
+        label: visibleText,
+        value: visibleText,
+        domain: studioDomain,
+      });
       updateActiveSession({ conversationContext: sessionContextForRequest });
     } else {
       const answerFact = captureUserAnswerAsContext(visibleText, [...messages, userMsg]);
@@ -2021,6 +2086,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               fallbackFrom,
               studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
               sessionContext: sessionContextForRequest,
+              listeningSignals,
               studioDomain,
               attachedImages,
               choiceSelected: options.choiceSelected === true,
@@ -3416,7 +3482,142 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         )}
 
-        {/* Prompt Card Container */}
+        {/* Overlays — separate cards above the input pill (never inside it) */}
+        <div className="studio-prompt-overlays">
+          {enhanceResult && (
+            <div className="studio-prompt-dock" style={{ margin: '0 2px', borderRadius: '14px', border: '1px solid rgba(249,115,22,0.35)', background: isLight ? '#fffaf5' : 'rgba(249,115,22,0.06)', boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.06)' : '0 8px 30px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)' }}>
+                <Wand2 size={15} color="#f97316" />
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor }}>Prompt Engineer</span>
+                <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#f97316', background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '999px', padding: '2px 8px' }}>{enhanceResult.tier}</span>
+                {enhanceResult.model && (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: subtextColor }}>
+                    <Cpu size={12} color="#f97316" /> Suggested: <strong style={{ color: textColor }}>{enhanceResult.model.name}</strong>
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={enhanceResult.prompt}
+                onChange={(e) => setEnhanceResult(r => ({ ...r, prompt: e.target.value }))}
+                rows={Math.min(10, Math.max(3, (enhanceResult.prompt.match(/\n/g) || []).length + 2))}
+                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', resize: 'vertical', background: 'transparent', color: textColor, fontSize: '0.9rem', lineHeight: 1.5, padding: '12px 14px', fontFamily: 'inherit' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderTop: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
+                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'lighter')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↓ Lighter</button>
+                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'deeper')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↑ Deeper</button>
+                {isEnhancingPrompt && <span style={{ fontSize: '0.72rem', color: subtextColor }}>Re-thinking…</span>}
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                  <button onClick={() => setEnhanceResult(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>Discard</button>
+                  <button onClick={applyEnhancement} style={{ background: '#f97316', border: 'none', color: '#fff', borderRadius: '8px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}>Use it</button>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {refineActive && previewCode && previewCode.trim() && !isGenerating && (
+            <div className="studio-edit-site-bar studio-prompt-dock">
+              <Wand2 size={13} color="#f97316" />
+              <span>Editing your site — describe changes below</span>
+              <button type="button" onClick={() => setRefineActive(false)}>New build</button>
+            </div>
+          )}
+
+          {showProactiveNudge && (
+            <div className="studio-prompt-dock">
+              <StudioProactiveNudge
+                text={proactiveNudge.text}
+                isLight={isLight}
+                onDismiss={() => setProactiveNudgeDismissedId(latestAiMessageId)}
+              />
+            </div>
+          )}
+
+          {pendingChoiceMessage && pendingChoiceMessage.choiceDockState !== 'dismissed' && (
+            <div className="studio-choice-dock studio-prompt-dock">
+              <StudioChoiceCards
+                variant="floating"
+                dockState={pendingChoiceMessage.choiceDockState || 'open'}
+                choiceSet={pendingChoiceMessage.choiceSet}
+                isLight={isLight}
+                disabled={isGenerating}
+                onCollapse={() => setChoiceDockState(pendingChoiceMessage.id, 'collapsed')}
+                onExpand={() => setChoiceDockState(pendingChoiceMessage.id, 'open')}
+                onDismiss={() => {
+                  setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
+                  updateActiveSession({
+                    conversationContext: learnFromDismissedSuggestions(conversationContext, 'suggestions'),
+                  });
+                  emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
+                }}
+                onSelect={(choice) => {
+                  updateActiveMessages((prev) => prev.map((m) => (
+                    m.id === pendingChoiceMessage.id ? { ...m, choiceUsed: true } : m
+                  )));
+                  updateActiveSession({
+                    conversationContext: learnFromChipSelection(conversationContext, {
+                      label: choice.label,
+                      value: choice.value,
+                      domain: studioDomain,
+                    }),
+                  });
+                  emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
+                  handleSendMessage(choice.value, { choiceSelected: true });
+                }}
+              />
+            </div>
+          )}
+
+          {!pendingChoiceMessage && dismissedChoiceMessage && (
+            <div className="studio-choice-dock-restore studio-prompt-dock">
+              <button
+                type="button"
+                className="studio-choice-dock-restore__btn"
+                onClick={() => setChoiceDockState(dismissedChoiceMessage.id, 'open')}
+              >
+                Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
+              </button>
+            </div>
+          )}
+
+          {latestContinueContext && !pendingChoiceMessage && (
+            <div className="studio-continue-dock studio-prompt-dock">
+              <StudioContinueChips
+                variant="floating"
+                continueSet={latestContinueContext.continueSet}
+                isLight={isLight}
+                textColor={textColor}
+                subtextColor={subtextColor}
+                disabled={isGenerating}
+                onDismiss={() => {
+                  updateActiveMessages((prev) => prev.map((m) => (
+                    m.id === latestContinueContext.msg.id ? { ...m, continueUsed: true } : m
+                  )));
+                  updateActiveSession({
+                    conversationContext: learnFromDismissedSuggestions(conversationContext, 'continue chips'),
+                  });
+                }}
+                onSelect={(item) => {
+                  const msg = latestContinueContext.msg;
+                  updateActiveMessages((prev) => prev.map((m) => (
+                    m.id === msg.id ? { ...m, continueUsed: true } : m
+                  )));
+                  updateActiveSession({
+                    conversationContext: learnFromChipSelection(conversationContext, {
+                      label: item.label,
+                      value: item.value,
+                      domain: studioDomain,
+                    }),
+                  });
+                  emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
+                  handleSendMessage(item.value);
+                }}
+              />
+            </div>
+          )}
+
+        </div>
+
+        {/* Prompt input pill — textarea + toolbar only */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
           position: 'relative',
@@ -3514,114 +3715,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <div style={{ fontSize: '0.7rem', color: subtextColor }}>Read previous conversation</div>
                 </div>
               </div>
-            </div>
-          )}
-
-
-
-          {/* Prompt Engineer review card — edit & finalize before it hits the input. */}
-          {enhanceResult && (
-            <div style={{ margin: '0 18px 8px', borderRadius: '14px', border: '1px solid rgba(249,115,22,0.35)', background: isLight ? '#fffaf5' : 'rgba(249,115,22,0.06)', boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.06)' : '0 8px 30px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)' }}>
-                <Wand2 size={15} color="#f97316" />
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor }}>Prompt Engineer</span>
-                <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#f97316', background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '999px', padding: '2px 8px' }}>{enhanceResult.tier}</span>
-                {enhanceResult.model && (
-                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: subtextColor }}>
-                    <Cpu size={12} color="#f97316" /> Suggested: <strong style={{ color: textColor }}>{enhanceResult.model.name}</strong>
-                  </span>
-                )}
-              </div>
-              <textarea
-                value={enhanceResult.prompt}
-                onChange={(e) => setEnhanceResult(r => ({ ...r, prompt: e.target.value }))}
-                rows={Math.min(10, Math.max(3, (enhanceResult.prompt.match(/\n/g) || []).length + 2))}
-                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', resize: 'vertical', background: 'transparent', color: textColor, fontSize: '0.9rem', lineHeight: 1.5, padding: '12px 14px', fontFamily: 'inherit' }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderTop: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
-                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'lighter')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↓ Lighter</button>
-                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'deeper')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↑ Deeper</button>
-                {isEnhancingPrompt && <span style={{ fontSize: '0.72rem', color: subtextColor }}>Re-thinking…</span>}
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-                  <button onClick={() => setEnhanceResult(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>Discard</button>
-                  <button onClick={applyEnhancement} style={{ background: '#f97316', border: 'none', color: '#fff', borderRadius: '8px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}>Use it</button>
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Refine mode: next message edits the existing site in place instead of rebuilding. */}
-          {refineActive && previewCode && previewCode.trim() && !isGenerating && (
-            <div className="studio-edit-site-bar">
-              <Wand2 size={13} color="#f97316" />
-              <span>Editing your site — describe changes below</span>
-              <button type="button" onClick={() => setRefineActive(false)}>New build</button>
-            </div>
-          )}
-
-          {showProactiveNudge && (
-            <StudioProactiveNudge
-              text={proactiveNudge.text}
-              isLight={isLight}
-              onDismiss={() => setProactiveNudgeDismissedId(latestAiMessageId)}
-            />
-          )}
-
-          {pendingChoiceMessage && (
-            <div className="studio-choice-dock">
-              <StudioChoiceCards
-                variant="floating"
-                dockState={pendingChoiceMessage.choiceDockState || 'collapsed'}
-                choiceSet={pendingChoiceMessage.choiceSet}
-                isLight={isLight}
-                disabled={isGenerating}
-                onCollapse={() => setChoiceDockState(pendingChoiceMessage.id, 'collapsed')}
-                onExpand={() => setChoiceDockState(pendingChoiceMessage.id, 'open')}
-                onDismiss={() => {
-                  setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
-                  emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-                }}
-                onSelect={(choice) => {
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === pendingChoiceMessage.id ? { ...m, choiceUsed: true } : m
-                  )));
-                  emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
-                  handleSendMessage(choice.value, { choiceSelected: true });
-                }}
-              />
-            </div>
-          )}
-
-          {!pendingChoiceMessage && dismissedChoiceMessage && (
-            <div className="studio-choice-dock-restore">
-              <button
-                type="button"
-                className="studio-choice-dock-restore__btn"
-                onClick={() => setChoiceDockState(dismissedChoiceMessage.id, 'open')}
-              >
-                Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
-              </button>
-            </div>
-          )}
-
-          {latestContinueContext && !pendingChoiceMessage && (
-            <div className="studio-continue-dock">
-              <StudioContinueChips
-                variant="floating"
-                continueSet={latestContinueContext.continueSet}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                disabled={isGenerating}
-                onSelect={(item) => {
-                  const msg = latestContinueContext.msg;
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === msg.id ? { ...m, continueUsed: true } : m
-                  )));
-                  emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
-                  handleSendMessage(item.value);
-                }}
-              />
             </div>
           )}
 

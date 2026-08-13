@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, X } from 'lucide-react';
 
 /**
  * Continuation chips — peer nudges after an answer.
@@ -13,6 +13,7 @@ export default function StudioContinueChips({
   onSelect,
   disabled = false,
   variant = 'inline',
+  onDismiss,
 }) {
   if (!continueSet?.items?.length) return null;
 
@@ -23,7 +24,23 @@ export default function StudioContinueChips({
       className={`studio-continue-chips${isFloating ? ' studio-continue-chips--floating' : ''}`}
       aria-label={continueSet.prompt || 'Continue the conversation'}
     >
-      {continueSet.prompt && (
+      {isFloating && onDismiss && (
+        <div className="studio-continue-chips__toolbar">
+          <span className="studio-continue-chips__prompt" style={{ color: subtextColor }}>
+            {continueSet.prompt || 'Keep going'}
+          </span>
+          <button
+            type="button"
+            className="studio-choice-cards__icon-btn"
+            onClick={onDismiss}
+            title="Hide suggestions"
+            aria-label="Hide suggestions"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {!isFloating && continueSet.prompt && (
         <span className="studio-continue-chips__prompt" style={{ color: subtextColor }}>
           {continueSet.prompt}
         </span>
