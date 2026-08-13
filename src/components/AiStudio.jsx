@@ -20,12 +20,16 @@ import {
   stripPartialAssistantMarkers,
 } from '../lib/studio-choices.js';
 import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
-import { createQuantoraListener, mergeSessionListeningSignals, QUANTORA_EVENTS } from '../lib/listening-layer.js';
+import { createQuantoraListener, QUANTORA_EVENTS } from '../lib/listening-layer.js';
 import { enrichContinueSet } from '../lib/domain-anticipation.js';
 import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import StudioWandStatus from './StudioWandStatus';
+import StudioToolsMenu from './StudioToolsMenu';
+import StudioPromptOverlays from './StudioPromptOverlays';
 import { usePromptPolish } from '../hooks/usePromptPolish.js';
+import { useStudioSession } from '../hooks/useStudioSession.js';
+import { useInlineSuggestions } from '../hooks/useInlineSuggestions.js';
 import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
@@ -33,7 +37,6 @@ import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner'
 import StudioWandHint from './StudioWandHint';
 import {
   learnFromChipSelection,
-  learnFromDismissedSuggestions,
 } from '../lib/communication-intelligence.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
 import {
@@ -50,81 +53,6 @@ import {
   getOutputModeLabel,
   getPromptPlaceholder,
 } from '../lib/studio-domains.js';
-
-const DOMAIN_ICONS = {
-  travel: Plane,
-  education: BookOpen,
-  finance: DollarSign,
-  research: Search,
-};
-
-const OUTPUT_MODE_ICONS = {
-  ask: MessageSquare,
-  build: Layout,
-  plan: Workflow,
-};
-
-function StudioGlossRow({ icon: Icon, iconColor, title, description, selected, onClick, badge }) {
-  return (
-    <button type="button" className={`studio-gloss-row${selected ? ' is-selected' : ''}`} onClick={onClick}>
-      <span className="studio-gloss-row__icon" style={{ color: iconColor }}>
-        <Icon size={17} strokeWidth={2} />
-      </span>
-      <span className="studio-gloss-row__copy">
-        <span className="studio-gloss-row__title">
-          {title}
-          {badge ? <span className="studio-gloss-row__badge">{badge}</span> : null}
-        </span>
-        {description ? <span className="studio-gloss-row__desc">{description}</span> : null}
-      </span>
-      <span className={`studio-gloss-row__radio${selected ? ' is-selected' : ''}`} aria-hidden="true" />
-    </button>
-  );
-}
-
-function StudioToolsMenu({ isLight, studioDomain, studioMode, onSelectDomain, onSelectMode }) {
-  return (
-    <div className={`studio-gloss-popover${isLight ? ' is-light' : ' is-dark'}`} role="menu" aria-label="Focus and response settings">
-      <div className="studio-gloss-popover__section">
-        <div className="studio-gloss-popover__heading">Focus</div>
-        <StudioGlossRow
-          icon={Compass}
-          iconColor="#64748b"
-          title="General"
-          description="No specific domain bias"
-          selected={!studioDomain}
-          onClick={() => onSelectDomain(null)}
-        />
-        {STUDIO_DOMAINS.map(({ id, label, description }) => (
-          <StudioGlossRow
-            key={id}
-            icon={DOMAIN_ICONS[id]}
-            iconColor={studioDomain === id ? '#f97316' : '#64748b'}
-            title={label}
-            description={description}
-            selected={studioDomain === id}
-            onClick={() => onSelectDomain(id)}
-          />
-        ))}
-      </div>
-      <div className="studio-gloss-popover__divider" />
-      <div className="studio-gloss-popover__section">
-        <div className="studio-gloss-popover__heading">Response</div>
-        {STUDIO_OUTPUT_MODES.map(({ id, label, description }) => (
-          <StudioGlossRow
-            key={id}
-            icon={OUTPUT_MODE_ICONS[id]}
-            iconColor={studioMode === id ? '#f97316' : '#64748b'}
-            title={label}
-            description={description}
-            selected={studioMode === id}
-            onClick={() => onSelectMode(id)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function extractHtmlFromResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
@@ -647,44 +575,43 @@ function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
 }
 
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
-  // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
-  const defaultGreetingMsg = {
-    id: 1,
-    sender: 'ai',
-    modelUsed: selectedModel ? selectedModel.name : 'Gemini 3 Flash',
-    text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! What would you like to create or ask today?`,
-    type: 'greeting'
-  };
-
-  const [chatSessions, setChatSessions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('quantora_chat_sessions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [
-      {
-        id: 'session-1',
-        title: 'New Chat',
-        createdAt: Date.now(),
-        messages: [defaultGreetingMsg]
-      }
-    ];
-  });
-
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    return chatSessions[0]?.id || 'session-1';
-  });
+  const sendMessageRef = useRef(async () => {});
+  const onSendMessage = useCallback((text, opts) => sendMessageRef.current(text, opts), []);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModelDashboard, setShowModelDashboard] = useState(false);
   const [idleReturnDismissed, setIdleReturnDismissed] = useState(false);
-  const [inlineSuggestionsDismissedId, setInlineSuggestionsDismissedId] = useState(null);
   const userFirstName = user?.name?.split(/\s+/)[0] || '';
+
+  const {
+    chatSessions,
+    setChatSessions,
+    activeSessionId,
+    setActiveSessionId,
+    activeSession,
+    messages,
+    studioMode,
+    studioDomain,
+    boundRepo,
+    conversationContext,
+    listeningSignals,
+    updateActiveSession,
+    updateActiveMessages,
+    setChoiceDockState,
+    setStudioMode,
+    setStudioDomain,
+    recordListeningSignal,
+    handleCreateNewChat,
+    handleDeleteChat,
+  } = useStudioSession({ user, selectedModel });
+
+  const showIdleReturn = !idleReturnDismissed
+    && messages.length > 1
+    && isSessionIdle(activeSession.lastActiveAt);
+
+  useEffect(() => {
+    setIdleReturnDismissed(false);
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!showModelDashboard) return undefined;
@@ -700,26 +627,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
   }, [showModelDashboard]);
 
-  // Derive current session and messages
-  const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0] || {
-    id: 'session-1',
-    title: 'New Chat',
-    messages: [defaultGreetingMsg]
-  };
-  const messages = activeSession.messages || [defaultGreetingMsg];
-  const showIdleReturn = !idleReturnDismissed
-    && messages.length > 1
-    && isSessionIdle(activeSession.lastActiveAt);
-
-  useEffect(() => {
-    setIdleReturnDismissed(false);
-    setInlineSuggestionsDismissedId(null);
-  }, [activeSessionId]);
-  const studioMode = activeSession.studioMode || 'ask';
-  const studioDomain = activeSession.studioDomain || null;
-  const boundRepo = activeSession.boundRepo || null;
-  const conversationContext = activeSession.conversationContext || {};
-  const listeningSignals = activeSession.listeningSignals || [];
   const repoContextCache = useRef({});
   const emitQuantoraRef = useRef(() => {});
   const [previewCode, setPreviewCode] = useState('');
@@ -755,14 +662,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return [...messages.slice(0, idx)].reverse().find((m) => m.sender === 'user')?.text || '';
   }, [messages]);
 
-  const setStudioMode = (mode) => {
-    updateActiveSession({ studioMode: mode });
-  };
-
-  const setStudioDomain = (domain) => {
-    updateActiveSession({ studioDomain: domain });
-  };
-
   const activeDomainMeta = getDomainById(studioDomain);
 
   const [dismissedModelSpotlights, setDismissedModelSpotlights] = useState(() => {
@@ -787,21 +686,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         localStorage.setItem('quantora_dismissed_model_spotlights', JSON.stringify(next));
       } catch { /* best effort */ }
       return next;
-    });
-  };
-
-  const updateActiveSession = (updates) => {
-    setChatSessions(prevSessions => {
-      const updated = prevSessions.map(session => {
-        if (session.id !== activeSessionId) return session;
-        return { ...session, ...updates };
-      });
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
     });
   };
 
@@ -907,43 +791,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return () => root.removeAttribute('data-workspace');
   }, [hasConversation]);
 
-  // Function to update current active session's messages
-  const updateActiveMessages = (updater) => {
-    setChatSessions(prevSessions => {
-      const updated = prevSessions.map(session => {
-        if (session.id === activeSessionId) {
-          const newMsgs = typeof updater === 'function' ? updater(session.messages) : updater;
-
-          let newTitle = session.title;
-          const firstUserMsg = newMsgs.find(m => m.sender === 'user');
-          if (firstUserMsg && (session.title === 'New Chat' || session.title === 'Welcome to Quantora')) {
-            newTitle = firstUserMsg.text.slice(0, 32) + (firstUserMsg.text.length > 32 ? '...' : '');
-          }
-
-          return {
-            ...session,
-            title: newTitle,
-            messages: newMsgs
-          };
-        }
-        return session;
-      });
-
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  };
-
-  const setChoiceDockState = useCallback((messageId, choiceDockState) => {
-    updateActiveMessages((prev) => prev.map((m) => (
-      m.id === messageId ? { ...m, choiceDockState } : m
-    )));
-  }, [activeSessionId]);
-
   // --- Pillar 4: Predictive Code Assist Logic ---
   const handleCodeChange = (e) => {
     const val = e.target.value;
@@ -1040,100 +887,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const handleCreateNewChat = () => {
-    const newId = 'session-' + Date.now();
-    const newSession = {
-      id: newId,
-      title: 'New Chat',
-      createdAt: Date.now(),
-      messages: [defaultGreetingMsg],
-      studioMode: 'ask',
-      studioDomain: null,
-      boundRepo: null,
-      conversationContext: {}
-    };
-
-    setChatSessions(prev => {
-      const updated = [newSession, ...prev];
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-    setActiveSessionId(newId);
-  };
-
-  const handleDeleteChat = (e, sessionId) => {
-    e.stopPropagation();
-    setChatSessions(prev => {
-      const filtered = prev.filter(s => s.id !== sessionId);
-      const fallback = filtered.length > 0 ? filtered : [{
-        id: 'session-' + Date.now(),
-        title: 'New Chat',
-        createdAt: Date.now(),
-        messages: [defaultGreetingMsg]
-      }];
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(fallback[0].id);
-      }
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(fallback));
-      } catch (err) {
-        console.error(err);
-      }
-      return fallback;
-    });
-  };
-
   const [localInputText, setLocalInputText] = useState('');
   const prefillAppliedRef = useRef(null);
   const inputText = localInputText;
   const setInputText = setLocalInputText;
 
   const [isGenerating, setIsGenerating] = useState(false);
-  const latestAiMessageId = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i]?.sender === 'ai' && !messages[i]?.isDual) return messages[i].id;
-    }
-    return null;
-  }, [messages]);
-
-  useEffect(() => {
-    setInlineSuggestionsDismissedId(null);
-  }, [latestAiMessageId]);
-
-  const resolveInlineSuggestions = useCallback((msg) => {
-    if (!msg || msg.sender !== 'ai' || msg.isDual) return null;
-    if (msg.id !== latestAiMessageId || isGenerating) return null;
-    if (inlineSuggestionsDismissedId === msg.id) return null;
-
-    if (msg.choiceSet?.choices?.length && !msg.choiceUsed && msg.choiceDockState !== 'dismissed') {
-      return { kind: 'choices', choiceSet: msg.choiceSet, msg };
-    }
-
-    if (!msg.continueUsed) {
-      const userPrompt = getPriorUserPrompt(msg.id);
-      const continueSet = enrichContinues(msg.continueSet, { userPrompt, aiResponse: msg.text });
-      if (continueSet?.items?.length) {
-        return { kind: 'continues', continueSet, msg };
-      }
-    }
-
-    return null;
-  }, [
-    latestAiMessageId,
-    isGenerating,
-    inlineSuggestionsDismissedId,
-    getPriorUserPrompt,
-    enrichContinues,
-  ]);
-
-  const latestInlineSuggestions = React.useMemo(() => {
-    const msg = messages.find((m) => m.id === latestAiMessageId);
-    return resolveInlineSuggestions(msg);
-  }, [messages, latestAiMessageId, resolveInlineSuggestions]);
 
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
@@ -1250,43 +1009,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       window.removeEventListener('message', onPreviewMessage);
     };
   }, [canvasOpen, closePreviewModal]);
-
-  useEffect(() => {
-    if (!latestInlineSuggestions) return undefined;
-
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      if (showModelDashboard || canvasOpen) return;
-
-      event.preventDefault();
-      const { msg } = latestInlineSuggestions;
-      setInlineSuggestionsDismissedId(msg.id);
-      if (latestInlineSuggestions.kind === 'choices') {
-        setChoiceDockState(msg.id, 'dismissed');
-        emitQuantoraRef.current(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-      } else {
-        updateActiveMessages((prev) => prev.map((m) => (
-          m.id === msg.id ? { ...m, continueUsed: true } : m
-        )));
-      }
-      updateActiveSession({
-        conversationContext: learnFromDismissedSuggestions(
-          conversationContext,
-          latestInlineSuggestions.kind === 'choices' ? 'suggestions' : 'continue chips',
-        ),
-      });
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [
-    latestInlineSuggestions,
-    showModelDashboard,
-    canvasOpen,
-    setChoiceDockState,
-    conversationContext,
-    updateActiveSession,
-  ]);
 
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
@@ -2227,6 +1949,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
+  useEffect(() => {
+    sendMessageRef.current = handleSendMessage;
+  });
+
   const submitModelFeedback = async (message, outcome) => {
     if (!message?.requestId || !message?.modelId || message.qualityFeedback) return;
     if (message.id) {
@@ -2299,22 +2025,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
   }, [messages, activeSessionId, activeSession.title, studioDomain, studioMode]);
 
-  const recordListeningSignal = useCallback((type, payload) => {
-    setChatSessions((prev) => {
-      const updated = prev.map((session) => (
-        session.id === activeSessionId
-          ? mergeSessionListeningSignals(session, type, payload)
-          : session
-      ));
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  }, [activeSessionId]);
-
   useEffect(() => {
     const listener = createQuantoraListener({
       setDreamNodes,
@@ -2329,54 +2039,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     emitQuantoraRef.current(type, payload);
   }, []);
 
-  const dismissInlineSuggestions = useCallback((msg, suggestions) => {
-    if (!msg || !suggestions) return;
-    setInlineSuggestionsDismissedId(msg.id);
-    if (suggestions.kind === 'choices') {
-      setChoiceDockState(msg.id, 'dismissed');
-      emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-    } else {
-      updateActiveMessages((prev) => prev.map((m) => (
-        m.id === msg.id ? { ...m, continueUsed: true } : m
-      )));
-    }
-    updateActiveSession({
-      conversationContext: learnFromDismissedSuggestions(
-        conversationContext,
-        suggestions.kind === 'choices' ? 'suggestions' : 'continue chips',
-      ),
-    });
-  }, [conversationContext, setChoiceDockState, updateActiveSession, emitQuantora]);
-
-  const handleInlineChoiceSelect = useCallback((msg, choice) => {
-    updateActiveMessages((prev) => prev.map((m) => (
-      m.id === msg.id ? { ...m, choiceUsed: true } : m
-    )));
-    updateActiveSession({
-      conversationContext: learnFromChipSelection(conversationContext, {
-        label: choice.label,
-        value: choice.value,
-        domain: studioDomain,
-      }),
-    });
-    emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
-    handleSendMessage(choice.value, { choiceSelected: true });
-  }, [conversationContext, studioDomain, updateActiveSession, emitQuantora, handleSendMessage]);
-
-  const handleInlineContinueSelect = useCallback((msg, item) => {
-    updateActiveMessages((prev) => prev.map((m) => (
-      m.id === msg.id ? { ...m, continueUsed: true } : m
-    )));
-    updateActiveSession({
-      conversationContext: learnFromChipSelection(conversationContext, {
-        label: item.label,
-        value: item.value,
-        domain: studioDomain,
-      }),
-    });
-    emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
-    handleSendMessage(item.value);
-  }, [conversationContext, studioDomain, updateActiveSession, emitQuantora, handleSendMessage]);
+  const {
+    resolveInlineSuggestions,
+    dismissInlineSuggestions,
+    handleInlineChoiceSelect,
+    handleInlineContinueSelect,
+  } = useInlineSuggestions({
+    messages,
+    isGenerating,
+    activeSessionId,
+    enrichContinues,
+    getPriorUserPrompt,
+    setChoiceDockState,
+    updateActiveMessages,
+    updateActiveSession,
+    conversationContext,
+    studioDomain,
+    emitQuantora,
+    onSendMessage,
+    escapeBlocked: showModelDashboard || canvasOpen,
+  });
 
   const handleWorkingNotesUpdate = useCallback((patch) => {
     updateActiveSession({
@@ -3505,29 +3187,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         )}
 
-        {/* Overlays — separate cards above the input pill (never inside it) */}
-        <div className="studio-prompt-overlays">
-          {refineActive && previewCode && previewCode.trim() && !isGenerating && (
-            <div className="studio-edit-site-bar studio-prompt-dock">
-              <Wand2 size={13} color="#f97316" />
-              <span>Editing your site — describe changes below</span>
-              <button type="button" onClick={() => setRefineActive(false)}>New build</button>
-            </div>
-          )}
-
-          {previewCode?.trim() && buildSplitDismissed && (
-            <div className="studio-split-restore studio-prompt-dock">
-              <button
-                type="button"
-                className="studio-split-restore__btn"
-                onClick={() => setBuildSplitDismissed(false)}
-              >
-                Open preview panel →
-              </button>
-            </div>
-          )}
-
-        </div>
+        {/* Overlays — build/refine only; suggestions live in the chat thread */}
+        <StudioPromptOverlays
+          refineActive={refineActive}
+          previewCode={previewCode}
+          isGenerating={isGenerating}
+          buildSplitDismissed={buildSplitDismissed}
+          onNewBuild={() => setRefineActive(false)}
+          onOpenSplit={() => setBuildSplitDismissed(false)}
+        />
 
         {/* Prompt input pill — textarea + toolbar only */}
         <div className="floating-input-pill" style={{
