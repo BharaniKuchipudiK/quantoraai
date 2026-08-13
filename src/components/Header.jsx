@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
-import { useAutoHideHeader } from '../hooks/useAutoHideHeader.js';
 
-export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false, autoHide = false }) {
+const PROFILE_MENU_WIDTH = 320;
+const PROFILE_MENU_GUTTER = 12;
+
+export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [confirmModalType, setConfirmModalType] = useState(null);
@@ -11,21 +14,41 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   const modelRef = useRef(null);
   const profileRef = useRef(null);
-  const chromeBlocked = showModelDropdown || showProfileMenu || Boolean(confirmModalType);
-  const { hidden: headerHidden, show: showHeader } = useAutoHideHeader(autoHide, { blocked: chromeBlocked });
+  const profileMenuRef = useRef(null);
+  const [profileMenuPosition, setProfileMenuPosition] = useState(null);
 
-  useEffect(() => {
-    showHeader();
-  }, [activeTab, showHeader]);
+  const positionProfileMenu = useCallback(() => {
+    const anchor = profileRef.current;
+    if (!anchor || typeof window === 'undefined') return;
+    const rect = anchor.getBoundingClientRect();
+    const headerBottom = anchor.closest('.app-header')?.getBoundingClientRect().bottom ?? rect.bottom;
+    const width = Math.min(PROFILE_MENU_WIDTH, window.innerWidth - (PROFILE_MENU_GUTTER * 2));
+    const left = Math.min(
+      Math.max(PROFILE_MENU_GUTTER, rect.right - width),
+      window.innerWidth - width - PROFILE_MENU_GUTTER,
+    );
+    const top = Math.max(rect.bottom, headerBottom) + 8;
+    setProfileMenuPosition({
+      top,
+      left,
+      width,
+      maxHeight: Math.max(180, window.innerHeight - top - PROFILE_MENU_GUTTER),
+    });
+  }, []);
 
-  useEffect(() => {
-    if (!autoHide) {
-      document.documentElement.removeAttribute('data-header-hidden');
+  useLayoutEffect(() => {
+    if (!showProfileMenu) {
+      setProfileMenuPosition(null);
       return undefined;
     }
-    document.documentElement.toggleAttribute('data-header-hidden', headerHidden);
-    return () => document.documentElement.removeAttribute('data-header-hidden');
-  }, [autoHide, headerHidden]);
+    positionProfileMenu();
+    window.addEventListener('resize', positionProfileMenu);
+    window.addEventListener('scroll', positionProfileMenu, true);
+    return () => {
+      window.removeEventListener('resize', positionProfileMenu);
+      window.removeEventListener('scroll', positionProfileMenu, true);
+    };
+  }, [showProfileMenu, positionProfileMenu]);
 
   // Click Outside Listener to close dropdowns automatically!
   useEffect(() => {
@@ -33,16 +56,28 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       if (modelRef.current && !modelRef.current.contains(event.target)) {
         setShowModelDropdown(false);
       }
-      if (profileRef.current && !profileRef.current.contains(event.target)) {
+      if (
+        profileRef.current
+        && !profileRef.current.contains(event.target)
+        && !profileMenuRef.current?.contains(event.target)
+      ) {
+        setShowProfileMenu(false);
+      }
+    };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowModelDropdown(false);
         setShowProfileMenu(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, []);
 
@@ -88,8 +123,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   return (
     <>
-    <div className={`app-header-wrap${autoHide ? ' app-header-wrap--auto-hide' : ''}${headerHidden ? ' is-hidden' : ''}`}>
-    <header className={`app-header${compact ? ' app-header--studio' : ''}${autoHide ? ' app-header--auto-hide' : ''}`} style={{
+    <header className={`app-header${compact ? ' app-header--studio' : ''}`} style={{
       position: 'relative',
       top: 0,
       zIndex: 100,
@@ -193,6 +227,10 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
           {user ? (
             <div ref={profileRef} style={{ position: 'relative' }}>
               <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={showProfileMenu}
+                aria-controls="quantora-profile-menu"
                 onClick={() => {
                   setShowProfileMenu(!showProfileMenu);
                   setShowModelDropdown(false);
@@ -225,18 +263,26 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               </button>
 
               {/* Profile & Privacy Master Menu Dropdown */}
-              {showProfileMenu && (
-                <div style={{
-                  position: 'absolute',
-                  top: '115%',
-                  right: 0,
-                  width: '320px',
+              {showProfileMenu && profileMenuPosition && createPortal((
+                <div
+                  ref={profileMenuRef}
+                  id="quantora-profile-menu"
+                  role="dialog"
+                  aria-label="Account, privacy, and appearance"
+                  style={{
+                  position: 'fixed',
+                  top: `${profileMenuPosition.top}px`,
+                  left: `${profileMenuPosition.left}px`,
+                  width: `${profileMenuPosition.width}px`,
+                  maxHeight: `${profileMenuPosition.maxHeight}px`,
+                  overflowY: 'auto',
+                  overscrollBehavior: 'contain',
                   background: dropdownBg,
                   border: `1px solid ${dropdownBorder}`,
                   borderRadius: '16px',
                   padding: '16px',
                   boxShadow: isLight ? '0 15px 40px rgba(0,0,0,0.15)' : '0 20px 50px rgba(0,0,0,0.7)',
-                  zIndex: 200,
+                  zIndex: 1000,
                   color: textColor
                 }}>
                   {/* Profile Info Header */}
@@ -443,7 +489,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <span>Delete Account</span>
                   </div>
                 </div>
-              )}
+              ), document.body)}
             </div>
           ) : (
             <button
@@ -469,17 +515,6 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
         </div>
       </div>
     </header>
-    </div>
-
-    {autoHide && headerHidden && (
-      <button
-        type="button"
-        className="app-header-reveal"
-        aria-label="Show navigation"
-        title="Show navigation"
-        onClick={showHeader}
-      />
-    )}
 
       {/* Double Confirmation Security Modal */}
       {confirmModalType && (

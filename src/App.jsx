@@ -316,7 +316,6 @@ export default function App() {
             setThemeMode={setThemeMode}
             isLight={isLight}
             compact={isWorkspaceShell}
-            autoHide={isWorkspaceShell}
           />
 
           <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{
