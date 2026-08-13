@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, ThumbsUp, ThumbsDown, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass, SlidersHorizontal } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, FileText, Image as ImageIcon, Activity, FolderPlus, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass, SlidersHorizontal, Atom } from 'lucide-react';
 import LivePreviewCanvas from './LivePreviewCanvas';
+import StudioChatFeed from './StudioChatFeed';
 import ModelDashboard from './ModelDashboard';
 import { chooseBestFreeModel, classifyTask, rankFreeModels } from '../lib/model-routing.js';
 import { loadArenaPreferences, recordArenaWin } from '../lib/arena-preferences.js';
@@ -20,21 +17,28 @@ import {
   stripPartialAssistantMarkers,
 } from '../lib/studio-choices.js';
 import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
-import { createQuantoraListener, mergeSessionListeningSignals, QUANTORA_EVENTS } from '../lib/listening-layer.js';
+import {
+  consumeOneShotListeningSignals,
+  createQuantoraListener,
+  QUANTORA_EVENTS,
+} from '../lib/listening-layer.js';
 import { enrichContinueSet } from '../lib/domain-anticipation.js';
 import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
-import StudioChoiceCards from './StudioChoiceCards';
-import StudioContinueChips from './StudioContinueChips';
+import StudioWandStatus from './StudioWandStatus';
+import StudioToolsMenu from './StudioToolsMenu';
+import StudioPromptOverlays from './StudioPromptOverlays';
+import { usePromptPolish } from '../hooks/usePromptPolish.js';
+import { useStudioSession } from '../hooks/useStudioSession.js';
+import { useInlineSuggestions } from '../hooks/useInlineSuggestions.js';
 import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
 import StudioIdleReturnBanner, { isSessionIdle } from './StudioIdleReturnBanner';
-import StudioProactiveNudge from './StudioProactiveNudge';
 import StudioWandHint from './StudioWandHint';
 import { detectProactiveNudge } from '../lib/proactive-nudges.js';
+import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import {
   learnFromChipSelection,
-  learnFromDismissedSuggestions,
   shouldSuppressProactiveNudge,
 } from '../lib/communication-intelligence.js';
 import { STARTER_TEMPLATES } from '../lib/starter-templates.js';
@@ -60,508 +64,11 @@ import {
   getPromptPlaceholder,
 } from '../lib/studio-domains.js';
 
-const DOMAIN_ICONS = {
-  travel: Plane,
-  education: BookOpen,
-  finance: DollarSign,
-  research: Search,
-};
-
-const OUTPUT_MODE_ICONS = {
-  ask: MessageSquare,
-  build: Layout,
-  plan: Workflow,
-};
-
-function StudioGlossRow({ icon: Icon, iconColor, title, description, selected, onClick, badge }) {
-  return (
-    <button type="button" className={`studio-gloss-row${selected ? ' is-selected' : ''}`} onClick={onClick}>
-      <span className="studio-gloss-row__icon" style={{ color: iconColor }}>
-        <Icon size={17} strokeWidth={2} />
-      </span>
-      <span className="studio-gloss-row__copy">
-        <span className="studio-gloss-row__title">
-          {title}
-          {badge ? <span className="studio-gloss-row__badge">{badge}</span> : null}
-        </span>
-        {description ? <span className="studio-gloss-row__desc">{description}</span> : null}
-      </span>
-      <span className={`studio-gloss-row__radio${selected ? ' is-selected' : ''}`} aria-hidden="true" />
-    </button>
-  );
-}
-
-function StudioToolsMenu({ isLight, studioDomain, studioMode, onSelectDomain, onSelectMode }) {
-  return (
-    <div className={`studio-gloss-popover${isLight ? ' is-light' : ' is-dark'}`} role="menu" aria-label="Focus and response settings">
-      <div className="studio-gloss-popover__section">
-        <div className="studio-gloss-popover__heading">Focus</div>
-        <StudioGlossRow
-          icon={Compass}
-          iconColor="#64748b"
-          title="General"
-          description="No specific domain bias"
-          selected={!studioDomain}
-          onClick={() => onSelectDomain(null)}
-        />
-        {STUDIO_DOMAINS.map(({ id, label, description }) => (
-          <StudioGlossRow
-            key={id}
-            icon={DOMAIN_ICONS[id]}
-            iconColor={studioDomain === id ? '#f97316' : '#64748b'}
-            title={label}
-            description={description}
-            selected={studioDomain === id}
-            onClick={() => onSelectDomain(id)}
-          />
-        ))}
-      </div>
-      <div className="studio-gloss-popover__divider" />
-      <div className="studio-gloss-popover__section">
-        <div className="studio-gloss-popover__heading">Response</div>
-        {STUDIO_OUTPUT_MODES.map(({ id, label, description }) => (
-          <StudioGlossRow
-            key={id}
-            icon={OUTPUT_MODE_ICONS[id]}
-            iconColor={studioMode === id ? '#f97316' : '#64748b'}
-            title={label}
-            description={description}
-            selected={studioMode === id}
-            onClick={() => onSelectMode(id)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function extractHtmlFromResponse(rawText) {
-  if (!rawText || typeof rawText !== 'string') return '';
-  const trimmed = rawText.trim();
-  const htmlFence = trimmed.match(/```html\s*\n?([\s\S]*?)```/i);
-  if (htmlFence?.[1]) return htmlFence[1].trim();
-  const genericFence = trimmed.match(/```\s*\n?([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)```/i);
-  if (genericFence?.[1]) return genericFence[1].trim();
-  if (/<!DOCTYPE html>/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
-    return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
-  }
-  return '';
-}
-
-function hasPreviewableContent(rawText) {
-  if (!rawText || typeof rawText !== 'string') return false;
-  return Boolean(extractHtmlFromResponse(rawText) || /```/.test(rawText));
-}
-
-function preparePreviewHtml(rawText, imageMap = new Map()) {
-  let html = extractHtmlFromResponse(rawText);
-  if (!html && (/<!DOCTYPE html>/i.test(rawText) || /<html[\s>]/i.test(rawText))) {
-    html = rawText.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
-  }
-  if (!html) return '';
-  if (imageMap.size) {
-    for (const [token, dataUrl] of imageMap) html = html.split(token).join(dataUrl);
-  }
-  return html;
-}
-
-function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {
-  if (!hasPreviewableContent(msg.text)) return null;
-  if (isGenerating && msg.id === streamingMessageId) {
-    return { disabled: true, label: 'Building…', title: 'Still generating the response' };
-  }
-  const status = msg.previewStatus;
-  if (!status) {
-    return { disabled: false, label: 'Open Live Preview', title: 'Open the sandbox preview' };
-  }
-  if (status === 'running' || status === 'verifying' || status === 'healing') {
-    return { disabled: true, label: 'Verifying preview…', title: 'Running sandbox checks before preview opens' };
-  }
-  if (status === 'clean') {
-    return { disabled: false, label: 'Open Live Preview', title: 'Verified — runs clean' };
-  }
-  if (status === 'degraded') {
-    return { disabled: false, label: 'Open Live Preview', title: 'Preview ready — styling may be incomplete' };
-  }
-  if (status === 'failed') {
-    return { disabled: false, label: 'Open Live Preview', title: 'Preview may have runtime errors' };
-  }
-  return { disabled: false, label: 'Open Live Preview', title: 'Open the sandbox preview' };
-}
-
-function LivePreviewActionButton({ msg, meta, onOpen, compact = false }) {
-  if (!meta) return null;
-  const iconSize = compact ? 10 : 13;
-  return (
-    <button
-      type="button"
-      disabled={meta.disabled}
-      title={meta.title}
-      onClick={() => !meta.disabled && onOpen(msg.text)}
-      style={{
-        background: meta.disabled ? 'rgba(148, 163, 184, 0.12)' : 'rgba(249, 115, 22, 0.15)',
-        border: meta.disabled ? '1px solid rgba(148, 163, 184, 0.35)' : '1px solid rgba(249, 115, 22, 0.4)',
-        color: meta.disabled ? '#94a3b8' : '#f97316',
-        padding: compact ? '4px 8px' : '6px 12px',
-        borderRadius: '8px',
-        fontSize: compact ? '0.72rem' : '0.78rem',
-        fontWeight: '700',
-        cursor: meta.disabled ? 'not-allowed' : 'pointer',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: compact ? '4px' : '6px',
-        opacity: meta.disabled ? 0.85 : 1,
-      }}
-    >
-      {meta.disabled ? <Loader size={iconSize} className="animate-spin" /> : <Play size={iconSize} />}
-      {meta.label}
-    </button>
-  );
-}
-// Interactive iOS Calculator Sub-Component
-function LiveIosCalculator() {
-  const [display, setDisplay] = useState('0');
-  const [prevVal, setPrevVal] = useState(null);
-  const [operator, setOperator] = useState(null);
-
-  const handleNum = (n) => {
-    setDisplay(d => (d === '0' ? String(n) : d + n));
-  };
-
-  const handleOp = (op) => {
-    setPrevVal(parseFloat(display));
-    setOperator(op);
-    setDisplay('0');
-  };
-
-  const handleEqual = () => {
-    if (prevVal === null || !operator) return;
-    const current = parseFloat(display);
-    let res = 0;
-    if (operator === '+') res = prevVal + current;
-    if (operator === '-') res = prevVal - current;
-    if (operator === '×') res = prevVal * current;
-    if (operator === '÷') res = current !== 0 ? prevVal / current : 'Error';
-    setDisplay(String(res));
-    setPrevVal(null);
-    setOperator(null);
-  };
-
-  const handleClear = () => {
-    setDisplay('0');
-    setPrevVal(null);
-    setOperator(null);
-  };
-
-
-  return (
-    <div style={{ maxWidth: '280px', background: '#000000', borderRadius: '32px', padding: '20px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', border: '4px solid #1c1c1e', margin: '14px 0' }}>
-      <div style={{ fontSize: '2.4rem', textAlign: 'right', marginBottom: '16px', padding: '0 8px', fontFamily: 'sans-serif', fontWeight: '300', minHeight: '50px' }}>
-        {display}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-        <button onClick={handleClear} style={{ background: '#a5a5a5', color: '#000', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>AC</button>
-        <button onClick={() => setDisplay(d => String(parseFloat(d) * -1))} style={{ background: '#a5a5a5', color: '#000', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>±</button>
-        <button onClick={() => setDisplay(d => String(parseFloat(d) / 100))} style={{ background: '#a5a5a5', color: '#000', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>%</button>
-        <button onClick={() => handleOp('÷')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>÷</button>
-
-        <button onClick={() => handleNum(7)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>7</button>
-        <button onClick={() => handleNum(8)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>8</button>
-        <button onClick={() => handleNum(9)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>9</button>
-        <button onClick={() => handleOp('×')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>×</button>
-
-        <button onClick={() => handleNum(4)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>4</button>
-        <button onClick={() => handleNum(5)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>5</button>
-        <button onClick={() => handleNum(6)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>6</button>
-        <button onClick={() => handleOp('-')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>-</button>
-
-        <button onClick={() => handleNum(1)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>1</button>
-        <button onClick={() => handleNum(2)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>2</button>
-        <button onClick={() => handleNum(3)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>3</button>
-        <button onClick={() => handleOp('+')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
-
-        <button onClick={() => handleNum(0)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '26px', gridColumn: 'span 2', fontSize: '1.3rem', textAlign: 'left', paddingLeft: '22px', cursor: 'pointer' }}>0</button>
-        <button onClick={() => handleNum('.')} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>.</button>
-        <button onClick={handleEqual} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>=</button>
-      </div>
-    </div>
-  );
-}
-
-// Interactive AI Beat Synthesizer Sub-Component
-function LiveBeatMaker() {
-  const [bpm, setBpm] = useState(124);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [activePads, setActivePads] = useState([]);
-
-  const togglePad = (id) => {
-    setActivePads(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
-  };
-
-  return (
-    <div style={{ padding: '20px', background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', borderRadius: '20px', color: '#fff', margin: '14px 0', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h4 style={{ margin: 0, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Music size={18} /> Interactive AI Beat Synthesizer
-        </h4>
-        <span style={{ fontSize: '0.78rem', background: '#334155', padding: '4px 10px', borderRadius: '9999px' }}>{bpm} BPM</span>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
-        {['Kick', 'Snare', 'Hi-Hat', 'Clap', 'Synth A', 'Bass B', 'Pad C', 'Vocal FX'].map((pad, i) => (
-          <button
-            key={i}
-            onClick={() => togglePad(i)}
-            style={{
-              padding: '16px 8px',
-              borderRadius: '12px',
-              background: activePads.includes(i) ? 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)' : '#1e293b',
-              border: 'none',
-              color: '#fff',
-              fontWeight: '600',
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              boxShadow: activePads.includes(i) ? '0 0 15px rgba(249, 115, 22, 0.6)' : 'none'
-            }}
-          >
-            {pad}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <button onClick={() => setIsPlaying(!isPlaying)} style={{ flex: 1, padding: '10px', borderRadius: '10px', background: '#f97316', border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-          {isPlaying ? '⏸ Pause Rhythm' : '▶ Play Synthesized Beat'}
-        </button>
-        <button onClick={() => setBpm(b => (b >= 160 ? 90 : b + 10))} style={{ padding: '10px 16px', borderRadius: '10px', background: '#334155', border: 'none', color: '#fff', cursor: 'pointer' }}>
-          Tempo Shift
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Interactive Quantum Simulator Sub-Component
-function LiveQuantumSimulator() {
-  const [prob00, setProb00] = useState(50);
-  const [prob11, setProb11] = useState(50);
-  const [hasHadamard, setHasHadamard] = useState(true);
-
-  const toggleHadamard = () => {
-    if (hasHadamard) {
-      setHasHadamard(false);
-      setProb00(100);
-      setProb11(0);
-    } else {
-      setHasHadamard(true);
-      setProb00(50);
-      setProb11(50);
-    }
-  };
-
-  return (
-    <div style={{ padding: '20px', background: 'linear-gradient(135deg, #070913 0%, #0d1127 100%)', borderRadius: '20px', color: '#fff', margin: '14px 0', border: '1px solid rgba(6, 182, 212, 0.4)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-        <h4 style={{ margin: 0, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Cpu size={18} /> Interactive Quantum Entanglement Simulator
-        </h4>
-        <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '6px' }}>
-          Bell State |Φ+⟩ Active
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontFamily: 'monospace', color: '#a78bfa', fontWeight: 'bold' }}>|q₀⟩ Wire:</span>
-          <button onClick={toggleHadamard} style={{ background: hasHadamard ? '#8b5cf6' : '#334155', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}>
-            {hasHadamard ? 'H (Hadamard Active)' : '+ Add Hadamard Gate'}
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-          <span>Superposition Outcome State |00⟩ & |11⟩:</span>
-          <strong style={{ color: '#34d399' }}>{prob00}% / {prob11}%</strong>
-        </div>
-        <div style={{ height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden', display: 'flex' }}>
-          <div style={{ width: `${prob00}%`, background: '#38bdf8', transition: 'width 0.4s ease' }} />
-          <div style={{ width: `${prob11}%`, background: '#a78bfa', transition: 'width 0.4s ease' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Graphic Brand Logo Renderer for Tech Stack Pills
-function TechLogo({ name }) {
-  switch (name) {
-    case 'React':
-      return (
-        <svg width="15" height="15" viewBox="-11.5 -10.2 23 20.4" fill="none">
-          <circle cx="0" cy="0" r="2.05" fill="#61DAFB"/>
-          <g stroke="#61DAFB" strokeWidth="1" fill="none">
-            <ellipse rx="11" ry="4.2"/>
-            <ellipse rx="11" ry="4.2" transform="rotate(60)"/>
-            <ellipse rx="11" ry="4.2" transform="rotate(120)"/>
-          </g>
-        </svg>
-      );
-    case 'Next.js':
-      return (
-        <svg width="15" height="15" viewBox="0 0 180 180" fill="none">
-          <circle cx="90" cy="90" r="85" fill="#000" stroke="#888" strokeWidth="8"/>
-          <path d="M149.5 157.5L69.1 54H54V126H67.5V70.9L138.2 162.2C142.2 160.8 146 159.2 149.5 157.5Z" fill="#fff"/>
-          <rect x="115.5" y="54" width="13.5" height="72" fill="#fff"/>
-        </svg>
-      );
-    case 'Go':
-      return (
-        <svg width="18" height="11" viewBox="0 0 100 50" fill="none">
-          <path d="M 25,5 C 12,5 4,16 4,30 C 4,44 12,55 25,55 C 35,55 42,48 44,38 L 25,38 L 25,28 L 54,28 C 55,31 55,34 55,38 C 55,52 44,62 25,62 C 8,62 0,48 0,30 C 0,12 8,0 25,0 C 37,0 48,8 51,18 L 41,23 C 38,13 31,5 25,5 Z" fill="#00ADD8"/>
-          <path d="M 95,30 C 95,48 82,58 66,58 C 50,58 37,48 37,30 C 37,12 50,2 66,2 C 82,2 95,12 95,30 Z M 50,30 C 50,42 56,50 66,50 C 76,50 82,42 82,30 C 82,18 76,10 66,10 C 56,10 50,18 50,30 Z" fill="#00ADD8"/>
-        </svg>
-      );
-    case 'Python':
-      return (
-        <svg width="15" height="15" viewBox="0 0 110 110" fill="none">
-          <path d="M51.6 3C27.8 3 29.1 13.3 29.1 13.3l.1 10.4h23.2v3.3H19.7S3 24.3 3 48.1c0 23.8 14.5 22.9 14.5 22.9h8.7V58.7s-.5-14.8 14.8-14.8h22.8V21.1S55.2 3 51.6 3zm-11 7.2a3.3 3.3 0 1 1 0 6.6 3.3 3.3 0 0 1 0-6.6z" fill="#3776AB"/>
-          <path d="M58.4 107c23.8 0 22.5-10.3 22.5-10.3l-.1-10.4H57.6v-3.3h32.7s16.7 2.7 16.7-21.1c0-23.8-14.5-22.9-14.5-22.9h-8.7v12.3s.5 14.8-14.8 14.8H56.2v22.8s-1.4 18.1 2.2 18.1zm11-7.2a3.3 3.3 0 1 1 0-6.6 3.3 3.3 0 0 1 0 6.6z" fill="#FFD43B"/>
-        </svg>
-      );
-    case 'Flutter':
-      return (
-        <svg width="14" height="14" viewBox="0 0 100 100" fill="none">
-          <path d="M58 8L15 51L28 64L85 8H58Z" fill="#42A5F5"/>
-          <path d="M58 51L34 75L47 88L85 51H58Z" fill="#0D47A1"/>
-          <path d="M34 75L58 51H85L47 88.5L34 75Z" fill="#167EE6"/>
-        </svg>
-      );
-    case 'Gemini AI':
-      return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-          <path d="M12 0C12 6.627 6.627 12 0 12C6.627 12 17.373 12 24 12C17.373 12 12 6.627 12 0Z" fill="url(#gemini_grad_pill)"/>
-          <defs>
-            <linearGradient id="gemini_grad_pill" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#f97316"/>
-              <stop offset="0.5" stopColor="#ec4899"/>
-              <stop offset="1" stopColor="#3b82f6"/>
-            </linearGradient>
-          </defs>
-        </svg>
-      );
-    case 'Angular':
-      return (
-        <svg width="15" height="15" viewBox="0 0 250 250" fill="none">
-          <polygon points="125,30 31.9,63.2 46.1,186.3 125,230 203.9,186.3 218.1,63.2" fill="#DD0031"/>
-          <polygon points="125,30 125,52.2 125,153.4 175.3,178.5 188.5,95.7" fill="#C3002F"/>
-          <polygon points="125,52.1 74.7,178.5 96.6,178.5 106.8,153.4 143.2,153.4 125,108" fill="#FFFFFF"/>
-        </svg>
-      );
-    case 'Node.js':
-      return (
-        <svg width="15" height="15" viewBox="0 0 256 289" fill="none">
-          <path d="M128 0L0 74v141l128 74 128-74V74L128 0z" fill="#5FA04E"/>
-          <path d="M128 141.5V289l128-74V74L128 141.5z" fill="#43853D"/>
-        </svg>
-      );
-    case 'Java':
-      return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-          <path d="M18.5 10.5C18.5 10.5 19 8.5 16 8.5C13 8.5 13 10 10.5 10C8 10 7.5 8.5 7.5 8.5M10.5 3C10.5 3 12.5 4.5 10.5 6C8.5 7.5 11.5 9 11.5 9M13.5 13.5C15.5 13.5 18 12.5 18 12.5M12 21C6.477 21 2 19.5 2 17.5C2 15.5 6.477 14 12 14C17.523 14 22 15.5 22 17.5C22 19.5 17.523 21 12 21Z" stroke="#ED8B00" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-      );
-    case '.NET':
-      return (
-        <svg width="16" height="14" viewBox="0 0 24 20" fill="none">
-          <rect width="24" height="20" rx="4" fill="#512BD4"/>
-          <text x="12" y="14" fontSize="10" fontWeight="800" fill="#fff" textAnchor="middle" fontFamily="sans-serif">.NET</text>
-        </svg>
-      );
-    default:
-      return <Sparkles size={13} color="#f97316" />;
-  }
-}
-
-// Interactive Tech Stack Badge Component (Fixed width, no shaking)
-function TechBadge({ tech, isLight, textColor, onSelect }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <span
-      onClick={() => onSelect(`Build a ${tech} application starter template`)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      title={tech}
-      style={{
-        fontSize: '0.76rem',
-        fontWeight: '600',
-        padding: '6px 12px',
-        borderRadius: '10px',
-        background: hovered
-          ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.22)')
-          : (isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.08)'),
-        color: hovered ? '#f97316' : textColor,
-        cursor: 'pointer',
-        border: hovered
-          ? '1px solid #f97316'
-          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)'),
-        whiteSpace: 'nowrap',
-        transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        boxShadow: hovered ? '0 4px 12px rgba(249, 115, 22, 0.2)' : 'none'
-      }}
-    >
-      <TechLogo name={tech} />
-      <span style={{ fontWeight: '600' }}>{tech}</span>
-    </span>
-  );
-}
-
-// Interactive Quick Suggestion Chip Component (Fixed width, no shaking)
-function QuickPromptChip({ chip, isLight, onSelect }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <button
-      onClick={() => onSelect(chip.prompt)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      title={chip.label}
-      style={{
-        background: hovered
-          ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.22)')
-          : (isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.08)'),
-        border: hovered
-          ? '1px solid #f97316'
-          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)'),
-        color: hovered ? '#f97316' : (isLight ? '#475569' : '#94a3b8'),
-        padding: '6px 14px',
-        borderRadius: '20px',
-        fontSize: '0.78rem',
-        fontWeight: '600',
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        boxShadow: hovered ? '0 4px 12px rgba(249, 115, 22, 0.2)' : 'none'
-      }}
-    >
-      {chip.iconType === 'currency' && <Globe size={15} color="#10b981" />}
-      {chip.iconType === 'calc' && <Calculator size={15} color="#3b82f6" />}
-      {chip.iconType === 'music' && <Music size={15} color="#d946ef" />}
-      {chip.iconType === 'quantum' && <Atom size={15} color="#8b5cf6" />}
-      {chip.iconType === 'weather' && <Sun size={15} color="#f59e0b" />}
-      {chip.iconType === 'joke' && <Smile size={15} color="#f97316" />}
-      {chip.iconType === 'recipe' && <Utensils size={15} color="#10b981" />}
-      {chip.iconType === 'expense' && <PieChart size={15} color="#8b5cf6" />}
-
-      <span style={{ fontWeight: '600' }}>{chip.label}</span>
-    </button>
-  );
-}
+import {
+  extractHtmlFromResponse,
+  hasPreviewableContent,
+  preparePreviewHtml,
+} from '../lib/studio-preview-helpers.js';
 
 /*
  * Conservative build-intent detector. Returns true only for clear "make me a
@@ -589,40 +96,6 @@ function isSoftwarePlanningRequest(text) {
   return softwareSignals.test(t);
 }
 
-// Syntax-highlighted code block with a one-click Copy button in the corner.
-function CopyableCodeBlock({ code, language }) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (e) { /* clipboard unavailable */ }
-  };
-  return (
-    <div style={{ position: 'relative', margin: '10px 0' }}>
-      <button
-        onClick={onCopy}
-        title="Copy code"
-        style={{
-          position: 'absolute', top: '8px', right: '8px', zIndex: 2,
-          background: copied ? 'rgba(16,185,129,0.9)' : 'rgba(255,255,255,0.12)',
-          border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
-          borderRadius: '6px', padding: '4px 9px', fontSize: '0.7rem', fontWeight: 700,
-          cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px'
-        }}
-      >
-        <Copy size={12} /> {copied ? 'Copied' : 'Copy'}
-      </button>
-      <SyntaxHighlighter style={vscDarkPlus} language={language} PreTag="div" customStyle={{ borderRadius: '8px', margin: 0, fontSize: '0.85rem', paddingTop: '34px' }}>
-        {code}
-      </SyntaxHighlighter>
-    </div>
-  );
-}
-
-// Workspace (Code Canvas) is hidden: Quantora is outcome-first — conversation
-// + live preview, not a code editor. Flip to true to bring back a dev mode.
 const SHOW_WORKSPACE = false;
 
 // Downscale an uploaded image to a bounded dimension and return a JPEG data URI.
@@ -656,45 +129,44 @@ function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
 }
 
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
-  // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
-  const defaultGreetingMsg = {
-    id: 1,
-    sender: 'ai',
-    modelUsed: selectedModel ? selectedModel.name : 'Gemini 3 Flash',
-    text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! What would you like to create or ask today?`,
-    type: 'greeting'
-  };
-
-  const [chatSessions, setChatSessions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('quantora_chat_sessions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [
-      {
-        id: 'session-1',
-        title: 'New Chat',
-        createdAt: Date.now(),
-        messages: [defaultGreetingMsg]
-      }
-    ];
-  });
-
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    return chatSessions[0]?.id || 'session-1';
-  });
+  const sendMessageRef = useRef(async () => {});
+  const onSendMessage = useCallback((text, opts) => sendMessageRef.current(text, opts), []);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModelDashboard, setShowModelDashboard] = useState(false);
   const [idleReturnDismissed, setIdleReturnDismissed] = useState(false);
-  const [proactiveNudgeDismissedId, setProactiveNudgeDismissedId] = useState(null);
   const userFirstName = user?.name?.split(/\s+/)[0] || '';
   const isSignedIn = Boolean(user);
+
+  const {
+    chatSessions,
+    setChatSessions,
+    activeSessionId,
+    setActiveSessionId,
+    activeSession,
+    messages,
+    studioMode,
+    studioDomain,
+    boundRepo,
+    conversationContext,
+    listeningSignals,
+    updateActiveSession,
+    updateActiveMessages,
+    setChoiceDockState,
+    setStudioMode,
+    setStudioDomain,
+    recordListeningSignal,
+    handleCreateNewChat,
+    handleDeleteChat,
+  } = useStudioSession({ user, selectedModel });
+
+  const showIdleReturn = !idleReturnDismissed
+    && messages.length > 1
+    && isSessionIdle(activeSession.lastActiveAt);
+
+  useEffect(() => {
+    setIdleReturnDismissed(false);
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!showModelDashboard) return undefined;
@@ -710,48 +182,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
   }, [showModelDashboard]);
 
-  // Derive current session and messages
-  const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0] || {
-    id: 'session-1',
-    title: 'New Chat',
-    messages: [defaultGreetingMsg]
-  };
-  const messages = activeSession.messages || [defaultGreetingMsg];
-  const showIdleReturn = !idleReturnDismissed
-    && messages.length > 1
-    && isSessionIdle(activeSession.lastActiveAt);
-
-  useEffect(() => {
-    setIdleReturnDismissed(false);
-  }, [activeSessionId]);
-  const pendingChoiceMessage = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual) {
-        if (m.choiceDockState === 'dismissed') return null;
-        return m;
-      }
-    }
-    return null;
-  }, [messages]);
-
-  const dismissedChoiceMessage = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender === 'ai' && m.choiceSet?.choices?.length && !m.choiceUsed && !m.isDual && m.choiceDockState === 'dismissed') {
-        return m;
-      }
-    }
-    return null;
-  }, [messages]);
-  const studioMode = activeSession.studioMode || 'ask';
-  const studioDomain = activeSession.studioDomain || null;
-  const boundRepo = activeSession.boundRepo || null;
-  const conversationContext = activeSession.conversationContext || {};
-  const listeningSignals = activeSession.listeningSignals || [];
   const memoryConsented = activeSession.memoryConsented === true;
   const outcomeVersion = Number.isInteger(activeSession.outcomeVersion) ? activeSession.outcomeVersion : 0;
   const outcomeState = activeSession.outcomeState || null;
+
   const repoContextCache = useRef({});
   const outcomeSyncTimerRef = useRef(null);
   const emitQuantoraRef = useRef(() => {});
@@ -788,14 +222,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return [...messages.slice(0, idx)].reverse().find((m) => m.sender === 'user')?.text || '';
   }, [messages]);
 
-  const setStudioMode = (mode) => {
-    updateActiveSession({ studioMode: mode });
-  };
-
-  const setStudioDomain = (domain) => {
-    updateActiveSession({ studioDomain: domain });
-  };
-
   const activeDomainMeta = getDomainById(studioDomain);
 
   const [dismissedModelSpotlights, setDismissedModelSpotlights] = useState(() => {
@@ -822,21 +248,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       return next;
     });
   };
-
-  const updateActiveSession = useCallback((updates) => {
-    setChatSessions(prevSessions => {
-      const updated = prevSessions.map(session => {
-        if (session.id !== activeSessionId) return session;
-        return { ...session, ...updates };
-      });
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  }, [activeSessionId]);
 
   useEffect(() => {
     if (!isSignedIn || !memoryConsented) return undefined;
@@ -912,6 +323,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
     updateActiveSession({ memoryConsented: false, outcomeVersion: 0, outcomeState: null });
   }, [activeSessionId, conversationContext, isSignedIn, syncOutcomeContext, updateActiveSession]);
+
+  const deleteChatWithMemory = useCallback((e, sessionId) => {
+    const sessionToDelete = chatSessions.find((session) => session.id === sessionId);
+    if (isSignedIn && sessionToDelete?.memoryConsented) {
+      void forgetOutcomeState(sessionId).catch((error) => {
+        console.warn('Outcome Memory could not be deleted with the chat:', error.message);
+      });
+    }
+    handleDeleteChat(e, sessionId);
+  }, [chatSessions, isSignedIn, handleDeleteChat]);
 
   const fetchRepoPreview = async (repoUrl, task = 'Understand this codebase and its architecture') => {
     const response = await fetch('/api/github/preview', {
@@ -1015,43 +436,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return () => root.removeAttribute('data-workspace');
   }, [hasConversation]);
 
-  // Function to update current active session's messages
-  const updateActiveMessages = (updater) => {
-    setChatSessions(prevSessions => {
-      const updated = prevSessions.map(session => {
-        if (session.id === activeSessionId) {
-          const newMsgs = typeof updater === 'function' ? updater(session.messages) : updater;
-
-          let newTitle = session.title;
-          const firstUserMsg = newMsgs.find(m => m.sender === 'user');
-          if (firstUserMsg && (session.title === 'New Chat' || session.title === 'Welcome to Quantora')) {
-            newTitle = firstUserMsg.text.slice(0, 32) + (firstUserMsg.text.length > 32 ? '...' : '');
-          }
-
-          return {
-            ...session,
-            title: newTitle,
-            messages: newMsgs
-          };
-        }
-        return session;
-      });
-
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  };
-
-  const setChoiceDockState = useCallback((messageId, choiceDockState) => {
-    updateActiveMessages((prev) => prev.map((m) => (
-      m.id === messageId ? { ...m, choiceDockState } : m
-    )));
-  }, [activeSessionId]);
-
   // --- Pillar 4: Predictive Code Assist Logic ---
   const handleCodeChange = (e) => {
     const val = e.target.value;
@@ -1148,115 +532,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const handleCreateNewChat = () => {
-    const newId = 'session-' + Date.now();
-    const newSession = {
-      id: newId,
-      title: 'New Chat',
-      createdAt: Date.now(),
-      messages: [defaultGreetingMsg],
-      studioMode: 'ask',
-      studioDomain: null,
-      boundRepo: null,
-      conversationContext: {},
-      memoryConsented: false,
-      outcomeVersion: 0,
-    };
-
-    setChatSessions(prev => {
-      const updated = [newSession, ...prev];
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-    setActiveSessionId(newId);
-  };
-
-  const handleDeleteChat = (e, sessionId) => {
-    e.stopPropagation();
-    const sessionToDelete = chatSessions.find((session) => session.id === sessionId);
-    if (isSignedIn && sessionToDelete?.memoryConsented) {
-      void forgetOutcomeState(sessionId).catch((error) => {
-        console.warn('Outcome Memory could not be deleted with the chat:', error.message);
-      });
-    }
-    setChatSessions(prev => {
-      const filtered = prev.filter(s => s.id !== sessionId);
-      const fallback = filtered.length > 0 ? filtered : [{
-        id: 'session-' + Date.now(),
-        title: 'New Chat',
-        createdAt: Date.now(),
-        messages: [defaultGreetingMsg]
-      }];
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(fallback[0].id);
-      }
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(fallback));
-      } catch (err) {
-        console.error(err);
-      }
-      return fallback;
-    });
-  };
-
   const [localInputText, setLocalInputText] = useState('');
   const prefillAppliedRef = useRef(null);
   const inputText = localInputText;
   const setInputText = setLocalInputText;
+  const activeSessionIdRef = useRef(activeSessionId);
+  const inputTextRef = useRef(inputText);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+    inputTextRef.current = inputText;
+  }, [activeSessionId, inputText]);
 
   const [isGenerating, setIsGenerating] = useState(false);
-  const latestContinueMessageId = React.useMemo(() => {
-    if (pendingChoiceMessage || isGenerating) return null;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender !== 'ai' || m.continueUsed || m.isDual) continue;
-      const userPrompt = getPriorUserPrompt(m.id);
-      const enriched = enrichContinues(m.continueSet, { userPrompt, aiResponse: m.text });
-      if (enriched?.items?.length) return m.id;
-    }
-    return null;
-  }, [messages, pendingChoiceMessage, isGenerating, enrichContinues, getPriorUserPrompt]);
-
-  const latestContinueContext = React.useMemo(() => {
-    if (!latestContinueMessageId || pendingChoiceMessage) return null;
-    const msg = messages.find((m) => m.id === latestContinueMessageId);
-    if (!msg) return null;
-    const userPrompt = getPriorUserPrompt(msg.id);
-    const continueSet = enrichContinues(msg.continueSet, { userPrompt, aiResponse: msg.text });
-    if (!continueSet?.items?.length) return null;
-    return { msg, continueSet };
-  }, [latestContinueMessageId, pendingChoiceMessage, messages, enrichContinues, getPriorUserPrompt]);
-
-  const proactiveNudge = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m?.sender !== 'ai' || m.isDual || isGenerating) continue;
-      const userPrompt = getPriorUserPrompt(m.id);
-      return detectProactiveNudge(userPrompt, m.text, userFirstName, {
-        studioDomain,
-        studioMode,
-        hasPreview: Boolean(previewCode?.trim()),
-        guidedIntake: guidedSession,
-        conversationContext,
-      });
-    }
-    return null;
-  }, [messages, isGenerating, getPriorUserPrompt, userFirstName, studioDomain, studioMode, previewCode, guidedSession, conversationContext]);
-
-  const latestAiMessageId = React.useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i]?.sender === 'ai' && !messages[i]?.isDual) return messages[i].id;
-    }
-    return null;
-  }, [messages]);
-
-  const showProactiveNudge = proactiveNudge
-    && proactiveNudgeDismissedId !== latestAiMessageId
-    && !shouldSuppressProactiveNudge(proactiveNudge, { listeningSignals, conversationContext });
 
   const [activeGeneratingModel, setActiveGeneratingModel] = useState(null);
   const [expandedMessageDetails, setExpandedMessageDetails] = useState({});
@@ -1373,58 +661,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       window.removeEventListener('message', onPreviewMessage);
     };
   }, [canvasOpen, closePreviewModal]);
-
-  useEffect(() => {
-    const hasOpenChoiceDock = pendingChoiceMessage
-      && pendingChoiceMessage.choiceDockState !== 'dismissed';
-    const hasContinueDock = Boolean(latestContinueContext);
-    const hasProactiveNudge = Boolean(showProactiveNudge);
-    if (!hasOpenChoiceDock && !hasContinueDock && !hasProactiveNudge) return undefined;
-
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      if (showModelDashboard || canvasOpen) return;
-
-      if (hasOpenChoiceDock) {
-        event.preventDefault();
-        setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
-        updateActiveSession({
-          conversationContext: learnFromDismissedSuggestions(conversationContext, 'suggestions'),
-        });
-        emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-        return;
-      }
-
-      if (showProactiveNudge) {
-        event.preventDefault();
-        setProactiveNudgeDismissedId(latestAiMessageId);
-        return;
-      }
-
-      if (hasContinueDock) {
-        event.preventDefault();
-        updateActiveMessages((prev) => prev.map((m) => (
-          m.id === latestContinueContext.msg.id ? { ...m, continueUsed: true } : m
-        )));
-        updateActiveSession({
-          conversationContext: learnFromDismissedSuggestions(conversationContext, 'continue chips'),
-        });
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [
-    pendingChoiceMessage,
-    latestContinueContext,
-    showProactiveNudge,
-    latestAiMessageId,
-    showModelDashboard,
-    canvasOpen,
-    setChoiceDockState,
-    activeSessionId,
-    conversationContext,
-  ]);
 
   const [canvasCode, setCanvasCode] = useState('');
   const [streamingMessageId, setStreamingMessageId] = useState(null);
@@ -1703,13 +939,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
-  const [showHeroCardModal, setShowHeroCardModal] = useState(false);
-  const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
-  // Prompt Engineer review card: { original, prompt, tier, model } | null.
-  // Enhancement is shown here for the user to edit/finalize before it lands in
-  // the input — never silently overwritten.
-  const [enhanceResult, setEnhanceResult] = useState(null);
+  const {
+    isPolishing: isEnhancingPrompt,
+    undo: wandPolishUndo,
+    error: wandPolishError,
+    polish: runPromptPolish,
+    clearPolish: clearWandPolish,
+    setError: setWandPolishError,
+  } = usePromptPolish({ availableModels, chooseBestFreeModel });
   const [wandHintOpen, setWandHintOpen] = useState(false);
   const wandAnchorRef = useRef(null);
 
@@ -1719,28 +956,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   );
 
   const runEnhance = async (sourcePrompt, depth) => {
-    const source = (sourcePrompt || '').trim();
-    if (!source) return;
-    setIsEnhancingPrompt(true);
-    try {
-      const res = await fetch('/api/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: source, depth })
-      });
-      const data = await res.json();
-      if (res.ok && data.enhancedPrompt) {
-        let model = null;
-        try { model = chooseBestFreeModel(availableModels, data.enhancedPrompt)?.model || null; } catch (e) {}
-        setEnhanceResult({ original: source, prompt: data.enhancedPrompt, tier: data.tier || 'Enrich', model });
-      } else {
-        console.error("Magic Wand failed:", data.error);
-      }
-    } catch (e) {
-      console.error("Magic Wand network error:", e);
-    } finally {
-      setIsEnhancingPrompt(false);
+    const requestSessionId = activeSessionIdRef.current;
+    const draftAtStart = inputTextRef.current;
+    const result = await runPromptPolish(sourcePrompt, depth);
+    if (!result) return;
+    if (!shouldApplyPromptPolishResult({
+      requestSessionId,
+      currentSessionId: activeSessionIdRef.current,
+      draftAtStart,
+      currentDraft: inputTextRef.current,
+    })) {
+      clearWandPolish();
+      return;
     }
+    setInputText(result.prompt);
+    requestAnimationFrame(resizePromptTextarea);
+    if (result.model) {
+      setSelectedModel(result.model);
+      setAutoSelectEnabled(false);
+    }
+  };
+
+  useEffect(() => {
+    clearWandPolish();
+  }, [activeSessionId, clearWandPolish]);
+
+  const revertWandPolish = () => {
+    if (!wandPolishUndo?.original) return;
+    setInputText(wandPolishUndo.original);
+    requestAnimationFrame(resizePromptTextarea);
+    clearWandPolish();
   };
 
   useEffect(() => {
@@ -1759,6 +1004,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handleWandTemplatePick = (template) => {
     setWandHintOpen(false);
+    clearWandPolish();
     setInputText(template.prompt);
     if (template.mode) setStudioMode(template.mode);
     if (template.domain !== undefined) setStudioDomain(template.domain);
@@ -1768,18 +1014,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
   };
 
-  // Apply the (possibly edited) enhancement to the input, adopt the suggested
-  // model, and close the card.
-  const applyEnhancement = () => {
-    if (!enhanceResult) return;
-    setInputText(enhanceResult.prompt);
-    requestAnimationFrame(resizePromptTextarea);
-    if (enhanceResult.model) {
-      setSelectedModel(enhanceResult.model);
-      setAutoSelectEnabled(false);
-    }
-    setEnhanceResult(null);
-  };
+  const [showHeroCardModal, setShowHeroCardModal] = useState(false);
+  const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
@@ -1875,9 +1111,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     shouldFollowLatestRef.current = true;
     updateActiveSession({ lastActiveAt: Date.now() });
-    updateActiveMessages(prev => prev.map((m) => (
-      m.sender === 'ai' && m.continueSet && !m.continueUsed ? { ...m, continueUsed: true } : m
-    )).concat(userMsg));
+    clearWandPolish();
+    updateActiveMessages(prev => prev.map((m) => {
+      if (m.sender !== 'ai') return m;
+      const patch = {};
+      if (m.continueSet && !m.continueUsed) patch.continueUsed = true;
+      if (m.choiceSet && !m.choiceUsed && !options.choiceSelected) patch.choiceUsed = true;
+      return Object.keys(patch).length ? { ...m, ...patch } : m;
+    }).concat(userMsg));
     scrollToLatest('smooth');
     if (!textToSend) setInputText('');
     setAttachments([]);
@@ -2054,6 +1295,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     // 2. Standard Single Model Execution Mode
+    const listeningSignalsForRequest = [...listeningSignals];
     const aiMsgId = Date.now() + 1;
     setStreamingMessageId(aiMsgId);
     const initialAiMsg = {
@@ -2192,7 +1434,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               fallbackFrom,
               studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
               sessionContext: sessionContextForRequest,
-              listeningSignals,
+              listeningSignals: listeningSignalsForRequest,
               studioDomain,
               attachedImages,
               choiceSelected: options.choiceSelected === true,
@@ -2238,6 +1480,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       if (!res) throw new Error('Quantora could not reach an available AI provider.');
 
       if (res.ok) {
+        const remainingListeningSignals = consumeOneShotListeningSignals(listeningSignalsForRequest);
+        if (remainingListeningSignals.length !== listeningSignalsForRequest.length) {
+          updateActiveSession({ listeningSignals: remainingListeningSignals });
+        }
+
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let currentText = "";
@@ -2386,6 +1633,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
+  useEffect(() => {
+    sendMessageRef.current = handleSendMessage;
+  });
+
   const submitModelFeedback = async (message, outcome) => {
     if (!message?.requestId || !message?.modelId || message.qualityFeedback) return;
     if (message.id) {
@@ -2458,22 +1709,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
   }, [messages, activeSessionId, activeSession.title, studioDomain, studioMode]);
 
-  const recordListeningSignal = useCallback((type, payload) => {
-    setChatSessions((prev) => {
-      const updated = prev.map((session) => (
-        session.id === activeSessionId
-          ? mergeSessionListeningSignals(session, type, payload)
-          : session
-      ));
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  }, [activeSessionId]);
-
   useEffect(() => {
     const listener = createQuantoraListener({
       setDreamNodes,
@@ -2487,6 +1722,52 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const emitQuantora = useCallback((type, payload = {}) => {
     emitQuantoraRef.current(type, payload);
   }, []);
+
+  const getProactiveNudge = useCallback((msg) => {
+    const userPrompt = getPriorUserPrompt(msg?.id);
+    const nudge = detectProactiveNudge(userPrompt, msg?.text, userFirstName, {
+      studioDomain,
+      studioMode,
+      hasPreview: Boolean(previewCode?.trim()),
+      guidedIntake: guidedSession,
+      conversationContext,
+    });
+    if (!nudge || shouldSuppressProactiveNudge(nudge, { listeningSignals, conversationContext })) {
+      return null;
+    }
+    return nudge;
+  }, [
+    conversationContext,
+    getPriorUserPrompt,
+    guidedSession,
+    listeningSignals,
+    previewCode,
+    studioDomain,
+    studioMode,
+    userFirstName,
+  ]);
+
+  const {
+    resolveInlineSuggestions,
+    dismissInlineSuggestions,
+    handleInlineChoiceSelect,
+    handleInlineContinueSelect,
+  } = useInlineSuggestions({
+    messages,
+    isGenerating,
+    activeSessionId,
+    enrichContinues,
+    getPriorUserPrompt,
+    getProactiveNudge,
+    setChoiceDockState,
+    updateActiveMessages,
+    updateActiveSession,
+    conversationContext,
+    studioDomain,
+    emitQuantora,
+    onSendMessage,
+    escapeBlocked: showModelDashboard || canvasOpen,
+  });
 
   const handleWorkingNotesUpdate = useCallback((patch) => {
     const nextContext = mergeSessionContext(conversationContext, patch);
@@ -2527,430 +1808,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     emitQuantora(QUANTORA_EVENTS.JOURNEY_SAVED, { title });
   }, [onPushToCanvas, messages, activeSessionId, studioDomain, studioMode, emitQuantora]);
 
-  const renderedChatFeed = React.useMemo(() => {
-    return messages.slice(1).map(msg => {
-      const isUser = msg.sender === 'user';
-      return (
-              <div
-                key={msg.id}
-                className={`chat-message-row${isUser ? ' chat-message-row--user' : ' chat-message-row--ai'}`}
-                style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}
-              >
-                {/* Avatar */}
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: msg.sender === 'user' ? '#3b82f6' : (isLight ? '#ffffff' : 'transparent'),
-                  border: msg.sender === 'ai' && isLight ? '1px solid var(--border-color)' : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.9rem',
-                  fontWeight: 'bold',
-                  color: msg.sender === 'user' ? '#ffffff' : 'var(--text-primary)',
-                  flexShrink: 0
-                }}>
-                  {msg.sender === 'user' ? (user?.name ? user.name[0] : 'B') : <Sparkles size={18} />}
-                </div>
-
-                {/* Content Bubble */}
-                <div
-                  className={isUser ? 'chat-message-body chat-message-body--user' : 'chat-message-body chat-message-body--ai'}
-                  style={{ flex: isUser ? '0 0 auto' : 1, minWidth: isUser ? undefined : 0 }}
-                >
-                  {msg.isDual ? (
-                    <div style={{ width: '100%' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
-                      {/* Model A Card */}
-                      <div style={{
-                        background: isLight ? '#ffffff' : '#0d1127',
-                        border: msg.arenaWinner === 'a'
-                          ? '2px solid #f97316'
-                          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)'),
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        boxShadow: msg.arenaWinner === 'a'
-                          ? '0 0 0 1px rgba(249,115,22,0.35), 0 8px 24px rgba(249,115,22,0.15)'
-                          : (isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'),
-                        opacity: msg.arenaWinner === 'b' ? 0.72 : 1,
-                      }}>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Cpu size={14} /> {msg.modelA.modelName}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
-                              ⚡ {msg.modelA.latencyMs}ms
-                            </span>
-                          </div>
-                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                code({node, inline, className, children, ...props}) {
-                                  const match = /language-(\w+)/.exec(className || '')
-                                  return !inline && match ? (
-                                    <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
-                                  ) : (
-                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                                  )
-                                }
-                              }}
-                            >
-                              {msg.modelA.text}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            {msg.modelA.text && !isGenerating && (
-                              <button
-                                type="button"
-                                onClick={() => handleArenaPreference(msg, 'a')}
-                                disabled={Boolean(msg.arenaWinner)}
-                                style={{
-                                  background: msg.arenaWinner === 'a' ? 'rgba(249,115,22,0.2)' : 'rgba(249,115,22,0.1)',
-                                  border: '1px solid rgba(249,115,22,0.45)',
-                                  color: '#f97316',
-                                  padding: '4px 10px',
-                                  borderRadius: '8px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  cursor: msg.arenaWinner ? 'default' : 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
-                              >
-                                <ThumbsUp size={12} /> {msg.arenaWinner === 'a' ? 'Preferred' : 'Prefer this'}
-                              </button>
-                            )}
-                            {hasPreviewableContent(msg.modelA.text) && (
-                              <LivePreviewActionButton
-                                msg={{ ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus }}
-                                meta={getLivePreviewButtonMeta(
-                                  { ...msg, text: msg.modelA.text, id: `${msg.id}-a`, previewStatus: msg.modelAPreviewStatus },
-                                  { isGenerating, streamingMessageId }
-                                )}
-                                onOpen={openCanvasWithCode}
-                                compact
-                              />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Model B Card */}
-                      <div style={{
-                        background: isLight ? '#ffffff' : '#0d1127',
-                        border: msg.arenaWinner === 'b'
-                          ? '2px solid #3b82f6'
-                          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)'),
-                        borderRadius: '16px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        boxShadow: msg.arenaWinner === 'b'
-                          ? '0 0 0 1px rgba(59,130,246,0.35), 0 8px 24px rgba(59,130,246,0.15)'
-                          : (isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'),
-                        opacity: msg.arenaWinner === 'a' ? 0.72 : 1,
-                      }}>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Cpu size={14} /> {msg.modelB.modelName}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
-                              ⚡ {msg.modelB.latencyMs}ms
-                            </span>
-                          </div>
-                          <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden', fontSize: '0.9rem', lineHeight: 1.6, color: textColor }}>
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                code({node, inline, className, children, ...props}) {
-                                  const match = /language-(\w+)/.exec(className || '')
-                                  return !inline && match ? (
-                                    <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
-                                  ) : (
-                                    <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                                  )
-                                }
-                              }}
-                            >
-                              {msg.modelB.text}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            {msg.modelB.text && !isGenerating && (
-                              <button
-                                type="button"
-                                onClick={() => handleArenaPreference(msg, 'b')}
-                                disabled={Boolean(msg.arenaWinner)}
-                                style={{
-                                  background: msg.arenaWinner === 'b' ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.1)',
-                                  border: '1px solid rgba(59,130,246,0.45)',
-                                  color: '#3b82f6',
-                                  padding: '4px 10px',
-                                  borderRadius: '8px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  cursor: msg.arenaWinner ? 'default' : 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
-                              >
-                                <ThumbsUp size={12} /> {msg.arenaWinner === 'b' ? 'Preferred' : 'Prefer this'}
-                              </button>
-                            )}
-                            {hasPreviewableContent(msg.modelB.text) && (
-                              <LivePreviewActionButton
-                                msg={{ ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus }}
-                                meta={getLivePreviewButtonMeta(
-                                  { ...msg, text: msg.modelB.text, id: `${msg.id}-b`, previewStatus: msg.modelBPreviewStatus },
-                                  { isGenerating, streamingMessageId }
-                                )}
-                                onOpen={openCanvasWithCode}
-                                compact
-                              />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    {msg.arenaWinner && (
-                      <p style={{ margin: '10px 0 0', fontSize: '0.74rem', color: subtextColor, textAlign: 'center' }}>
-                        Saved — Auto-select will prefer {(msg.arenaWinner === 'a' ? msg.modelA : msg.modelB).modelName} for similar {msg.taskCategory || 'general'} questions.
-                      </p>
-                    )}
-                    </div>
-                  ) : (
-                    <div className={`prose chat-message-bubble${isUser ? ' chat-message-bubble--user' : ' chat-message-bubble--ai'}`} style={{
-                      background: isUser ? (isLight ? '#f0f4f9' : '#1e1f20') : 'transparent',
-                      border: 'none',
-                      padding: isUser ? '12px 18px' : '4px 0',
-                      borderRadius: '20px',
-                      color: textColor,
-                      fontSize: '1rem',
-                      lineHeight: 1.65,
-                      boxShadow: 'none',
-                    }}>
-                      {/* Render Attachments if present on user message */}
-                      {msg.attachments && msg.attachments.length > 0 && (
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                          {msg.attachments.map((att, i) => (
-                            <span key={i} style={{ fontSize: '0.75rem', background: isLight ? '#fff' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '4px 10px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#f97316', fontWeight: '600' }}>
-                              <Paperclip size={12} /> {att.name} ({att.size})
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {(msg.routingNote || msg.thoughtProcess) && (
-                        <div style={{ marginBottom: '9px' }}>
-                          {!expandedMessageDetails[msg.id] ? (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedMessageDetails((prev) => ({ ...prev, [msg.id]: true }))}
-                              style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.74rem', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: '2px' }}
-                            >
-                              Details
-                            </button>
-                          ) : (
-                            <>
-                              {msg.routingNote && (
-                                <div style={{ marginBottom: '9px', padding: '7px 10px', borderRadius: '9px', background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.1)', color: isLight ? '#9a3412' : '#fdba74', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <Sparkles size={13} /> {msg.routingNote}
-                                </div>
-                              )}
-                              {msg.thoughtProcess && (
-                                <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                                  <Lightbulb size={14} color="#f97316" />
-                                  <span>Thought for a moment ({msg.thoughtProcess})</span>
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setExpandedMessageDetails((prev) => ({ ...prev, [msg.id]: false }))}
-                                style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.74rem', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: '2px' }}
-                              >
-                                Hide details
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="markdown-prose" style={{ width: isUser ? 'auto' : '100%', overflowX: 'hidden' }}>
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code({node, inline, className, children, ...props}) {
-                              const match = /language-(\w+)/.exec(className || '')
-                              if (!inline && match && (match[1] === 'html' || match[1] === 'javascript' || match[1] === 'js') && msg.codeSnippet) {
-                                return (
-                                  <p style={{ fontSize: '0.82rem', color: subtextColor, fontStyle: 'italic', margin: '8px 0' }}>
-                                    Site code updated → see Live Preview panel
-                                  </p>
-                                );
-                              }
-                              return !inline && match ? (
-                                <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
-                              ) : (
-                                <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                              )
-                            }
-                          }}
-                        >
-                          {!isUser && (msg.codeSnippet || hasPreviewableContent(msg.text))
-                            ? getChatDisplayText(msg.text, { artifactHtml: msg.codeSnippet || '' })
-                            : msg.text}
-                        </ReactMarkdown>
-                      </div>
-
-                      {/* Continue chips render in prompt dock — not inline in chat */}
-
-                      {/* Plan / code actions */}
-                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {msg.sender === 'ai' && msg.planSpec && (
-                          <button
-                            onClick={() => handleBuildFromPlan(msg.planSpec)}
-                            style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                          >
-                            <Code2 size={13} /> Build this →
-                          </button>
-                        )}
-                        {msg.sender === 'ai' && hasPreviewableContent(msg.text) && (
-                          <LivePreviewActionButton
-                            msg={msg}
-                            meta={getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId })}
-                            onOpen={openCanvasWithCode}
-                          />
-                        )}
-                        {msg.sender === 'ai' && onPushToCanvas && (
-                          <button
-                            type="button"
-                            onClick={() => saveToJourney(msg)}
-                            style={{ background: isLight ? '#f0f9ff' : 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.35)', color: '#0284c7', padding: '6px 14px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                          >
-                            <Workflow size={13} /> Save to Journey
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/*
-                   * Quiet feedback row. We deliberately drop the old
-                   * "Engine / Response Time / Live AI Verified / No Mock"
-                   * diagnostic strip — no serious assistant (Claude, Cursor,
-                   * ChatGPT) surfaces engine names or latency to the user. All
-                   * that remains is an unobtrusive thumbs up/down, which still
-                   * feeds the model-quality flywheel.
-                   */}
-                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.requestId && (
-                    <div style={{
-                      marginTop: '10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '0.75rem',
-                      color: subtextColor,
-                      opacity: 0.35,
-                      transition: 'opacity 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0.35}
-                    >
-                      <button type="button" onClick={() => submitModelFeedback(msg, 'helpful')} aria-label="Mark this response helpful" title="Helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'helpful' ? '#059669' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsUp size={14} /></button>
-                      <button type="button" onClick={() => submitModelFeedback(msg, 'not_helpful')} aria-label="Mark this response not helpful" title="Not helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'not_helpful' ? '#dc2626' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsDown size={14} /></button>
-                    </div>
-                  )}
-
-                  {/* Inline API Key Input Prompt */}
-                  {msg.isAuthPrompt && (
-                    <div style={{
-                      marginTop: '14px',
-                      padding: '16px',
-                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
-                      borderRadius: '12px',
-                      border: '1px solid #0ea5e9',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                      flexWrap: 'wrap'
-                    }}>
-                      <div style={{ fontSize: '0.85rem', color: subtextColor, flex: 1, minWidth: '200px' }}>
-                        Signing in lets you use Quantora's built-in AI without supplying your own key.
-                      </div>
-                      <button
-                        onClick={() => onOpenAuth && onOpenAuth()}
-                        style={{
-                          background: '#0ea5e9',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '10px 20px',
-                          borderRadius: '8px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        Sign in
-                      </button>
-                    </div>
-                  )}
-
-
-
-                  {/* Render Interactive Live Component Sandboxes Directly in Chat */}
-                  {msg.componentType === 'calculator' && <LiveIosCalculator />}
-                  {msg.componentType === 'beat' && <LiveBeatMaker />}
-                  {msg.componentType === 'quantum' && <LiveQuantumSimulator />}
-
-                  {/* Source Code Toggle Button */}
-                  {msg.codeSnippet && (
-                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <button
-                        onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
-                        style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Code2 size={14} /> {showCodeMap[msg.id] ? 'Hide Source Code' : 'Inspect Source Code'}
-                      </button>
-
-                      <button
-                        onClick={() => saveToJourney(msg)}
-                        style={{ background: isLight ? '#f0f9ff' : 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.35)', color: '#0284c7', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Workflow size={12} /> Save to Journey
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Optional Source Code Panel */}
-                  {showCodeMap[msg.id] && msg.codeSnippet && (
-                    <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                      <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-                        {msg.codeSnippet}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-    });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, expandedMessageDetails, isGenerating, streamingMessageId, autoSelectEnabled, activeGeneratingModel, selectedModel, handleArenaPreference, saveToJourney, onPushToCanvas, emitQuantora, enrichContinues, getPriorUserPrompt, latestContinueMessageId]);
 
   return (
     <div className="ai-studio-shell" style={{
@@ -3150,7 +2007,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
 
                 <button
-                  onClick={(e) => handleDeleteChat(e, session.id)}
+                  onClick={(e) => deleteChatWithMemory(e, session.id)}
                   title="Delete chat"
                   style={{
                     background: 'transparent',
@@ -3215,14 +2072,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       ), document.body)}
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
+      <div
+        className="ai-studio-conversation"
+        style={{
+          flex: showBuildSplit || isWorkspaceMode ? '0 0 48%' : 1,
+          display: 'flex',
+          flexDirection: 'column',
+          maxWidth: showBuildSplit || isWorkspaceMode ? '48%' : '100%',
+          margin: '0 auto',
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
       <div className="ai-studio-main" style={{
-        flex: showBuildSplit || isWorkspaceMode ? '0 0 48%' : 1,
+        flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: showBuildSplit || isWorkspaceMode ? '48%' : '100%',
         margin: '0 auto',
-        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(6px, 1vw, 12px) clamp(12px, 1.6vw, 24px)',
+        padding: isWorkspaceMode ? '0 10px 0 0' : 'clamp(4px, 0.8vw, 8px) clamp(12px, 1.6vw, 24px) 0',
         minHeight: 0,
+        width: '100%',
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         <StudioChromeBar
@@ -3432,7 +2303,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         ) : (
           /* Active Chat Thread */
           <div className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
-            {renderedChatFeed}
+            <StudioChatFeed
+              messages={messages}
+              user={user}
+              isLight={isLight}
+              textColor={textColor}
+              subtextColor={subtextColor}
+              isGenerating={isGenerating}
+              streamingMessageId={streamingMessageId}
+              expandedMessageDetails={expandedMessageDetails}
+              setExpandedMessageDetails={setExpandedMessageDetails}
+              showCodeMap={showCodeMap}
+              setShowCodeMap={setShowCodeMap}
+              resolveInlineSuggestions={resolveInlineSuggestions}
+              handleInlineChoiceSelect={handleInlineChoiceSelect}
+              handleInlineContinueSelect={handleInlineContinueSelect}
+              dismissInlineSuggestions={dismissInlineSuggestions}
+              handleBuildFromPlan={handleBuildFromPlan}
+              openCanvasWithCode={openCanvasWithCode}
+              saveToJourney={saveToJourney}
+              onPushToCanvas={onPushToCanvas}
+              onOpenAuth={onOpenAuth}
+              handleArenaPreference={handleArenaPreference}
+              submitModelFeedback={submitModelFeedback}
+            />
             {isGenerating && (
               <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                 <div style={{
@@ -3601,152 +2495,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         )}
 
-        {/* Overlays — separate cards above the input pill (never inside it) */}
-        <div className="studio-prompt-overlays">
-          {enhanceResult && (
-            <div className="studio-prompt-dock" style={{ margin: '0 2px', borderRadius: '14px', border: '1px solid rgba(249,115,22,0.35)', background: isLight ? '#fffaf5' : 'rgba(249,115,22,0.06)', boxShadow: isLight ? '0 8px 24px rgba(0,0,0,0.06)' : '0 8px 30px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderBottom: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)' }}>
-                <Wand2 size={15} color="#f97316" />
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor }}>Prompt Engineer</span>
-                <span style={{ fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#f97316', background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '999px', padding: '2px 8px' }}>{enhanceResult.tier}</span>
-                {enhanceResult.model && (
-                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: subtextColor }}>
-                    <Cpu size={12} color="#f97316" /> Suggested: <strong style={{ color: textColor }}>{enhanceResult.model.name}</strong>
-                  </span>
-                )}
-              </div>
-              <textarea
-                value={enhanceResult.prompt}
-                onChange={(e) => setEnhanceResult(r => ({ ...r, prompt: e.target.value }))}
-                rows={Math.min(10, Math.max(3, (enhanceResult.prompt.match(/\n/g) || []).length + 2))}
-                style={{ width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', resize: 'vertical', background: 'transparent', color: textColor, fontSize: '0.9rem', lineHeight: 1.5, padding: '12px 14px', fontFamily: 'inherit' }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderTop: isLight ? '1px solid #f1e4d6' : '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' }}>
-                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'lighter')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↓ Lighter</button>
-                <button disabled={isEnhancingPrompt} onClick={() => runEnhance(enhanceResult.original, 'deeper')} style={{ background: 'transparent', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)', color: subtextColor, borderRadius: '8px', padding: '5px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}>↑ Deeper</button>
-                {isEnhancingPrompt && <span style={{ fontSize: '0.72rem', color: subtextColor }}>Re-thinking…</span>}
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-                  <button onClick={() => setEnhanceResult(null)} style={{ background: 'transparent', border: 'none', color: subtextColor, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>Discard</button>
-                  <button onClick={applyEnhancement} style={{ background: '#f97316', border: 'none', color: '#fff', borderRadius: '8px', padding: '6px 14px', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}>Use it</button>
-                </span>
-              </div>
-            </div>
-          )}
-
-          {refineActive && previewCode && previewCode.trim() && !isGenerating && (
-            <div className="studio-edit-site-bar studio-prompt-dock">
-              <Wand2 size={13} color="#f97316" />
-              <span>Editing your site — describe changes below</span>
-              <button type="button" onClick={() => setRefineActive(false)}>New build</button>
-            </div>
-          )}
-
-          {showProactiveNudge && (
-            <div className="studio-prompt-dock studio-prompt-dock--center">
-              <StudioProactiveNudge
-                text={proactiveNudge.text}
-                isLight={isLight}
-                onDismiss={() => setProactiveNudgeDismissedId(latestAiMessageId)}
-              />
-            </div>
-          )}
-
-          {pendingChoiceMessage && pendingChoiceMessage.choiceDockState !== 'dismissed' && (
-            <div className="studio-choice-dock studio-prompt-dock">
-              <StudioChoiceCards
-                variant="floating"
-                dockState={pendingChoiceMessage.choiceDockState || 'open'}
-                choiceSet={pendingChoiceMessage.choiceSet}
-                isLight={isLight}
-                disabled={isGenerating}
-                onCollapse={() => setChoiceDockState(pendingChoiceMessage.id, 'collapsed')}
-                onExpand={() => setChoiceDockState(pendingChoiceMessage.id, 'open')}
-                onDismiss={() => {
-                  setChoiceDockState(pendingChoiceMessage.id, 'dismissed');
-                  updateActiveSession({
-                    conversationContext: learnFromDismissedSuggestions(conversationContext, 'suggestions'),
-                  });
-                  emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
-                }}
-                onSelect={(choice) => {
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === pendingChoiceMessage.id ? { ...m, choiceUsed: true } : m
-                  )));
-                  updateActiveSession({
-                    conversationContext: learnFromChipSelection(conversationContext, {
-                      label: choice.label,
-                      value: choice.value,
-                      domain: studioDomain,
-                    }),
-                  });
-                  emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
-                  handleSendMessage(choice.value, { choiceSelected: true });
-                }}
-              />
-            </div>
-          )}
-
-          {!pendingChoiceMessage && dismissedChoiceMessage && (
-            <div className="studio-choice-dock-restore studio-prompt-dock">
-              <button
-                type="button"
-                className="studio-choice-dock-restore__btn"
-                onClick={() => setChoiceDockState(dismissedChoiceMessage.id, 'open')}
-              >
-                Show suggestions ({dismissedChoiceMessage.choiceSet.choices.length})
-              </button>
-            </div>
-          )}
-
-          {previewCode?.trim() && buildSplitDismissed && (
-            <div className="studio-split-restore studio-prompt-dock">
-              <button
-                type="button"
-                className="studio-split-restore__btn"
-                onClick={() => setBuildSplitDismissed(false)}
-              >
-                Open preview panel →
-              </button>
-            </div>
-          )}
-
-          {latestContinueContext && !pendingChoiceMessage && (
-            <div className="studio-continue-dock studio-prompt-dock">
-              <StudioContinueChips
-                variant="floating"
-                continueSet={latestContinueContext.continueSet}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                disabled={isGenerating}
-                onDismiss={() => {
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === latestContinueContext.msg.id ? { ...m, continueUsed: true } : m
-                  )));
-                  updateActiveSession({
-                    conversationContext: learnFromDismissedSuggestions(conversationContext, 'continue chips'),
-                  });
-                }}
-                onSelect={(item) => {
-                  const msg = latestContinueContext.msg;
-                  updateActiveMessages((prev) => prev.map((m) => (
-                    m.id === msg.id ? { ...m, continueUsed: true } : m
-                  )));
-                  updateActiveSession({
-                    conversationContext: learnFromChipSelection(conversationContext, {
-                      label: item.label,
-                      value: item.value,
-                      domain: studioDomain,
-                    }),
-                  });
-                  emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
-                  handleSendMessage(item.value);
-                }}
-              />
-            </div>
-          )}
-
-        </div>
+        {/* Overlays — build/refine only; suggestions live in the chat thread */}
+        <StudioPromptOverlays
+          refineActive={refineActive}
+          previewCode={previewCode}
+          isGenerating={isGenerating}
+          buildSplitDismissed={buildSplitDismissed}
+          onNewBuild={() => setRefineActive(false)}
+          onOpenSplit={() => setBuildSplitDismissed(false)}
+        />
 
         {/* Prompt input pill — textarea + toolbar only */}
         <div className="floating-input-pill" style={{
@@ -3851,6 +2608,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '8px 14px' }}>
+            <StudioWandStatus
+              isPolishing={isEnhancingPrompt}
+              undo={wandPolishUndo}
+              error={wandPolishError}
+              isLight={isLight}
+              onUndo={revertWandPolish}
+              onShorter={wandPolishUndo ? () => runEnhance(wandPolishUndo.original, 'lighter') : undefined}
+              onMoreDetail={wandPolishUndo ? () => runEnhance(wandPolishUndo.original, 'deeper') : undefined}
+              onRetry={wandPolishError ? () => runEnhance(inputText, 'auto') : undefined}
+              onDismissError={() => setWandPolishError(null)}
+            />
             <textarea
               ref={textareaRef}
               rows={1}
@@ -4022,7 +2790,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   className={`studio-prompt-icon-btn${isEnhancingPrompt ? ' is-active' : ''}${wandHintOpen ? ' is-active' : ''}`}
                   onClick={handleMagicWandEnhance}
                   disabled={isEnhancingPrompt}
-                  title={inputText.trim() ? 'Polish and expand your prompt' : 'Type a rough idea first, then polish it'}
+                  title={inputText.trim() ? 'Polish your prompt' : 'Type a rough idea first'}
                 >
                   {isEnhancingPrompt ? <RefreshCw size={16} className="animate-spin" /> : <Wand2 size={18} />}
                 </button>
@@ -4234,6 +3002,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
         </div>
 
+      </div>
       </div>
       </div>
 
@@ -4624,37 +3393,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <><Github size={18} /> Connect to this chat</>
               )}
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Magic Wand Blocking Loader Overlay */}
-      {isEnhancingPrompt && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.85)',
-          backdropFilter: 'blur(36px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(36px) saturate(200%)',
-          zIndex: 3000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-        }}>
-          <div style={{
-            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15, 23, 42, 0.9)',
-            border: isLight ? '1px solid rgba(226,232,240,1)' : '1px solid rgba(255,255,255,0.1)',
-            padding: '48px 64px',
-            borderRadius: '24px',
-            boxShadow: isLight ? '0 40px 80px rgba(0,0,0,0.06)' : '0 40px 80px rgba(0,0,0,0.6)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px',
-            minWidth: '400px'
-          }}>
-            <Wand2 size={56} color="#f97316" className="animate-spin" style={{ animationDuration: '4s' }} />
-            <h3 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: textColor, letterSpacing: '-0.02em' }}>
-              Synthesizing Architecture
-            </h3>
-            <p style={{ margin: 0, color: subtextColor, fontSize: '1.1rem', fontWeight: '400' }}>
-              Orchestrating multi-model pipelines for your prompt.
-            </p>
           </div>
         </div>
       )}
