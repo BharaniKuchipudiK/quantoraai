@@ -379,6 +379,7 @@ export default function App() {
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
                 onContinueInStudio={handleContinueInStudio}
+                user={user}
               />
             )}
 

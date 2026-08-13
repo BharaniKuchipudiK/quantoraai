@@ -1518,6 +1518,23 @@ body {
   background: rgba(249, 115, 22, 0.1);
 }
 
+.journey-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.journey-capture__input:focus {
+  outline: none;
+  border-color: rgba(2, 132, 199, 0.55);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+.journey-capture .studio-wand-status {
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
 .studio-wand-status {
   display: flex;
   flex-wrap: wrap;
