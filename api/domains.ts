@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { fetchApiGatewayKey } from './autocomplete';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
-import { getSessionUser } from './_lib/session.js';
+import { requireActiveSession } from "./_lib/authz.js";
 import { isPublishedSiteOwner } from './_lib/store.js';
 import { normalizeDomainName } from './_lib/publish-policy.js';
 
@@ -15,8 +15,9 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const sessionUser = getSessionUser(req);
-  if (!sessionUser) return res.status(401).json({ error: 'Sign in to use domain services.' });
+  const auth = await requireActiveSession(req, res);
+  if (!auth.ok) return;
+  const { sessionUser } = auth.value;
 
   const limitKey = `domains:user:${sessionUser.sub}`;
   if (isRateLimited(limitKey, REQUESTS_PER_MINUTE, 60_000)) {

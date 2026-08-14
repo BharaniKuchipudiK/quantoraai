@@ -8,6 +8,7 @@ import {
   isCriticalResourceError,
   revokePreviewEmbedObjectUrl,
 } from '../lib/preview-utils.js';
+import { getClientSecret } from '../lib/client-secrets.js';
 
 /*
  * Live preview + verification loop.
@@ -137,12 +138,19 @@ export default function LivePreviewCanvas({
   }, [currentCode, embedReady, pushHtmlToEmbed]);
 
   const requestRepair = useCallback(async (brokenCode, message) => {
-    const openRouterApiKey = (() => { try { return localStorage.getItem('openRouterApiKey'); } catch { return null; } })();
-    const geminiApiKey = (() => { try { return localStorage.getItem('geminiApiKey'); } catch { return null; } })();
+    const openRouterApiKey = getClientSecret('openrouter');
+    const geminiApiKey = getClientSecret('gemini');
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task: 'repair', code: brokenCode, error: message, framework: 'html', openRouterKey: openRouterApiKey, userKey: geminiApiKey })
+      body: JSON.stringify({
+        task: 'repair',
+        code: brokenCode,
+        error: message,
+        framework: 'html',
+        ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
+        ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
+      })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Repair failed (${res.status})`);

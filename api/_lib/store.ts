@@ -65,8 +65,11 @@ async function request(path: string, init: RequestInit & { headers?: Record<stri
 export type StoredUser = {
   google_sub: string;
   email: string;
+  name?: string | null;
+  picture?: string | null;
   blocked_at: string | null;
   blocked_reason: string | null;
+  is_admin?: boolean | null;
 };
 
 /*
@@ -106,6 +109,22 @@ export async function recordSignIn(user: {
       } : {}),
     }]),
   });
+  if (!response) return null;
+
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function readStoredUser(googleSub: string): Promise<StoredUser | null> {
+  if (!googleSub) return null;
+  const response = await request(
+    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin&google_sub=eq.${encodeURIComponent(googleSub)}&limit=1`,
+    { method: "GET" },
+  );
   if (!response) return null;
 
   try {

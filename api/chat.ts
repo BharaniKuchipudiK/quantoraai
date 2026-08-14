@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./_lib/store.js";
+import { requireActiveSession } from "./_lib/authz.js";
 import { getRequestGeo } from "./_lib/geo.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
@@ -12,6 +13,7 @@ import { normalizeStudioMode } from "./_lib/studio-modes.js";
 import { buildDomainDirective, normalizeStudioDomain } from "./_lib/studio-domains.js";
 import { repairArtifact } from "./_lib/repair.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
+import { readModelRegistry } from "./_lib/model-store.js";
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
@@ -33,6 +35,15 @@ const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
+const FEATURED_SERVER_MODELS = new Set([
+  "gemini-flash-latest",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "deepseek/deepseek-chat",
+  "qwen/qwen-2.5-coder-32b-instruct",
+  "meta-llama/llama-3.3-70b-instruct",
+  "google/gemma-2-9b-it",
+  "openai/gpt-4o-mini",
+]);
 
 function normaliseTaskCategory(value: unknown): string {
   return typeof value === "string" && TASK_CATEGORIES.has(value) ? value : "general";
@@ -64,6 +75,15 @@ const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
   "qwen-2.5-coder-32b": "qwen/qwen-2.5-coder-32b-instruct",
   "qwen-2.5-coder-32b-instruct": "qwen/qwen-2.5-coder-32b-instruct",
 };
+
+async function isApprovedServerModel(modelId: string): Promise<boolean> {
+  if (!modelId || typeof modelId !== "string") return false;
+  if (modelId.startsWith("gemini")) return true;
+  if (FEATURED_SERVER_MODELS.has(modelId)) return true;
+
+  const rows = await readModelRegistry();
+  return rows.some((row: any) => row?.id === modelId && row?.approved === true && row?.lifecycle === "available");
+}
 
 function resolveOpenRouterModelId(modelId: string): { slug?: string; error?: string } {
   if (!modelId || typeof modelId !== "string" || !modelId.trim()) {
@@ -390,11 +410,25 @@ export default async function handler(req: any, res: any) {
      * directly and bill this deployment's keys. Bring-your-own-key callers are
      * unaffected — their requests cost the deployment nothing.
      */
-    const mayUseServerKeys = Boolean(sessionUser);
+    const auth = sessionUser ? await requireActiveSession(req, res) : null;
+    if (auth && !auth.ok) return;
+    const activeSessionUser = auth?.ok ? auth.value.sessionUser : sessionUser;
+    const mayUseServerKeys = Boolean(activeSessionUser);
     const effectiveOpenRouterKey =
       openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY || await fetchApiGatewayKey('OPENROUTER') : undefined);
     const effectiveGeminiKey =
       userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
+
+    const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;
+    if (usingServerOwnedModelAccess) {
+      const approved = await isApprovedServerModel(modelId);
+      if (!approved) {
+        return res.status(403).json({
+          error: `The model "${modelName || modelId}" is not approved for Quantora-managed usage yet.`,
+          requiresApprovedModel: true,
+        });
+      }
+    }
 
     if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
       return res.status(401).json({
@@ -425,8 +459,8 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const authoritativeOutcome = sessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
-      ? await readOutcomeState(sessionUser.sub, normalizedSessionId)
+    const authoritativeOutcome = activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
+      ? await readOutcomeState(activeSessionUser.sub, normalizedSessionId)
       : null;
     const conversationSnapshot = buildConversationSnapshot({
       outcomeRecord: authoritativeOutcome,
@@ -460,7 +494,7 @@ export default async function handler(req: any, res: any) {
       sessionContext: promptSessionContext,
       listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
       studioDomain: normalizeStudioDomain(studioDomain),
-      userFirstName: sessionUser?.name?.split(/\s+/)[0] || null,
+      userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
     }) + navigatorDirective + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
@@ -505,7 +539,7 @@ export default async function handler(req: any, res: any) {
         }
         
         const latencyMs = Date.now() - startTime;
-        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", sessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
+        logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", activeSessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
         recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
         res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true, conversation: conversationMetadata(fullReply) })}\n\n`);
@@ -622,7 +656,7 @@ export default async function handler(req: any, res: any) {
 
       const latencyMs = Date.now() - startTime;
       logTelemetry(openRouterModelId, latencyMs, fullReply.length, "OpenRouter",
-        sessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
+        activeSessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
       recordModelQualityEvent({ requestId, modelId: openRouterModelId, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
       res.write(`data: ${JSON.stringify({ provider: `OpenRouter (${modelName || openRouterModelId})`, latencyMs, modelId: openRouterModelId, requestId, liveConnected: true, conversation: conversationMetadata(fullReply) })}\n\n`);

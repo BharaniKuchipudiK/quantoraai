@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
+import { requireActiveSession } from "./_lib/authz.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
@@ -29,7 +30,9 @@ export default async function handler(req: any, res: any) {
     const { node, targetStage, repoUrl, task } = req.body || {};
 
     if (targetStage === 'outcome-state') {
-      if (!sessionUser) return res.status(401).json({ error: 'Sign in to use Outcome Memory.' });
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
+      const { sessionUser: activeSessionUser } = auth.value;
       if (!isStoreConfigured()) return res.status(503).json({ error: 'Outcome Memory is not configured on this deployment.' });
 
       const sessionId = normalizeOutcomeSessionId(req.body?.sessionId);
@@ -37,12 +40,12 @@ export default async function handler(req: any, res: any) {
       const action = req.body?.action || 'get';
 
       if (action === 'get') {
-        const record = await readOutcomeState(sessionUser.sub, sessionId);
+        const record = await readOutcomeState(activeSessionUser.sub, sessionId);
         return res.status(200).json(record || { sessionId, version: 0, state: emptyOutcomeState() });
       }
 
       if (action === 'delete') {
-        const deleted = await deleteOutcomeState(sessionUser.sub, sessionId);
+        const deleted = await deleteOutcomeState(activeSessionUser.sub, sessionId);
         return deleted
           ? res.status(200).json({ deleted: true, sessionId })
           : res.status(503).json({ error: 'Outcome Memory could not be deleted. Please try again.' });
@@ -59,7 +62,7 @@ export default async function handler(req: any, res: any) {
         }
         const sourceTurn = typeof req.body?.sourceTurn === 'string' ? req.body.sourceTurn.slice(0, 128) : null;
         const result = await saveOutcomeState({
-          userSub: sessionUser.sub,
+          userSub: activeSessionUser.sub,
           sessionId,
           expectedVersion,
           state,

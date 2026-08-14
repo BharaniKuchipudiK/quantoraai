@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
-import { getSessionUser } from "./_lib/session.js";
+import { requireActiveSession } from "./_lib/authz.js";
 
 const MAX_PROMPT_CHARS = 20_000;
 
@@ -48,8 +48,9 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const sessionUser = getSessionUser(req);
-  if (!sessionUser) return res.status(401).json({ error: 'Sign in to enhance prompts.' });
+  const auth = await requireActiveSession(req, res);
+  if (!auth.ok) return;
+  const { sessionUser } = auth.value;
 
   const limitKey = `enhance:user:${sessionUser.sub}`;
   if (isRateLimited(limitKey, 30, 60_000)) {

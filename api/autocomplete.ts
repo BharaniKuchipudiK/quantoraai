@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
-import { getSessionUser } from './_lib/session.js';
+import { requireActiveSession } from "./_lib/authz.js";
 
 const MAX_CODE_CONTEXT_CHARS = 50_000;
 const REQUESTS_PER_MINUTE = 30;
@@ -34,8 +34,9 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const sessionUser = getSessionUser(req);
-  if (!sessionUser) return res.status(401).json({ error: 'Sign in to use autocomplete.' });
+  const auth = await requireActiveSession(req, res);
+  if (!auth.ok) return;
+  const { sessionUser } = auth.value;
 
   const limitKey = `autocomplete:user:${sessionUser.sub}`;
   if (isRateLimited(limitKey, REQUESTS_PER_MINUTE, 60_000)) {

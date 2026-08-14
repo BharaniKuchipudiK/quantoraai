@@ -7,6 +7,10 @@ import domains from "../domains.js";
 import enhance from "../enhance.js";
 import pipeline from "../pipeline.js";
 
+process.env.SESSION_SECRET = "12345678901234567890123456789012";
+process.env.SUPABASE_URL = "https://example.supabase.co";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
+
 function responseHarness() {
   const state: { status?: number; body?: any; headers: Record<string, string> } = { headers: {} };
   const res = {
@@ -44,6 +48,43 @@ test("chat rejects an invalid conversation session before provider execution", a
   }, res);
   assert.equal(state.status, 400);
   assert.match(state.body?.error || "", /valid sessionId/);
+});
+
+test("chat revokes blocked signed-in sessions before provider execution", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url: any, init: any = {}) => {
+    if (String(url).includes("/rest/v1/users?select=") && init?.method === "GET") {
+      return new Response(JSON.stringify([{
+        google_sub: "user-1",
+        email: "user@example.com",
+        blocked_at: "2026-08-01T00:00:00.000Z",
+        blocked_reason: "Suspended for review",
+        is_admin: false,
+      }]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`Unexpected fetch: ${String(url)}`);
+  };
+
+  const { createSessionToken } = await import("../_lib/session.js");
+  const token = createSessionToken({
+    sub: "user-1",
+    email: "user@example.com",
+    name: "User One",
+    picture: "",
+  });
+
+  const { state, res } = responseHarness();
+  await chat({
+    method: "POST",
+    headers: { cookie: `quantora_session=${token}` },
+    socket: {},
+    body: { message: "Hello", modelId: "gemini-test" },
+  }, res);
+
+  global.fetch = originalFetch;
+  assert.equal(state.status, 403);
+  assert.equal(state.body?.sessionRevoked, true);
+  assert.match(state.headers["Set-Cookie"] || "", /Max-Age=0/);
 });
 
 test("Outcome Memory refuses anonymous access", async () => {
