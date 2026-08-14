@@ -362,7 +362,8 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "A valid sessionId is required when conversation state is supplied." });
     }
     if (!isRepairTask) {
-      const safety = evaluateSafetyText(message);
+      const requestGeo = getRequestGeo(req);
+      const safety = evaluateSafetyText(message, requestGeo?.countryCode);
       if (safety.action !== "allow") {
         return res.status(422).json({
           error: safety.userMessage,
@@ -372,6 +373,7 @@ export default async function handler(req: any, res: any) {
             severity: safety.severity,
             reasonCode: safety.reasonCode,
             policyVersion: safety.policyVersion,
+            crisisResource: safety.crisisResource,
           },
           requestId,
         });

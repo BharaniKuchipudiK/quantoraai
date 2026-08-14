@@ -10,6 +10,7 @@ import LivePreviewActionButton from './studio-chat/LivePreviewActionButton';
 import { LiveIosCalculator, LiveBeatMaker, LiveQuantumSimulator } from './studio-chat/StudioLiveDemos';
 import { getChatDisplayText } from '../lib/build-communication.js';
 import { hasPreviewableContent, getLivePreviewButtonMeta } from '../lib/studio-preview-helpers.js';
+import { getAssistantDisplayText } from '../lib/assistant-response-normalizer.js';
 
 function StudioChatFeed({
   messages,
@@ -108,7 +109,7 @@ function StudioChatFeed({
                                 }
                               }}
                             >
-                              {msg.modelA.text}
+                              {getAssistantDisplayText(msg.modelA.text)}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -191,7 +192,7 @@ function StudioChatFeed({
                                 }
                               }}
                             >
-                              {msg.modelB.text}
+                              {getAssistantDisplayText(msg.modelB.text)}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -319,8 +320,13 @@ function StudioChatFeed({
                             }
                           }}
                         >
-                          {!isUser && (msg.codeSnippet || hasPreviewableContent(msg.text))
-                            ? getChatDisplayText(msg.text, { artifactHtml: msg.codeSnippet || '' })
+                          {!isUser
+                            ? (() => {
+                                const assistantText = getAssistantDisplayText(msg.text);
+                                return (msg.codeSnippet || hasPreviewableContent(assistantText))
+                                  ? getChatDisplayText(assistantText, { artifactHtml: msg.codeSnippet || '' })
+                                  : assistantText;
+                              })()
                             : msg.text}
                         </ReactMarkdown>
                       </div>

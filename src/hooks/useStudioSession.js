@@ -130,6 +130,7 @@ export function useStudioSession({ user, selectedModel }) {
       conversationContext: {},
       memoryConsented: false,
       outcomeVersion: 0,
+      dismissedCapabilityIds: [],
     };
     setChatSessions((prev) => {
       const updated = [newSession, ...prev];
