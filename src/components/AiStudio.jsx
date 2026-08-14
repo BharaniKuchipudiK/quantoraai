@@ -1644,6 +1644,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`,
             thoughtProcess: 'Rate limited'
           } : m));
+        } else if (errData.safety) {
+          const isCrisisSupport = errData.safety.action === 'support';
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: isCrisisSupport ? (errData.error || '') : `🛡️ **Safety Notice**: ${errData.error || 'This request cannot be fulfilled under Quantora safety guidelines.'}`,
+            thoughtProcess: isCrisisSupport ? 'Support Resources' : 'Safety Policy',
+            safetyDecision: errData.safety,
+          } : m));
         } else {
           const errText = errData.error || `The backend server encountered an error with ${respondingModel.name}.`;
 
