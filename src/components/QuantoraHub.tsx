@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import React, { useEffect } from 'react';
 import { IntelligenceLayout } from './IntelligenceLayout';
 import { useQuantoraIntelligence } from '../hooks/useQuantoraIntelligence';

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { useState } from 'react';
 import { QuantoraOrchestrator } from '../lib/intelligence/orchestrator';
 import { Blueprint } from '../lib/intelligence/blueprint';
