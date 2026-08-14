@@ -1,32 +1,36 @@
 import { BlueprintSchema, type Blueprint } from './blueprint';
-import { SYSTEM_PROMPTS } from '../prompts';
+import { QuantoraMemory } from './memory';
 
 export class QuantoraOrchestrator {
-  /**
-   * Transforms raw user imagination into a structured Action Blueprint.
-   * This is the "Step 0" of every interaction.
-   */
-  static async brainstorm(prompt: string, context: any): Promise<Blueprint> {
-    // In a real flow, this calls the LLM with a specific "Architect" persona.
-    // For now, we are defining the structural bridge.
-    console.log("Quantora is observing and imagining...");
+  static async brainstorm(prompt: string): Promise<Blueprint> {
+    const context = QuantoraMemory.getContextString();
     
-    // This is where lightning speed happens: 
-    // We can run Intent Detection and Security checks in parallel.
-    return {
-      intent: "Transforming abstract idea to actionable roadmap",
+    console.log("Recalling memories to sharpen observation...");
+    
+    // In a real LLM call, 'context' would be sent as a System Message.
+    // This ensures Quantora stays 'focused' on the long-term objective.
+    
+    const blueprint = {
+      intent: "Synthesizing imagination based on persistent memory",
       objective: prompt,
-      observations: ["Project uses React/Vite", "Zod validation implemented", "Supabase backend"],
+      observations: [
+        "Project history recognized",
+        "Previous execution results analyzed"
+      ],
       imagination: [
-        "We could add a real-time preview of this idea",
-        "Integration with Git-actions for automated testing"
+        "Based on your preference for Zod, we should validate the next API layer",
+        "Since we just updated the UI, we should now connect the backend services"
       ],
       roadmap: [
-        { step: 1, task: "Structure the data models", status: 'pending' },
-        { step: 2, task: "Develop the core logic", status: 'pending' },
-        { step: 3, task: "Deploy to edge environment", status: 'pending' }
+        { step: 1, task: "Aligning new features with existing memory", status: 'pending' },
+        { step: 2, task: "Executing next logical phase", status: 'pending' }
       ],
       securityCheck: { isSafe: true, concerns: [] }
     };
+
+    // Record the fact that we started a new brainstorm
+    QuantoraMemory.record('OBSERVATION', `User initiated new objective: ${prompt}`, 4);
+
+    return BlueprintSchema.parse(blueprint);
   }
 }
