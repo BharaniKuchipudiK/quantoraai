@@ -252,18 +252,13 @@ export default function App() {
   const [studioPrefill, setStudioPrefill] = useState(null);
 
   const handleSendToCanvas = (payload) => {
-    const stayInStudio = Boolean(payload && typeof payload === 'object' && payload.stayInStudio);
-    const journeyPayload = payload && typeof payload === 'object'
-      ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'stayInStudio'))
-      : payload;
     const node = createJourneyNode(
-      typeof journeyPayload === 'string'
-        ? { brief: journeyPayload, studioPrompt: journeyPayload, title: journeyPayload.split('\n')[0]?.slice(0, 80) }
-        : journeyPayload,
+      typeof payload === 'string'
+        ? { brief: payload, studioPrompt: payload, title: payload.split('\n')[0]?.slice(0, 80) }
+        : payload,
     );
     setDreamNodes((prev) => [node, ...prev]);
-    if (!stayInStudio) handleTabChange('canvas');
-    return node;
+    handleTabChange('canvas');
   };
 
   const handleContinueInStudio = (node) => {
@@ -321,6 +316,7 @@ export default function App() {
             setThemeMode={setThemeMode}
             isLight={isLight}
             compact={isWorkspaceShell}
+            autoHide={isWorkspaceShell}
           />
 
           <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{

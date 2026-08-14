@@ -1,32 +1,30 @@
-import React, { useState } from 'react';
-import { IntelligenceCanvas } from './IntelligenceCanvas';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+// @ts-nocheck
 
-export const IntelligenceLayout: React.FC<{ children: React.ReactNode, blueprint: any }> = ({ children, blueprint }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+import React, { useState } from 'react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { IntelligenceCanvas } from './IntelligenceCanvas';
+
+export const IntelligenceLayout: React.FC<{ children: React.ReactNode, blueprint: any, isThinking: boolean }> = ({ children, blueprint, isThinking }) => {
+  const [isOpen, setIsOpen] = useState(true);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-white">
-      <div className="flex-1 flex flex-col min-w-0 h-full relative border-r border-slate-100">
-        <div className="flex-1 overflow-y-auto px-4 md:px-12 pt-6 pb-32">
-          <div className="max-w-3xl mx-auto">
-            {children}
-          </div>
-        </div>
+      <div className="flex-1 flex flex-col min-w-0 h-full relative">
+        <div className="flex-1 overflow-y-auto">{children}</div>
         <button 
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="absolute top-4 right-4 z-20 p-2 bg-white/80 backdrop-blur border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 shadow-sm transition-all"
+          onClick={() => setIsOpen(!isOpen)}
+          className="absolute top-4 right-4 z-50 p-2 bg-white/80 backdrop-blur border border-slate-200 rounded-lg shadow-sm"
         >
-          {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+          {isOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
         </button>
       </div>
-      {isSidebarOpen && (
-        <div className="w-80 bg-slate-50/50 h-full overflow-y-auto p-4 animate-in slide-in-from-right duration-300 shadow-inner">
+      {isOpen && (
+        <div className="w-80 border-l border-slate-200 bg-slate-50/50 p-4 overflow-y-auto animate-in slide-in-from-right">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
-            <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Intelligence Hub</h2>
+            <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Intelligence Hub</h2>
           </div>
-          <IntelligenceCanvas blueprint={blueprint} isThinking={false} />
+          <IntelligenceCanvas blueprint={blueprint} isThinking={isThinking} />
         </div>
       )}
     </div>
