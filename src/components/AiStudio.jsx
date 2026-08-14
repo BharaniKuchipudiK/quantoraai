@@ -1,7 +1,3 @@
-import { IntelligenceLayout } from "./IntelligenceLayout";
-import { useQuantoraIntelligence } from "../hooks/useQuantoraIntelligence";
-import { MessageActions } from "./MessageActions";
-import { IntelligenceLayout } from "./IntelligenceLayout";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, FileText, Image as ImageIcon, Activity, FolderPlus, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass, SlidersHorizontal, Atom } from 'lucide-react';
@@ -17,9 +13,10 @@ import {
   mergeSessionContext,
 } from '../lib/session-context.js';
 import {
-  normalizeAssistantResponse,
-  sanitizeAssistantStream,
-} from '../lib/assistant-response-normalizer.js';
+  extractChoicesFromAssistantText,
+  stripPartialAssistantMarkers,
+} from '../lib/studio-choices.js';
+import { extractContinuesFromAssistantText } from '../lib/studio-continues.js';
 import {
   consumeOneShotListeningSignals,
   createQuantoraListener,
@@ -30,10 +27,8 @@ import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detect
 import StudioWandStatus from './StudioWandStatus';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioPromptOverlays from './StudioPromptOverlays';
-import { proposeCapabilities } from '../lib/capability-intelligence.js';
 import { usePromptPolish } from '../hooks/usePromptPolish.js';
 import { useStudioSession } from '../hooks/useStudioSession.js';
-import { useChatScrollFollow } from '../hooks/useChatScrollFollow.js';
 import { useInlineSuggestions } from '../hooks/useInlineSuggestions.js';
 import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
@@ -133,8 +128,7 @@ function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
   });
 }
 
-export default function AiStudio({
-  const { blueprint, isThinking } = useQuantoraIntelligence(); onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
+export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
   const sendMessageRef = useRef(async () => {});
   const onSendMessage = useCallback((text, opts) => sendMessageRef.current(text, opts), []);
 
@@ -182,8 +176,7 @@ export default function AiStudio({
     };
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', closeOnEscape);
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => {
+    return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', closeOnEscape);
     };
@@ -272,8 +265,7 @@ export default function AiStudio({
       if (!cancelled) console.warn('Outcome Memory could not be loaded:', error.message);
     });
 
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => { cancelled = true; };
+    return () => { cancelled = true; };
     // Load once when the owner, session, or consent boundary changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId, isSignedIn, memoryConsented]);
@@ -319,11 +311,10 @@ export default function AiStudio({
   const handleMemoryConsentChange = useCallback(async (enabled) => {
     if (enabled) {
       updateActiveSession({ memoryConsented: true });
-      const record = await syncOutcomeContext(conversationContext, {
+      await syncOutcomeContext(conversationContext, {
         sourceTurn: 'user-memory-consent', confirmed: false, consentOverride: true,
       });
-      if (!record) updateActiveSession({ memoryConsented: false });
-      return Boolean(record);
+      return;
     }
 
     if (isSignedIn) {
@@ -331,7 +322,6 @@ export default function AiStudio({
       catch (error) { console.warn('Outcome Memory could not be deleted:', error.message); return; }
     }
     updateActiveSession({ memoryConsented: false, outcomeVersion: 0, outcomeState: null });
-    return true;
   }, [activeSessionId, conversationContext, isSignedIn, syncOutcomeContext, updateActiveSession]);
 
   const deleteChatWithMemory = useCallback((e, sessionId) => {
@@ -443,8 +433,7 @@ export default function AiStudio({
     const root = document.documentElement;
     if (hasConversation) root.setAttribute('data-workspace', 'active');
     else root.removeAttribute('data-workspace');
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => root.removeAttribute('data-workspace');
+    return () => root.removeAttribute('data-workspace');
   }, [hasConversation]);
 
   // --- Pillar 4: Predictive Code Assist Logic ---
@@ -621,8 +610,7 @@ export default function AiStudio({
       }
     };
     document.addEventListener('mousedown', onDocClick);
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => document.removeEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
   }, [showStudioToolsMenu]);
 
   const [arenaMode, setArenaMode] = useState(false);
@@ -667,8 +655,7 @@ export default function AiStudio({
     };
     document.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('message', onPreviewMessage);
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => {
+    return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('message', onPreviewMessage);
@@ -744,8 +731,7 @@ export default function AiStudio({
       )));
       setBackgroundVerify(null);
     }, 30000);
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => clearTimeout(timer);
+    return () => clearTimeout(timer);
   }, [backgroundVerify]);
 
 
@@ -753,7 +739,8 @@ export default function AiStudio({
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
   const messageViewportRef = useRef(null);
-  const messageThreadRef = useRef(null);
+  const shouldFollowLatestRef = useRef(true);
+  const scrollFrameRef = useRef(null);
 
   const focusPrompt = useCallback(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -776,14 +763,36 @@ export default function AiStudio({
     });
   }, [prefillPrompt, resizePromptTextarea]);
 
-  const { resumeFollow, handleScroll: handleMessageScroll } = useChatScrollFollow({
-    viewportRef: messageViewportRef,
-    threadRef: messageThreadRef,
-    messages,
-    isGenerating,
-    streamingMessageId,
-    activeSessionId,
-  });
+  const scrollToLatest = (behavior = 'auto') => {
+    if (!shouldFollowLatestRef.current || !messageViewportRef.current) return;
+    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      const viewport = messageViewportRef.current;
+      if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+    });
+  };
+
+  const handleMessageScroll = () => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) return;
+    const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    shouldFollowLatestRef.current = distanceFromLatest < 96;
+  };
+
+  // Follow new and streaming content only while the reader remains near the
+  // latest message. Sending a prompt deliberately re-enables this behaviour.
+  useEffect(() => {
+    scrollToLatest();
+  }, [messages, isGenerating]);
+
+  useEffect(() => {
+    shouldFollowLatestRef.current = true;
+    scrollToLatest();
+  }, [activeSessionId]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   // Click outside listener for in-bar model dropdown
   useEffect(() => {
@@ -794,8 +803,7 @@ export default function AiStudio({
     };
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => {
+    return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
@@ -947,32 +955,6 @@ export default function AiStudio({
     [dreamNodes, activeSessionId],
   );
 
-  const capabilityProposals = React.useMemo(() => proposeCapabilities({
-    isSignedIn,
-    memoryConsented,
-    hasJourneyNode: Boolean(sessionJourneyNode),
-    isGenerating,
-    conversationContext,
-    messages,
-  }), [
-    conversationContext,
-    isGenerating,
-    isSignedIn,
-    memoryConsented,
-    messages,
-    sessionJourneyNode,
-  ]);
-
-  const dismissedCapabilityIds = Array.isArray(activeSession.dismissedCapabilityIds)
-    ? activeSession.dismissedCapabilityIds
-    : [];
-
-  const dismissCapability = useCallback((capabilityId) => {
-    updateActiveSession({
-      dismissedCapabilityIds: [...new Set([...dismissedCapabilityIds, capabilityId])],
-    });
-  }, [dismissedCapabilityIds, updateActiveSession]);
-
   const runEnhance = async (sourcePrompt, depth) => {
     const requestSessionId = activeSessionIdRef.current;
     const draftAtStart = inputTextRef.current;
@@ -1048,8 +1030,7 @@ export default function AiStudio({
     const timer = setTimeout(() => {
       setSuggestedModel(chooseBestFreeModel(availableModels, trimmed));
     }, 600);
-    return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => clearTimeout(timer);
+    return () => clearTimeout(timer);
   }, [inputText, availableModels, autoSelectEnabled]);
 
   const saveKeyAndRetry = (keyType) => {
@@ -1128,6 +1109,7 @@ export default function AiStudio({
       attachments: [...attachments]
     };
 
+    shouldFollowLatestRef.current = true;
     updateActiveSession({ lastActiveAt: Date.now() });
     clearWandPolish();
     updateActiveMessages(prev => prev.map((m) => {
@@ -1137,7 +1119,7 @@ export default function AiStudio({
       if (m.choiceSet && !m.choiceUsed && !options.choiceSelected) patch.choiceUsed = true;
       return Object.keys(patch).length ? { ...m, ...patch } : m;
     }).concat(userMsg));
-    resumeFollow();
+    scrollToLatest('smooth');
     if (!textToSend) setInputText('');
     setAttachments([]);
     setIsGenerating(true);
@@ -1161,7 +1143,7 @@ export default function AiStudio({
       }
     }
     if (confirmedContextChanged) {
-      await syncOutcomeContext(sessionContextForRequest, {
+      void syncOutcomeContext(sessionContextForRequest, {
         sourceTurn: `user-${userMsg.id}`,
         confirmed: true,
       });
@@ -1229,16 +1211,9 @@ export default function AiStudio({
               history: cleanMessages,
               userKey: geminiApiKey,
               openRouterKey: openRouterApiKey,
-              cognitiveLevel,
               taskCategory: arenaTaskCategory,
               attachedImages: arenaImageUrls,
               studioMode: arenaImageUrls.length ? 'ask' : studioMode,
-              sessionId: activeSessionId,
-              memoryConsented,
-              sessionContext: sessionContextForRequest,
-              listeningSignals,
-              studioDomain,
-              choiceSelected: options.choiceSelected === true,
             })
           });
           
@@ -1270,7 +1245,7 @@ export default function AiStudio({
                         const updatedModelInfo = {
                           modelId: mod.id,
                           modelName: mod.name,
-                          text: sanitizeAssistantStream(currentText),
+                          text: currentText,
                           provider: finalProvider,
                           latencyMs: finalLatency,
                           requestId: parsed.requestId || null,
@@ -1288,15 +1263,10 @@ export default function AiStudio({
                         const updatedModelInfo = {
                           modelId: mod.id,
                           modelName: mod.name,
-                          text: sanitizeAssistantStream(currentText),
+                          text: currentText,
                           provider: finalProvider,
                           latencyMs: finalLatency,
                           requestId: parsed.requestId || m[isModelA ? 'modelA' : 'modelB']?.requestId || null,
-                          ...(parsed.conversation ? {
-                            conversationMove: parsed.conversation.move,
-                            conversationPolicyVersion: parsed.conversation.policyVersion,
-                            conversationVerification: parsed.conversation.verification,
-                          } : {}),
                         };
                         return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
                       }
@@ -1307,20 +1277,6 @@ export default function AiStudio({
               }
             }
           }
-
-          const normalized = normalizeAssistantResponse(currentText);
-          updateActiveMessages(prev => prev.map(m => {
-            if (m.id !== dualMsgId) return m;
-            const side = isModelA ? 'modelA' : 'modelB';
-            const updatedModelInfo = {
-              ...m[side],
-              text: normalized.displayText,
-              ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
-              ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
-              ...(normalized.contextUpdate ? { contextUpdate: normalized.contextUpdate } : {}),
-            };
-            return { ...m, [side]: updatedModelInfo };
-          }));
           
         } catch (e) {
           updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
@@ -1477,8 +1433,6 @@ export default function AiStudio({
               taskCategory,
               fallbackFrom,
               studioMode: isVisionQuestion ? 'ask' : apiStudioMode,
-              sessionId: activeSessionId,
-              memoryConsented,
               sessionContext: sessionContextForRequest,
               listeningSignals: listeningSignalsForRequest,
               studioDomain,
@@ -1550,7 +1504,7 @@ export default function AiStudio({
                 const parsed = JSON.parse(dataStr);
                 if (parsed.text) {
                   currentText += parsed.text;
-                  const visibleText = sanitizeAssistantStream(currentText);
+                  const visibleText = stripPartialAssistantMarkers(currentText);
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     text: visibleText,
@@ -1565,11 +1519,6 @@ export default function AiStudio({
                     modelId: parsed.modelId || respondingModel.id,
                     requestId: parsed.requestId || m.requestId,
                     latencyMs: parsed.latencyMs || 0,
-                    ...(parsed.conversation ? {
-                      conversationMove: parsed.conversation.move,
-                      conversationPolicyVersion: parsed.conversation.policyVersion,
-                      conversationVerification: parsed.conversation.verification,
-                    } : {}),
                     thoughtProcess: `Processed live via ${parsed.provider} (${parsed.latencyMs || 0}ms)`
                   } : m));
                 }
@@ -1578,7 +1527,9 @@ export default function AiStudio({
           }
         }
 
-        const { displayText, choiceSet, continueSet, contextUpdate } = normalizeAssistantResponse(currentText);
+        const { displayText: afterChoices, choiceSet } = extractChoicesFromAssistantText(currentText);
+        const { displayText: afterContinues, continueSet } = extractContinuesFromAssistantText(afterChoices);
+        const { displayText, contextUpdate } = extractContextFromAssistantText(afterContinues);
         const finalHtml = preparePreviewHtml(displayText, imageMap);
         const chatDisplay = getChatDisplayText(displayText, { artifactHtml: finalHtml });
         if (displayText !== currentText || chatDisplay !== displayText) {
@@ -1656,14 +1607,6 @@ export default function AiStudio({
             ...m,
             text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`,
             thoughtProcess: 'Rate limited'
-          } : m));
-        } else if (errData.safety) {
-          const isCrisisSupport = errData.safety.action === 'support';
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: isCrisisSupport ? (errData.error || '') : `🛡️ **Safety Notice**: ${errData.error || 'This request cannot be fulfilled under Quantora safety guidelines.'}`,
-            thoughtProcess: isCrisisSupport ? 'Support Resources' : 'Safety Policy',
-            safetyDecision: errData.safety,
           } : m));
         } else {
           const errText = errData.error || `The backend server encountered an error with ${respondingModel.name}.`;
@@ -1865,45 +1808,9 @@ export default function AiStudio({
     emitQuantora(QUANTORA_EVENTS.JOURNEY_SAVED, { title });
   }, [onPushToCanvas, messages, activeSessionId, studioDomain, studioMode, emitQuantora]);
 
-  const activateCapability = useCallback(async (capability) => {
-    if (capability?.id === 'outcome-memory') {
-      await handleMemoryConsentChange(true);
-      return;
-    }
-
-    if (capability?.id === 'journey-track' && onPushToCanvas) {
-      const userText = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
-      const goal = conversationContext.goal || activeSession.title || userText || 'Untitled outcome';
-      onPushToCanvas({
-        title: goal.split('\n')[0].slice(0, 80),
-        brief: conversationContext.understanding || userText.slice(0, 300) || goal,
-        studioPrompt: userText || goal,
-        sessionId: activeSessionId,
-        domain: studioDomain,
-        mode: studioMode,
-        hasPreview: Boolean(previewCode?.trim()),
-        stayInStudio: true,
-      });
-      emitQuantora(QUANTORA_EVENTS.JOURNEY_SAVED, { title: goal });
-    }
-  }, [
-    activeSession.title,
-    activeSessionId,
-    conversationContext.goal,
-    conversationContext.understanding,
-    emitQuantora,
-    handleMemoryConsentChange,
-    messages,
-    onPushToCanvas,
-    previewCode,
-    studioDomain,
-    studioMode,
-  ]);
-
 
   return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>
-    <div className="ai-studio-shell" style={{ display: "none" }} style={{
+    <div className="ai-studio-shell" style={{
       display: 'flex',
       gap: '20px',
       maxWidth: showBuildSplit || isWorkspaceMode ? '100%' : '1800px',
@@ -2065,7 +1972,6 @@ export default function AiStudio({
           {chatSessions.map((session) => {
             const isActive = session.id === activeSessionId;
             return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>
               <div
                 key={session.id}
                 onClick={() => setActiveSessionId(session.id)}
@@ -2276,7 +2182,7 @@ export default function AiStudio({
         ref={messageViewportRef}
         onScroll={handleMessageScroll}
         className={`ai-studio-messages ${messages.length <= 1 ? 'ai-studio-messages--empty' : ''}`}
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '12px' }}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '12px', scrollBehavior: 'smooth' }}
       >
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
@@ -2396,7 +2302,7 @@ export default function AiStudio({
           </div>
         ) : (
           /* Active Chat Thread */
-          <div ref={messageThreadRef} className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
+          <div className="ai-studio-thread" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1120px', margin: '0 auto', width: '100%' }}>
             <StudioChatFeed
               messages={messages}
               user={user}
@@ -2595,13 +2501,8 @@ export default function AiStudio({
           previewCode={previewCode}
           isGenerating={isGenerating}
           buildSplitDismissed={buildSplitDismissed}
-          capabilityProposals={capabilityProposals}
-          dismissedCapabilityIds={dismissedCapabilityIds}
-          isLight={isLight}
           onNewBuild={() => setRefineActive(false)}
           onOpenSplit={() => setBuildSplitDismissed(false)}
-          onActivateCapability={activateCapability}
-          onDismissCapability={dismissCapability}
         />
 
         {/* Prompt input pill — textarea + toolbar only */}
@@ -3002,7 +2903,6 @@ export default function AiStudio({
                           const isAvailable = model.available !== false;
                           
                           return (
-    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>
                           <div
                             key={model.id}
                             onClick={() => {
@@ -3498,6 +3398,5 @@ export default function AiStudio({
       )}
 
     </div>
-    </IntelligenceLayout>
   );
 }
