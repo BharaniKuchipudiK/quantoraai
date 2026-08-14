@@ -1,17 +1,21 @@
-.message-bubble {
-  padding: 0.75rem 1rem !important; 
-  margin-bottom: 0.5rem !important;
-  max-width: 85% !important;
+/* 
+ * Quantora High-Density UI 
+ * Maximizing screen real estate and reducing cognitive noise.
+ */
+
+/* Hide the scattered "Busy" chips to declutter the conversation */
+.studio-starter-templates, 
+.action-chip-container,
+.useful-now-banner {
+    display: none !important;
 }
-.action-chip-container {
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding-bottom: 4px;
+
+/* Shrink bubble padding for higher information density */
+.ai-studio-thread {
+    max-width: 900px !important;
+    gap: 12px !important;
 }
-.action-chip-container::-webkit-scrollbar {
-  display: none;
-}
-.intelligence-panel {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+.ai-studio-messages {
+    padding-bottom: 20px !important;
 }
