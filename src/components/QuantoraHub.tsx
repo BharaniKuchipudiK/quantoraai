@@ -1,3 +1,4 @@
+<>Tsx
 // @ts-nocheck
 
 import React, { useEffect } from 'react';
