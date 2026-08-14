@@ -66,9 +66,9 @@ export const IntelligenceCanvas: React.FC<Props> = ({ blueprint, isThinking }) =
               <button 
                 onClick={() => handleExecute(step.step, step.task)}
                 disabled={executingStep !== null}
-                className="px-3 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                className="px-3 py-1 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 disabled:opacity-50 transition-colors"
               >
-                {executingStep === step.step ? 'Acting...' : 'Execute'}
+                {executingStep === step.step ? 'Recording…' : 'Record action'}
               </button>
             </div>
           ))}

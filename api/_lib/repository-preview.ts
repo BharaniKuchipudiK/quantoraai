@@ -4,6 +4,7 @@ const MAX_RELEVANT_FILES = 10;
 const MAX_FILE_SIZE = 180_000;
 const MAX_FILE_CHARS = 24_000;
 const MAX_CONTEXT_CHARS = 120_000;
+const GITHUB_TIMEOUT_MS = 8_000;
 
 const STOP_WORDS = new Set([
   "about", "after", "again", "also", "and", "been", "before", "build", "can", "change",
@@ -133,6 +134,10 @@ function githubHeaders(token?: string): Record<string, string> {
   return headers;
 }
 
+async function githubFetch(url: string, init: RequestInit) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS) });
+}
+
 function encodedPath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
@@ -149,7 +154,7 @@ export async function buildRepositoryPreview(
 
   const { owner, repo } = parseGithubRepositoryUrl(repoUrl);
   const headers = githubHeaders(githubToken);
-  const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+  const repoResponse = await githubFetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
   if (!repoResponse.ok) {
     if (repoResponse.status === 404) throw new Error("Repository not found. Private repositories require a configured GitHub token.");
     if (repoResponse.status === 403) throw new Error("GitHub's request limit was reached. Try again later.");
@@ -158,7 +163,7 @@ export async function buildRepositoryPreview(
 
   const metadata = await repoResponse.json();
   const branch = metadata.default_branch || "main";
-  const treeResponse = await fetch(
+  const treeResponse = await githubFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     { headers },
   );
@@ -170,7 +175,7 @@ export async function buildRepositoryPreview(
 
   const rankedFiles = (await Promise.all(candidates.map(async file => {
     const rawUrl = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(branch)}/${encodedPath(file.path)}`;
-    const response = await fetch(rawUrl, {
+    const response = await githubFetch(rawUrl, {
       headers: githubToken ? { Authorization: `Bearer ${githubToken}` } : undefined,
     });
     if (!response.ok) return null;

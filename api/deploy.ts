@@ -1,6 +1,7 @@
 import { fetchApiGatewayKey } from './autocomplete';
 import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
+import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
 import { recordProductEvent, recordPublishedSite } from './_lib/store.js';
 import { getRequestGeo } from './_lib/geo.js';
 import { ownedProjectName } from './_lib/publish-policy.js';
@@ -42,14 +43,14 @@ export default async function handler(req: any, res: any) {
       projectSettings: { framework: null },
     };
 
-    const response = await fetch("https://api.vercel.com/v13/deployments", {
+    const response = await fetchWithTimeout("https://api.vercel.com/v13/deployments", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${vercelToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
-    });
+    }, 8_000);
 
     const data = await response.json();
 

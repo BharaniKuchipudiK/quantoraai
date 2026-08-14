@@ -12,19 +12,10 @@ export type QuantoraAction = z.infer<typeof ActionSchema>;
 
 export class QuantoraExecutor {
   static async execute(action: QuantoraAction): Promise<{ success: boolean; message: string }> {
-    // Record intent to act
-    QuantoraMemory.record('ACTION_RESULT', `Attempting: ${action.description}`, 2);
-
-    // Mock execution
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    const success = true; // In reality, this checks the actual result
-    
-    if (success) {
-      QuantoraMemory.record('ACTION_RESULT', `Success: ${action.description} at ${action.path || 'root'}`, 3);
-      return { success: true, message: "Action complete and recorded in memory." };
-    }
-
-    return { success: false, message: "Action failed." };
+    QuantoraMemory.record('ACTION_RESULT', `Execution requested but not performed: ${action.description}`, 2);
+    return {
+      success: false,
+      message: "Execution is not wired to a verified runtime yet. Quantora recorded the requested action, but did not run it.",
+    };
   }
 }

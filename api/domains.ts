@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { fetchApiGatewayKey } from './autocomplete';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
+import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
 import { isPublishedSiteOwner } from './_lib/store.js';
 import { normalizeDomainName } from './_lib/publish-policy.js';
 
@@ -50,11 +51,11 @@ export default async function handler(req: any, res: any) {
       const vercelToken = await fetchApiGatewayKey('VERCEL') || process.env.VERCEL_ACCESS_TOKEN;
       if (!vercelToken) return res.status(401).json({ error: 'Missing VERCEL_ACCESS_TOKEN in the API Gateway.' });
 
-      const addRes = await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectName)}/domains`, {
+      const addRes = await fetchWithTimeout(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectName)}/domains`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${vercelToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
-      });
+      }, 8_000);
       const addData = await addRes.json().catch(() => ({}));
       // 409 = already attached to this project; treat as success.
       if (!addRes.ok && addRes.status !== 409) {
