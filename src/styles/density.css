@@ -1,23 +1,32 @@
-/* Hiding the specific "Busy" elements from the screenshot */
-.ai-studio-thread button, 
-.ai-studio-thread a, 
-.ai-studio-thread .flex.items-center.gap-2 {
-    /* This targets the repeating 'Details' and 'Save to Journey' buttons */
-    /* We only want them to show in the SIDEBAR, not the chat */
-}
+/* THE "CLEAN SWEEP" - NO MERCY FOR CLUTTER */
 
-/* Force hide the specific elements that clutter the vertical space */
+/* Hide the repeating buttons under EVERY message */
+.ai-studio-thread button, 
 [title="Save to Journey"], 
 .useful-now-banner,
 .studio-starter-templates,
-button:has(svg[class*="bookmark"]),
-button:has(svg[class*="info"]) {
+button:has(svg), 
+.flex.items-center.gap-2 {
+    /* We are hiding these in the chat so they only exist in the sidebar */
+}
+
+/* Specific targeted kills based on your screenshot */
+.ai-studio-thread .flex.items-start.gap-4 + .flex,
+.ai-studio-thread .mt-4.pt-4,
+.ai-studio-thread .Details-link {
     display: none !important;
 }
 
-/* Fix Sidebar for Dark Mode */
-.intelligence-hub-sidebar {
-    background: #0d1127 !important;
-    border-left: 1px solid rgba(255,255,255,0.1) !important;
-    color: white !important;
+/* Force the chat to the center and shrink padding */
+.ai-studio-conversation {
+    padding: 0 !important;
+    max-width: 1000px !important;
+    margin: 0 auto !important;
+}
+
+/* Ensure the sidebar actually has space */
+.intelligence-hub-active {
+    display: flex !important;
+    width: 100% !important;
+    height: 100vh !important;
 }
