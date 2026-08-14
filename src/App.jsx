@@ -1,5 +1,3 @@
-import { QuantoraHub } from './components/QuantoraHub';
-
 import React, { useState, useEffect, useCallback } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
@@ -357,7 +355,7 @@ export default function App() {
               />
             )}
 
-            <QuantoraHub> {activeTab === 'studio' && (
+            {activeTab === 'studio' && (
               <AiStudio
                 onOpenAuth={() => setShowAuthModal(true)}
                 selectedModel={selectedModel}
@@ -376,7 +374,6 @@ export default function App() {
                 prefillPrompt={studioPrefill}
               />
             )}
-            </QuantoraHub>
 
             {activeTab === 'canvas' && (
               <DreamActionCanvas
