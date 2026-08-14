@@ -1,3 +1,4 @@
+import { QuantoraHub } from './components/QuantoraHub';
 import React, { useState, useEffect, useCallback } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
@@ -360,8 +361,8 @@ export default function App() {
             )}
 
             {activeTab === 'studio' && (
-              <AiStudio
-                onOpenAuth={() => setShowAuthModal(true)}
+              <QuantoraHub><AiStudio
+                onOpenAuth={() =></QuantoraHub> setShowAuthModal(true)}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 availableModels={availableModels}

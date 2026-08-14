@@ -1,21 +1,23 @@
 /* 
- * Quantora High-Density UI 
- * Maximizing screen real estate and reducing cognitive noise.
+ * Quantora High-Density Overlays 
+ * Reclaiming real estate by hiding non-essential clutter.
  */
 
-/* Hide the scattered "Busy" chips to declutter the conversation */
-.studio-starter-templates, 
+/* Hide the scattered buttons that make the UI "Busy" */
 .action-chip-container,
-.useful-now-banner {
+.useful-now-banner,
+.studio-starter-templates {
     display: none !important;
 }
 
-/* Shrink bubble padding for higher information density */
+/* Optimize message spacing for maximum reading area */
 .ai-studio-thread {
-    max-width: 900px !important;
+    max-width: 960px !important;
     gap: 12px !important;
+    margin: 0 auto !important;
 }
 
 .ai-studio-messages {
-    padding-bottom: 20px !important;
+    padding-top: 10px !important;
+    padding-bottom: 30px !important;
 }
