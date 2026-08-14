@@ -4,6 +4,7 @@ import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, Me
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioChatFeed from './StudioChatFeed';
 import ModelDashboard from './ModelDashboard';
+import { chooseBestFreeModel } from '../lib/model-routing.js';
 import { loadArenaPreferences, recordArenaWin } from '../lib/arena-preferences.js';
 import {
   extractContextFromAssistantText,
