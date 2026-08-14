@@ -12,6 +12,44 @@ import { getChatDisplayText } from '../lib/build-communication.js';
 import { hasPreviewableContent, getLivePreviewButtonMeta } from '../lib/studio-preview-helpers.js';
 import { getAssistantDisplayText } from '../lib/assistant-response-normalizer.js';
 
+function ResponseInsightStrip({ msg, isLight, subtextColor }) {
+  const chips = [
+    msg.modelUsed && `Model ${msg.modelUsed}`,
+    msg.provider && `Provider ${msg.provider}`,
+    Number.isFinite(msg.latencyMs) && msg.latencyMs > 0 ? `${msg.latencyMs}ms` : null,
+    msg.routingNote ? 'Auto-routed' : null,
+  ].filter(Boolean);
+
+  if (!chips.length) return null;
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '6px',
+      marginBottom: '10px',
+    }}>
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          style={{
+            fontSize: '0.68rem',
+            lineHeight: 1,
+            padding: '6px 9px',
+            borderRadius: '999px',
+            background: isLight ? '#eef6ff' : 'rgba(59,130,246,0.12)',
+            color: isLight ? '#1d4ed8' : '#93c5fd',
+            border: isLight ? '1px solid rgba(59,130,246,0.12)' : '1px solid rgba(147,197,253,0.14)',
+            fontWeight: 600,
+          }}
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function StudioChatFeed({
   messages,
   user,
@@ -263,6 +301,8 @@ function StudioChatFeed({
                           ))}
                         </div>
                       )}
+
+                      {!isUser && <ResponseInsightStrip msg={msg} isLight={isLight} subtextColor={subtextColor} />}
 
                       {(msg.routingNote || msg.thoughtProcess) && (
                         <div style={{ marginBottom: '9px' }}>

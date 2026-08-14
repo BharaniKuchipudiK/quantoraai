@@ -53,6 +53,74 @@ function LatencyTrendChart({ usageDays }) {
     );
   }
 
+  function ConversationInsightCard({ row, isLight }) {
+    const conversation = row.conversation || {};
+    const routing = conversation.routing || {};
+    const evaluation = conversation.evaluation || {};
+    const responseContract = conversation.responseContract || {};
+    const chips = [
+      conversation.move && `move: ${conversation.move}`,
+      responseContract.action && `action: ${responseContract.action}`,
+      routing.reason && `routing: ${routing.reason}`,
+      routing.selectionSource && `source: ${routing.selectionSource}`,
+      evaluation.verifierStatus && `verify: ${evaluation.verifierStatus}`,
+      Number.isFinite(evaluation.score) && `score: ${evaluation.score}`,
+    ].filter(Boolean);
+
+    return (
+      <div style={{
+        padding: '12px',
+        background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+        border: isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+        borderRadius: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: isLight ? '#0f172a' : '#f1f5f9' }}>
+              {shortModel(row.model_id)}
+            </div>
+            <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+              {[row.studio_mode, row.provider, row.used_server_key ? 'server key' : 'BYOK'].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0, fontFamily: 'monospace', fontSize: '0.72rem', color: '#64748b' }}>
+            <div>{row.latency_ms ?? '—'}ms</div>
+            <div>{new Date(row.created_at).toLocaleTimeString()}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {chips.map((chip) => (
+            <span
+              key={chip}
+              style={{
+                fontSize: '0.66rem',
+                padding: '4px 8px',
+                borderRadius: '999px',
+                background: isLight ? 'rgba(14,165,233,0.08)' : 'rgba(14,165,233,0.16)',
+                color: isLight ? '#0c4a6e' : '#7dd3fc',
+                border: isLight ? '1px solid rgba(14,165,233,0.12)' : '1px solid rgba(125,211,252,0.14)',
+              }}
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+        {(conversation.reasonCode || responseContract.tone || responseContract.depth || responseContract.safetyLevel || evaluation.qualitySignal) && (
+          <div style={{ fontSize: '0.68rem', color: '#64748b', lineHeight: 1.45 }}>
+            {conversation.reasonCode ? `reason ${conversation.reasonCode}` : 'reason unavailable'}
+            {responseContract.tone ? ` · tone ${responseContract.tone}` : ''}
+            {responseContract.depth ? ` · depth ${responseContract.depth}` : ''}
+            {responseContract.safetyLevel ? ` · safety ${responseContract.safetyLevel}` : ''}
+            {evaluation.qualitySignal ? ` · quality ${evaluation.qualitySignal}` : ''}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const days = usageDays.slice().reverse();
   const max = Math.max(...days.map((d) => Number(d.avg_latency_ms) || 0), 1);
 
@@ -257,6 +325,21 @@ export default function TechnicalAnalyticsPanel({ technical, window, daily, isLi
           </div>
         ) : (
           <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '12px 0 0' }}>No recent requests yet.</p>
+        )}
+      </div>
+
+      <div className="product-analytics-panel__chart" style={{ marginTop: '16px' }}>
+        <h4>Recent communication decisions</h4>
+        {technical?.recentConversationInsights?.length ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+            {technical.recentConversationInsights.map((row) => (
+              <ConversationInsightCard key={row.id} row={row} isLight={isLight} />
+            ))}
+          </div>
+        ) : (
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '12px 0 0' }}>
+            No communication metadata captured yet. New Studio requests will populate policy, routing, and verification decisions here.
+          </p>
         )}
       </div>
 

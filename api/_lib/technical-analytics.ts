@@ -38,6 +38,37 @@ export type RecentUsageRow = {
   created_at: string;
 };
 
+export type RecentConversationInsightRow = {
+  id: string;
+  model_id: string | null;
+  provider: string | null;
+  studio_mode: string | null;
+  latency_ms: number | null;
+  used_server_key: boolean;
+  conversation: {
+    move?: string;
+    reasonCode?: string;
+    policyVersion?: string;
+    routing?: {
+      reason?: string;
+      provider?: string;
+      selectionSource?: string;
+    };
+    evaluation?: {
+      verifierStatus?: string;
+      qualitySignal?: string;
+      score?: number;
+    };
+    responseContract?: {
+      action?: string;
+      tone?: string;
+      depth?: string;
+      safetyLevel?: string;
+    };
+  } | null;
+  created_at: string;
+};
+
 export type TechnicalTrackingHealth = {
   configured: boolean;
   viewsReachable: boolean;
@@ -51,6 +82,7 @@ export type TechnicalInsights = {
   modelLatency: TechnicalModelLatencyRow[];
   completion: ProductCompletionSummary | null;
   recentRequests: RecentUsageRow[];
+  recentConversationInsights: RecentConversationInsightRow[];
   tracking: TechnicalTrackingHealth;
 };
 
@@ -99,16 +131,41 @@ async function fetchRecentUsage(): Promise<RecentUsageRow[]> {
   }
 }
 
+async function fetchRecentConversationInsights(): Promise<RecentConversationInsightRow[]> {
+  const url = process.env.SUPABASE_URL?.replace(/\/+$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return [];
+
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/usage?select=id,model_id,provider,studio_mode,latency_ms,used_server_key,conversation,created_at&conversation=not.is.null&order=created_at.desc&limit=10`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+        },
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    if (!response.ok) return [];
+    const rows = await response.json();
+    return Array.isArray(rows) ? (rows as RecentConversationInsightRow[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getTechnicalInsights(windowRequests7d = 0): Promise<TechnicalInsights | null> {
   const configured = isStoreConfigured();
   if (!configured) return null;
 
-  const [keyMixResult, latencyResult, modelResult, completionResult, recentRequests] = await Promise.all([
+  const [keyMixResult, latencyResult, modelResult, completionResult, recentRequests, recentConversationInsights] = await Promise.all([
     fetchView<TechnicalKeyMix>("technical_key_mix_7d"),
     fetchView<TechnicalLatencySummary>("technical_latency_summary_7d"),
     fetchView<TechnicalModelLatencyRow>("technical_model_latency_7d"),
     fetchView<ProductCompletionSummary>("product_completion_7d"),
     fetchRecentUsage(),
+    fetchRecentConversationInsights(),
   ]);
 
   const viewsReachable = keyMixResult.reachable
@@ -134,6 +191,7 @@ export async function getTechnicalInsights(windowRequests7d = 0): Promise<Techni
     modelLatency: modelResult.rows,
     completion,
     recentRequests,
+    recentConversationInsights,
     tracking,
   };
 }
