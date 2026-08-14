@@ -1,7 +1,5 @@
-// @ts-nocheck
-
 import React, { useState } from 'react';
-import { Blueprint } from '../lib/intelligence/blueprint';
+import type { Blueprint } from '../lib/intelligence/blueprint';
 import { QuantoraExecutor } from '../lib/intelligence/executor';
 
 interface Props {

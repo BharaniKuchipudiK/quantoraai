@@ -1,8 +1,15 @@
 import React, { useState } from 'react';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { IntelligenceCanvas } from './IntelligenceCanvas';
+import type { Blueprint } from '../lib/intelligence/blueprint';
 
-export const IntelligenceLayout = ({ children, blueprint, isThinking }) => {
+type IntelligenceLayoutProps = {
+  children: React.ReactNode;
+  blueprint: Blueprint | null;
+  isThinking: boolean;
+};
+
+export const IntelligenceLayout = ({ children, blueprint, isThinking }: IntelligenceLayoutProps) => {
   const [isOpen, setIsOpen] = useState(true);
 
   return (
