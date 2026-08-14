@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Lock, Key, Server, Database, CheckCircle2, UserCheck, EyeOff, Globe, KeySquare } from 'lucide-react';
+import React from 'react';
+import { ShieldCheck, Lock, Server, CheckCircle2, UserCheck, AlertTriangle } from 'lucide-react';
 
 export default function PrivacyVault({ user, isLight }) {
-  const [zeroLogMode, setZeroLogMode] = useState(true);
-  const [localWasmMode, setLocalWasmMode] = useState(false);
-
   const textColor = isLight ? '#0f172a' : '#ffffff';
   const subtextColor = isLight ? '#475569' : '#94a3b8';
   const itemBg = isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)';
@@ -23,13 +20,13 @@ export default function PrivacyVault({ user, isLight }) {
               </h2>
             </div>
             <p style={{ fontSize: '0.88rem', color: subtextColor, margin: 0 }}>
-              Built for high trust, local encryption, and zero data harvesting.
+              Signed sessions, server-side access control, and explicit notes about what is and is not enforced today.
             </p>
           </div>
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <span style={{ fontSize: '0.75rem', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.4)', color: '#db2777', padding: '6px 12px', borderRadius: '8px', fontWeight: '600' }}>
-              🔒 Keys Stored Only On Your Device
+              🔒 BYOK keys are memory-only for this tab
             </span>
           </div>
         </div>
@@ -64,11 +61,11 @@ export default function PrivacyVault({ user, isLight }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${borderSubtle}`, paddingBottom: '6px' }}>
                   <span>Token Format</span>
-                  <strong style={{ color: '#0284c7' }}>Stateless JWT (PKCE)</strong>
+                  <strong style={{ color: '#0284c7' }}>Signed HttpOnly session cookie</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Session Storage</span>
-                  <strong style={{ color: '#059669' }}>Browser Local Storage</strong>
+                  <strong style={{ color: '#059669' }}>Server-issued cookie</strong>
                 </div>
               </div>
             </div>
@@ -81,48 +78,45 @@ export default function PrivacyVault({ user, isLight }) {
           )}
         </div>
 
-        {/* Privacy Guardrails & Toggles */}
+        {/* Privacy Guardrails */}
         <div className="glass-card" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', borderBottom: `1px solid ${borderSubtle}`, paddingBottom: '12px' }}>
             <Lock size={20} color="#db2777" />
-            <h3 style={{ fontSize: '1.1rem', margin: 0, color: textColor }}>Privacy & Zero-Log Controls</h3>
+            <h3 style={{ fontSize: '1.1rem', margin: 0, color: textColor }}>Privacy Guardrails</h3>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Toggle 1: Zero Log Mode */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: itemBg, padding: '14px', borderRadius: '12px' }}>
+            <div style={{ background: itemBg, padding: '14px', borderRadius: '12px' }}>
               <div>
                 <span style={{ fontSize: '0.9rem', fontWeight: '600', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <EyeOff size={16} color="#db2777" /> Zero-Data Retention Mode
+                  <CheckCircle2 size={16} color="#059669" /> Enforced today
                 </span>
                 <p style={{ fontSize: '0.75rem', color: subtextColor, margin: '2px 0 0 0' }}>
-                  Prevent open-source API providers from storing chat logs.
+                  Google sign-in is verified server-side, sessions are signed and HttpOnly, and unapproved candidate models are not supposed to be routed with server-owned keys.
                 </p>
               </div>
-              <input
-                type="checkbox"
-                checked={zeroLogMode}
-                onChange={() => setZeroLogMode(!zeroLogMode)}
-                style={{ width: '20px', height: '20px', accentColor: '#db2777', cursor: 'pointer' }}
-              />
             </div>
 
-            {/* Toggle 2: Local WebLLM Execution */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: itemBg, padding: '14px', borderRadius: '12px' }}>
+            <div style={{ background: itemBg, padding: '14px', borderRadius: '12px' }}>
               <div>
                 <span style={{ fontSize: '0.9rem', fontWeight: '600', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Globe size={16} color="#0284c7" /> Pure Local WASM/WebGPU Mode
+                  <AlertTriangle size={16} color="#db2777" /> Important limitation
                 </span>
                 <p style={{ fontSize: '0.75rem', color: subtextColor, margin: '2px 0 0 0' }}>
-                  Run WebLLM models 100% inside browser memory without internet calls.
+                  Quantora does not yet enforce zero-retention provider mode or fully local browser-only model execution. When you send a request, provider traffic follows the selected model and deployment configuration.
                 </p>
               </div>
-              <input
-                type="checkbox"
-                checked={localWasmMode}
-                onChange={() => setLocalWasmMode(!localWasmMode)}
-                style={{ width: '20px', height: '20px', accentColor: '#0284c7', cursor: 'pointer' }}
-              />
+            </div>
+
+            <div style={{ background: itemBg, padding: '14px', borderRadius: '12px' }}>
+              <div>
+                <span style={{ fontSize: '0.9rem', fontWeight: '600', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Server size={16} color="#0284c7" /> Bring-your-own-key handling
+                </span>
+                <p style={{ fontSize: '0.75rem', color: subtextColor, margin: '2px 0 0 0' }}>
+                  API keys you paste into the Studio stay only in in-memory state for the current browser tab. They are not written to localStorage by this client.
+                </p>
+              </div>
             </div>
           </div>
         </div>

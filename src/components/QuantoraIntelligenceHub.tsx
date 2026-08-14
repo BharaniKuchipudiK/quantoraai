@@ -1,7 +1,10 @@
-// @ts-nocheck
 import React from 'react';
 
-export const QuantoraIntelligenceHub = ({ children }) => {
+type QuantoraIntelligenceHubProps = {
+  children: React.ReactNode;
+};
+
+export const QuantoraIntelligenceHub = ({ children }: QuantoraIntelligenceHubProps) => {
   return <>{children}</>;
 };
 export default QuantoraIntelligenceHub;

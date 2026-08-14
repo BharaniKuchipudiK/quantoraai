@@ -1,5 +1,5 @@
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
-import { getSessionUser } from "./_lib/session.js";
+import { requireActiveSession } from "./_lib/authz.js";
 import { recordProductEvent } from "./_lib/store.js";
 import { getRequestGeo } from "./_lib/geo.js";
 
@@ -14,10 +14,9 @@ export default async function handler(req: any, res: any) {
     return res.status(429).json({ error: "Too many requests. Please wait a minute and try again." });
   }
 
-  const sessionUser = getSessionUser(req);
-  if (!sessionUser) {
-    return res.status(401).json({ error: "Sign in to track product events." });
-  }
+  const auth = await requireActiveSession(req, res);
+  if (!auth.ok) return;
+  const { sessionUser } = auth.value;
 
   const { eventType, metadata } = req.body || {};
   if (!ALLOWED_EVENTS.has(eventType)) {

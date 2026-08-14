@@ -30,6 +30,7 @@ import StudioPromptOverlays from './StudioPromptOverlays';
 import { usePromptPolish } from '../hooks/usePromptPolish.js';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { useInlineSuggestions } from '../hooks/useInlineSuggestions.js';
+import { getClientSecret, setClientSecret } from '../lib/client-secrets.js';
 import StudioChromeBar from './StudioChromeBar';
 import StudioWorkingNotes from './StudioWorkingNotes';
 import StudioJourneyStrip from './StudioJourneyStrip';
@@ -1036,9 +1037,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const saveKeyAndRetry = (keyType) => {
     if (!keyInputValue.trim()) return;
     if (keyType === 'gemini') {
-      localStorage.setItem('geminiApiKey', keyInputValue.trim());
+      setClientSecret('gemini', keyInputValue);
     } else {
-      localStorage.setItem('openRouterApiKey', keyInputValue.trim());
+      setClientSecret('openrouter', keyInputValue);
     }
     setKeyInputValue('');
     updateActiveMessages(prev => prev.filter(m => !m.isKeyPrompt));
@@ -1174,8 +1175,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       console.error("Moderation API failed, failing open...", e);
     }
 
-    const geminiApiKey = localStorage.getItem('geminiApiKey');
-    const openRouterApiKey = localStorage.getItem('openRouterApiKey');
+    const geminiApiKey = getClientSecret('gemini');
+    const openRouterApiKey = getClientSecret('openrouter');
 
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
 
@@ -1209,8 +1210,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               modelId: mod.id,
               modelName: mod.name,
               history: cleanMessages,
-              userKey: geminiApiKey,
-              openRouterKey: openRouterApiKey,
+              ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
+              ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
               taskCategory: arenaTaskCategory,
               attachedImages: arenaImageUrls,
               studioMode: arenaImageUrls.length ? 'ask' : studioMode,
@@ -1423,8 +1424,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               modelId: candidate.id,
               modelName: candidate.name,
               history: cleanMessages,
-              userKey: geminiApiKey,
-              openRouterKey: openRouterApiKey,
+              ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
+              ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
               cognitiveLevel,
               buildMode,
               guidedBuild,

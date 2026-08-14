@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { fetchWithTimeout } from "./fetch-timeout.js";
 
 /*
  * Self-heal core for the live preview's verification loop.
@@ -39,7 +40,7 @@ function stripFences(text: string): string {
 }
 
 async function repairWithOpenRouter(apiKey: string, model: string, system: string, user: string): Promise<string> {
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -56,7 +57,7 @@ async function repairWithOpenRouter(apiKey: string, model: string, system: strin
       temperature: 0.1,
       stream: false,
     }),
-  });
+  }, 12_000);
 
   if (!resp.ok) {
     const errText = await resp.text();
