@@ -1,3 +1,7 @@
+import { IntelligenceLayout } from "./IntelligenceLayout";
+import { useQuantoraIntelligence } from "../hooks/useQuantoraIntelligence";
+import { MessageActions } from "./MessageActions";
+import { IntelligenceLayout } from "./IntelligenceLayout";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, FileText, Image as ImageIcon, Activity, FolderPlus, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Loader, Plane, BookOpen, DollarSign, Search, Check, Compass, SlidersHorizontal, Atom } from 'lucide-react';
@@ -129,7 +133,8 @@ function downscaleImageToDataUrl(file, maxDim = 1000, quality = 0.82) {
   });
 }
 
-export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
+export default function AiStudio({
+  const { blueprint, isThinking } = useQuantoraIntelligence(); onOpenAuth, selectedModel, setSelectedModel, availableModels, modelDashboard, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, prefillPrompt, isAdmin, onModelsRefresh }) {
   const sendMessageRef = useRef(async () => {});
   const onSendMessage = useCallback((text, opts) => sendMessageRef.current(text, opts), []);
 
@@ -177,7 +182,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', closeOnEscape);
-    return () => {
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', closeOnEscape);
     };
@@ -266,7 +272,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       if (!cancelled) console.warn('Outcome Memory could not be loaded:', error.message);
     });
 
-    return () => { cancelled = true; };
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => { cancelled = true; };
     // Load once when the owner, session, or consent boundary changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId, isSignedIn, memoryConsented]);
@@ -436,7 +443,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const root = document.documentElement;
     if (hasConversation) root.setAttribute('data-workspace', 'active');
     else root.removeAttribute('data-workspace');
-    return () => root.removeAttribute('data-workspace');
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => root.removeAttribute('data-workspace');
   }, [hasConversation]);
 
   // --- Pillar 4: Predictive Code Assist Logic ---
@@ -613,7 +621,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => document.removeEventListener('mousedown', onDocClick);
   }, [showStudioToolsMenu]);
 
   const [arenaMode, setArenaMode] = useState(false);
@@ -658,7 +667,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
     document.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('message', onPreviewMessage);
-    return () => {
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('message', onPreviewMessage);
@@ -734,7 +744,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       )));
       setBackgroundVerify(null);
     }, 30000);
-    return () => clearTimeout(timer);
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => clearTimeout(timer);
   }, [backgroundVerify]);
 
 
@@ -783,7 +794,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
-    return () => {
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
@@ -1036,7 +1048,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const timer = setTimeout(() => {
       setSuggestedModel(chooseBestFreeModel(availableModels, trimmed));
     }, 600);
-    return () => clearTimeout(timer);
+    return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>) => clearTimeout(timer);
   }, [inputText, availableModels, autoSelectEnabled]);
 
   const saveKeyAndRetry = (keyType) => {
@@ -1889,7 +1902,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
   return (
-    <div className="ai-studio-shell" style={{
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>
+    <div className="ai-studio-shell" style={{ display: "none" }} style={{
       display: 'flex',
       gap: '20px',
       maxWidth: showBuildSplit || isWorkspaceMode ? '100%' : '1800px',
@@ -2051,6 +2065,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           {chatSessions.map((session) => {
             const isActive = session.id === activeSessionId;
             return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>
               <div
                 key={session.id}
                 onClick={() => setActiveSessionId(session.id)}
@@ -2987,6 +3002,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           const isAvailable = model.available !== false;
                           
                           return (
+    <IntelligenceLayout blueprint={blueprint} isThinking={isThinking}>
                           <div
                             key={model.id}
                             onClick={() => {
@@ -3482,5 +3498,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       )}
 
     </div>
+    </IntelligenceLayout>
   );
 }
