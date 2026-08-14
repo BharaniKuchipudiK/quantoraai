@@ -4,7 +4,6 @@ import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, Me
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioChatFeed from './StudioChatFeed';
 import ModelDashboard from './ModelDashboard';
-import { chooseBestFreeModel, classifyTask, rankFreeModels } from '../lib/model-routing.js';
 import { loadArenaPreferences, recordArenaWin } from '../lib/arena-preferences.js';
 import {
   extractContextFromAssistantText,
@@ -64,6 +63,7 @@ import {
   getOutputModeLabel,
   getPromptPlaceholder,
 } from '../lib/studio-domains.js';
+import { buildStudioRoutingNote, resolveStudioRouting } from '../lib/studio-routing.js';
 
 import {
   extractHtmlFromResponse,
@@ -1096,12 +1096,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setLastPrompt(text.trim());
 
-    const taskCategory = pendingImages.length ? 'vision' : classifyTask(visibleText);
-    const autoChoice = autoSelectEnabled ? chooseBestFreeModel(availableModels, visibleText, arenaPrefs) : null;
-    const targetModel = autoChoice?.model || selectedModel || { id: 'gemini-flash-latest', name: 'Gemini Flash', pricingKind: 'free-tier', available: true };
+    const {
+      taskCategory,
+      autoChoice,
+      targetModel,
+      rankedFreeFallbacks,
+    } = resolveStudioRouting({
+      availableModels,
+      visibleText,
+      selectedModel,
+      autoSelectEnabled,
+      arenaPrefs,
+      pendingImages,
+    });
     setActiveGeneratingModel({ id: targetModel.id, name: targetModel.name });
-    const rankedFreeFallbacks = rankFreeModels(availableModels, visibleText, arenaPrefs)
-      .filter((model) => model.id !== targetModel.id);
 
     const userMsg = {
       id: Date.now(),
@@ -1306,9 +1314,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       text: '',
       componentType: 'formatted_text',
       thoughtProcess: `Connecting to ${targetModel.name}...`,
-      routingNote: autoChoice?.model
-        ? `Quantora chose ${targetModel.name} because ${autoChoice.reason}.`
-        : null,
+      routingNote: buildStudioRoutingNote({ autoChoice, targetModel }),
       taskCategory,
       latencyMs: 0,
       provider: targetModel.name,
