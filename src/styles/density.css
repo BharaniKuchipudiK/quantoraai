@@ -1,23 +1,23 @@
-/* 
- * Quantora High-Density Overlays 
- * Reclaiming real estate by hiding non-essential clutter.
- */
+/* Hiding the specific "Busy" elements from the screenshot */
+.ai-studio-thread button, 
+.ai-studio-thread a, 
+.ai-studio-thread .flex.items-center.gap-2 {
+    /* This targets the repeating 'Details' and 'Save to Journey' buttons */
+    /* We only want them to show in the SIDEBAR, not the chat */
+}
 
-/* Hide the scattered buttons that make the UI "Busy" */
-.action-chip-container,
+/* Force hide the specific elements that clutter the vertical space */
+[title="Save to Journey"], 
 .useful-now-banner,
-.studio-starter-templates {
+.studio-starter-templates,
+button:has(svg[class*="bookmark"]),
+button:has(svg[class*="info"]) {
     display: none !important;
 }
 
-/* Optimize message spacing for maximum reading area */
-.ai-studio-thread {
-    max-width: 960px !important;
-    gap: 12px !important;
-    margin: 0 auto !important;
-}
-
-.ai-studio-messages {
-    padding-top: 10px !important;
-    padding-bottom: 30px !important;
+/* Fix Sidebar for Dark Mode */
+.intelligence-hub-sidebar {
+    background: #0d1127 !important;
+    border-left: 1px solid rgba(255,255,255,0.1) !important;
+    color: white !important;
 }
