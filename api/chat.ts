@@ -9,8 +9,6 @@ import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
 import { normalizeSessionContext } from "./_lib/session-context.js";
 import { normalizeOutcomeSessionId } from "./_lib/outcome-state.js";
-import { normalizeStudioMode } from "./_lib/studio-modes.js";
-import { buildDomainDirective, normalizeStudioDomain } from "./_lib/studio-domains.js";
 import { repairArtifact } from "./_lib/repair.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistry } from "./_lib/model-store.js";
@@ -21,6 +19,10 @@ import {
   publicConversationMetadata,
   verifyConversationResponse,
 } from "./_lib/conversation-engine.js";
+import { normalizeCommunicationRequest } from "./_lib/communication/request-normalizer.js";
+import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
+import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
+import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
 
 // Generous ceilings: bound worst-case cost/abuse without rejecting any
 // realistic legitimate use (long chats, pasted code files). History is
@@ -320,7 +322,24 @@ export default async function handler(req: any, res: any) {
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
 
   try {
-    const { message, modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, buildMode, guidedBuild, refineMode, featureSuggest, task, fallbackFrom, studioMode, sessionId, memoryConsented, sessionContext, listeningSignals, studioDomain, attachedImages, choiceSelected } = req.body || {};
+    const { modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, task, fallbackFrom } = req.body || {};
+    const communicationRequest = normalizeCommunicationRequest(req.body);
+    const {
+      message,
+      sessionId,
+      studioMode: mode,
+      studioDomain: normalizedStudioDomain,
+      memoryConsented,
+      sessionContext: normalizedSessionContext,
+      listeningSignals: normalizedListeningSignals,
+      attachedImages: visionImages,
+      choiceSelected,
+      buildMode,
+      guidedBuild,
+      featureSuggest,
+      isRefine,
+      hasPreviewCode,
+    } = communicationRequest;
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -339,7 +358,6 @@ export default async function handler(req: any, res: any) {
       return res.status(202).json({ recorded: true });
     }
 
-    const mode = normalizeStudioMode(studioMode);
     const explicitBuild = mode === "build";
     const explicitAsk = mode === "ask";
     const planMode = mode === "plan";
@@ -356,14 +374,9 @@ export default async function handler(req: any, res: any) {
     if (effectiveBuildMode && !guidedBuild) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
     if (planMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
 
-    const visionImages = Array.isArray(attachedImages)
-      ? attachedImages.filter((url: unknown): url is string => typeof url === "string" && url.startsWith("data:image/")).slice(0, 4)
-      : [];
-    const normalizedSessionContext = normalizeSessionContext(sessionContext);
-
     const telemetryContext = {
       studioMode: mode,
-      studioDomain: normalizeStudioDomain(studioDomain),
+      studioDomain: normalizedStudioDomain,
       choiceSelected: choiceSelected === true,
     };
 
@@ -462,19 +475,30 @@ export default async function handler(req: any, res: any) {
     const authoritativeOutcome = activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
       ? await readOutcomeState(activeSessionUser.sub, normalizedSessionId)
       : null;
+    const registryModels = await readModelRegistry();
+    const modelRouting = selectModelsForTurn({
+      models: registryModels.length ? registryModels : [],
+      message,
+      explicitModelId: typeof modelId === "string" ? modelId : null,
+      hasImages: visionImages.length > 0,
+      studioMode: mode,
+      guidedBuild: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      refineMode: isRefine,
+    });
     const conversationSnapshot = buildConversationSnapshot({
       outcomeRecord: authoritativeOutcome,
       sessionContext: normalizedSessionContext,
-      listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
+      listeningSignals: normalizedListeningSignals,
       message,
       taskCategory,
       studioMode: mode,
-      studioDomain: normalizeStudioDomain(studioDomain),
+      studioDomain: normalizedStudioDomain,
       guidedBuild: Boolean(guidedBuild) && !explicitBuild && !planMode,
-      refineMode: Boolean(refineMode),
+      refineMode: isRefine,
       choiceSelected: choiceSelected === true,
     });
     const conversationDecision = chooseNextConversationMove(conversationSnapshot);
+    const responseContract = buildResponseContract(conversationSnapshot, conversationDecision);
     const navigatorDirective = formatConversationDecisionForPrompt(conversationSnapshot, conversationDecision);
     const promptSessionContext = authoritativeOutcome
       ? {
@@ -488,26 +512,43 @@ export default async function handler(req: any, res: any) {
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
       guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
-      refineMode: Boolean(refineMode),
+      refineMode: isRefine,
       featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
       planMode,
       sessionContext: promptSessionContext,
-      listeningSignals: Array.isArray(listeningSignals) ? listeningSignals.slice(0, 8) : undefined,
-      studioDomain: normalizeStudioDomain(studioDomain),
+      listeningSignals: normalizedListeningSignals,
+      studioDomain: normalizedStudioDomain,
       userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
     }) + navigatorDirective + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
 
-    const conversationMetadata = (response: string) => publicConversationMetadata(
-      conversationSnapshot,
-      conversationDecision,
-      verifyConversationResponse({
+    const conversationMetadata = (response: string) => {
+      const verification = verifyConversationResponse({
         snapshot: conversationSnapshot,
         decision: conversationDecision,
         response,
-      }),
-    );
+      });
+      return publicConversationMetadata(
+        conversationSnapshot,
+        conversationDecision,
+        verification,
+        {
+          responseContract,
+          evaluation: evaluationFromVerification({
+            verification,
+            latencyMs: Date.now() - startTime,
+            usedFallback: Boolean(fallbackFrom),
+          }),
+          routing: modelRouting,
+          communicationRequest: {
+            studioMode: communicationRequest.studioMode,
+            studioDomain: communicationRequest.studioDomain,
+            hasPreviewCode,
+          },
+        },
+      );
+    };
 
     const isGeminiModel = modelId && modelId.startsWith("gemini");
 

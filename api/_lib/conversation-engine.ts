@@ -363,6 +363,12 @@ export function publicConversationMetadata(
   snapshot: ConversationSnapshot,
   decision: ConversationDecision,
   verification: ConversationVerification,
+  extras?: {
+    responseContract?: unknown;
+    evaluation?: unknown;
+    routing?: unknown;
+    communicationRequest?: unknown;
+  },
 ) {
   return {
     policyVersion: decision.policyVersion,
@@ -372,5 +378,9 @@ export function publicConversationMetadata(
     stateSource: snapshot.stateSource,
     stateVersion: snapshot.stateVersion,
     verification,
+    ...(extras?.responseContract ? { responseContract: extras.responseContract } : {}),
+    ...(extras?.evaluation ? { evaluation: extras.evaluation } : {}),
+    ...(extras?.routing ? { routing: extras.routing } : {}),
+    ...(extras?.communicationRequest ? { communicationRequest: extras.communicationRequest } : {}),
   };
 }
