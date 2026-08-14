@@ -1,32 +1,18 @@
-/* THE "CLEAN SWEEP" - NO MERCY FOR CLUTTER */
-
-/* Hide the repeating buttons under EVERY message */
-.ai-studio-thread button, 
-[title="Save to Journey"], 
-.useful-now-banner,
-.studio-starter-templates,
-button:has(svg), 
-.flex.items-center.gap-2 {
-    /* We are hiding these in the chat so they only exist in the sidebar */
-}
-
-/* Specific targeted kills based on your screenshot */
-.ai-studio-thread .flex.items-start.gap-4 + .flex,
-.ai-studio-thread .mt-4.pt-4,
-.ai-studio-thread .Details-link {
+/* FORCE HIDE CLUTTER */
+.action-chip-container, 
+.useful-now-banner, 
+.studio-starter-templates, 
+[title="Save to Journey"],
+.Details-link,
+button:has(svg[class*="bookmark"]),
+button:has(svg[class*="info"]) {
     display: none !important;
 }
 
-/* Force the chat to the center and shrink padding */
-.ai-studio-conversation {
-    padding: 0 !important;
-    max-width: 1000px !important;
-    margin: 0 auto !important;
-}
-
-/* Ensure the sidebar actually has space */
+/* SIDEBAR & REAL ESTATE */
 .intelligence-hub-active {
     display: flex !important;
-    width: 100% !important;
+    flex-direction: row !important;
+    width: 100vw !important;
     height: 100vh !important;
 }
