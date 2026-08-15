@@ -698,6 +698,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return messages.slice(1).map(msg => {
       const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
+      const isFailover = isActiveGenerating && msg.isFailover;
       
       // Hide empty AI message block while generating to avoid redundant avatar above "is thinking..." indicator
       if (msg.sender === 'ai' && !msg.text && isActiveGenerating) {
@@ -1566,17 +1567,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
                 <div style={{ flex: 1, color: '#f97316', fontSize: '0.9rem', paddingTop: '8px', fontWeight: 500 }}>
-                  {thinkingTime > 45 ? 'The model is experiencing high latency...' :
+                  {isFailover ? 'Original model stalled. Proactively switching to a faster model...' :
+                   thinkingTime > 45 ? 'The model is experiencing high latency...' :
                    thinkingTime > 25 ? 'Still working on your request...' :
                    thinkingTime > 10 ? 'This is taking a bit longer than usual...' :
                    `${selectedModel ? formatModelName(selectedModel.name) : 'Model'} is thinking...`}
                 </div>
-                <button 
-                  onClick={() => cancelStream()} 
-                  style={{ background: 'transparent', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '6px', color: '#f97316', padding: '4px 8px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}
-                >
-                  <X size={12} /> Stop
-                </button>
               </div>
             )}
           </div>
