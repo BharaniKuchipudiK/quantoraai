@@ -397,6 +397,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
+  const [thinkingTime, setThinkingTime] = useState(0);
   
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
@@ -679,7 +680,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (setActiveTab) setActiveTab('canvas');
   };
 
-  const { handleSendMessage } = useChatStream({
+  const { handleSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
     attachments, setAttachments,
     isGenerating, setIsGenerating,
@@ -1062,6 +1063,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             );
           });
   }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating]);
+
+  
+  useEffect(() => {
+    let interval;
+    if (isGenerating) {
+      setThinkingTime(0);
+      interval = setInterval(() => {
+        setThinkingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      setThinkingTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [isGenerating]);
 
   useEffect(() => {
     if (!isGenerating && messages.length > 0) {
@@ -1551,8 +1566,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
                 <div style={{ flex: 1, color: '#f97316', fontSize: '0.9rem', paddingTop: '8px', fontWeight: 500 }}>
-                  {selectedModel ? formatModelName(selectedModel.name) : 'Qwen 2.5 Coder'} is thinking...
+                  {thinkingTime > 45 ? 'The model is experiencing high latency...' :
+                   thinkingTime > 25 ? 'Still working on your request...' :
+                   thinkingTime > 10 ? 'This is taking a bit longer than usual...' :
+                   `${selectedModel ? formatModelName(selectedModel.name) : 'Model'} is thinking...`}
                 </div>
+                <button 
+                  onClick={() => cancelStream()} 
+                  style={{ background: 'transparent', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '6px', color: '#f97316', padding: '4px 8px', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}
+                >
+                  <X size={12} /> Stop
+                </button>
               </div>
             )}
           </div>

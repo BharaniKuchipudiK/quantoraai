@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 export function useChatStream({
   inputText,
   setInputText,
@@ -16,6 +17,24 @@ export function useChatStream({
   messages,
   setLastPrompt
 }) {
+  const abortControllerRef = useRef(null);
+  
+  const cancelStream = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsGenerating(false);
+      updateActiveMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.sender === 'ai' && !last.text) {
+          return [...prev.slice(0, -1), { ...last, text: '⚠️ **Generation Stopped**: The request was cancelled by the user.', isError: true }];
+        } else if (last && last.sender === 'ai') {
+           return [...prev.slice(0, -1), { ...last, text: last.text + '\n\n*(Stopped by user)*' }];
+        }
+        return prev;
+      });
+    }
+  };
+
   const handleSendMessage = async (textToSend) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
@@ -98,7 +117,10 @@ export function useChatStream({
 
       const streamSingleModel = async (mod, isModelA) => {
         try {
-          const res = await fetch('/api/chat', {
+          abortControllerRef.current = new AbortController();
+      const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
+      const res = await fetch('/api/chat', {
+        signal: abortControllerRef.current.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text, modelId: mod.id, modelName: mod.name, history: cleanMessages, userKey: geminiApiKey, openRouterKey: openRouterApiKey })
@@ -106,7 +128,8 @@ export function useChatStream({
           
           if (!res.ok) throw new Error('API Error');
           
-          const reader = res.body.getReader();
+          clearTimeout(timeoutId);
+        const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let currentText = "";
           let finalProvider = mod.name;
@@ -159,6 +182,14 @@ export function useChatStream({
       try {
         await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
       } catch (err) {
+      if (typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
+      if (err.name === 'AbortError' || err === 'timeout') {
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
+        } : m));
+        return;
+      }
         console.error('Arena Execution Error:', err);
       } finally {
         setIsGenerating(false);
@@ -274,5 +305,5 @@ export function useChatStream({
       setIsGenerating(false);
     }
   };
-  return { handleSendMessage };
+  return { handleSendMessage, cancelStream };
 }
