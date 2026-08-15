@@ -750,7 +750,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     selectedModel,
     arenaMode, secondModel,
     cognitiveLevel,
-    previewCode,
+    canvasCode,
     messages,
     setLastPrompt
   });
@@ -2184,7 +2184,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             overflow: 'hidden'
           }}>
             <LivePreviewCanvas 
-              code={previewCode} 
+              code={canvasCode} 
               isLight={isLight} 
               onClose={() => setCanvasOpen(false)} 
             />

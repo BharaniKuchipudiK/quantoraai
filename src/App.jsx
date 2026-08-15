@@ -27,8 +27,8 @@ const WelcomeHub = React.lazy(() => import('./components/WelcomeHub'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/react';
+// import { Analytics } from '@vercel/analytics/react';
+// import { SpeedInsights } from '@vercel/speed-insights/react';
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -513,8 +513,8 @@ export default function App() {
           handleTabChange={handleTabChange}
         />
       )}
-      {shouldLoadVercelTelemetry && <Analytics />}
-      {shouldLoadVercelTelemetry && <SpeedInsights />}
+      {/* {shouldLoadVercelTelemetry && <Analytics />} */}
+      {/* {shouldLoadVercelTelemetry && <SpeedInsights />} */}
     </div>
     </GoogleOAuthProvider>
     </ErrorBoundary>

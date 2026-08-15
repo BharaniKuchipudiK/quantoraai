@@ -12,7 +12,7 @@ export function useChatStream({
   arenaMode,
   secondModel,
   cognitiveLevel,
-  previewCode,
+  canvasCode,
   messages,
   setLastPrompt
 }) {
@@ -27,7 +27,7 @@ export function useChatStream({
       let contextString = "";
       for (const chip of contextChips) {
         if (chip.contextType === 'canvas') {
-          contextString += `\n\n[CONTEXT: CURRENT CANVAS CODE]\n\`\`\`\n${previewCode}\n\`\`\``;
+          contextString += `\n\n[CONTEXT: CURRENT CANVAS CODE]\n\`\`\`\n${canvasCode}\n\`\`\``;
         } else if (chip.contextType === 'history') {
            const prevSession = chatSessions.find(s => s.id !== activeSessionId);
            if (prevSession) {
