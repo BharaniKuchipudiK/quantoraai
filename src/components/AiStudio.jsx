@@ -937,68 +937,42 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
-                      {/* Standard Message Action Buttons */}
-                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {msg.sender === 'ai' && msg.text?.includes('```') && (
-                          <button
-                            onClick={() => openCanvasWithCode(msg.text)}
-                            style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      {/* Minimalist Message Footer */}
+                      {msg.sender === 'ai' && (
+                        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px' }}>
+                          <button 
+                            onClick={() => navigator.clipboard.writeText(msg.text)}
+                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.5, transition: 'opacity 0.2s', padding: 0 }}
+                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.5}
+                            title="Copy to clipboard"
                           >
-                            <Play size={13} /> Open Live Canvas Mode
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                           </button>
-                        )}
-                        <button
-                          onClick={() => handlePushToDream(msg)}
-                          style={{ background: 'rgba(139, 92, 246, 0.15)', border: '1px solid rgba(139, 92, 246, 0.4)', color: '#8b5cf6', padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <Workflow size={13} /> Push to Dream Canvas
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
-                  {/* Live Model Connection Diagnostic Footer */}
-                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.provider && (
-                    <div style={{
-                      marginTop: '14px',
-                      paddingTop: '10px',
-                      borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      fontSize: '0.75rem',
-                      color: subtextColor,
-                      flexWrap: 'wrap',
-                      opacity: 0.25,
-                      transition: 'opacity 0.2s ease',
-                      cursor: 'default'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                    onMouseLeave={(e) => e.currentTarget.style.opacity = 0.25}
-                    >
-                      <Info size={14} />
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        color: '#10b981',
-                        fontWeight: '700',
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid rgba(16, 185, 129, 0.25)'
-                      }}>
-                        <Activity size={12} color="#10b981" /> Live AI Verified
-                      </span>
-                      <span>Engine: <strong style={{ color: textColor }}>{msg.provider}</strong></span>
-                      {msg.latencyMs && (
-                        <>
-                          <span>•</span>
-                          <span>Response Time: <strong style={{ color: '#f97316' }}>{msg.latencyMs}ms</strong></span>
-                        </>
+                          <button 
+                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.5, transition: 'opacity 0.2s', padding: 0 }}
+                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.5}
+                            title="Pin message"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.16V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v5.16a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+                          </button>
+                          
+                          <button 
+                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.5, transition: 'opacity 0.2s', padding: 0 }}
+                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.5}
+                            title="Read aloud"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                          </button>
+                          
+                          <span style={{ fontSize: '0.75rem', color: subtextColor, opacity: 0.5, marginLeft: '4px' }}>
+                            just now
+                          </span>
+                        </div>
                       )}
-                      <span>•</span>
-                      <span style={{ opacity: 0.8 }}>No Mock / Pre-set SOP Data</span>
                     </div>
                   )}
 
