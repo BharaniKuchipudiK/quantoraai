@@ -843,9 +843,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
                       {/* Render Ollama Style "Thought for a moment" Header */}
                       {msg.thoughtProcess && (
-                        <div style={{ fontSize: '0.78rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
-                          <Lightbulb size={14} color="#f97316" />
-                          <span>Thought for a moment ({msg.thoughtProcess})</span>
+                        <div style={{ fontSize: '0.8rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '12px 16px', background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
+                          <Lightbulb size={16} color="#f97316" />
+                          <span style={{ fontWeight: 500 }}>Thought for a moment ({msg.thoughtProcess})</span>
                         </div>
                       )}
 
@@ -871,7 +871,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && !isActiveGenerating && (
-                        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px', flexWrap: 'wrap' }}>
+                        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                           
                           {runnableCode && (
                             <button
@@ -935,7 +935,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
                   {/* Minimalist User Message Footer */}
                   {msg.sender === 'user' && (
-                    <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', paddingRight: '4px' }}>
+                    <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '16px' }}>
                       <button 
                         onClick={() => {
                           navigator.clipboard.writeText(msg.text);
@@ -1516,12 +1516,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           /* Active Chat Thread */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
-          </div>
-        )}
-
-        {isGenerating && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f97316', fontSize: '0.88rem', paddingLeft: '50px', marginTop: '16px' }}>
-            <Sparkles size={16} className="animate-spin" /> {selectedModel ? selectedModel.name : 'Qwen 2.5 Coder'} is thinking...
+            {isGenerating && (
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', marginTop: '4px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Sparkles size={18} className="animate-spin" color="#f97316" />
+                </div>
+                <div style={{ flex: 1, color: '#f97316', fontSize: '0.9rem', paddingTop: '8px', fontWeight: 500 }}>
+                  {selectedModel ? selectedModel.name : 'Qwen 2.5 Coder'} is thinking...
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div ref={messagesEndRef} />
