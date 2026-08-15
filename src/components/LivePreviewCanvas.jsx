@@ -8,6 +8,7 @@ import {
   isIgnorableRuntimeError,
   isCriticalResourceError,
   revokePreviewEmbedObjectUrl,
+  buildPreviewSandbox,
 } from '../lib/preview-utils.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
@@ -492,7 +493,7 @@ export default function LivePreviewCanvas({
       title="Live Preview"
       src={wcUrl || embedSrc}
       onError={handleEmbedFrameError}
-      sandbox={`allow-scripts allow-forms allow-popups allow-modals ${wcUrl ? 'allow-same-origin' : ''}`}
+      sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
       style={{
         width: '100%',
         height: '100%',

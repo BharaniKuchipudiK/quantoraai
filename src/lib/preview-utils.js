@@ -3,6 +3,32 @@ export const PREVIEW_EMBED_PATH = '/preview/embed.html';
 export const PREVIEW_RELAXED_CSP =
   "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; img-src 'self' https: data: blob:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';";
 
+/**
+ * Build the iframe `sandbox` attribute for the live preview.
+ *
+ * SECURITY INVARIANT — untrusted generated code must NEVER get `allow-same-origin`.
+ * The embed host is served from the app's own origin (or a blob/data URL that
+ * inherits it). Granting `allow-same-origin` there would let generated code read
+ * the app's `localStorage` — which holds the user's Gemini / OpenRouter API keys —
+ * and exfiltrate them. Without it the frame runs in an opaque origin and cannot
+ * touch app storage; the preview still works because HTML is delivered by
+ * `postMessage` + `document.write`, neither of which needs same-origin.
+ *
+ * `allow-same-origin` is granted ONLY for the WebContainer runtime (`wcUrl`),
+ * which is a *cross-origin* host (e.g. *.webcontainer.io). There, same-origin
+ * refers to the WebContainer's own origin, not the Quantora app's, so it still
+ * cannot reach app storage — but it needs same-origin to function.
+ *
+ * @param {{ trustedRuntimeUrl?: string|null }} [opts]
+ *   trustedRuntimeUrl — the WebContainer URL (`wcUrl`) if that runtime is active.
+ * @returns {string} the space-separated sandbox token list.
+ */
+export function buildPreviewSandbox({ trustedRuntimeUrl = null } = {}) {
+  const tokens = ['allow-scripts', 'allow-forms', 'allow-popups', 'allow-modals'];
+  if (trustedRuntimeUrl) tokens.push('allow-same-origin');
+  return tokens.join(' ');
+}
+
 /** Inline embed shell — blob/src use avoids fetching /preview/embed.html (X-Frame-Options on SPA). */
 export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
 <html lang="en">
