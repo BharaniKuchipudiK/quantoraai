@@ -18,8 +18,14 @@ import {
 } from './_lib/model-catalog.js';
 import { readModelQualitySummary, readModelRegistry } from './_lib/model-store.js';
 import { isAuthorizedModelScan, scanModelCatalog } from './_lib/model-scanner.js';
+import { purgeOldTelemetry } from './_lib/store.js';
 
 const NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+// Retention TTL for operational telemetry (usage / product_events). These hold
+// no prompt or response bodies — only metadata — so this is footprint
+// minimization, not a functional dependency. (Roadmap 0.2)
+const TELEMETRY_RETENTION_DAYS = 30;
 
 function isRecentlyCreated(model) {
   const createdAt = catalogCreatedAt(model);
@@ -79,8 +85,12 @@ export default async function handler(req, res) {
   // GET requests continue to receive the read-only dashboard response below.
   if (isAuthorizedModelScan(req)) {
     res.setHeader('Cache-Control', 'no-store');
-    const result = await scanModelCatalog();
-    return res.status(result.status).json(result.body);
+    // Piggyback the daily retention sweep on the same scheduled run.
+    const [result, retention] = await Promise.all([
+      scanModelCatalog(),
+      purgeOldTelemetry(TELEMETRY_RETENTION_DAYS),
+    ]);
+    return res.status(result.status).json({ ...result.body, telemetryPurged: retention.ok });
   }
 
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');

@@ -11,6 +11,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [confirmModalType, setConfirmModalType] = useState(null);
   const [confirmInputValue, setConfirmInputValue] = useState('');
+  const [dataActionBusy, setDataActionBusy] = useState(false);
 
   const modelRef = useRef(null);
   const profileRef = useRef(null);
@@ -87,7 +88,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       ? 'DELETE ACCOUNT' 
       : 'DELETE DATA';
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
+    if (dataActionBusy) return;
     if (confirmInputValue.trim().toUpperCase() !== requiredConfirmationText) return;
 
     if (confirmModalType === 'logout') {
@@ -100,8 +102,29 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       setUser(null);
       setActiveTab('landing');
     } else if (confirmModalType === 'delete_account') {
+      // Real erasure: the server drops living memory + site ownership and
+      // anonymizes usage. Clearing localStorage alone would leave every server
+      // row intact — do NOT wipe local or sign out unless the server confirms.
+      setDataActionBusy(true);
+      try {
+        const res = await fetch('/api/account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ action: 'delete', confirm: true }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Could not delete your data.');
+        }
+      } catch (err) {
+        setDataActionBusy(false);
+        alert(`Account deletion failed: ${err.message || 'Please try again.'}\n\nNothing was changed.`);
+        return; // keep the modal open state cleared below only on success
+      }
+      setDataActionBusy(false);
       localStorage.clear();
-      fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+      // Session cookie is already cleared by the server on delete.
       setUser(null);
       setActiveTab('landing');
     } else if (confirmModalType === 'delete_data') {
@@ -112,6 +135,36 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
     setConfirmModalType(null);
     setConfirmInputValue('');
     setShowProfileMenu(false);
+  };
+
+  // Export everything the server holds for this account as a downloadable file.
+  const handleExportData = async () => {
+    if (dataActionBusy) return;
+    setDataActionBusy(true);
+    try {
+      const res = await fetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'export' }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not export your data.');
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'quantora-my-data.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Data export failed: ${err.message || 'Please try again.'}`);
+    } finally {
+      setDataActionBusy(false);
+    }
   };
 
   const navBg = isLight ? '#f1f5f9' : 'rgba(18, 24, 48, 0.8)';
@@ -427,6 +480,28 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     Account Controls
                   </div>
 
+                  {/* Export My Data */}
+                  <div
+                    onClick={handleExportData}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      background: isLight ? '#f0f9ff' : 'rgba(255, 255, 255, 0.03)',
+                      border: isLight ? '1px solid #e0f2fe' : 'none',
+                      cursor: dataActionBusy ? 'wait' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '6px',
+                      fontSize: '0.85rem',
+                      opacity: dataActionBusy ? 0.6 : 1,
+                      color: isLight ? '#0369a1' : '#cbd5e1'
+                    }}
+                  >
+                    <Download size={16} color="#0284c7" />
+                    <span>{dataActionBusy ? 'Preparing…' : 'Export My Data'}</span>
+                  </div>
+
                   {/* Clear Data */}
                   <div
                     onClick={() => setConfirmModalType('delete_data')}
@@ -607,23 +682,25 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
               <button
                 onClick={handleConfirmAction}
-                disabled={confirmInputValue.trim().toUpperCase() !== requiredConfirmationText}
+                disabled={confirmInputValue.trim().toUpperCase() !== requiredConfirmationText || dataActionBusy}
                 style={{
                   flex: 1,
                   padding: '12px',
                   borderRadius: '10px',
-                  background: confirmInputValue.trim().toUpperCase() === requiredConfirmationText
+                  background: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy
                     ? (confirmModalType === 'delete_account' ? '#ef4444' : '#f97316')
                     : (isLight ? '#cbd5e1' : '#334155'),
                   border: 'none',
                   color: '#ffffff',
                   fontWeight: '700',
-                  cursor: confirmInputValue.trim().toUpperCase() === requiredConfirmationText ? 'pointer' : 'not-allowed',
-                  opacity: confirmInputValue.trim().toUpperCase() === requiredConfirmationText ? 1 : 0.5,
+                  cursor: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy ? 'pointer' : 'not-allowed',
+                  opacity: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy ? 1 : 0.5,
                   transition: 'all 0.2s ease'
                 }}
               >
-                Confirm {confirmModalType === 'logout' ? 'Sign Out' : confirmModalType === 'delete_account' ? 'Delete' : 'Clear'}
+                {dataActionBusy
+                  ? 'Working…'
+                  : `Confirm ${confirmModalType === 'logout' ? 'Sign Out' : confirmModalType === 'delete_account' ? 'Delete' : 'Clear'}`}
               </button>
             </div>
           </div>
