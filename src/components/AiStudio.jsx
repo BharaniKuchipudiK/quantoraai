@@ -796,7 +796,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             <ReactMarkdown 
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                code({node, inline, className, children, ...props}) {
+                                a({node, children, ...props}) {
+                              return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                            },
+                            code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return !inline && match ? (
                                     <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
@@ -867,7 +870,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             <ReactMarkdown 
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                code({node, inline, className, children, ...props}) {
+                                a({node, children, ...props}) {
+                              return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                            },
+                            code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return !inline && match ? (
                                     <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
@@ -949,6 +955,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
                           components={{
+                            a({node, children, ...props}) {
+                              return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                            },
                             code({node, inline, className, children, ...props}) {
                               const match = /language-(\w+)/.exec(className || '')
                               return !inline && match ? (
@@ -1649,6 +1658,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   e.currentTarget.style.transform = 'none'; 
                   e.currentTarget.style.boxShadow = isLight ? '0 4px 12px rgba(0,0,0,0.03)' : '0 8px 32px rgba(0,0,0,0.2)'; 
                   e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+                }}
+                onClick={() => {
+                  if (onSelectModel && availableModels) {
+                    const found = availableModels.find(m => m.name === model.name);
+                    if (found) onSelectModel(found);
+                  }
                 }}
                 >
                   <div style={{ position: 'absolute', top: 0, right: 0, background: `${model.color}22`, color: model.color, fontSize: '0.65rem', fontWeight: '800', padding: '4px 10px', borderBottomLeftRadius: '12px' }}>

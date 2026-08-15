@@ -189,7 +189,9 @@ export default function App() {
     { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'Qwen', available: true, pricingKind: 'paid' },
     { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Open Source', provider: 'Meta', available: true, pricingKind: 'paid' },
     { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'Google', available: true, pricingKind: 'paid' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', specialty: 'General Assistant & Fast Queries', badge: 'Fast', provider: 'OpenAI', available: true, pricingKind: 'paid' }
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', specialty: 'General Assistant & Fast Queries', badge: 'Fast', provider: 'OpenAI', available: true, pricingKind: 'paid' },
+    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', specialty: 'Ultra-fast coding via OpenRouter integration.', badge: 'HOT', provider: 'Anthropic', available: true, pricingKind: 'paid' },
+    { id: 'meta-llama/llama-3-70b-instruct', name: 'Llama 3 70B', specialty: 'Open-source powerhouse with zero filters.', badge: 'UPDATED', provider: 'Meta', available: true, pricingKind: 'free' }
   ];
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);
