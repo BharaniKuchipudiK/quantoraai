@@ -2363,3 +2363,28 @@ body {
     border-radius: 20px 20px 0 0;
   }
 }
+
+/* UI Enhancements: Micro-animations */
+@keyframes slideUpFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUpFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Typography Polish for .markdown-prose */
+.markdown-prose p {
+  line-height: 1.7 !important;
+  letter-spacing: 0.01em;
+}
+.markdown-prose h1, .markdown-prose h2, .markdown-prose h3 {
+  letter-spacing: -0.02em;
+}

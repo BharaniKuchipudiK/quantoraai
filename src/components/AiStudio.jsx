@@ -186,6 +186,8 @@ const extractRunnableCode = (text) => {
   return match ? match[1] : null;
 };
 
+const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim() : '';
+
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const {
@@ -689,7 +691,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       return (
-              <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+        <div key={msg.id} className="animate-slide-up" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                 {/* Avatar */}
                 <div style={{
                   width: '36px',
@@ -726,7 +728,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Cpu size={14} /> {msg.modelA.modelName}
+                              <Cpu size={14} /> {formatModelName(msg.modelA.modelName)}
                             </span>
                             <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
                               ⚡ {msg.modelA.latencyMs}ms
@@ -779,7 +781,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Cpu size={14} /> {msg.modelB.modelName}
+                              <Cpu size={14} /> {formatModelName(msg.modelB.modelName)}
                             </span>
                             <span style={{ fontSize: '0.7rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>
                               ⚡ {msg.modelB.latencyMs}ms
@@ -1291,7 +1293,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
                 <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
-                  Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? selectedModel.name : 'Gemini 3 Flash'}</strong>
+                  Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? formatModelName(selectedModel.name) : 'Gemini 3 Flash'}</strong>
                 </span>
                 <span style={{
                   fontSize: '0.7rem',
@@ -1500,7 +1502,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     <div style={{ background: `${model.color}15`, padding: '8px', borderRadius: '12px', display: 'flex' }}>
                       {model.icon}
                     </div>
-                    <h3 style={{ margin: 0, fontSize: '0.95rem', color: textColor, fontWeight: '700' }}>{model.name}</h3>
+                    <h3 style={{ margin: 0, fontSize: '0.95rem', color: textColor, fontWeight: '700' }}>{formatModelName(model.name)}</h3>
                   </div>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: subtextColor, lineHeight: '1.5' }}>
                     {model.desc}
@@ -1517,12 +1519,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
             {isGenerating && (
-              <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', marginTop: '4px' }}>
+              <div className="animate-slide-up" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', marginTop: '4px' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
                 <div style={{ flex: 1, color: '#f97316', fontSize: '0.9rem', paddingTop: '8px', fontWeight: 500 }}>
-                  {selectedModel ? selectedModel.name : 'Qwen 2.5 Coder'} is thinking...
+                  {selectedModel ? formatModelName(selectedModel.name) : 'Qwen 2.5 Coder'} is thinking...
                 </div>
               </div>
             )}
@@ -1921,7 +1923,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   }}
                 >
                   <Cpu size={15} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
-                  <span>{selectedModel ? selectedModel.name.split(' ')[0] : 'Engine'}</span>
+                  <span>{selectedModel ? formatModelName(selectedModel.name).split(' ')[0] : 'Engine'}</span>
                 </button>
 
                 {showInBarModelDropdown && (
@@ -2014,7 +2016,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: !isAvailable ? 'line-through' : 'none' }}>{model.name}</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: !isAvailable ? 'line-through' : 'none' }}>{formatModelName(model.name)}</span>
                               <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter')}</span>
                             </div>
                             {selectedModel?.id === model.id && (

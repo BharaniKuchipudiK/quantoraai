@@ -174,7 +174,6 @@ export function useChatStream({
       modelUsed: targetModel.name,
       text: '',
       componentType: 'formatted_text',
-      thoughtProcess: `Connecting to ${targetModel.name}...`,
       latencyMs: 0,
       provider: targetModel.name,
       liveConnected: true
@@ -218,17 +217,14 @@ export function useChatStream({
                 if (parsed.text) {
                   currentText += parsed.text;
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                    ...m,
-                    text: currentText,
-                    thoughtProcess: 'Generating live...'
+                    text: currentText
                   } : m));
                 }
                 if (parsed.provider) {
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     provider: parsed.provider,
-                    latencyMs: parsed.latencyMs || 0,
-                    thoughtProcess: `Processed live via ${parsed.provider} (${parsed.latencyMs || 0}ms)`
+                    latencyMs: parsed.latencyMs || 0
                   } : m));
                 }
               } catch (e) {}
@@ -249,22 +245,19 @@ export function useChatStream({
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
             text: `🔒 **Please sign in to continue.**\n\n${errData.error || "Sign in to use Quantora's built-in AI."}`,
-            isAuthPrompt: true,
-            thoughtProcess: 'Sign-in required'
+            isAuthPrompt: true
           } : m));
         } else if (res.status === 429) {
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`,
-            thoughtProcess: 'Rate limited'
+            text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`
           } : m));
         } else {
           const errText = errData.error || `The backend server encountered an error with ${targetModel.name}.`;
 
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment. Please try again later or select a different model.`,
-            thoughtProcess: `Error processing request via ${targetModel.name}`
+            text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment. Please try again later or select a different model.`
           } : m));
         }
       }
@@ -272,8 +265,7 @@ export function useChatStream({
       console.error('Chat error:', error);
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
         ...m,
-        text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${targetModel.name}. Please check your connection and try again.`,
-        thoughtProcess: `Network connection error for ${targetModel.name}`
+        text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${targetModel.name}. Please check your connection and try again.`
       } : m));
     } finally {
       setIsGenerating(false);
