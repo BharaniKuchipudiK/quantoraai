@@ -6,6 +6,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import { useChatStream } from '../hooks/useChatStream';
+import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 const LiveIosCalculator = lazy(() => import('./interactive/LiveIosCalculator'));
 const LiveBeatMaker = lazy(() => import('./interactive/LiveBeatMaker'));
@@ -398,6 +399,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasCode, setCanvasCode] = useState('');
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
+  const { checkModelHealth } = usePCLMemory();
+  const [pclIntercept, setPclIntercept] = useState(null);
   
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
@@ -680,7 +683,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (setActiveTab) setActiveTab('canvas');
   };
 
-  const { handleSendMessage, cancelStream } = useChatStream({
+  const { handleSendMessage: streamSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
     attachments, setAttachments,
     isGenerating, setIsGenerating,
@@ -693,6 +696,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages,
     setLastPrompt
   });
+
+  const handleSendMessage = (overrideText = null) => {
+    const textToSend = overrideText || inputText;
+    if (!textToSend.trim() && !attachments.length) return;
+    
+    // HUMAN IN THE LOOP: PCL Memory Check
+    if (selectedModel && !arenaMode) {
+      const health = checkModelHealth(selectedModel.id);
+      if (!health.isHealthy) {
+        setPclIntercept({ text: textToSend, targetModel: selectedModel, errorType: health.errorType, timeAgo: health.lastFailureMsAgo });
+        return; // Intercept!
+      }
+    }
+    
+    streamSendMessage(overrideText);
+  };
+  
+  const handlePclDecision = (routeToGemini) => {
+    if (!pclIntercept) return;
+    if (routeToGemini) {
+      // Force change model to Gemini
+      const geminiModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+      if (setSelectedModel) setSelectedModel(geminiModel);
+      streamSendMessage(pclIntercept.text, geminiModel); 
+      
+    } else {
+      streamSendMessage(pclIntercept.text);
+    }
+    setPclIntercept(null);
+  };
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.slice(1).map(msg => {
@@ -1561,6 +1594,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           /* Active Chat Thread */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
+            {pclIntercept && (
+              <div className="animate-slide-up" style={{ 
+                margin: '20px 0', 
+                padding: '20px', 
+                background: isLight ? '#fff' : '#0f172a', 
+                border: '1px solid rgba(249, 115, 22, 0.4)', 
+                borderRadius: '16px',
+                boxShadow: isLight ? '0 10px 25px rgba(0,0,0,0.05)' : '0 10px 25px rgba(0,0,0,0.3)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', color: '#f97316', fontWeight: 'bold' }}>
+                  <Sparkles size={20} /> PCL Observation
+                </div>
+                <div style={{ color: 'var(--text-primary)', marginBottom: '20px', lineHeight: '1.5' }}>
+                  I remember that <strong>{pclIntercept.targetModel.name}</strong> experienced severe network latency a few minutes ago. 
+                  To prevent you from waiting, would you like me to route this request to our fastest model (<strong>Gemini 3 Flash</strong>) instead?
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button 
+                    onClick={() => handlePclDecision(true)}
+                    style={{ background: '#f97316', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                  >
+                    Route to Gemini Flash
+                  </button>
+                  <button 
+                    onClick={() => handlePclDecision(false)}
+                    style={{ background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                  >
+                    Force Proceed with {pclIntercept.targetModel.name}
+                  </button>
+                </div>
+              </div>
+            )}
             {isGenerating && (
               <div className="animate-slide-up" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', marginTop: '4px' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

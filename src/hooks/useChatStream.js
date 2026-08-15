@@ -1,3 +1,4 @@
+import { usePCLMemory } from './usePCLMemory';
 import { useRef } from 'react';
 export function useChatStream({
   inputText,
@@ -18,6 +19,7 @@ export function useChatStream({
   setLastPrompt
 }) {
   const abortControllerRef = useRef(null);
+  const { logModelFailure } = usePCLMemory();
   
   const cancelStream = () => {
     if (abortControllerRef.current) {
@@ -35,7 +37,7 @@ export function useChatStream({
     }
   };
 
-  const handleSendMessage = async (textToSend) => {
+  const handleSendMessage = async (textToSend, targetModelOverride = null) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
@@ -95,7 +97,7 @@ export function useChatStream({
     }
 
 
-    const targetModel = selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+    const targetModel = targetModelOverride || selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
@@ -292,6 +294,7 @@ export function useChatStream({
           } else {
             // PROACTIVE FAILOVER ON SERVER ERROR (503 / 500)
             if (attempt === 1) {
+               logModelFailure(modelToUse.id, 'server_error');
                console.log("PCL: Intercepted server error. Auto-failing over...");
                const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -314,6 +317,7 @@ export function useChatStream({
         if (error.name === 'AbortError' || error === 'timeout') {
             // PROACTIVE FAILOVER ON TIMEOUT
             if (attempt === 1 && error === 'timeout') {
+               logModelFailure(modelToUse.id, 'timeout');
                console.log("PCL: Intercepted timeout. Auto-failing over...");
                const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -335,6 +339,7 @@ export function useChatStream({
         console.error('Chat error:', error);
         
         if (attempt === 1) {
+           logModelFailure(modelToUse.id, 'connection_error');
            console.log("PCL: Intercepted connection error. Auto-failing over...");
            const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
