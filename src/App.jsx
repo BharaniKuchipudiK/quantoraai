@@ -18,12 +18,34 @@ import { createJourneyNode } from './lib/build-journey';
  * Kept eager above: the landing page, the header and the background, which are
  * needed for the first paint and would only add a flash of nothing.
  */
-const AiStudio = React.lazy(() => import('./components/AiStudio'));
-const DreamActionCanvas = React.lazy(() => import('./components/DreamActionCanvas'));
-const QuantumPlayground = React.lazy(() => import('./components/QuantumPlayground'));
-const PrivacyVault = React.lazy(() => import('./components/PrivacyVault'));
-const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
-const WelcomeHub = React.lazy(() => import('./components/WelcomeHub'));
+/*
+ * Deploys replace hashed chunk filenames, so a tab opened BEFORE a deploy can
+ * fail to lazy-load a chunk that no longer exists on the CDN
+ * ("Failed to fetch dynamically imported module"). Recover by reloading once to
+ * pick up the fresh index.html + chunk map. A sessionStorage guard prevents a
+ * reload loop if the failure is genuine (e.g. offline).
+ */
+function lazyWithReload(factory) {
+  return React.lazy(() =>
+    factory().catch((err) => {
+      try {
+        if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('quantora_chunk_reloaded')) {
+          sessionStorage.setItem('quantora_chunk_reloaded', '1');
+          window.location.reload();
+          return new Promise(() => {}); // never resolves; the page is reloading
+        }
+      } catch (e) { /* ignore */ }
+      throw err;
+    })
+  );
+}
+
+const AiStudio = lazyWithReload(() => import('./components/AiStudio'));
+const DreamActionCanvas = lazyWithReload(() => import('./components/DreamActionCanvas'));
+const QuantumPlayground = lazyWithReload(() => import('./components/QuantumPlayground'));
+const PrivacyVault = lazyWithReload(() => import('./components/PrivacyVault'));
+const AdminDashboard = lazyWithReload(() => import('./components/AdminDashboard'));
+const WelcomeHub = lazyWithReload(() => import('./components/WelcomeHub'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
@@ -36,6 +58,19 @@ class ErrorBoundary extends React.Component {
   }
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
+  }
+  componentDidCatch(error) {
+    // Stale-deploy chunk error that surfaced here instead of at the lazy
+    // boundary — reload once (same guard) to recover to the current build.
+    const msg = String(error?.message || error || '');
+    if (/dynamically imported module|Failed to fetch|Importing a module script failed/i.test(msg)) {
+      try {
+        if (!sessionStorage.getItem('quantora_chunk_reloaded')) {
+          sessionStorage.setItem('quantora_chunk_reloaded', '1');
+          window.location.reload();
+        }
+      } catch (e) { /* ignore */ }
+    }
   }
   render() {
     if (this.state.hasError) {
