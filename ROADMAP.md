@@ -43,10 +43,15 @@ cognitive layer · desktop app.
   can read the user's API keys from `localStorage`. **Fix:** separate preview
   origin *or* nested sandbox. *Accept:* generated code cannot read app storage;
   preview + WebContainer still work.
-- 🔜 **0.2 Privacy — data control.** User-facing "delete / export my data" and a
-  retention TTL on telemetry. Confirm no prompt/response bodies are persisted
-  without consent. *Accept:* a user can erase their footprint.
-- ⏳ **0.3 Efficiency wins.** Cache the model registry (TTL) on the chat hot
+  → **Shipped.** Generated code runs opaque-origin (no `allow-same-origin`); a
+  `buildPreviewSandbox()` helper + regression tests lock the invariant so it
+  can't silently regress.
+- ✅ **0.2 Privacy — data control.** User-facing export + real account deletion
+  (`api/account.ts`) and a 30-day retention TTL on telemetry (folded into the
+  daily cron). No prompt/response bodies persisted; no raw IP; keyed on `sub`.
+  *Accept met:* a user can export and erase their footprint. Live published
+  sites are intentionally left running on delete.
+- 🔜 **0.3 Efficiency wins.** Cache the model registry (TTL) on the chat hot
   path; strip base64 data-URIs from code sent to model on refine/repair/verify.
   *Accept:* lower p50 latency + token cost on refine.
 
