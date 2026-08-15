@@ -43,6 +43,10 @@ export default function LivePreviewCanvas({
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
   const [status, setStatus] = useState('running'); // running | healing | clean | degraded | failed
+  // WebContainer preview URL. Declared here so the (in-progress) WebContainer
+  // wiring has a defined binding — its absence crashed the app with
+  // "wcUrl is not defined". Falsy → the standard embed preview is used.
+  const [wcUrl, setWcUrl] = useState(null);
   // Build verifier: a visible quality score for the finished artifact.
   const [qualityReport, setQualityReport] = useState(null);
   const [verifyingQuality, setVerifyingQuality] = useState(false);
