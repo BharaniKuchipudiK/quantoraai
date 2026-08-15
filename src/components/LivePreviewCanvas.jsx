@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2 } from 'lucide-react';
+import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2, Cloud } from 'lucide-react';
 import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
@@ -46,6 +46,8 @@ export default function LivePreviewCanvas({
   const [attempt, setAttempt] = useState(0);
   const [lastError, setLastError] = useState(null);
   const [isDeploying, setIsDeploying] = useState(false);
+  const [isDeployingGcp, setIsDeployingGcp] = useState(false);
+  const [gcpUrl, setGcpUrl] = useState(null);
   const [deployResult, setDeployResult] = useState(null);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [projectNameInput, setProjectNameInput] = useState('');
@@ -489,6 +491,16 @@ export default function LivePreviewCanvas({
       display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 'bold'
     }}>
       <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying…' : 'Publish'}
+    </button>
+  );
+
+  const deployGcpButton = (
+    <button onClick={handleGcpDeployClick} disabled={isDeployingGcp} title="Deploy Full-Stack to GCP Cloud Run" style={{
+      background: isDeployingGcp ? '#94a3b8' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+      border: 'none', cursor: isDeployingGcp ? 'not-allowed' : 'pointer', color: '#ffffff',
+      display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 'bold'
+    }}>
+      <Cloud className={isDeployingGcp ? 'animate-pulse' : ''} size={14} /> {isDeployingGcp ? 'Deploying to GCP…' : gcpUrl ? 'Live on GCP' : 'Deploy to GCP'}
     </button>
   );
 
