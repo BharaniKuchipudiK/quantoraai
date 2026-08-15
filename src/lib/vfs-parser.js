@@ -1,3 +1,4 @@
+import { applyDiffPatch } from './diff-patcher.js';
 /**
  * Parses markdown text to extract code blocks into a Virtual File System (VFS).
  *
@@ -5,8 +6,9 @@
  * @returns {object} A VFS object mapping filepaths to their contents.
  * Example: { 'App.jsx': { content: '...', language: 'jsx' } }
  */
-export function parseVFSFromMarkdown(text) {
-  const vfs = {};
+export function parseVFSFromMarkdown(text, currentVfs = {}) {
+  // Deep clone currentVfs to prevent mutating React state directly
+  const vfs = JSON.parse(JSON.stringify(currentVfs));
   if (!text) return vfs;
 
   // Regex to match markdown code blocks
@@ -48,10 +50,20 @@ export function parseVFSFromMarkdown(text) {
     if (['ts', 'tsx', 'typescript'].includes(language)) normalizedLanguage = 'tsx';
 
     // Update VFS
-    vfs[filepath] = {
-      content: code,
-      language: normalizedLanguage
-    };
+    if (code.includes('<<<<') && code.includes('====')) {
+       // It's a diff patch! Apply it to the existing content if it exists
+       const existingContent = vfs[filepath] ? vfs[filepath].content : '';
+       vfs[filepath] = {
+          content: applyDiffPatch(existingContent, code),
+          language: normalizedLanguage
+       };
+    } else {
+       // It's a full rewrite
+       vfs[filepath] = {
+         content: code,
+         language: normalizedLanguage
+       };
+    }
   }
   
   // Backward compatibility: If no valid code blocks were found using standard markdown, 
