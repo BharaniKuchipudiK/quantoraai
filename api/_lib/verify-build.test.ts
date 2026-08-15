@@ -1,0 +1,49 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { heuristicChecks } from "./verify-build.ts";
+
+function checkById(checks: ReturnType<typeof heuristicChecks>, id: string) {
+  return checks.find((c) => c.id === id);
+}
+
+const GOOD = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hira's Cafe</title><style>body{font-family:Inter}</style></head><body><header><nav><a href="/menu">Menu</a></nav></header><main><h1>Welcome</h1><img src="https://images.unsplash.com/x" alt="Latte"><button>Order</button></main><footer>© Hira's Cafe</footer></body></html>`;
+
+test("a well-formed styled document passes the critical checks", () => {
+  const checks = heuristicChecks(GOOD);
+  assert.equal(checkById(checks, "doctype")?.ok, true);
+  assert.equal(checkById(checks, "styled")?.ok, true);
+  assert.equal(checkById(checks, "responsive")?.ok, true);
+  assert.equal(checkById(checks, "structure")?.ok, true);
+  assert.equal(checkById(checks, "img-alt")?.ok, true);
+});
+
+test("an unstyled bare document fails the critical 'styled' check", () => {
+  const bare = `<!doctype html><html><body><h1>Hi</h1><a href="#">Link</a></body></html>`;
+  const checks = heuristicChecks(bare);
+  assert.equal(checkById(checks, "styled")?.ok, false);
+  assert.equal(checkById(checks, "styled")?.critical, true);
+});
+
+test("leftover placeholder tokens are flagged", () => {
+  const withToken = GOOD.replace("https://images.unsplash.com/x", "{{QUANTORA_IMAGE_1}}");
+  const checks = heuristicChecks(withToken);
+  assert.equal(checkById(checks, "no-tokens")?.ok, false);
+});
+
+test("a shop brief without a cart fails the cart feature check", () => {
+  const checks = heuristicChecks(GOOD, "an online boutique to sell handmade jewelry");
+  const cart = checkById(checks, "feat-cart");
+  assert.ok(cart, "cart feature check should be present for a shop brief");
+  assert.equal(cart?.ok, false);
+});
+
+test("a shop brief WITH a cart passes the cart feature check", () => {
+  const shop = GOOD.replace("<button>Order</button>", '<button class="add-to-cart">Add to cart</button>');
+  const checks = heuristicChecks(shop, "sell products online with a checkout");
+  assert.equal(checkById(checks, "feat-cart")?.ok, true);
+});
+
+test("a plain landing page is not penalised for lacking a cart", () => {
+  const checks = heuristicChecks(GOOD, "a simple landing page for my app");
+  assert.equal(checkById(checks, "feat-cart"), undefined);
+});

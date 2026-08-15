@@ -43,6 +43,11 @@ export default function LivePreviewCanvas({
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
   const [status, setStatus] = useState('running'); // running | healing | clean | degraded | failed
+  // Build verifier: a visible quality score for the finished artifact.
+  const [qualityReport, setQualityReport] = useState(null);
+  const [verifyingQuality, setVerifyingQuality] = useState(false);
+  const [improving, setImproving] = useState(false);
+  const verifiedCodeRef = useRef(null);
   const [attempt, setAttempt] = useState(0);
   const [lastError, setLastError] = useState(null);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -162,6 +167,63 @@ export default function LivePreviewCanvas({
     if (!res.ok) throw new Error(data.error || `Repair failed (${res.status})`);
     return data;
   }, []);
+
+  // Score the finished artifact against quality bars, once per distinct build.
+  const runQualityCheck = useCallback(async (codeToCheck) => {
+    if (!codeToCheck || !codeToCheck.trim()) return;
+    setVerifyingQuality(true);
+    try {
+      const openRouterApiKey = getClientSecret('openrouter');
+      const geminiApiKey = getClientSecret('gemini');
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: 'verify-build',
+          code: codeToCheck,
+          ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
+          ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && typeof data.score === 'number') {
+        setQualityReport(data);
+        onVerificationStatusChange?.({ kind: 'quality', score: data.score, passed: data.passed });
+      }
+    } catch { /* verification is best-effort — never block the preview */ }
+    finally { setVerifyingQuality(false); }
+  }, [onVerificationStatusChange]);
+
+  // One-click improve: feed the verifier's concrete issues back into the
+  // self-heal loop, keeping the design (guarded like the runtime repair path).
+  const handleImprove = useCallback(async () => {
+    const report = qualityReport;
+    if (improving || !report?.issues?.length) return;
+    setImproving(true);
+    try {
+      const instruction = `Improve this page. Fix ONLY these specific issues, preserving the existing design, layout and content:\n- ${report.issues.join('\n- ')}`;
+      const data = await requestRepair(currentCodeRef.current, instruction);
+      const original = currentCodeRef.current || '';
+      const fixed = data?.code || '';
+      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=/i.test(original) || /class\s*=/i.test(original);
+      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=/i.test(fixed) || /class\s*=/i.test(fixed);
+      if (fixed && !data.unchanged && fixed.trim() !== original.trim() && (!hadStyle || keepsStyle) && fixed.length >= original.length * 0.55) {
+        verifiedCodeRef.current = null; // re-verify the improved build
+        setQualityReport(null);
+        setCurrentCode(fixed);
+      }
+    } catch { /* leave the current build in place on failure */ }
+    finally { setImproving(false); }
+  }, [qualityReport, improving, requestRepair]);
+
+  // Run the quality check the first time a fresh build settles into "clean".
+  useEffect(() => {
+    if (headless || verifyOnly) return;
+    if (status !== 'clean') return;
+    if (!currentCode || verifiedCodeRef.current === currentCode) return;
+    verifiedCodeRef.current = currentCode;
+    runQualityCheck(currentCode);
+  }, [status, currentCode, headless, verifyOnly, runQualityCheck]);
 
   const handleRuntimeError = useCallback(async (message) => {
     if (healingRef.current || errorSeenRef.current) return;
@@ -573,6 +635,27 @@ export default function LivePreviewCanvas({
           )}
           {(status === 'failed' || status === 'degraded') && lastError && (
             <span title={lastError} style={{ marginLeft: status === 'failed' ? '10px' : '8px', maxWidth: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, opacity: 0.85 }}>{lastError}</span>
+          )}
+        </div>
+      )}
+
+      {!headless && !verifyOnly && (qualityReport || verifyingQuality) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px',
+          fontSize: '0.78rem', fontWeight: 600,
+          background: verifyingQuality ? (isLight ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.14)') : (qualityReport.passed ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.14)'),
+          color: verifyingQuality ? (isLight ? '#64748b' : '#94a3b8') : (qualityReport.passed ? '#10b981' : '#f59e0b'),
+          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)'
+        }}>
+          {verifyingQuality ? <Loader size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {verifyingQuality ? 'Checking quality…' : `Quality ${qualityReport.score}/100 — ${qualityReport.summary}`}
+          </span>
+          {!verifyingQuality && qualityReport && !qualityReport.passed && qualityReport.issues?.length > 0 && (
+            <button onClick={handleImprove} disabled={improving} title={qualityReport.issues.join('\n')} style={{
+              marginLeft: 'auto', flexShrink: 0, background: 'transparent', border: '1px solid #f59e0b',
+              color: '#f59e0b', borderRadius: '8px', padding: '3px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: improving ? 'default' : 'pointer'
+            }}>{improving ? 'Improving…' : 'Improve'}</button>
           )}
         </div>
       )}
