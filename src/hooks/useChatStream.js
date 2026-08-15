@@ -16,7 +16,8 @@ export function useChatStream({
   cognitiveLevel,
   canvasCode,
   messages,
-  setLastPrompt
+  setLastPrompt,
+  webSearchEnabled
 }) {
   const abortControllerRef = useRef(null);
   const { logModelFailure, getLearnedBehaviors } = usePCLMemory();
@@ -261,7 +262,8 @@ export function useChatStream({
             modelName: modelToUse.name,
             history: cleanMessages,
             openRouterKey: openRouterApiKey,
-            cognitiveLevel: cognitiveLevel
+            cognitiveLevel: cognitiveLevel,
+            webSearch: webSearchEnabled
           })
         });
 
