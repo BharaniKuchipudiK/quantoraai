@@ -1632,7 +1632,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
                 <div style={{ flex: 1, color: '#f97316', fontSize: '0.9rem', paddingTop: '8px', fontWeight: 500 }}>
-                  {isFailover ? 'Original model stalled. Proactively switching to a faster model...' :
+                  {(isGenerating && messages[messages.length - 1]?.isFailover) ? 'Original model stalled. Proactively switching to a faster model...' :
                    thinkingTime > 45 ? 'The model is experiencing high latency...' :
                    thinkingTime > 25 ? 'Still working on your request...' :
                    thinkingTime > 10 ? 'This is taking a bit longer than usual...' :
