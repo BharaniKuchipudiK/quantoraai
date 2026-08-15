@@ -704,7 +704,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     cognitiveLevel,
     canvasCode,
     messages,
-    setLastPrompt
+    setLastPrompt,
+    webSearchEnabled
   });
 
   const handleSendMessage = (overrideText = null) => {

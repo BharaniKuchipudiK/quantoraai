@@ -161,7 +161,7 @@ function buildGeminiContents(history: any[], currentMessage: string, attachedIma
   return contents;
 }
 
-async function generateGeminiContentStream(apiKey: string, contents: any[], systemInstruction: string, temperature: number = 0.7) {
+async function generateGeminiContentStream(apiKey: string, contents: any[], systemInstruction: string, temperature: number = 0.7, grounding: boolean = false) {
   const client = new GoogleGenAI({ apiKey });
   
   let selectedModel = "";
@@ -211,6 +211,10 @@ async function generateGeminiContentStream(apiKey: string, contents: any[], syst
         config: {
           systemInstruction: systemInstruction,
           temperature: temperature,
+          // Real web grounding: when on, the model runs an actual Google
+          // Search and answers from live results, returning citations in
+          // groundingMetadata. Off for builds. Supported on modern Gemini.
+          ...(grounding ? { tools: [{ googleSearch: {} }] } : {}),
         },
       });
       return { stream: responseStream, usedModel: m };
@@ -362,6 +366,14 @@ export default async function handler(req: any, res: any) {
     const explicitAsk = mode === "ask";
     const planMode = mode === "plan";
     const effectiveBuildMode = explicitAsk ? false : explicitBuild ? true : Boolean(buildMode);
+
+    /*
+     * Web grounding. When the user turns on "Grounded", the model answers from
+     * a live web search instead of memory — this is what makes Quantora more
+     * than a static chatbot. Deliberately OFF while building a site (a build
+     * wants deterministic code, not search noise) and off for the repair task.
+     */
+    const grounding = Boolean(req.body?.webSearch) && !effectiveBuildMode && !guidedBuild && task !== "repair";
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') {
@@ -562,8 +574,17 @@ export default async function handler(req: any, res: any) {
 
       try {
         const contents = buildGeminiContents(boundedHistory, message, visionImages);
-        const { stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature);
-        
+        // Try grounded first; if this key's models don't support the search
+        // tool, fall back to an ungrounded stream rather than failing the turn.
+        let responseStream, usedModel;
+        try {
+          ({ stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature, grounding));
+        } catch (groundErr: any) {
+          if (!grounding) throw groundErr;
+          console.warn("Grounded Gemini call failed; retrying without grounding:", groundErr?.message || groundErr);
+          ({ stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature, false));
+        }
+
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -571,19 +592,41 @@ export default async function handler(req: any, res: any) {
         });
 
         let fullReply = "";
+        const sources: Array<{ uri: string; title: string }> = [];
+        const seenSources = new Set<string>();
         for await (const chunk of responseStream) {
           if (chunk.text) {
             fullReply += chunk.text;
             res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
             if (res.flush) res.flush();
           }
+          // Collect real citations from grounding metadata as they arrive.
+          const gcs = (chunk as any)?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+          if (Array.isArray(gcs)) {
+            for (const gc of gcs) {
+              const uri = gc?.web?.uri;
+              if (uri && !seenSources.has(uri)) {
+                seenSources.add(uri);
+                sources.push({ uri, title: gc?.web?.title || uri });
+              }
+            }
+          }
         }
-        
+
+        // Surface the sources so a grounded answer is visibly backed by the web.
+        if (grounding && sources.length) {
+          let block = `\n\n---\n**Sources**\n`;
+          sources.slice(0, 5).forEach((s, i) => { block += `${i + 1}. [${s.title}](${s.uri})\n`; });
+          fullReply += block;
+          res.write(`data: ${JSON.stringify({ text: block })}\n\n`);
+          if (res.flush) res.flush();
+        }
+
         const latencyMs = Date.now() - startTime;
         logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", activeSessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
         recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom });
 
-        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true, conversation: conversationMetadata(fullReply) })}\n\n`);
+        res.write(`data: ${JSON.stringify({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, liveConnected: true, grounded: grounding && sources.length > 0, conversation: conversationMetadata(fullReply) })}\n\n`);
         res.write('data: [DONE]\n\n');
         return res.end();
       } catch (geminiErr: any) {
@@ -639,7 +682,10 @@ export default async function handler(req: any, res: any) {
           model: openRouterModelId,
           messages: formattedHistory,
           temperature: dynamicTemperature,
-          stream: true
+          stream: true,
+          // OpenRouter's web plugin performs a real search and injects results
+          // (with citations) into the model's context. Only when grounding is on.
+          ...(grounding ? { plugins: [{ id: "web", max_results: 3 }] } : {}),
         }),
       });
 
