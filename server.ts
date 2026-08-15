@@ -1,3 +1,4 @@
+import { generateGeminiContentWithRouting, TelemetryEvent } from "./lib/routingHelper.js";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -143,38 +144,7 @@ async function startServer() {
   app.use(express.json({ limit: "500kb" }));
 
   // Helper function to execute Gemini with multi-model fallback chain
-  async function generateGeminiContent(apiKey: string, contents: any[], systemInstruction: string) {
-    const client = new GoogleGenAI({ apiKey });
-    const fallbackModels = [
-      "gemini-3.6-flash",
-      "gemini-3.5-flash",
-      "gemini-3-flash-preview",
-      "gemini-flash-latest",
-      "gemma-4-26b-a4b-it",
-      "gemma-4-31b-it"
-    ];
-
-    let lastError: any = null;
-    for (const m of fallbackModels) {
-      try {
-        const response = await client.models.generateContent({
-          model: m,
-          contents: contents,
-          config: {
-            systemInstruction: systemInstruction,
-            temperature: 0.7,
-          },
-        });
-        if (response && response.text) {
-          return { text: response.text, usedModel: m };
-        }
-      } catch (err: any) {
-        console.warn(`Gemini model ${m} failed:`, err.message || err);
-        lastError = err;
-      }
-    }
-    throw lastError || new Error("All Gemini fallback models failed.");
-  }
+  
 
   // Global In-Memory Metrics Store
   const globalMetrics = {
@@ -185,11 +155,22 @@ async function startServer() {
     failedRequests: 0,
     totalLatencyMs: 0,
     latencyHistory: [] as number[],
+    routingEvents: [] as TelemetryEvent[],
+    spendByModel: {} as Record<string, number>,
     modelUsage: {} as Record<string, number>,
     hourlyTraffic: new Array(24).fill(0)
   };
 
   // Helper to record metrics
+  const handleRoutingTelemetry = (event: TelemetryEvent) => {
+    globalMetrics.routingEvents.push(event);
+    if (globalMetrics.routingEvents.length > 500) globalMetrics.routingEvents.shift();
+    if (event.success) {
+       // Mock spend calculation: 0.001 per req
+       globalMetrics.spendByModel[event.model] = (globalMetrics.spendByModel[event.model] || 0) + 0.001;
+    }
+  };
+
   const recordMetric = (latency: number, model: string, success: boolean) => {
     if (success) {
       globalMetrics.successfulRequests++;

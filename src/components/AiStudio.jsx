@@ -1,185 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
-// Interactive iOS Calculator Sub-Component
-function LiveIosCalculator() {
-  const [display, setDisplay] = useState('0');
-  const [prevVal, setPrevVal] = useState(null);
-  const [operator, setOperator] = useState(null);
-
-  const handleNum = (n) => {
-    setDisplay(d => (d === '0' ? String(n) : d + n));
-  };
-
-  const handleOp = (op) => {
-    setPrevVal(parseFloat(display));
-    setOperator(op);
-    setDisplay('0');
-  };
-
-  const handleEqual = () => {
-    if (prevVal === null || !operator) return;
-    const current = parseFloat(display);
-    let res = 0;
-    if (operator === '+') res = prevVal + current;
-    if (operator === '-') res = prevVal - current;
-    if (operator === '×') res = prevVal * current;
-    if (operator === '÷') res = current !== 0 ? prevVal / current : 'Error';
-    setDisplay(String(res));
-    setPrevVal(null);
-    setOperator(null);
-  };
-
-  const handleClear = () => {
-    setDisplay('0');
-    setPrevVal(null);
-    setOperator(null);
-  };
-
-
-  return (
-    <div style={{ maxWidth: '280px', background: '#000000', borderRadius: '32px', padding: '20px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', border: '4px solid #1c1c1e', margin: '14px 0' }}>
-      <div style={{ fontSize: '2.4rem', textAlign: 'right', marginBottom: '16px', padding: '0 8px', fontFamily: 'sans-serif', fontWeight: '300', minHeight: '50px' }}>
-        {display}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-        <button onClick={handleClear} style={{ background: '#a5a5a5', color: '#000', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}>AC</button>
-        <button onClick={() => setDisplay(d => String(parseFloat(d) * -1))} style={{ background: '#a5a5a5', color: '#000', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>±</button>
-        <button onClick={() => setDisplay(d => String(parseFloat(d) / 100))} style={{ background: '#a5a5a5', color: '#000', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer' }}>%</button>
-        <button onClick={() => handleOp('÷')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>÷</button>
-
-        <button onClick={() => handleNum(7)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>7</button>
-        <button onClick={() => handleNum(8)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>8</button>
-        <button onClick={() => handleNum(9)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>9</button>
-        <button onClick={() => handleOp('×')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>×</button>
-
-        <button onClick={() => handleNum(4)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>4</button>
-        <button onClick={() => handleNum(5)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>5</button>
-        <button onClick={() => handleNum(6)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>6</button>
-        <button onClick={() => handleOp('-')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>-</button>
-
-        <button onClick={() => handleNum(1)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>1</button>
-        <button onClick={() => handleNum(2)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>2</button>
-        <button onClick={() => handleNum(3)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>3</button>
-        <button onClick={() => handleOp('+')} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
-
-        <button onClick={() => handleNum(0)} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '26px', gridColumn: 'span 2', fontSize: '1.3rem', textAlign: 'left', paddingLeft: '22px', cursor: 'pointer' }}>0</button>
-        <button onClick={() => handleNum('.')} style={{ background: '#333333', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.3rem', cursor: 'pointer' }}>.</button>
-        <button onClick={handleEqual} style={{ background: '#ff9f0a', color: '#fff', border: 'none', height: '52px', borderRadius: '50%', fontSize: '1.4rem', fontWeight: 'bold', cursor: 'pointer' }}>=</button>
-      </div>
-    </div>
-  );
-}
-
-// Interactive AI Beat Synthesizer Sub-Component
-function LiveBeatMaker() {
-  const [bpm, setBpm] = useState(124);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [activePads, setActivePads] = useState([]);
-
-  const togglePad = (id) => {
-    setActivePads(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
-  };
-
-  return (
-    <div style={{ padding: '20px', background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', borderRadius: '20px', color: '#fff', margin: '14px 0', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h4 style={{ margin: 0, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Music size={18} /> Interactive AI Beat Synthesizer
-        </h4>
-        <span style={{ fontSize: '0.78rem', background: '#334155', padding: '4px 10px', borderRadius: '9999px' }}>{bpm} BPM</span>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
-        {['Kick', 'Snare', 'Hi-Hat', 'Clap', 'Synth A', 'Bass B', 'Pad C', 'Vocal FX'].map((pad, i) => (
-          <button
-            key={i}
-            onClick={() => togglePad(i)}
-            style={{
-              padding: '16px 8px',
-              borderRadius: '12px',
-              background: activePads.includes(i) ? 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)' : '#1e293b',
-              border: 'none',
-              color: '#fff',
-              fontWeight: '600',
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              boxShadow: activePads.includes(i) ? '0 0 15px rgba(249, 115, 22, 0.6)' : 'none'
-            }}
-          >
-            {pad}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <button onClick={() => setIsPlaying(!isPlaying)} style={{ flex: 1, padding: '10px', borderRadius: '10px', background: '#f97316', border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-          {isPlaying ? '⏸ Pause Rhythm' : '▶ Play Synthesized Beat'}
-        </button>
-        <button onClick={() => setBpm(b => (b >= 160 ? 90 : b + 10))} style={{ padding: '10px 16px', borderRadius: '10px', background: '#334155', border: 'none', color: '#fff', cursor: 'pointer' }}>
-          Tempo Shift
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Interactive Quantum Simulator Sub-Component
-function LiveQuantumSimulator() {
-  const [prob00, setProb00] = useState(50);
-  const [prob11, setProb11] = useState(50);
-  const [hasHadamard, setHasHadamard] = useState(true);
-
-  const toggleHadamard = () => {
-    if (hasHadamard) {
-      setHasHadamard(false);
-      setProb00(100);
-      setProb11(0);
-    } else {
-      setHasHadamard(true);
-      setProb00(50);
-      setProb11(50);
-    }
-  };
-
-  return (
-    <div style={{ padding: '20px', background: 'linear-gradient(135deg, #070913 0%, #0d1127 100%)', borderRadius: '20px', color: '#fff', margin: '14px 0', border: '1px solid rgba(6, 182, 212, 0.4)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-        <h4 style={{ margin: 0, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Cpu size={18} /> Interactive Quantum Entanglement Simulator
-        </h4>
-        <span style={{ fontSize: '0.75rem', background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '6px' }}>
-          Bell State |Φ+⟩ Active
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontFamily: 'monospace', color: '#a78bfa', fontWeight: 'bold' }}>|q₀⟩ Wire:</span>
-          <button onClick={toggleHadamard} style={{ background: hasHadamard ? '#8b5cf6' : '#334155', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}>
-            {hasHadamard ? 'H (Hadamard Active)' : '+ Add Hadamard Gate'}
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-          <span>Superposition Outcome State |00⟩ & |11⟩:</span>
-          <strong style={{ color: '#34d399' }}>{prob00}% / {prob11}%</strong>
-        </div>
-        <div style={{ height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden', display: 'flex' }}>
-          <div style={{ width: `${prob00}%`, background: '#38bdf8', transition: 'width 0.4s ease' }} />
-          <div style={{ width: `${prob11}%`, background: '#a78bfa', transition: 'width 0.4s ease' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
+import { useChatStream } from '../hooks/useChatStream';
+const LiveIosCalculator = lazy(() => import('./interactive/LiveIosCalculator'));
+const LiveBeatMaker = lazy(() => import('./interactive/LiveBeatMaker'));
+const LiveQuantumSimulator = lazy(() => import('./interactive/LiveQuantumSimulator'));
 // Graphic Brand Logo Renderer for Tech Stack Pills
 function TechLogo({ name }) {
   switch (name) {
@@ -912,269 +741,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (setActiveTab) setActiveTab('canvas');
   };
 
-  const handleSendMessage = async (textToSend) => {
-    let text = textToSend || inputText;
-    if (!text.trim() && !attachments.length) return;
-    if (isGenerating) return;
-
-    // Inject Context Chips
-    const contextChips = attachments.filter(a => a.type === 'context');
-    if (contextChips.length > 0) {
-      let contextString = "";
-      for (const chip of contextChips) {
-        if (chip.contextType === 'canvas') {
-          contextString += `\n\n[CONTEXT: CURRENT CANVAS CODE]\n\`\`\`\n${previewCode}\n\`\`\``;
-        } else if (chip.contextType === 'history') {
-           const prevSession = chatSessions.find(s => s.id !== activeSessionId);
-           if (prevSession) {
-             const stringifiedHistory = prevSession.messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
-             contextString += `\n\n[CONTEXT: PREVIOUS SESSION (${prevSession.title})]\n${stringifiedHistory.substring(0, 5000)}...`;
-           }
-        }
-      }
-      text = text + contextString;
-    }
-
-    setLastPrompt(text.trim());
-
-    const userMsg = {
-      id: Date.now(),
-      sender: 'user',
-      text: text.trim(),
-      attachments: [...attachments]
-    };
-
-    updateActiveMessages(prev => [...prev, userMsg]);
-    if (!textToSend) setInputText('');
-    setAttachments([]);
-    setIsGenerating(true);
-
-    try {
-      const modRes = await fetch('/api/moderate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text.trim() })
-      });
-      const modData = await modRes.json();
-      
-      if (modData.flagged) {
-        updateActiveMessages(prev => [...prev, {
-          id: Date.now() + 1,
-          sender: 'ai',
-          text: `🚨 **Policy Violation Detected**\n\n${modData.reason}\n\n*Flagged Pattern: \`${modData.matchedPattern}\`*`,
-          isError: true
-        }]);
-        setIsGenerating(false);
-        return;
-      }
-    } catch (e) {
-      console.error("Moderation API failed, failing open...", e);
-    }
-
-
-    const targetModel = selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-
-    const geminiApiKey = localStorage.getItem('geminiApiKey');
-    const openRouterApiKey = localStorage.getItem('openRouterApiKey');
-
-    const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
-
-    // 1. Dual Model Arena Execution Mode
-    if (arenaMode) {
-      const modelA = targetModel;
-      const modelB = secondModel || { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' };
-
-      const dualMsgId = Date.now() + 1;
-      const dualMsg = {
-        id: dualMsgId, sender: 'ai', type: 'arena_battle', isDual: true, prompt: text,
-        modelA: { modelName: modelA.name, text: '', provider: modelA.name, latencyMs: 0 },
-        modelB: { modelName: modelB.name, text: '', provider: modelB.name, latencyMs: 0 }
-      };
-      updateActiveMessages(prev => [...prev, dualMsg]);
-
-      const streamSingleModel = async (mod, isModelA) => {
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, modelId: mod.id, modelName: mod.name, history: cleanMessages, userKey: geminiApiKey, openRouterKey: openRouterApiKey })
-          });
-          
-          if (!res.ok) throw new Error('API Error');
-          
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let currentText = "";
-          let finalProvider = mod.name;
-          let finalLatency = 0;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const dataStr = line.slice(6);
-                if (dataStr === '[DONE]') break;
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  if (parsed.text) {
-                    currentText += parsed.text;
-                    updateActiveMessages(prev => prev.map(m => {
-                      if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: currentText, provider: finalProvider, latencyMs: finalLatency };
-                        return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
-                      }
-                      return m;
-                    }));
-                  }
-                  if (parsed.provider) {
-                    finalProvider = parsed.provider;
-                    finalLatency = parsed.latencyMs || 0;
-                    updateActiveMessages(prev => prev.map(m => {
-                      if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: currentText, provider: finalProvider, latencyMs: finalLatency };
-                        return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
-                      }
-                      return m;
-                    }));
-                  }
-                } catch (e) {}
-              }
-            }
-          }
-          
-        } catch (e) {
-          updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
-        }
-      };
-
-      try {
-        await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
-      } catch (err) {
-        console.error('Arena Execution Error:', err);
-      } finally {
-        setIsGenerating(false);
-      }
-      return;
-    }
-
-    // 2. Standard Single Model Execution Mode
-    const aiMsgId = Date.now() + 1;
-    const initialAiMsg = {
-      id: aiMsgId,
-      sender: 'ai',
-      modelUsed: targetModel.name,
-      text: '',
-      componentType: 'formatted_text',
-      thoughtProcess: `Connecting to ${targetModel.name}...`,
-      latencyMs: 0,
-      provider: targetModel.name,
-      liveConnected: true
-    };
-    updateActiveMessages(prev => [...prev, initialAiMsg]);
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: text,
-          modelId: targetModel.id,
-          modelName: targetModel.name,
-          history: cleanMessages,
-          openRouterKey: openRouterApiKey,
-          cognitiveLevel: cognitiveLevel
-        })
-      });
-
-      if (res.ok) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let currentText = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6);
-              if (dataStr === '[DONE]') break;
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.text) {
-                  currentText += parsed.text;
-                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                    ...m,
-                    text: currentText,
-                    thoughtProcess: 'Generating live...'
-                  } : m));
-                }
-                if (parsed.provider) {
-                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                    ...m,
-                    provider: parsed.provider,
-                    latencyMs: parsed.latencyMs || 0,
-                    thoughtProcess: `Processed live via ${parsed.provider} (${parsed.latencyMs || 0}ms)`
-                  } : m));
-                }
-              } catch (e) {}
-            }
-          }
-        }
-
-      } else {
-        const errData = await res.json().catch(() => ({}));
-
-        /*
-         * "You need to sign in" and "you need an API key" are different
-         * problems with different fixes. Collapsing both into the key prompt
-         * told signed-out users to paste a key they did not need, which read
-         * as the key handling being broken.
-         */
-        if (res.status === 401 && errData.requiresAuth) {
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: `🔒 **Please sign in to continue.**\n\n${errData.error || "Sign in to use Quantora's built-in AI."}`,
-            isAuthPrompt: true,
-            thoughtProcess: 'Sign-in required'
-          } : m));
-        } else if (res.status === 429) {
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`,
-            thoughtProcess: 'Rate limited'
-          } : m));
-        } else {
-          const errText = errData.error || `The backend server encountered an error with ${targetModel.name}.`;
-
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment. Please try again later or select a different model.`,
-            thoughtProcess: `Error processing request via ${targetModel.name}`
-          } : m));
-        }
-      }
-    } catch (error) {
-      console.error('Chat error:', error);
-      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-        ...m,
-        text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${targetModel.name}. Please check your connection and try again.`,
-        thoughtProcess: `Network connection error for ${targetModel.name}`
-      } : m));
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+  const { handleSendMessage } = useChatStream({
+    inputText, setInputText,
+    attachments, setAttachments,
+    isGenerating, setIsGenerating,
+    updateActiveMessages,
+    chatSessions, activeSessionId,
+    selectedModel,
+    arenaMode, secondModel,
+    cognitiveLevel,
+    previewCode,
+    messages,
+    setLastPrompt
+  });
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.slice(1).map(msg => (
@@ -1205,7 +784,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       <div style={{
                         background: isLight ? '#ffffff' : '#0d1127',
                         border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
-                        borderRadius: '16px',
+                        borderRadius: '24px',
                         padding: '16px',
                         display: 'flex',
                         flexDirection: 'column',
@@ -1461,9 +1040,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
                   {/* Render Interactive Live Component Sandboxes Directly in Chat */}
-                  {msg.componentType === 'calculator' && <LiveIosCalculator />}
-                  {msg.componentType === 'beat' && <LiveBeatMaker />}
-                  {msg.componentType === 'quantum' && <LiveQuantumSimulator />}
+                  {msg.componentType === 'calculator' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading Calculator...</div>}><LiveIosCalculator /></Suspense>}
+                  {msg.componentType === 'beat' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading BeatMaker...</div>}><LiveBeatMaker /></Suspense>}
+                  {msg.componentType === 'quantum' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading Quantum Simulator...</div>}><LiveQuantumSimulator /></Suspense>}
 
                   {/* Source Code Toggle Button */}
                   {msg.codeSnippet && (
@@ -1997,44 +1576,49 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
-        {/* Attachment Files Badge Bar */}
-        {attachments.length > 0 && (
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px', paddingLeft: '4px' }}>
-            {attachments.map((att, index) => (
-              <span
-                key={index}
-                style={{
-                  fontSize: '0.75rem',
-                  background: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.1)',
-                  border: '1px solid #f97316',
-                  color: textColor,
-                  padding: '4px 10px',
-                  borderRadius: '16px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                }}
-              >
-                {att.type === 'context' ? <Layers size={12} color="#8b5cf6" /> : att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
-                <span>{att.name}</span>
-                <X
-                  size={12}
-                  color="#ef4444"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => removeAttachment(index)}
-                />
-              </span>
-            ))}
-          </div>
-        )}
-
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
           position: 'relative',
-          padding: '4px'
+          padding: '12px 14px',
+          background: isLight ? '#f4f4f5' : '#27272a',
+          borderRadius: '24px',
+          border: isLight ? '1px solid #e4e4e7' : '1px solid #3f3f46',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px'
         }}>
+          {/* Attachment Files Badge Bar (Moved inside pill) */}
+          {attachments.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+              {attachments.map((att, index) => (
+                <span
+                  key={index}
+                  style={{
+                    fontSize: '0.75rem',
+                    background: isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid #f97316',
+                    color: textColor,
+                    padding: '4px 10px',
+                    borderRadius: '16px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  {att.type === 'context' ? <Layers size={12} color="#8b5cf6" /> : att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
+                  <span>{att.name}</span>
+                  <X
+                    size={12}
+                    color="#ef4444"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => removeAttachment(index)}
+                  />
+                </span>
+              ))}
+            </div>
+          )}
           {/* Intelligent Router Suggestion Pill */}
           {suggestedModel && !showMentionMenu && (
             <div style={{
@@ -2131,7 +1715,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
           {/* Text Area Input */}
-          <div style={{ position: 'relative', padding: '12px 18px' }}>
+          <div style={{ position: 'relative', padding: '0' }}>
             <textarea
               ref={textareaRef}
               rows={1}
@@ -2503,7 +2087,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
 
             {/* Right Control: Send & Push Buttons */}
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 onClick={() => {
                   if (!inputText.trim()) return;
@@ -2528,9 +2112,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   background: inputText.trim() ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
                   border: inputText.trim() ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid transparent',
                   color: inputText.trim() ? '#8b5cf6' : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '12px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
                   cursor: inputText.trim() ? 'pointer' : 'default',
                   display: 'flex',
                   alignItems: 'center',
@@ -2562,7 +2146,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
                 }}
               >
-                <Send size={16} />
+                <Send size={14} />
               </button>
             </div>
           </div>
