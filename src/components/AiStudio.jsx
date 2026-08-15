@@ -1731,7 +1731,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   {(isGenerating && messages[messages.length - 1]?.isFailover) ? 'Original model stalled. Proactively switching to a faster model...' :
                    thinkingTime > 45 ? 'The model is experiencing high latency...' :
                    thinkingTime > 25 ? 'Still working on your request...' :
-                   thinkingTime > 10 ? 'This is taking a bit longer than usual...' :
+                   thinkingTime > 10 ? 'This is taking a bit longer than usual... hang tight..' :
                    `${selectedModel ? formatModelName(selectedModel.name) : 'Model'} is thinking...`}
                 </div>
               </div>
