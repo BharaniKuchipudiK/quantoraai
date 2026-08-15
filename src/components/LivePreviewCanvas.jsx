@@ -560,6 +560,39 @@ export default function LivePreviewCanvas({
     </button>
   );
 
+  // Deploy the current multi-file project to GCP Cloud Run. The button below
+  // references this handler, so it must exist (a previous cleanup removed the
+  // only definition and left the reference dangling — no-undef crash on main).
+  // Contract: POST /api/deploy-gcp expects { vfs, projectName } and returns
+  // { buildId, projectName, status } — it triggers an async Cloud Build, so
+  // there is no live URL to await here; we report that the build kicked off.
+  const handleGcpDeployClick = async () => {
+    if (isDeployingGcp) return;
+    if (!user) { onRequireAuth?.(); return; }
+    if (!vfs || Object.keys(vfs).length === 0) {
+      alert('GCP Cloud Run deploys a multi-file project. This artifact has no project files (vfs) to deploy.');
+      return;
+    }
+    setIsDeployingGcp(true);
+    try {
+      const res = await fetch('/api/deploy-gcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ vfs, projectName: suggestedProjectName || 'quantora-app' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'GCP deployment failed');
+      alert(`GCP build triggered (${data.projectName || 'project'}). Cloud Build is now building and deploying to Cloud Run — this can take a few minutes.`);
+    } catch (err) {
+      const message = err.message || 'GCP deployment failed';
+      if (message.toLowerCase().includes('sign in')) onRequireAuth?.();
+      alert(`GCP deployment failed: ${message}`);
+    } finally {
+      setIsDeployingGcp(false);
+    }
+  };
+
   const deployGcpButton = (
     <button onClick={handleGcpDeployClick} disabled={isDeployingGcp} title="Deploy Full-Stack to GCP Cloud Run" style={{
       background: isDeployingGcp ? '#94a3b8' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
