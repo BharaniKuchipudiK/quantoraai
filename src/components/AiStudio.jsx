@@ -1,3 +1,4 @@
+import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -394,6 +395,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
+  const [vfs, setVfs] = useState({});
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
@@ -1117,11 +1119,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.sender === 'ai' && lastMsg.id !== lastProcessedMessageId) {
         setLastProcessedMessageId(lastMsg.id);
-        const code = extractRunnableCode(lastMsg.text);
-        if (code) {
-           setWorkspaceCode(code);
+        const parsedVfs = parseVFSFromMarkdown(lastMsg.text);
+        if (Object.keys(parsedVfs).length > 0) {
+           setVfs(parsedVfs);
+           // Also set workspaceCode for backward compatibility in case some child components strictly expect string
+           setWorkspaceCode(parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
+        } else {
+           // Fallback for old single-string generations
+           const code = extractRunnableCode(lastMsg.text);
+           if (code) {
+              setWorkspaceCode(code);
+              setVfs({ 'App.jsx': { content: code, language: 'jsx' } });
+              setWorkspaceActiveTab('preview');
+              setIsWorkspaceMode(true);
+           }
         }
       }
     }

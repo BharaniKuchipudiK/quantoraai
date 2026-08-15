@@ -11,6 +11,9 @@ export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="${PREVIEW_RELAXED_CSP}">
   <title>Quantora Preview</title>
+    <style id="vfs-injected-styles">
+      ${injectedCSS}
+    </style>
   <script>
     (function () {
       function render(html) {

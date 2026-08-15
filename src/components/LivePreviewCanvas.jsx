@@ -24,6 +24,7 @@ const MAX_HEAL_ATTEMPTS = 3;
 
 export default function LivePreviewCanvas({
   code,
+  vfs = {},
   isLight,
   onClose,
   isFullscreen,
