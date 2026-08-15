@@ -884,9 +884,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           {runnableCode && (
                             <button
                               onClick={() => {
-                                setWorkspaceCode(runnableCode);
-                                setIsWorkspaceMode(true);
-                                if (setActiveTab) setActiveTab('canvas');
+                                setCanvasCode(runnableCode);
+                                setCanvasOpen(true);
                               }}
                               style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
                               onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
