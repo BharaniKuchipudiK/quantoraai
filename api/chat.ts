@@ -697,24 +697,41 @@ export default async function handler(req: any, res: any) {
           : message,
       });
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${effectiveOpenRouterKey}`,
-          "HTTP-Referer": process.env.APP_URL || "https://quantoraai.app",
-          "X-Title": "Quantora AI",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: openRouterModelId,
-          messages: formattedHistory,
-          temperature: dynamicTemperature,
-          stream: true,
-          // OpenRouter's web plugin performs a real search and injects results
-          // (with citations) into the model's context. Only when grounding is on.
-          ...(grounding ? { plugins: [{ id: "web", max_results: 3 }] } : {}),
-        }),
-      });
+      // Bound the time to establish the stream. A hung/unreachable upstream
+      // must not pin this serverless function until Vercel's max duration. The
+      // timer is cleared the moment response headers arrive, so a long but
+      // healthy stream is never cut off mid-flight.
+      const orAbort = new AbortController();
+      const orConnectTimeout = setTimeout(() => orAbort.abort(), 25_000);
+      let response: Response;
+      try {
+        response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          signal: orAbort.signal,
+          headers: {
+            Authorization: `Bearer ${effectiveOpenRouterKey}`,
+            "HTTP-Referer": process.env.APP_URL || "https://quantoraai.app",
+            "X-Title": "Quantora AI",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: openRouterModelId,
+            messages: formattedHistory,
+            temperature: dynamicTemperature,
+            stream: true,
+            // OpenRouter's web plugin performs a real search and injects results
+            // (with citations) into the model's context. Only when grounding is on.
+            ...(grounding ? { plugins: [{ id: "web", max_results: 3 }] } : {}),
+          }),
+        });
+      } catch (fetchErr: any) {
+        if (orAbort.signal.aborted) {
+          throw new Error(`OpenRouter request for "${modelName || openRouterModelId}" timed out before responding.`);
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(orConnectTimeout);
+      }
 
       if (!response.ok) {
         const errText = await response.text();
