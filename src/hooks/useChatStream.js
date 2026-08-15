@@ -104,8 +104,37 @@ export function useChatStream({
 
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
 
-    // 1. Dual Model Arena Execution Mode
+    // Phase 4: Intent Router (Gatekeeper)
+    let effectiveArenaMode = arenaMode;
     if (arenaMode) {
+      try {
+        const intentRes = await fetch('/api/classify-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text })
+        });
+        if (intentRes.ok) {
+          const intentData = await intentRes.json();
+          if (intentData.intent === 'deterministic') {
+            effectiveArenaMode = false;
+            // Inject a system message notifying the user
+            updateActiveMessages(prev => [...prev, {
+              id: Date.now() + 1,
+              sender: 'ai',
+              text: '⚡ **PCL Observation**: This is a deterministic request. Bypassing Arena Mode to provide a single, consolidated answer.',
+            }]);
+            
+            // Artificial delay to let the user read the observation before streaming starts
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
+        }
+      } catch (e) {
+        console.error("Gatekeeper intent routing failed", e);
+      }
+    }
+
+    // 1. Dual Model Arena Execution Mode
+    if (effectiveArenaMode) {
       const modelA = targetModel;
       const modelB = secondModel || { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' };
 
