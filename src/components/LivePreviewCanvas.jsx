@@ -116,9 +116,9 @@ export default function LivePreviewCanvas({
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
-    const preparedHtml = prepareCodeForPreview(html);
+    const preparedHtml = prepareCodeForPreview(html, vfs);
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
-  }, []);
+  }, [vfs]);
 
   useEffect(() => {
     setCurrentCode(code || '');

@@ -11,9 +11,7 @@ export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="${PREVIEW_RELAXED_CSP}">
   <title>Quantora Preview</title>
-    <style id="vfs-injected-styles">
-      ${injectedCSS}
-    </style>
+    <style id="vfs-injected-styles"></style>
   <script>
     (function () {
       function render(html) {
@@ -117,12 +115,19 @@ export function injectPreviewHarness(html) {
   return bundle + safe;
 }
 
-export function prepareCodeForPreview(code) {
+export function prepareCodeForPreview(code, vfs = {}) {
   if (!code) return '';
   const str = String(code).trim();
   
-  // If it's already an HTML document, return it as is
+  let injectedCSS = '';
+  if (vfs['index.css']?.content) injectedCSS += vfs['index.css'].content + '\n';
+  if (vfs['App.css']?.content) injectedCSS += vfs['App.css'].content + '\n';
+  
+  // If it's already an HTML document, inject CSS into <head>
   if (/^<!DOCTYPE html>/i.test(str) || /^<html/i.test(str) || /<head>/i.test(str)) {
+    if (injectedCSS) {
+       return str.replace(/(<\/head>)/i, `<style id="vfs-styles">\n${injectedCSS}\n</style>\n$1`);
+    }
     return str;
   }
   
@@ -148,6 +153,7 @@ export function prepareCodeForPreview(code) {
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { margin: 0; padding: 0; font-family: system-ui, sans-serif; background: #ffffff; color: #0f172a; }
+    ${injectedCSS}
   </style>
 </head>
 <body>
