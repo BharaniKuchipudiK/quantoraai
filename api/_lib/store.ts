@@ -412,3 +412,75 @@ export async function isAdminUser(googleSub: string): Promise<boolean | null> {
     return null;
   }
 }
+
+/* ── Privacy / data control (Roadmap 0.2) ─────────────────────────────────────
+ * A user owns their footprint: they can export everything we hold about them
+ * and erase it. These do NOT fail soft — a privacy action that silently no-ops
+ * would be worse than an honest error, so callers surface unavailability.
+ */
+
+/** Everything we store keyed to this account, for a "download my data" export. */
+export async function exportUserData(googleSub: string): Promise<Record<string, unknown> | null> {
+  if (!config() || !googleSub) return null;
+  const sub = encodeURIComponent(googleSub);
+  const get = async (path: string) => {
+    const res = await requestRaw(path, { method: "GET" });
+    if (!res || !res.ok) return null; // null = a query failed; caller aborts
+    try { return (await res.json()) as any[]; } catch { return null; }
+  };
+
+  const [profile, usage, events, sites, states] = await Promise.all([
+    get(`users?select=google_sub,email,name,picture,created_at,last_seen_at,sign_in_count&google_sub=eq.${sub}`),
+    get(`usage?select=provider,model_id,latency_ms,tokens_est,used_server_key,created_at&user_sub=eq.${sub}&order=created_at.desc`),
+    get(`product_events?select=event_type,metadata,created_at&user_sub=eq.${sub}&order=created_at.desc`),
+    get(`published_sites?select=project_name,deployment_url,created_at,updated_at&user_sub=eq.${sub}&order=created_at.desc`),
+    get(`outcome_states?select=session_id,version,state,created_at,updated_at&user_sub=eq.${sub}&order=updated_at.desc`),
+  ]);
+
+  // If any table read failed outright, refuse to hand back a partial export
+  // that the user might mistake for complete.
+  if ([profile, usage, events, sites, states].some((v) => v === null)) return null;
+
+  return {
+    exported_at: new Date().toISOString(),
+    account: profile![0] ?? null,
+    usage: usage!,
+    product_events: events!,
+    published_sites: sites!,
+    outcome_states: states!,
+  };
+}
+
+/**
+ * Hard-delete this account's footprint. Deleting the users row cascades to
+ * outcome_states (living memory) and published_sites (ownership records), and
+ * nulls user_sub on usage / product_events (anonymized, not lost). Live
+ * published deployments are intentionally left running — dropping ownership
+ * does not take a visitor-facing URL offline.
+ * Returns true on success, false if the store is unreachable / the delete failed.
+ */
+export async function deleteUserData(googleSub: string): Promise<boolean> {
+  if (!config() || !googleSub) return false;
+  const res = await requestRaw(
+    `users?google_sub=eq.${encodeURIComponent(googleSub)}`,
+    { method: "DELETE", headers: { Prefer: "return=minimal" } },
+  );
+  return Boolean(res && res.ok);
+}
+
+/**
+ * Retention TTL: purge telemetry rows older than `days`. Run from a cron.
+ * Returns null if the store is unreachable. usage / product_events hold no
+ * prompt or response bodies — only operational metadata — so this is a
+ * footprint-minimization sweep, not a functional dependency.
+ */
+export async function purgeOldTelemetry(days: number): Promise<{ ok: boolean }> {
+  if (!config()) return { ok: false };
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const before = `created_at=lt.${encodeURIComponent(cutoff)}`;
+  const [u, e] = await Promise.all([
+    requestRaw(`usage?${before}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+    requestRaw(`product_events?${before}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+  ]);
+  return { ok: Boolean(u && u.ok && e && e.ok) };
+}
