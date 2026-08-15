@@ -75,10 +75,25 @@ cognitive layer · desktop app.
 
 ## Phase 3 — The Cognitive Layer  *(the differentiator — not a chatbot)*
 
-Turn the existing seeds (`listening-layer`, `proactive-nudges`,
-`domain-anticipation`, `conversation-engine`) from reactive into a persistent,
-proactive operator. **Guardrails on every slice:** opt-in, transparent, a quiet
-mode, human approval for consequential actions.
+> **Reality check (2026-08, honest audit).** Of the "cognitive" modules, only
+> `conversation-engine` (wired into `api/chat.ts`), `listening-layer` (studio
+> session + inline suggestions) and `outcome_states` (memory) are actually
+> connected. `proactive-nudges`, `domain-anticipation` and
+> `capability-intelligence` ship code **and passing tests but have zero
+> non-test importers** — they are dead placeholders. Shipping "intelligence"
+> that is wired to nothing is the fastest way to become the wrapper we claim not
+> to be. **3.0 (below) is now the gate for this whole phase.**
+
+- 🔴 **3.0 Connect-or-cut the dead cognitive modules.** For each of
+  `proactive-nudges`, `domain-anticipation`, `capability-intelligence`: either
+  wire it into a real surface with a visible effect, or delete it (keep the idea
+  in this doc). *Accept:* no module in `src/lib` claims to be intelligence while
+  importing into nothing. Trust is the product.
+
+Turn the existing seeds (`listening-layer`, `conversation-engine`,
+`outcome_states`) from reactive into a persistent, proactive operator.
+**Guardrails on every slice:** opt-in, transparent, a quiet mode, human approval
+for consequential actions.
 
 - ⏳ **3.1 Living project memory** — a structured model of *what you're building
   and why*, persistent across sessions. On return: "here's where you were, and
@@ -111,8 +126,86 @@ policy** so it's proactive, not noisy.
 
 ---
 
+# The North-Star Bets  *(the "liquid-gold" list)*
+
+If we had unlimited resources, these are the swings that make Quantora a
+category-definer instead of one of a dozen prompt-to-app tools. The thesis:
+**everyone can generate an app now — that race is over. The moat is the
+*outcome operator*: a system that builds it, proves it works, remembers why you
+wanted it, watches it in the wild, and acts to make the outcome better.** No
+competitor (v0, Lovable, Bolt, Replit, Copilot, Fello) ties
+generate → verify → remember → monitor → act into one loop. We already own the
+rare pieces (Verifier, `outcome_states`, grounding). These bets connect them.
+
+## Phase 6 — Agentic Automations  *(from a tool you visit → an operator that works while you sleep)*
+
+The paradigm shift. Fello/Copilot "automations" are generic dev-ops (issue
+triage, changelogs). Ours must be **outcome-native**: agents that act on *the
+user's published thing*, powered by the cron infra we already run + grounding +
+the Verifier. This is Phase 3.2 made concrete and user-facing.
+
+- ⏳ **6.1 Automations surface** — a first-class "Automations" area: create,
+  schedule (cron) or event-trigger, pause, and see run history. Reuse the
+  existing cron + `CRON_SECRET` pattern; each run is a bounded agent pass with a
+  transcript.
+- ⏳ **6.2 Outcome-native recipes** (not dev-ops clones):
+  - *Watcher:* "watch my site; when mobile bounce/error spikes, draft a fix PR."
+  - *Growth:* "every Monday, check conversion and propose one concrete change."
+  - *Market radar:* "when a competitor's pricing/page changes (grounding), brief
+    me and draft a response section."
+  - *Freshness:* "keep the menu/hours/stock in sync from a source I point to."
+- ⏳ **6.3 The restraint policy** — proactivity budget, quiet hours, and
+  human-approval gates for anything consequential (deploys, spend, emails).
+  *Accept:* an automation ran overnight and produced a reviewable, reversible
+  proposal — not a surprise change. **This is the "not a gimmick" bar.**
+
+## Phase 7 — The Generative Studio  *(generation beyond code)*
+
+Today we generate markup. A launch-ready outcome needs identity, content, and
+data. Lean on multi-modal + image models, all judged by the Verifier.
+
+- ⏳ **7.1 Generative brand system** — from a one-line brief, generate a coherent
+  identity (palette, type pairing, logo via image gen, voice) and apply it
+  across the whole build, not per-page guesses.
+- ⏳ **7.2 Launch-ready content** — real copy, product descriptions, and images
+  (image models) instead of lorem-ipsum/stock; consent-gated.
+- ⏳ **7.3 Realistic seed data** — generate demo data so an app *feels* alive on
+  first render.
+- ⏳ **7.4 Multi-modal input** — sketch/screenshot → app (extends the existing
+  paste-image); "make it look like this" from a reference.
+- ⏳ **7.5 Generative variants** — pairs with 2.1 Best-of-N: show 3 distinct
+  directions, Verifier-ranked, user picks the taste.
+
+## Phase 8 — World-class product IA  *(the left nav that signals a platform)*
+
+The current nav reads like a builder; it should read like an operating system
+for outcomes. Proposed spine (each a real surface, no dead entries):
+
+- ⏳ **8.1 Projects = the Outcome Graph** — promote `outcome_states` from a hidden
+  table to the primary object: each project a living card (goal, status, last
+  action, **next best step**), resumable across sessions. This is Phase 3.1 made
+  visible and becomes the nav's backbone.
+- ⏳ **8.2 Automations** — Phase 6, surfaced in nav.
+- ⏳ **8.3 Insights / Monitoring** — post-launch outcomes (traffic, errors,
+  conversion) feeding Phase 3.2.
+- ⏳ **8.4 "Quantora is working…" activity rail** — a persistent, honest view of
+  what agents are doing right now (the proactive layer made visible, never
+  faked). Models & Vault stay as-is.
+  *Accept:* every nav item maps to a live capability; nothing is a placeholder.
+
+---
+
 ## Suggested order of attack
 
-`0.1 sandbox` → `1.x Stripe` → `3.1 memory` → `2.1 best-of-N` → `3.2 monitoring`
-→ `4.1 desktop`, with Phase 5 hygiene interleaved and Phase 0.2/0.3 as quick
-wins between features.
+**Foundations first, then the swing.**
+`0.3 efficiency` → `3.0 connect-or-cut` (integrity gate) → `1.x Stripe` →
+`3.1 memory` / `8.1 Outcome Graph nav` (same object) → `2.1 best-of-N` +
+`7.5 variants` → `6.x Automations` (the flagship) → `3.2 monitoring` /
+`8.3 insights` → `7.x Generative Studio` → `4.1 desktop`, with Phase 5 hygiene
+interleaved.
+
+*Sequencing logic:* **3.0 is non-negotiable and early** — we do not build new
+intelligence on top of dead intelligence. Memory (3.1) and the Outcome-Graph nav
+(8.1) are the same object seen two ways, so they ship together. Automations
+(Phase 6) is the headline bet but depends on memory + monitoring being real, so
+it comes after them, not before.
