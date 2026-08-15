@@ -19,7 +19,7 @@ export function useChatStream({
   setLastPrompt
 }) {
   const abortControllerRef = useRef(null);
-  const { logModelFailure } = usePCLMemory();
+  const { logModelFailure, getLearnedBehaviors } = usePCLMemory();
   
   const cancelStream = () => {
     if (abortControllerRef.current) {
@@ -241,6 +241,11 @@ export function useChatStream({
     updateActiveMessages(prev => [...prev, initialAiMsg]);
 
     const executeSingleModel = async (modelToUse, attempt = 1, promptOverride = null) => {
+      const learned = getLearnedBehaviors();
+      let finalPromptOverride = promptOverride || '';
+      if (learned) {
+        finalPromptOverride = finalPromptOverride ? (finalPromptOverride + '\n\n' + learned) : learned;
+      }
       try {
         abortControllerRef.current = new AbortController();
         const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
@@ -251,7 +256,7 @@ export function useChatStream({
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            message: promptOverride ? text + '\n\n' + promptOverride : text,
+            message: finalPromptOverride ? text + '\n\n' + finalPromptOverride : text,
             modelId: modelToUse.id,
             modelName: modelToUse.name,
             history: cleanMessages,

@@ -59,5 +59,39 @@ export function usePCLMemory() {
     mem.preferences[modelId] = (mem.preferences[modelId] || 0) + score;
     saveMemory(mem);
   };
-  return { logModelFailure, checkModelHealth, clearModelHealth, logPreference };
+
+  const logFeedback = (prompt, responseText, isPositive) => {
+    if (isPositive) return; // For now, we only learn from mistakes
+    const mem = getMemory();
+    if (!mem.learnedBehaviors) mem.learnedBehaviors = [];
+    
+    // Store the failure signature
+    mem.learnedBehaviors.push({
+      timestamp: Date.now(),
+      failedPrompt: prompt,
+      badResponseSnippet: responseText.substring(0, 200) + '...'
+    });
+    
+    // Keep only the last 5 corrections to avoid blowing up the system prompt context window
+    if (mem.learnedBehaviors.length > 5) {
+      mem.learnedBehaviors.shift();
+    }
+    saveMemory(mem);
+  };
+
+  const getLearnedBehaviors = () => {
+    const mem = getMemory();
+    if (!mem.learnedBehaviors || mem.learnedBehaviors.length === 0) return null;
+    
+    let instructions = "⚠️ PCL COGNITIVE MEMORY ALERT - DO NOT REPEAT PAST MISTAKES ⚠️\n";
+    instructions += "In previous interactions, you failed to follow instructions. Learn from these failures:\n";
+    
+    mem.learnedBehaviors.forEach((b, i) => {
+      instructions += `\n[Failure ${i+1}] When the user asked: "${b.failedPrompt}", you incorrectly responded with: "${b.badResponseSnippet}". DO NOT repeat this behavior. Strictly obey the user's requested persona and intent without hallucinating platform philosophy.`;
+    });
+    
+    return instructions;
+  };
+
+  return { logModelFailure, checkModelHealth, clearModelHealth, logPreference, logFeedback, getLearnedBehaviors };
 }

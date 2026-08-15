@@ -1,6 +1,6 @@
 import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -409,7 +409,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasCode, setCanvasCode] = useState('');
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
-  const { checkModelHealth, logPreference } = usePCLMemory();
+  const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
   
   // Pillar 4: Predictive Code Assist State
@@ -968,6 +968,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && !isActiveGenerating && (
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              onClick={() => {
+                                alert('Thank you! Quantora learned that this was a good response.');
+                              }}
+                              style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                              title="Helpful response"
+                            >
+                              <ThumbsUp size={14} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                // Find the preceding user prompt
+                                const userMsg = messages.slice().reverse().find(m => m.id < msg.id && m.sender === 'user');
+                                logFeedback(userMsg ? userMsg.text : '', msg.text, false);
+                                alert('Feedback logged. Cognitive Memory updated. Quantora will not repeat this mistake.');
+                              }}
+                              style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                              title="Incorrect response"
+                            >
+                              <ThumbsDown size={14} />
+                            </button>
+                          </div>
                           
                           {runnableCode && (
                             <button
