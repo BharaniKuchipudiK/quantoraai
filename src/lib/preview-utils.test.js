@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildPreviewSandbox,
   injectPreviewHarness,
   isCriticalResourceError,
   isIgnorableRuntimeError,
@@ -38,4 +39,22 @@ test('still ignores opaque script errors', () => {
 test('embed shell html includes relaxed csp and postMessage bridge', () => {
   assert.match(PREVIEW_EMBED_SHELL_HTML, /frame-ancestors 'self'/);
   assert.match(PREVIEW_EMBED_SHELL_HTML, /__quantoraPreviewHtml/);
+});
+
+// SECURITY REGRESSION GUARD — do not weaken. Untrusted generated code runs in
+// the default (no wcUrl) preview path; if it ever gains `allow-same-origin` it
+// can read the app's localStorage API keys. These assertions fail the build if
+// that protection is removed.
+test('preview sandbox denies allow-same-origin to untrusted generated code', () => {
+  const sandbox = buildPreviewSandbox({ trustedRuntimeUrl: null });
+  assert.doesNotMatch(sandbox, /allow-same-origin/, 'untrusted embed must be opaque-origin');
+  assert.match(sandbox, /allow-scripts/);
+  // default call (no args) must be equally safe
+  assert.doesNotMatch(buildPreviewSandbox(), /allow-same-origin/);
+});
+
+test('preview sandbox grants allow-same-origin only to the WebContainer runtime', () => {
+  const sandbox = buildPreviewSandbox({ trustedRuntimeUrl: 'https://abc.webcontainer.io' });
+  assert.match(sandbox, /allow-same-origin/, 'WebContainer needs same-origin for its own cross-origin host');
+  assert.match(sandbox, /allow-scripts/);
 });
