@@ -6,6 +6,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import { useChatStream } from '../hooks/useChatStream';
+import { useStudioSession } from '../hooks/useStudioSession.js';
 const LiveIosCalculator = lazy(() => import('./interactive/LiveIosCalculator'));
 const LiveBeatMaker = lazy(() => import('./interactive/LiveBeatMaker'));
 const LiveQuantumSimulator = lazy(() => import('./interactive/LiveQuantumSimulator'));
@@ -187,47 +188,20 @@ const extractRunnableCode = (text) => {
 
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
-  const defaultGreetingMsg = {
-    id: 1,
-    sender: 'ai',
-    modelUsed: selectedModel ? selectedModel.name : 'Gemini 3 Flash',
-    text: `Hello ${user?.name ? user.name.split(' ')[0] : 'Creator'}! What would you like to create or ask today?`,
-    type: 'greeting'
-  };
-
-  const [chatSessions, setChatSessions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('quantora_chat_sessions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [
-      {
-        id: 'session-1',
-        title: 'New Chat',
-        createdAt: Date.now(),
-        messages: [defaultGreetingMsg]
-      }
-    ];
-  });
-
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    return chatSessions[0]?.id || 'session-1';
-  });
+  const {
+    chatSessions,
+    activeSessionId,
+    setActiveSessionId,
+    messages,
+    updateActiveMessages,
+    handleCreateNewChat,
+    handleDeleteChat
+  } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Derive current session and messages
-  const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0] || {
-    id: 'session-1',
-    title: 'New Chat',
-    messages: [defaultGreetingMsg]
-  };
-  const messages = activeSession.messages || [defaultGreetingMsg];
+  const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
 
   /*
    * Tell the ambient background to step back once there is work on screen.
@@ -245,36 +219,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return () => root.removeAttribute('data-workspace');
   }, [hasConversation]);
 
-  // Function to update current active session's messages
-  const updateActiveMessages = (updater) => {
-    setChatSessions(prevSessions => {
-      const updated = prevSessions.map(session => {
-        if (session.id === activeSessionId) {
-          const newMsgs = typeof updater === 'function' ? updater(session.messages) : updater;
 
-          let newTitle = session.title;
-          const firstUserMsg = newMsgs.find(m => m.sender === 'user');
-          if (firstUserMsg && (session.title === 'New Chat' || session.title === 'Welcome to Quantora')) {
-            newTitle = firstUserMsg.text.slice(0, 32) + (firstUserMsg.text.length > 32 ? '...' : '');
-          }
-
-          return {
-            ...session,
-            title: newTitle,
-            messages: newMsgs
-          };
-        }
-        return session;
-      });
-
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  };
 
   // --- Pillar 4: Predictive Code Assist Logic ---
   const handleCodeChange = (e) => {
@@ -372,48 +317,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const handleCreateNewChat = () => {
-    const newId = 'session-' + Date.now();
-    const newSession = {
-      id: newId,
-      title: 'New Chat',
-      createdAt: Date.now(),
-      messages: [defaultGreetingMsg]
-    };
 
-    setChatSessions(prev => {
-      const updated = [newSession, ...prev];
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-    setActiveSessionId(newId);
-  };
-
-  const handleDeleteChat = (e, sessionId) => {
-    e.stopPropagation();
-    setChatSessions(prev => {
-      const filtered = prev.filter(s => s.id !== sessionId);
-      const fallback = filtered.length > 0 ? filtered : [{
-        id: 'session-' + Date.now(),
-        title: 'New Chat',
-        createdAt: Date.now(),
-        messages: [defaultGreetingMsg]
-      }];
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(fallback[0].id);
-      }
-      try {
-        localStorage.setItem('quantora_chat_sessions', JSON.stringify(fallback));
-      } catch (err) {
-        console.error(err);
-      }
-      return fallback;
-    });
-  };
 
   const [localInputText, setLocalInputText] = useState('');
   const inputText = externalInputText !== undefined ? externalInputText : localInputText;
