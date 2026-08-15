@@ -396,6 +396,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
+  const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
@@ -1055,6 +1056,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             );
           });
   }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating]);
+
+  useEffect(() => {
+    if (!isGenerating && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.sender === 'ai' && lastMsg.id !== lastProcessedMessageId) {
+        setLastProcessedMessageId(lastMsg.id);
+        const code = extractRunnableCode(lastMsg.text);
+        if (code) {
+           setWorkspaceCode(code);
+           setWorkspaceActiveTab('preview');
+           setIsWorkspaceMode(true);
+        }
+      }
+    }
+  }, [isGenerating, messages, lastProcessedMessageId]);
 
   return (
     <div style={{
@@ -2208,7 +2224,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexShrink: 0
           }}>
             <div style={{ display: 'flex', gap: '4px', height: '100%' }}>
-              {['App.jsx', 'styles.css', 'package.json'].map(tab => (
+              {['preview', 'code'].map(tab => (
                 <button
                   key={tab}
                   onClick={() => setWorkspaceActiveTab(tab)}
@@ -2232,16 +2248,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     marginTop: 'auto'
                   }}
                 >
-                  {tab.includes('.jsx') ? <Code2 size={14} /> : <FileText size={14} />}
-                  {tab}
+                  {tab === 'code' ? <Code2 size={14} /> : <Play size={14} />}
+                  {tab === 'preview' ? 'Preview' : 'Code'}
                 </button>
               ))}
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Play size={12} /> Preview App
-              </button>
+              {workspaceActiveTab === 'code' && (
+                 <button 
+                   onClick={() => setWorkspaceActiveTab('preview')}
+                   style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                   <Play size={12} /> Preview App
+                 </button>
+              )}
               <button 
                 onClick={() => setIsWorkspaceMode(false)}
                 style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
@@ -2251,64 +2271,75 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           </div>
 
-          {/* Canvas Editor Area (Pillar 4: Predictive Assist) */}
-          <div style={{ flex: 1, overflow: 'auto', background: '#0d1127', padding: '24px', position: 'relative' }}>
-             {/* Line Numbers */}
-             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none', zIndex: 10 }}>
-                {Array.from({ length: Math.max(20, (workspaceCode.match(/\n/g) || []).length + 2) }).map((_, i) => (
-                  <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
-                ))}
-             </div>
-             
-             {/* Textarea for actual input */}
-             <textarea
-                value={workspaceCode}
-                onChange={handleCodeChange}
-                onKeyDown={handleCodeKeyDown}
-                spellCheck="false"
-                style={{
-                  position: 'absolute',
-                  top: '24px',
-                  left: '60px',
-                  width: 'calc(100% - 84px)',
-                  height: 'calc(100% - 48px)',
-                  background: 'transparent',
-                  color: 'transparent',
-                  caretColor: '#e2e8f0',
-                  border: 'none',
-                  outline: 'none',
-                  resize: 'none',
-                  fontFamily: '"Fira Code", monospace',
-                  fontSize: '0.9rem',
-                  lineHeight: '1.6',
-                  whiteSpace: 'pre-wrap',
-                  zIndex: 2,
-                  margin: 0,
-                  padding: 0
-                }}
-             />
-             
-             {/* Syntax Highlighted & Ghost Text Layer */}
-             <pre style={{
-                position: 'absolute',
-                top: '24px',
-                left: '60px',
-                width: 'calc(100% - 84px)',
-                pointerEvents: 'none',
-                margin: 0,
-                padding: 0,
-                fontFamily: '"Fira Code", monospace',
-                fontSize: '0.9rem',
-                lineHeight: '1.6',
-                color: '#e2e8f0',
-                outline: 'none',
-                whiteSpace: 'pre-wrap',
-                zIndex: 1
-             }}>
-                {workspaceCode}
-                {ghostText && <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>{ghostText}</span>}
-                {!workspaceCode && <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>{'// Quantora FX Interactive Canvas\n// Start typing or tell Quantora to build something...'}</span>}
-             </pre>
+          {/* Workspace Content Area */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden' }}>
+             {workspaceActiveTab === 'preview' ? (
+                <LivePreviewCanvas 
+                  code={workspaceCode} 
+                  isLight={isLight} 
+                  onClose={() => setIsWorkspaceMode(false)}
+                  showHeader={false}
+                />
+             ) : (
+               <>
+                 {/* Line Numbers */}
+                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none', zIndex: 10 }}>
+                    {Array.from({ length: Math.max(20, (workspaceCode.match(/\n/g) || []).length + 2) }).map((_, i) => (
+                      <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
+                    ))}
+                 </div>
+                 
+                 {/* Textarea for actual input */}
+                 <textarea
+                    value={workspaceCode}
+                    onChange={handleCodeChange}
+                    onKeyDown={handleCodeKeyDown}
+                    spellCheck="false"
+                    style={{
+                      position: 'absolute',
+                      top: '24px',
+                      left: '60px',
+                      width: 'calc(100% - 84px)',
+                      height: 'calc(100% - 48px)',
+                      background: 'transparent',
+                      color: 'transparent',
+                      caretColor: '#e2e8f0',
+                      border: 'none',
+                      outline: 'none',
+                      resize: 'none',
+                      fontFamily: '"Fira Code", monospace',
+                      fontSize: '0.9rem',
+                      lineHeight: '1.6',
+                      whiteSpace: 'pre-wrap',
+                      zIndex: 2,
+                      margin: 0,
+                      padding: 0
+                    }}
+                 />
+                 
+                 {/* Syntax Highlighted & Ghost Text Layer */}
+                 <pre style={{
+                    position: 'absolute',
+                    top: '24px',
+                    left: '60px',
+                    width: 'calc(100% - 84px)',
+                    pointerEvents: 'none',
+                    margin: 0,
+                    padding: 0,
+                    fontFamily: '"Fira Code", monospace',
+                    fontSize: '0.9rem',
+                    lineHeight: '1.6',
+                    color: '#e2e8f0',
+                    outline: 'none',
+                    whiteSpace: 'pre-wrap',
+                    zIndex: 1
+                 }}>
+                    {workspaceCode}
+                    {ghostText && <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>{ghostText}</span>}
+                    {!workspaceCode && <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>{'// Quantora FX Interactive Canvas\n// Start typing or tell Quantora to build something...'}</span>}
+                 </pre>
+               </>
+             )}
           </div>
         </div>
       )}

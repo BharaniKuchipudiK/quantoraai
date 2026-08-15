@@ -1,0 +1,7 @@
+# Quantora UI/UX Architectural Guard Rails
+
+1. **Additive, Not Destructive**: Never delete or overwrite a core UI feature (like a modal or a tab) to build another one. Enhance and integrate. If the user asks for a new view, check if it conflicts with an existing one before ripping it out.
+2. **Context is Sacred**: Modals and Split Screens serve different cognitive purposes. A modal is for immersive, distraction-free viewing. A split screen is for side-by-side iterative working. Both must exist and be explicitly controllable by the user.
+3. **State Isolation**: UI states (like `canvasOpen` for the modal vs. `isWorkspaceMode` for the split screen) must be strictly decoupled so they don't break one another.
+4. **Proactive, Not Intrusive**: "Smart" features (like auto-opening panels) must degrade gracefully and never rip control away from the user abruptly without a clear way to dismiss them.
+5. **No Blind Bandaids**: Do not apply superficial state changes (like hijacking tab navigation) to avoid doing structural layout work. If a layout needs to change, refactor the flexbox/CSS structure appropriately.
