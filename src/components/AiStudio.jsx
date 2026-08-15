@@ -409,7 +409,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasCode, setCanvasCode] = useState('');
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
-  const { checkModelHealth } = usePCLMemory();
+  const { checkModelHealth, logPreference } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
   
   // Pillar 4: Predictive Code Assist State
@@ -814,14 +814,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                         <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
-                          {msg.modelA.text?.includes('```') && (
-                            <button
-                              onClick={() => openCanvasWithCode(msg.modelA.text)}
-                              style={{ background: 'rgba(249, 115, 22, 0.15)', border: '1px solid rgba(249, 115, 22, 0.4)', color: '#f97316', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Play size={10} /> Live Sandbox
-                            </button>
-                          )}
+                          
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.modelA.text);
+                                    setCopiedMessageId(`${msg.id}-A`);
+                                    setTimeout(() => setCopiedMessageId(null), 2000);
+                                  }}
+                                  style={{ background: 'transparent', border: 'none', color: copiedMessageId === `${msg.id}-A` ? '#10b981' : subtextColor, cursor: 'pointer', padding: 0 }}
+                                  title="Copy response"
+                                >
+                                  {copiedMessageId === `${msg.id}-A` ? <Check size={14} /> : <Copy size={14} />}
+                                </button>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  logPreference(msg.modelA.modelName);
+                                  alert('Preference logged to Cognitive Memory!');
+                                }}
+                                style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#3b82f6', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                👍 Select Model A
+                              </button>
+                            </div>
+
                         </div>
                       </div>
 
@@ -867,14 +885,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </div>
                         <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
-                          {msg.modelB.text?.includes('```') && (
-                            <button
-                              onClick={() => openCanvasWithCode(msg.modelB.text)}
-                              style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#3b82f6', padding: '4px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Play size={10} /> Live Sandbox
-                            </button>
-                          )}
+                          
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(msg.modelB.text);
+                                    setCopiedMessageId(`${msg.id}-B`);
+                                    setTimeout(() => setCopiedMessageId(null), 2000);
+                                  }}
+                                  style={{ background: 'transparent', border: 'none', color: copiedMessageId === `${msg.id}-B` ? '#10b981' : subtextColor, cursor: 'pointer', padding: 0 }}
+                                  title="Copy response"
+                                >
+                                  {copiedMessageId === `${msg.id}-B` ? <Check size={14} /> : <Copy size={14} />}
+                                </button>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  logPreference(msg.modelB.modelName);
+                                  alert('Preference logged to Cognitive Memory!');
+                                }}
+                                style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#3b82f6', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                👍 Select Model B
+                              </button>
+                            </div>
+
                         </div>
                       </div>
                     </div>

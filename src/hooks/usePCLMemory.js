@@ -52,5 +52,12 @@ export function usePCLMemory() {
     saveMemory(mem);
   };
 
-  return { logModelFailure, checkModelHealth, clearModelHealth };
+  const logPreference = (modelId, score = 1) => {
+    if (!modelId) return;
+    const mem = getMemory();
+    if (!mem.preferences) mem.preferences = {};
+    mem.preferences[modelId] = (mem.preferences[modelId] || 0) + score;
+    saveMemory(mem);
+  };
+  return { logModelFailure, checkModelHealth, clearModelHealth, logPreference };
 }
