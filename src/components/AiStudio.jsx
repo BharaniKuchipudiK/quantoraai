@@ -420,6 +420,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const [showMentionMenu, setShowMentionMenu] = useState(false);
 
+  const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, isGenerating]);
+
   const handleInputTextChange = (e) => {
     const text = e.target.value;
     setInputText(text);
@@ -985,6 +994,47 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     </div>
                   )}
 
+                  {/* Minimalist User Message Footer */}
+                  {msg.sender === 'user' && (
+                    <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', paddingRight: '4px' }}>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(msg.text);
+                          setCopiedMessageId(msg.id);
+                          setTimeout(() => setCopiedMessageId(null), 2000);
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: copiedMessageId === msg.id ? '#10b981' : subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: copiedMessageId === msg.id ? 1 : 0.4, transition: 'all 0.2s', padding: 0 }}
+                        onMouseEnter={(e) => copiedMessageId !== msg.id && (e.currentTarget.style.opacity = 1)}
+                        onMouseLeave={(e) => copiedMessageId !== msg.id && (e.currentTarget.style.opacity = 0.4)}
+                        title="Copy prompt"
+                      >
+                        {copiedMessageId === msg.id ? <Check size={14} /> : <Copy size={14} />}
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          setInputText(msg.text);
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.4, transition: 'opacity 0.2s', padding: 0 }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.4}
+                        title="Edit prompt"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                      </button>
+                      
+                      <button 
+                        onClick={() => alert("Prompt pushed to journey flow.")}
+                        style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.4, transition: 'opacity 0.2s', padding: 0 }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = 0.4}
+                        title="Push to Dream Canvas"
+                      >
+                        <Workflow size={14} />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Inline API Key Input Prompt */}
                   {msg.isAuthPrompt && (
                     <div style={{
@@ -1134,16 +1184,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </button>
         </div>
 
-        {/* Starter Templates Section */}
+        {/* Specialized Agents Section */}
         <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
-          Starter Templates
+          Specialized Agents
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', marginBottom: '24px' }}>
           {[
-            { title: 'Task Manager App', icon: <FileText size={15} color="#f97316" />, prompt: 'Build a full-stack task manager app with category filters and status tracking' },
-            { title: 'iOS Calculator', icon: <Calculator size={15} color="#3b82f6" />, prompt: 'Build an interactive iOS style calculator app' },
-            { title: 'AI Beat Synthesizer', icon: <Music size={15} color="#ec4899" />, prompt: 'Build an interactive AI Beat Synthesizer with customizable BPM' },
-            { title: 'Quantum Simulator', icon: <Atom size={15} color="#8b5cf6" />, prompt: 'Build an interactive Quantum Circuit & Bell state entanglement simulator' }
+            { title: 'Travel Guide AI', icon: <Globe size={15} color="#3b82f6" />, prompt: 'Act as a world-class travel planner. I want to plan a trip.' },
+            { title: 'Finance Advisor', icon: <PieChart size={15} color="#10b981" />, prompt: 'Act as a strict, data-driven financial analyst. Help me evaluate my portfolio.' },
+            { title: 'Study Tutor', icon: <Lightbulb size={15} color="#f59e0b" />, prompt: 'Act as an encouraging academic tutor using the Socratic method. Teach me something new.' },
+            { title: 'Research Analyst', icon: <Layers size={15} color="#8b5cf6" />, prompt: 'Act as a deep-dive research assistant. Let\'s explore a complex topic.' }
           ].map((card, idx) => (
             <div
               key={idx}
@@ -1444,7 +1494,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Messages Stream / Initial Hero State */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px' }}>
+      <div ref={chatContainerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px', position: 'relative' }}>
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
           <div style={{ 
@@ -1555,6 +1605,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <Sparkles size={16} className="animate-spin" /> {selectedModel ? selectedModel.name : 'Qwen 2.5 Coder'} is thinking...
           </div>
         )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Floating Scroll Navigation */}
+      <div style={{ position: 'absolute', bottom: '110px', right: '30px', display: 'flex', flexDirection: 'column', gap: '8px', zIndex: 100 }}>
+        <button
+          onClick={() => chatContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: subtextColor, width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', transition: 'background 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,0.7)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'}
+          title="Scroll to top"
+        >
+          <ChevronUp size={18} />
+        </button>
+        <button
+          onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+          style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: subtextColor, width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', transition: 'background 0.2s' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,0.7)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'}
+          title="Scroll to bottom"
+        >
+          <ChevronDown size={18} />
+        </button>
       </div>
 
       {/* Clean Prompt Console Input Area */}
