@@ -114,6 +114,57 @@ export function injectPreviewHarness(html) {
   return bundle + safe;
 }
 
+export function prepareCodeForPreview(code) {
+  if (!code) return '';
+  const str = String(code).trim();
+  
+  // If it's already an HTML document, return it as is
+  if (/^<!DOCTYPE html>/i.test(str) || /^<html/i.test(str) || /<head>/i.test(str)) {
+    return str;
+  }
+  
+  // Detect if it's a raw React/JSX component
+  if (str.includes('import React') || str.includes('export default function') || str.includes('useState(')) {
+    // Strip import/export statements that break browser execution
+    let cleanCode = str
+      .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
+      .replace(/export\s+default\s+/g, '');
+    
+    // Extract component name
+    const match = cleanCode.match(/function\s+([A-Za-z0-9_]+)/);
+    const componentName = match ? match[1] : 'App';
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; padding: 0; font-family: system-ui, sans-serif; background: #ffffff; color: #0f172a; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext } = React;
+    ${cleanCode}
+    
+    // Auto-mount the detected component
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<${componentName} />);
+  </script>
+</body>
+</html>`;
+  }
+  
+  // Fallback: If it's just a snippet, wrap it in a body
+  return `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body>${str}</body></html>`;
+}
+
 export function usesTailwindCdn(html) {
   return /cdn\.tailwindcss\.com/i.test(String(html || ''));
 }

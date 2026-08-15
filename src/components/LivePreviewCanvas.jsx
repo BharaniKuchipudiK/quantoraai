@@ -4,6 +4,7 @@ import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
   injectPreviewHarness,
+  prepareCodeForPreview,
   isIgnorableRuntimeError,
   isCriticalResourceError,
   revokePreviewEmbedObjectUrl,
@@ -114,7 +115,8 @@ export default function LivePreviewCanvas({
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
-    frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(html) }, '*');
+    const preparedHtml = prepareCodeForPreview(html);
+    frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
   }, []);
 
   useEffect(() => {
