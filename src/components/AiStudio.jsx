@@ -236,6 +236,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const val = e.target.value;
     const pos = e.target.selectionStart;
     setWorkspaceCode(val);
+    
+    // Update VFS if we are editing a specific file
+    if (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) {
+      setVfs(prev => ({
+        ...prev,
+        [workspaceActiveTab]: { ...prev[workspaceActiveTab], content: val }
+      }));
+    }
     setCursorPos(pos);
     setGhostText('');
     
@@ -2359,7 +2367,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexShrink: 0
           }}>
             <div style={{ display: 'flex', gap: '4px', height: '100%' }}>
-              {['preview', 'code'].map(tab => (
+              {(Object.keys(vfs).length > 0 ? ['preview', ...Object.keys(vfs)] : ['preview', 'code']).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setWorkspaceActiveTab(tab)}
@@ -2383,8 +2391,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     marginTop: 'auto'
                   }}
                 >
-                  {tab === 'code' ? <Code2 size={14} /> : <Play size={14} />}
-                  {tab === 'preview' ? 'Preview' : 'Code'}
+                  {tab === 'preview' ? <Play size={14} /> : <Code2 size={14} />}
+                  {tab === 'preview' ? 'Preview' : tab === 'code' ? 'Code' : tab}
                 </button>
               ))}
             </div>
@@ -2419,14 +2427,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                <>
                  {/* Line Numbers */}
                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none', zIndex: 10 }}>
-                    {Array.from({ length: Math.max(20, (workspaceCode.match(/\n/g) || []).length + 2) }).map((_, i) => (
-                      <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
-                    ))}
+                    {(function(){
+                      const currentText = (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode;
+                      return Array.from({ length: Math.max(20, (currentText.match(/\n/g) || []).length + 2) }).map((_, i) => (
+                        <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
+                      ));
+                    })()}
                  </div>
                  
                  {/* Textarea for actual input */}
+                 
                  <textarea
-                    value={workspaceCode}
+                    value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
                     onChange={handleCodeChange}
                     onKeyDown={handleCodeKeyDown}
                     spellCheck="false"
