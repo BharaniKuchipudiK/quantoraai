@@ -407,6 +407,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
+  const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
   const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
@@ -474,7 +475,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         ? rawText.replace(/```(?:html|javascript|js|css)?\n([\s\S]*?)```/gi, '$1')
         : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
     }
-    setPreviewCode(cleanCode);
+    setCanvasCode(cleanCode);
     setCanvasOpen(true);
   };
 
@@ -1724,9 +1725,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
                 }}
                 onClick={() => {
-                  if (onSelectModel && availableModels) {
+                  if (setSelectedModel && availableModels) {
                     const found = availableModels.find(m => m.name === model.name);
-                    if (found) onSelectModel(found);
+                    if (found) setSelectedModel(found);
                   }
                 }}
                 >

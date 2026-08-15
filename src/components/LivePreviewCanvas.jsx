@@ -560,6 +560,32 @@ export default function LivePreviewCanvas({
     </button>
   );
 
+  // Deploy the current artifact to GCP Cloud Run. Mirrors handlePublish; the
+  // button referenced this handler before it existed, which crashed the app.
+  const handleGcpDeployClick = async () => {
+    if (isDeployingGcp) return;
+    if (!user) { onRequireAuth?.(); return; }
+    setIsDeployingGcp(true);
+    try {
+      const res = await fetch('/api/deploy-gcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ code: currentCode, projectName: suggestedProjectName || 'quantora-app' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'GCP deployment failed');
+      const url = data.url || data.serviceUrl || null;
+      if (url) setGcpUrl(url);
+    } catch (err) {
+      const message = err.message || 'GCP deployment failed';
+      if (message.toLowerCase().includes('sign in')) onRequireAuth?.();
+      alert(`GCP deployment failed: ${message}`);
+    } finally {
+      setIsDeployingGcp(false);
+    }
+  };
+
   const deployGcpButton = (
     <button onClick={handleGcpDeployClick} disabled={isDeployingGcp} title="Deploy Full-Stack to GCP Cloud Run" style={{
       background: isDeployingGcp ? '#94a3b8' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',

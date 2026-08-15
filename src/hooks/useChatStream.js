@@ -216,7 +216,6 @@ export function useChatStream({
       try {
         await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
       } catch (err) {
-      if (typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
       if (err.name === 'AbortError' || err === 'timeout') {
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
