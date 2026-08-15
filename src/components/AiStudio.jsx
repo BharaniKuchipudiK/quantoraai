@@ -774,6 +774,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const renderedChatFeed = React.useMemo(() => {
     return messages.slice(1).map(msg => {
       const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
+      const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       return (
               <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                 {/* Avatar */}
@@ -956,7 +957,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       </div>
 
                       {/* Minimalist Message Footer */}
-                      {msg.sender === 'ai' && (
+                      {msg.sender === 'ai' && !isActiveGenerating && (
                         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px', flexWrap: 'wrap' }}>
                           
                           {runnableCode && (
@@ -1133,7 +1134,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating]);
 
   return (
     <div style={{
