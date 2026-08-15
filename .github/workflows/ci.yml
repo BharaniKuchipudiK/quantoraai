@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck
         run: npm run lint
 
+      - name: Lint (no-undef, frontend)
+        run: npm run lint:undef
+
       - name: Run all tests
         run: npm run test:all
 
