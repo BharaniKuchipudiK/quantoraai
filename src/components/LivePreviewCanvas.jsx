@@ -10,6 +10,7 @@ import {
   revokePreviewEmbedObjectUrl,
 } from '../lib/preview-utils.js';
 import { getClientSecret } from '../lib/client-secrets.js';
+import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 
 /*
  * Live preview + verification loop.
@@ -416,12 +417,12 @@ export default function LivePreviewCanvas({
     failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
-  const previewFrame = currentCode && embedSrc ? (
+  const previewFrame = (currentCode && embedSrc) || wcUrl ? (
     <iframe
       ref={iframeRef}
       key={`${attempt}-${embedModeRef.current}`}
       title="Live Preview"
-      src={embedSrc}
+      src={wcUrl || embedSrc}
       onError={handleEmbedFrameError}
       sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
       style={{
