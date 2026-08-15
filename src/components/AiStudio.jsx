@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -2161,29 +2161,60 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <Workflow size={16} />
               </button>
 
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={(!inputText.trim() && !attachments.length) || isGenerating}
-                style={{
-                  background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
-                  border: 'none',
-                  color: (inputText.trim() || attachments.length)
-                    ? '#ffffff'
-                    : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '12px',
-                  cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease',
-                  fontWeight: 'bold',
-                  boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
-                }}
-              >
-                <Send size={14} />
-              </button>
+              {isGenerating ? (
+                <button
+                  onClick={() => cancelStream()}
+                  title="Stop generating"
+                  style={{
+                    background: isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: isLight ? '#64748b' : '#94a3b8',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    boxShadow: 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#ef4444';
+                    e.currentTarget.style.background = isLight ? '#fee2e2' : 'rgba(239, 68, 68, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = isLight ? '#64748b' : '#94a3b8';
+                    e.currentTarget.style.background = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+                  }}
+                >
+                  <Square size={14} fill="currentColor" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSendMessage()}
+                  disabled={!inputText.trim() && !attachments.length}
+                  style={{
+                    background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
+                    border: 'none',
+                    color: (inputText.trim() || attachments.length)
+                      ? '#ffffff'
+                      : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '12px',
+                    cursor: (inputText.trim() || attachments.length) ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    fontWeight: 'bold',
+                    boxShadow: (inputText.trim() || attachments.length) ? '0 4px 14px rgba(249, 115, 22, 0.35)' : 'none'
+                  }}
+                >
+                  <Send size={14} />
+                </button>
+              )}
             </div>
           </div>
         </div>
