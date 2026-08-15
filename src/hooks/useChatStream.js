@@ -15,6 +15,8 @@ export function useChatStream({
   secondModel,
   cognitiveLevel,
   canvasCode,
+  vfs,
+  isWorkspaceMode,
   messages,
   setLastPrompt,
   webSearchEnabled
@@ -436,8 +438,28 @@ export function useChatStream({
            
            
            // Clear text and run Coder
+           let coderPrompt = `Architect's Approved Implementation Plan:\n\n${architectPlan}\n\n---\n\nPlease execute this plan and write the final code for the original request.`;
            
-           executeSingleModel(targetModel, 1, `Architect's Approved Implementation Plan:\n\n${architectPlan}\n\n---\n\nPlease execute this plan and write the final code for the original request.`);
+           if (isWorkspaceMode && vfs && Object.keys(vfs).length > 0) {
+             coderPrompt += `\n\nIMPORTANT: We are editing an existing app. DO NOT rewrite entire files! Use exact Search/Replace diff blocks.
+             
+FORMAT:
+\`\`\`jsx filepath="filename.ext"
+<<<<
+exact lines of original code to replace (must match perfectly)
+====
+new lines of code
+>>>>
+\`\`\`
+
+You can output multiple search/replace blocks if needed.
+\nCURRENT VIRTUAL FILE SYSTEM:\n`;
+             for (const [filename, file] of Object.entries(vfs)) {
+               coderPrompt += `\n--- ${filename} ---\n\`\`\`${file.language || ''}\n${file.content}\n\`\`\`\n`;
+             }
+           }
+           
+           executeSingleModel(targetModel, 1, coderPrompt);
            return;
          }
        } catch (e) {

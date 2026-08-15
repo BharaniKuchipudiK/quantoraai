@@ -703,6 +703,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     arenaMode, secondModel,
     cognitiveLevel,
     canvasCode,
+    vfs,
+    isWorkspaceMode,
     messages,
     setLastPrompt,
     webSearchEnabled
