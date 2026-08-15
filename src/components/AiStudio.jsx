@@ -697,6 +697,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return messages.slice(1).map(msg => {
       const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
+      
+      // Hide empty AI message block while generating to avoid redundant avatar above "is thinking..." indicator
+      if (msg.sender === 'ai' && !msg.text && isActiveGenerating) {
+        return null;
+      }
+      
       return (
         <div key={msg.id} className="animate-slide-up" style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                 {/* Avatar */}
