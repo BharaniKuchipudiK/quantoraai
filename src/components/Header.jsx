@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
 
-export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight }) {
+const PROFILE_MENU_WIDTH = 320;
+const PROFILE_MENU_GUTTER = 12;
+
+export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [confirmModalType, setConfirmModalType] = useState(null);
@@ -10,6 +14,41 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   const modelRef = useRef(null);
   const profileRef = useRef(null);
+  const profileMenuRef = useRef(null);
+  const [profileMenuPosition, setProfileMenuPosition] = useState(null);
+
+  const positionProfileMenu = useCallback(() => {
+    const anchor = profileRef.current;
+    if (!anchor || typeof window === 'undefined') return;
+    const rect = anchor.getBoundingClientRect();
+    const headerBottom = anchor.closest('.app-header')?.getBoundingClientRect().bottom ?? rect.bottom;
+    const width = Math.min(PROFILE_MENU_WIDTH, window.innerWidth - (PROFILE_MENU_GUTTER * 2));
+    const left = Math.min(
+      Math.max(PROFILE_MENU_GUTTER, rect.right - width),
+      window.innerWidth - width - PROFILE_MENU_GUTTER,
+    );
+    const top = Math.max(rect.bottom, headerBottom) + 8;
+    setProfileMenuPosition({
+      top,
+      left,
+      width,
+      maxHeight: Math.max(180, window.innerHeight - top - PROFILE_MENU_GUTTER),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showProfileMenu) {
+      setProfileMenuPosition(null);
+      return undefined;
+    }
+    positionProfileMenu();
+    window.addEventListener('resize', positionProfileMenu);
+    window.addEventListener('scroll', positionProfileMenu, true);
+    return () => {
+      window.removeEventListener('resize', positionProfileMenu);
+      window.removeEventListener('scroll', positionProfileMenu, true);
+    };
+  }, [showProfileMenu, positionProfileMenu]);
 
   // Click Outside Listener to close dropdowns automatically!
   useEffect(() => {
@@ -17,16 +56,28 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       if (modelRef.current && !modelRef.current.contains(event.target)) {
         setShowModelDropdown(false);
       }
-      if (profileRef.current && !profileRef.current.contains(event.target)) {
+      if (
+        profileRef.current
+        && !profileRef.current.contains(event.target)
+        && !profileMenuRef.current?.contains(event.target)
+      ) {
+        setShowProfileMenu(false);
+      }
+    };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setShowModelDropdown(false);
         setShowProfileMenu(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, []);
 
@@ -72,18 +123,18 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
   return (
     <>
-    <header style={{
-      position: 'sticky',
+    <header className={`app-header${compact ? ' app-header--studio' : ''}`} style={{
+      position: 'relative',
       top: 0,
       zIndex: 100,
       background: isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 9, 19, 0.88)',
       backdropFilter: 'blur(20px)',
       borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)',
-      padding: '12px 24px',
+      padding: compact ? '6px 16px' : '12px 24px',
       transition: 'all 0.3s ease'
     }}>
-      <div style={{
-        maxWidth: '1400px',
+      <div className="app-header-inner" style={{
+        maxWidth: activeTab === 'studio' ? '1800px' : '1400px',
         margin: '0 auto',
         display: 'flex',
         alignItems: 'center',
@@ -93,16 +144,16 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       }}>
         {/* Vector SVG Brand Logo */}
         <div style={{ cursor: 'pointer' }} onClick={() => setActiveTab(user ? 'hub' : 'landing')}>
-          <QuantoraFullLogoSvg height={36} isDark={!isLight} />
+          <QuantoraFullLogoSvg height={compact ? 28 : 36} isDark={!isLight} tagline={compact ? '' : undefined} />
         </div>
 
         {/* Clean Navigation Tabs */}
         {user ? (
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '6px', background: navBg, padding: '4px', borderRadius: '12px', border: `1px solid ${navBorder}` }}>
+          <nav className="app-primary-nav" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: navBg, padding: '4px', borderRadius: '12px', border: `1px solid ${navBorder}` }}>
             <button
               onClick={() => setActiveTab('studio')}
               style={{
-                padding: '8px 18px',
+                padding: compact ? '6px 12px' : '8px 18px',
                 borderRadius: '8px',
                 background: activeTab === 'studio' ? (isLight ? '#ffffff' : 'linear-gradient(135deg, rgba(249, 115, 22, 0.3) 0%, rgba(139, 92, 246, 0.2) 100%)') : 'transparent',
                 color: activeTab === 'studio' ? (isLight ? '#f97316' : '#ffffff') : subtextColor,
@@ -117,13 +168,13 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               }}
             >
               <Sparkles size={16} color="#f97316" />
-              AI Studio
+              {compact ? 'Studio' : 'AI Studio'}
             </button>
 
             <button
               onClick={() => setActiveTab('canvas')}
               style={{
-                padding: '8px 18px',
+                padding: compact ? '6px 12px' : '8px 18px',
                 borderRadius: '8px',
                 background: activeTab === 'canvas' ? (isLight ? '#ffffff' : 'linear-gradient(135deg, rgba(249, 115, 22, 0.3) 0%, rgba(6, 182, 212, 0.2) 100%)') : 'transparent',
                 color: activeTab === 'canvas' ? (isLight ? '#0284c7' : '#ffffff') : subtextColor,
@@ -138,13 +189,13 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               }}
             >
               <Workflow size={16} color="#0284c7" />
-              Dream-to-Action Canvas
+              {compact ? 'Journey' : 'Dream-to-Action Canvas'}
             </button>
 
             <button
               onClick={() => setActiveTab('quantum')}
               style={{
-                padding: '8px 18px',
+                padding: compact ? '6px 12px' : '8px 18px',
                 borderRadius: '8px',
                 background: activeTab === 'quantum' ? (isLight ? '#ffffff' : 'linear-gradient(135deg, rgba(6, 182, 212, 0.3) 0%, rgba(16, 185, 129, 0.2) 100%)') : 'transparent',
                 color: activeTab === 'quantum' ? (isLight ? '#059669' : '#ffffff') : subtextColor,
@@ -159,7 +210,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               }}
             >
               <Cpu size={16} color="#059669" />
-              Quantum Playground
+              {compact ? 'Quantum' : 'Quantum Playground'}
             </button>
           </nav>
         ) : (
@@ -176,6 +227,10 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
           {user ? (
             <div ref={profileRef} style={{ position: 'relative' }}>
               <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={showProfileMenu}
+                aria-controls="quantora-profile-menu"
                 onClick={() => {
                   setShowProfileMenu(!showProfileMenu);
                   setShowModelDropdown(false);
@@ -186,7 +241,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   gap: '10px',
                   background: isLight ? '#f8fafc' : 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
                   border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
-                  padding: '5px 14px 5px 6px',
+                  padding: compact ? '4px 8px 4px 4px' : '5px 14px 5px 6px',
                   borderRadius: '20px',
                   cursor: 'pointer'
                 }}
@@ -196,7 +251,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   alt={user?.name || 'User'}
                   style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
                 />
-                <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+                <div style={{ display: compact ? 'none' : 'flex', flexDirection: 'column', textAlign: 'left' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: '700', color: textColor, lineHeight: 1.2 }}>
                     Signed in as {(user?.name || 'User').split(' ')[0]}
                   </span>
@@ -204,22 +259,30 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <CheckCircle2 size={10} color="#059669" /> Google OAuth Verified
                   </span>
                 </div>
-                <ChevronDown size={14} color={subtextColor} />
+                {!compact && <ChevronDown size={14} color={subtextColor} />}
               </button>
 
               {/* Profile & Privacy Master Menu Dropdown */}
-              {showProfileMenu && (
-                <div style={{
-                  position: 'absolute',
-                  top: '115%',
-                  right: 0,
-                  width: '320px',
+              {showProfileMenu && profileMenuPosition && createPortal((
+                <div
+                  ref={profileMenuRef}
+                  id="quantora-profile-menu"
+                  role="dialog"
+                  aria-label="Account, privacy, and appearance"
+                  style={{
+                  position: 'fixed',
+                  top: `${profileMenuPosition.top}px`,
+                  left: `${profileMenuPosition.left}px`,
+                  width: `${profileMenuPosition.width}px`,
+                  maxHeight: `${profileMenuPosition.maxHeight}px`,
+                  overflowY: 'auto',
+                  overscrollBehavior: 'contain',
                   background: dropdownBg,
                   border: `1px solid ${dropdownBorder}`,
                   borderRadius: '16px',
                   padding: '16px',
                   boxShadow: isLight ? '0 15px 40px rgba(0,0,0,0.15)' : '0 20px 50px rgba(0,0,0,0.7)',
-                  zIndex: 200,
+                  zIndex: 1000,
                   color: textColor
                 }}>
                   {/* Profile Info Header */}
@@ -426,7 +489,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <span>Delete Account</span>
                   </div>
                 </div>
-              )}
+              ), document.body)}
             </div>
           ) : (
             <button

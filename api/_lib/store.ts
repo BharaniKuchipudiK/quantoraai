@@ -1,3 +1,5 @@
+import { normalizeOutcomeState, type OutcomeState, type OutcomeStateRecord } from "./outcome-state.js";
+
 /*
  * Server-side reads and writes against Supabase.
  *
@@ -26,7 +28,7 @@ export function isStoreConfigured(): boolean {
   return config() !== null;
 }
 
-async function request(path: string, init: RequestInit & { headers?: Record<string, string> }) {
+async function requestRaw(path: string, init: RequestInit & { headers?: Record<string, string> }) {
   const cfg = config();
   if (!cfg) return null;
 
@@ -42,11 +44,6 @@ async function request(path: string, init: RequestInit & { headers?: Record<stri
       signal: AbortSignal.timeout(REST_TIMEOUT_MS),
     });
 
-    if (!response.ok) {
-      // Logged, never thrown — see the fail-soft note above.
-      console.warn(`Supabase ${init.method || "GET"} ${path} -> ${response.status}`, await response.text());
-      return null;
-    }
     return response;
   } catch (err: any) {
     console.warn(`Supabase ${init.method || "GET"} ${path} failed:`, err?.message || err);
@@ -54,11 +51,25 @@ async function request(path: string, init: RequestInit & { headers?: Record<stri
   }
 }
 
+async function request(path: string, init: RequestInit & { headers?: Record<string, string> }) {
+  const response = await requestRaw(path, init);
+  if (!response) return null;
+  if (!response.ok) {
+    // Logged, never thrown — see the fail-soft note above.
+    console.warn(`Supabase ${init.method || "GET"} ${path} -> ${response.status}`, await response.text());
+    return null;
+  }
+  return response;
+}
+
 export type StoredUser = {
   google_sub: string;
   email: string;
+  name?: string | null;
+  picture?: string | null;
   blocked_at: string | null;
   blocked_reason: string | null;
+  is_admin?: boolean | null;
 };
 
 /*
@@ -74,6 +85,7 @@ export type StoredUser = {
  */
 export async function recordSignIn(user: {
   sub: string; email: string; name: string; picture: string;
+  geo?: { countryCode: string; region?: string | null; city?: string | null } | null;
 }): Promise<StoredUser | null> {
   const now = new Date().toISOString();
 
@@ -89,8 +101,30 @@ export async function recordSignIn(user: {
       name: user.name,
       picture: user.picture,
       last_seen_at: now,
+      ...(user.geo ? {
+        country_code: user.geo.countryCode,
+        region: user.geo.region || null,
+        city: user.geo.city || null,
+        geo_updated_at: now,
+      } : {}),
     }]),
   });
+  if (!response) return null;
+
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function readStoredUser(googleSub: string): Promise<StoredUser | null> {
+  if (!googleSub) return null;
+  const response = await request(
+    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin&google_sub=eq.${encodeURIComponent(googleSub)}&limit=1`,
+    { method: "GET" },
+  );
   if (!response) return null;
 
   try {
@@ -118,6 +152,10 @@ export function recordUsage(entry: {
   latencyMs: number;
   tokensEst: number;
   usedServerKey: boolean;
+  studioMode?: string | null;
+  studioDomain?: string | null;
+  choiceSelected?: boolean;
+  countryCode?: string | null;
 }): void {
   void request("usage", {
     method: "POST",
@@ -129,6 +167,165 @@ export function recordUsage(entry: {
       latency_ms: entry.latencyMs,
       tokens_est: entry.tokensEst,
       used_server_key: entry.usedServerKey,
+      studio_mode: entry.studioMode || null,
+      studio_domain: entry.studioDomain || null,
+      choice_selected: entry.choiceSelected === true,
+      country_code: entry.countryCode || null,
+    }]),
+  });
+}
+
+export function recordProductEvent(entry: {
+  userSub: string | null;
+  eventType: "preview_opened" | "publish_completed";
+  metadata?: Record<string, unknown>;
+}): void {
+  void request("product_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      user_sub: entry.userSub,
+      event_type: entry.eventType,
+      metadata: entry.metadata || {},
+    }]),
+  });
+}
+
+/** Persist the owner of a project before allowing later privileged mutations. */
+export async function recordPublishedSite(entry: {
+  userSub: string;
+  projectName: string;
+  deploymentId: string;
+  deploymentUrl: string;
+}): Promise<boolean> {
+  const response = await request("published_sites?on_conflict=project_name", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify([{
+      user_sub: entry.userSub,
+      project_name: entry.projectName,
+      deployment_id: entry.deploymentId,
+      deployment_url: entry.deploymentUrl,
+      updated_at: new Date().toISOString(),
+    }]),
+  });
+  return response !== null;
+}
+
+/**
+ * True only when the database positively confirms ownership. Null means the
+ * store could not answer and privileged callers must fail closed.
+ */
+export async function isPublishedSiteOwner(userSub: string, projectName: string): Promise<boolean | null> {
+  if (!config()) return null;
+  const response = await request(
+    `published_sites?select=project_name&project_name=eq.${encodeURIComponent(projectName)}&user_sub=eq.${encodeURIComponent(userSub)}&limit=1`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length === 1;
+  } catch {
+    return null;
+  }
+}
+
+function outcomeRecord(row: any): OutcomeStateRecord | null {
+  if (!row || typeof row !== "object" || typeof row.version !== "number") return null;
+  return {
+    sessionId: row.session_id,
+    version: row.version,
+    state: normalizeOutcomeState(row.state),
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function readOutcomeState(userSub: string, sessionId: string): Promise<OutcomeStateRecord | null> {
+  const response = await request(
+    `outcome_states?select=session_id,version,state,updated_at&user_sub=eq.${encodeURIComponent(userSub)}&session_id=eq.${encodeURIComponent(sessionId)}&limit=1`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length ? outcomeRecord(rows[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Atomic optimistic-concurrency save through migration 0014's RPC. */
+export type OutcomeSaveResult =
+  | { status: "saved"; record: OutcomeStateRecord }
+  | { status: "conflict" }
+  | { status: "unavailable" };
+
+export async function saveOutcomeState(entry: {
+  userSub: string;
+  sessionId: string;
+  expectedVersion: number;
+  state: OutcomeState;
+  sourceTurn?: string | null;
+}): Promise<OutcomeSaveResult> {
+  const response = await requestRaw("rpc/save_outcome_state", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      p_user_sub: entry.userSub,
+      p_session_id: entry.sessionId,
+      p_expected_version: entry.expectedVersion,
+      p_state: entry.state,
+      p_source_turn: entry.sourceTurn || null,
+    }),
+  });
+  if (!response) return { status: "unavailable" };
+  if (!response.ok) {
+    const detail = await response.text();
+    if (detail.includes("outcome_version_conflict")) return { status: "conflict" };
+    console.warn(`Supabase POST rpc/save_outcome_state -> ${response.status}`, detail);
+    return { status: "unavailable" };
+  }
+  try {
+    const rows = await response.json();
+    const record = outcomeRecord(Array.isArray(rows) ? rows[0] : rows);
+    return record ? { status: "saved", record } : { status: "unavailable" };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
+export async function deleteOutcomeState(userSub: string, sessionId: string): Promise<boolean> {
+  const response = await request(
+    `outcome_states?user_sub=eq.${encodeURIComponent(userSub)}&session_id=eq.${encodeURIComponent(sessionId)}`,
+    { method: "DELETE", headers: { Prefer: "return=minimal" } },
+  );
+  return response !== null;
+}
+
+/*
+ * Anonymous model-quality signal. No account id, prompt, response, API key or
+ * IP address is stored. This is intentionally operational data only: did a
+ * model complete, was a fallback needed, and did the user mark it useful?
+ */
+export function recordModelQualityEvent(entry: {
+  requestId: string;
+  modelId: string;
+  taskCategory: string;
+  outcome: "success" | "failure" | "helpful" | "not_helpful";
+  latencyMs?: number | null;
+  fallbackFrom?: string | null;
+}): void {
+  void request("model_quality_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      request_id: entry.requestId,
+      model_id: entry.modelId,
+      task_category: entry.taskCategory,
+      outcome: entry.outcome,
+      latency_ms: entry.latencyMs ?? null,
+      fallback_from: entry.fallbackFrom || null,
     }]),
   });
 }

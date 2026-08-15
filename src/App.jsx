@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
 import AuroraBackground from './components/AuroraBackground';
 import Footer from './components/Footer';
+import { createJourneyNode } from './lib/build-journey';
 
 /*
  * The heavy surfaces load on demand.
@@ -26,6 +27,8 @@ const WelcomeHub = React.lazy(() => import('./components/WelcomeHub'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -52,7 +55,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('landing');
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [themeMode, setThemeMode] = useState('light'); // 'light' | 'dark' | 'system'
+  const [themeMode, setThemeMode] = useState('dark'); // 'light' | 'dark' | 'system'
 
   const [showCustomAccountInput, setShowCustomAccountInput] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -103,7 +106,8 @@ export default function App() {
               || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
             authProvider: 'Google OAuth 2.0 (Verified)',
             tier: 'Indie Creator ($0 / mo)',
-            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+            isAdmin: data.user.isAdmin === true,
           });
         } else {
           // No valid server session — clear any leftover local profile.
@@ -163,46 +167,76 @@ export default function App() {
     setActiveTab(tabName);
   };
 
+  // Start a real build from the landing hero: prefill the studio prompt, then
+  // drop the visitor straight into the Studio (or the auth gate if signed out).
+  // No simulation — the same box that runs every real build.
+  const handleStartBuild = (prompt) => {
+    if (typeof prompt === 'string' && prompt.trim()) {
+      setStudioPrefill({ id: Date.now(), text: prompt.trim() });
+    }
+    handleTabChange('studio');
+  };
+
+  // Offline-safe defaults used until /api/models resolves (and if it fails).
+  // Every OpenRouter id here MUST be a valid `vendor/model` slug — a bare id
+  // like "deepseek-coder-v2" gets a 400 Bad Request from OpenRouter. Keep this
+  // in sync with api/models.js so the app behaves identically whether or not
+  // the registry endpoint responds.
   const fallbackModels = [
-    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google AI', available: true },
-    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'OpenRouter', available: true },
-    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B (Google)', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'OpenRouter', available: true },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'OpenRouter', available: true },
-    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Capacity Full', provider: 'OpenRouter', available: false },
-    { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra', specialty: 'High-Fidelity Reward & Alignment', badge: 'Nvidia SOTA', provider: 'OpenRouter', available: true },
-    { id: 'openai/gpt-4o-mini', name: 'ChatGPT 4o-Mini', specialty: 'General Assistant & Fast Queries', badge: 'API Offline', provider: 'OpenRouter', available: false }
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google', available: true, pricingKind: 'free-tier' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Free Reasoning', provider: 'NVIDIA', available: true, pricingKind: 'free' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'DeepSeek', available: true, pricingKind: 'paid' },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'Qwen', available: true, pricingKind: 'paid' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Open Source', provider: 'Meta', available: true, pricingKind: 'paid' },
+    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'Google', available: true, pricingKind: 'paid' },
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', specialty: 'General Assistant & Fast Queries', badge: 'Fast', provider: 'OpenAI', available: true, pricingKind: 'paid' }
   ];
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0]);
+  const [modelDashboard, setModelDashboard] = useState(null);
+
+  const applyModelRegistry = useCallback((data) => {
+    if (!data?.models?.length) return;
+    const mapped = data.models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      specialty: m.description,
+      badge: m.tag || (m.available ? 'Online' : m.unavailableReason || 'Offline'),
+      provider: m.provider,
+      available: m.available,
+      pricingKind: m.pricingKind,
+      quality: m.quality || null,
+    }));
+    const dynamicModels = mapped.filter(
+      (m) => typeof m.id === 'string' && (m.id.includes('/') || m.id.startsWith('gemini') || m.id.startsWith('gemma'))
+    );
+    if (dynamicModels.length === 0) return;
+    setAvailableModels(dynamicModels);
+    if (data.dashboard) setModelDashboard(data.dashboard);
+    setSelectedModel((current) => {
+      const stillExists = dynamicModels.find((d) => d.id === current?.id);
+      if (stillExists) return stillExists;
+      return dynamicModels.find((d) => d.available) || dynamicModels[0];
+    });
+  }, []);
+
+  const refreshModels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+      applyModelRegistry(data);
+    } catch (err) {
+      console.error('Failed to refresh model registry:', err);
+    }
+  }, [applyModelRegistry]);
 
   useEffect(() => {
-    // Dynamically fetch model registry
     fetch('/api/models')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.models && data.models.length > 0) {
-          // Map dynamic schema back to our UI expectations
-          const dynamicModels = data.models.map(m => ({
-            id: m.id,
-            name: m.name,
-            specialty: m.description,
-            badge: m.tag || (m.available ? 'Online' : m.unavailableReason || 'Offline'),
-            provider: m.provider,
-            available: m.available
-          }));
-          setAvailableModels(dynamicModels);
-          
-          // Only change selected model if current is no longer available or we just booted
-          setSelectedModel(current => {
-            const stillExists = dynamicModels.find(d => d.id === current.id);
-            return stillExists ? stillExists : dynamicModels[0];
-          });
-        }
-      })
-      .catch(err => console.error("Failed to fetch dynamic model registry:", err));
-  }, []);
-  const [activeCanvasNode, setActiveCanvasNode] = useState(null);
+      .then((res) => res.json())
+      .then((data) => applyModelRegistry(data))
+      .catch((err) => console.error('Failed to fetch dynamic model registry:', err));
+  }, [applyModelRegistry]);
   const [dreamNodes, setDreamNodes] = useState(() => {
     try {
       const saved = localStorage.getItem('quantora_canvas_nodes');
@@ -215,18 +249,37 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('quantora_canvas_nodes', JSON.stringify(dreamNodes));
   }, [dreamNodes]);
-  const [studioInputText, setStudioInputText] = useState('');
+  const [studioPrefill, setStudioPrefill] = useState(null);
 
-  const handleSendToCanvas = (messageData) => {
-    setActiveCanvasNode(messageData);
+  const handleSendToCanvas = (payload) => {
+    const node = createJourneyNode(
+      typeof payload === 'string'
+        ? { brief: payload, studioPrompt: payload, title: payload.split('\n')[0]?.slice(0, 80) }
+        : payload,
+    );
+    setDreamNodes((prev) => [node, ...prev]);
     handleTabChange('canvas');
   };
+
+  const handleContinueInStudio = (node) => {
+    const prompt = node?.studioPrompt || node?.brief || node?.title || '';
+    if (prompt) setStudioPrefill({ id: Date.now(), text: prompt });
+    handleTabChange('studio');
+  };
+
+  const isStudioShell = activeTab === 'studio';
+  const isWorkspaceShell = ['studio', 'canvas', 'quantum'].includes(activeTab);
+  const isFramedShell = !isStudioShell && activeTab !== 'landing';
+  const shouldLoadVercelTelemetry = typeof window !== 'undefined'
+    && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
   return (
     <ErrorBoundary>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
-    <div style={{
-      minHeight: '100vh',
+    <div className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}${isWorkspaceShell ? ' app-shell--workspace' : ''}`} style={{
+      minHeight: '100dvh',
+      height: isStudioShell || isFramedShell ? '100dvh' : 'auto',
+      overflow: isStudioShell || isFramedShell ? 'hidden' : 'visible',
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
@@ -241,8 +294,10 @@ export default function App() {
       {activeTab === 'landing' ? (
         <LandingPage
           onLaunchStudio={() => handleTabChange('studio')}
+          onStartBuild={handleStartBuild}
           onOpenAuth={() => setShowAuthModal(true)}
           user={user}
+          availableModels={availableModels}
           themeMode={themeMode}
           setThemeMode={setThemeMode}
         />
@@ -260,17 +315,24 @@ export default function App() {
             themeMode={themeMode}
             setThemeMode={setThemeMode}
             isLight={isLight}
+            compact={isWorkspaceShell}
+            autoHide={isWorkspaceShell}
           />
 
-          <main style={{
+          <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
             minHeight: 0,
-            maxWidth: '1400px',
+            maxWidth: isStudioShell ? '1800px' : '1400px',
             width: '100%',
             margin: '0 auto',
-            padding: '24px',
+            padding: isStudioShell
+              ? 'clamp(6px, 0.8vw, 12px) clamp(8px, 1.2vw, 20px)'
+              : isFramedShell
+                ? 'clamp(12px, 2vh, 20px) clamp(16px, 2vw, 24px)'
+                : '24px',
+            overflow: isStudioShell ? 'hidden' : undefined,
             position: 'relative',
             zIndex: 10
           }}>
@@ -299,25 +361,27 @@ export default function App() {
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 availableModels={availableModels}
+                modelDashboard={modelDashboard}
                 onPushToCanvas={handleSendToCanvas}
                 onSendToCanvas={handleSendToCanvas}
                 user={user}
+                isAdmin={user?.isAdmin === true}
+                onModelsRefresh={refreshModels}
                 isLight={isLight}
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
                 setActiveTab={setActiveTab}
-                inputText={studioInputText}
-                setInputText={setStudioInputText}
+                prefillPrompt={studioPrefill}
               />
             )}
 
             {activeTab === 'canvas' && (
               <DreamActionCanvas
-                activeCanvasNode={activeCanvasNode}
-                setActiveCanvasNode={setActiveCanvasNode}
                 isLight={isLight}
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
+                onContinueInStudio={handleContinueInStudio}
+                user={user}
               />
             )}
 
@@ -429,7 +493,6 @@ export default function App() {
                   <GoogleLogin
                     onSuccess={handleGoogleSuccess}
                     onError={handleGoogleError}
-                    useOneTap
                     shape="pill"
                     theme={isLight ? "outline" : "filled_black"}
                     text="signin"
@@ -442,12 +505,16 @@ export default function App() {
         </div>
       )}
 
-      {/* Global Footer */}
-      <Footer 
-        isLight={themeMode === 'light'} 
-        activeTab={activeTab} 
-        handleTabChange={handleTabChange} 
-      />
+      {/* Global Footer — hidden in Studio for maximum conversation real estate (Cursor-style) */}
+      {!isStudioShell && (
+        <Footer
+          isLight={themeMode === 'light'}
+          activeTab={activeTab}
+          handleTabChange={handleTabChange}
+        />
+      )}
+      {shouldLoadVercelTelemetry && <Analytics />}
+      {shouldLoadVercelTelemetry && <SpeedInsights />}
     </div>
     </GoogleOAuthProvider>
     </ErrorBoundary>

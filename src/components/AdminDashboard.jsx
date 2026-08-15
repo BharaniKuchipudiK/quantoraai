@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Users, Database, ChevronLeft, Cpu, Zap, Network, BarChart3, Fingerprint, Clock, AlertTriangle, Play } from 'lucide-react';
+import { Activity, Users, ChevronLeft, Cpu, BarChart3, Fingerprint, AlertTriangle } from 'lucide-react';
 
 const AdminDashboard = ({ onBack }) => {
   const [metrics, setMetrics] = useState(null);
@@ -181,7 +181,8 @@ const TabButton = ({ active, onClick, icon, label }) => (
   </button>
 );
 
-import LiveUsersMap from './LiveUsersMap';
+import ProductAnalyticsPanel from './ProductAnalyticsPanel';
+import TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
   const g = metrics.growth || {};
@@ -209,7 +210,7 @@ const UserAnalyticsTab = ({ metrics }) => {
         <MiniKpi title="Billable Requests (7d)" value={(g.billableRequests7d || 0).toLocaleString()} sparklineColor="#8b5cf6" icon={<Fingerprint size={16}/>} />
       </div>
       
-      <LiveUsersMap isLight={isLight} />
+      <ProductAnalyticsPanel product={metrics.product} growth={metrics.growth} isLight={isLight} />
       <div style={{ marginBottom: '24px' }}></div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
         <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
@@ -217,24 +218,42 @@ const UserAnalyticsTab = ({ metrics }) => {
             <Activity size={18} color="#0ea5e9" /> 14-Day Growth History (Authentic)
           </h3>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '240px', width: '100%' }}>
-            {metrics.daily && metrics.daily.growth && metrics.daily.growth.length > 0 ? metrics.daily.growth.slice().reverse().map((day, i) => {
-              const max = Math.max(...metrics.daily.growth.map(d => d.signups), 1);
-              const heightPct = (day.signups / max) * 100;
-              return (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
-                  <div style={{
-                    width: '100%',
-                    height: `${Math.max(heightPct, 2)}%`,
-                    background: 'linear-gradient(to top, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.6))',
-                    borderRadius: '4px 4px 0 0',
-                    transition: 'height 0.5s ease-out'
-                  }}></div>
-                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
-                </div>
-              );
-            }) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No historical data yet.</div>
-            )}
+            {(() => {
+              const growthDays = metrics.daily?.growth || [];
+              const maxSignups = growthDays.length
+                ? Math.max(...growthDays.map((d) => Number(d.signups) || 0))
+                : 0;
+              if (!growthDays.length) {
+                return (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '0 24px' }}>
+                    No signup history yet. Bars appear as new users register via Google sign-in.
+                  </div>
+                );
+              }
+              if (maxSignups === 0) {
+                return (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '0 24px', gap: '8px' }}>
+                    <span>0 new signups in the last 14 days — chart is connected but empty.</span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>Use Product Engagement above for prompt volume until registrations grow.</span>
+                  </div>
+                );
+              }
+              return growthDays.slice().reverse().map((day, i) => {
+                const heightPct = (Number(day.signups) / maxSignups) * 100;
+                return (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                    <div style={{
+                      width: '100%',
+                      height: `${Math.max(heightPct, 8)}%`,
+                      background: 'linear-gradient(to top, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.6))',
+                      borderRadius: '4px 4px 0 0',
+                      transition: 'height 0.5s ease-out',
+                    }} />
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       </div>
@@ -243,77 +262,16 @@ const UserAnalyticsTab = ({ metrics }) => {
 };
 
 const TechnicalPredictiveTab = ({ metrics }) => {
-  const w = metrics.window || {};
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+
   return (
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-      {/* Technical KPIs */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '20px',
-        marginBottom: '20px'
-      }}>
-        <MiniKpi title="Total Inference Reqs (14d)" value={(w.requests || 0).toLocaleString()} sparklineColor="#0ea5e9" icon={<Database size={16}/>} />
-        <MiniKpi title="Global Avg Latency" value={`${w.avgLatencyMs || 0}ms`} sparklineColor="#f59e0b" icon={<Clock size={16}/>} />
-        <MiniKpi title="Tokens Generated (14d)" value={(w.tokensEstimated || 0).toLocaleString()} sparklineColor="#8b5cf6" icon={<Zap size={16}/>} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
-        
-        {/* Network Ingress Chart */}
-        <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
-          <h3 style={{ margin: '0 0 24px 0', fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Network size={18} color="#0ea5e9" /> 14-Day Network Ingress Volume (Authentic)
-          </h3>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '240px', width: '100%' }}>
-            {metrics.daily && metrics.daily.usage && metrics.daily.usage.length > 0 ? metrics.daily.usage.slice().reverse().map((day, i) => {
-              const max = Math.max(...metrics.daily.usage.map(d => d.requests), 1);
-              const heightPct = (day.requests / max) * 100;
-              return (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative' }}>
-                  <div style={{
-                    width: '100%',
-                    height: `${Math.max(heightPct, 2)}%`,
-                    background: 'linear-gradient(to top, rgba(14, 165, 233, 0.2), #0ea5e9)',
-                    borderRadius: '4px 4px 0 0',
-                    transition: 'height 0.5s ease-out'
-                  }}></div>
-                  <span style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(day.day).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>
-                </div>
-              );
-            }) : (
-               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No historical data yet.</div>
-            )}
-          </div>
-        </div>
-
-        {/* Live Traces */}
-        <div className="panel" style={{ background: '#09090b', border: '1px solid #1f2937', borderRadius: '12px', padding: '24px' }}>
-          <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1rem', fontWeight: '600', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Play size={18} color="#8b5cf6" /> Live Traces (Recent Activity)
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {metrics.legacyTelemetry && metrics.legacyTelemetry.activeSessions.length > 0 ? metrics.legacyTelemetry.activeSessions.map((s, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                <div>
-                  <div style={{ color: '#f1f5f9', fontSize: '0.9rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8b5cf6', boxShadow: '0 0 8px #8b5cf6' }}></div>
-                    {s.id}
-                  </div>
-                  <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '4px' }}>Model: {s.model}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: '#cbd5e1', fontSize: '0.85rem', fontFamily: 'monospace' }}>{s.tokens} tk</div>
-                  <div style={{ color: '#10b981', fontSize: '0.75rem', marginTop: '4px', fontWeight: '500' }}>{s.latency} ms</div>
-                </div>
-              </div>
-            )) : (
-               <div style={{ color: '#64748b', fontSize: '0.9rem' }}>No recent sessions found.</div>
-            )}
-          </div>
-        </div>
-
-      </div>
+      <TechnicalAnalyticsPanel
+        technical={metrics.technical}
+        window={metrics.window}
+        daily={metrics.daily}
+        isLight={isLight}
+      />
     </div>
   );
 };

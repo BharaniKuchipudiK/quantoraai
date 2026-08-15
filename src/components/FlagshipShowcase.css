@@ -1,0 +1,291 @@
+.flagship-experience {
+  position: relative;
+  z-index: 10;
+  width: min(1320px, calc(100% - 48px));
+  margin: 0 auto clamp(56px, 8vh, 72px);
+}
+
+.flagship-experience-heading {
+  max-width: 720px;
+  margin-bottom: 28px;
+}
+
+.flagship-experience-heading > span {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.flagship-experience-heading h2 {
+  margin: 14px 0 16px;
+  font-family: var(--font-heading);
+  font-size: clamp(2rem, 3.6vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  font-kerning: normal;
+  text-wrap: balance;
+}
+
+.flagship-experience-heading p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: clamp(1rem, 1.2vw, 1.125rem);
+  line-height: 1.65;
+  max-width: 620px;
+  font-weight: 400;
+}
+
+.flagship-stage {
+  isolation: isolate;
+  position: relative;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 24px;
+  background: #070913;
+  box-shadow: 0 28px 70px rgba(2, 6, 23, 0.28);
+}
+
+.flagship-stage-image,
+.flagship-stage-shade {
+  position: absolute;
+  inset: 0;
+}
+
+.flagship-stage-image {
+  z-index: -2;
+  background-position: center;
+  background-size: cover;
+  /* Enter with a soft crossfade, then drift forever (Ken Burns) so the frame
+     always feels alive rather than a static screenshot. */
+  animation:
+    flagship-image-in 900ms cubic-bezier(.16, 1, .3, 1),
+    flagship-kenburns 22s ease-in-out 900ms infinite alternate;
+}
+
+/* Thin progress bar across the top of the stage; re-keyed on each change so it
+   refills over exactly one auto-advance interval — the cinematic "reel" cue. */
+.flagship-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  z-index: 6;
+  opacity: 0.9;
+  animation: flagship-progress 5200ms linear forwards;
+}
+
+.flagship-stage-shade {
+  z-index: -1;
+  background:
+    linear-gradient(90deg, rgba(2, 6, 23, 0.94) 0%, rgba(2, 6, 23, 0.76) 40%, rgba(2, 6, 23, 0.16) 74%, rgba(2, 6, 23, 0.34) 100%),
+    linear-gradient(0deg, rgba(2, 6, 23, 0.88) 0%, transparent 46%);
+}
+
+.flagship-stage-content {
+  width: min(590px, 60%);
+  padding: clamp(42px, 6vw, 74px);
+  color: #fff;
+  animation: flagship-content-in 500ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.flagship-stage-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--flagship-accent);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.flagship-stage-content h3 {
+  max-width: 570px;
+  margin: 18px 0 15px;
+  font-family: var(--font-heading);
+  font-size: clamp(1.85rem, 3.2vw, 3rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.flagship-stage-content p {
+  max-width: 525px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.96rem;
+  line-height: 1.65;
+}
+
+.flagship-stage-content > button {
+  margin-top: 25px;
+  padding: 12px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--flagship-accent) 60%, #fff);
+  border-radius: 10px;
+  background: var(--flagship-accent);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--flagship-accent) 24%, transparent);
+}
+
+.flagship-stage-nav {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(2, 6, 23, 0.66);
+  backdrop-filter: blur(18px);
+}
+
+.flagship-stage-nav button {
+  min-height: 78px;
+  padding: 13px 18px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.13);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: left;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease;
+}
+
+.flagship-stage-nav button:last-child { border-right: 0; }
+.flagship-stage-nav button > span { font-size: 0.58rem; font-weight: 800; }
+.flagship-stage-nav button strong { font-size: 0.76rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.flagship-stage-nav button.is-active { background: rgba(255, 255, 255, 0.08); color: #fff; box-shadow: inset 0 3px 0 var(--item-accent); }
+.flagship-stage-nav button.is-active svg { color: var(--item-accent); }
+
+.flagship-supporting-strip {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.flagship-supporting-strip > div {
+  padding: 15px 17px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 13px;
+  background: var(--bg-card);
+}
+
+.flagship-supporting-strip span { display: flex; flex-direction: column; gap: 2px; }
+.flagship-supporting-strip strong { font-size: 0.78rem; }
+.flagship-supporting-strip small { color: var(--text-secondary); font-size: 0.68rem; line-height: 1.4; }
+
+@keyframes flagship-image-in {
+  from { opacity: 0.5; transform: scale(1.06); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes flagship-kenburns {
+  from { transform: scale(1); }
+  to { transform: scale(1.09); }
+}
+
+@keyframes flagship-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes flagship-content-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/*
+ * Full-bleed cinematic band. The section used to be a hard dark rectangle
+ * floating on the light page; now it sits inside a band whose top and bottom
+ * fade THROUGH the page colour into deep space and back, so the dark emerges
+ * and dissolves seamlessly instead of cutting a seam. (Background gradient is
+ * set inline so it can follow the active theme.)
+ */
+.flagship-band {
+  position: relative;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  padding: clamp(48px, 6vw, 72px) 0 clamp(56px, 7vw, 80px);
+  overflow: hidden;
+}
+/* Short, fixed-height fades at the two edges only — a crisp transition into
+   and out of the dark, instead of a tall grey gradient smeared across the
+   whole (very tall) section. */
+.flagship-band::before,
+.flagship-band::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 44px;
+  pointer-events: none;
+  z-index: 3;
+}
+.flagship-band::before { top: 0; background: linear-gradient(180deg, var(--page-bg) 0%, transparent 100%); }
+.flagship-band::after { bottom: 0; background: linear-gradient(0deg, var(--page-bg) 0%, transparent 100%); }
+.flagship-band .flagship-experience { position: relative; z-index: 1; margin-bottom: 0; }
+
+/* Heading on the dark band — restrained, editorial. */
+.flagship-heading-ondark > span { color: rgba(255, 255, 255, 0.52); }
+.flagship-heading-ondark h2 { color: #ffffff; }
+.flagship-heading-ondark p { color: rgba(255, 255, 255, 0.72); }
+
+/* Soften the stage so it belongs to the band rather than reading as a card. */
+.flagship-band .flagship-stage {
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 44px 120px rgba(0, 0, 0, 0.55);
+}
+
+/* Supporting strip cards, restyled for the dark band. */
+.flagship-band .flagship-supporting-strip > div {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.flagship-band .flagship-supporting-strip strong { color: #ffffff; }
+.flagship-band .flagship-supporting-strip small { color: rgba(255, 255, 255, 0.6); }
+
+.flagship-stage-content { animation: flagship-content-in 650ms cubic-bezier(.16, 1, .3, 1); }
+
+@media (max-width: 760px) {
+  .flagship-experience { width: calc(100% - 28px); margin-bottom: 58px; }
+  .flagship-experience-heading { margin-bottom: 24px; }
+  .flagship-experience-heading h2 { font-size: clamp(1.75rem, 8vw, 2.5rem); line-height: 1.2; }
+  .flagship-stage { min-height: 590px; border-radius: 18px; }
+  .flagship-stage-shade {
+    background: linear-gradient(0deg, rgba(2, 6, 23, 0.98) 0%, rgba(2, 6, 23, 0.83) 48%, rgba(2, 6, 23, 0.22) 100%);
+  }
+  .flagship-stage-content { width: 100%; padding: 225px 24px 120px; }
+  .flagship-stage-content h3 { font-size: 2.45rem; }
+  .flagship-stage-content p { font-size: 0.85rem; }
+  .flagship-stage-nav { overflow-x: auto; grid-template-columns: repeat(4, minmax(118px, 1fr)); }
+  .flagship-stage-nav button { min-height: 72px; padding: 11px; grid-template-columns: auto 1fr; }
+  .flagship-stage-nav button > span { display: none; }
+  .flagship-supporting-strip { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flagship-stage-image,
+  .flagship-stage-content { animation: none; }
+  .flagship-progress { animation: none; transform: scaleX(1); opacity: 0.5; }
+}

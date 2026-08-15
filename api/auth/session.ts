@@ -1,5 +1,7 @@
 import { applyCors } from "../_lib/rate-limit.js";
 import { getSessionUser } from "../_lib/session.js";
+import { isAdminUser } from "../_lib/store.js";
+import { requireActiveSession } from "../_lib/authz.js";
 
 /*
  * Who is signed in on this request.
@@ -15,9 +17,21 @@ export default async function handler(req: any, res: any) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
-  const user = getSessionUser(req);
+  const sessionUser = getSessionUser(req);
 
   // A signed-out visitor is a normal state, not an error.
   res.setHeader("Cache-Control", "no-store");
-  return res.status(200).json({ user: user ?? null });
+  if (!sessionUser) {
+    return res.status(200).json({ user: null });
+  }
+
+  const auth = await requireActiveSession(req, res);
+  if (!auth.ok) return;
+  const isAdmin = auth.value.storedUser.is_admin === true || await isAdminUser(sessionUser.sub) === true;
+  return res.status(200).json({
+    user: {
+      ...auth.value.sessionUser,
+      isAdmin: isAdmin === true,
+    },
+  });
 }

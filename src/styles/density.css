@@ -1,0 +1,18 @@
+/* FORCE HIDE CLUTTER */
+.action-chip-container, 
+.useful-now-banner, 
+.studio-starter-templates, 
+[title="Save to Journey"],
+.Details-link,
+button:has(svg[class*="bookmark"]),
+button:has(svg[class*="info"]) {
+    display: none !important;
+}
+
+/* SIDEBAR & REAL ESTATE */
+.intelligence-hub-active {
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100vw !important;
+    height: 100vh !important;
+}

@@ -10,7 +10,14 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:quantum": "node --test src/lib/quantum/*.test.js"
+    "test:conversation": "tsx --test api/_lib/conversation-policy.test.ts",
+    "test:models": "node --test api/_lib/model-catalog.test.js",
+    "test:repository-preview": "tsx --test api/_lib/repository-preview.test.ts",
+    "test:quantum": "node --test src/lib/quantum/*.test.js",
+    "test:studio-synthetic": "node scripts/studio-synthetic-test.mjs",
+    "test:outcome-navigator": "tsx scripts/outcome-navigator-eval.ts",
+    "test:ts": "tsx --test api/_lib/conversation-engine.test.ts api/_lib/conversation-policy.test.ts api/_lib/outcome-state.test.ts api/_lib/protected-endpoints.test.ts api/_lib/publish-policy.test.ts api/_lib/repository-preview.test.ts api/_lib/safety-policy.test.ts api/_lib/session-context.test.ts api/_lib/studio-choice-templates.test.ts api/_lib/studio-choices.test.ts api/_lib/studio-domains.test.ts api/_lib/studio-modes.test.ts",
+    "test:all": "npm run test:ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js && npm run test:studio-synthetic && npm run test:outcome-navigator"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",
@@ -21,6 +28,8 @@
     "@langchain/openai": "^1.5.6",
     "@react-oauth/google": "^0.13.5",
     "@tailwindcss/vite": "^4.1.14",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
     "duckduckgo-search": "^1.0.7",
@@ -28,6 +37,7 @@
     "google-auth-library": "^11.0.0",
     "langchain": "^1.5.5",
     "lucide-react": "^0.546.0",
+    "p-limit": "^7.3.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
