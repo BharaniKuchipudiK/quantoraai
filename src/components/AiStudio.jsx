@@ -708,6 +708,67 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     webSearchEnabled
   });
 
+
+  const handlePreviewCodeBlock = useCallback((codeString, lang) => {
+    let vfsPayload = {};
+    try {
+      const maybeJson = JSON.parse(codeString);
+      if (maybeJson.files || maybeJson['package.json'] || maybeJson['App.jsx']) {
+        vfsPayload = maybeJson.files || maybeJson;
+      }
+    } catch (e) {
+      // Not JSON
+    }
+    
+    if (Object.keys(vfsPayload).length > 0) {
+      setVfs(vfsPayload);
+      setWorkspaceCode(vfsPayload['App.jsx']?.content || vfsPayload[Object.keys(vfsPayload)[0]]?.content || '');
+    } else {
+      setWorkspaceCode(codeString);
+      const filename = (lang === 'html') ? 'index.html' : (lang === 'css' ? 'index.css' : 'App.jsx');
+      setVfs({ [filename]: { content: codeString, language: lang } });
+    }
+    setWorkspaceActiveTab('preview');
+    setIsWorkspaceMode(true);
+  }, []);
+
+  const markdownComponents = React.useMemo(() => ({
+    a({node, children, ...props}) {
+      return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+    },
+    code({node, inline, className, children, ...props}) {
+      const match = /language-(w+)/.exec(className || '');
+      const rawCode = String(children).replace(/\n$/, '');
+      const isRunnable = match && ['javascript', 'jsx', 'tsx', 'html', 'css', 'json'].includes(match[1]);
+      
+      return !inline && match ? (
+        <div style={{ position: 'relative', margin: '10px 0', group: 'code-block' }}>
+          {isRunnable && (
+            <button
+              onClick={() => handlePreviewCodeBlock(rawCode, match[1])}
+              title="Preview in Workspace"
+              style={{
+                position: 'absolute', top: '8px', right: '40px', background: 'rgba(249, 115, 22, 0.9)', 
+                border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', 
+                fontWeight: 'bold', cursor: 'pointer', zIndex: 10, display: 'flex', alignItems: 'center', gap: '4px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#ea580c'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(249, 115, 22, 0.9)'}
+            >
+              <Play size={12} fill="currentColor" /> Preview
+            </button>
+          )}
+          <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', fontSize: '0.85rem', paddingTop: '30px' }} {...props}>
+            {rawCode}
+          </SyntaxHighlighter>
+        </div>
+      ) : (
+        <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
+      )
+    }
+  }), [handlePreviewCodeBlock]);
+
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
