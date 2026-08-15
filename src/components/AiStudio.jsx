@@ -182,8 +182,14 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
 
 const extractRunnableCode = (text) => {
   if (!text) return null;
-  const match = text.match(/```(?:jsx|tsx|html|css|javascript|react)\n([\s\S]*?)```/i);
-  return match ? match[1] : null;
+  const match = text.match(/```(?:jsx|tsx|html|css|javascript|react|js)?\n([\s\S]*?)```/i);
+  if (match) {
+    const code = match[1].trim();
+    if (code.includes('import React') || code.includes('export default') || code.includes('<html>') || code.includes('<div')) {
+      return code;
+    }
+  }
+  return null;
 };
 
 const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim() : '';
