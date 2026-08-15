@@ -492,7 +492,7 @@ export default function LivePreviewCanvas({
       title="Live Preview"
       src={wcUrl || embedSrc}
       onError={handleEmbedFrameError}
-      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
+      sandbox={`allow-scripts allow-forms allow-popups allow-modals ${wcUrl ? 'allow-same-origin' : ''}`}
       style={{
         width: '100%',
         height: '100%',
@@ -559,32 +559,6 @@ export default function LivePreviewCanvas({
       <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying…' : 'Publish'}
     </button>
   );
-
-  // Deploy the current artifact to GCP Cloud Run. Mirrors handlePublish; the
-  // button referenced this handler before it existed, which crashed the app.
-  const handleGcpDeployClick = async () => {
-    if (isDeployingGcp) return;
-    if (!user) { onRequireAuth?.(); return; }
-    setIsDeployingGcp(true);
-    try {
-      const res = await fetch('/api/deploy-gcp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ code: currentCode, projectName: suggestedProjectName || 'quantora-app' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'GCP deployment failed');
-      const url = data.url || data.serviceUrl || null;
-      if (url) setGcpUrl(url);
-    } catch (err) {
-      const message = err.message || 'GCP deployment failed';
-      if (message.toLowerCase().includes('sign in')) onRequireAuth?.();
-      alert(`GCP deployment failed: ${message}`);
-    } finally {
-      setIsDeployingGcp(false);
-    }
-  };
 
   const deployGcpButton = (
     <button onClick={handleGcpDeployClick} disabled={isDeployingGcp} title="Deploy Full-Stack to GCP Cloud Run" style={{
