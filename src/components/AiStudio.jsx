@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -178,6 +178,12 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
     </button>
   );
 }
+
+const extractRunnableCode = (text) => {
+  if (!text) return null;
+  const match = text.match(/```(?:jsx|tsx|html|css|javascript|react)\n([\s\S]*?)```/i);
+  return match ? match[1] : null;
+};
 
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
@@ -766,7 +772,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   });
 
   const renderedChatFeed = React.useMemo(() => {
-    return messages.slice(1).map(msg => (
+    return messages.slice(1).map(msg => {
+      const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
+      return (
               <div key={msg.id} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                 {/* Avatar */}
                 <div style={{
@@ -949,7 +957,24 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && (
-                        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px' }}>
+                        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px', flexWrap: 'wrap' }}>
+                          
+                          {runnableCode && (
+                            <button
+                              onClick={() => {
+                                setWorkspaceCode(runnableCode);
+                                setIsWorkspaceMode(true);
+                                if (setActiveTab) setActiveTab('canvas');
+                              }}
+                              style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
+                              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                              onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
+                              title="Live Preview"
+                            >
+                              <Play size={12} fill="currentColor" /> Live Preview
+                            </button>
+                          )}
+
                           <button 
                             onClick={() => {
                               navigator.clipboard.writeText(msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, ''));
@@ -1106,7 +1131,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   )}
                 </div>
               </div>
-            ));
+            );
+          });
   }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth]);
 
   return (
