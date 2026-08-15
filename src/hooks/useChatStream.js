@@ -122,12 +122,14 @@ export function useChatStream({
       console.error("Gatekeeper intent routing failed", e);
     }
 
-    if (effectiveArenaMode && intent === 'deterministic') {
+    const isCodingRequest = text.toLowerCase().includes('build') && (text.toLowerCase().includes('react') || text.toLowerCase().includes('app') || text.toLowerCase().includes('code'));
+    
+    if (effectiveArenaMode && (intent === 'deterministic' || isCodingRequest)) {
         effectiveArenaMode = false;
         updateActiveMessages(prev => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
-          text: '⚡ **PCL Observation**: This is a deterministic request. Bypassing Arena Mode to provide a single, consolidated answer.'
+          text: '⚡ **PCL Observation**: This is a coding/deterministic request. Automatically bypassing Arena Mode to route to the Agentic Swarm and open the Workspace IDE.'
         }]);
         await new Promise(resolve => setTimeout(resolve, 1500));
     }
