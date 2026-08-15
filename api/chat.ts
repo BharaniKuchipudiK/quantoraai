@@ -10,6 +10,7 @@ import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
 import { normalizeSessionContext } from "./_lib/session-context.js";
 import { normalizeOutcomeSessionId } from "./_lib/outcome-state.js";
 import { repairArtifact } from "./_lib/repair.js";
+import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistry } from "./_lib/model-store.js";
 import {
@@ -383,18 +384,22 @@ export default async function handler(req: any, res: any) {
     // The self-heal endpoint reuses this handler (via task: "repair") so it
     // adds no serverless function. It carries code+error instead of a message.
     const isRepairTask = task === "repair";
+    // Build verification reuses this handler (task: "verify-build"); like repair
+    // it carries code (not a chat message) and must bypass the message guards.
+    const isVerifyTask = task === "verify-build";
+    const isArtifactTask = isRepairTask || isVerifyTask;
 
-    if (!isRepairTask && (!message || typeof message !== "string" || !message.trim())) {
+    if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
     }
-    if (!isRepairTask && message.length > MAX_MESSAGE_LENGTH) {
+    if (!isArtifactTask && message.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
     }
     const normalizedSessionId = sessionId == null ? null : normalizeOutcomeSessionId(sessionId);
-    if (!isRepairTask && sessionId != null && !normalizedSessionId) {
+    if (!isArtifactTask && sessionId != null && !normalizedSessionId) {
       return res.status(400).json({ error: "A valid sessionId is required when conversation state is supplied." });
     }
-    if (!isRepairTask) {
+    if (!isArtifactTask) {
       const requestGeo = getRequestGeo(req);
       const safety = evaluateSafetyText(message, requestGeo?.countryCode);
       if (safety.action !== "allow") {
@@ -469,6 +474,28 @@ export default async function handler(req: any, res: any) {
       } catch (err: any) {
         console.error("Error in /api/chat repair task:", err);
         return res.status(500).json({ error: err?.message || "Auto-repair failed." });
+      }
+    }
+
+    // Build verification: score a generated artifact against quality + brief and
+    // return a structured report (score, checklist, fixable issues). Reuses the
+    // resolved keys; adds no serverless function.
+    if (isVerifyTask) {
+      const { code, brief } = req.body || {};
+      if (!code || typeof code !== "string" || !code.trim()) {
+        return res.status(400).json({ error: "No code provided to verify." });
+      }
+      try {
+        const report = await verifyBuild({
+          code,
+          brief: typeof brief === "string" ? brief : "",
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
+        return res.status(200).json(report);
+      } catch (err: any) {
+        console.error("Error in /api/chat verify-build task:", err);
+        return res.status(500).json({ error: err?.message || "Verification failed." });
       }
     }
 
