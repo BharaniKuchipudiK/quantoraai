@@ -393,7 +393,7 @@ export function useChatStream({
     // Phase 5: Swarm Mode
     if (!effectiveArenaMode && intent === 'subjective') {
        // Trigger Architect -> Coder Swarm
-       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: '🧠 *Architect Agent is planning the system design...*' } : m));
+       
        
        try {
          // Fire Architect call to our generic chat endpoint using Flash
@@ -428,11 +428,11 @@ export function useChatStream({
              }
            }
            
-           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: '👨‍💻 *Coder Agent is executing the architecture...*' } : m));
-           await new Promise(resolve => setTimeout(resolve, 800)); // UI delay
+           
+           
            
            // Clear text and run Coder
-           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, text: '' } : m));
+           
            executeSingleModel(targetModel, 1, `Architect's Approved Implementation Plan:\n\n${architectPlan}\n\n---\n\nPlease execute this plan and write the final code for the original request.`);
            return;
          }
