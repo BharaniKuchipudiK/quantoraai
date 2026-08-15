@@ -201,12 +201,14 @@ export function useChatStream({
         const decoder = new TextDecoder();
         let currentText = "";
 
+        let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -217,6 +219,7 @@ export function useChatStream({
                 if (parsed.text) {
                   currentText += parsed.text;
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
                     text: currentText
                   } : m));
                 }
