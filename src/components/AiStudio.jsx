@@ -424,6 +424,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [suggestedModel, setSuggestedModel] = useState(null);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
 
+  const [showScrollUp, setShowScrollUp] = useState(false);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+
+  const handleScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    setShowScrollUp(scrollTop > 100);
+    setShowScrollDown(scrollHeight - scrollTop - clientHeight > 10);
+  };
+
   const [showMentionMenu, setShowMentionMenu] = useState(false);
 
   const messagesEndRef = useRef(null);
@@ -1367,28 +1376,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </button>
             )}
 
-            <button
-              onClick={() => setIsWorkspaceMode(!isWorkspaceMode)}
-              title={isWorkspaceMode ? "Close Code Canvas" : "Open Code Canvas"}
-              style={{
-                background: isWorkspaceMode ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' : (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)'),
-                color: isWorkspaceMode ? '#fff' : subtextColor,
-                border: 'none',
-                padding: '6px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                transition: 'all 0.2s ease',
-                boxShadow: isWorkspaceMode ? '0 4px 12px rgba(249, 115, 22, 0.3)' : 'none'
-              }}
-            >
-              <Layout size={14} />
-              <span className="hidden md:inline">Workspace</span>
-            </button>
+
 
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Sparkles size={20} color="#f97316" />
@@ -1521,7 +1509,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Messages Stream / Initial Hero State */}
-      <div ref={chatContainerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px', position: 'relative' }}>
+      <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px', position: 'relative' }}>
         {messages.length <= 1 ? (
           /* Clean Hero Empty State */
           <div style={{ 
@@ -1637,24 +1625,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Floating Scroll Navigation */}
       <div style={{ position: 'absolute', bottom: '110px', right: '30px', display: 'flex', flexDirection: 'column', gap: '8px', zIndex: 100 }}>
-        <button
-          onClick={() => chatContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-          style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: subtextColor, width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', transition: 'background 0.2s' }}
-          onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,0.7)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'}
-          title="Scroll to top"
-        >
-          <ChevronUp size={18} />
-        </button>
-        <button
-          onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
-          style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: subtextColor, width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', transition: 'background 0.2s' }}
-          onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,0.7)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'}
-          title="Scroll to bottom"
-        >
-          <ChevronDown size={18} />
-        </button>
+        {showScrollUp && (
+          <button
+            onClick={() => chatContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: subtextColor, width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', transition: 'background 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,0.7)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'}
+            title="Scroll to top"
+          >
+            <ChevronUp size={18} />
+          </button>
+        )}
+        {showScrollDown && (
+          <button
+            onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: subtextColor, width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', transition: 'background 0.2s' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,0.7)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'}
+            title="Scroll to bottom"
+          >
+            <ChevronDown size={18} />
+          </button>
+        )}
       </div>
 
       {/* Clean Prompt Console Input Area */}
