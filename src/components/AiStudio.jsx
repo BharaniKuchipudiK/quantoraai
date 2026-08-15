@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -416,6 +416,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [showCodeMap, setShowCodeMap] = useState({});
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
   const [suggestedModel, setSuggestedModel] = useState(null);
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
 
   const [showMentionMenu, setShowMentionMenu] = useState(false);
 
@@ -816,7 +817,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 }
                               }}
                             >
-                              {msg.modelA.text}
+                              {msg.modelA.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '')}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -869,7 +870,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 }
                               }}
                             >
-                              {msg.modelB.text}
+                              {msg.modelB.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '')}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -933,7 +934,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             }
                           }}
                         >
-                          {msg.text}
+                          {msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '')}
                         </ReactMarkdown>
                       </div>
 
@@ -941,13 +942,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       {msg.sender === 'ai' && (
                         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', paddingLeft: '4px' }}>
                           <button 
-                            onClick={() => navigator.clipboard.writeText(msg.text)}
-                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.5, transition: 'opacity 0.2s', padding: 0 }}
-                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.5}
+                            onClick={() => {
+                              navigator.clipboard.writeText(msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, ''));
+                              setCopiedMessageId(msg.id);
+                              setTimeout(() => setCopiedMessageId(null), 2000);
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: copiedMessageId === msg.id ? '#10b981' : subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: copiedMessageId === msg.id ? 1 : 0.5, transition: 'all 0.2s', padding: 0 }}
+                            onMouseEnter={(e) => copiedMessageId !== msg.id && (e.currentTarget.style.opacity = 1)}
+                            onMouseLeave={(e) => copiedMessageId !== msg.id && (e.currentTarget.style.opacity = 0.5)}
                             title="Copy to clipboard"
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            {copiedMessageId === msg.id ? (
+                              <Check size={15} />
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            )}
                           </button>
 
                           <button 
