@@ -216,6 +216,8 @@ async function generateGeminiContentStream(apiKey: string, contents: any[], syst
           // Search and answers from live results, returning citations in
           // groundingMetadata. Off for builds. Supported on modern Gemini.
           ...(grounding ? { tools: [{ googleSearch: {} }] } : {}),
+          // JSON mode enforcement for Office files
+          ...(systemInstruction?.includes("JSON DECK SPEC") ? { responseMimeType: "application/json" } : {})
         },
       });
       return { stream: responseStream, usedModel: m };
