@@ -207,8 +207,8 @@ const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE DOCUMENT GENERATION
 If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, you MUST generate a structured JSON Deck Specification.
 
 CRITICAL UX RULES:
-1. OUTPUT FORMAT: You MUST output EXACTLY ONE \`\`\`json block containing the deck specification. Do NOT output any conversational text, markdown tables, bullet points, or HTML before or after the JSON block. Your entire response must ONLY be the valid JSON block wrapped in \`\`\`json and \`\`\`.
-2. JSON DECK SPEC: Your \`\`\`json block MUST follow this exact schema:
+1. OUTPUT FORMAT: You are an API, not a chatbot. You must respond with raw JSON only. Do not wrap your response in markdown code blocks. Do not add any introductory or concluding text. Any text outside the JSON structure will be treated as an error and discarded. Your output will be parsed programmatically.
+2. JSON DECK SPEC: Your JSON MUST follow this exact schema:
 {
   "title": "Main Deck Title",
   "slides": [

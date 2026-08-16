@@ -724,6 +724,8 @@ export default async function handler(req: any, res: any) {
             // OpenRouter's web plugin performs a real search and injects results
             // (with citations) into the model's context. Only when grounding is on.
             ...(grounding ? { plugins: [{ id: "web", max_results: 3 }] } : {}),
+            // JSON mode enforcement for Office files
+            ...(finalSystemPrompt.includes("JSON DECK SPEC") ? { response_format: { type: "json_object" } } : {})
           }),
         });
       } catch (fetchErr: any) {
