@@ -12,7 +12,7 @@ import { normalizeOutcomeSessionId } from "./_lib/outcome-state.js";
 import { repairArtifact } from "./_lib/repair.js";
 import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
-import { readModelRegistry } from "./_lib/model-store.js";
+import { readModelRegistryCached } from "./_lib/model-store.js";
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
@@ -84,7 +84,7 @@ async function isApprovedServerModel(modelId: string): Promise<boolean> {
   if (modelId.startsWith("gemini")) return true;
   if (FEATURED_SERVER_MODELS.has(modelId)) return true;
 
-  const rows = await readModelRegistry();
+  const rows = await readModelRegistryCached();
   return rows.some((row: any) => row?.id === modelId && row?.approved === true && row?.lifecycle === "available");
 }
 
@@ -514,7 +514,7 @@ export default async function handler(req: any, res: any) {
     const authoritativeOutcome = activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
       ? await readOutcomeState(activeSessionUser.sub, normalizedSessionId)
       : null;
-    const registryModels = await readModelRegistry();
+    const registryModels = await readModelRegistryCached();
     const modelRouting = selectModelsForTurn({
       models: registryModels.length ? registryModels : [],
       message,

@@ -43,6 +43,32 @@ export async function readModelRegistry() {
   }
 }
 
+/*
+ * Hot-path cache for the model registry (Roadmap 0.3).
+ *
+ * The registry changes at most once a day (the model-scan cron), but the chat
+ * handler reads it on every request — up to twice. A short module-level TTL cache
+ * absorbs those reads on a warm serverless instance, cutting a Supabase
+ * round-trip (and its latency) off the critical path. Empty results are NOT
+ * cached: an empty array usually means the store was momentarily unreachable, and
+ * caching that would blind routing for the whole TTL window.
+ */
+const REGISTRY_TTL_MS = 60_000;
+let registryCache = null; // { at: number, rows: any[] }
+
+export async function readModelRegistryCached(ttlMs = REGISTRY_TTL_MS) {
+  const now = Date.now();
+  if (registryCache && now - registryCache.at < ttlMs) return registryCache.rows;
+  const rows = await readModelRegistry();
+  if (rows.length) registryCache = { at: now, rows };
+  return rows;
+}
+
+/** Test/edge hook: drop the cached registry so the next read is fresh. */
+export function clearModelRegistryCache() {
+  registryCache = null;
+}
+
 export async function readModelQualitySummary() {
   const response = await request('model_quality_summary?select=*', { method: 'GET' });
   if (!response) return [];

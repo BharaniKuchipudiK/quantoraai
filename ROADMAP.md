@@ -51,9 +51,11 @@ cognitive layer · desktop app.
   daily cron). No prompt/response bodies persisted; no raw IP; keyed on `sub`.
   *Accept met:* a user can export and erase their footprint. Live published
   sites are intentionally left running on delete.
-- 🔜 **0.3 Efficiency wins.** Cache the model registry (TTL) on the chat hot
-  path; strip base64 data-URIs from code sent to model on refine/repair/verify.
-  *Accept:* lower p50 latency + token cost on refine.
+- ✅ **0.3 Efficiency wins.** `readModelRegistryCached()` (60s TTL) removes a
+  Supabase round-trip from the chat hot path (was read up to twice/request);
+  base64 data-URIs are stripped from the verify critic's copy and
+  tokenized+restored on repair (images preserved, never re-sent). *Accept met:*
+  lower token cost + latency on verify/repair, no behavior change.
 
 ## Phase 1 — Monetization (Stripe, done right)
 

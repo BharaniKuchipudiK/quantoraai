@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { stripDataUris } from "./model-payload.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -178,9 +179,13 @@ export async function verifyBuild(opts: {
   let critSummary: string | undefined;
   try {
     if (openRouterKey || geminiKey) {
+      // The critic judges layout/design/brief, not image bytes. Strip embedded
+      // base64 data-URIs from its copy so they don't burn tokens or crowd real
+      // markup out of the 60k window. Heuristics above still see the real code.
+      const critiqueCode = stripDataUris(code);
       const raw = openRouterKey
-        ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, code, brief)
-        : await critiqueWithGemini(geminiKey as string, code, brief);
+        ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, critiqueCode, brief)
+        : await critiqueWithGemini(geminiKey as string, critiqueCode, brief);
       const parsed = parseCritique(raw);
       critScore = parsed.score;
       critIssues = parsed.issues;

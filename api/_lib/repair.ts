@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { fetchWithTimeout } from "./fetch-timeout.js";
+import { tokenizeDataUris, restoreDataUris } from "./model-payload.js";
 
 /*
  * Self-heal core for the live preview's verification loop.
@@ -115,7 +116,13 @@ export async function repairArtifact(opts: {
   }
 
   const errText = typeof error === "string" && error.trim() ? error.trim().slice(0, 4000) : "Unknown runtime error.";
-  const { system, user } = buildRepairPrompt(code, errText, framework);
+
+  // Replace embedded base64 images/fonts with short tokens before sending: they
+  // can dominate the payload (cost + latency) yet never help diagnose a runtime
+  // error, and the model is told to preserve images — a token is far easier to
+  // return intact than a 100KB blob. We restore the originals from the result.
+  const { tokenized, assets } = tokenizeDataUris(code);
+  const { system, user } = buildRepairPrompt(tokenized, errText, framework);
 
   const fixed = openRouterKey
     ? await repairWithOpenRouter(openRouterKey, model || DEFAULT_REPAIR_MODEL, system, user)
@@ -123,5 +130,6 @@ export async function repairArtifact(opts: {
 
   if (!fixed || !fixed.trim()) throw new Error("The repair model returned nothing usable.");
 
-  return { code: fixed, unchanged: fixed.trim() === code.trim() };
+  const restored = restoreDataUris(fixed, assets);
+  return { code: restored, unchanged: restored.trim() === code.trim() };
 }
