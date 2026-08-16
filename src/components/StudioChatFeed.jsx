@@ -140,6 +140,13 @@ function StudioChatFeed({
                               components={{
                                 code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
+                                  if (!inline && match && (match[1] === 'html' || match[1] === 'javascript' || match[1] === 'js') && msg.modelA.codeSnippet) {
+                                    return (
+                                      <p style={{ fontSize: '0.82rem', color: subtextColor, fontStyle: 'italic', margin: '8px 0' }}>
+                                        Site code updated → see Live Preview panel
+                                      </p>
+                                    );
+                                  }
                                   return !inline && match ? (
                                     <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
                                   ) : (
@@ -228,6 +235,13 @@ function StudioChatFeed({
                               components={{
                                 code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
+                                  if (!inline && match && (match[1] === 'html' || match[1] === 'javascript' || match[1] === 'js') && msg.modelB.codeSnippet) {
+                                    return (
+                                      <p style={{ fontSize: '0.82rem', color: subtextColor, fontStyle: 'italic', margin: '8px 0' }}>
+                                        Site code updated → see Live Preview panel
+                                      </p>
+                                    );
+                                  }
                                   return !inline && match ? (
                                     <CopyableCodeBlock code={String(children).replace(/\n$/, '')} language={match[1]} />
                                   ) : (
