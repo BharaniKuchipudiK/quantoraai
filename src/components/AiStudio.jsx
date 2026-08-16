@@ -1,6 +1,6 @@
 import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
-import { getChatDisplayText } from '../lib/build-communication.js';
+import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -15,7 +15,7 @@ import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
-import { normalizeDeck } from '../lib/deck-builder.js';
+import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -803,30 +803,45 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }), [handlePreviewCodeBlock]);
 
+  // Pick a genuinely DIFFERENT, currently-healthy model to fall back to when the
+  // selected one just failed. Returns null when there's no better option — in
+  // which case we must NOT nag the user with a pointless "route to itself" prompt.
+  const pickHealthyFallback = (failedModel) => {
+    const candidates = (availableModels || []).filter(
+      (m) => m && m.id && m.id !== failedModel.id && checkModelHealth(m.id).isHealthy,
+    );
+    if (!candidates.length) return null;
+    // Prefer a fast model to recover from latency, else the first healthy one.
+    return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
+  };
+
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
-    
-    // HUMAN IN THE LOOP: PCL Memory Check
+
+    // HUMAN IN THE LOOP: only intercept when the selected model recently failed
+    // AND a genuinely different healthy model exists to offer.
     if (selectedModel && !arenaMode) {
       const health = checkModelHealth(selectedModel.id);
       if (!health.isHealthy) {
-        setPclIntercept({ text: textToSend, targetModel: selectedModel, errorType: health.errorType, timeAgo: health.lastFailureMsAgo });
-        return; // Intercept!
+        const fallbackModel = pickHealthyFallback(selectedModel);
+        if (fallbackModel) {
+          setPclIntercept({ text: textToSend, targetModel: selectedModel, fallbackModel, errorType: health.errorType, timeAgo: health.lastFailureMsAgo });
+          return; // Intercept!
+        }
+        // No better model available — proceeding silently beats a no-op prompt.
       }
     }
-    
+
     streamSendMessage(overrideText);
   };
-  
-  const handlePclDecision = (routeToGemini) => {
+
+  const handlePclDecision = (routeToFallback) => {
     if (!pclIntercept) return;
-    if (routeToGemini) {
-      // Force change model to Gemini
-      const geminiModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-      if (setSelectedModel) setSelectedModel(geminiModel);
-      streamSendMessage(pclIntercept.text, geminiModel); 
-      
+    if (routeToFallback && pclIntercept.fallbackModel) {
+      const fallbackModel = pclIntercept.fallbackModel;
+      if (setSelectedModel) setSelectedModel(fallbackModel);
+      streamSendMessage(pclIntercept.text, fallbackModel);
     } else {
       streamSendMessage(pclIntercept.text);
     }
@@ -1332,8 +1347,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         // Presentations get a deterministic, app-owned deck (renderable + export
         // safe) built from the model's content, whatever shape it arrived in.
+        // A deck must NEVER fall through to the multi-file / React webcontainer
+        // path — that is what produced the "runtime error, auto-fixing" loop and
+        // a blank preview when the model returned an App.jsx instead of a deck.
         if (isPresentationIntent) {
-          const deckHtml = normalizeDeck(lastMsg.text, { title: deriveDeckTitle(messages) });
+          const title = deriveDeckTitle(messages);
+          let deckHtml = normalizeDeck(lastMsg.text, { title });
+
+          // Salvage: the model may have wrapped the deck in files (index.html /
+          // presentation.html) or embedded slide content across files.
+          if (!deckHtml) {
+            const parsed = parseVFSFromMarkdown(lastMsg.text, vfs);
+            const htmlFile = parsed['presentation.html'] || parsed['index.html'];
+            if (htmlFile?.content) {
+              deckHtml = normalizeDeck(htmlFile.content, { title })
+                || (hasSlideHtml(htmlFile.content) ? htmlFile.content : null);
+            }
+            if (!deckHtml) {
+              const joined = Object.values(parsed).map((f) => f?.content || '').join('\n\n');
+              deckHtml = normalizeDeck(joined, { title });
+            }
+          }
+
           if (deckHtml) {
             setVfs({ 'presentation.html': { content: deckHtml, language: 'html' } });
             setWorkspaceCode(deckHtml);
@@ -1341,6 +1376,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             setIsWorkspaceMode(true);
             return;
           }
+
+          // No deck could be built. Never run a presentation as an app. If the
+          // model actually said something (e.g. asked which direction to take),
+          // let that stand as normal chat; only nudge when the reply was empty
+          // or artifact-only.
+          if (!stripArtifactFromChatDisplay(lastMsg.text || '')) {
+            updateActiveMessages((prev) => [...prev, {
+              id: Date.now() + 1,
+              sender: 'ai',
+              text: "That didn't come back as a finished deck — add any specifics and tap send, and I'll generate the full slides.",
+            }]);
+          }
+          return;
         }
 
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
@@ -1880,21 +1928,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <Sparkles size={20} /> PCL Observation
                 </div>
                 <div style={{ color: 'var(--text-primary)', marginBottom: '20px', lineHeight: '1.5' }}>
-                  I remember that <strong>{pclIntercept.targetModel.name}</strong> experienced severe network latency a few minutes ago. 
-                  To prevent you from waiting, would you like me to route this request to our fastest model (<strong>Gemini 3 Flash</strong>) instead?
+                  <strong>{pclIntercept.targetModel.name}</strong> hit an error on your last request a few moments ago.
+                  Want me to route this one to <strong>{pclIntercept.fallbackModel?.name}</strong> instead?
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
+                  <button
                     onClick={() => handlePclDecision(true)}
                     style={{ background: '#f97316', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
                   >
-                    Route to Gemini Flash
+                    Route to {pclIntercept.fallbackModel?.name}
                   </button>
-                  <button 
+                  <button
                     onClick={() => handlePclDecision(false)}
                     style={{ background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
                   >
-                    Force Proceed with {pclIntercept.targetModel.name}
+                    Stay on {pclIntercept.targetModel.name}
                   </button>
                 </div>
               </div>

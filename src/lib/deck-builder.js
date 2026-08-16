@@ -27,6 +27,32 @@ export function hasSlideHtml(html) {
   return /class\s*=\s*["'][^"']*\bslide\b|<section[\s>]/i.test(html);
 }
 
+/**
+ * Is this reply the model TALKING ABOUT a deck (outline + clarifying questions)
+ * rather than delivering one? We must never scrape a Q&A/outline reply into
+ * slides — that produced the one-slide "Overview" deck full of the model's own
+ * follow-up questions.
+ */
+export function looksLikeClarifyingReply(text) {
+  const stripped = String(text || '').replace(/```[\s\S]*?```/g, ' ').trim();
+  if (hasSlideHtml(stripped)) return false; // a real deck is present
+  return (
+    /\b(would you like|shall i|do you want|which (option|approach|style|direction|one)|let me know|before (i|we) (build|proceed|start|begin)|here'?s how (we|i)('|’|\s)?(?:wi)?ll approach|should i|how would you|what (would|do) you)\b/i.test(stripped)
+    || /\?\s*$/.test(stripped)
+  );
+}
+
+// Inline markdown → HTML (bold/italic/code), on top of HTML-escaped text, so a
+// bullet like "**Core Structure**" renders bold instead of showing raw asterisks.
+export function mdInline(s) {
+  let out = escapeHtml(s);
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return out;
+}
+
 /** Pull the first full ```html fenced document, or null. */
 export function extractHtmlDoc(text) {
   if (!text) return null;
@@ -96,12 +122,20 @@ function extractFromMarkdown(text) {
   const slides = [];
   let cur = null;
   const push = () => { if (cur && (cur.title || cur.bullets.length)) slides.push(cur); };
+  const startSlide = (title, firstBullet) => {
+    push();
+    cur = { title: clean(title) || 'Slide', subtitle: '', bullets: firstBullet ? [clean(firstBullet)] : [] };
+  };
   for (const line of lines) {
-    const h = line.match(/^\s{0,3}(#{1,3})\s+(.*)$/);
-    const b = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
-    if (h) { push(); cur = { title: clean(h[2]), subtitle: '', bullets: [] }; }
-    else if (b && cur) { cur.bullets.push(clean(b[1])); }
-    else if (b && !cur) { cur = { title: 'Overview', subtitle: '', bullets: [clean(b[1])] }; }
+    const h = line.match(/^\s{0,3}(#{1,3})\s+(.*)$/);                       // # / ## / ### heading
+    const numBold = line.match(/^\s*\d+[.)]\s+\*\*(.+?)\*\*\s*:?\s*(.*)$/); // "1. **Header**: rest"
+    const boldHead = line.match(/^\s*\*\*(.+?)\*\*\s*:?\s*$/);              // "**Header**:" on its own line
+    const b = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);                  // bullet / numbered item
+    if (h) startSlide(h[2]);
+    else if (numBold) startSlide(numBold[1], numBold[2]);
+    else if (boldHead) startSlide(boldHead[1]);
+    else if (b && cur) cur.bullets.push(clean(b[1]));
+    else if (b && !cur) cur = { title: 'Overview', subtitle: '', bullets: [clean(b[1])] };
   }
   push();
   return slides.length ? slides : null;
@@ -113,13 +147,13 @@ export function renderDeckHtml(slides, { title = 'Presentation' } = {}) {
   if (!safeSlides.length) return null;
 
   const slideMarkup = safeSlides.map((s, i) => {
-    const bullets = (s.bullets || []).map((b) => `<li>${escapeHtml(b)}</li>`).join('');
+    const bullets = (s.bullets || []).map((b) => `<li>${mdInline(b)}</li>`).join('');
     return `
     <section class="slide" aria-label="Slide ${i + 1}">
       <div class="slide-inner">
         <div class="slide-num">${String(i + 1).padStart(2, '0')} / ${String(safeSlides.length).padStart(2, '0')}</div>
-        <h1>${escapeHtml(s.title || `Slide ${i + 1}`)}</h1>
-        ${s.subtitle ? `<p class="subtitle">${escapeHtml(s.subtitle)}</p>` : ''}
+        <h1>${mdInline(s.title || `Slide ${i + 1}`)}</h1>
+        ${s.subtitle ? `<p class="subtitle">${mdInline(s.subtitle)}</p>` : ''}
         ${bullets ? `<ul>${bullets}</ul>` : ''}
         <div class="slide-footer"><span>${escapeHtml(title)}</span></div>
       </div>
@@ -171,6 +205,9 @@ export function normalizeDeck(modelText, { title } = {}) {
   // mode deck legitimately carries an inline slide-data array we must NOT strip).
   const html = extractHtmlDoc(modelText);
   if (html && hasSlideHtml(html)) return html;
+  // Never turn a "let me outline this / which approach do you want?" reply into
+  // a deck — that produced the one-slide dump of the model's own questions.
+  if (looksLikeClarifyingReply(modelText)) return null;
   // Otherwise rebuild deterministically from whatever slide content we can find
   // (a leaked {num,title,desc} array, markdown) so the preview never breaks.
   const slides = extractSlides(modelText);

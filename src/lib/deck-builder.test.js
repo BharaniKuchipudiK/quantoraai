@@ -7,6 +7,8 @@ import {
   hasSlideHtml,
   extractHtmlDoc,
   escapeHtml,
+  mdInline,
+  looksLikeClarifyingReply,
 } from './deck-builder.js';
 
 test('extracts slides from the exact JS data array the model leaks', () => {
@@ -82,4 +84,35 @@ test('escapeHtml neutralises injection from model content', () => {
   const html = renderDeckHtml([{ title: '<script>alert(1)</script>', bullets: ['<img src=x onerror=y>'] }]);
   assert.ok(!/<script>alert/.test(html));
   assert.match(html, /&lt;script&gt;/);
+});
+
+test('mdInline renders bold/italic/code instead of raw asterisks', () => {
+  assert.equal(mdInline('**Core Structure**'), '<strong>Core Structure</strong>');
+  assert.equal(mdInline('a `code` b'), 'a <code>code</code> b');
+  assert.ok(!mdInline('**bold**').includes('*'));
+});
+
+test('rendered bullets have no raw ** markers', () => {
+  const html = renderDeckHtml([{ title: 'T', bullets: ['**Bold point** here'] }]);
+  assert.match(html, /<strong>Bold point<\/strong>/);
+  assert.ok(!/\*\*/.test(html));
+});
+
+test('refuses to build a deck from a clarifying/outline reply (the pptx bug)', () => {
+  // The exact failure: model outlined an approach and asked which style to use.
+  const reply = `Here's how we'll approach this:
+1. **Core Narrative Structure**: commercial inflection by 2030
+2. **Visual Framework**: clean slide masters
+
+Would you like the McKinsey-style game plan narrative, or Accenture's phased roadmap approach?`;
+  assert.equal(looksLikeClarifyingReply(reply), true);
+  assert.equal(normalizeDeck(reply, { title: 'X' }), null);
+});
+
+test('a genuine markdown outline (no questions) splits into multiple slides', () => {
+  const deck = `## Market\n- Big TAM\n- Fast growth\n\n## Strategy\n- Land and expand\n- Cut churn`;
+  const slides = extractSlides(deck);
+  assert.equal(slides.length, 2);
+  assert.equal(slides[0].title, 'Market');
+  assert.equal(slides[1].title, 'Strategy');
 });
