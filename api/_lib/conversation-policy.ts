@@ -270,8 +270,8 @@ export function buildConversationSystemPrompt(options: {
   }
 
   // Inject Office Generation constraints if building, guiding, or user explicitly requested it
-  const isOfficeRequest = (options.lastMessage && /presentation|slide|deck|pptx/i.test(options.lastMessage)) ||
-                          (options.history && options.history.some((m: any) => m.role === 'user' && m.parts?.some((p: any) => /presentation|slide|deck|pptx/i.test(p.text))));
+  const isOfficeRequest = (options.lastMessage && /presentation|slide|deck|pptx|word|docx|excel|xlsx/i.test(options.lastMessage)) ||
+                          (options.history && options.history.some((m: any) => m.role === 'user' && m.parts?.some((p: any) => /presentation|slide|deck|pptx|word|docx|excel|xlsx/i.test(p.text))));
   if (options.buildMode || options.guided || isOfficeRequest) {
     build += `\n\n${OFFICE_GENERATION_DIRECTIVE}`;
   }
