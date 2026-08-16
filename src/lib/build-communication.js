@@ -17,6 +17,16 @@ export function stripArtifactFromChatDisplay(rawText = '') {
     text = htmlStart > 0 ? text.slice(0, htmlStart) : '';
   }
 
+  // Strip bare JSON objects (from strict JSON mode) that leaked into the prose.
+  // This prevents raw JSON schemas from rendering in the user's chat feed.
+  if (text.includes('{"title":') || text.includes('{"slides":') || text.trim().startsWith('{')) {
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      text = text.slice(0, firstBrace) + text.slice(lastBrace + 1);
+    }
+  }
+
   return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
