@@ -15,6 +15,14 @@ import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
+import { normalizeDeck } from '../lib/deck-builder.js';
+
+// A short human title for a generated deck, taken from the first user prompt.
+const deriveDeckTitle = (messages) => {
+  const firstUser = (messages || []).find((m) => m.sender === 'user' && m.text);
+  const t = (firstUser?.text || 'Presentation').replace(/\s+/g, ' ').trim();
+  return t.length > 60 ? `${t.slice(0, 57)}…` : t;
+};
 const LiveIosCalculator = lazy(() => import('./interactive/LiveIosCalculator'));
 const LiveBeatMaker = lazy(() => import('./interactive/LiveBeatMaker'));
 const LiveQuantumSimulator = lazy(() => import('./interactive/LiveQuantumSimulator'));
@@ -478,8 +486,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const openCanvasWithCode = (rawText) => {
+    // Presentations: rebuild a guaranteed-renderable deck from whatever the
+    // model produced (HTML, or a leaked slide-data array) instead of trusting
+    // the model to emit a perfect self-contained slide viewer.
+    if (detectSlideDeck(messages)) {
+      const deckHtml = normalizeDeck(rawText, { title: deriveDeckTitle(messages) });
+      if (deckHtml) {
+        setCanvasCode(deckHtml);
+        setCanvasOpen(true);
+        return;
+      }
+    }
+
     let cleanCode = extractHtmlFromResponse(rawText);
-    
+
     if (!cleanCode) {
       cleanCode = rawText.includes('<!DOCTYPE html>') || rawText.includes('<html')
         ? rawText.replace(/```(?:html|javascript|js|css)?\n([\s\S]*?)```/gi, '$1')
@@ -711,6 +731,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveMessages,
     chatSessions, activeSessionId,
     selectedModel,
+    availableModels,
     arenaMode, secondModel,
     cognitiveLevel,
     canvasCode,
@@ -1323,6 +1344,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         const isPresentationIntent = detectSlideDeck(messages);
+
+        // Presentations get a deterministic, app-owned deck (renderable + export
+        // safe) built from the model's content, whatever shape it arrived in.
+        if (isPresentationIntent) {
+          const deckHtml = normalizeDeck(lastMsg.text, { title: deriveDeckTitle(messages) });
+          if (deckHtml) {
+            setVfs({ 'presentation.html': { content: deckHtml, language: 'html' } });
+            setWorkspaceCode(deckHtml);
+            setWorkspaceActiveTab('preview');
+            setIsWorkspaceMode(true);
+            return;
+          }
+        }
+
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         if (Object.keys(parsedVfs).length > 0) {
            if (isPresentationIntent && parsedVfs['index.html']) {
