@@ -782,30 +782,45 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }), [handlePreviewCodeBlock]);
 
+  // Pick a genuinely DIFFERENT, currently-healthy model to fall back to when the
+  // selected one just failed. Returns null when there's no better option — in
+  // which case we must NOT nag the user with a pointless "route to itself" prompt.
+  const pickHealthyFallback = (failedModel) => {
+    const candidates = (availableModels || []).filter(
+      (m) => m && m.id && m.id !== failedModel.id && checkModelHealth(m.id).isHealthy,
+    );
+    if (!candidates.length) return null;
+    // Prefer a fast model to recover from latency, else the first healthy one.
+    return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
+  };
+
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
-    
-    // HUMAN IN THE LOOP: PCL Memory Check
+
+    // HUMAN IN THE LOOP: only intercept when the selected model recently failed
+    // AND a genuinely different healthy model exists to offer.
     if (selectedModel && !arenaMode) {
       const health = checkModelHealth(selectedModel.id);
       if (!health.isHealthy) {
-        setPclIntercept({ text: textToSend, targetModel: selectedModel, errorType: health.errorType, timeAgo: health.lastFailureMsAgo });
-        return; // Intercept!
+        const fallbackModel = pickHealthyFallback(selectedModel);
+        if (fallbackModel) {
+          setPclIntercept({ text: textToSend, targetModel: selectedModel, fallbackModel, errorType: health.errorType, timeAgo: health.lastFailureMsAgo });
+          return; // Intercept!
+        }
+        // No better model available — proceeding silently beats a no-op prompt.
       }
     }
-    
+
     streamSendMessage(overrideText);
   };
-  
-  const handlePclDecision = (routeToGemini) => {
+
+  const handlePclDecision = (routeToFallback) => {
     if (!pclIntercept) return;
-    if (routeToGemini) {
-      // Force change model to Gemini
-      const geminiModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-      if (setSelectedModel) setSelectedModel(geminiModel);
-      streamSendMessage(pclIntercept.text, geminiModel); 
-      
+    if (routeToFallback && pclIntercept.fallbackModel) {
+      const fallbackModel = pclIntercept.fallbackModel;
+      if (setSelectedModel) setSelectedModel(fallbackModel);
+      streamSendMessage(pclIntercept.text, fallbackModel);
     } else {
       streamSendMessage(pclIntercept.text);
     }
@@ -1845,21 +1860,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <Sparkles size={20} /> PCL Observation
                 </div>
                 <div style={{ color: 'var(--text-primary)', marginBottom: '20px', lineHeight: '1.5' }}>
-                  I remember that <strong>{pclIntercept.targetModel.name}</strong> experienced severe network latency a few minutes ago. 
-                  To prevent you from waiting, would you like me to route this request to our fastest model (<strong>Gemini 3 Flash</strong>) instead?
+                  <strong>{pclIntercept.targetModel.name}</strong> hit an error on your last request a few moments ago.
+                  Want me to route this one to <strong>{pclIntercept.fallbackModel?.name}</strong> instead?
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
+                  <button
                     onClick={() => handlePclDecision(true)}
                     style={{ background: '#f97316', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
                   >
-                    Route to Gemini Flash
+                    Route to {pclIntercept.fallbackModel?.name}
                   </button>
-                  <button 
+                  <button
                     onClick={() => handlePclDecision(false)}
                     style={{ background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
                   >
-                    Force Proceed with {pclIntercept.targetModel.name}
+                    Stay on {pclIntercept.targetModel.name}
                   </button>
                 </div>
               </div>

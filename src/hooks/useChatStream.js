@@ -127,13 +127,15 @@ export function useChatStream({
     const isCodingRequest = text.toLowerCase().includes('build') && (text.toLowerCase().includes('react') || text.toLowerCase().includes('app') || text.toLowerCase().includes('code'));
     
     if (effectiveArenaMode && (intent === 'deterministic' || isCodingRequest)) {
+        // A build request doesn't benefit from side-by-side Arena comparison —
+        // switch to the single-model workspace flow. (No artificial delay or
+        // "agentic swarm" theater; just do it.)
         effectiveArenaMode = false;
         updateActiveMessages(prev => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
-          text: '⚡ **PCL Observation**: This is a coding/deterministic request. Automatically bypassing Arena Mode to route to the Agentic Swarm and open the Workspace IDE.'
+          text: 'Switching out of Arena Mode for this build so I can open the workspace and generate it.'
         }]);
-        await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     // 1. Dual Model Arena Execution Mode
