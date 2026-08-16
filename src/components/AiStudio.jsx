@@ -2599,11 +2599,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexDirection: 'column',
             overflow: 'hidden'
           }}>
+            <div style={{
+            flex: 1, 
+            background: isLight ? '#f8fafc' : '#0f172a',
+            overflow: 'hidden'
+          }}>
             <LivePreviewCanvas 
               code={canvasCode} 
               isLight={isLight} 
               onClose={() => setCanvasOpen(false)} 
+              isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
             />
+          </div>
           </div>
         </div>
       )}
@@ -2689,6 +2696,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   isLight={isLight} 
                   onClose={() => setIsWorkspaceMode(false)}
                   showHeader={false}
+                  vfs={vfs}
+                  suggestedProjectName={suggestedProjectName}
+                  isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
                 />
              ) : (
                <>

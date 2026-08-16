@@ -38,6 +38,7 @@ export default function LivePreviewCanvas({
   user = null,
   onRequireAuth,
   suggestedProjectName = 'quantora-app',
+  isPresentationIntent = false,
   onPublishComplete,
   onShareComplete,
 }) {
@@ -672,7 +673,7 @@ export default function LivePreviewCanvas({
 
   const showHeader = !hideHeader;
   const hasPresentationName = Object.keys(vfs || {}).some(name => /presentation|deck|slides|ppt/i.test(name)) || /presentation|deck|slides|ppt/i.test(suggestedProjectName || '');
-  const isOfficeDoc = /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName;
+  const isOfficeDoc = isPresentationIntent || /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName;
 
   return (
     <div style={{
