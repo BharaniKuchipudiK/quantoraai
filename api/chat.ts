@@ -558,7 +558,8 @@ export default async function handler(req: any, res: any) {
       listeningSignals: normalizedListeningSignals,
       studioDomain: normalizedStudioDomain,
       userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
-      lastMessage: message
+      lastMessage: message,
+      history: contents
     }) + navigatorDirective + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
