@@ -105,18 +105,58 @@ export function useChatStream({
 
     let targetModel = targetModelOverride || selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
 
-    // Presentations demand the strongest available writer of rich HTML/SVG, not
-    // the fastest free model. Auto-route deck requests to the best model when a
-    // genuinely stronger one is available (user-approved behaviour).
-    if (!targetModelOverride && detectOfficeIntent({ messages: [{ sender: 'user', text }] }) === OFFICE_KIND.POWERPOINT) {
-      const deckModel = chooseBestDeckModel(availableModels || []);
-      if (deckModel && deckModel.id && deckModel.id !== targetModel.id) targetModel = deckModel;
-    }
-
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
-
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+
+    // --- GATEKEEPER FOR OFFICE DOCUMENTS ---
+    // Instead of streaming JSON to the chat, we proxy to the dedicated binary compiler
+    const officeKind = detectOfficeIntent({ messages: [...cleanMessages, { sender: 'user', text }] });
+    if (officeKind) {
+      const aiMsgId = Date.now() + 1;
+      updateActiveMessages(prev => [...prev, {
+        id: aiMsgId,
+        sender: 'ai',
+        text: `⏳ **Architecting ${officeKind.toUpperCase()} document...** (This may take 15-30 seconds to validate the schema and compile the binary).`,
+        isGenerating: true,
+        latencyMs: 0
+      }]);
+
+      try {
+        const res = await fetch('/api/generate-office', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: text,
+            format: officeKind,
+            history: cleanMessages,
+            userKey: geminiApiKey,
+            openRouterKey: openRouterApiKey
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Compilation failed');
+
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: `✅ **Successfully generated ${officeKind} document.**`,
+          isGenerating: false,
+          officeAttachment: data
+        } : m));
+      } catch (err) {
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: `❌ **Failed to generate document:** ${err.message}`,
+          isGenerating: false,
+          isError: true
+        } : m));
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+    // ---------------------------------------
 
     // Phase 4 & 5: Intent Router & Agentic Swarm
     let effectiveArenaMode = arenaMode;

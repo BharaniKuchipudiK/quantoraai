@@ -11,9 +11,6 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioMessageActions from './StudioMessageActions';
 import StudioDecisionModal from './StudioDecisionModal';
-import ConsultingDeckRenderer from './ConsultingDeckRenderer';
-import { parseDeckSpec } from '../lib/deck-parser';
-import { generatePPTXFromJson } from '../lib/deck-render';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
@@ -427,7 +424,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
-  const [deckSpec, setDeckSpec] = useState(null);
+  // Legacy deckSpec state removed
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
@@ -436,6 +433,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [thinkingTime, setThinkingTime] = useState(0);
   const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
+  const [feedbackStates, setFeedbackStates] = useState({});
   
   // Pillar 4: Predictive Code Assist State
   const [ghostText, setGhostText] = useState('');
@@ -1103,6 +1101,63 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         </ReactMarkdown>
                       </div>
 
+                      {/* Render Dedicated Office Download Card */}
+                      {msg.officeAttachment && (
+                        <div style={{
+                          marginTop: '20px',
+                          padding: '24px',
+                          background: isLight ? '#ffffff' : '#0f172a',
+                          border: isLight ? '1px solid #e2e8f0' : '1px solid #1e293b',
+                          borderRadius: '16px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '16px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div style={{ padding: '12px', background: 'rgba(37, 99, 235, 0.1)', borderRadius: '12px' }}>
+                              <FileText size={32} color="#2563eb" />
+                            </div>
+                            <div>
+                              <h4 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 'bold', color: textColor }}>
+                                {msg.officeAttachment.fileName || 'Generated Document'}
+                              </h4>
+                              <p style={{ margin: 0, fontSize: '0.85rem', color: subtextColor }}>
+                                Ready for download
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = `data:${msg.officeAttachment.mimeType};base64,${msg.officeAttachment.data}`;
+                              link.download = msg.officeAttachment.fileName;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                            style={{
+                              background: '#2563eb',
+                              color: 'white',
+                              border: 'none',
+                              padding: '10px 20px',
+                              borderRadius: '8px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              transition: 'background 0.2s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#1d4ed8'}
+                            onMouseLeave={e => e.currentTarget.style.background = '#2563eb'}
+                          >
+                            Download
+                          </button>
+                        </div>
+                      )}
+
                       {modalData && (
                         <StudioDecisionModal
                           modalData={modalData}
@@ -1119,21 +1174,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <button
                               onClick={() => {
-                                alert('Thank you! Quantora learned that this was a good response.');
+                                setFeedbackStates(prev => ({ ...prev, [msg.id]: 'up' }));
                               }}
-                              style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                              style={{ background: 'transparent', border: 'none', color: feedbackStates[msg.id] === 'up' ? '#22c55e' : subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
                               title="Helpful response"
                             >
                               <ThumbsUp size={14} />
                             </button>
                             <button
                               onClick={() => {
-                                // Find the preceding user prompt
+                                setFeedbackStates(prev => ({ ...prev, [msg.id]: 'down' }));
                                 const userMsg = messages.slice().reverse().find(m => m.id < msg.id && m.sender === 'user');
                                 logFeedback(userMsg ? userMsg.text : '', msg.text, false);
-                                alert('Feedback logged. Cognitive Memory updated. Quantora will not repeat this mistake.');
                               }}
-                              style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                              style={{ background: 'transparent', border: 'none', color: feedbackStates[msg.id] === 'down' ? '#ef4444' : subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
                               title="Incorrect response"
                             >
                               <ThumbsDown size={14} />
@@ -1160,45 +1214,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </button>
                           )}
 
-                          <button 
-                            onClick={() => {
-                              navigator.clipboard.writeText(msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, ''));
-                              setCopiedMessageId(msg.id);
-                              setTimeout(() => setCopiedMessageId(null), 2000);
-                            }}
-                            style={{ background: 'transparent', border: 'none', color: copiedMessageId === msg.id ? '#10b981' : subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: copiedMessageId === msg.id ? 1 : 0.5, transition: 'all 0.2s', padding: 0 }}
-                            onMouseEnter={(e) => copiedMessageId !== msg.id && (e.currentTarget.style.opacity = 1)}
-                            onMouseLeave={(e) => copiedMessageId !== msg.id && (e.currentTarget.style.opacity = 0.5)}
-                            title="Copy to clipboard"
-                          >
-                            {copiedMessageId === msg.id ? (
-                              <Check size={15} />
-                            ) : (
-                              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                            )}
-                          </button>
-
-                          <button 
-                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.5, transition: 'opacity 0.2s', padding: 0 }}
-                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.5}
-                            title="Pin message"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.16V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v5.16a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
-                          </button>
-                          
-                          <button 
-                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.5, transition: 'opacity 0.2s', padding: 0 }}
-                            onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                            onMouseLeave={(e) => e.currentTarget.style.opacity = 0.5}
-                            title="Read aloud"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-                          </button>
-                          
-                          <span style={{ fontSize: '0.75rem', color: subtextColor, opacity: 0.5, marginLeft: '4px' }}>
-                            just now
-                          </span>
                         </div>
                       )}
                     </div>
@@ -1347,27 +1362,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            return;
         }
 
-        const isPresentationIntent = detectSlideDeck(messages);
-        
-        if (isPresentationIntent) {
-           const spec = parseDeckSpec(lastMsg.text);
-           if (spec) {
-              setDeckSpec(spec);
-              setWorkspaceActiveTab('preview');
-              setIsWorkspaceMode(true);
-              return;
-           }
-
-          // No deck could be built. Never run a presentation as an app.
-          if (!stripArtifactFromChatDisplay(lastMsg.text || '')) {
-            updateActiveMessages((prev) => [...prev, {
-              id: Date.now() + 1,
-              sender: 'ai',
-              text: "That didn't come back as a finished deck — add any specifics and tap send, and I'll generate the full slides.",
-            }]);
-          }
-          return;
-        }
+        // Legacy frontend deck parser removed - Office artifacts are now handled by the backend generator and returned as file download cards.
 
 
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
@@ -1927,12 +1922,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
-                <div style={{ flex: 1, color: '#f97316', fontSize: '0.9rem', paddingTop: '8px', fontWeight: 500 }}>
-                  {(isGenerating && messages[messages.length - 1]?.isFailover) ? 'Original model stalled. Proactively switching to a faster model...' :
-                   thinkingTime > 45 ? 'The model is experiencing high latency...' :
-                   thinkingTime > 25 ? 'Still working on your request...' :
-                   thinkingTime > 10 ? 'This is taking a bit longer than usual... hang tight..' :
-                   `${selectedModel ? formatModelName(selectedModel.name) : 'Model'} is thinking...`}
+                <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, fontFamily: 'monospace' }}>
+                  0:{thinkingTime.toString().padStart(2, '0')}s
                 </div>
               </div>
             )}
@@ -2705,23 +2696,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             overflow: 'hidden',
             position: 'relative'
           }}>
-            {deckSpec ? (
-              <>
-                <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }}>
-                  <button onClick={async () => {
-                    try {
-                      await generatePPTXFromJson(deckSpec);
-                    } catch (err) {
-                      console.error("PPTX Generation failed:", err);
-                      alert("Failed to generate PPTX: " + err.message);
-                    }
-                  }} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                    Download PPTX
-                  </button>
-                </div>
-                <ConsultingDeckRenderer deck={deckSpec} isLight={isLight} />
-              </>
-            ) : (
               <LivePreviewCanvas
                 code={canvasCode}
                 isLight={isLight}
@@ -2730,7 +2704,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 officeKind={detectOfficeIntent({ messages })}
                 modelId={selectedModel?.id}
               />
-            )}
           </div>
           </div>
         </div>
@@ -2832,23 +2805,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           {/* Workspace Content Area */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden' }}>
              {workspaceActiveTab === 'preview' ? (
-                deckSpec ? (
-                  <>
-                    <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }}>
-                      <button onClick={async () => {
-                        try {
-                          await generatePPTXFromJson(deckSpec);
-                        } catch (err) {
-                          console.error("PPTX Generation failed:", err);
-                          alert("Failed to generate PPTX: " + err.message);
-                        }
-                      }} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                        Download PPTX
-                      </button>
-                    </div>
-                    <ConsultingDeckRenderer deck={deckSpec} isLight={isLight} />
-                  </>
-                ) : (
                   <LivePreviewCanvas 
                     code={workspaceCode} 
                     isLight={isLight} 
@@ -2860,7 +2816,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     officeKind={detectOfficeIntent({ messages })}
                     modelId={selectedModel?.id}
                   />
-                )
              ) : (
                <>
                  {/* Line Numbers */}

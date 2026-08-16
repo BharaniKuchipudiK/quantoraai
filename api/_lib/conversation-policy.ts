@@ -203,12 +203,8 @@ The user wants ideas, not code yet.
 - Ask what they think and offer <quantora-modal> to proceed.
 - Do NOT output any HTML or code block on this turn.`;
 
-const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE DOCUMENT GENERATION
-If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, you MUST generate a structured JSON Deck Specification.
-
-CRITICAL UX RULES:
-1. OUTPUT FORMAT: You are an API, not a chatbot. You must respond with raw JSON only. Do not wrap your response in markdown code blocks. Do not add any introductory or concluding text. Any text outside the JSON structure will be treated as an error and discarded. Your output will be parsed programmatically.
-2. JSON DECK SPEC: Your JSON MUST follow this exact schema:
+export const OFFICE_SCHEMAS = {
+  powerpoint: `
 {
   "title": "Main Deck Title",
   "slides": [
@@ -223,15 +219,44 @@ CRITICAL UX RULES:
       "speakerNotes": "Narrative transcript for the presenter"
     }
   ]
-}
+}`,
+  word: `
+{
+  "title": "Document Title",
+  "sections": [
+    {
+      "heading": "Section Heading",
+      "paragraphs": ["Paragraph 1", "Paragraph 2"],
+      "bullets": ["Bullet 1", "Bullet 2"] // Optional
+    }
+  ]
+}`,
+  excel: `
+{
+  "filename": "Financial_Model",
+  "sheets": [
+    {
+      "name": "Sheet1",
+      "data": [
+        [
+          {"value": "Revenue", "fontWeight": "bold"},
+          {"value": 100000, "type": "Number", "format": "$#,##0.00"}
+        ]
+      ]
+    }
+  ]
+}`
+};
+
+export const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE DOCUMENT GENERATION
+If the user requests a presentation, deck, slides, PowerPoint (.pptx), Excel (.xlsx), or Word (.docx) document, you MUST generate a structured JSON Specification.
+
+CRITICAL UX RULES:
+1. OUTPUT FORMAT: You are an API, not a chatbot. You must respond with raw JSON only. Do not wrap your response in markdown code blocks. Do not add any introductory or concluding text. Any text outside the JSON structure will be treated as an error and discarded. Your output will be parsed programmatically.
+2. SCHEMA: Your JSON MUST follow the exact schema requested by the system (the schema will be injected).
 
 CRITICAL — BUILD IMMEDIATELY, DO NOT ASK:
-Generate the COMPLETE deck on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want, do NOT present an outline for approval, do NOT offer a menu of options, do NOT end with a question. Make reasonable, professional assumptions (consulting-grade EY/McKinsey style, 8–14 slides) and deliver the full finished JSON deck now. An outline or a question instead of the deck is a failure.
-
-Consulting-Grade Standards (EY/Deloitte/Accenture level):
-- You MUST use structured frameworks (MECE, SWOT).
-- You MUST use a variety of slide types (e.g., start with a 'cover', use 'section' to transition, use 'data_viz' for numbers, 'matrix' for 2x2 grids).
-- Keep bullets concise and impactful. Do not write paragraphs on slides; put the detailed explanation in 'speakerNotes'.`;
+Generate the COMPLETE document on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want. Make reasonable, professional assumptions (consulting-grade style) and deliver the full finished JSON now.`;
 
 export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
