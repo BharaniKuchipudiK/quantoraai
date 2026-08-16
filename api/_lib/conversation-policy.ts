@@ -203,33 +203,36 @@ The user wants ideas, not code yet.
 - Ask what they think and offer <quantora-modal> to proceed.
 - Do NOT output any HTML or code block on this turn.`;
 
-const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE / PRESENTATION GENERATION
-If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, output ONE complete, self-contained HTML document (a single \`\`\`html block). Quantora renders it in the Live Preview and owns the download/export — so DO NOT add any download button, and DO NOT include any export or file-generation libraries.
+const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE DOCUMENT GENERATION
+If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, you MUST generate a structured JSON Deck Specification, not an HTML app.
 
-CRITICAL — THIS OVERRIDES THE VFS MULTI-FILE RULE ABOVE:
-For a presentation/deck/document you MUST NOT create a multi-file project or a React app. Do NOT emit \`filepath="..."\` code blocks, do NOT create App.jsx / main.jsx / index.html / package.json, and do NOT write React/JSX or any code that needs a build step or a dev server. Output EXACTLY ONE plain \`\`\`html fenced block (no filepath attribute) containing the whole deck. The VFS/multi-file/filepath instruction does not apply to presentations or documents — this rule wins.
+CRITICAL UX RULES:
+1. NO CHAT NOISE: Do NOT output any markdown tables, bullet points, or explanations in the chat. Just say a brief sentence like "Here is your consulting-grade presentation." and output ONE single \`\`\`json block.
+2. NATIVE ILLUSION: NEVER mention JSON, HTML, CSS, or code in your text response. Act as if you are natively generating a .pptx file.
+3. JSON DECK SPEC: Your \`\`\`json block MUST follow this exact schema:
+{
+  "title": "Main Deck Title",
+  "slides": [
+    {
+      "type": "cover", // Allowed: cover, section, bullets, data_viz, matrix, quote
+      "title": "Slide Headline",
+      "subtitle": "Optional subheadline",
+      "bullets": ["Point 1", "Point 2"], // Array of strings (for bullets/matrix)
+      "data": [{"label": "Q1", "value": 50}], // Array of objects (for data_viz)
+      "quote": "Quote text", // For quote slides
+      "author": "Author name",
+      "speakerNotes": "Narrative transcript for the presenter"
+    }
+  ]
+}
 
 CRITICAL — BUILD IMMEDIATELY, DO NOT ASK:
 Generate the COMPLETE deck on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want, do NOT present an outline for approval, do NOT offer a menu of options, do NOT end with a question. Make reasonable, professional assumptions (consulting-grade EY/McKinsey style, 8–14 slides) and deliver the full finished deck now. An outline or a question instead of the deck is a failure.
 
-CHAT OUTPUT:
-1. NO CHAT NOISE: Say ONE short sentence (e.g. "Here's your presentation.") then the single \`\`\`html block. No outlines, bullet lists, tables, or slide data in the chat.
-2. NATIVE ILLUSION: Do not mention HTML/CSS/JS or file names in the chat; speak as if you produced the deck itself.
-
-HARD TECHNICAL CONSTRAINTS (these make it actually render + export cleanly):
-- SELF-CONTAINED ONLY. All CSS in one <style> tag. NO external stylesheets, NO CDN (no Tailwind CDN, no Google Fonts), NO external <script>, NO remote images. Anything loaded from a URL is forbidden.
-- ALL visuals as INLINE SVG or CSS: icons, spot illustrations, charts/graphs (bar/line/donut), diagrams, logos, textures, gradients. Never <img src="http...">. Inline SVG is how you get imagery that survives export.
-- Each slide is a <section class="slide"> sized 16:9 (aspect-ratio: 16/9). This structure is required for export.
-
-DESIGN BAR — match a top-tier design tool (think Claude artifacts / Gamma / consulting flagship):
-- A cohesive design system: 2–3 font sizes scale, a disciplined color palette (define CSS variables), consistent spacing, a signature accent color, and a subtle background treatment (gradient mesh, soft shapes) per slide.
-- VARIED LAYOUTS across slides — NOT bullets on every slide. Use: a bold title/cover slide; section dividers; two-column (text + SVG visual); a stat/metric row with large numbers; a quote slide; a simple SVG chart or comparison table; a closing slide. Aim for 8–14 slides.
-- Real hierarchy and whitespace. Short, assertive headlines (Minto/action titles). Minimal words per slide.
-- MOTION: tasteful CSS only — a keyframe fade/slide-up reveal on slide content, hover/transition polish. Keep it smooth and professional, never gaudy. No JS animation libraries.
-- PRESENT MODE: include lightweight inline JS (vanilla, no libraries) for arrow-key / click navigation between slides with a smooth transition, and a slide counter. Everything inline.
-- Consulting-grade rigor when the topic warrants it: title slide, agenda, MECE structure, quantified claims, a footer with page number.
-
-For Word (.docx) / documents: same self-contained rules — one <style>, no CDN, no export libs. Produce a clean document layout (cover, heading hierarchy H1/H2/H3, styled tables as inline HTML, generous typographic spacing) that reads like a finished report. Quantora handles the .docx/.pdf export.`;
+Consulting-Grade Standards (EY/Deloitte/Accenture level):
+- You MUST use structured frameworks (MECE, SWOT).
+- You MUST use a variety of slide types (e.g., start with a 'cover', use 'section' to transition, use 'data_viz' for numbers, 'matrix' for 2x2 grids).
+- Keep bullets concise and impactful. Do not write paragraphs on slides; put the detailed explanation in 'speakerNotes'.`;
 
 export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
