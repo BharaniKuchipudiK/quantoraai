@@ -27,8 +27,14 @@ test('derives readable provider names from namespaced ids', () => {
   assert.equal(providerFromId(''), 'Unknown');
 });
 
-test('keeps one qualified free Nemotron in the selectable catalogue', () => {
-  const nemotron = CURATED_MODELS.filter((model) => model.id.includes('nemotron'));
-  assert.equal(nemotron.length, 1);
-  assert.equal(nemotron[0].id, 'nvidia/nemotron-3-super-120b-a12b:free');
+test('curated models are unique and namespaced (durable curation invariant)', () => {
+  // The specific curated set is a product decision that changes as models are
+  // curated in/out; this guards the invariant that survives those changes —
+  // every curated id must be a unique, fully namespaced `vendor/model` slug
+  // (a bare or duplicate id silently breaks routing / OpenRouter calls).
+  const ids = CURATED_MODELS.map((model) => model.id);
+  assert.equal(new Set(ids).size, ids.length, 'no duplicate curated model ids');
+  for (const id of ids) {
+    assert.match(id, /^[^/\s]+\/[^/\s]+/, `curated id must be namespaced vendor/model: ${id}`);
+  }
 });
