@@ -30,9 +30,7 @@ async function runLocalTests() {
   console.log('\n=== Local communication layer ===\n');
 
   const { inferConversationStage } = await import('../src/lib/communication-intelligence.js');
-  const { enrichContinueSet, getAnticipatedContinues } = await import('../src/lib/domain-anticipation.js');
   const { detectOutcomeGaps, injectGapContinues } = await import('../src/lib/outcome-gap-detection.js');
-  const { detectProactiveNudge } = await import('../src/lib/proactive-nudges.js');
   const { extractChoicesFromAssistantText } = await import('../src/lib/studio-choices.js');
   const { extractContinuesFromAssistantText } = await import('../src/lib/studio-continues.js');
   const { extractContextFromAssistantText } = await import('../src/lib/session-context.js');
@@ -43,20 +41,6 @@ async function runLocalTests() {
     pass('inferConversationStage → ready_for_itinerary');
   } catch (e) {
     fail('inferConversationStage → ready_for_itinerary', e.message);
-  }
-
-  try {
-    const anticipated = getAnticipatedContinues({
-      domain: 'travel',
-      mode: 'ask',
-      conversationContext: { facts: ['5 nights in March', 'solo traveler'] },
-    });
-    assert.ok(anticipated.items.some((i) => /day-by-day/i.test(i.label)));
-    assert.equal(anticipated.items.some((i) => /pin down dates/i.test(i.label)), false);
-    assert.equal(enrichContinueSet(null, { domain: 'travel', mode: 'ask' }), null);
-    pass('anticipation is stage-aware without backfilling Ask-mode chips');
-  } catch (e) {
-    fail('anticipation is stage-aware without backfilling Ask-mode chips', e.message);
   }
 
   try {
@@ -71,19 +55,6 @@ async function runLocalTests() {
     pass('outcome gap → Add direct links chip');
   } catch (e) {
     fail('outcome gap → Add direct links chip', e.message);
-  }
-
-  try {
-    const nudge = detectProactiveNudge(
-      'plan my Bali trip with booking links',
-      'Day 1: beach. https://example.com/hotel',
-      'Bharani',
-      { studioDomain: 'travel' },
-    );
-    assert.equal(nudge, null);
-    pass('proactive nudge suppressed when links already in reply');
-  } catch (e) {
-    fail('proactive nudge suppressed when links already in reply', e.message);
   }
 
   const mockReply = `Here are three options for your solo March trip.

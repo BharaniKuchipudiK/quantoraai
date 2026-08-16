@@ -81,16 +81,21 @@ cognitive layer · desktop app.
 > `conversation-engine` (wired into `api/chat.ts`), `listening-layer` (studio
 > session + inline suggestions) and `outcome_states` (memory) are actually
 > connected. `proactive-nudges`, `domain-anticipation` and
-> `capability-intelligence` ship code **and passing tests but have zero
-> non-test importers** — they are dead placeholders. Shipping "intelligence"
-> that is wired to nothing is the fastest way to become the wrapper we claim not
-> to be. **3.0 (below) is now the gate for this whole phase.**
+> `capability-intelligence` shipped code **and passing tests but had zero
+> non-test importers** — dead placeholders. Shipping "intelligence" that is
+> wired to nothing is the fastest way to become the wrapper we claim not to be.
 
-- 🔴 **3.0 Connect-or-cut the dead cognitive modules.** For each of
-  `proactive-nudges`, `domain-anticipation`, `capability-intelligence`: either
-  wire it into a real surface with a visible effect, or delete it (keep the idea
-  in this doc). *Accept:* no module in `src/lib` claims to be intelligence while
-  importing into nothing. Trust is the product.
+- ✅ **3.0 Connect-or-cut the dead cognitive modules.** Audit outcome: all three
+  were **stale duplicates** of concepts already live under other names
+  (`getProactiveNudge`, `enrichContinues`, the `capabilityProposals` prompt
+  surface, `communication-intelligence`, `conversation-engine`). **Cut** all
+  three modules + tests — zero importers, so no runtime change and no capability
+  lost. The genuinely good but unwired ideas are **preserved, not discarded**:
+  the capability proposer's design lives on in
+  `docs/architecture/capability-intelligence-v1.md` (to be built for real in
+  3.x / 8.1), and domain-specific "next-step" beats belong with the Outcome
+  Graph (8.1). *Accept met:* no module in `src/lib` claims to be intelligence
+  while importing into nothing.
 
 Turn the existing seeds (`listening-layer`, `conversation-engine`,
 `outcome_states`) from reactive into a persistent, proactive operator.
