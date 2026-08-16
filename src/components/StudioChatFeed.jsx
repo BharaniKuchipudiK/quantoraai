@@ -475,6 +475,7 @@ function StudioChatFeed({
                     >
                       <button type="button" onClick={() => submitModelFeedback(msg, 'helpful')} aria-label="Mark this response helpful" title="Helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'helpful' ? '#059669' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsUp size={14} /></button>
                       <button type="button" onClick={() => submitModelFeedback(msg, 'not_helpful')} aria-label="Mark this response not helpful" title="Not helpful" style={{ border: 'none', background: 'transparent', color: msg.qualityFeedback === 'not_helpful' ? '#dc2626' : subtextColor, cursor: msg.qualityFeedback ? 'default' : 'pointer', padding: '2px', display: 'inline-flex' }}><ThumbsDown size={14} /></button>
+                      </div>
                     </div>
                   )}
 

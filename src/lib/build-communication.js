@@ -23,7 +23,7 @@ export function getChatDisplayText(rawText = '', { artifactHtml = '' } = {}) {
   if (stripped) return stripped;
   if (artifactHtml || rawText.trim() !== '') {
     // If the text was entirely stripped (leaving it blank), it means it was just an HTML block
-    return 'Your generated preview is ready in the panel →';
+    return 'Your generated site is ready in the preview panel →';
   }
   return rawText;
 }
