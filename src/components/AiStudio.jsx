@@ -14,6 +14,7 @@ import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
+import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 const LiveIosCalculator = lazy(() => import('./interactive/LiveIosCalculator'));
 const LiveBeatMaker = lazy(() => import('./interactive/LiveBeatMaker'));
 const LiveQuantumSimulator = lazy(() => import('./interactive/LiveQuantumSimulator'));
@@ -1306,7 +1307,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            return;
         }
 
-        const isPresentationIntent = messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text));
+        const isPresentationIntent = detectSlideDeck(messages);
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         if (Object.keys(parsedVfs).length > 0) {
            if (isPresentationIntent && parsedVfs['index.html']) {
@@ -2617,11 +2618,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             background: isLight ? '#f8fafc' : '#0f172a',
             overflow: 'hidden'
           }}>
-            <LivePreviewCanvas 
-              code={canvasCode} 
-              isLight={isLight} 
-              onClose={() => setCanvasOpen(false)} 
-              isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
+            <LivePreviewCanvas
+              code={canvasCode}
+              isLight={isLight}
+              onClose={() => setCanvasOpen(false)}
+              isPresentationIntent={detectSlideDeck(messages)}
+              officeKind={detectOfficeIntent({ messages })}
               modelId={selectedModel?.id}
             />
           </div>
@@ -2655,7 +2657,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexShrink: 0
           }}>
             <div style={{ display: 'flex', gap: '4px', height: '100%' }}>
-              {(messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text)) ? ['preview'] : (Object.keys(vfs).length > 0 ? ['preview', ...Object.keys(vfs)] : ['preview', 'code'])).map(tab => (
+              {(detectOfficeIntent({ messages }) ? ['preview'] : (Object.keys(vfs).length > 0 ? ['preview', ...Object.keys(vfs)] : ['preview', 'code'])).map(tab => (
                 <div key={tab} style={{
                     background: workspaceActiveTab === tab ? (isLight ? '#ffffff' : '#0d1127') : 'transparent',
                     borderTop: workspaceActiveTab === tab ? '2px solid #f97316' : '2px solid transparent',
@@ -2732,7 +2734,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   showHeader={false}
                   vfs={vfs}
                   suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
-                  isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
+                  isPresentationIntent={detectSlideDeck(messages)}
+                  officeKind={detectOfficeIntent({ messages })}
                   modelId={selectedModel?.id}
                 />
              ) : (
