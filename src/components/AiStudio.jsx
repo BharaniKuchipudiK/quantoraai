@@ -1,5 +1,6 @@
 import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
+import { getChatDisplayText } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -820,7 +821,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         return null;
       }
       
-      let cleanText = msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '');
+      let cleanText = getChatDisplayText(msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '');
       let modalData = null;
       if (cleanText) {
         const match = cleanText.match(/<quantora-modal>([\s\S]*?)<\/quantora-modal>/);
@@ -897,7 +898,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 }
                               }}
                             >
-                              {msg.modelA.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '')}
+                              {getChatDisplayText(msg.modelA.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '')}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -971,7 +972,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 }
                               }}
                             >
-                              {msg.modelB.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '')}
+                              {getChatDisplayText(msg.modelB.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '')}
                             </ReactMarkdown>
                           </div>
                         </div>
