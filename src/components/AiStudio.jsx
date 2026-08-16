@@ -11,6 +11,9 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioMessageActions from './StudioMessageActions';
 import StudioDecisionModal from './StudioDecisionModal';
+import ConsultingDeckRenderer from './ConsultingDeckRenderer';
+import { parseDeckSpec } from '../lib/deck-parser';
+import { generatePPTXFromJson } from '../lib/deck-render';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
@@ -424,6 +427,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  const [deckSpec, setDeckSpec] = useState(null);
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
@@ -1344,43 +1348,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         const isPresentationIntent = detectSlideDeck(messages);
-
-        // Presentations get a deterministic, app-owned deck (renderable + export
-        // safe) built from the model's content, whatever shape it arrived in.
-        // A deck must NEVER fall through to the multi-file / React webcontainer
-        // path — that is what produced the "runtime error, auto-fixing" loop and
-        // a blank preview when the model returned an App.jsx instead of a deck.
+        
         if (isPresentationIntent) {
-          const title = deriveDeckTitle(messages);
-          let deckHtml = normalizeDeck(lastMsg.text, { title });
+           const spec = parseDeckSpec(lastMsg.text);
+           if (spec) {
+              setDeckSpec(spec);
+              setWorkspaceActiveTab('preview');
+              setIsWorkspaceMode(true);
+              return;
+           }
 
-          // Salvage: the model may have wrapped the deck in files (index.html /
-          // presentation.html) or embedded slide content across files.
-          if (!deckHtml) {
-            const parsed = parseVFSFromMarkdown(lastMsg.text, vfs);
-            const htmlFile = parsed['presentation.html'] || parsed['index.html'];
-            if (htmlFile?.content) {
-              deckHtml = normalizeDeck(htmlFile.content, { title })
-                || (hasSlideHtml(htmlFile.content) ? htmlFile.content : null);
-            }
-            if (!deckHtml) {
-              const joined = Object.values(parsed).map((f) => f?.content || '').join('\n\n');
-              deckHtml = normalizeDeck(joined, { title });
-            }
-          }
-
-          if (deckHtml) {
-            setVfs({ 'presentation.html': { content: deckHtml, language: 'html' } });
-            setWorkspaceCode(deckHtml);
-            setWorkspaceActiveTab('preview');
-            setIsWorkspaceMode(true);
-            return;
-          }
-
-          // No deck could be built. Never run a presentation as an app. If the
-          // model actually said something (e.g. asked which direction to take),
-          // let that stand as normal chat; only nudge when the reply was empty
-          // or artifact-only.
+          // No deck could be built. Never run a presentation as an app.
           if (!stripArtifactFromChatDisplay(lastMsg.text || '')) {
             updateActiveMessages((prev) => [...prev, {
               id: Date.now() + 1,
@@ -1390,13 +1368,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
           return;
         }
+        }
 
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         if (Object.keys(parsedVfs).length > 0) {
-           if (isPresentationIntent && parsedVfs['index.html']) {
-              parsedVfs['presentation.html'] = parsedVfs['index.html'];
-              delete parsedVfs['index.html'];
-           }
            setVfs(parsedVfs);
            // Also set workspaceCode for backward compatibility in case some child components strictly expect string
            setWorkspaceCode(parsedVfs['presentation.html']?.content || parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
@@ -2696,19 +2671,31 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexDirection: 'column',
             overflow: 'hidden'
           }}>
-            <div style={{
+          <div style={{
             flex: 1, 
             background: isLight ? '#f8fafc' : '#0f172a',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            position: 'relative'
           }}>
-            <LivePreviewCanvas
-              code={canvasCode}
-              isLight={isLight}
-              onClose={() => setCanvasOpen(false)}
-              isPresentationIntent={detectSlideDeck(messages)}
-              officeKind={detectOfficeIntent({ messages })}
-              modelId={selectedModel?.id}
-            />
+            {deckSpec ? (
+              <>
+                <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }}>
+                  <button onClick={() => generatePPTXFromJson(deckSpec)} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                    Download PPTX
+                  </button>
+                </div>
+                <ConsultingDeckRenderer deck={deckSpec} isLight={isLight} />
+              </>
+            ) : (
+              <LivePreviewCanvas
+                code={canvasCode}
+                isLight={isLight}
+                onClose={() => setCanvasOpen(false)}
+                isPresentationIntent={detectSlideDeck(messages)}
+                officeKind={detectOfficeIntent({ messages })}
+                modelId={selectedModel?.id}
+              />
+            )}
           </div>
           </div>
         </div>
