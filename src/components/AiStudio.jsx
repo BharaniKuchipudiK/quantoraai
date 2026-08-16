@@ -2697,7 +2697,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   onClose={() => setIsWorkspaceMode(false)}
                   showHeader={false}
                   vfs={vfs}
-                  suggestedProjectName={suggestedProjectName}
+                  suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                   isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
                 />
              ) : (
