@@ -41,6 +41,7 @@ export default function LivePreviewCanvas({
   isPresentationIntent = false,
   onPublishComplete,
   onShareComplete,
+  modelId,
 }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -165,6 +166,7 @@ export default function LivePreviewCanvas({
         code: brokenCode,
         error: message,
         framework: 'html',
+        modelId,
         ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
         ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
       })
@@ -187,6 +189,7 @@ export default function LivePreviewCanvas({
         body: JSON.stringify({
           task: 'verify-build',
           code: codeToCheck,
+          modelId,
           ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
           ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
         })

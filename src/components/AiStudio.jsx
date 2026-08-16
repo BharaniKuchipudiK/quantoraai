@@ -1321,6 +1321,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               setVfs({ 'App.jsx': { content: code, language: 'jsx' } });
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
+           } else {
+              // Heuristic context switch: if no code is generated and the user didn't reference code
+              const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text.toLowerCase() : '';
+              const isCodeContext = /this|code|it|why|how|explain|fix|add|change|color|button|layout/i.test(userPrompt);
+              if (!isCodeContext) {
+                 setIsWorkspaceMode(false);
+                 setCanvasOpen(false);
+              }
            }
         }
       }
@@ -2609,6 +2617,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               isLight={isLight} 
               onClose={() => setCanvasOpen(false)} 
               isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
+              modelId={selectedModel?.id}
             />
           </div>
           </div>
@@ -2699,6 +2708,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   vfs={vfs}
                   suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                   isPresentationIntent={messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text))}
+                  modelId={selectedModel?.id}
                 />
              ) : (
                <>
