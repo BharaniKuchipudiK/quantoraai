@@ -2680,7 +2680,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             {deckSpec ? (
               <>
                 <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }}>
-                  <button onClick={() => generatePPTXFromJson(deckSpec)} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  <button onClick={async () => {
+                    try {
+                      await generatePPTXFromJson(deckSpec);
+                    } catch (err) {
+                      console.error("PPTX Generation failed:", err);
+                      alert("Failed to generate PPTX: " + err.message);
+                    }
+                  }} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
                     Download PPTX
                   </button>
                 </div>

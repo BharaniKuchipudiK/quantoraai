@@ -56,8 +56,8 @@ export function normalizeDeckSpec(spec) {
         type: ['cover', 'section', 'bullets', 'data_viz', 'matrix', 'quote'].includes(type) ? type : 'bullets',
         title: slide.title || '',
         subtitle: slide.subtitle || '',
-        bullets: Array.isArray(slide.bullets) ? slide.bullets : [],
-        data: Array.isArray(slide.data) ? slide.data : [],
+        bullets: Array.isArray(slide.bullets) ? slide.bullets : (typeof slide.bullets === 'string' ? [slide.bullets] : []),
+        data: Array.isArray(slide.data) ? slide.data : (typeof slide.data === 'object' && slide.data !== null ? [slide.data] : []),
         speakerNotes: slide.speakerNotes || '',
         quote: slide.quote || '',
         author: slide.author || ''

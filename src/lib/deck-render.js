@@ -1,7 +1,8 @@
 import pptxgen from "pptxgenjs";
 
 export async function generatePPTXFromJson(deckSpec) {
-  const pptx = new pptxgen();
+  const PptxGenJS = pptxgen.default || pptxgen;
+  const pptx = new PptxGenJS();
   pptx.author = 'Quantora AI';
   pptx.company = 'Quantora';
   pptx.subject = deckSpec.title || 'Consulting Deck';
