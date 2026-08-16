@@ -15,7 +15,7 @@ import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
-import { normalizeDeck } from '../lib/deck-builder.js';
+import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -1347,8 +1347,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         // Presentations get a deterministic, app-owned deck (renderable + export
         // safe) built from the model's content, whatever shape it arrived in.
+        // A deck must NEVER fall through to the multi-file / React webcontainer
+        // path — that is what produced the "runtime error, auto-fixing" loop and
+        // a blank preview when the model returned an App.jsx instead of a deck.
         if (isPresentationIntent) {
-          const deckHtml = normalizeDeck(lastMsg.text, { title: deriveDeckTitle(messages) });
+          const title = deriveDeckTitle(messages);
+          let deckHtml = normalizeDeck(lastMsg.text, { title });
+
+          // Salvage: the model may have wrapped the deck in files (index.html /
+          // presentation.html) or embedded slide content across files.
+          if (!deckHtml) {
+            const parsed = parseVFSFromMarkdown(lastMsg.text, vfs);
+            const htmlFile = parsed['presentation.html'] || parsed['index.html'];
+            if (htmlFile?.content) {
+              deckHtml = normalizeDeck(htmlFile.content, { title })
+                || (hasSlideHtml(htmlFile.content) ? htmlFile.content : null);
+            }
+            if (!deckHtml) {
+              const joined = Object.values(parsed).map((f) => f?.content || '').join('\n\n');
+              deckHtml = normalizeDeck(joined, { title });
+            }
+          }
+
           if (deckHtml) {
             setVfs({ 'presentation.html': { content: deckHtml, language: 'html' } });
             setWorkspaceCode(deckHtml);
@@ -1356,6 +1376,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             setIsWorkspaceMode(true);
             return;
           }
+
+          // Couldn't assemble a deck — show a clean retry instead of running a
+          // broken app. Never enter webcontainer mode for a presentation.
+          updateActiveMessages((prev) => [...prev, {
+            id: Date.now() + 1,
+            sender: 'ai',
+            text: "I couldn't assemble the slides cleanly that time — tap send again to regenerate. Presentations render as a single deck, not an app.",
+          }]);
+          return;
         }
 
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);

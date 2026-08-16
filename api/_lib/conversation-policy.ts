@@ -206,6 +206,9 @@ The user wants ideas, not code yet.
 const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE / PRESENTATION GENERATION
 If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, output ONE complete, self-contained HTML document (a single \`\`\`html block). Quantora renders it in the Live Preview and owns the download/export — so DO NOT add any download button, and DO NOT include any export or file-generation libraries.
 
+CRITICAL — THIS OVERRIDES THE VFS MULTI-FILE RULE ABOVE:
+For a presentation/deck/document you MUST NOT create a multi-file project or a React app. Do NOT emit \`filepath="..."\` code blocks, do NOT create App.jsx / main.jsx / index.html / package.json, and do NOT write React/JSX or any code that needs a build step or a dev server. Output EXACTLY ONE plain \`\`\`html fenced block (no filepath attribute) containing the whole deck. The VFS/multi-file/filepath instruction does not apply to presentations or documents — this rule wins.
+
 CHAT OUTPUT:
 1. NO CHAT NOISE: Say ONE short sentence (e.g. "Here's your presentation.") then the single \`\`\`html block. No outlines, bullet lists, tables, or slide data in the chat.
 2. NATIVE ILLUSION: Do not mention HTML/CSS/JS or file names in the chat; speak as if you produced the deck itself.
