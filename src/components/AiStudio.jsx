@@ -1,6 +1,6 @@
 import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
-import { getChatDisplayText } from '../lib/build-communication.js';
+import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -1377,13 +1377,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             return;
           }
 
-          // Couldn't assemble a deck — show a clean retry instead of running a
-          // broken app. Never enter webcontainer mode for a presentation.
-          updateActiveMessages((prev) => [...prev, {
-            id: Date.now() + 1,
-            sender: 'ai',
-            text: "I couldn't assemble the slides cleanly that time — tap send again to regenerate. Presentations render as a single deck, not an app.",
-          }]);
+          // No deck could be built. Never run a presentation as an app. If the
+          // model actually said something (e.g. asked which direction to take),
+          // let that stand as normal chat; only nudge when the reply was empty
+          // or artifact-only.
+          if (!stripArtifactFromChatDisplay(lastMsg.text || '')) {
+            updateActiveMessages((prev) => [...prev, {
+              id: Date.now() + 1,
+              sender: 'ai',
+              text: "That didn't come back as a finished deck — add any specifics and tap send, and I'll generate the full slides.",
+            }]);
+          }
           return;
         }
 
