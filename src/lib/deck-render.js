@@ -112,7 +112,7 @@ export async function generatePPTXFromJson(deckSpec) {
         
         // Abstract geometric elements
         slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: "100%", h: "100%", fill: THEME.colors.primary });
-        slide.addShape(pptx.ShapeType.rightTriangle, { x: 4, y: 0, w: 6, h: THEME.grid.h, fill: THEME.colors.secondary });
+        slide.addShape(pptx.ShapeType.rtTriangle, { x: 4, y: 0, w: 6, h: THEME.grid.h, fill: THEME.colors.secondary });
         slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: "100%", h: 0.1, fill: THEME.colors.accent });
 
         // Content
