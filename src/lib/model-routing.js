@@ -62,6 +62,29 @@ export function rankFreeModels(models = [], message = '', arenaPrefs = null) {
     .map(({ model }) => model);
 }
 
+// Presentations need the strongest available writer of rich, self-contained
+// HTML/CSS/SVG — not the fastest free model. Rank ALL ready models (paid
+// included) toward flagship design/reasoning quality.
+const DESIGN_STRONG = /(claude|opus|sonnet|gpt-?4|gpt-?5|o[13]\b|gemini[^a-z]*(2\.5|2\.0|1\.5)?[^a-z]*pro|deepseek|nemotron|llama[^a-z]*3\.[13][^a-z]*70|qwen[^a-z]*(72|max)|mistral[^a-z]*large|grok)/i;
+const DESIGN_WEAK = /(flash|mini|nano|lite|haiku|8b|7b|3b|1b|tiny|small)/i;
+
+export function chooseBestDeckModel(models = []) {
+  const ready = (Array.isArray(models) ? models : []).filter((m) => m && m.available !== false);
+  if (!ready.length) return null;
+  const scored = ready.map((model, index) => {
+    const hay = `${model.id || ''} ${model.name || ''} ${model.specialty || ''}`.toLowerCase();
+    let score = 0;
+    if (DESIGN_STRONG.test(hay)) score += 40;
+    if (DESIGN_WEAK.test(hay)) score -= 18;
+    if (model.pricingKind && !FREE_KINDS.has(model.pricingKind)) score += 8; // paid tiers are usually stronger
+    if (model.quality?.sampleSize >= 5 && Number.isFinite(model.quality?.score)) {
+      score += Math.max(0, Math.min(15, model.quality.score / 6.5));
+    }
+    return { model, index, score };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  return scored[0].model;
+}
+
 export function chooseBestFreeModel(models = [], message = '', arenaPrefs = null) {
   const task = classifyTask(message);
   const model = rankFreeModels(models, message, arenaPrefs)[0] || null;

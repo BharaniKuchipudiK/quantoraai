@@ -138,7 +138,10 @@ export function renderDeckHtml(slides, { title = 'Presentation' } = {}) {
   .deck { display: flex; flex-direction: column; align-items: center; gap: 28px; padding: 32px 16px 64px; }
   .slide { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #ffffff; border-radius: 14px;
            box-shadow: 0 20px 50px rgba(0,0,0,.35); overflow: hidden; position: relative; scroll-snap-align: center; }
-  .slide-inner { position: absolute; inset: 0; padding: 56px 64px; display: flex; flex-direction: column; }
+  .slide-inner { position: absolute; inset: 0; padding: 56px 64px; display: flex; flex-direction: column;
+                 animation: riseIn .6s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  .slide:nth-child(even) { background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); }
   .slide-num { position: absolute; top: 28px; right: 40px; font-size: 13px; letter-spacing: .12em; color: #94a3b8; font-weight: 700; }
   .slide h1 { font-size: clamp(24px, 3.4vw, 40px); line-height: 1.12; color: #0b1220; font-weight: 800; max-width: 88%;
               border-left: 6px solid #f97316; padding-left: 18px; }
@@ -163,16 +166,13 @@ export function renderDeckHtml(slides, { title = 'Presentation' } = {}) {
  * @returns {string|null} deck HTML, or null if no slide content could be found.
  */
 export function normalizeDeck(modelText, { title } = {}) {
-  // Prefer a deterministic rebuild whenever the model gave us real slide DATA
-  // (the common failure: a leaked {num,title,desc} array). This guarantees a
-  // renderable, CDN-free, exportable deck regardless of model fidelity.
-  const slides = extractSlides(modelText);
-  if (slides.length) {
-    const built = renderDeckHtml(slides, { title });
-    if (built) return built;
-  }
-  // Otherwise honour a genuine, slide-structured HTML document from the model.
+  // Prefer the model's own deck when it is a genuine, slide-structured HTML
+  // document — that is where the rich, Claude-level design lives (and a present-
+  // mode deck legitimately carries an inline slide-data array we must NOT strip).
   const html = extractHtmlDoc(modelText);
   if (html && hasSlideHtml(html)) return html;
-  return null;
+  // Otherwise rebuild deterministically from whatever slide content we can find
+  // (a leaked {num,title,desc} array, markdown) so the preview never breaks.
+  const slides = extractSlides(modelText);
+  return renderDeckHtml(slides, { title }) || null;
 }
