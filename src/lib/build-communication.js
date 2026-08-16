@@ -30,18 +30,11 @@ export function stripArtifactFromChatDisplay(rawText = '') {
   return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Keep the chat reply short. Presentations especially should read as a one- or
-// two-line brief, not an essay — the deck itself is the deliverable in the panel.
-function capBrief(text, maxChars = 480) {
-  if (text.length <= maxChars) return text;
-  const slice = text.slice(0, maxChars);
-  const lastStop = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('\n'));
-  return `${(lastStop > 120 ? slice.slice(0, lastStop + 1) : slice).trim()}…`;
-}
-
 export function getChatDisplayText(rawText = '', { artifactHtml = '' } = {}) {
   const stripped = stripArtifactFromChatDisplay(rawText);
-  if (stripped) return capBrief(stripped);
+  // Return the FULL reply — never truncate chat. (A 480-char cap here previously
+  // chopped normal answers mid-sentence; artifacts are already stripped above.)
+  if (stripped) return stripped;
   if (artifactHtml || rawText.trim() !== '') {
     // The reply was pure artifact — surface a short, kind-aware pointer instead.
     const isDeck = /\b(slide|deck|presentation|powerpoint|pptx)\b/i.test(`${rawText} ${artifactHtml}`);

@@ -271,6 +271,7 @@ export function buildConversationSystemPrompt(options: {
   studioDomain?: import("./studio-domains.js").StudioDomain | null;
   userFirstName?: string | null;
   history?: any[];
+  lastMessage?: string;
 } = {}): string {
   const modelContext = options.modelName
     ? `\n\nYou are currently using ${options.modelName} as the underlying model. Preserve its useful expertise while following the Quantora policy above.`
