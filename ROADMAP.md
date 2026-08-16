@@ -200,16 +200,69 @@ for outcomes. Proposed spine (each a real surface, no dead entries):
   faked). Models & Vault stay as-is.
   *Accept:* every nav item maps to a live capability; nothing is a placeholder.
 
+## Phase 9 — PCL, Cursor-grade  *(validated external input, 2026-08)*
+
+An outside "Cursor co-founder" critique of the ProActive Communication Layer.
+Audited against the code; most of it **validates the direction we're already on**
+— captured here so the good parts become tracked work, not vibes.
+
+**Already real in Quantora (validation, not to-do):**
+- *"Interaction = Action, not text / the Diff philosophy"* — **shipped**:
+  `src/lib/diff-patcher.js` + `vfs-parser` already stream edits as diffs for
+  zero-click execution. This is the essay's centrepiece and we have it.
+- *Intent memory* — `outcome_states` already stores structured outcome state,
+  not transcripts (the seed of the "Context Graph").
+- *Acceptance signal* — `recordModelQualityEvent` already logs helpful /
+  not_helpful.
+
+**New / sharpened to-dos:**
+- 🔜 **9.1 Acceptance Rate as the North-Star metric** *(immediate, cheap,
+  anti-gimmick).* Instrument proactive suggestions/actions: shown → accepted /
+  rejected / ignored, per surface. We already record thumbs; extend it to every
+  proactive act and expose the rate. *Why now:* it's the one honest number that
+  proves the PCL adds value instead of noise — and it's the reward signal 2.3
+  needs. Small, measurable, no architecture change.
+- ⏳ **9.2 "Interaction = Action" as a product principle.** Make diff-apply +
+  accept/reject the *default* interaction mode beyond code (tasks, content,
+  config), not text the user copies. Extends the shipped diff engine.
+- ⏳ **9.3 Two-speed PCL (fast-path / deep-path).** Formalize routing: a
+  Gemini-Flash **fast-path** for constant low-latency monitoring / constraint
+  validation ("does this contradict the last 5 decisions?"), and Pro only for
+  the **deep-path** reasoning. Target: proactive hints feel instant.
+- ⏳ **9.4 Ambient "Ghost" surface.** A non-intrusive indicator ("I checked your
+  past work — you likely need to update X") with Tab/Enter to execute. This is
+  8.4's activity rail turned proactive; kill the chat-window-as-only-surface.
+- ⏳ **9.5 Index intent, not text.** Sharpen `outcome_states` to store
+  *decisions, rationale, dependencies* — the Context Graph — feeding 3.1 / 8.1.
+- ⏳ **9.6 Specialized SLM for the PCL** *(later; moat play).* Use Vertex credits
+  to fine-tune a small, fast model on our own reward dataset. **Gated on 2.3** —
+  needs the data flywheel first; premature without it.
+
+**Honest caveats (so we don't chase a mirage):**
+- *The <200ms "local, instant" bar* fights our serverless + browser topology:
+  cloud round-trips can't reliably hit 200ms. True instant recall needs the
+  desktop app (4.1) or aggressive client-side caching — track it there, don't
+  pretend serverless will feel local.
+- *SLM fine-tuning* is powerful but worthless without data — it follows 2.3, not
+  precedes it.
+
+**Open strategic question (founder's call, not a code task):** the critique says
+*"focus on ONE workflow, not a platform for everything"* (Cursor won by owning
+coding). Quantora today spans websites, research, students, professionals.
+Narrowing could sharpen the moat — but that's a positioning decision for you,
+flagged here rather than silently chosen.
+
 ---
 
 ## Suggested order of attack
 
 **Foundations first, then the swing.**
-`0.3 efficiency` → `3.0 connect-or-cut` (integrity gate) → `1.x Stripe` →
-`3.1 memory` / `8.1 Outcome Graph nav` (same object) → `2.1 best-of-N` +
+`0.3 efficiency` ✅ → `3.0 connect-or-cut` ✅ → `9.1 Acceptance-Rate metric`
+(cheap, proves value, feeds the flywheel) → `1.x Stripe` → `3.1 memory` /
+`8.1 Outcome Graph nav` (same object) → `9.3 two-speed PCL` + `2.1 best-of-N` +
 `7.5 variants` → `6.x Automations` (the flagship) → `3.2 monitoring` /
-`8.3 insights` → `7.x Generative Studio` → `4.1 desktop`, with Phase 5 hygiene
-interleaved.
+`8.3 insights` + `9.4 Ghost surface` → `7.x Generative Studio` → `4.1 desktop` /
+`9.6 SLM`, with Phase 5 hygiene interleaved.
 
 *Sequencing logic:* **3.0 is non-negotiable and early** — we do not build new
 intelligence on top of dead intelligence. Memory (3.1) and the Outcome-Graph nav
