@@ -33,7 +33,18 @@ export function parseDeckSpec(text) {
     };
   }
 
-  return null;
+  // If we reach here, no JSON was found at all.
+  return {
+    title: "Generated Presentation",
+    slides: [
+      {
+        type: "cover",
+        title: "Presentation Error",
+        subtitle: "The AI did not output a valid JSON presentation.",
+        speakerNotes: "The AI responded with text but failed to provide the necessary JSON data structure."
+      }
+    ]
+  };
 }
 
 export function normalizeDeckSpec(spec) {

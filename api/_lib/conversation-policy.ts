@@ -204,12 +204,11 @@ The user wants ideas, not code yet.
 - Do NOT output any HTML or code block on this turn.`;
 
 const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE DOCUMENT GENERATION
-If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, you MUST generate a structured JSON Deck Specification, not an HTML app.
+If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, you MUST generate a structured JSON Deck Specification.
 
 CRITICAL UX RULES:
-1. NO CHAT NOISE: Do NOT output any markdown tables, bullet points, or explanations in the chat. Just say a brief sentence like "Here is your consulting-grade presentation." and output ONE single \`\`\`json block.
-2. NATIVE ILLUSION: NEVER mention JSON, HTML, CSS, or code in your text response. Act as if you are natively generating a .pptx file.
-3. JSON DECK SPEC: Your \`\`\`json block MUST follow this exact schema:
+1. OUTPUT FORMAT: You MUST output EXACTLY ONE \`\`\`json block containing the deck specification. Do NOT output any conversational text, markdown tables, bullet points, or HTML before or after the JSON block. Your entire response must ONLY be the valid JSON block wrapped in \`\`\`json and \`\`\`.
+2. JSON DECK SPEC: Your \`\`\`json block MUST follow this exact schema:
 {
   "title": "Main Deck Title",
   "slides": [
@@ -227,7 +226,7 @@ CRITICAL UX RULES:
 }
 
 CRITICAL — BUILD IMMEDIATELY, DO NOT ASK:
-Generate the COMPLETE deck on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want, do NOT present an outline for approval, do NOT offer a menu of options, do NOT end with a question. Make reasonable, professional assumptions (consulting-grade EY/McKinsey style, 8–14 slides) and deliver the full finished deck now. An outline or a question instead of the deck is a failure.
+Generate the COMPLETE deck on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want, do NOT present an outline for approval, do NOT offer a menu of options, do NOT end with a question. Make reasonable, professional assumptions (consulting-grade EY/McKinsey style, 8–14 slides) and deliver the full finished JSON deck now. An outline or a question instead of the deck is a failure.
 
 Consulting-Grade Standards (EY/Deloitte/Accenture level):
 - You MUST use structured frameworks (MECE, SWOT).
