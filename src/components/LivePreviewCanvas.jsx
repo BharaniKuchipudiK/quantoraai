@@ -14,6 +14,7 @@ import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
 import { OFFICE_KIND } from '../lib/office-intent.js';
+import OfficePreview from './OfficePreview.jsx';
 
 // Office kind → download-button label / extension.
 const OFFICE_LABEL = {
@@ -760,16 +761,26 @@ export default function LivePreviewCanvas({
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: viewport === 'desktop' ? '0' : '20px' }}>
-        <div style={{
-          ...viewportStyles[viewport], background: '#ffffff',
-          borderRadius: viewport === 'desktop' ? '0' : '12px', overflow: 'hidden',
-          boxShadow: viewport === 'desktop' ? 'none' : '0 10px 40px rgba(0,0,0,0.2)',
-          transition: 'all 0.3s ease', position: 'relative'
-        }}>
-          {previewFrame}
+      {isOfficeDoc ? (
+        // Office artifacts get a format-faithful preview (spreadsheet grid /
+        // slide stage / paper page) instead of the responsive website viewport.
+        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          <OfficePreview kind={resolvedOfficeKind} html={currentCode} isLight={isLight}>
+            {previewFrame}
+          </OfficePreview>
         </div>
-      </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: viewport === 'desktop' ? '0' : '20px' }}>
+          <div style={{
+            ...viewportStyles[viewport], background: '#ffffff',
+            borderRadius: viewport === 'desktop' ? '0' : '12px', overflow: 'hidden',
+            boxShadow: viewport === 'desktop' ? 'none' : '0 10px 40px rgba(0,0,0,0.2)',
+            transition: 'all 0.3s ease', position: 'relative'
+          }}>
+            {previewFrame}
+          </div>
+        </div>
+      )}
 
       {deployResult && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
