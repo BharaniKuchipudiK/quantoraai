@@ -216,12 +216,14 @@ Audited against the code; most of it **validates the direction we're already on*
   not_helpful.
 
 **New / sharpened to-dos:**
-- 🔜 **9.1 Acceptance Rate as the North-Star metric** *(immediate, cheap,
-  anti-gimmick).* Instrument proactive suggestions/actions: shown → accepted /
-  rejected / ignored, per surface. We already record thumbs; extend it to every
-  proactive act and expose the rate. *Why now:* it's the one honest number that
-  proves the PCL adds value instead of noise — and it's the reward signal 2.3
-  needs. Small, measurable, no architecture change.
+- ✅ **9.1 Acceptance Rate as the North-Star metric.** Shipped: a
+  `suggestion_events` table (isolated migration `0015`) records every proactive
+  act — shown / accepted / dismissed, per surface — written fire-and-forget from
+  the inline-suggestion hook via `/api/product-event` (anonymous-allowed, no
+  prompt text). `suggestion_acceptance_7d` view + `getSuggestionAcceptance()`
+  surface the per-surface 7-day rate in the admin metrics endpoint; swept by the
+  same retention TTL. *Accept met:* we can now measure whether the PCL is
+  accepted, not just how often it's shown.
 - ⏳ **9.2 "Interaction = Action" as a product principle.** Make diff-apply +
   accept/reject the *default* interaction mode beyond code (tasks, content,
   config), not text the user copies. Extends the shipped diff engine.

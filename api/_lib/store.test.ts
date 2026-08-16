@@ -5,7 +5,10 @@ import test from "node:test";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
 
-const { exportUserData, deleteUserData, purgeOldTelemetry } = await import("./store.js");
+const {
+  exportUserData, deleteUserData, purgeOldTelemetry,
+  recordSuggestionEvent, getSuggestionAcceptance,
+} = await import("./store.js");
 
 type Call = { url: string; method: string };
 
@@ -48,8 +51,9 @@ test("purgeOldTelemetry deletes only rows older than the cutoff, on both telemet
     assert.equal(res.ok, true);
     const usage = calls.find((c) => c.url.includes("/rest/v1/usage?"));
     const events = calls.find((c) => c.url.includes("/rest/v1/product_events?"));
-    assert.ok(usage && events, "both telemetry tables purged");
-    for (const c of [usage!, events!]) {
+    const suggestions = calls.find((c) => c.url.includes("/rest/v1/suggestion_events?"));
+    assert.ok(usage && events && suggestions, "all three telemetry tables purged");
+    for (const c of [usage!, events!, suggestions!]) {
       assert.equal(c.method, "DELETE");
       assert.match(c.url, /created_at=lt\./); // strictly less-than a cutoff, never all rows
     }
@@ -81,3 +85,34 @@ test("privacy helpers refuse to act on an empty account id", async () => {
   assert.equal(await deleteUserData(""), false);
   assert.equal(await exportUserData(""), null);
 });
+
+test("recordSuggestionEvent writes one row to suggestion_events with surface + action", withFetch(
+  () => [],
+  async (calls) => {
+    recordSuggestionEvent({ userSub: "user-9", surface: "inline-continues", action: "accepted" });
+    // fire-and-forget: give the un-awaited request a tick to fire
+    await new Promise((r) => setTimeout(r, 5));
+    const post = calls.find((c) => c.url.includes("/rest/v1/suggestion_events"));
+    assert.ok(post, "posted to suggestion_events");
+    assert.equal(post!.method, "POST");
+  },
+));
+
+test("recordSuggestionEvent ignores incomplete input (no surface/action)", withFetch(
+  () => [],
+  async (calls) => {
+    recordSuggestionEvent({ userSub: null, surface: "", action: "shown" });
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(calls.length, 0, "no write without a surface");
+  },
+));
+
+test("getSuggestionAcceptance reads the 7-day acceptance view", withFetch(
+  () => [{ surface: "inline-continues", shown: 10, accepted: 4, dismissed: 2, acceptance_rate_pct: 66.7 }],
+  async (calls) => {
+    const rows = await getSuggestionAcceptance();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].surface, "inline-continues");
+    assert.match(calls[0].url, /suggestion_acceptance_7d/);
+  },
+));

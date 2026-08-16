@@ -1,6 +1,6 @@
 import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
 import { authenticateAdminRequest } from "../_lib/admin-auth.js";
-import { getGrowthSummary, getDailySeries, isStoreConfigured } from "../_lib/store.js";
+import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured } from "../_lib/store.js";
 import { getProductInsights } from "../_lib/product-analytics.js";
 import { getTechnicalInsights } from "../_lib/technical-analytics.js";
 
@@ -23,7 +23,11 @@ export default async function handler(req: any, res: any) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
-  const [growth, series] = await Promise.all([getGrowthSummary(), getDailySeries(14)]);
+  const [growth, series, suggestionAcceptance] = await Promise.all([
+    getGrowthSummary(),
+    getDailySeries(14),
+    getSuggestionAcceptance(),
+  ]);
   const product = await getProductInsights(growth);
   const technical = await getTechnicalInsights(growth?.requests7d ?? 0);
 
@@ -58,6 +62,10 @@ export default async function handler(req: any, res: any) {
     product: product ?? null,
 
     technical: technical ?? null,
+
+    /* PCL North-Star (Roadmap 9.1): per-surface 7-day proactive-suggestion
+     * acceptance rate — the honest measure of whether the PCL adds value. */
+    suggestionAcceptance: suggestionAcceptance ?? [],
 
     /*
      * Deliberately absent rather than fabricated: uptime, CPU, memory and

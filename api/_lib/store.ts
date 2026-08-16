@@ -191,6 +191,45 @@ export function recordProductEvent(entry: {
   });
 }
 
+/*
+ * Acceptance-Rate instrumentation (Roadmap 9.1). One row per proactive act:
+ * shown / accepted / dismissed, per surface. Fire-and-forget bookkeeping — a
+ * suggestion must never wait on, or fail because of, analytics. Stores no
+ * prompt/response text, only surface + action.
+ */
+export function recordSuggestionEvent(entry: {
+  userSub: string | null;
+  surface: string;
+  action: "shown" | "accepted" | "dismissed";
+  meta?: Record<string, unknown>;
+}): void {
+  if (!entry.surface || !entry.action) return;
+  void request("suggestion_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      user_sub: entry.userSub,
+      surface: entry.surface,
+      action: entry.action,
+      meta: entry.meta || {},
+    }]),
+  });
+}
+
+/** Read the 7-day acceptance rate per surface for the admin dashboard. */
+export async function getSuggestionAcceptance(): Promise<Array<{
+  surface: string; shown: number; accepted: number; dismissed: number; acceptance_rate_pct: number | null;
+}>> {
+  const res = await request("suggestion_acceptance_7d?select=*", { method: "GET" });
+  if (!res) return [];
+  try {
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Persist the owner of a project before allowing later privileged mutations. */
 export async function recordPublishedSite(entry: {
   userSub: string;
@@ -478,9 +517,10 @@ export async function purgeOldTelemetry(days: number): Promise<{ ok: boolean }> 
   if (!config()) return { ok: false };
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const before = `created_at=lt.${encodeURIComponent(cutoff)}`;
-  const [u, e] = await Promise.all([
+  const [u, e, s] = await Promise.all([
     requestRaw(`usage?${before}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
     requestRaw(`product_events?${before}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
+    requestRaw(`suggestion_events?${before}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }),
   ]);
-  return { ok: Boolean(u && u.ok && e && e.ok) };
+  return { ok: Boolean(u && u.ok && e && e.ok && s && s.ok) };
 }
