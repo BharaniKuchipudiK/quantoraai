@@ -14,8 +14,11 @@ import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
-import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
-import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
+import { detectOfficeIntent, isPresentationIntent as detectSlideDeck, OFFICE_KIND } from '../lib/office-intent.js';
+import { generateDeck } from '../lib/deck-client.js';
+import { renderConsultingDeck } from '../lib/deck-render.js';
+import { hasSlideHtml } from '../lib/deck-builder.js';
+import { buildDeck } from '../lib/deck-render.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -490,7 +493,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // model produced (HTML, or a leaked slide-data array) instead of trusting
     // the model to emit a perfect self-contained slide viewer.
     if (detectSlideDeck(messages)) {
-      const deckHtml = normalizeDeck(rawText, { title: deriveDeckTitle(messages) });
+      const deckHtml = buildDeck(rawText, { title: deriveDeckTitle(messages) });
       if (deckHtml) {
         setCanvasCode(deckHtml);
         setCanvasOpen(true);
@@ -815,9 +818,46 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
   };
 
+  // Presentations use the dedicated JSON-mode deck endpoint (content) + the
+  // deterministic consulting renderer (design) — never the chat stream. This is
+  // what makes decks reliable: no prose to parse, no HTML/React, no crash path.
+  const handleDeckRequest = async (text) => {
+    const userMsg = { id: Date.now(), sender: 'user', text };
+    const workingId = Date.now() + 1;
+    updateActiveMessages((prev) => [...prev, userMsg, { id: workingId, sender: 'ai', text: 'Building your presentation…' }]);
+    setInputText('');
+    setAttachments([]);
+    setIsGenerating(true);
+    try {
+      const userKey = localStorage.getItem('geminiApiKey') || undefined;
+      const data = await generateDeck(text, { userKey });
+      const html = data?.ok && data.spec ? renderConsultingDeck(data.spec) : null;
+      if (html) {
+        setCanvasCode(html);
+        setCanvasOpen(true);
+        updateActiveMessages((prev) => prev.map((m) => (m.id === workingId
+          ? { ...m, text: "Here's your presentation — ready in the preview panel →" } : m)));
+      } else {
+        updateActiveMessages((prev) => prev.map((m) => (m.id === workingId
+          ? { ...m, text: data?.error || "I couldn't build the deck cleanly — tap send to try again.", isError: true } : m)));
+      }
+    } catch (err) {
+      updateActiveMessages((prev) => prev.map((m) => (m.id === workingId
+        ? { ...m, text: 'Deck generation failed — please try again.', isError: true } : m)));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
+
+    // Presentations bypass the chat stream entirely (dedicated deck pipeline).
+    if (detectOfficeIntent({ messages: [{ sender: 'user', text: textToSend }] }) === OFFICE_KIND.POWERPOINT) {
+      handleDeckRequest(textToSend);
+      return;
+    }
 
     // HUMAN IN THE LOOP: only intercept when the selected model recently failed
     // AND a genuinely different healthy model exists to offer.
@@ -1352,7 +1392,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         // a blank preview when the model returned an App.jsx instead of a deck.
         if (isPresentationIntent) {
           const title = deriveDeckTitle(messages);
-          let deckHtml = normalizeDeck(lastMsg.text, { title });
+          let deckHtml = buildDeck(lastMsg.text, { title });
 
           // Salvage: the model may have wrapped the deck in files (index.html /
           // presentation.html) or embedded slide content across files.
@@ -1360,12 +1400,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             const parsed = parseVFSFromMarkdown(lastMsg.text, vfs);
             const htmlFile = parsed['presentation.html'] || parsed['index.html'];
             if (htmlFile?.content) {
-              deckHtml = normalizeDeck(htmlFile.content, { title })
+              deckHtml = buildDeck(htmlFile.content, { title })
                 || (hasSlideHtml(htmlFile.content) ? htmlFile.content : null);
             }
             if (!deckHtml) {
               const joined = Object.values(parsed).map((f) => f?.content || '').join('\n\n');
-              deckHtml = normalizeDeck(joined, { title });
+              deckHtml = buildDeck(joined, { title });
             }
           }
 

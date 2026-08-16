@@ -203,33 +203,40 @@ The user wants ideas, not code yet.
 - Ask what they think and offer <quantora-modal> to proceed.
 - Do NOT output any HTML or code block on this turn.`;
 
-const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE / PRESENTATION GENERATION
-If the user requests a presentation, deck, slides, PowerPoint (.pptx), or Word (.docx) document, output ONE complete, self-contained HTML document (a single \`\`\`html block). Quantora renders it in the Live Preview and owns the download/export — so DO NOT add any download button, and DO NOT include any export or file-generation libraries.
+const OFFICE_GENERATION_DIRECTIVE = `PRESENTATION / DECK GENERATION
+If the user requests a presentation, deck, slides, or PowerPoint, output the deck as a STRUCTURED JSON SPEC — Quantora owns the visual design and rendering. You supply the CONTENT and choose the layout per slide; you do NOT write HTML, CSS, or code. This produces consulting-grade output reliably.
 
-CRITICAL — THIS OVERRIDES THE VFS MULTI-FILE RULE ABOVE:
-For a presentation/deck/document you MUST NOT create a multi-file project or a React app. Do NOT emit \`filepath="..."\` code blocks, do NOT create App.jsx / main.jsx / index.html / package.json, and do NOT write React/JSX or any code that needs a build step or a dev server. Output EXACTLY ONE plain \`\`\`html fenced block (no filepath attribute) containing the whole deck. The VFS/multi-file/filepath instruction does not apply to presentations or documents — this rule wins.
+CRITICAL — OVERRIDES THE VFS / MULTI-FILE / "ASK FIRST" RULES:
+Do NOT create files, App.jsx, HTML, or React. Do NOT ask which style/approach they want, do NOT present an outline for approval, do NOT offer options or end with a question. Build the COMPLETE deck immediately on the first request with reasonable professional assumptions. An outline or a question instead of the deck is a failure.
 
-CRITICAL — BUILD IMMEDIATELY, DO NOT ASK:
-Generate the COMPLETE deck on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want, do NOT present an outline for approval, do NOT offer a menu of options, do NOT end with a question. Make reasonable, professional assumptions (consulting-grade EY/McKinsey style, 8–14 slides) and deliver the full finished deck now. An outline or a question instead of the deck is a failure.
+OUTPUT FORMAT — say ONE short sentence (e.g. "Here's your presentation."), then EXACTLY ONE \`\`\`json fenced block, nothing after it:
+\`\`\`json
+{
+  "title": "Deck title",
+  "subtitle": "one-line subtitle",
+  "slides": [
+    { "layout": "cover", "title": "...", "subtitle": "..." },
+    { "layout": "section", "title": "Market Landscape", "subtitle": "..." },
+    { "layout": "bullets", "title": "Action-title takeaway", "subtitle": "optional kicker", "bullets": ["short point", "short point", "short point"] },
+    { "layout": "stat", "title": "...", "stats": [ {"value": "$5B", "label": "market by 2030"}, {"value": "70%", "label": "value concentration"} ] },
+    { "layout": "chart", "title": "...", "chart": { "type": "bar", "caption": "Source: ...", "data": [ {"label": "2024", "value": 12}, {"label": "2030", "value": 48} ] }, "bullets": ["so-what insight"] },
+    { "layout": "two-column", "title": "...", "columns": [ {"heading": "Today", "bullets": ["..."]}, {"heading": "2030", "bullets": ["..."]} ] },
+    { "layout": "quote", "quote": "A sharp, memorable line.", "attribution": "Source" },
+    { "layout": "close", "title": "Recommended next steps", "bullets": ["...", "..."] }
+  ]
+}
+\`\`\`
 
-CHAT OUTPUT:
-1. NO CHAT NOISE: Say ONE short sentence (e.g. "Here's your presentation.") then the single \`\`\`html block. No outlines, bullet lists, tables, or slide data in the chat.
-2. NATIVE ILLUSION: Do not mention HTML/CSS/JS or file names in the chat; speak as if you produced the deck itself.
+LAYOUTS: cover (opening), section (divider between parts), bullets (default; 3–5 SHORT points), stat (2–4 big metrics), chart (type = bar | line | donut, with numeric data), two-column (comparison / before-after), quote, close (recommendations/CTA).
 
-HARD TECHNICAL CONSTRAINTS (these make it actually render + export cleanly):
-- SELF-CONTAINED ONLY. All CSS in one <style> tag. NO external stylesheets, NO CDN (no Tailwind CDN, no Google Fonts), NO external <script>, NO remote images. Anything loaded from a URL is forbidden.
-- ALL visuals as INLINE SVG or CSS: icons, spot illustrations, charts/graphs (bar/line/donut), diagrams, logos, textures, gradients. Never <img src="http...">. Inline SVG is how you get imagery that survives export.
-- Each slide is a <section class="slide"> sized 16:9 (aspect-ratio: 16/9). This structure is required for export.
+CONSULTING QUALITY BAR (EY / McKinsey / BCG):
+- 8–14 slides: cover → (agenda optional) → sections with content → close.
+- ACTION TITLES: each slide title states the insight ("Value concentrates in 3 sectors"), not a topic label ("Sectors").
+- Pyramid/MECE structure; quantified, specific claims; use stat and chart slides for numbers (real figures from the topic, with a Source caption).
+- 3–5 bullets max per slide, each a short phrase — never paragraphs. Vary layouts; do not put bullets on every slide.
+- Plain text in fields (a little **bold** is fine). No HTML, no markdown headings, no code.
 
-DESIGN BAR — match a top-tier design tool (think Claude artifacts / Gamma / consulting flagship):
-- A cohesive design system: 2–3 font sizes scale, a disciplined color palette (define CSS variables), consistent spacing, a signature accent color, and a subtle background treatment (gradient mesh, soft shapes) per slide.
-- VARIED LAYOUTS across slides — NOT bullets on every slide. Use: a bold title/cover slide; section dividers; two-column (text + SVG visual); a stat/metric row with large numbers; a quote slide; a simple SVG chart or comparison table; a closing slide. Aim for 8–14 slides.
-- Real hierarchy and whitespace. Short, assertive headlines (Minto/action titles). Minimal words per slide.
-- MOTION: tasteful CSS only — a keyframe fade/slide-up reveal on slide content, hover/transition polish. Keep it smooth and professional, never gaudy. No JS animation libraries.
-- PRESENT MODE: include lightweight inline JS (vanilla, no libraries) for arrow-key / click navigation between slides with a smooth transition, and a slide counter. Everything inline.
-- Consulting-grade rigor when the topic warrants it: title slide, agenda, MECE structure, quantified claims, a footer with page number.
-
-For Word (.docx) / documents: same self-contained rules — one <style>, no CDN, no export libs. Produce a clean document layout (cover, heading hierarchy H1/H2/H3, styled tables as inline HTML, generous typographic spacing) that reads like a finished report. Quantora handles the .docx/.pdf export.`;
+For Word (.docx) / documents only: output ONE self-contained \`\`\`html block (one <style>, no CDN, no scripts) with a clean report layout — cover, H1/H2/H3 hierarchy, styled tables. Quantora handles export.`;
 
 export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
