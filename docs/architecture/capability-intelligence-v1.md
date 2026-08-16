@@ -1,5 +1,12 @@
 # Quantora Capability Intelligence v1
 
+> **Status (2026-08): design only — not shipped.** The v1 module
+> (`src/lib/capability-intelligence.js`) was removed as dead code: it was
+> imported by nothing, and the live prompt surfaces render `capabilityProposals`
+> through a different path. This document is preserved as the design of record;
+> the proposer is to be implemented for real as part of Phase 3 (Cognitive
+> Layer) / 8.1 (the Outcome Graph) in `ROADMAP.md`, not resurrected as-is.
+
 ## Decision
 
 Quantora proposes a capability only when the current outcome state makes that
