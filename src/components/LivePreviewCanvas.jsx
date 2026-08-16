@@ -356,6 +356,72 @@ export default function LivePreviewCanvas({
     desktop: { width: '100%', height: '100%' }
   };
 
+  const handleDownloadPptx = async () => {
+    try {
+      if (!window.PptxGenJS) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+      const pptx = new window.PptxGenJS();
+      const iframe = document.querySelector('iframe[title="preview"]');
+      let doc = null;
+      try {
+        if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
+      } catch (e) {}
+      if (!doc) doc = new DOMParser().parseFromString(currentCode, 'text/html');
+      
+      const slideElements = doc.querySelectorAll('.slide, section, .card, article') || [];
+      const elementsToProcess = slideElements.length > 0 ? slideElements : [doc.body];
+      
+      let hasSlides = false;
+      elementsToProcess.forEach((el) => {
+         if (!el.innerText.trim()) return;
+         hasSlides = true;
+         const slide = pptx.addSlide();
+         let yPos = 0.5;
+         
+         const headers = el.querySelectorAll('h1, h2, h3');
+         headers.forEach(h => {
+             if (yPos > 5) return;
+             slide.addText(h.innerText, { x: 0.5, y: yPos, w: '90%', fontSize: 24, bold: true, color: '363636' });
+             yPos += 0.8;
+         });
+         
+         const paragraphs = el.querySelectorAll('p');
+         paragraphs.forEach(p => {
+             if (yPos > 5) return;
+             slide.addText(p.innerText, { x: 0.5, y: yPos, w: '90%', fontSize: 14, color: '666666' });
+             yPos += 0.6;
+         });
+         
+         const lists = el.querySelectorAll('li');
+         lists.forEach(li => {
+             if (yPos > 5) return;
+             slide.addText(li.innerText, { x: 0.8, y: yPos, w: '80%', fontSize: 14, bullet: true, color: '363636' });
+             yPos += 0.4;
+         });
+      });
+      
+      if (!hasSlides) {
+         const slide = pptx.addSlide();
+         slide.addText("Generated Presentation", { x: 1, y: 1, fontSize: 24, bold: true });
+         slide.addText("Please view the rich HTML version in your browser for the full design.", { x: 1, y: 2, fontSize: 14 });
+      }
+
+      let filename = suggestedProjectName || 'presentation';
+      if (filename.endsWith('.html')) filename = filename.replace('.html', '');
+      pptx.writeFile({ fileName: filename + '.pptx' });
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate PPTX. Please use Export to PDF from the browser instead.');
+    }
+  };
+
   const handleDownload = () => {
     const blob = new Blob([currentCode], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -605,7 +671,8 @@ export default function LivePreviewCanvas({
   );
 
   const showHeader = !hideHeader;
-  const isOfficeDoc = /pptxgen|docx@/i.test(currentCode || '');
+  const hasPresentationName = Object.keys(vfs || {}).some(name => /presentation|deck|slides|ppt/i.test(name)) || /presentation|deck|slides|ppt/i.test(suggestedProjectName || '');
+  const isOfficeDoc = /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName;
 
   return (
     <div style={{
@@ -625,6 +692,11 @@ export default function LivePreviewCanvas({
         <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1', flexShrink: 0 }}>Live Preview</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {viewportSwitcher}
+          {isOfficeDoc && (
+            <button onClick={handleDownloadPptx} title="Download as .pptx" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <Download size={16} /> PPTX
+            </button>
+          )}
           {!isOfficeDoc && (
             <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
               <Download size={18} />
@@ -652,6 +724,11 @@ export default function LivePreviewCanvas({
           background: isLight ? '#ffffff' : '#1e293b',
         }}>
           {viewportSwitcher}
+          {isOfficeDoc && (
+            <button onClick={handleDownloadPptx} title="Download as .pptx" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <Download size={16} /> PPTX
+            </button>
+          )}
           {!isOfficeDoc && (
             <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
               <Download size={18} />
