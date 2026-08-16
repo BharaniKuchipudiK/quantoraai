@@ -150,6 +150,7 @@ ARTIFACT (routed to Live Preview — not read in chat):
 - External <script> tags only for payment SDKs (e.g. Stripe) or icon libraries when strictly needed.
 - Google Fonts via <link> are fine.
 - Polished, complete, real content — no TODOs or lorem ipsum.
+- For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd" }]\`. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
 - Optional session-memory HTML comment after the code block only.`;
 
 /*
@@ -176,7 +177,7 @@ Gather what's still missing through normal dialogue (brand/vibe, sections or pro
 - Put ALL visual styling in a comprehensive <style> block (responsive @media included). Do NOT use Tailwind CDN or external CSS frameworks.
 - Inline all JavaScript; external scripts only for Stripe/icons when needed.
 - Polished, responsive, real content built from what the user told you. No lorem ipsum or TODOs.
-- If they wanted a shop, include a WORKING client-side demo cart and checkout: add-to-cart buttons, a cart drawer with quantities and a running total, and a mock checkout screen — clearly a demo, with no real payment.
+- If they wanted a shop: include a working client-side cart. You MUST output a \`products.json\` file alongside the HTML containing the catalog (e.g. \`[{ "id": "item1", "name": "Item 1", "priceCents": 1000, "currency": "usd" }]\`). The checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "item1", "quantity": 1 }] }\` to launch the secure Stripe payment flow.
 - Use tasteful placeholder imagery where the user has not supplied photos.
 - Put at most one short sentence before the code block, and nothing after it (except an optional session-memory HTML comment).`;
 
@@ -200,6 +201,23 @@ The user wants ideas, not code yet.
 - Explain the benefit in plain language (1–2 sentences).
 - Ask what they think and offer quantora-choices to proceed.
 - Do NOT output any HTML or code block on this turn.`;
+
+const OFFICE_GENERATION_DIRECTIVE = `MS OFFICE DOCUMENT GENERATION
+If the user requests a PowerPoint (.pptx) or Word (.docx) document, you MUST generate a complete, self-contained HTML application that generates and downloads the requested file on the client-side.
+
+CRITICAL UX RULES:
+1. NO CHAT NOISE: Do NOT output any markdown outlines, Python scripts, or long explanations in the chat. The user only wants to see the visual preview in the Live Canvas. Just say a brief sentence like "Here is your consulting-grade presentation." and output ONE single \`\`\`html block.
+2. VISUAL PREVIEW MANDATORY: The HTML MUST render a gorgeous, interactive Slide Viewer or Document Viewer directly in the browser. Do not just show a "Download" button. You MUST use CSS (like Tailwind) to render 16:9 cards that perfectly mimic the actual slides you are generating, so the user can review the content visually before deciding to download.
+3. EXPORT BUTTON: Overlay a prominent "Download .pptx" or "Download .docx" button that triggers the export.
+
+For PowerPoint (.pptx):
+- Include: <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/libs/jszip.min.js"></script>
+- Include: <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
+- Mandate Consulting-Grade Standards (EY/Deloitte/Accenture level): Define a corporate Master Slide, include footer positioning, page numbers, proper title slide, and structured frameworks (MECE, SWOT, quantitative charts, tables).
+
+For Word Document (.docx):
+- Include: <script src="https://unpkg.com/docx@8.2.3/build/index.js"></script>
+- Mandate Professional Standards: Cover page, Table of Contents, precise heading hierarchy (Heading 1/2/3), styled tables, standard fonts (Arial/Calibri).`;
 
 export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
@@ -234,6 +252,11 @@ export function buildConversationSystemPrompt(options: {
     }
   } else if (options.refineMode) {
     build = `\n\n${REFINE_ARTIFACT_DIRECTIVE}`;
+  }
+
+  // Inject Office Generation constraints if building or guiding
+  if (options.buildMode || options.guided) {
+    build += `\n\n${OFFICE_GENERATION_DIRECTIVE}`;
   }
 
   const plan = options.planMode

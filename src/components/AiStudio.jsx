@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
+import StudioToolsMenu from './StudioToolsMenu';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
@@ -398,7 +399,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [attachments, setAttachments] = useState([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
-  const [arenaMode, setArenaMode] = useState(false);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [hideWelcomeScreen, setHideWelcomeScreen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('quantora_hide_welcome') === 'true';
+    }
+    return false;
+  });  const [arenaMode, setArenaMode] = useState(false);
   const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
@@ -1646,7 +1653,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Messages Stream / Initial Hero State */}
       <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px', position: 'relative' }}>
-        {messages.length <= 1 ? (
+        {messages.length <= 1 && !hideWelcomeScreen ? (
           /* Clean Hero Empty State */
           <div style={{ 
             textAlign: 'center', 
@@ -1693,61 +1700,79 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               width: '100%'
             }}>
               
-              {[
-                { name: "Gemini 1.5 Pro", desc: "2M Context Window • Advanced Reasoning for complex logic.", icon: <Cpu size={20} color="#f97316"/>, badge: "NEW", color: "#f97316" },
-                { name: "Claude 3.5 Sonnet", desc: "Ultra-fast coding via OpenRouter integration.", icon: <Sparkles size={20} color="#8b5cf6"/>, badge: "HOT", color: "#8b5cf6" },
-                { name: "Llama 3 70B", desc: "Open-source powerhouse with zero filters.", icon: <Layers size={20} color="#10b981"/>, badge: "UPDATED", color: "#10b981" }
-              ].map((model, idx) => (
-                <div key={idx} style={{
-                  flex: '1 1 200px',
-                  maxWidth: '280px',
-                  background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.05)',
-                  backdropFilter: 'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
-                  border: isLight ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
-                  boxShadow: isLight ? '0 8px 32px rgba(31, 38, 135, 0.07)' : '0 8px 32px rgba(0, 0, 0, 0.3)',
-                  borderRadius: '16px',
-                  padding: '16px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
-                }}
-                onMouseEnter={(e) => { 
-                  e.currentTarget.style.transform = 'translateY(-3px)'; 
-                  e.currentTarget.style.boxShadow = `0 12px 24px ${model.color}33`; 
-                  e.currentTarget.style.borderColor = `${model.color}66`;
-                }}
-                onMouseLeave={(e) => { 
-                  e.currentTarget.style.transform = 'none'; 
-                  e.currentTarget.style.boxShadow = isLight ? '0 4px 12px rgba(0,0,0,0.03)' : '0 8px 32px rgba(0,0,0,0.2)'; 
-                  e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
-                }}
-                onClick={() => {
-                  if (setSelectedModel && availableModels) {
-                    const found = availableModels.find(m => m.name === model.name);
-                    if (found) setSelectedModel(found);
-                  }
-                }}
-                >
-                  <div style={{ position: 'absolute', top: 0, right: 0, background: `${model.color}22`, color: model.color, fontSize: '0.65rem', fontWeight: '800', padding: '4px 10px', borderBottomLeftRadius: '12px' }}>
-                    {model.badge}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                    <div style={{ background: `${model.color}15`, padding: '8px', borderRadius: '12px', display: 'flex' }}>
-                      {model.icon}
+              {(availableModels || [])
+                .filter(m => m.available !== false)
+                .slice(0, 3)
+                .map((model, idx) => {
+                  const colors = ['#f97316', '#8b5cf6', '#10b981'];
+                  const icons = [<Cpu size={20} color={colors[idx]}/>, <Sparkles size={20} color={colors[idx]}/>, <Layers size={20} color={colors[idx]}/>];
+                  const badges = ["HOT", "RECOMMENDED", "UPDATED"];
+                  
+                  return (
+                    <div key={idx} style={{
+                      flex: '1 1 200px',
+                      maxWidth: '280px',
+                      background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.05)',
+                      backdropFilter: 'blur(20px)',
+                      WebkitBackdropFilter: 'blur(20px)',
+                      border: isLight ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      boxShadow: isLight ? '0 8px 32px rgba(31, 38, 135, 0.07)' : '0 8px 32px rgba(0, 0, 0, 0.3)',
+                      borderRadius: '16px',
+                      padding: '16px',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'transform 0.2s, box-shadow 0.2s, border-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => { 
+                      e.currentTarget.style.transform = 'translateY(-3px)'; 
+                      e.currentTarget.style.boxShadow = `0 12px 24px ${colors[idx]}33`; 
+                      e.currentTarget.style.borderColor = `${colors[idx]}66`;
+                    }}
+                    onMouseLeave={(e) => { 
+                      e.currentTarget.style.transform = 'none'; 
+                      e.currentTarget.style.boxShadow = isLight ? '0 4px 12px rgba(0,0,0,0.03)' : '0 8px 32px rgba(0,0,0,0.2)'; 
+                      e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+                    }}
+                    onClick={() => {
+                      if (setSelectedModel) setSelectedModel(model);
+                    }}
+                    >
+                      <div style={{ position: 'absolute', top: 0, right: 0, background: `${colors[idx]}22`, color: colors[idx], fontSize: '0.65rem', fontWeight: '800', padding: '4px 10px', borderBottomLeftRadius: '12px' }}>
+                        {model.tag || badges[idx]}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <div style={{ background: `${colors[idx]}15`, padding: '8px', borderRadius: '12px', display: 'flex' }}>
+                          {icons[idx]}
+                        </div>
+                        <h3 style={{ margin: 0, fontSize: '0.95rem', color: textColor, fontWeight: '700' }}>{formatModelName(model.name)}</h3>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: subtextColor, lineHeight: '1.5' }}>
+                        {model.description}
+                      </p>
                     </div>
-                    <h3 style={{ margin: 0, fontSize: '0.95rem', color: textColor, fontWeight: '700' }}>{formatModelName(model.name)}</h3>
-                  </div>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: subtextColor, lineHeight: '1.5' }}>
-                    {model.desc}
-                  </p>
-                </div>
-              ))}
+                  );
+              })}
             </div>
-
-
+            
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: subtextColor, fontSize: '0.85rem' }}>
+                <input 
+                  type="checkbox" 
+                  checked={hideWelcomeScreen}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setHideWelcomeScreen(val);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('quantora_hide_welcome', val);
+                    }
+                  }}
+                  style={{ accentColor: '#f97316' }}
+                />
+                Do not show this next time
+              </label>
+            </div>
 
           </div>
         ) : (
@@ -2026,6 +2051,79 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 multiple
               />
 
+              {/* Plus Button for Tools Menu */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowToolsMenu(true)}
+                  title="Tools Menu"
+                  style={{
+                    background: showToolsMenu ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
+                    border: 'none',
+                    color: showToolsMenu ? textColor : subtextColor,
+                    padding: '6px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={e => {
+                    if (!showToolsMenu) {
+                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
+                      e.currentTarget.style.color = textColor;
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!showToolsMenu) {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = subtextColor;
+                    }
+                  }}
+                >
+                  <Plus size={18} />
+                </button>
+                <StudioToolsMenu
+                  isOpen={showToolsMenu}
+                  onClose={() => setShowToolsMenu(false)}
+                  isLight={isLight}
+                  onSelectTool={(tool) => {
+                    let defaultPrompt = '';
+                    switch (tool) {
+                      case 'Search':
+                        defaultPrompt = 'Search the web for ';
+                        break;
+                      case 'Deep Research':
+                        defaultPrompt = 'Conduct a deep research report on ';
+                        break;
+                      case 'Podcast':
+                        defaultPrompt = 'Create a podcast script about ';
+                        break;
+                      case 'Travel':
+                        defaultPrompt = 'Plan a travel itinerary to ';
+                        break;
+                      case 'PowerPoint':
+                        defaultPrompt = 'Prepare a PowerPoint presentation about ';
+                        break;
+                      case 'Excel':
+                        defaultPrompt = 'Create an Excel spreadsheet that tracks ';
+                        break;
+                      case 'Word':
+                        defaultPrompt = 'Draft a formal Word document discussing ';
+                        break;
+                      case 'PDF':
+                        defaultPrompt = 'Generate a PDF summary of ';
+                        break;
+                    }
+                    setInputText(defaultPrompt);
+                    setShowToolsMenu(false);
+                    if (textareaRef.current) {
+                      textareaRef.current.focus();
+                    }
+                  }}
+                />
+              </div>
+
               {/* Attach File */}
               <button
                 onClick={toggleVoiceInput}
@@ -2252,34 +2350,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         AI Model
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {availableModels && availableModels.map(model => {
-                          const isAvailable = model.available !== false;
-                          
-                          return (
+                        {availableModels && availableModels.filter(m => m.available !== false).map(model => (
                           <div
                             key={model.id}
                             onClick={() => {
-                              if (isAvailable) {
-                                setSelectedModel(model);
-                                setShowInBarModelDropdown(false);
-                              }
+                              setSelectedModel(model);
+                              setShowInBarModelDropdown(false);
                             }}
                             style={{
                               padding: '8px 10px',
                               borderRadius: '8px',
-                              cursor: isAvailable ? 'pointer' : 'not-allowed',
+                              cursor: 'pointer',
                               background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               fontSize: '0.8rem',
-                              color: isAvailable ? (selectedModel?.id === model.id ? '#f97316' : textColor) : subtextColor,
+                              color: selectedModel?.id === model.id ? '#f97316' : textColor,
                               fontWeight: selectedModel?.id === model.id ? '700' : '500',
-                              opacity: isAvailable ? 1 : 0.6,
                               transition: 'all 0.2s ease'
                             }}
                             onMouseEnter={(e) => {
-                              if (isAvailable && selectedModel?.id !== model.id) {
+                              if (selectedModel?.id !== model.id) {
                                 e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
                               }
                             }}
@@ -2288,17 +2380,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: !isAvailable ? 'line-through' : 'none' }}>{formatModelName(model.name)}</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatModelName(model.name)}</span>
                               <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter')}</span>
                             </div>
                             {selectedModel?.id === model.id && (
                               <span style={{ fontSize: '0.65rem', background: '#f97316', color: '#fff', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Active</span>
                             )}
-                            {!isAvailable && (
-                              <span style={{ fontSize: '0.65rem', background: isLight ? '#cbd5e1' : '#334155', color: isLight ? '#64748b' : '#94a3b8', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Unavailable</span>
-                            )}
                           </div>
-                        )})}
+                        ))}
                       </div>
                     </div>
                   </div>

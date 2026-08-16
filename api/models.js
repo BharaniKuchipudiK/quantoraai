@@ -145,6 +145,9 @@ export default async function handler(req, res) {
 
   const liveFree = catalog ? [...catalog.values()].filter(isFreeModel) : [];
   const dashboardIds = new Set(dashboardModels.map((model) => model.id));
+  
+  // Track candidates for admin view, but DO NOT append them to the public model list
+  // to avoid cluttering the dropdown with dozens of untested free models.
   for (const model of liveFree) {
     if (dashboardIds.has(model.id)) continue;
     const storedRow = stored.get(model.id);
@@ -154,24 +157,14 @@ export default async function handler(req, res) {
       category: 'candidate',
     };
     dashboardIds.add(model.id);
-    if (storedRow?.approved !== true) continue;
+    
+    // We only push to dashboardModels for the admin panel, NOT to the `models` array
+    // which powers the public dropdown.
     dashboardModels.push({
       ...candidate,
-      status: 'available',
-      selectable: true,
-      category: 'approved',
-    });
-    models.push({
-      id: model.id,
-      name: candidate.name,
-      provider: candidate.provider,
-      description: candidate.description,
-      contextWindow: candidate.contextWindow,
-      tag: 'FREE',
-      icon: 'sparkles',
-      available: true,
-      pricingKind: 'free',
-      quality: quality.get(model.id) || null,
+      status: storedRow?.approved === true ? 'available' : candidate.status,
+      selectable: storedRow?.approved === true,
+      category: storedRow?.approved === true ? 'approved' : 'candidate',
     });
   }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
-import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
+import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity, CreditCard } from 'lucide-react';
 
 const PROFILE_MENU_WIDTH = 320;
 const PROFILE_MENU_GUTTER = 12;
@@ -299,11 +299,28 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   cursor: 'pointer'
                 }}
               >
-                <img
-                  src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256'}
-                  alt={user?.name || 'User'}
-                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
-                />
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={user.name || 'User'}
+                    style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                  />
+                ) : null}
+                <div style={{
+                  display: user?.avatar ? 'none' : 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  fontSize: '0.8rem'
+                }}>
+                  {(user?.name || 'U').charAt(0).toUpperCase()}
+                </div>
                 <div style={{ display: compact ? 'none' : 'flex', flexDirection: 'column', textAlign: 'left' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: '700', color: textColor, lineHeight: 1.2 }}>
                     Signed in as {(user?.name || 'User').split(' ')[0]}
@@ -340,7 +357,28 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                 }}>
                   {/* Profile Info Header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '14px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '12px' }}>
-                    <img src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256'} alt={user?.name || 'User'} style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover' }} />
+                    {user?.avatar ? (
+                      <img
+                        src={user.avatar}
+                        alt={user.name || 'User'}
+                        style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover' }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                      />
+                    ) : null}
+                    <div style={{
+                      display: user?.avatar ? 'none' : 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)',
+                      color: '#fff',
+                      fontWeight: 'bold',
+                      fontSize: '1.2rem'
+                    }}>
+                      {(user?.name || 'U').charAt(0).toUpperCase()}
+                    </div>
                     <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
                       <span style={{ fontSize: '0.95rem', fontWeight: '700', color: textColor }}>{user?.name || 'User'}</span>
                       <span style={{ fontSize: '0.78rem', color: subtextColor }}>{user?.email || ''}</span>
@@ -447,6 +485,28 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <span>Privacy Vault & Encryption Status</span>
                   </div>
 
+                  <div
+                    onClick={() => {
+                      setActiveTab('dashboard'); // Assuming dashboard is the model dashboard in App.jsx
+                      setShowProfileMenu(false);
+                    }}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.04)',
+                      border: isLight ? '1px solid #e2e8f0' : 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '8px',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <Cpu size={16} color="#8b5cf6" />
+                    <span>Model Dashboard</span>
+                  </div>
+
 
 
                   {user?.email === 'bharanik.h@gmail.com' && (
@@ -500,6 +560,36 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   >
                     <Download size={16} color="#0284c7" />
                     <span>{dataActionBusy ? 'Preparing…' : 'Export My Data'}</span>
+                  </div>
+
+                  {/* Connect Stripe */}
+                  <div
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/stripe-onboard', { method: 'POST' });
+                        const data = await res.json();
+                        if (data.url) window.location.href = data.url;
+                        else alert('Failed to connect Stripe: ' + (data.error || 'Unknown error'));
+                      } catch (err) {
+                        alert('Network error connecting to Stripe.');
+                      }
+                    }}
+                    style={{
+                      padding: '10px',
+                      borderRadius: '10px',
+                      background: 'rgba(99, 102, 241, 0.12)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '6px',
+                      fontSize: '0.85rem',
+                      color: '#6366f1',
+                      fontWeight: '600'
+                    }}
+                  >
+                    <CreditCard size={16} color="#6366f1" />
+                    <span>Connect Stripe Account</span>
                   </div>
 
                   {/* Clear Data */}

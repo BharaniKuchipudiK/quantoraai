@@ -3,13 +3,13 @@ const FETCH_TIMEOUT_MS = 4_000;
 
 export const CURATED_MODELS = [
   {
-    id: 'nvidia/nemotron-3-super-120b-a12b:free',
-    name: 'Nemotron 3 Super 120B',
-    provider: 'NVIDIA',
-    description: 'Free large reasoning model for complex planning, analysis and coding.',
-    contextWindow: '262k',
-    tag: 'FREE',
-    icon: 'brain',
+    id: 'google/gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    provider: 'Google',
+    description: 'Fast multimodal reasoning for complex logic and general tasks.',
+    contextWindow: '1M',
+    tag: 'RECOMMENDED',
+    icon: 'sparkles',
   },
   {
     id: 'deepseek/deepseek-chat',
@@ -39,24 +39,16 @@ export const CURATED_MODELS = [
     icon: 'database',
   },
   {
-    id: 'google/gemma-2-9b-it',
-    name: 'Gemma 2 9B',
-    provider: 'Google',
-    description: 'Fast reasoning and spec planning via OpenRouter.',
-    contextWindow: '8k',
-    tag: 'FAST',
-    icon: 'zap',
-  },
-  {
     id: 'openai/gpt-4o-mini',
     name: 'GPT-4o Mini',
     provider: 'OpenAI',
     description: 'General assistant tuned for fast, low-cost queries.',
     contextWindow: '128k',
-    tag: 'RECOMMENDED',
-    icon: 'brain',
+    tag: 'FAST',
+    icon: 'zap',
   },
 ];
+
 
 export const DIRECT_MODELS = [
   {
