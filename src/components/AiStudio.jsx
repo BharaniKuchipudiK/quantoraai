@@ -2804,17 +2804,35 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           {/* Workspace Content Area */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden' }}>
              {workspaceActiveTab === 'preview' ? (
-                <LivePreviewCanvas 
-                  code={workspaceCode} 
-                  isLight={isLight} 
-                  onClose={() => setIsWorkspaceMode(false)}
-                  showHeader={false}
-                  vfs={vfs}
-                  suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
-                  isPresentationIntent={detectSlideDeck(messages)}
-                  officeKind={detectOfficeIntent({ messages })}
-                  modelId={selectedModel?.id}
-                />
+                deckSpec ? (
+                  <>
+                    <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }}>
+                      <button onClick={async () => {
+                        try {
+                          await generatePPTXFromJson(deckSpec);
+                        } catch (err) {
+                          console.error("PPTX Generation failed:", err);
+                          alert("Failed to generate PPTX: " + err.message);
+                        }
+                      }} style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                        Download PPTX
+                      </button>
+                    </div>
+                    <ConsultingDeckRenderer deck={deckSpec} isLight={isLight} />
+                  </>
+                ) : (
+                  <LivePreviewCanvas 
+                    code={workspaceCode} 
+                    isLight={isLight} 
+                    onClose={() => setIsWorkspaceMode(false)}
+                    showHeader={false}
+                    vfs={vfs}
+                    suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
+                    isPresentationIntent={detectSlideDeck(messages)}
+                    officeKind={detectOfficeIntent({ messages })}
+                    modelId={selectedModel?.id}
+                  />
+                )
              ) : (
                <>
                  {/* Line Numbers */}
