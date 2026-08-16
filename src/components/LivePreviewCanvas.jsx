@@ -720,46 +720,7 @@ export default function LivePreviewCanvas({
         </div>
       )}
 
-      {statusUI && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px',
-          background: statusUI.bg, color: statusUI.color, fontSize: '0.78rem', fontWeight: 600,
-          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)'
-        }}>
-          {statusUI.icon}
-          <span>{statusUI.label}</span>
-          {(status === 'failed' || status === 'degraded') && (
-            <button onClick={retryVerification} style={{
-              marginLeft: 'auto', background: 'transparent', border: `1px solid ${statusUI.color}`,
-              color: statusUI.color, borderRadius: '8px', padding: '3px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer'
-            }}>Retry</button>
-          )}
-          {(status === 'failed' || status === 'degraded') && lastError && (
-            <span title={lastError} style={{ marginLeft: status === 'failed' ? '10px' : '8px', maxWidth: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500, opacity: 0.85 }}>{lastError}</span>
-          )}
-        </div>
-      )}
 
-      {!headless && !verifyOnly && (qualityReport || verifyingQuality) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px',
-          fontSize: '0.78rem', fontWeight: 600,
-          background: verifyingQuality ? (isLight ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.14)') : (qualityReport.passed ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.14)'),
-          color: verifyingQuality ? (isLight ? '#64748b' : '#94a3b8') : (qualityReport.passed ? '#10b981' : '#f59e0b'),
-          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)'
-        }}>
-          {verifyingQuality ? <Loader size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {verifyingQuality ? 'Checking quality…' : `Quality ${qualityReport.score}/100 — ${qualityReport.summary}`}
-          </span>
-          {!verifyingQuality && qualityReport && !qualityReport.passed && qualityReport.issues?.length > 0 && (
-            <button onClick={handleImprove} disabled={improving} title={qualityReport.issues.join('\n')} style={{
-              marginLeft: 'auto', flexShrink: 0, background: 'transparent', border: '1px solid #f59e0b',
-              color: '#f59e0b', borderRadius: '8px', padding: '3px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: improving ? 'default' : 'pointer'
-            }}>{improving ? 'Improving…' : 'Improve'}</button>
-          )}
-        </div>
-      )}
 
       {isOfficeDoc ? (
         // Office artifacts get a format-faithful preview (spreadsheet grid /

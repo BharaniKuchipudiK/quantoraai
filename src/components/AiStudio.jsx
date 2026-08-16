@@ -2,14 +2,13 @@ import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioToolsMenu from './StudioToolsMenu';
-import StudioMessageActions from './StudioMessageActions';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
@@ -1193,11 +1192,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               <ThumbsDown size={14} />
                             </button>
                           </div>
-                          <StudioMessageActions 
-                            text={cleanText} 
-                            onRegenerate={() => handleSendMessage('Regenerate the previous response.')} 
-                            onSummarize={() => handleSendMessage('Please summarize this.')} 
-                          />
+                          <button 
+                            onClick={() => handleSendMessage('Please summarize this.')} 
+                            title="Summarize"
+                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                          >
+                            <List size={14} />
+                          </button>
+                          
+                          <button 
+                            onClick={() => handleSendMessage('Regenerate the previous response.')} 
+                            title="Regenerate"
+                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                          >
+                            <RefreshCw size={14} />
+                          </button>
+                          
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(cleanText);
+                              setCopiedMessageId(msg.id);
+                              setTimeout(() => setCopiedMessageId(null), 2000);
+                            }}
+                            title="Copy"
+                            style={{ background: 'transparent', border: 'none', color: copiedMessageId === msg.id ? '#10b981' : subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                          >
+                            {copiedMessageId === msg.id ? <Check size={14} /> : <Copy size={14} />}
+                          </button>
+                          
+                          <button 
+                            title="More"
+                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                          >
+                            <MoreHorizontal size={14} />
+                          </button>
                           
                           {runnableCode && (
                             <button
@@ -1366,16 +1394,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
-        if (Object.keys(parsedVfs).length > 0) {
+        // Only auto-open workspace if the message wasn't just an office document generation
+        const hasOfficeIntent = lastMsg.attachments?.some(a => ['pptx', 'docx', 'xlsx'].includes(a.type)) || lastMsg.text?.includes('Architecting POWERPOINT') || lastMsg.text?.includes('Architecting WORD') || lastMsg.text?.includes('Architecting EXCEL');
+        
+        if (Object.keys(parsedVfs).length > 0 && !hasOfficeIntent) {
            setVfs(parsedVfs);
-           // Also set workspaceCode for backward compatibility in case some child components strictly expect string
            setWorkspaceCode(parsedVfs['presentation.html']?.content || parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
         } else {
-           // Fallback for old single-string generations
            const code = extractRunnableCode(lastMsg.text);
-           if (code) {
+           if (code && !hasOfficeIntent) {
               setWorkspaceCode(code);
               setVfs({ [isPresentationIntent ? 'presentation.html' : 'App.jsx']: { content: code, language: isPresentationIntent ? 'html' : 'jsx' } });
               setWorkspaceActiveTab('preview');

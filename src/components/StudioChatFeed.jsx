@@ -5,7 +5,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
-import StudioMessageActions from './StudioMessageActions';
+
 import CopyableCodeBlock from './studio-chat/CopyableCodeBlock';
 import LivePreviewActionButton from './studio-chat/LivePreviewActionButton';
 import { LiveIosCalculator, LiveBeatMaker, LiveQuantumSimulator } from './studio-chat/StudioLiveDemos';
@@ -458,11 +458,6 @@ function StudioChatFeed({
                       alignItems: 'center',
                       justifyContent: 'space-between'
                     }}>
-                      <StudioMessageActions 
-                        text={getAssistantDisplayText(msg.text)} 
-                        onRegenerate={() => { console.log('Regenerate clicked') }} 
-                        onSummarize={() => { console.log('Summarize clicked') }} 
-                      />
                       <div style={{
                         display: 'flex',
                       alignItems: 'center',
