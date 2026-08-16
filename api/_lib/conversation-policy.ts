@@ -269,8 +269,9 @@ export function buildConversationSystemPrompt(options: {
     build = `\n\n${REFINE_ARTIFACT_DIRECTIVE}`;
   }
 
-  // Inject Office Generation constraints if building or guiding
-  if (options.buildMode || options.guided) {
+  // Inject Office Generation constraints if building, guiding, or user explicitly requested it
+  const isOfficeRequest = options.lastMessage && /presentation|slide|deck|pptx/i.test(options.lastMessage);
+  if (options.buildMode || options.guided || isOfficeRequest) {
     build += `\n\n${OFFICE_GENERATION_DIRECTIVE}`;
   }
 

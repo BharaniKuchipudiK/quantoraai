@@ -409,7 +409,8 @@ export function useChatStream({
     };
     
     // Phase 5: Swarm Mode
-    if (!effectiveArenaMode && intent === 'subjective') {
+    const isOffice = detectOfficeIntent({ messages: [{ sender: 'user', text }] }) !== null;
+    if (!effectiveArenaMode && intent === 'subjective' && !isOffice) {
        // Trigger Architect -> Coder Swarm
        
        
