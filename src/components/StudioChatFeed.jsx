@@ -148,7 +148,12 @@ function StudioChatFeed({
                                 }
                               }}
                             >
-                              {getAssistantDisplayText(msg.modelA.text)}
+                              {(() => {
+                                const assistantText = getAssistantDisplayText(msg.modelA.text);
+                                return hasPreviewableContent(assistantText)
+                                  ? getChatDisplayText(assistantText)
+                                  : assistantText;
+                              })()}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -231,7 +236,12 @@ function StudioChatFeed({
                                 }
                               }}
                             >
-                              {getAssistantDisplayText(msg.modelB.text)}
+                              {(() => {
+                                const assistantText = getAssistantDisplayText(msg.modelB.text);
+                                return hasPreviewableContent(assistantText)
+                                  ? getChatDisplayText(assistantText)
+                                  : assistantText;
+                              })()}
                             </ReactMarkdown>
                           </div>
                         </div>

@@ -605,6 +605,7 @@ export default function LivePreviewCanvas({
   );
 
   const showHeader = !hideHeader;
+  const isOfficeDoc = /pptxgen|docx@/i.test(currentCode || '');
 
   return (
     <div style={{
@@ -624,16 +625,18 @@ export default function LivePreviewCanvas({
         <span style={{ fontSize: '0.85rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1', flexShrink: 0 }}>Live Preview</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {viewportSwitcher}
-          <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
-            <Download size={18} />
-          </button>
+          {!isOfficeDoc && (
+            <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
+              <Download size={18} />
+            </button>
+          )}
           {onToggleFullscreen && (
             <button onClick={onToggleFullscreen} title={isFullscreen ? 'Exit full screen' : 'Full screen'} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
           )}
-          {shareButton}
-          {publishButton}
+          {!isOfficeDoc && shareButton}
+          {!isOfficeDoc && publishButton}
           <button onClick={onClose} title="Close preview (Esc)" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <X size={18} />
           </button>
@@ -649,11 +652,13 @@ export default function LivePreviewCanvas({
           background: isLight ? '#ffffff' : '#1e293b',
         }}>
           {viewportSwitcher}
-          <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
-            <Download size={18} />
-          </button>
-          {shareButton}
-          {publishButton}
+          {!isOfficeDoc && (
+            <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
+              <Download size={18} />
+            </button>
+          )}
+          {!isOfficeDoc && shareButton}
+          {!isOfficeDoc && publishButton}
         </div>
       )}
 
