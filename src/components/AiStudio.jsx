@@ -1,8 +1,9 @@
 import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
 import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
+import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -358,6 +359,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
   const [suggestedModel, setSuggestedModel] = useState(null);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState(null);
 
   const [showScrollUp, setShowScrollUp] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -1168,82 +1170,76 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       )}
 
                       {/* Minimalist Message Footer */}
-                      {msg.sender === 'ai' && !isActiveGenerating && (
-                        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {msg.sender === 'ai' && !isActiveGenerating && (() => {
+                        // Actions are DERIVED from the message content — not a
+                        // fixed row dumped on every reply. Right-aligned.
+                        const actions = resolveMessageActions({ text: cleanText, hasPreview: !!runnableCode });
+                        const iconBtn = { background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' };
+                        return (
+                        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          {/* Preview (code / presentation / app) — only when previewable */}
+                          {actions.preview && runnableCode && (
                             <button
-                              onClick={() => {
-                                setFeedbackStates(prev => ({ ...prev, [msg.id]: 'up' }));
-                              }}
-                              style={{ background: 'transparent', border: 'none', color: feedbackStates[msg.id] === 'up' ? '#22c55e' : subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                              title="Helpful response"
+                              onClick={() => { setCanvasCode(runnableCode); setCanvasOpen(true); }}
+                              style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
+                              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                              onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
+                              title="Preview"
                             >
-                              <ThumbsUp size={14} />
+                              <Play size={12} fill="currentColor" /> Preview
                             </button>
+                          )}
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button onClick={() => setFeedbackStates(prev => ({ ...prev, [msg.id]: 'up' }))} style={{ ...iconBtn, color: feedbackStates[msg.id] === 'up' ? '#22c55e' : subtextColor }} title="Helpful response"><ThumbsUp size={14} /></button>
                             <button
                               onClick={() => {
                                 setFeedbackStates(prev => ({ ...prev, [msg.id]: 'down' }));
                                 const userMsg = messages.slice().reverse().find(m => m.id < msg.id && m.sender === 'user');
                                 logFeedback(userMsg ? userMsg.text : '', msg.text, false);
                               }}
-                              style={{ background: 'transparent', border: 'none', color: feedbackStates[msg.id] === 'down' ? '#ef4444' : subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                              title="Incorrect response"
-                            >
-                              <ThumbsDown size={14} />
-                            </button>
+                              style={{ ...iconBtn, color: feedbackStates[msg.id] === 'down' ? '#ef4444' : subtextColor }} title="Incorrect response"
+                            ><ThumbsDown size={14} /></button>
                           </div>
-                          <button 
-                            onClick={() => handleSendMessage('Please summarize this.')} 
-                            title="Summarize"
-                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                          >
-                            <List size={14} />
-                          </button>
-                          
-                          <button 
-                            onClick={() => handleSendMessage('Regenerate the previous response.')} 
-                            title="Regenerate"
-                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                          >
-                            <RefreshCw size={14} />
-                          </button>
-                          
-                          <button 
-                            onClick={() => {
-                              navigator.clipboard.writeText(cleanText);
-                              setCopiedMessageId(msg.id);
-                              setTimeout(() => setCopiedMessageId(null), 2000);
-                            }}
-                            title="Copy"
-                            style={{ background: 'transparent', border: 'none', color: copiedMessageId === msg.id ? '#10b981' : subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                          >
-                            {copiedMessageId === msg.id ? <Check size={14} /> : <Copy size={14} />}
-                          </button>
-                          
-                          <button 
-                            title="More"
-                            style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                          >
-                            <MoreHorizontal size={14} />
-                          </button>
-                          
-                          {runnableCode && (
-                            <button
-                              onClick={() => {
-                                setCanvasCode(runnableCode);
-                                setCanvasOpen(true);
-                              }}
-                              style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
-                              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-                              onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
-                              title="Live Preview"
-                            >
-                              <Play size={12} fill="currentColor" /> Live Preview
-                            </button>
+
+                          {/* Summarize — only for long replies (not one-liners) */}
+                          {actions.summarize && (
+                            <button onClick={() => handleSendMessage('Please summarize this.')} title="Summarize" style={{ ...iconBtn, color: subtextColor }}><List size={14} /></button>
                           )}
 
+                          <button onClick={() => handleSendMessage('Regenerate the previous response.')} title="Regenerate" style={{ ...iconBtn, color: subtextColor }}><RefreshCw size={14} /></button>
+
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(cleanText); setCopiedMessageId(msg.id); setTimeout(() => setCopiedMessageId(null), 2000); }}
+                            title="Copy" style={{ ...iconBtn, color: copiedMessageId === msg.id ? '#10b981' : subtextColor }}
+                          >{copiedMessageId === msg.id ? <Check size={14} /> : <Copy size={14} />}</button>
+
+                          {/* Overflow — real menu (was a dead button); shown only when it has items */}
+                          {actions.overflow.length > 0 && (
+                            <div style={{ position: 'relative', display: 'flex' }}>
+                              <button title="More" onClick={() => setOpenActionMenuId(openActionMenuId === msg.id ? null : msg.id)} style={{ ...iconBtn, color: subtextColor }}><MoreHorizontal size={14} /></button>
+                              {openActionMenuId === msg.id && (
+                                <>
+                                  <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpenActionMenuId(null)} />
+                                  <div style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: '6px', zIndex: 50, minWidth: '160px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column' }}>
+                                    {actions.overflow.includes('read-aloud') && (
+                                      <button
+                                        onClick={() => { try { window.speechSynthesis?.cancel(); window.speechSynthesis?.speak(new SpeechSynthesisUtterance(cleanText)); } catch { /* unsupported */ } setOpenActionMenuId(null); }}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '8px 10px', borderRadius: '6px', fontSize: '0.82rem', textAlign: 'left' }}
+                                      ><Volume2 size={14} /> Read aloud</button>
+                                    )}
+                                    <button
+                                      onClick={() => { setFeedbackStates(prev => ({ ...prev, [msg.id]: 'down' })); const userMsg = messages.slice().reverse().find(m => m.id < msg.id && m.sender === 'user'); logFeedback(userMsg ? userMsg.text : '', msg.text, false); setOpenActionMenuId(null); }}
+                                      style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '8px 10px', borderRadius: '6px', fontSize: '0.82rem', textAlign: 'left' }}
+                                    ><Flag size={14} /> Report issue</button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
 
