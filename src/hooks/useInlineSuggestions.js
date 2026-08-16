@@ -1,9 +1,18 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   learnFromChipSelection,
   learnFromDismissedSuggestions,
 } from '../lib/communication-intelligence.js';
 import { QUANTORA_EVENTS } from '../lib/listening-layer.js';
+import { trackSuggestion } from '../lib/acceptance-metrics.js';
+
+// Acceptance-Rate surfaces (Roadmap 9.1): the "kind" of a proactive act maps to
+// a stable surface label so accepted/dismissed can be measured per type.
+const SUGGESTION_SURFACE = {
+  choices: 'inline-choices',
+  continues: 'inline-continues',
+  nudge: 'inline-nudge',
+};
 
 /**
  * Inline suggestion pills — latest AI turn only, conversation-first.
@@ -71,9 +80,22 @@ export function useInlineSuggestions({
     return resolveInlineSuggestions(msg);
   }, [messages, latestAiMessageId, resolveInlineSuggestions]);
 
+  // Acceptance-Rate: record each proactive act exactly once when it first
+  // becomes visible (the memo recomputes often, so dedupe by message+kind).
+  const shownRef = useRef(new Set());
+  useEffect(() => {
+    const s = latestInlineSuggestions;
+    if (!s?.msg) return;
+    const key = `${s.msg.id}:${s.kind}`;
+    if (shownRef.current.has(key)) return;
+    shownRef.current.add(key);
+    trackSuggestion(SUGGESTION_SURFACE[s.kind] || 'inline', 'shown');
+  }, [latestInlineSuggestions]);
+
   const dismissInlineSuggestions = useCallback((msg, suggestions) => {
     if (!msg || !suggestions) return;
     setDismissedId(msg.id);
+    trackSuggestion(SUGGESTION_SURFACE[suggestions.kind] || 'inline', 'dismissed');
     if (suggestions.kind === 'choices') {
       setChoiceDockState(msg.id, 'dismissed');
       emitQuantora(QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED);
@@ -110,6 +132,7 @@ export function useInlineSuggestions({
       }),
     });
     emitQuantora(QUANTORA_EVENTS.CHOICE_SELECTED, { label: choice.label });
+    trackSuggestion(SUGGESTION_SURFACE.choices, 'accepted');
     onSendMessage(choice.value, { choiceSelected: true });
   }, [conversationContext, studioDomain, updateActiveSession, updateActiveMessages, emitQuantora, onSendMessage]);
 
@@ -125,6 +148,7 @@ export function useInlineSuggestions({
       }),
     });
     emitQuantora(QUANTORA_EVENTS.CONTINUE_SELECTED, { label: item.label });
+    trackSuggestion(SUGGESTION_SURFACE.continues, 'accepted');
     onSendMessage(item.value);
   }, [conversationContext, studioDomain, updateActiveSession, updateActiveMessages, emitQuantora, onSendMessage]);
 
