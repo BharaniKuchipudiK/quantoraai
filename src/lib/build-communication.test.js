@@ -32,11 +32,11 @@ test('deck-only reply gets a presentation-aware brief', () => {
   assert.match(getChatDisplayText(raw, { artifactHtml: '<section class="slide">' }), /presentation is ready/i);
 });
 
-test('capBrief shortens an over-long reply', () => {
-  const long = `${'This is a sentence. '.repeat(60)}`;
+test('getChatDisplayText never truncates a normal (long) reply', () => {
+  const long = `${'This is a sentence. '.repeat(60)}`.trim();
   const out = getChatDisplayText(long);
-  assert.ok(out.length < long.length);
-  assert.match(out, /…$/);
+  assert.equal(out, long); // full text, no cap, no ellipsis
+  assert.ok(!/…$/.test(out));
 });
 
 test('getChatDisplayText falls back when only html returned', () => {

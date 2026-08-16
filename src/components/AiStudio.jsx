@@ -1406,7 +1406,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            const code = extractRunnableCode(lastMsg.text);
            if (code && !hasOfficeIntent) {
               setWorkspaceCode(code);
-              setVfs({ [isPresentationIntent ? 'presentation.html' : 'App.jsx']: { content: code, language: isPresentationIntent ? 'html' : 'jsx' } });
+              setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : 'App.jsx']: { content: code, language: detectSlideDeck(messages) ? 'html' : 'jsx' } });
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {

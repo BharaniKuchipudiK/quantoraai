@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     let fileName = '';
 
     if (format === 'powerpoint') {
-      const PptxGenJS = pptxgen.default || pptxgen;
+      const PptxGenJS: any = (pptxgen as any).default || pptxgen;
       const pptx = new PptxGenJS();
       pptx.layout = 'LAYOUT_16x9';
       const slides = validJson.slides || [];
@@ -83,20 +83,20 @@ export default async function handler(req, res) {
       fileName = sanitizeFilename(validJson.title || 'Presentation') + '.pptx';
 
     } else if (format === 'word') {
-      let htmlString = \`<!DOCTYPE html><html><body><h1>\${validJson.title || 'Document'}</h1>\`;
+      let htmlString = `<!DOCTYPE html><html><body><h1>${validJson.title || 'Document'}</h1>`;
       (validJson.sections || []).forEach(sec => {
-         htmlString += \`<h2>\${sec.heading || ''}</h2>\`;
-         (sec.paragraphs || []).forEach(p => { htmlString += \`<p>\${p}</p>\`; });
+         htmlString += `<h2>${sec.heading || ''}</h2>`;
+         (sec.paragraphs || []).forEach(p => { htmlString += `<p>${p}</p>`; });
          if (sec.bullets && sec.bullets.length > 0) {
             htmlString += '<ul>';
-            sec.bullets.forEach(b => { htmlString += \`<li>\${b}</li>\`; });
+            sec.bullets.forEach(b => { htmlString += `<li>${b}</li>`; });
             htmlString += '</ul>';
          }
       });
       htmlString += '</body></html>';
       
-      const blob = await asBlob(htmlString);
-      const buffer = Buffer.from(await blob.arrayBuffer());
+      const blob: any = await asBlob(htmlString);
+      const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(await blob.arrayBuffer());
       base64Data = buffer.toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       fileName = sanitizeFilename(validJson.title || 'Document') + '.docx';
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
           });
       });
       
-      const buffer = await writeXlsxFile(formattedData.length > 0 ? formattedData : [[{value: 'Empty Data', type: String}]], { buffer: true });
+      const buffer: any = await (writeXlsxFile as any)(formattedData.length > 0 ? formattedData : [[{ value: 'Empty Data', type: String }]], { buffer: true });
       base64Data = buffer.toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = sanitizeFilename(validJson.filename || 'Spreadsheet') + '.xlsx';
@@ -140,8 +140,8 @@ export default async function handler(req, res) {
 // Helpers
 
 async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError) {
-   const systemPrompt = OFFICE_GENERATION_DIRECTIVE + \`\n\nSCHEMA:\n\` + OFFICE_SCHEMAS[format] +
-        (lastError ? \`\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: \${lastError}. You MUST fix this syntax or structure error.\` : "");
+   const systemPrompt = OFFICE_GENERATION_DIRECTIVE + `\n\nSCHEMA:\n` + OFFICE_SCHEMAS[format] +
+        (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. You MUST fix this syntax or structure error.` : "");
 
    if (apiKey) {
       const client = new GoogleGenAI({ apiKey });
@@ -159,7 +159,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
          method: "POST",
          headers: {
-            "Authorization": \`Bearer \${key}\`,
+            "Authorization": `Bearer ${key}`,
             "Content-Type": "application/json"
          },
          body: JSON.stringify({
@@ -180,8 +180,8 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
 
 function sanitizeFilename(name) {
   return String(name || 'document')
-    .replace(/[^\\w\\- ]+/g, '')
+    .replace(/[^\w\- ]+/g, '')
     .trim()
-    .replace(/\\s+/g, '_')
+    .replace(/\s+/g, '_')
     .slice(0, 50);
 }
