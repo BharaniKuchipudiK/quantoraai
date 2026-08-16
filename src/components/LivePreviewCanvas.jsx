@@ -265,6 +265,8 @@ export default function LivePreviewCanvas({
 
     if (attemptRef.current >= MAX_HEAL_ATTEMPTS) {
       setStatus('failed');
+      const errHtml = `<div style="font-family:sans-serif;padding:2rem;color:#ef4444;background:#fee2e2;border:1px solid #f87171;border-radius:8px;margin:2rem;"><h2>Runtime Error</h2><p>${message}</p></div>`;
+      pushHtmlToEmbed(errHtml);
       return;
     }
 
@@ -275,6 +277,8 @@ export default function LivePreviewCanvas({
       if (data.unchanged || !data.code || data.code.trim() === currentCodeRef.current.trim()) {
         setStatus('failed');
         healingRef.current = false;
+        const errHtml = `<div style="font-family:sans-serif;padding:2rem;color:#ef4444;background:#fee2e2;border:1px solid #f87171;border-radius:8px;margin:2rem;"><h2>Auto-repair Failed</h2><p>${message}</p></div>`;
+        pushHtmlToEmbed(errHtml);
         return;
       }
       const original = currentCodeRef.current || '';
@@ -294,6 +298,8 @@ export default function LivePreviewCanvas({
       setLastError(err.message || 'Auto-repair failed.');
       setStatus('failed');
       healingRef.current = false;
+      const errHtml = `<div style="font-family:sans-serif;padding:2rem;color:#ef4444;background:#fee2e2;border:1px solid #f87171;border-radius:8px;margin:2rem;"><h2>Auto-repair Failed</h2><p>${err.message || 'Auto-repair failed.'}</p></div>`;
+      pushHtmlToEmbed(errHtml);
     }
   }, [requestRepair, verifyOnly]);
 

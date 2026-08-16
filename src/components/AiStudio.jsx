@@ -1306,11 +1306,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            return;
         }
 
+        const isPresentationIntent = messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text));
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         if (Object.keys(parsedVfs).length > 0) {
+           if (isPresentationIntent && parsedVfs['index.html']) {
+              parsedVfs['presentation.html'] = parsedVfs['index.html'];
+              delete parsedVfs['index.html'];
+           }
            setVfs(parsedVfs);
            // Also set workspaceCode for backward compatibility in case some child components strictly expect string
-           setWorkspaceCode(parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
+           setWorkspaceCode(parsedVfs['presentation.html']?.content || parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
         } else {
@@ -1318,7 +1323,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            const code = extractRunnableCode(lastMsg.text);
            if (code) {
               setWorkspaceCode(code);
-              setVfs({ 'App.jsx': { content: code, language: 'jsx' } });
+              setVfs({ [isPresentationIntent ? 'presentation.html' : 'App.jsx']: { content: code, language: isPresentationIntent ? 'html' : 'jsx' } });
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {
@@ -2650,33 +2655,53 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             flexShrink: 0
           }}>
             <div style={{ display: 'flex', gap: '4px', height: '100%' }}>
-              {(Object.keys(vfs).length > 0 ? ['preview', ...Object.keys(vfs)] : ['preview', 'code']).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setWorkspaceActiveTab(tab)}
-                  style={{
+              {(messages.some(m => m.sender === 'user' && /presentation|deck|slides|ppt|powerpoint/i.test(m.text)) ? ['preview'] : (Object.keys(vfs).length > 0 ? ['preview', ...Object.keys(vfs)] : ['preview', 'code'])).map(tab => (
+                <div key={tab} style={{
                     background: workspaceActiveTab === tab ? (isLight ? '#ffffff' : '#0d1127') : 'transparent',
-                    border: 'none',
-                    color: workspaceActiveTab === tab ? '#f97316' : subtextColor,
-                    padding: '0 16px',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem',
-                    fontWeight: workspaceActiveTab === tab ? '600' : '500',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    height: '100%',
                     borderTop: workspaceActiveTab === tab ? '2px solid #f97316' : '2px solid transparent',
                     borderLeft: workspaceActiveTab === tab && isLight ? '1px solid #e2e8f0' : '1px solid transparent',
                     borderRight: workspaceActiveTab === tab && isLight ? '1px solid #e2e8f0' : '1px solid transparent',
-                    borderBottom: 'none',
-                    transition: 'all 0.2s ease',
-                    marginTop: 'auto'
-                  }}
-                >
-                  {tab === 'preview' ? <Play size={14} /> : <Code2 size={14} />}
-                  {tab === 'preview' ? 'Preview' : tab === 'code' ? 'Code' : tab}
-                </button>
+                    display: 'flex', alignItems: 'center', height: '100%', marginTop: 'auto', transition: 'all 0.2s ease'
+                }}>
+                  <button
+                    onClick={() => setWorkspaceActiveTab(tab)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: workspaceActiveTab === tab ? '#f97316' : subtextColor,
+                      padding: '0 12px 0 16px',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: workspaceActiveTab === tab ? '600' : '500',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      height: '100%'
+                    }}
+                  >
+                    {tab === 'preview' ? <Play size={14} /> : <Code2 size={14} />}
+                    {tab === 'preview' ? 'Preview' : tab === 'code' ? 'Code' : tab}
+                  </button>
+                  {tab !== 'preview' && tab !== 'code' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newVfs = { ...vfs };
+                        delete newVfs[tab];
+                        setVfs(newVfs);
+                        if (workspaceActiveTab === tab) setWorkspaceActiveTab('preview');
+                      }}
+                      style={{
+                        background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer',
+                        padding: '0 12px 0 0', display: 'flex', alignItems: 'center', opacity: 0.6
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
             
