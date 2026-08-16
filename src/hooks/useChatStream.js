@@ -1,5 +1,7 @@
 import { usePCLMemory } from './usePCLMemory';
 import { useRef } from 'react';
+import { detectOfficeIntent, OFFICE_KIND } from '../lib/office-intent.js';
+import { chooseBestDeckModel } from '../lib/model-routing.js';
 export function useChatStream({
   inputText,
   setInputText,
@@ -11,6 +13,7 @@ export function useChatStream({
   chatSessions,
   activeSessionId,
   selectedModel,
+  availableModels,
   arenaMode,
   secondModel,
   cognitiveLevel,
@@ -100,7 +103,15 @@ export function useChatStream({
     }
 
 
-    const targetModel = targetModelOverride || selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+    let targetModel = targetModelOverride || selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+
+    // Presentations demand the strongest available writer of rich HTML/SVG, not
+    // the fastest free model. Auto-route deck requests to the best model when a
+    // genuinely stronger one is available (user-approved behaviour).
+    if (!targetModelOverride && detectOfficeIntent({ messages: [{ sender: 'user', text }] }) === OFFICE_KIND.POWERPOINT) {
+      const deckModel = chooseBestDeckModel(availableModels || []);
+      if (deckModel && deckModel.id && deckModel.id !== targetModel.id) targetModel = deckModel;
+    }
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
