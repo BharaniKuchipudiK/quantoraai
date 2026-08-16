@@ -1,4 +1,5 @@
 import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
+import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -474,11 +475,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const openCanvasWithCode = (rawText) => {
-    let cleanCode = '';
-    const htmlMatch = rawText.match(/```html\n([\s\S]*?)```/i) || rawText.match(/```\n([\s\S]*?<html[\s\S]*?)```/i);
-    if (htmlMatch && htmlMatch[1]) {
-      cleanCode = htmlMatch[1];
-    } else {
+    let cleanCode = extractHtmlFromResponse(rawText);
+    
+    if (!cleanCode) {
       cleanCode = rawText.includes('<!DOCTYPE html>') || rawText.includes('<html')
         ? rawText.replace(/```(?:html|javascript|js|css)?\n([\s\S]*?)```/gi, '$1')
         : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;

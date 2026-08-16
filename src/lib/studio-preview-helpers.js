@@ -3,12 +3,12 @@
 export function extractHtmlFromResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
   const trimmed = rawText.trim();
-  const htmlFence = trimmed.match(/```html\s*\n?([\s\S]*?)```/i);
+  const htmlFence = trimmed.match(/```html\s*\n?([\s\S]*?)(?:```|$)/i);
   if (htmlFence?.[1]) return htmlFence[1].trim();
-  const genericFence = trimmed.match(/```\s*\n?([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)```/i);
+  const genericFence = trimmed.match(/```\s*\n?([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)(?:```|$)/i);
   if (genericFence?.[1]) return genericFence[1].trim();
   if (/<!DOCTYPE html>/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
-    return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
+    return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)(?:```|$)/gi, '$1').trim();
   }
   return '';
 }
