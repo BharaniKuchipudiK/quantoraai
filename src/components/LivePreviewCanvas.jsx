@@ -12,6 +12,16 @@ import {
 } from '../lib/preview-utils.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
+import { exportOffice } from '../lib/office-export.js';
+import { OFFICE_KIND } from '../lib/office-intent.js';
+
+// Office kind → download-button label / extension.
+const OFFICE_LABEL = {
+  [OFFICE_KIND.POWERPOINT]: 'PPTX',
+  [OFFICE_KIND.EXCEL]: 'XLSX',
+  [OFFICE_KIND.WORD]: 'DOCX',
+  [OFFICE_KIND.PDF]: 'PDF',
+};
 
 /*
  * Live preview + verification loop.
@@ -39,6 +49,7 @@ export default function LivePreviewCanvas({
   onRequireAuth,
   suggestedProjectName = 'quantora-app',
   isPresentationIntent = false,
+  officeKind = null,
   onPublishComplete,
   onShareComplete,
   modelId,
@@ -366,69 +377,23 @@ export default function LivePreviewCanvas({
     desktop: { width: '100%', height: '100%' }
   };
 
-  const handleDownloadPptx = async () => {
+  // Export the current artifact to a real Office/PDF file via bundled, lazy-
+  // loaded libraries (pptxgenjs / SheetJS / html-docx-js / print-to-PDF). No
+  // runtime CDN, and the format follows the detected office kind.
+  const [exportingOffice, setExportingOffice] = useState(false);
+  const handleOfficeDownload = async () => {
+    if (exportingOffice) return;
+    setExportingOffice(true);
     try {
-      if (!window.PptxGenJS) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-      }
-      const pptx = new window.PptxGenJS();
-      const iframe = document.querySelector('iframe[title="preview"]');
-      let doc = null;
-      try {
-        if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
-      } catch (e) {}
-      if (!doc) doc = new DOMParser().parseFromString(currentCode, 'text/html');
-      
-      const slideElements = doc.querySelectorAll('.slide, section, .card, article') || [];
-      const elementsToProcess = slideElements.length > 0 ? slideElements : [doc.body];
-      
-      let hasSlides = false;
-      elementsToProcess.forEach((el) => {
-         if (!el.innerText.trim()) return;
-         hasSlides = true;
-         const slide = pptx.addSlide();
-         let yPos = 0.5;
-         
-         const headers = el.querySelectorAll('h1, h2, h3');
-         headers.forEach(h => {
-             if (yPos > 5) return;
-             slide.addText(h.innerText, { x: 0.5, y: yPos, w: '90%', fontSize: 24, bold: true, color: '363636' });
-             yPos += 0.8;
-         });
-         
-         const paragraphs = el.querySelectorAll('p');
-         paragraphs.forEach(p => {
-             if (yPos > 5) return;
-             slide.addText(p.innerText, { x: 0.5, y: yPos, w: '90%', fontSize: 14, color: '666666' });
-             yPos += 0.6;
-         });
-         
-         const lists = el.querySelectorAll('li');
-         lists.forEach(li => {
-             if (yPos > 5) return;
-             slide.addText(li.innerText, { x: 0.8, y: yPos, w: '80%', fontSize: 14, bullet: true, color: '363636' });
-             yPos += 0.4;
-         });
+      await exportOffice(resolvedOfficeKind || OFFICE_KIND.POWERPOINT, {
+        html: currentCode,
+        filename: suggestedProjectName,
       });
-      
-      if (!hasSlides) {
-         const slide = pptx.addSlide();
-         slide.addText("Generated Presentation", { x: 1, y: 1, fontSize: 24, bold: true });
-         slide.addText("Please view the rich HTML version in your browser for the full design.", { x: 1, y: 2, fontSize: 14 });
-      }
-
-      let filename = suggestedProjectName || 'presentation';
-      if (filename.endsWith('.html')) filename = filename.replace('.html', '');
-      pptx.writeFile({ fileName: filename + '.pptx' });
     } catch (err) {
       console.error(err);
-      alert('Failed to generate PPTX. Please use Export to PDF from the browser instead.');
+      alert(`Export failed: ${err?.message || 'please try again.'}`);
+    } finally {
+      setExportingOffice(false);
     }
   };
 
@@ -682,7 +647,12 @@ export default function LivePreviewCanvas({
 
   const showHeader = !hideHeader;
   const hasPresentationName = Object.keys(vfs || {}).some(name => /presentation|deck|slides|ppt/i.test(name)) || /presentation|deck|slides|ppt/i.test(suggestedProjectName || '');
-  const isOfficeDoc = isPresentationIntent || /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName;
+  // Prefer the explicit kind passed from the studio; fall back to the legacy
+  // presentation heuristics so existing decks still get a PPTX button.
+  const resolvedOfficeKind = officeKind
+    || (isPresentationIntent || /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName ? OFFICE_KIND.POWERPOINT : null);
+  const isOfficeDoc = Boolean(resolvedOfficeKind);
+  const officeLabel = OFFICE_LABEL[resolvedOfficeKind] || 'FILE';
 
   return (
     <div style={{
@@ -703,8 +673,8 @@ export default function LivePreviewCanvas({
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {viewportSwitcher}
           {isOfficeDoc && (
-            <button onClick={handleDownloadPptx} title="Download as .pptx" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-              <Download size={16} /> PPTX
+            <button onClick={handleOfficeDownload} disabled={exportingOffice} title={`Download as .${officeLabel.toLowerCase()}`} style={{ background: 'transparent', border: 'none', cursor: exportingOffice ? 'wait' : 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', opacity: exportingOffice ? 0.6 : 1 }}>
+              <Download size={16} /> {exportingOffice ? '…' : officeLabel}
             </button>
           )}
           {!isOfficeDoc && (
@@ -735,8 +705,8 @@ export default function LivePreviewCanvas({
         }}>
           {viewportSwitcher}
           {isOfficeDoc && (
-            <button onClick={handleDownloadPptx} title="Download as .pptx" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-              <Download size={16} /> PPTX
+            <button onClick={handleOfficeDownload} disabled={exportingOffice} title={`Download as .${officeLabel.toLowerCase()}`} style={{ background: 'transparent', border: 'none', cursor: exportingOffice ? 'wait' : 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', opacity: exportingOffice ? 0.6 : 1 }}>
+              <Download size={16} /> {exportingOffice ? '…' : officeLabel}
             </button>
           )}
           {!isOfficeDoc && (

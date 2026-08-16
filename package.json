@@ -38,6 +38,7 @@
     "duckduckgo-search": "^1.0.7",
     "express": "^4.21.2",
     "google-auth-library": "^11.0.2",
+    "html-docx-js-typescript": "^0.1.5",
     "langchain": "^1.5.5",
     "lucide-react": "^0.546.0",
     "p-limit": "^7.3.1",
@@ -47,6 +48,7 @@
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1",
     "vite": "^6.2.3",
+    "write-excel-file": "^4.1.1",
     "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
