@@ -24,7 +24,7 @@ export const PREVIEW_RELAXED_CSP =
  * @returns {string} the space-separated sandbox token list.
  */
 export function buildPreviewSandbox({ trustedRuntimeUrl = null } = {}) {
-  const tokens = ['allow-scripts', 'allow-forms', 'allow-popups', 'allow-modals'];
+  const tokens = ['allow-scripts', 'allow-forms', 'allow-popups', 'allow-modals', 'allow-downloads'];
   if (trustedRuntimeUrl) tokens.push('allow-same-origin');
   return tokens.join(' ');
 }

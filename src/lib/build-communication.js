@@ -6,8 +6,8 @@ export function stripArtifactFromChatDisplay(rawText = '') {
   if (!rawText || typeof rawText !== 'string') return '';
   let text = rawText.trim();
 
-  text = text.replace(/```html\s*\n?[\s\S]*?```/gi, '');
-  text = text.replace(/```\s*\n?[\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?```/gi, '');
+  text = text.replace(/```html\s*\n?[\s\S]*?(?:```|$)/gi, '');
+  text = text.replace(/```\s*\n?[\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?(?:```|$)/gi, '');
 
   if (/<!DOCTYPE html>/i.test(text) || /<html[\s>]/i.test(text)) {
     const htmlStart = text.search(/<!DOCTYPE html>|<html[\s>]/i);
@@ -21,8 +21,9 @@ export function stripArtifactFromChatDisplay(rawText = '') {
 export function getChatDisplayText(rawText = '', { artifactHtml = '' } = {}) {
   const stripped = stripArtifactFromChatDisplay(rawText);
   if (stripped) return stripped;
-  if (artifactHtml) {
-    return 'Your site is updated in the preview panel →';
+  if (artifactHtml || rawText.trim() !== '') {
+    // If the text was entirely stripped (leaving it blank), it means it was just an HTML block
+    return 'Your generated preview is ready in the panel →';
   }
   return rawText;
 }

@@ -98,10 +98,12 @@ export function parseAssistantMarkers(text: string): {
 }
 
 export const CHOICES_DIRECTIVE = `STRUCTURED FOLLOW-UP OPTIONS
-When you need the user to pick among 2–5 concrete options (guided build intake, travel dates/budget, site type, payment preference, etc.), keep your visible reply to one short natural question, then append this HTML comment as the last line (after visible text, before quantora-ctx if present):
-<!-- quantora-choices:{"title":"Short heading","prompt":"Optional sub-prompt","choices":[{"id":"unique_id","label":"Button label","value":"Exact user message if they tap this","description":"Optional subtitle"}]} -->
+When you need the user to pick among 2–5 concrete options (guided build intake, travel dates/budget, site type, payment preference, strategic framework, etc.), keep your visible reply to one short natural question, then append this XML block as the last line:
+<quantora-modal>
+{"question":"Short heading (e.g. 'What should I do here?')","options":[{"id":"unique_id","title":"Button label","description":"Optional subtitle explaining the choice"}]}
+</quantora-modal>
 Rules:
 - Use ONLY when options are genuinely discrete; never for open-ended questions.
-- Max 5 choices; each value is the precise next message the user would send.
-- Omit the comment if a free-text answer is better.
+- Max 5 choices; the title of the selected choice is the precise next message the user would send.
+- Omit the modal if a free-text answer is better.
 - Do not repeat the same options in prose and in the JSON.`;

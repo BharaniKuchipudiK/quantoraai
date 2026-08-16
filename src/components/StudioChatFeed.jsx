@@ -5,6 +5,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
+import StudioMessageActions from './StudioMessageActions';
 import CopyableCodeBlock from './studio-chat/CopyableCodeBlock';
 import LivePreviewActionButton from './studio-chat/LivePreviewActionButton';
 import { LiveIosCalculator, LiveBeatMaker, LiveQuantumSimulator } from './studio-chat/StudioLiveDemos';
@@ -74,7 +75,7 @@ function StudioChatFeed({
   handleArenaPreference,
   submitModelFeedback,
 }) {
-    return messages.slice(1).map(msg => {
+    return messages.filter(msg => msg.type !== 'greeting').map(msg => {
       const isUser = msg.sender === 'user';
       return (
               <div
@@ -428,6 +429,16 @@ function StudioChatFeed({
                     <div style={{
                       marginTop: '10px',
                       display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <StudioMessageActions 
+                        text={getAssistantDisplayText(msg.text)} 
+                        onRegenerate={() => { console.log('Regenerate clicked') }} 
+                        onSummarize={() => { console.log('Summarize clicked') }} 
+                      />
+                      <div style={{
+                        display: 'flex',
                       alignItems: 'center',
                       gap: '4px',
                       fontSize: '0.75rem',

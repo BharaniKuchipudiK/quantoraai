@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioToolsMenu from './StudioToolsMenu';
+import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
@@ -810,7 +811,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const renderedChatFeed = React.useMemo(() => {
-    return messages.slice(1).map(msg => {
+    return messages.filter(msg => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       const isFailover = isActiveGenerating && msg.isFailover;
@@ -818,6 +819,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       // Hide empty AI message block while generating to avoid redundant avatar above "is thinking..." indicator
       if (msg.sender === 'ai' && !msg.text && isActiveGenerating) {
         return null;
+      }
+      
+      let cleanText = msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '');
+      let modalData = null;
+      if (cleanText) {
+        const match = cleanText.match(/<quantora-modal>([\s\S]*?)<\/quantora-modal>/);
+        if (match) {
+          try {
+            modalData = JSON.parse(match[1]);
+            cleanText = cleanText.replace(match[0], '').trim();
+          } catch (e) {
+            console.error("Failed to parse modal data", e);
+          }
+        }
       }
       
       return (
@@ -1042,9 +1057,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             }
                           }}
                         >
-                          {msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '')}
+                          {cleanText}
                         </ReactMarkdown>
                       </div>
+
+                      {modalData && (
+                        <StudioDecisionModal
+                          modalData={modalData}
+                          isLight={isLight}
+                          onSubmit={(choiceText) => {
+                            handleSendMessage(choiceText);
+                          }}
+                        />
+                      )}
 
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && !isActiveGenerating && (

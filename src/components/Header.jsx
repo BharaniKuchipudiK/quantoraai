@@ -485,27 +485,29 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <span>Privacy Vault & Encryption Status</span>
                   </div>
 
-                  <div
-                    onClick={() => {
-                      setActiveTab('dashboard'); // Assuming dashboard is the model dashboard in App.jsx
-                      setShowProfileMenu(false);
-                    }}
-                    style={{
-                      padding: '10px',
-                      borderRadius: '10px',
-                      background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.04)',
-                      border: isLight ? '1px solid #e2e8f0' : 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      marginBottom: '8px',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    <Cpu size={16} color="#8b5cf6" />
-                    <span>Model Dashboard</span>
-                  </div>
+                  {user?.isAdmin && (
+                    <div
+                      onClick={() => {
+                        setActiveTab('model_dashboard');
+                        setShowProfileMenu(false);
+                      }}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '10px',
+                        background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.04)',
+                        border: isLight ? '1px solid #e2e8f0' : 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        marginBottom: '8px',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      <Cpu size={16} color="#8b5cf6" />
+                      <span>Model Dashboard</span>
+                    </div>
+                  )}
 
 
 

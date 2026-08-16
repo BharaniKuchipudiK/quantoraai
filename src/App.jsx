@@ -45,6 +45,7 @@ const DreamActionCanvas = lazyWithReload(() => import('./components/DreamActionC
 const QuantumPlayground = lazyWithReload(() => import('./components/QuantumPlayground'));
 const PrivacyVault = lazyWithReload(() => import('./components/PrivacyVault'));
 const AdminDashboard = lazyWithReload(() => import('./components/AdminDashboard'));
+const ModelDashboard = lazyWithReload(() => import('./components/ModelDashboard'));
 const WelcomeHub = lazyWithReload(() => import('./components/WelcomeHub'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
@@ -439,6 +440,20 @@ export default function App() {
             {activeTab === 'dashboard' && (
               <AdminDashboard
                 onBack={() => handleTabChange('studio')}
+              />
+            )}
+
+            {activeTab === 'model_dashboard' && (
+              <ModelDashboard
+                data={modelDashboard}
+                availableModels={availableModels}
+                selectedModel={selectedModel}
+                onSelectModel={setSelectedModel}
+                autoSelectEnabled={false}
+                onToggleAutoSelect={() => {}}
+                isLight={isLight}
+                isAdmin={user?.isAdmin === true}
+                onModelsRefresh={refreshModels}
               />
             )}
             </React.Suspense>

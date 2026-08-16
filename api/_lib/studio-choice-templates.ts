@@ -20,11 +20,13 @@ choices: Relaxed — few stops, lots of downtime | Balanced mix | Packed — see
 Group — title "Who's going?"
 choices: Solo | Couple | Family with kids | Group of friends
 
-Example marker (adapt ids/labels/values):
-<!-- quantora-choices:{"title":"When are you thinking?","prompt":"Pick one or type your dates below","choices":[{"id":"flex","label":"Flexible","value":"My dates are flexible — suggest the best window","description":"Open to your recommendation"},{"id":"month","label":"Next 1–2 months","value":"I'm planning for the next 1–2 months","description":"Rough near-term trip"},{"id":"fixed","label":"I have fixed dates","value":"I have specific travel dates — I'll share them next","description":"Already booked or locked in"}]} -->`;
+Example marker (adapt ids/labels/titles):
+<quantora-modal>
+{"question":"When are you thinking?","options":[{"id":"flex","title":"My dates are flexible","description":"Open to your recommendation"},{"id":"month","title":"Next 1–2 months","description":"Rough near-term trip"},{"id":"fixed","title":"I have fixed dates","description":"Already booked or locked in"}]}
+</quantora-modal>`;
 
 export const BUILD_CHOICE_HINTS = `BUILD CHOICE TEMPLATES (adapt labels/values to context)
-During guided build intake, when essentials are still unclear, use quantora-choices instead of a text checklist. Prefer these on the FIRST turn of a new build.
+During guided build intake, when essentials are still unclear, use <quantora-modal> instead of a text checklist. Prefer these on the FIRST turn of a new build.
 
 Business name — title "What's it called?"
 choices: I'll type the name in chat | Use a placeholder name for now | Same as my business name on the sign
@@ -47,8 +49,10 @@ choices: Clean & minimal | Bold & colorful | Professional / corporate | Cozy & w
 Scope — title "Ready to build?"
 choices: Keep clarifying | Build a first draft now (use reasonable defaults for gaps)
 
-Example marker (adapt ids/labels/values):
-<!-- quantora-choices:{"title":"What are you building?","choices":[{"id":"shop","label":"Online shop","value":"I want an online shop with add-to-cart and a demo checkout flow","description":"Products + cart"},{"id":"brochure","label":"Business site","value":"I want a brochure website for my business with contact info and services","description":"No cart"},{"id":"portfolio","label":"Portfolio","value":"I want a portfolio site to showcase my work with a contact form","description":"Creative / personal"}]} -->`;
+Example marker (adapt ids/labels/titles):
+<quantora-modal>
+{"question":"What are you building?","options":[{"id":"shop","title":"Online shop with checkout","description":"Products + cart"},{"id":"brochure","title":"Business brochure site","description":"No cart"},{"id":"portfolio","title":"Personal portfolio","description":"Creative / personal"}]}
+</quantora-modal>`;
 
 export function buildChoiceTemplateDirective(options: {
   studioDomain?: StudioDomain | null;
