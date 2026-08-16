@@ -13,3 +13,12 @@ coverage/
 # repo or restoring it by mistake.
 *.orig
 *.rej
+
+# One-off agent edit/patch scripts must never be committed. Historically ~38
+# throwaway `patch_*.cjs` / `test_*.cjs` mutation scripts were committed to the
+# repo root and left to rot — clutter that made the tree look broken. Real
+# tooling lives in scripts/ and is referenced by package.json.
+/patch_*.cjs
+/patch_*.js
+/test_production.cjs
+/test_simulation.cjs
