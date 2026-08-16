@@ -2162,6 +2162,34 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 multiple
               />
 
+              {/* Attachment Button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach File"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: subtextColor,
+                  padding: '6px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
+                  e.currentTarget.style.color = textColor;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = subtextColor;
+                }}
+              >
+                <Paperclip size={18} />
+              </button>
+
               {/* Plus Button for Tools Menu */}
               <div style={{ position: 'relative' }}>
                 <button
