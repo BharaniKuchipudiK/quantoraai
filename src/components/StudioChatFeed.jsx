@@ -425,7 +425,7 @@ function StudioChatFeed({
                    * that remains is an unobtrusive thumbs up/down, which still
                    * feeds the model-quality flywheel.
                    */}
-                  {msg.sender === 'ai' && !msg.isKeyPrompt && msg.requestId && (
+                  {msg.sender === 'ai' && !msg.isKeyPrompt && (
                     <div style={{
                       marginTop: '10px',
                       display: 'flex',
