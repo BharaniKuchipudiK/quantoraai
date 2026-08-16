@@ -111,10 +111,10 @@ export default function PrivacyVault({ user, isLight }) {
             <div style={{ background: itemBg, padding: '14px', borderRadius: '12px' }}>
               <div>
                 <span style={{ fontSize: '0.9rem', fontWeight: '600', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Server size={16} color="#0284c7" /> Bring-your-own-key handling
+                  <Server size={16} color="#0284c7" /> Bring-your-own-key (Claude 3.5 & GPT-4o)
                 </span>
                 <p style={{ fontSize: '0.75rem', color: subtextColor, margin: '2px 0 0 0' }}>
-                  API keys you paste into the Studio stay only in in-memory state for the current browser tab. They are not written to localStorage by this client.
+                  Paste your <strong>OpenRouter</strong>, <strong>Anthropic (Claude 3.5 Sonnet)</strong>, or <strong>OpenAI</strong> API key in the top nav to unlock stable office generation. BYOK keys stay only in in-memory state for the current browser tab. They are never written to localStorage or sent to Quantora's backend permanently.
                 </p>
               </div>
             </div>

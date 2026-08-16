@@ -12,6 +12,8 @@ import { LiveIosCalculator, LiveBeatMaker, LiveQuantumSimulator } from './studio
 import { getChatDisplayText } from '../lib/build-communication.js';
 import { hasPreviewableContent, getLivePreviewButtonMeta } from '../lib/studio-preview-helpers.js';
 import { getAssistantDisplayText } from '../lib/assistant-response-normalizer.js';
+import { parseDeckSpec } from '../lib/deck-parser.js';
+import { generatePPTXFromJson } from '../lib/deck-render.js';
 
 function ResponseInsightStrip({ msg, isLight, subtextColor }) {
   const chips = [
@@ -428,6 +430,26 @@ function StudioChatFeed({
                             onOpen={openCanvasWithCode}
                           />
                         )}
+                        {msg.sender === 'ai' && (() => {
+                           if (!hasPreviewableContent(msg.text)) return null;
+                           const spec = parseDeckSpec(msg.text);
+                           if (!spec) return null;
+
+                           return (
+                             <button
+                               onClick={async () => {
+                                 try {
+                                   await generatePPTXFromJson(spec);
+                                 } catch(e) {
+                                   alert("Failed to download PPTX: " + e.message);
+                                 }
+                               }}
+                               style={{ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff', padding: '6px 14px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                             >
+                               <Paperclip size={13} /> Direct Download PPTX
+                             </button>
+                           );
+                        })()}
                         {msg.sender === 'ai' && onPushToCanvas && (
                           <button
                             type="button"
