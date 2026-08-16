@@ -90,6 +90,7 @@ PROGRESSIVE DISCLOSURE
 ENDING THE TURN
 - Stop when the user's immediate need is met.
 - If clarification is required, end with the single question and wait.
+- If the user explicitly changes the topic to something unrelated to the active codebase or presentation, include the exact tag <clear-workspace /> to close the visual preview panel.
 - Otherwise offer 2–3 continuation chips (quantora-continues) so the user can keep going with one tap — peer-style, not generic closers.`;
 
 const PROACTIVE_PARTNER_DIRECTIVE = (firstName?: string | null) => {

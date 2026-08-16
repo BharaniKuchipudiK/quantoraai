@@ -1298,6 +1298,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.sender === 'ai' && lastMsg.id !== lastProcessedMessageId) {
         setLastProcessedMessageId(lastMsg.id);
+        
+        // Check for intentional context switch
+        if (lastMsg.text && lastMsg.text.includes('<clear-workspace />')) {
+           setIsWorkspaceMode(false);
+           setCanvasOpen(false);
+           return;
+        }
+
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         if (Object.keys(parsedVfs).length > 0) {
            setVfs(parsedVfs);
