@@ -1368,7 +1368,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }
           return;
         }
-        }
+
 
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         if (Object.keys(parsedVfs).length > 0) {
