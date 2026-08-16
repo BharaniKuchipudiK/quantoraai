@@ -9,6 +9,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioToolsMenu from './StudioToolsMenu';
+import StudioMessageActions from './StudioMessageActions';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
@@ -1097,6 +1098,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               <ThumbsDown size={14} />
                             </button>
                           </div>
+                          <StudioMessageActions 
+                            text={cleanText} 
+                            onRegenerate={() => handleSendMessage('Regenerate the previous response.')} 
+                            onSummarize={() => handleSendMessage('Please summarize this.')} 
+                          />
                           
                           {runnableCode && (
                             <button
