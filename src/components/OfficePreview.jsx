@@ -8,9 +8,10 @@ import { extractOfficeManifest, manifestMatchesPreview } from '../lib/office-art
  * PowerPoint and Word render the canonical server-produced HTML preview inside
  * Office chrome. Excel parses every server-rendered worksheet and exposes real
  * worksheet tabs, so the preview no longer hides sheets that are present in the
- * downloaded workbook. The verified-source badge means this exact preview is
- * fingerprint-bound to a server-verified Office specification; Download remains
- * an explicit human action after review.
+ * downloaded workbook. The artifact-verification badge means this exact preview
+ * is fingerprint-bound to the server-compiled Office artifact. It deliberately
+ * does NOT imply that business facts, figures or citations were independently
+ * verified; content review remains an explicit human responsibility.
  */
 
 const colLabel = (index) => {
@@ -28,7 +29,7 @@ function VerificationBadge({ verified, dark = false }) {
   if (!verified) return null;
   return (
     <span
-      title="This preview is fingerprint-bound to a server-verified Office artifact. Review it before downloading."
+      title="Preview and downloadable Office artifact are fingerprint-bound and structurally verified. Business facts and citations still require content review."
       style={{
         marginLeft: 'auto',
         display: 'inline-flex',
@@ -45,7 +46,7 @@ function VerificationBadge({ verified, dark = false }) {
       }}
     >
       <span aria-hidden="true">✓</span>
-      Verified source · review before download
+      Artifact verified · review content
     </span>
   );
 }
