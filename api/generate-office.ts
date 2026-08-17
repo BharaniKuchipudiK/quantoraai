@@ -219,6 +219,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError) {
+   const priorContext = buildOfficeHistoryContext(history);
+   const promptWithContext = priorContext ? priorContext + '\n\nCURRENT REQUEST:\n' + prompt : prompt;
+
    const systemPrompt = OFFICE_GENERATION_DIRECTIVE + `\n\nSCHEMA:\n` + OFFICE_SCHEMAS[format] +
         (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. You MUST fix this syntax or structure error.` : "");
 
