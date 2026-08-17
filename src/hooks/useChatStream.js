@@ -23,7 +23,8 @@ export function useChatStream({
   isWorkspaceMode,
   messages,
   setLastPrompt,
-  webSearchEnabled
+  webSearchEnabled,
+  sessionContext
 }) {
   const abortControllerRef = useRef(null);
   const { logModelFailure, getLearnedBehaviors } = usePCLMemory();
@@ -334,7 +335,8 @@ export function useChatStream({
             history: cleanMessages,
             openRouterKey: openRouterApiKey,
             cognitiveLevel: cognitiveLevel,
-            webSearch: webSearchEnabled
+            webSearch: webSearchEnabled,
+            sessionContext
           })
         });
 
