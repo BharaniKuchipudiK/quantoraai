@@ -112,13 +112,20 @@ export default async function handler(req, res) {
       const asBlob = docxModule.asBlob || docxModule.default?.asBlob;
       if (typeof asBlob !== 'function') throw new Error('Word exporter unavailable.');
 
-      let htmlString = '<!DOCTYPE html><html><body><h1>' + escapeHtml(validJson.title || 'Document') + '</h1>';
+      const parseInline = (txt) => {
+         let safe = escapeHtml(txt);
+         safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" style="color:blue;text-decoration:underline;">$1</a>');
+         safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+         return safe;
+      };
+
+      let htmlString = '<!DOCTYPE html><html><body><h1>' + parseInline(validJson.title || 'Document') + '</h1>';
       for (const sec of (validJson.sections || [])) {
-         htmlString += '<h2>' + escapeHtml(sec.heading || '') + '</h2>';
-         for (const paragraph of (sec.paragraphs || [])) htmlString += '<p>' + escapeHtml(paragraph) + '</p>';
+         htmlString += '<h2>' + parseInline(sec.heading || '') + '</h2>';
+         for (const paragraph of (sec.paragraphs || [])) htmlString += '<p>' + parseInline(paragraph) + '</p>';
          if (Array.isArray(sec.bullets) && sec.bullets.length > 0) {
             htmlString += '<ul>';
-            for (const bullet of sec.bullets) htmlString += '<li>' + escapeHtml(bullet) + '</li>';
+            for (const bullet of sec.bullets) htmlString += '<li>' + parseInline(bullet) + '</li>';
             htmlString += '</ul>';
          }
          if (Array.isArray(sec.images) && sec.images.length > 0) {
@@ -317,7 +324,12 @@ async function imageToDataUrl(url) {
   try {
     const parsed = new URL(trimmed);
     if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return '';
-    const response = await withTimeout(fetch(trimmed, { headers: { Accept: 'image/*' } }), 8000, 'Image download timed out');
+    const response = await withTimeout(fetch(trimmed, { 
+      headers: { 
+        'Accept': 'image/*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      } 
+    }), 8000, 'Image download timed out');
     if (!response.ok) return '';
     const contentType = response.headers.get('content-type') || '';
     if (!/^image\//i.test(contentType)) return '';

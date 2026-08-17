@@ -1413,21 +1413,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            return;
         }
 
-        // Legacy frontend deck parser removed - Office artifacts are now handled by the backend generator and returned as file download cards.
-
-
+        // RESTORED: Frontend deck parser re-enabled. Office artifacts render natively in the LivePreviewCanvas.
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
-        // Only auto-open workspace if the message wasn't just an office document generation
-        const hasOfficeIntent = lastMsg.attachments?.some(a => ['pptx', 'docx', 'xlsx'].includes(a.type)) || lastMsg.text?.includes('Architecting POWERPOINT') || lastMsg.text?.includes('Architecting WORD') || lastMsg.text?.includes('Architecting EXCEL');
         
-        if (Object.keys(parsedVfs).length > 0 && !hasOfficeIntent) {
+        if (Object.keys(parsedVfs).length > 0) {
            setVfs(parsedVfs);
            setWorkspaceCode(parsedVfs['presentation.html']?.content || parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
         } else {
            const code = extractRunnableCode(lastMsg.text);
-           if (code && !hasOfficeIntent) {
+           if (code) {
               setWorkspaceCode(code);
               setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : 'App.jsx']: { content: code, language: detectSlideDeck(messages) ? 'html' : 'jsx' } });
               setWorkspaceActiveTab('preview');
