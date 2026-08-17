@@ -1,8 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
-import pptxgen from "pptxgenjs";
-import writeXlsxFile from 'write-excel-file/node';
-import { asBlob } from 'html-docx-js-typescript';
+import { createRequire } from "node:module";
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
+
+// Vercel's Node runtime executes this function as CommonJS. Use Node's
+// require-condition so dual-published Office libraries load their CJS builds.
+const require = createRequire(import.meta.url);
 
 // A full-deck LLM call + server-side file compilation takes ~15–30s. Without an
 // explicit budget, Vercel kills the function at its short default limit and
@@ -73,7 +75,8 @@ export default async function handler(req, res) {
     let fileName = '';
 
     if (format === 'powerpoint') {
-      const PptxGenJS: any = (pptxgen as any).default || pptxgen;
+      const pptxgenModule: any = require('pptxgenjs');
+      const PptxGenJS: any = pptxgenModule.default || pptxgenModule;
       const pptx = new PptxGenJS();
       pptx.layout = 'LAYOUT_16x9';
       const slides = validJson.slides || [];
@@ -95,6 +98,10 @@ export default async function handler(req, res) {
       fileName = sanitizeFilename(validJson.title || 'Presentation') + '.pptx';
 
     } else if (format === 'word') {
+      const docxModule: any = require('html-docx-js-typescript');
+      const asBlob = docxModule.asBlob || docxModule.default?.asBlob;
+      if (typeof asBlob !== 'function') throw new Error('Word exporter unavailable.');
+
       let htmlString = `<!DOCTYPE html><html><body><h1>${validJson.title || 'Document'}</h1>`;
       (validJson.sections || []).forEach(sec => {
          htmlString += `<h2>${sec.heading || ''}</h2>`;
@@ -114,6 +121,9 @@ export default async function handler(req, res) {
       fileName = sanitizeFilename(validJson.title || 'Document') + '.docx';
 
     } else if (format === 'excel') {
+      const writeXlsxModule: any = require('write-excel-file/node');
+      const writeXlsxFile: any = writeXlsxModule.default || writeXlsxModule;
+
       // Need to convert JSON "rows" to write-excel-file schema
       const sheetsData = validJson.sheets && validJson.sheets.length > 0 ? validJson.sheets : [{name: 'Sheet1', data: []}];
       // We take the first sheet to compile (write-excel-file supports multiple sheets if passed as an object, but we keep it simple)
