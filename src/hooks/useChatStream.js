@@ -337,10 +337,16 @@ export function useChatStream({
 
     const executeSingleModel = async (modelToUse, attempt = 1, promptOverride = null) => {
       const learned = getLearnedBehaviors();
+      const isOfficeBriefingOverride = typeof promptOverride === 'string' && promptOverride.startsWith('OFFICE BRIEFING CONTEXT');
       let finalPromptOverride = promptOverride || '';
       if (learned) {
         finalPromptOverride = finalPromptOverride ? (finalPromptOverride + '\n\n' + learned) : learned;
       }
+      const messageForModel = isOfficeBriefingOverride
+        ? finalPromptOverride
+        : finalPromptOverride
+          ? text + '\n\n' + finalPromptOverride
+          : text;
       try {
         abortControllerRef.current = new AbortController();
         const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
@@ -351,7 +357,7 @@ export function useChatStream({
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            message: finalPromptOverride ? text + '\n\n' + finalPromptOverride : text,
+            message: messageForModel,
             modelId: modelToUse.id,
             modelName: modelToUse.name,
             history: cleanMessages,
