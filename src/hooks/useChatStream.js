@@ -110,8 +110,10 @@ export function useChatStream({
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
 
     // --- GATEKEEPER FOR OFFICE DOCUMENTS ---
-    // Instead of streaming JSON to the chat, we proxy to the dedicated binary compiler
-    const officeKind = detectOfficeIntent({ messages: [...cleanMessages, { sender: 'user', text }] });
+    // Classify only the current request. Including prior chat messages makes Office
+    // mode sticky: one earlier presentation request would route every later prompt
+    // (including weather, coding, and general questions) to the PPTX generator.
+    const officeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
     if (officeKind) {
       const aiMsgId = Date.now() + 1;
       updateActiveMessages(prev => [...prev, {
