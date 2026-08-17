@@ -83,6 +83,7 @@ export default async function handler(req, res) {
     let mimeType = '';
     let fileName = '';
     let imageCount = 0;
+    let htmlPreview = '';
 
     if (format === 'powerpoint') {
       const pptxgenModule: any = require('pptxgenjs');
@@ -91,16 +92,34 @@ export default async function handler(req, res) {
       pptx.layout = 'LAYOUT_16x9';
       const slides = validJson.slides || [];
       
-      slides.forEach((s) => {
+      htmlPreview = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;">
+        <h1 style="text-align:center;margin-bottom:40px;">${escapeHtml(validJson.title || 'Presentation')}</h1>
+        <div style="display:flex;flex-direction:column;gap:30px;align-items:center;">`;
+
+      slides.forEach((s, i) => {
         const slide = pptx.addSlide();
         if (s.speakerNotes) slide.addNotes(s.speakerNotes);
         slide.addText(s.title || "Slide", { x: 0.5, y: 0.5, w: 9, h: 1, fontSize: 24, bold: true, color: '0F172A' });
         if (s.subtitle) slide.addText(s.subtitle, { x: 0.5, y: 1.2, w: 9, h: 0.5, fontSize: 14, color: '64748B' });
+        
+        let slideHtml = `<div style="width:100%;max-width:800px;border:1px solid #ccc;border-radius:8px;padding:30px;box-shadow:0 4px 6px rgba(0,0,0,0.1);background:#fff;">
+          <h2 style="margin-top:0;">${escapeHtml(s.title || 'Slide ' + (i+1))}</h2>
+          ${s.subtitle ? `<h3 style="color:#666;font-weight:normal;margin-top:0;">${escapeHtml(s.subtitle)}</h3>` : ''}`;
+
         if (s.bullets && s.bullets.length > 0) {
            const bulletPoints = s.bullets.map(b => ({ text: b, options: { bullet: true } }));
            slide.addText(bulletPoints, { x: 0.5, y: 2, w: 9, h: 3, fontSize: 16, color: '0F172A' });
+           
+           slideHtml += `<ul>${s.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`;
         }
+        
+        if (s.speakerNotes) {
+           slideHtml += `<div style="margin-top:20px;padding:10px;background:#f8f9fa;border-left:4px solid #0ea5e9;font-size:0.9em;"><strong>Speaker Notes:</strong><br/>${escapeHtml(s.speakerNotes)}</div>`;
+        }
+        slideHtml += `</div>`;
+        htmlPreview += slideHtml;
       });
+      htmlPreview += `</div></body></html>`;
       
       const buffer = await pptx.write({ outputType: 'nodebuffer' });
       base64Data = (await toNodeBuffer(buffer)).toString('base64');
@@ -134,7 +153,8 @@ export default async function handler(req, res) {
               const caption = image?.caption || image?.altText || 'Figure';
               if (dataUrl) {
                 imageCount += 1;
-                htmlString += '<figure style="margin:16px 0;text-align:center;"><img src="' + dataUrl + '" alt="' + escapeHtml(image?.altText || caption) + '" style="max-width:100%;height:auto;" /><figcaption>' + escapeHtml(caption) + '</figcaption></figure>';
+                // Fix for MS Word image sizing: must use width="..." attributes rather than max-width CSS
+                htmlString += '<figure style="margin:16px 0;text-align:center;"><img src="' + dataUrl + '" alt="' + escapeHtml(image?.altText || caption) + '" width="600" /><figcaption>' + escapeHtml(caption) + '</figcaption></figure>';
               } else if (image?.url) {
                 htmlString += '<p><em>Figure: ' + escapeHtml(caption) + ' (' + escapeHtml(image.url) + ')</em></p>';
               }
@@ -142,6 +162,7 @@ export default async function handler(req, res) {
          }
       }
       htmlString += '</body></html>';
+      htmlPreview = htmlString; // Forward HTML preview to frontend for rendering
 
       const blob: any = await asBlob(htmlString);
       const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(await blob.arrayBuffer());
@@ -173,6 +194,19 @@ export default async function handler(req, res) {
         formattedData.length > 0 ? formattedData : [[{ value: 'Empty Data', type: String }]],
         { buffer: true }
       );
+      
+      htmlPreview = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;">
+        <h1 style="text-align:center;margin-bottom:30px;">${escapeHtml(validJson.filename || 'Spreadsheet')}</h1>
+        <table style="width:100%;border-collapse:collapse;margin:0 auto;max-width:1000px;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+          <tbody>
+            ${formattedData.map((row, rIdx) => `
+              <tr style="${rIdx === 0 ? 'background-color:#f1f5f9;font-weight:bold;border-bottom:2px solid #cbd5e1;' : 'border-bottom:1px solid #e2e8f0;'}">
+                ${row.map(cell => `<td style="padding:12px;text-align:${cell.type === Number ? 'right' : 'left'};">${escapeHtml(cell.value)}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table></body></html>`;
+
       const buffer: any = xlsxResult && typeof xlsxResult.toBuffer === 'function'
         ? await xlsxResult.toBuffer()
         : await xlsxResult;
@@ -188,6 +222,7 @@ export default async function handler(req, res) {
       mimeType,
       data: base64Data,
       spec: validJson,
+      htmlPreview,
       imageCount
     });
 

@@ -157,7 +157,7 @@ export function useChatStream({
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: `✅ **Successfully generated ${officeKind} document.**`,
+          text: `✅ **Successfully generated ${officeKind} document.**` + (data.htmlPreview ? `\n\n\`\`\`html\n${data.htmlPreview}\n\`\`\`` : ''),
           isGenerating: false,
           officeAttachment: data
         } : m));
