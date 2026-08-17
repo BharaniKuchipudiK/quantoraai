@@ -3,238 +3,406 @@ import { createRequire } from "node:module";
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
 import { resizeImageForEmbed } from './_lib/office-images.js';
 import { DECK_THEME, classifySlide, normalizeChartData, buildDeckPreviewHtml } from './_lib/deck-theme.js';
+import {
+  OFFICE_ARTIFACT_VERSION,
+  OFFICE_META,
+  injectOfficeManifest,
+  normalizeOfficeSpec,
+  validateOfficeSpec,
+  verifyCompiledOfficeArtifact,
+} from './_lib/office-artifact.js';
+import { fetchPublicHttpsImage } from './_lib/safe-image-fetch.js';
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
+import { getSessionUser } from './_lib/session.js';
 
-// Vercel's Node runtime executes this function as CommonJS. Use Node's
-// require-condition so dual-published Office libraries load their CJS builds.
 const require = createRequire(import.meta.url);
+const OFFICE_GENERATE_RATE_PER_MINUTE = 6;
+const OFFICE_COMPILE_RATE_PER_MINUTE = 12;
+const MAX_OFFICE_SPEC_BYTES = 3_000_000;
+const MAX_OFFICE_PROMPT_CHARS = 100_000;
 
-// Generating a full consulting-grade deck spec with Gemini can legitimately
-// take 30–60s+ (large structured JSON), and a slow tail runs longer. The old
-// 60s budget with a 25s per-attempt cap strangled exactly those requests
-// ("The AI model took too long to respond (>25s)"). On the Pro plan Vercel
-// allows up to 300s, so give the function real headroom.
 export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  applyCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { prompt, format, history = [], userKey, openRouterKey, imageAttachments = [] } = req.body;
+  const {
+    prompt = '',
+    format,
+    history = [],
+    userKey,
+    openRouterKey,
+    imageAttachments = [],
+    spec: suppliedSpec = null,
+    compileOnly = false,
+  } = req.body || {};
 
   if (!['powerpoint', 'word', 'excel'].includes(format)) {
     return res.status(400).json({ error: 'Invalid format requested' });
   }
 
-  // Choose the best key available (Gemini preferred, or OpenRouter)
+  if (String(prompt || '').length > MAX_OFFICE_PROMPT_CHARS) {
+    return res.status(413).json({ error: 'Office request is too large. Please reduce the prompt or attachments and try again.' });
+  }
+
+  if (suppliedSpec) {
+    let specBytes = Infinity;
+    try { specBytes = Buffer.byteLength(JSON.stringify(suppliedSpec), 'utf8'); } catch { /* invalid spec rejected below */ }
+    if (specBytes > MAX_OFFICE_SPEC_BYTES) {
+      return res.status(413).json({ error: 'Office specification is too large to compile reliably. Reduce embedded images or document size and try again.' });
+    }
+  }
+
   const apiKey = userKey || process.env.GEMINI_API_KEY;
-  if (!apiKey && !openRouterKey && !process.env.OPENROUTER_API_KEY) {
+  const hasOpenRouter = Boolean(openRouterKey || process.env.OPENROUTER_API_KEY);
+  const isCompileRequest = Boolean(compileOnly || suppliedSpec);
+  if (!isCompileRequest && !apiKey && !hasOpenRouter) {
     return res.status(401).json({ error: 'API key required' });
   }
 
+  // Compilation is intentionally available without another model/API key so a
+  // verified preview can be deterministically rebuilt. Bound that CPU surface
+  // with the same two-layer limiter used by chat: local hot-loop protection +
+  // durable shared counters across serverless instances.
+  const sessionUser = getSessionUser(req);
+  const rateLimit = isCompileRequest ? OFFICE_COMPILE_RATE_PER_MINUTE : OFFICE_GENERATE_RATE_PER_MINUTE;
+  const rateKind = isCompileRequest ? 'compile' : 'generate';
+  const identity = sessionUser ? `user:${sessionUser.sub}` : `ip:${clientIp(req)}`;
+  const rateKey = `office:${rateKind}:${identity}`;
+
+  if (isRateLimited(rateKey, rateLimit, 60_000)) {
+    return res.status(429).json({ error: 'Too many Office requests. Please wait a minute and try again.' });
+  }
+  const durable = await isRateLimitedDurable(rateKey, rateLimit, 60);
+  if (durable.limited) {
+    if (durable.resetsAt) {
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durable.resetsAt).getTime() - Date.now()) / 1000)));
+    }
+    return res.status(429).json({
+      error: 'Too many Office requests. Please wait a minute and try again.',
+      resetsAt: durable.resetsAt,
+    });
+  }
+
   try {
-    // 1. GATEKEEPER: GENERATE & VALIDATE WITH RETRY LOOP
-    let validJson = null;
-    let attempts = 0;
-    const maxAttempts = 2; // bound total time so we stay within maxDuration
-    let lastError = '';
+    let validJson;
+    let generationAttempts = 0;
+    const generationWarnings = [];
 
-    while (attempts < maxAttempts && !validJson) {
-      attempts++;
-      try {
-        // Bound each attempt at 110s so two attempts (+ compilation) stay
-        // within the 300s function budget, while giving a real deck the time it
-        // needs. A genuine hang still surfaces as a clean error, not a Vercel
-        // hard-kill — but a normal 30–60s generation now succeeds.
-        const rawResponse = await withTimeout(
-          generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError),
-          110000,
-          'The AI model took too long to respond',
-        );
-        validJson = JSON.parse(rawResponse);
-        
-        // Basic validation: must have the core structures
-        if (format === 'powerpoint' && (!validJson.slides || !Array.isArray(validJson.slides))) {
-           throw new Error("Missing 'slides' array in PowerPoint schema");
+    if (isCompileRequest) {
+      const validation = validateOfficeSpec(format, suppliedSpec);
+      if (!validation.valid) {
+        return res.status(422).json({
+          error: `Office specification failed validation: ${validation.issues.join(' ')}`,
+          issues: validation.issues,
+          warnings: validation.warnings,
+        });
+      }
+      validJson = validation.spec;
+      generationWarnings.push(...validation.warnings);
+    } else {
+      const maxAttempts = 2;
+      let lastError = '';
+
+      while (generationAttempts < maxAttempts && !validJson) {
+        generationAttempts += 1;
+        try {
+          const preferOpenRouter = generationAttempts > 1 && hasOpenRouter;
+          const rawResponse = await withTimeout(
+            generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError, preferOpenRouter),
+            110_000,
+            'The AI model took too long to respond',
+          );
+          const parsed = JSON.parse(rawResponse);
+          const validation = validateOfficeSpec(format, parsed);
+          if (!validation.valid) throw new Error(validation.issues.join(' '));
+          validJson = validation.spec;
+          generationWarnings.push(...validation.warnings);
+        } catch (error) {
+          lastError = String(error?.message || error);
+          console.warn(`Office gatekeeper failed (attempt ${generationAttempts}):`, lastError);
+          validJson = null;
         }
-        if (format === 'word' && (!validJson.sections || !Array.isArray(validJson.sections))) {
-           throw new Error("Missing 'sections' array in Word schema");
-        }
-        if (format === 'excel' && (!validJson.sheets || !Array.isArray(validJson.sheets))) {
-           throw new Error("Missing 'sheets' array in Excel schema");
-        }
-      } catch (err) {
-        console.warn(`Gatekeeper validation failed (attempt ${attempts}):`, err.message);
-        lastError = err.message;
-        validJson = null;
+      }
+
+      if (!validJson) {
+        return res.status(502).json({
+          error: `Gatekeeper failed to produce a valid ${format} specification after ${generationAttempts} attempts.`,
+        });
       }
     }
 
-    if (!validJson) {
-      return res.status(500).json({ error: `Gatekeeper failed to produce valid ${format} schema after ${maxAttempts} attempts. Last error: ${lastError}` });
-    }
-
-    if ((format === 'word' || format === 'powerpoint') && Array.isArray(imageAttachments) && imageAttachments.length > 0) {
-      const attachedImages = imageAttachments.filter((image) => /^data:image\//i.test(String(image?.dataUrl || ''))).slice(0, 6).map((image) => ({ url: image.dataUrl, caption: image.name || 'Attached image', altText: image.name || 'Attached image' }));
-      if (attachedImages.length > 0) {
-        if (format === 'word') {
-          const firstSection = validJson.sections?.[0] || { heading: 'Figures', paragraphs: [], bullets: [] };
-          firstSection.images = [...(firstSection.images || []), ...attachedImages];
-          validJson.sections = validJson.sections?.length ? [firstSection, ...validJson.sections.slice(1)] : [firstSection];
-        } else if (format === 'powerpoint') {
-          // Attach uploads to a CONTENT slide (the renderer shows images there),
-          // never the cover — creating one after the cover if the deck has none.
-          const slidesArr = Array.isArray(validJson.slides) ? validJson.slides : [];
-          let target = slidesArr.find((sl, idx) => classifySlide(sl, idx) === 'bullets');
-          if (!target) {
-            target = { type: 'bullets', title: 'Figures', bullets: [] };
-            const insertAt = slidesArr.length && classifySlide(slidesArr[0], 0) === 'cover' ? 1 : 0;
-            slidesArr.splice(insertAt, 0, target);
-          }
-          target.images = [...(target.images || []), ...attachedImages];
-          validJson.slides = slidesArr.length ? slidesArr : [target];
-        }
-      }
-    }
-
-    // 2. SERVER-SIDE COMPILATION
-    let base64Data = '';
-    let mimeType = '';
-    let fileName = '';
-    let imageCount = 0;
-    let htmlPreview = '';
-
-    if (format === 'powerpoint') {
-      const pptxgenModule: any = require('pptxgenjs');
-      const PptxGenJS: any = pptxgenModule.default || pptxgenModule;
-      const pptx = new PptxGenJS();
-      pptx.layout = 'LAYOUT_16x9';
-
-      // Type-aware, themed rendering. The composer draws each slide per its
-      // schema `type` (cover/section/bullets/data_viz/matrix/quote) and returns
-      // the resolved (already-downscaled) image data URLs per slide so the HTML
-      // preview can mirror the exact deck instead of a divergent approximation.
-      const composed = await composePresentation(pptx, validJson);
-      imageCount = composed.imageCount;
-      htmlPreview = buildDeckPreviewHtml(validJson, composed.slideImages);
-
-      const buffer = await pptx.write({ outputType: 'nodebuffer' });
-      base64Data = (await toNodeBuffer(buffer)).toString('base64');
-      mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      fileName = sanitizeFilename(validJson.title || 'Presentation') + '.pptx';
-
-    } else if (format === 'word') {
-      const docxModule: any = require('html-docx-js-typescript');
-      const asBlob = docxModule.asBlob || docxModule.default?.asBlob;
-      if (typeof asBlob !== 'function') throw new Error('Word exporter unavailable.');
-
-      const parseInline = (txt) => {
-         let safe = escapeHtml(txt);
-         safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" style="color:blue;text-decoration:underline;">$1</a>');
-         safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-         return safe;
-      };
-
-      let htmlString = '<!DOCTYPE html><html><body><h1>' + parseInline(validJson.title || 'Document') + '</h1>';
-      for (const sec of (validJson.sections || [])) {
-         htmlString += '<h2>' + parseInline(sec.heading || '') + '</h2>';
-         for (const paragraph of (sec.paragraphs || [])) htmlString += '<p>' + parseInline(paragraph) + '</p>';
-         if (Array.isArray(sec.bullets) && sec.bullets.length > 0) {
-            htmlString += '<ul>';
-            for (const bullet of sec.bullets) htmlString += '<li>' + parseInline(bullet) + '</li>';
-            htmlString += '</ul>';
-         }
-         if (Array.isArray(sec.images) && sec.images.length > 0) {
-           for (const image of sec.images.slice(0, 4)) {
-             const imgData = await imageToDataUrl(image?.url);
-             const caption = image?.caption || image?.altText || 'Figure';
-             if (imgData && imgData.dataUrl) {
-               imageCount += 1;
-               // Fix for MS Word image sizing: calculate exact proportional height based on a target width
-               const targetWidth = 600;
-               const targetHeight = imgData.width && imgData.height ? Math.round((imgData.height / imgData.width) * targetWidth) : 'auto';
-               htmlString += '<figure style="margin:16px 0;text-align:center;"><img src="' + imgData.dataUrl + '" alt="' + escapeHtml(image?.altText || caption) + '" width="' + targetWidth + '" height="' + targetHeight + '" /><figcaption>' + escapeHtml(caption) + '</figcaption></figure>';
-             } else if (image?.url) {
-               htmlString += '<p><em>Figure: ' + escapeHtml(caption) + ' (' + escapeHtml(image.url) + ')</em></p>';
-             }
-           }
-         }
-      }
-      htmlString += '</body></html>';
-      htmlPreview = htmlString; // Forward HTML preview to frontend for rendering
-
-      const blob: any = await asBlob(htmlString);
-      const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(await blob.arrayBuffer());
-      base64Data = (await toNodeBuffer(buffer)).toString('base64');
-      mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      fileName = sanitizeFilename(validJson.title || 'Document') + '.docx';
-
-    } else if (format === 'excel') {
-      const writeXlsxModule: any = require('write-excel-file/node');
-      const writeXlsxFile: any = writeXlsxModule.default || writeXlsxModule;
-
-      // Need to convert JSON "rows" to write-excel-file schema
-      const sheetsData = validJson.sheets && validJson.sheets.length > 0 ? validJson.sheets : [{name: 'Sheet1', data: []}];
-      // We take the first sheet to compile (write-excel-file supports multiple sheets if passed as an object, but we keep it simple)
-      const excelRows = sheetsData[0].data || [];
-      // Flatten out if they are raw arrays, otherwise try to pass directly
-      
-      // write-excel-file expects rows of objects {value: x, type: String}
-      const formattedData = excelRows.map(row => {
-          return row.map(cell => {
-             if (typeof cell === 'string') return { value: cell, type: String };
-             if (typeof cell === 'number') return { value: cell, type: Number };
-             return { value: cell.value || '', type: cell.type === 'Number' ? Number : String, fontWeight: cell.fontWeight };
-          });
+    validJson = attachUserImages(format, validJson, imageAttachments);
+    validJson = normalizeOfficeSpec(format, validJson);
+    const finalSpecValidation = validateOfficeSpec(format, validJson);
+    if (!finalSpecValidation.valid) {
+      return res.status(422).json({
+        error: `Office specification could not be repaired safely: ${finalSpecValidation.issues.join(' ')}`,
+        issues: finalSpecValidation.issues,
+        warnings: finalSpecValidation.warnings,
       });
-      
-      // The Node exporter returns a writer object; materialize it before encoding.
-      const xlsxResult: any = (writeXlsxFile as any)(
-        formattedData.length > 0 ? formattedData : [[{ value: 'Empty Data', type: String }]],
-        { buffer: true }
-      );
-      
-      htmlPreview = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;">
-        <h1 style="text-align:center;margin-bottom:30px;">${escapeHtml(validJson.filename || 'Spreadsheet')}</h1>
-        <table style="width:100%;border-collapse:collapse;margin:0 auto;max-width:1000px;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-          <tbody>
-            ${formattedData.map((row, rIdx) => `
-              <tr style="${rIdx === 0 ? 'background-color:#f1f5f9;font-weight:bold;border-bottom:2px solid #cbd5e1;' : 'border-bottom:1px solid #e2e8f0;'}">
-                ${row.map(cell => `<td style="padding:12px;text-align:${cell.type === Number ? 'right' : 'left'};">${escapeHtml(cell.value)}</td>`).join('')}
-              </tr>
-            `).join('')}
-          </tbody>
-        </table></body></html>`;
+    }
+    validJson = finalSpecValidation.spec;
+    generationWarnings.push(...finalSpecValidation.warnings);
 
-      const buffer: any = xlsxResult && typeof xlsxResult.toBuffer === 'function'
-        ? await xlsxResult.toBuffer()
-        : await xlsxResult;
-      base64Data = (await toNodeBuffer(buffer)).toString('base64');
-      mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      fileName = sanitizeFilename(validJson.filename || 'Spreadsheet') + '.xlsx';
+    const compiled = await compileOfficeArtifact(format, validJson);
+    const verification = verifyCompiledOfficeArtifact(format, {
+      buffer: compiled.buffer,
+      spec: validJson,
+      htmlPreview: compiled.htmlPreview,
+    });
+    verification.warnings = [...new Set([...generationWarnings, ...(verification.warnings || [])])];
+
+    if (!verification.passed) {
+      console.error('Office verification rejected artifact:', verification.issues);
+      return res.status(422).json({
+        error: `Generated ${format} failed the Office verification gate. No degraded file was returned.`,
+        issues: verification.issues,
+        warnings: verification.warnings,
+        verification,
+      });
     }
 
-    // Return the cleanly packaged binary
-    res.status(200).json({
-      success: true,
-      fileName,
-      mimeType,
-      data: base64Data,
+    const htmlPreview = injectOfficeManifest(compiled.htmlPreview, {
+      kind: format,
       spec: validJson,
-      htmlPreview,
-      imageCount
+      previewFingerprint: verification.previewFingerprint,
     });
 
-  } catch (err) {
-    console.error("Office Compilation Error:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(200).json({
+      success: true,
+      artifactVersion: OFFICE_ARTIFACT_VERSION,
+      source: 'server-compiled',
+      kind: format,
+      fileName: compiled.fileName,
+      mimeType: compiled.mimeType,
+      data: compiled.buffer.toString('base64'),
+      spec: validJson,
+      htmlPreview,
+      imageCount: compiled.imageCount,
+      verification,
+      generation: {
+        mode: isCompileRequest ? 'deterministic-recompile' : 'ai-generate-and-compile',
+        attempts: generationAttempts,
+      },
+    });
+  } catch (error) {
+    console.error('Office Compilation Error:', error);
+    return res.status(500).json({ error: error?.message || 'Office compilation failed' });
   }
 }
 
-// Helpers
+function attachUserImages(format, inputSpec, imageAttachments) {
+  const spec = structuredClone(inputSpec || {});
+  if (!['word', 'powerpoint'].includes(format) || !Array.isArray(imageAttachments) || !imageAttachments.length) return spec;
 
-// Office libraries return different binary types across Node and bundlers.
-// Normalize them before base64 encoding so downloads are real Office files.
+  const attachedImages = imageAttachments
+    .filter((image) => /^data:image\//i.test(String(image?.dataUrl || '')))
+    .slice(0, 6)
+    .map((image) => ({
+      url: image.dataUrl,
+      caption: image.name || 'Attached image',
+      altText: image.name || 'Attached image',
+    }));
+  if (!attachedImages.length) return spec;
+
+  if (format === 'word') {
+    const sections = Array.isArray(spec.sections) ? spec.sections : [];
+    const first = sections[0] || { heading: 'Figures', paragraphs: [], bullets: [] };
+    first.images = [...(Array.isArray(first.images) ? first.images : []), ...attachedImages];
+    spec.sections = sections.length ? [first, ...sections.slice(1)] : [first];
+    return spec;
+  }
+
+  const slides = Array.isArray(spec.slides) ? spec.slides : [];
+  let target = slides.find((slide, index) => classifySlide(slide, index) === 'bullets');
+  if (!target) {
+    target = { type: 'bullets', title: 'Figures', bullets: [] };
+    const insertAt = slides.length && classifySlide(slides[0], 0) === 'cover' ? 1 : 0;
+    slides.splice(insertAt, 0, target);
+  }
+  target.images = [...(Array.isArray(target.images) ? target.images : []), ...attachedImages];
+  spec.slides = slides;
+  return spec;
+}
+
+export async function compileOfficeArtifact(format, spec) {
+  if (format === 'powerpoint') return compilePowerPoint(spec);
+  if (format === 'word') return compileWord(spec);
+  if (format === 'excel') return compileExcel(spec);
+  throw new Error(`Unsupported Office format: ${format}`);
+}
+
+async function compilePowerPoint(spec) {
+  const pptxgenModule: any = require('pptxgenjs');
+  const PptxGenJS: any = pptxgenModule.default || pptxgenModule;
+  const pptx = new PptxGenJS();
+  pptx.layout = 'LAYOUT_16x9';
+  pptx.author = 'Quantora';
+  pptx.subject = String(spec.title || 'Presentation');
+  pptx.title = String(spec.title || 'Presentation');
+  pptx.company = 'Quantora';
+  pptx.lang = 'en-US';
+
+  const composed = await composePresentation(pptx, spec);
+  const htmlPreview = buildDeckPreviewHtml(spec, composed.slideImages);
+  const raw = await pptx.write({ outputType: 'nodebuffer' });
+  const buffer = await toNodeBuffer(raw);
+
+  return {
+    buffer,
+    mimeType: OFFICE_META.powerpoint.mimeType,
+    fileName: sanitizeFilename(spec.title || 'Presentation') + '.pptx',
+    imageCount: composed.imageCount,
+    htmlPreview,
+  };
+}
+
+function parseInlineMarkdown(text) {
+  let safe = escapeHtml(text);
+  safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" style="color:#2563eb;text-decoration:underline;">$1</a>');
+  safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  return safe;
+}
+
+async function compileWord(spec) {
+  const docxModule: any = require('html-docx-js-typescript');
+  const asBlob = docxModule.asBlob || docxModule.default?.asBlob;
+  if (typeof asBlob !== 'function') throw new Error('Word exporter unavailable.');
+
+  let imageCount = 0;
+  let body = `<h1>${parseInlineMarkdown(spec.title || 'Document')}</h1>`;
+  for (const section of spec.sections || []) {
+    body += `<section><h2>${parseInlineMarkdown(section.heading || '')}</h2>`;
+    for (const paragraph of section.paragraphs || []) body += `<p>${parseInlineMarkdown(paragraph)}</p>`;
+    if (Array.isArray(section.bullets) && section.bullets.length) {
+      body += '<ul>';
+      for (const bullet of section.bullets) body += `<li>${parseInlineMarkdown(bullet)}</li>`;
+      body += '</ul>';
+    }
+    for (const image of (section.images || []).slice(0, 4)) {
+      const resolved = await imageToDataUrl(image?.url);
+      const caption = image?.caption || image?.altText || 'Figure';
+      if (resolved?.dataUrl) {
+        imageCount += 1;
+        const targetWidth = Math.min(560, resolved.width || 560);
+        const targetHeight = resolved.width && resolved.height
+          ? Math.max(1, Math.round((resolved.height / resolved.width) * targetWidth))
+          : 360;
+        body += `<figure><img src="${resolved.dataUrl}" alt="${escapeHtml(image?.altText || caption)}" width="${targetWidth}" height="${targetHeight}"/><figcaption>${escapeHtml(caption)}</figcaption></figure>`;
+      } else if (image?.url) {
+        body += `<p class="figure-fallback"><em>Figure unavailable during compilation: ${escapeHtml(caption)}</em></p>`;
+      }
+    }
+    body += '</section>';
+  }
+
+  const htmlPreview = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
+    @page { size: A4; margin: 0.72in; }
+    body { font-family: Aptos, "Segoe UI", Arial, sans-serif; color:#334155; font-size:11pt; line-height:1.5; margin:0; padding:42px 54px; background:#fff; }
+    h1 { color:#0f172a; font-size:27pt; line-height:1.12; margin:0 0 24px; padding-bottom:12px; border-bottom:4px solid #4f46e5; }
+    h2 { color:#0f172a; font-size:17pt; line-height:1.2; margin:26px 0 10px; }
+    p { margin:0 0 11px; }
+    ul { margin:7px 0 15px 22px; padding:0; }
+    li { margin:0 0 6px; }
+    figure { margin:18px 0; text-align:center; page-break-inside:avoid; }
+    figure img { max-width:100%; height:auto; }
+    figcaption { color:#64748b; font-size:9pt; margin-top:6px; }
+    .figure-fallback { color:#64748b; }
+  </style></head><body>${body}</body></html>`;
+
+  const blob: any = await asBlob(htmlPreview);
+  const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(await blob.arrayBuffer());
+  return {
+    buffer: await toNodeBuffer(buffer),
+    mimeType: OFFICE_META.word.mimeType,
+    fileName: sanitizeFilename(spec.title || 'Document') + '.docx',
+    imageCount,
+    htmlPreview,
+  };
+}
+
+function toExcelLibraryCell(cell) {
+  const isNumber = cell?.type === 'Number' && Number.isFinite(Number(cell.value));
+  const out: any = {
+    value: isNumber ? Number(cell.value) : String(cell?.value ?? ''),
+    type: isNumber ? Number : String,
+  };
+  if (cell?.fontWeight === 'bold') out.fontWeight = 'bold';
+  if (cell?.format) out.format = cell.format;
+  if (cell?.backgroundColor) out.backgroundColor = `#${String(cell.backgroundColor).replace('#', '')}`;
+  if (cell?.color) out.textColor = `#${String(cell.color).replace('#', '')}`;
+  if (cell?.align) out.align = cell.align;
+  if (typeof cell?.wrap === 'boolean') out.wrap = cell.wrap;
+  if (cell?.fontSize) out.fontSize = cell.fontSize;
+  return out;
+}
+
+function buildExcelPreview(spec, formattedSheets) {
+  const sections = (spec.sheets || []).map((sheet, sheetIndex) => {
+    const rows = formattedSheets[sheetIndex] || [];
+    const previewRows = rows.slice(0, 250);
+    const table = previewRows.map((row, rowIndex) => `
+      <tr class="${rowIndex === 0 ? 'header-row' : ''}">
+        ${row.map((cell) => `<td class="${cell.type === Number ? 'number' : ''}">${escapeHtml(cell.value)}</td>`).join('')}
+      </tr>`).join('');
+    const truncated = rows.length > previewRows.length
+      ? `<p class="preview-note">Preview shows the first ${previewRows.length} of ${rows.length} rows. The downloaded workbook contains all rows.</p>`
+      : '';
+    return `<section class="excel-sheet" data-sheet-name="${escapeHtml(sheet.name)}"><h2>${escapeHtml(sheet.name)}</h2>${truncated}<div class="table-wrap"><table><tbody>${table}</tbody></table></div></section>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
+    body { margin:0; padding:24px; background:#f8fafc; font-family:Aptos,"Segoe UI",Arial,sans-serif; color:#1f2937; }
+    h1 { margin:0 0 18px; color:#0f172a; font-size:24px; }
+    .excel-sheet { background:#fff; border:1px solid #dbe2ea; border-radius:10px; padding:18px; margin:0 0 22px; box-shadow:0 2px 8px rgba(15,23,42,.06); }
+    h2 { margin:0 0 12px; color:#107c41; font-size:17px; }
+    .table-wrap { overflow:auto; }
+    table { border-collapse:collapse; min-width:100%; font-size:13px; }
+    td { border:1px solid #d4d4d8; padding:7px 9px; white-space:nowrap; }
+    .header-row td { font-weight:700; background:#f1f5f9; border-bottom:2px solid #94a3b8; }
+    td.number { text-align:right; }
+    .preview-note { margin:0 0 10px; color:#64748b; font-size:12px; }
+  </style></head><body><h1>${escapeHtml(spec.filename || 'Spreadsheet')}</h1>${sections}</body></html>`;
+}
+
+async function compileExcel(spec) {
+  const writeXlsxModule: any = require('write-excel-file/node');
+  const writeXlsxFile: any = writeXlsxModule.default || writeXlsxModule;
+
+  const sheets = Array.isArray(spec.sheets) && spec.sheets.length
+    ? spec.sheets
+    : [{ name: 'Sheet1', data: [[{ value: 'Empty Data', type: 'String' }]] }];
+  const formattedSheets = sheets.map((sheet) => {
+    const rows = Array.isArray(sheet.data) && sheet.data.length ? sheet.data : [[{ value: '', type: 'String' }]];
+    return rows.map((row) => (Array.isArray(row) ? row : []).map(toExcelLibraryCell));
+  });
+
+  const workbookSheets = sheets.map((sheet, index) => ({
+    data: formattedSheets[index],
+    sheet: sheet.name,
+    stickyRowsCount: formattedSheets[index]?.length > 1 ? 1 : 0,
+  }));
+  const writer: any = writeXlsxFile(workbookSheets, {
+    fontFamily: 'Aptos',
+    fontSize: 11,
+  });
+  if (!writer || typeof writer.toBuffer !== 'function') {
+    throw new Error('Excel writer did not expose a buffer output method.');
+  }
+  const buffer = await toNodeBuffer(await writer.toBuffer());
+
+  return {
+    buffer,
+    mimeType: OFFICE_META.excel.mimeType,
+    fileName: sanitizeFilename(spec.filename || 'Spreadsheet') + '.xlsx',
+    imageCount: 0,
+    htmlPreview: buildExcelPreview(spec, formattedSheets),
+  };
+}
+
 async function toNodeBuffer(value: any): Promise<Buffer> {
   if (Buffer.isBuffer(value)) return value;
   if (value instanceof Uint8Array) return Buffer.from(value);
@@ -242,15 +410,10 @@ async function toNodeBuffer(value: any): Promise<Buffer> {
   if (value?.buffer instanceof ArrayBuffer) {
     return Buffer.from(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength));
   }
-  if (typeof value?.arrayBuffer === 'function') {
-    return Buffer.from(await value.arrayBuffer());
-  }
+  if (typeof value?.arrayBuffer === 'function') return Buffer.from(await value.arrayBuffer());
   return Buffer.from(value);
 }
 
-// Reject a promise if it doesn't settle within `ms`, so a slow/hung upstream
-// call becomes a clean, diagnosable error inside our own try/catch instead of a
-// Vercel function timeout (which returns an opaque raw 500 HTML page).
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: any;
   const timeout = new Promise<never>((_, reject) => {
@@ -261,115 +424,98 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
-// Failures that are transient (worth a retry) or that a DIFFERENT provider could
-// serve (worth a fallback): overload (503 "high demand" / UNAVAILABLE), rate
-// limits (429), other 5xx, deadline/timeouts, and model-availability errors.
-// The old fallback regex missed 503/UNAVAILABLE, so an overloaded Gemini Flash
-// killed the whole request instead of routing around it.
 function isTransientModelError(text = '') {
   return /\b(429|500|502|503|504)\b|unavailable|overload|high demand|try again|resource.?exhausted|quota|rate.?limit|deadline|timeout|not found|no longer available|not available/i.test(String(text || ''));
 }
 
-async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError) {
-   const priorContext = buildOfficeHistoryContext(history);
-   const promptWithContext = priorContext ? priorContext + '\n\nCURRENT REQUEST:\n' + prompt : prompt;
+async function callOpenRouter(systemPrompt, promptWithContext, openRouterKey) {
+  const key = openRouterKey || process.env.OPENROUTER_API_KEY;
+  if (!key) throw new Error('OpenRouter credential unavailable');
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: process.env.OPENROUTER_OFFICE_MODEL || 'openai/gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: promptWithContext },
+      ],
+      response_format: { type: 'json_object' },
+    }),
+  });
 
-   const systemPrompt = OFFICE_GENERATION_DIRECTIVE + `\n\nSCHEMA:\n` + OFFICE_SCHEMAS[format] +
-        (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. You MUST fix this syntax or structure error.` : "");
+  const raw = await response.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`OpenRouter returned unreadable JSON (${response.status})`);
+  }
+  if (!response.ok || data.error) throw new Error(data.error?.message || `HTTP ${response.status}`);
+  let content = String(data.choices?.[0]?.message?.content || '');
+  if (content.startsWith('```')) content = content.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
+  return content;
+}
 
-   if (apiKey) {
-      const client = new GoogleGenAI({ apiKey });
-      let geminiErr: any = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-       try {
+async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError, preferOpenRouter = false) {
+  const priorContext = buildOfficeHistoryContext(history);
+  const promptWithContext = priorContext ? `${priorContext}\n\nCURRENT REQUEST:\n${prompt}` : prompt;
+  const systemPrompt = OFFICE_GENERATION_DIRECTIVE + `\n\nSCHEMA:\n${OFFICE_SCHEMAS[format]}` +
+    (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. Correct the structure and preserve the user's requested content.` : '');
+
+  if (preferOpenRouter && (openRouterKey || process.env.OPENROUTER_API_KEY)) {
+    return callOpenRouter(systemPrompt, promptWithContext, openRouterKey);
+  }
+
+  if (apiKey) {
+    const client = new GoogleGenAI({ apiKey });
+    let geminiError: any = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
         const response = await client.models.generateContent({
-           model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
-           contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
-           config: {
-              systemInstruction: systemPrompt,
-              responseMimeType: "application/json"
-           }
+          model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
+          contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+          },
         });
-        let text = response.text;
-        // Strip markdown code blocks if the model ignored the directive
-        if (text.startsWith('\`\`\`')) {
-           text = text.replace(/^\`\`\`(?:json)?\\n/, '').replace(/\\n\`\`\`$/, '');
-        }
+        let text = String(response.text || '');
+        if (text.startsWith('```')) text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
         return text;
-       } catch (err: any) {
-        geminiErr = err;
-        const errorText = String(err?.message || err);
-        // 503 "high demand" / UNAVAILABLE and 429 / other 5xx are usually
-        // momentary — wait and retry the SAME model before giving up on it.
+      } catch (error: any) {
+        geminiError = error;
+        const errorText = String(error?.message || error);
         if (isTransientModelError(errorText) && attempt < 2) {
-          await sleep(1500 * (attempt + 1)); // 1.5s, then 3s
+          await sleep(1500 * (attempt + 1));
           continue;
         }
         break;
-       }
       }
-      // Gemini is exhausted for this request. Route around it to OpenRouter when
-      // a key is present and the failure is one another provider could serve —
-      // so a single overloaded model is no longer a single point of failure.
-      const errorText = String(geminiErr?.message || geminiErr);
-      const fallbackKey = openRouterKey || process.env.OPENROUTER_API_KEY;
-      const canFallback = Boolean(fallbackKey) && isTransientModelError(errorText);
-      if (!canFallback) throw geminiErr;
-      console.warn("Gemini Office generation unavailable; falling back to OpenRouter:", errorText);
-   }
+    }
 
-   const key = openRouterKey || process.env.OPENROUTER_API_KEY;
-   if (key) {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-         method: "POST",
-         headers: {
-            "Authorization": `Bearer ${key}`,
-            "Content-Type": "application/json"
-         },
-         body: JSON.stringify({
-            // Fall back to a NON-Google model by default: if we're here because
-            // Google is overloaded, routing OpenRouter back to Gemini would just
-            // hit the same outage. Override with OPENROUTER_OFFICE_MODEL.
-            model: process.env.OPENROUTER_OFFICE_MODEL || "openai/gpt-4o-mini",
-            messages: [
-               { role: "system", content: systemPrompt },
-               { role: "user", content: promptWithContext }
-            ],
-            response_format: { type: "json_object" }
-         })
-      });
-      
-      const text = await response.text();
-      let data;
-      try {
-         data = JSON.parse(text);
-      } catch (err) {
-         throw new Error(`API Gateway Error (${response.status}): ${text.substring(0, 100)}`);
-      }
-      
-      if (!response.ok || data.error) {
-         throw new Error(data.error?.message || `HTTP ${response.status}`);
-      }
-      
-      let content = data.choices[0].message.content;
-      if (content.startsWith('```')) {
-         content = content.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
-      }
-      return content;
-   }
-   throw new Error("No available API credentials");
+    const errorText = String(geminiError?.message || geminiError);
+    if (!(openRouterKey || process.env.OPENROUTER_API_KEY) || !isTransientModelError(errorText)) throw geminiError;
+    console.warn('Gemini Office generation unavailable; falling back to OpenRouter:', errorText);
+  }
+
+  return callOpenRouter(systemPrompt, promptWithContext, openRouterKey);
 }
+
 function buildOfficeHistoryContext(history = []) {
   const entries = (Array.isArray(history) ? history : []).slice(-10).map((message) => {
     const role = message?.sender === 'user' ? 'USER' : 'ASSISTANT';
     const text = String(message?.text || '').slice(0, 5000);
-    const spec = message?.officeAttachment?.spec ? '\nPREVIOUS OFFICE SPECIFICATION:\n' + JSON.stringify(message.officeAttachment.spec).slice(0, 14000) : '';
-    return role + ': ' + text + spec;
+    const priorSpec = message?.officeAttachment?.spec
+      ? `\nPREVIOUS OFFICE SPECIFICATION:\n${JSON.stringify(message.officeAttachment.spec).slice(0, 14000)}`
+      : '';
+    return `${role}: ${text}${priorSpec}`;
   }).filter(Boolean);
-  return entries.length ? 'PRIOR CONVERSATION AND DOCUMENT STATE:\n' + entries.join('\n\n') : '';
+  return entries.length ? `PRIOR CONVERSATION AND DOCUMENT STATE:\n${entries.join('\n\n')}` : '';
 }
-
-// --- PowerPoint composition (type-aware, themed) -------------------------------
 
 const T = DECK_THEME.color;
 const F = DECK_THEME.font;
@@ -382,10 +528,7 @@ function defineDeckMasters(pptx) {
     background: { color: T.coverBg },
     objects: [{ rect: { x: MARGIN, y: 1.55, w: 0.8, h: 0.08, fill: { color: T.accent } } }],
   });
-  pptx.defineSlideMaster({
-    title: 'SECTION',
-    background: { color: T.accentSoft },
-  });
+  pptx.defineSlideMaster({ title: 'SECTION', background: { color: T.accentSoft } });
   pptx.defineSlideMaster({
     title: 'CONTENT',
     background: { color: T.bg },
@@ -394,65 +537,65 @@ function defineDeckMasters(pptx) {
 }
 
 function addContentHeader(slide, s, index) {
-  slide.addText(String(s.title || 'Slide ' + (index + 1)), {
+  slide.addText(String(s.title || `Slide ${index + 1}`), {
     x: MARGIN, y: 0.55, w: CONTENT_W, h: 0.7, fontSize: 26, bold: true, color: T.ink, fontFace: F.heading,
+    margin: 0,
   });
   if (s.subtitle) {
     slide.addText(String(s.subtitle), {
-      x: MARGIN, y: 1.25, w: CONTENT_W, h: 0.45, fontSize: 14, color: T.muted, fontFace: F.body,
+      x: MARGIN, y: 1.25, w: CONTENT_W, h: 0.45, fontSize: 14, color: T.muted, fontFace: F.body, margin: 0,
     });
   }
-  slide.addShape('rect', { x: MARGIN, y: s.subtitle ? 1.72 : 1.32, w: 0.6, h: 0.045, fill: { color: T.accent } });
+  slide.addShape('rect', { x: MARGIN, y: s.subtitle ? 1.72 : 1.32, w: 0.6, h: 0.045, fill: { color: T.accent }, line: { color: T.accent } });
 }
 
 function addFooter(slide, deckTitle, page, total) {
   slide.addText(String(deckTitle || ''), {
-    x: MARGIN, y: 5.25, w: CONTENT_W - 1, h: 0.3, fontSize: 9, color: T.muted, fontFace: F.body,
+    x: MARGIN, y: 5.25, w: CONTENT_W - 1, h: 0.3, fontSize: 9, color: T.muted, fontFace: F.body, margin: 0,
   });
   slide.addText(`${page} / ${total}`, {
-    x: DECK_THEME.layout.w - 1.4, y: 5.25, w: 0.8, h: 0.3, fontSize: 9, color: T.muted, align: 'right',
+    x: DECK_THEME.layout.w - 1.4, y: 5.25, w: 0.8, h: 0.3, fontSize: 9, color: T.muted, align: 'right', margin: 0,
   });
 }
 
 function addBullets(slide, bullets, x, y, w) {
-  const items = bullets.map((b) => ({ text: String(b), options: { bullet: { indent: 18 }, breakLine: true } }));
+  const items = bullets.map((bullet) => ({ text: String(bullet), options: { bullet: { indent: 18 }, breakLine: true } }));
   slide.addText(items, {
     x, y, w, h: 5.1 - y, fontSize: 16, color: T.body, fontFace: F.body, valign: 'top', lineSpacingMultiple: 1.15, paraSpaceAfter: 6,
+    margin: 0.04,
   });
 }
 
-// Place up to 2 already-resolved images down the right column without overlap.
 function placeImages(slide, resolved, top) {
   const colX = 5.0;
   const colW = 4.5;
   const bottom = 5.1;
   const gap = 0.2;
-  const slotH = resolved.length > 0 ? (bottom - top - gap * (resolved.length - 1)) / resolved.length : 0;
-  resolved.forEach((img, idx) => {
-    const aspect = img.width && img.height ? img.height / img.width : 0.66;
+  const slotH = resolved.length ? (bottom - top - gap * (resolved.length - 1)) / resolved.length : 0;
+  resolved.forEach((image, index) => {
+    const aspect = image.width && image.height ? image.height / image.width : 0.66;
     let w = colW;
     let h = w * aspect;
     if (h > slotH) { h = slotH; w = h / aspect; }
-    const slotTop = top + idx * (slotH + gap);
-    const x = colX + (colW - w) / 2;
-    const y = slotTop + (slotH - h) / 2;
-    slide.addImage({ data: img.dataUrl, x, y, w, h });
+    const slotTop = top + index * (slotH + gap);
+    slide.addImage({
+      data: image.dataUrl,
+      x: colX + (colW - w) / 2,
+      y: slotTop + (slotH - h) / 2,
+      w,
+      h,
+    });
   });
   return resolved.length;
 }
 
-/**
- * Render the whole deck onto `pptx`, drawing each slide by its type.
- * Returns the resolved image data URLs per slide (for preview parity) and the
- * total number of images embedded.
- */
 export async function composePresentation(pptx, spec) {
   defineDeckMasters(pptx);
   const slides = Array.isArray(spec.slides) ? spec.slides : [];
   const slideImages: string[][] = [];
   let imageCount = 0;
 
-  for (let i = 0; i < slides.length; i++) {
+  for (let i = 0; i < slides.length; i += 1) {
     const s = slides[i] || {};
     const type = classifySlide(s, i);
     const resolvedUrls: string[] = [];
@@ -460,26 +603,25 @@ export async function composePresentation(pptx, spec) {
     if (type === 'cover') {
       const slide = pptx.addSlide({ masterName: 'COVER' });
       slide.addText(String(s.title || spec.title || 'Presentation'), {
-        x: MARGIN, y: 1.9, w: CONTENT_W, h: 1.5, fontSize: 40, bold: true, color: T.coverText, fontFace: F.heading, valign: 'top',
+        x: MARGIN, y: 1.9, w: CONTENT_W, h: 1.5, fontSize: 40, bold: true, color: T.coverText, fontFace: F.heading, valign: 'top', margin: 0,
       });
-      if (s.subtitle) slide.addText(String(s.subtitle), { x: MARGIN, y: 3.45, w: CONTENT_W, h: 0.8, fontSize: 18, color: T.coverMuted, fontFace: F.body });
-      if (s.author) slide.addText(String(s.author), { x: MARGIN, y: 4.7, w: CONTENT_W, h: 0.4, fontSize: 13, color: T.coverMuted });
+      if (s.subtitle) slide.addText(String(s.subtitle), { x: MARGIN, y: 3.45, w: CONTENT_W, h: 0.8, fontSize: 18, color: T.coverMuted, fontFace: F.body, margin: 0 });
+      if (s.author) slide.addText(String(s.author), { x: MARGIN, y: 4.7, w: CONTENT_W, h: 0.4, fontSize: 13, color: T.coverMuted, margin: 0 });
       if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
     } else if (type === 'section') {
       const slide = pptx.addSlide({ masterName: 'SECTION' });
-      slide.addText(`SECTION ${String(i + 1).padStart(2, '0')}`, { x: MARGIN, y: 1.9, w: CONTENT_W, h: 0.4, fontSize: 14, bold: true, color: T.accent, charSpacing: 3, fontFace: F.heading });
-      slide.addText(String(s.title || ''), { x: MARGIN, y: 2.35, w: CONTENT_W, h: 1.1, fontSize: 30, bold: true, color: T.ink, fontFace: F.heading });
-      slide.addShape('rect', { x: MARGIN, y: 3.5, w: 0.9, h: 0.05, fill: { color: T.accent } });
-      if (s.subtitle) slide.addText(String(s.subtitle), { x: MARGIN, y: 3.7, w: CONTENT_W * 0.7, h: 0.8, fontSize: 16, color: T.muted, fontFace: F.body });
+      slide.addText(`SECTION ${String(i + 1).padStart(2, '0')}`, { x: MARGIN, y: 1.9, w: CONTENT_W, h: 0.4, fontSize: 14, bold: true, color: T.accent, charSpacing: 3, fontFace: F.heading, margin: 0 });
+      slide.addText(String(s.title || ''), { x: MARGIN, y: 2.35, w: CONTENT_W, h: 1.1, fontSize: 30, bold: true, color: T.ink, fontFace: F.heading, margin: 0 });
+      slide.addShape('rect', { x: MARGIN, y: 3.5, w: 0.9, h: 0.05, fill: { color: T.accent }, line: { color: T.accent } });
+      if (s.subtitle) slide.addText(String(s.subtitle), { x: MARGIN, y: 3.7, w: CONTENT_W * 0.7, h: 0.8, fontSize: 16, color: T.muted, fontFace: F.body, margin: 0 });
       if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
     } else if (type === 'quote') {
       const slide = pptx.addSlide({ masterName: 'SECTION' });
-      slide.addText('“', { x: MARGIN - 0.05, y: 0.7, w: 2, h: 1.5, fontSize: 96, bold: true, color: T.accent, fontFace: 'Georgia' });
-      slide.addText(String(s.quote || s.title || ''), { x: MARGIN, y: 2.0, w: CONTENT_W, h: 2.2, fontSize: 26, bold: true, italic: true, color: T.ink, fontFace: 'Georgia', valign: 'top' });
-      if (s.author) slide.addText('— ' + String(s.author), { x: MARGIN, y: 4.35, w: CONTENT_W, h: 0.5, fontSize: 15, color: T.muted, fontFace: F.body });
+      slide.addText('“', { x: MARGIN - 0.05, y: 0.7, w: 2, h: 1.5, fontSize: 96, bold: true, color: T.accent, fontFace: 'Georgia', margin: 0 });
+      slide.addText(String(s.quote || s.title || ''), { x: MARGIN, y: 2.0, w: CONTENT_W, h: 2.2, fontSize: 26, bold: true, italic: true, color: T.ink, fontFace: 'Georgia', valign: 'top', margin: 0 });
+      if (s.author) slide.addText(`— ${String(s.author)}`, { x: MARGIN, y: 4.35, w: CONTENT_W, h: 0.5, fontSize: 15, color: T.muted, fontFace: F.body, margin: 0 });
       if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
     } else {
-      // content family: bullets / matrix / data_viz
       const slide = pptx.addSlide({ masterName: 'CONTENT' });
       addContentHeader(slide, s, i);
       addFooter(slide, spec.title, i + 1, slides.length);
@@ -487,13 +629,14 @@ export async function composePresentation(pptx, spec) {
 
       if (type === 'data_viz') {
         const rows = normalizeChartData(s.data);
-        if (rows.length > 0) {
-          slide.addChart('bar', [{ name: 'Value', labels: rows.map((r) => r.label), values: rows.map((r) => r.value) }], {
+        if (rows.length) {
+          slide.addChart('bar', [{ name: 'Value', labels: rows.map((row) => row.label), values: rows.map((row) => row.value) }], {
             x: MARGIN, y: bodyTop, w: CONTENT_W, h: 5.0 - bodyTop,
             barDir: 'bar', chartColors: [T.accent], showValue: true, showLegend: false,
             catAxisLabelColor: T.body, valAxisLabelColor: T.muted, dataLabelColor: T.ink, dataLabelFontSize: 11,
+            showTitle: false,
           });
-        } else if (Array.isArray(s.bullets) && s.bullets.length > 0) {
+        } else if (s.bullets?.length) {
           addBullets(slide, s.bullets, MARGIN, bodyTop, CONTENT_W);
         }
       } else if (type === 'matrix') {
@@ -503,25 +646,27 @@ export async function composePresentation(pptx, spec) {
         const cellW = (CONTENT_W - gx) / 2;
         const rowsN = Math.ceil(cells.length / 2) || 1;
         const cellH = (5.0 - bodyTop - gy * (rowsN - 1)) / rowsN;
-        cells.forEach((b, idx) => {
-          const col = idx % 2;
-          const row = Math.floor(idx / 2);
+        cells.forEach((bullet, index) => {
+          const col = index % 2;
+          const row = Math.floor(index / 2);
           const x = MARGIN + col * (cellW + gx);
           const y = bodyTop + row * (cellH + gy);
-          slide.addShape('roundRect', { x, y, w: cellW, h: cellH, fill: { color: T.surface }, line: { color: T.line, width: 1 }, rectRadius: 0.08 });
-          slide.addShape('rect', { x, y, w: 0.07, h: cellH, fill: { color: T.accent } });
-          slide.addText(String(b), { x: x + 0.28, y, w: cellW - 0.45, h: cellH, fontSize: 15, color: T.body, valign: 'middle', fontFace: F.body });
+          slide.addShape('roundRect', { x, y, w: cellW, h: cellH, fill: { color: T.surface }, line: { color: T.line, width: 1 }, radius: 0.08 });
+          slide.addShape('rect', { x, y, w: 0.07, h: cellH, fill: { color: T.accent }, line: { color: T.accent } });
+          slide.addText(String(bullet), { x: x + 0.28, y, w: cellW - 0.45, h: cellH, fontSize: 15, color: T.body, valign: 'middle', fontFace: F.body, margin: 0.04 });
         });
       } else {
-        // bullets (default) + optional images
         const hasImages = Array.isArray(s.images) && s.images.length > 0;
         const bodyW = hasImages ? 4.0 : CONTENT_W;
-        if (Array.isArray(s.bullets) && s.bullets.length > 0) addBullets(slide, s.bullets, MARGIN, bodyTop, bodyW);
+        if (s.bullets?.length) addBullets(slide, s.bullets, MARGIN, bodyTop, bodyW);
         if (hasImages) {
           const resolved = [];
           for (const image of s.images.slice(0, 2)) {
-            const d = await imageToDataUrl(image?.url);
-            if (d && d.dataUrl) { resolved.push(d); resolvedUrls.push(d.dataUrl); }
+            const data = await imageToDataUrl(image?.url);
+            if (data?.dataUrl) {
+              resolved.push(data);
+              resolvedUrls.push(data.dataUrl);
+            }
           }
           imageCount += placeImages(slide, resolved, bodyTop);
         }
@@ -547,43 +692,27 @@ function escapeHtml(value) {
 async function imageToDataUrl(url) {
   if (typeof url !== 'string' || !url.trim()) return null;
   const trimmed = url.trim();
-  
   try {
     let bytes;
-    // The real MIME of the source bytes, so the fallback path can label the
-    // data URL honestly instead of guessing 'image/png' for every image.
     let sourceMime = 'image/png';
 
     if (/^data:image\//i.test(trimmed)) {
-       const header = trimmed.slice(5, trimmed.indexOf(','));
-       sourceMime = header.split(';')[0] || 'image/png';
-       const b64 = trimmed.split(',')[1];
-       if (!b64) return null;
-       bytes = Buffer.from(b64, 'base64');
+      const comma = trimmed.indexOf(',');
+      if (comma < 0) return null;
+      const header = trimmed.slice(5, comma);
+      sourceMime = header.split(';')[0] || 'image/png';
+      const b64 = trimmed.slice(comma + 1);
+      if (!b64) return null;
+      bytes = Buffer.from(b64, 'base64');
+      if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
     } else {
-       if (!/^https?:\/\//i.test(trimmed)) return null;
-       const parsed = new URL(trimmed);
-       if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return null;
-       const response = await withTimeout(fetch(trimmed, {
-         headers: {
-           'Accept': 'image/*',
-           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-         }
-       }), 8000, 'Image download timed out');
-       if (!response.ok) return null;
-       const contentType = response.headers.get('content-type') || '';
-       if (!/^image\//i.test(contentType)) return null;
-       sourceMime = contentType.split(';')[0] || 'image/png';
-       bytes = Buffer.from(await response.arrayBuffer());
-       if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
+      if (!/^https:\/\//i.test(trimmed)) return null;
+      const remote = await fetchPublicHttpsImage(trimmed, { maxBytes: 5 * 1024 * 1024, timeoutMs: 8_000 });
+      sourceMime = remote.contentType || 'image/png';
+      bytes = remote.bytes;
     }
 
-    // Word renders an embedded image at the payload's native pixel size and
-    // ignores HTML width/height, so the only reliable size cap is to physically
-    // shrink the pixels before embedding. resizeImageForEmbed does that (and
-    // falls back to the original bytes for formats jimp can't decode).
-    const { dataUrl, width, height } = await resizeImageForEmbed(bytes, sourceMime);
-
+    const { dataUrl, width, height } = await resizeImageForEmbed(bytes, sourceMime, 560);
     return { dataUrl, width, height };
   } catch (error) {
     console.warn('Image could not be embedded or sized:', error?.message || error);
@@ -596,5 +725,5 @@ function sanitizeFilename(name) {
     .replace(/[^\w\- ]+/g, '')
     .trim()
     .replace(/\s+/g, '_')
-    .slice(0, 50);
+    .slice(0, 50) || 'document';
 }
