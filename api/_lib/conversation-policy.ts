@@ -227,7 +227,8 @@ export const OFFICE_SCHEMAS = {
     {
       "heading": "Section Heading",
       "paragraphs": ["Paragraph 1", "Paragraph 2"],
-      "bullets": ["Bullet 1", "Bullet 2"] // Optional
+      "bullets": ["Bullet 1", "Bullet 2"], // Optional
+      "images": [{"url": "https://images.unsplash.com/...", "caption": "Figure caption", "altText": "Accessible description"}] // Optional; include when the user requests images or figures
     }
   ]
 }`,
@@ -254,6 +255,11 @@ If the user requests a presentation, deck, slides, PowerPoint (.pptx), Excel (.x
 CRITICAL UX RULES:
 1. OUTPUT FORMAT: You are an API, not a chatbot. You must respond with raw JSON only. Do not wrap your response in markdown code blocks. Do not add any introductory or concluding text. Any text outside the JSON structure will be treated as an error and discarded. Your output will be parsed programmatically.
 2. SCHEMA: Your JSON MUST follow the exact schema requested by the system (the schema will be injected).
+
+IMAGE AND REVISION RULES:
+- If the user asks for images, photos, figures, illustrations, charts, or visual references, include an images array in the relevant Word sections. Use direct public image URLs (not search-result pages), plus a caption and altText.
+- When the user is refining an existing Office document, preserve the previous title, sections, paragraphs, bullets, and images. Make the requested change instead of returning a blank template or starting over.
+- The previous document specification may be included in the conversation context; treat it as the source of truth for revisions.
 
 CRITICAL — BUILD IMMEDIATELY, DO NOT ASK:
 Generate the COMPLETE document on the very first request. This OVERRIDES the "ask one clarifying question first" and "first-turn" rules. Do NOT ask which style/approach they want. Make reasonable, professional assumptions (consulting-grade style) and deliver the full finished JSON now.`;
