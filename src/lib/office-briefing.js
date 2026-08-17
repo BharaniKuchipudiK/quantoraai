@@ -7,7 +7,8 @@ const EVIDENCE_SIGNAL = /\b(attached|source|sources|metrics|kpi|kpis|data|financ
 const APPROVAL_PHRASE = /\b(go ahead|proceed|approved|approve it|build it|generate it|create it|make it|prepare it|build the requested artifact|generate the requested artifact|create the requested artifact|prepare the requested artifact|yes[, ]+(?:build|generate|create|prepare|proceed)|ready to build)\b/i;
 const FAST_TRACK_PHRASE = /\b(just build|build it now|generate it now|create it now|prepare it now|use (?:your|reasonable) (?:judg(?:e)?ment|assumptions)|assume reasonable|do not ask|don't ask|skip the questions|no questions)\b/i;
 const GENERATOR_TRIGGER_WORDS = /\b(powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b/gi;
-const DIRECT_CREATE_PHRASE = /(?:\b(?:create|make|prepare|generate|build|produce|draft|develop|assemble|compose)\b[\s\S]{0,140}\b(?:powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b)|(?:\b(?:give|provide|return|deliver)\b[\s\S]{0,140}\b(?:output|file|artifact)\b[\s\S]{0,100}\b(?:powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b)/i;
+const DIRECT_CREATE_PHRASE = /^(?:please\s+)?(?:(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)|(?:i\s+(?:want|need|would\s+like)\s+you\s+to\s+)|(?:help\s+me\s+(?:to\s+)?))?(?:create|make|prepare|generate|build|produce|draft|develop|assemble|compose|write|turn|convert|export|save)\b[\s\S]{0,180}\b(?:powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b/i;
+const DIRECT_OUTPUT_PHRASE = /\b(?:give|provide|return|deliver)\s+(?:me\s+)?(?:the\s+)?(?:output|file|artifact)\b[\s\S]{0,120}\b(?:as|in|into)\s+(?:an?\s+)?(?:powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b/i;
 
 function recentOfficeBriefing(messages = []) {
   return [...(Array.isArray(messages) ? messages : [])]
@@ -41,12 +42,12 @@ export function shouldGenerateOfficeNow({ text = '', officeKind = null, messages
   if (!activeKind) return false;
 
   // Explicit artifact creation language is already authorization to create.
-  // Do not make the user say the same thing twice. A direct request such as
-  // "prepare a PowerPoint", "make me a presentation", or "give me the output
-  // as a PPT" should enter the canonical Office generator immediately. The
-  // generator may make reasonable, clearly stated assumptions when the brief is
-  // incomplete; clarification is reserved for genuinely blocking ambiguity.
-  if (officeKind && DIRECT_CREATE_PHRASE.test(value)) return true;
+  // Do not make the user say the same thing twice. Command-shaped requests such
+  // as "prepare a PowerPoint", "can you make a presentation", "help me develop
+  // a deck", or "give me the output as a PPT" enter the canonical Office
+  // generator immediately. Meta questions ("how do I create a PowerPoint?") and
+  // negated requests ("don't create a PowerPoint") deliberately do not match.
+  if (officeKind && (DIRECT_CREATE_PHRASE.test(value) || DIRECT_OUTPUT_PHRASE.test(value))) return true;
 
   // When the conversation previously paused for a briefing, ordinary approval
   // language should hand off immediately to generation.
