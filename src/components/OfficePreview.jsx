@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { OFFICE_KIND } from '../lib/office-intent.js';
+import { extractOfficeManifest, manifestMatchesPreview } from '../lib/office-artifact-cache.js';
 
 /*
  * Format-aware preview for generated Office artifacts.
@@ -7,7 +8,9 @@ import { OFFICE_KIND } from '../lib/office-intent.js';
  * PowerPoint and Word render the canonical server-produced HTML preview inside
  * Office chrome. Excel parses every server-rendered worksheet and exposes real
  * worksheet tabs, so the preview no longer hides sheets that are present in the
- * downloaded workbook. Download is still an explicit human action.
+ * downloaded workbook. The verified-source badge means this exact preview is
+ * fingerprint-bound to a server-verified Office specification; Download remains
+ * an explicit human action after review.
  */
 
 const colLabel = (index) => {
@@ -20,6 +23,32 @@ const colLabel = (index) => {
   }
   return label;
 };
+
+function VerificationBadge({ verified, dark = false }) {
+  if (!verified) return null;
+  return (
+    <span
+      title="This preview is fingerprint-bound to a server-verified Office artifact. Review it before downloading."
+      style={{
+        marginLeft: 'auto',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '5px',
+        padding: '3px 8px',
+        borderRadius: '999px',
+        border: dark ? '1px solid rgba(52,211,153,.45)' : '1px solid rgba(16,185,129,.35)',
+        background: dark ? 'rgba(16,185,129,.12)' : 'rgba(16,185,129,.08)',
+        color: dark ? '#6ee7b7' : '#047857',
+        fontSize: '0.68rem',
+        fontWeight: 700,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span aria-hidden="true">✓</span>
+      Verified source · review before download
+    </span>
+  );
+}
 
 function tableRows(table) {
   if (!table) return [];
@@ -47,11 +76,8 @@ function parseSheets(html) {
     });
   }
 
-  // Backward-compatible rendering for older artifacts that had one bare table.
   const table = doc.querySelector('table');
-  if (table) {
-    return [{ name: 'Sheet1', rows: tableRows(table), hasTable: true, note: '' }];
-  }
+  if (table) return [{ name: 'Sheet1', rows: tableRows(table), hasTable: true, note: '' }];
 
   const lines = Array.from(doc.querySelectorAll('h1, h2, h3, p, li'))
     .map((el) => el.textContent.trim())
@@ -64,7 +90,7 @@ function parseSheets(html) {
   }];
 }
 
-function ExcelGrid({ html, isLight }) {
+function ExcelGrid({ html, isLight, verified }) {
   const sheets = useMemo(() => parseSheets(html), [html]);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -103,6 +129,7 @@ function ExcelGrid({ html, isLight }) {
           {active.hasTable ? `${rows.length} preview rows × ${maxCols} cols` : 'text layout'}
         </span>
         {sheets.length > 1 && <span style={{ fontSize: '0.72rem', color: muted }}>• {sheets.length} worksheets</span>}
+        <VerificationBadge verified={verified} dark={!isLight} />
         {active.note && <span style={{ fontSize: '0.7rem', color: muted, width: '100%' }}>{active.note}</span>}
       </div>
 
@@ -174,13 +201,14 @@ const STAGE = {
   [OFFICE_KIND.PDF]: { label: 'PDF preview', backdrop: (light) => (light ? '#cbd5e1' : '#111827'), dot: '#b30b00', aspect: null, maxW: '820px', pad: '24px' },
 };
 
-function DocStage({ kind, isLight, children }) {
+function DocStage({ kind, isLight, children, verified }) {
   const stage = STAGE[kind];
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: stage.backdrop(isLight) }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', flexShrink: 0 }}>
         <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: stage.dot }} />
         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#e2e8f0', mixBlendMode: 'difference' }}>{stage.label}</span>
+        <VerificationBadge verified={verified} dark />
       </div>
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', padding: stage.pad }}>
         <div style={{
@@ -198,9 +226,16 @@ function DocStage({ kind, isLight, children }) {
 }
 
 export default function OfficePreview({ kind, html, isLight, children }) {
-  if (kind === OFFICE_KIND.EXCEL) return <ExcelGrid html={html} isLight={isLight} />;
+  const reviewState = useMemo(() => {
+    const manifest = extractOfficeManifest(html);
+    return { manifest, verified: Boolean(manifest && manifestMatchesPreview(html, manifest)) };
+  }, [html]);
+
+  if (kind === OFFICE_KIND.EXCEL) {
+    return <ExcelGrid html={html} isLight={isLight} verified={reviewState.verified} />;
+  }
   if (kind === OFFICE_KIND.POWERPOINT || kind === OFFICE_KIND.WORD || kind === OFFICE_KIND.PDF) {
-    return <DocStage kind={kind} isLight={isLight}>{children}</DocStage>;
+    return <DocStage kind={kind} isLight={isLight} verified={kind !== OFFICE_KIND.PDF && reviewState.verified}>{children}</DocStage>;
   }
   return children;
 }
