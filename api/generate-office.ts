@@ -1,11 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { createRequire } from "node:module";
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
+import { resizeImageForEmbed } from './_lib/office-images.js';
 
 // Vercel's Node runtime executes this function as CommonJS. Use Node's
+// require-condition so dual-published Office libraries load their CJS builds.
 const require = createRequire(import.meta.url);
-const sizeOf = require('image-size');
-const Jimp = require('jimp');
 
 // A full-deck LLM call + server-side file compilation takes ~15–30s. Without an
 // explicit budget, Vercel kills the function at its short default limit and
@@ -122,27 +122,36 @@ export default async function handler(req, res) {
         }
 
         if (Array.isArray(s.images) && s.images.length > 0) {
-           let imgX = 5.0; // Place images on the right side of the slide by default
-           for (const image of s.images.slice(0, 2)) { // max 2 images per slide
+           // Stack up to 2 images down the right column (x 5.0–9.5) in equal,
+           // non-overlapping vertical slots. Each image is fit inside its slot
+           // preserving aspect ratio, so two images never collide.
+           const candidates = s.images.slice(0, 2);
+           const resolved = [];
+           for (const image of candidates) {
               const imgData = await imageToDataUrl(image?.url);
-              if (imgData && imgData.dataUrl) {
-                 imageCount += 1;
-                 // PowerPoint dimensions are in inches. Layout is 10 x 5.625
-                 const targetW = 4.0;
-                 const targetH = imgData.width && imgData.height ? (imgData.height / imgData.width) * targetW : 2.5;
-                 
-                 // Constrain Y so it doesn't overflow the bottom of the slide
-                 let imgY = 1.5;
-                 if (imgY + targetH > 5.4) {
-                    imgY = 5.4 - targetH;
-                    if (imgY < 0.5) imgY = 0.5; // don't overlap title too much
-                 }
-                 
-                 slide.addImage({ data: imgData.dataUrl, x: imgX, y: imgY, w: targetW, h: targetH });
-                 slideHtml += `<div style="margin-top:20px;text-align:center;"><img src="${imgData.dataUrl}" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);" /></div>`;
-                 imgX += 0.5; // Offset second image slightly if there is one
-              }
+              if (imgData && imgData.dataUrl) resolved.push(imgData);
            }
+           const colX = 5.0;
+           const colW = 4.5;
+           const colTop = 1.5;
+           const colBottom = 5.4;
+           const gap = 0.2;
+           const slotH = resolved.length > 0
+              ? (colBottom - colTop - gap * (resolved.length - 1)) / resolved.length
+              : 0;
+           resolved.forEach((imgData, idx) => {
+              imageCount += 1;
+              const aspect = imgData.width && imgData.height ? imgData.height / imgData.width : 0.66;
+              // Fit within the slot: cap by width, then by slot height.
+              let w = colW;
+              let h = w * aspect;
+              if (h > slotH) { h = slotH; w = h / aspect; }
+              const slotTop = colTop + idx * (slotH + gap);
+              const x = colX + (colW - w) / 2; // centre horizontally in the column
+              const y = slotTop + (slotH - h) / 2; // centre vertically in the slot
+              slide.addImage({ data: imgData.dataUrl, x, y, w, h });
+              slideHtml += `<div style="margin-top:20px;text-align:center;"><img src="${imgData.dataUrl}" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);" /></div>`;
+           });
         }
         
         if (s.speakerNotes) {
@@ -391,9 +400,13 @@ async function imageToDataUrl(url) {
   
   try {
     let bytes;
-    let finalDataUrl = trimmed;
-    
+    // The real MIME of the source bytes, so the fallback path can label the
+    // data URL honestly instead of guessing 'image/png' for every image.
+    let sourceMime = 'image/png';
+
     if (/^data:image\//i.test(trimmed)) {
+       const header = trimmed.slice(5, trimmed.indexOf(','));
+       sourceMime = header.split(';')[0] || 'image/png';
        const b64 = trimmed.split(',')[1];
        if (!b64) return null;
        bytes = Buffer.from(b64, 'base64');
@@ -401,60 +414,27 @@ async function imageToDataUrl(url) {
        if (!/^https?:\/\//i.test(trimmed)) return null;
        const parsed = new URL(trimmed);
        if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return null;
-       const response = await withTimeout(fetch(trimmed, { 
-         headers: { 
+       const response = await withTimeout(fetch(trimmed, {
+         headers: {
            'Accept': 'image/*',
            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-         } 
+         }
        }), 8000, 'Image download timed out');
        if (!response.ok) return null;
        const contentType = response.headers.get('content-type') || '';
        if (!/^image\//i.test(contentType)) return null;
+       sourceMime = contentType.split(';')[0] || 'image/png';
        bytes = Buffer.from(await response.arrayBuffer());
        if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
     }
 
-    // TRACE THE FLOW: 
-    // Word imports MHT base64 images by converting them to native OpenXML drawing nodes.
-    // It frequently ignores HTML width/height attributes, and uses the physical DPI of the image payload.
-    // Therefore, the only guaranteed way to constrain the image size is to PHYSICALLY resize the buffer before embedding.
-    let finalWidth = 600;
-    let finalHeight = 400;
+    // Word renders an embedded image at the payload's native pixel size and
+    // ignores HTML width/height, so the only reliable size cap is to physically
+    // shrink the pixels before embedding. resizeImageForEmbed does that (and
+    // falls back to the original bytes for formats jimp can't decode).
+    const { dataUrl, width, height } = await resizeImageForEmbed(bytes, sourceMime);
 
-    try {
-      // 1. Physically resize the image buffer so it is exactly 600px wide.
-      // Word cannot natively stretch an image to 3000px if the pixels literally do not exist.
-      const jimpImage = await Jimp.read(bytes);
-      if (jimpImage.bitmap.width > 600) {
-         jimpImage.resize(600, Jimp.AUTO);
-      }
-      
-      finalWidth = jimpImage.bitmap.width;
-      finalHeight = jimpImage.bitmap.height;
-      const resizedBytes = await jimpImage.getBufferAsync(Jimp.MIME_JPEG);
-      finalDataUrl = 'data:image/jpeg;base64,' + resizedBytes.toString('base64');
-    } catch (jimpErr) {
-      console.warn('Jimp failed to resize image (unsupported format?), falling back to native dimensions:', jimpErr.message);
-      // Fallback: If it's a format Jimp doesn't support (like SVG or modern WebP), just pass the raw bytes
-      // and use image-size to at least provide the HTML attributes.
-      try {
-        const dimensions = sizeOf(bytes);
-        finalWidth = dimensions.width;
-        finalHeight = dimensions.height;
-      } catch (e) {
-        // Ignore sizeOf errors
-      }
-      const contentType = finalDataUrl === trimmed ? 'image/png' : 'image/jpeg';
-      if (bytes) {
-         finalDataUrl = 'data:' + contentType + ';base64,' + bytes.toString('base64');
-      }
-    }
-
-    return {
-       dataUrl: finalDataUrl,
-       width: finalWidth,
-       height: finalHeight
-    };
+    return { dataUrl, width, height };
   } catch (error) {
     console.warn('Image could not be embedded or sized:', error?.message || error);
     return null;
