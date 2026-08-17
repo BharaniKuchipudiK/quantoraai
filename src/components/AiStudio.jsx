@@ -219,7 +219,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages,
     updateActiveMessages,
     handleCreateNewChat,
-    handleDeleteChat
+    handleDeleteChat,
+    projects,
+    activeProjectId,
+    activeProject,
+    setActiveProjectId,
+    handleCreateProject,
+    projectContext,
+    projectArtifacts
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -742,7 +749,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     isWorkspaceMode,
     messages,
     setLastPrompt,
-    webSearchEnabled
+    webSearchEnabled,
+    sessionContext: projectContext
   });
 
 
@@ -1492,6 +1500,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           >
             <PanelLeftClose size={18} />
           </button>
+        </div>
+
+        {/* Projects */}
+        <div style={{
+          padding: '12px',
+          marginBottom: '18px',
+          borderRadius: '12px',
+          background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.72)',
+          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.16)'
+        }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: '800', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Projects</div>
+          <select
+            aria-label="Active project"
+            value={activeProjectId}
+            onChange={(event) => setActiveProjectId(event.target.value)}
+            style={{ width: '100%', background: isLight ? '#f8fafc' : '#111827', color: textColor, border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(148, 163, 184, 0.28)', borderRadius: '8px', padding: '8px 9px', fontSize: '0.82rem', fontWeight: '650', outline: 'none' }}
+          >
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+          <div style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: '30px' }}>
+            {activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'}
+          </div>
+          <button
+            onClick={() => {
+              const name = window.prompt('What should we call this project?', 'New project');
+              if (name && name.trim()) handleCreateProject({ name: name.trim() });
+            }}
+            style={{ marginTop: '10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'transparent', color: isLight ? '#2563eb' : '#60a5fa', border: isLight ? '1px solid #bfdbfe' : '1px solid rgba(96, 165, 250, 0.35)', borderRadius: '8px', padding: '7px 8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer' }}
+          >
+            <Plus size={14} /> New Project
+          </button>
+          {projectArtifacts.length > 0 && <div style={{ color: subtextColor, fontSize: '0.7rem', marginTop: '8px', textAlign: 'center' }}>{projectArtifacts.length} linked artifact{projectArtifacts.length === 1 ? '' : 's'}</div>}
         </div>
 
         {/* Specialized Agents Section */}
