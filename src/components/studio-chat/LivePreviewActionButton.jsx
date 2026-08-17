@@ -9,7 +9,7 @@ export default function LivePreviewActionButton({ msg, meta, onOpen, compact = f
       type="button"
       disabled={meta.disabled}
       title={meta.title}
-      onClick={() => !meta.disabled && onOpen(msg.text)}
+      onClick={() => !meta.disabled && onOpen(msg.codeSnippet || msg.text)}
       style={{
         background: meta.disabled ? 'rgba(148, 163, 184, 0.12)' : 'rgba(249, 115, 22, 0.15)',
         border: meta.disabled ? '1px solid rgba(148, 163, 184, 0.35)' : '1px solid rgba(249, 115, 22, 0.4)',
