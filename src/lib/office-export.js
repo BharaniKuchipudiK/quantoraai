@@ -1,135 +1,116 @@
 /*
- * Real MS Office / PDF export (Roadmap: MS Office integration).
+ * Canonical MS Office / PDF export.
  *
- * Replaces the old approach — a runtime <script> from a raw-GitHub CDN that only
- * produced a text-scraped PowerPoint — with genuine exporters for all four
- * formats. Source of truth is the generated artifact HTML (`html`).
+ * PowerPoint, Word and Excel are NEVER reconstructed from arbitrary HTML here.
+ * The preview carries a signed-by-structure Quantora manifest containing the
+ * exact structured Office specification that produced it. We first reuse the
+ * already-verified server artifact from the in-memory cache; if that artifact is
+ * no longer available (for example after a page refresh), we deterministically
+ * recompile the SAME specification on the server and verify the returned
+ * envelope before downloading it.
  *
- * Dependency notes:
- *  - XLSX (write-excel-file) and DOCX (html-docx-js) are bundled and lazy-loaded
- *    via dynamic import(), so they only ship when the user exports.
- *  - PDF uses print-to-PDF (no dependency, full CSS fidelity).
- *  - PPTX loads pptxgenjs from a PINNED official npm CDN at runtime. It is not
- *    bundled because pptxgenjs pulls a transitive (`image-size`) with an
- *    unfixable high-severity advisory (affects all versions) that would fail
- *    `npm audit --audit-level=high` in CI. The pinned jsdelivr `/npm/` URL is a
- *    large supply-chain improvement over the previous raw-GitHub `/gh/` path.
+ * This deliberately fails closed. A missing/mismatched manifest does not fall
+ * back to text scraping, because a degraded Office file is worse than a clear
+ * error: the user must never see a rich preview and receive a plain document.
+ * PDF remains browser print-to-PDF because it is not an OOXML Office artifact.
  */
 
 import { OFFICE_KIND, sanitizeOfficeFilename } from './office-intent.js';
+import {
+  cacheOfficeArtifact,
+  downloadOfficeArtifact,
+  extractOfficeManifest,
+  getCachedOfficeArtifact,
+  manifestMatchesPreview,
+  validateOfficeArtifactEnvelope,
+} from './office-artifact-cache.js';
 
-const PPTX_CDN = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
-
-function parseHtml(html) {
-  return new DOMParser().parseFromString(String(html || ''), 'text/html');
+async function parseJsonResponse(res) {
+  const raw = await res.text();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(res.status === 504
+      ? 'The verified Office compiler timed out. Please try again.'
+      : 'The verified Office compiler returned an unreadable response. Please try again.');
+  }
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+async function compileCanonicalOffice(kind, html) {
+  const manifest = extractOfficeManifest(html);
+  if (!manifest) {
+    throw new Error('This preview is not bound to a verified Office specification. Regenerate the document once before downloading; Quantora will not create a lower-fidelity fallback.');
+  }
+  if (manifest.kind !== kind) {
+    throw new Error(`Preview/export mismatch: this preview is ${manifest.kind}, not ${kind}. Regenerate the requested Office document.`);
+  }
+  if (!manifestMatchesPreview(html, manifest)) {
+    throw new Error('The preview changed after the Office artifact was compiled. Regenerate it before download so Preview and Download stay identical.');
+  }
 
-/* ── PowerPoint (pptxgenjs, pinned CDN) ─────────────────────────────────── */
-async function loadPptxGenJS() {
-  if (typeof window !== 'undefined' && window.PptxGenJS) return window.PptxGenJS;
-  await new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = PPTX_CDN;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Could not load the PowerPoint library. Check your connection and try again.'));
-    document.head.appendChild(s);
-  });
-  if (!window.PptxGenJS) throw new Error('PowerPoint library failed to initialise.');
-  return window.PptxGenJS;
-}
+  const cached = getCachedOfficeArtifact(manifest.previewFingerprint);
+  if (cached) {
+    const cachedValidation = validateOfficeArtifactEnvelope(cached, kind, manifest.previewFingerprint);
+    if (cachedValidation.valid) return cached;
+  }
 
-export async function exportPptx(html, filenameBase) {
-  const PptxGenJS = await loadPptxGenJS();
-  const doc = parseHtml(html);
-  const pptx = new PptxGenJS();
-
-  const containers = doc.querySelectorAll('.slide, section, article');
-  const blocks = containers.length ? Array.from(containers) : [doc.body];
-
-  let made = 0;
-  for (const el of blocks) {
-    if (!el || !el.textContent || !el.textContent.trim()) continue;
-    made += 1;
-    const slide = pptx.addSlide();
-    let y = 0.4;
-    el.querySelectorAll('h1, h2, h3').forEach((h) => {
-      if (y > 6.5) return;
-      slide.addText(h.textContent.trim(), { x: 0.5, y, w: 9, fontSize: h.tagName === 'H1' ? 28 : 22, bold: true, color: '1F2937' });
-      y += 0.7;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90_000);
+  try {
+    const res = await fetch('/api/generate-office', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        format: kind,
+        compileOnly: true,
+        spec: manifest.spec,
+      }),
     });
-    el.querySelectorAll('p').forEach((p) => {
-      const t = p.textContent.trim();
-      if (!t || y > 6.5) return;
-      slide.addText(t, { x: 0.5, y, w: 9, fontSize: 14, color: '4B5563' });
-      y += 0.5;
-    });
-    const bullets = Array.from(el.querySelectorAll('li')).map((li) => li.textContent.trim()).filter(Boolean);
-    if (bullets.length && y <= 6.5) {
-      slide.addText(bullets.map((text) => ({ text, options: { bullet: true } })), { x: 0.7, y, w: 8.6, fontSize: 14, color: '1F2937' });
+    const artifact = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(artifact.error || 'Verified Office compilation failed.');
+
+    const validation = validateOfficeArtifactEnvelope(artifact, kind, manifest.previewFingerprint);
+    if (!validation.valid) {
+      throw new Error(`Verified Office compilation was rejected: ${validation.issues.join(' ')}`);
     }
+    cacheOfficeArtifact(artifact);
+    return artifact;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('The verified Office compiler took too long. No degraded fallback was created; please try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!made) throw new Error('No slide content found to export.');
-  await pptx.writeFile({ fileName: `${filenameBase}.pptx` });
 }
 
-/* ── Excel (write-excel-file, bundled) ──────────────────────────────────── */
-export async function exportXlsx(html, filenameBase) {
-  const { default: writeXlsxFile } = await import('write-excel-file/browser');
-  const doc = parseHtml(html);
-  const table = doc.querySelector('table');
-
-  let rows;
-  if (table) {
-    rows = Array.from(table.rows).map((tr, ri) =>
-      Array.from(tr.cells).map((cell) => ({
-        value: cell.textContent.trim(),
-        type: String,
-        fontWeight: ri === 0 || cell.tagName === 'TH' ? 'bold' : undefined,
-      })),
-    );
-  } else {
-    // No table — fall back to one column of the text lines so the export is
-    // still a real, usable sheet rather than an error.
-    const lines = Array.from(doc.querySelectorAll('h1, h2, h3, p, li'))
-      .map((el) => el.textContent.trim())
-      .filter(Boolean);
-    if (!lines.length) throw new Error('No tabular content found to export.');
-    rows = lines.map((l) => [{ value: l, type: String }]);
-  }
-  await writeXlsxFile(rows, { fileName: `${filenameBase}.xlsx` });
+export async function exportPptx(html) {
+  const artifact = await compileCanonicalOffice(OFFICE_KIND.POWERPOINT, html);
+  downloadOfficeArtifact(artifact);
 }
 
-/* ── Word (html-docx-js, bundled) ───────────────────────────────────────── */
-export async function exportDocx(html, filenameBase) {
-  const mod = await import('html-docx-js-typescript');
-  const asBlob = mod.asBlob || (mod.default && mod.default.asBlob);
-  if (typeof asBlob !== 'function') throw new Error('Word exporter unavailable.');
-  const full = /<html[\s>]/i.test(html) ? html : `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html || ''}</body></html>`;
-  const result = await asBlob(full);
-  const blob = result instanceof Blob ? result : new Blob([result], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-  downloadBlob(blob, `${filenameBase}.docx`);
+export async function exportDocx(html) {
+  const artifact = await compileCanonicalOffice(OFFICE_KIND.WORD, html);
+  downloadOfficeArtifact(artifact);
 }
 
-/* ── PDF (print-to-PDF, no dependency) ──────────────────────────────────── */
+export async function exportXlsx(html) {
+  const artifact = await compileCanonicalOffice(OFFICE_KIND.EXCEL, html);
+  downloadOfficeArtifact(artifact);
+}
+
 export async function exportPdf(html, filenameBase) {
   const w = window.open('', '_blank');
   if (!w) throw new Error('Pop-up blocked — allow pop-ups to export PDF.');
-  const full = /<html[\s>]/i.test(html) ? html : `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filenameBase}</title></head><body>${html || ''}</body></html>`;
+  const full = /<html[\s>]/i.test(html)
+    ? html
+    : `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${filenameBase}</title></head><body>${html || ''}</body></html>`;
   w.document.open();
   w.document.write(full);
   w.document.close();
-  await new Promise((r) => setTimeout(r, 400)); // let assets load before print
+  await new Promise((resolve) => setTimeout(resolve, 400));
   w.focus();
   w.print();
 }
@@ -141,7 +122,6 @@ const EXPORTERS = {
   [OFFICE_KIND.PDF]: exportPdf,
 };
 
-/** Dispatch to the right real exporter for the given office kind. */
 export async function exportOffice(kind, { html, filename } = {}) {
   const exporter = EXPORTERS[kind];
   if (!exporter) throw new Error(`Unsupported export type: ${kind}`);
