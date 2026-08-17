@@ -870,6 +870,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setPclIntercept(null);
   };
 
+  const handleRegenerateMessage = (messageId) => {
+    const messageIndex = messages.findIndex((message) => message.id === messageId);
+    const previousUserMessage = messageIndex >= 0
+      ? messages.slice(0, messageIndex).reverse().find((message) => message.sender === 'user' && message.text)
+      : null;
+    if (previousUserMessage?.text) handleSendMessage(previousUserMessage.text);
+  };
+
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text) || extractHtmlFromResponse(msg.text)) : null;
@@ -1226,7 +1234,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             <button onClick={() => handleSendMessage('Please summarize this.')} title="Summarize" style={{ ...iconBtn, color: subtextColor }}><List size={14} /></button>
                           )}
 
-                          <button onClick={() => handleSendMessage('Regenerate the previous response.')} title="Regenerate" style={{ ...iconBtn, color: subtextColor }}><RefreshCw size={14} /></button>
+                          <button onClick={() => handleRegenerateMessage(msg.id)} title="Regenerate" style={{ ...iconBtn, color: subtextColor }}><RefreshCw size={14} /></button>
 
                           <button
                             onClick={() => { navigator.clipboard.writeText(cleanText); setCopiedMessageId(msg.id); setTimeout(() => setCopiedMessageId(null), 2000); }}
