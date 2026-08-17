@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { composePresentation } from '../generate-office.js';
+import { compileOfficeArtifact, composePresentation } from '../generate-office.js';
+import { normalizeOfficeSpec, verifyCompiledOfficeArtifact } from './office-artifact.js';
 
 const require = createRequire(import.meta.url);
 const pptxgenModule: any = require('pptxgenjs');
@@ -29,8 +30,6 @@ async function tinyPngDataUrl() {
   return 'data:image/png;base64,' + Buffer.from(buf).toString('base64');
 }
 
-// A representative deck that exercises EVERY slide type the schema allows, plus
-// an embedded image — the exact surface that used to render blank or crash.
 async function sampleSpec() {
   return {
     title: 'Quantora Strategy Review',
@@ -71,4 +70,68 @@ test('composePresentation tolerates a minimal / under-specified spec', async () 
   assert.equal(slideImages.length, 1);
   const buffer: any = await pptx.write({ outputType: 'nodebuffer' });
   assert.ok((Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)).length > 1000);
+});
+
+test('canonical PowerPoint compiler passes the same structural verification gate used in production', async () => {
+  const spec = normalizeOfficeSpec('powerpoint', await sampleSpec());
+  const compiled = await compileOfficeArtifact('powerpoint', spec);
+  const verification = verifyCompiledOfficeArtifact('powerpoint', {
+    buffer: compiled.buffer,
+    spec,
+    htmlPreview: compiled.htmlPreview,
+  });
+  assert.equal(verification.passed, true, verification.issues.join('; '));
+  assert.equal((compiled.htmlPreview.match(/<section\b/gi) || []).length, spec.slides.length);
+  assert.ok(compiled.buffer.length > 5000);
+});
+
+test('canonical Word compiler creates a real OOXML document and preview with matching sections', async () => {
+  const spec = normalizeOfficeSpec('word', {
+    title: 'Operating Model Review',
+    sections: [
+      { heading: 'Executive summary', paragraphs: ['Quantora should use one canonical artifact contract.'], bullets: ['Verified before download', 'Human review remains explicit'] },
+      { heading: 'Controls', paragraphs: ['Compilation failures fail closed rather than degrading output.'] },
+    ],
+  });
+  const compiled = await compileOfficeArtifact('word', spec);
+  const verification = verifyCompiledOfficeArtifact('word', {
+    buffer: compiled.buffer,
+    spec,
+    htmlPreview: compiled.htmlPreview,
+  });
+  assert.equal(verification.passed, true, verification.issues.join('; '));
+  assert.equal((compiled.htmlPreview.match(/<h2\b/gi) || []).length, 2);
+  assert.equal(compiled.buffer.subarray(0, 2).toString('latin1'), 'PK');
+});
+
+test('canonical Excel compiler preserves every worksheet and passes workbook verification', async () => {
+  const spec = normalizeOfficeSpec('excel', {
+    filename: 'Reliability_Model',
+    sheets: [
+      {
+        name: 'Summary',
+        data: [
+          [{ value: 'Metric', fontWeight: 'bold' }, { value: 'Value', fontWeight: 'bold' }],
+          ['Preview parity', { value: 100, type: 'Number', format: '0%' }],
+        ],
+      },
+      {
+        name: 'Controls',
+        data: [
+          ['Control', 'Status'],
+          ['OOXML verification', 'Required'],
+          ['Human approval', 'Required'],
+        ],
+      },
+    ],
+  });
+  const compiled = await compileOfficeArtifact('excel', spec);
+  const verification = verifyCompiledOfficeArtifact('excel', {
+    buffer: compiled.buffer,
+    spec,
+    htmlPreview: compiled.htmlPreview,
+  });
+  assert.equal(verification.passed, true, verification.issues.join('; '));
+  assert.equal((compiled.htmlPreview.match(/data-sheet-name=/gi) || []).length, 2, 'both worksheets are represented in preview');
+  assert.equal(compiled.buffer.subarray(0, 2).toString('latin1'), 'PK');
 });
