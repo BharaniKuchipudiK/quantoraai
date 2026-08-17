@@ -6,6 +6,7 @@ import {
   normalizeOfficeSpec,
   validateOfficeSpec,
   verifyCompiledOfficeArtifact,
+  verifyPresentationCommunicationQuality,
 } from './office-artifact.js';
 
 function fakeZip(...entries) {
@@ -76,6 +77,84 @@ test('verifies structural parity for all three Office formats', () => {
     htmlPreview: previewDocument('<section data-sheet-name="Summary"><h2>Summary</h2><table><tr><td>A</td></tr></table></section><section data-sheet-name="Data"><h2>Data</h2><table><tr><td>B</td></tr></table></section>'),
   });
   assert.equal(excel.passed, true, excel.issues.join('; '));
+});
+
+test('negative golden: rejects generic AI consulting slide pattern before release', () => {
+  const result = verifyPresentationCommunicationQuality({
+    version: 2,
+    title: 'AI Travel Agent',
+    archetype: 'strategy',
+    communicationStandard: 'consulting',
+    slides: [
+      { type: 'cover', title: 'AI Travel Agent' },
+      {
+        type: 'bullets',
+        title: 'Should You Build an AI Travel Agent?',
+        bullets: ['Pros', 'Cons'],
+        images: [{ url: 'https://example.com/aircraft.jpg', caption: 'Aircraft' }],
+      },
+      { type: 'bullets', title: 'Pros & Cons', bullets: ['Faster planning', 'Integration risk'] },
+      { type: 'bullets', title: 'Recommendation', bullets: ['Proceed carefully'] },
+      { type: 'bullets', title: 'Next Steps', bullets: ['Pilot'] },
+    ],
+  });
+
+  assert.equal(result.passed, false);
+  assert.ok(result.issues.some((issue) => /assertion-led executive headline/i.test(issue)));
+  assert.ok(result.issues.some((issue) => /decorative stock imagery/i.test(issue)));
+  assert.ok(result.issues.some((issue) => /executive_summary/i.test(issue)));
+  assert.ok(result.issues.some((issue) => /analytical\/evidence composition/i.test(issue)));
+});
+
+test('accepts an assertion-led, evidence-aware consulting storyline', () => {
+  const result = verifyPresentationCommunicationQuality({
+    version: 2,
+    title: 'AI Travel Agent Strategy',
+    archetype: 'strategy',
+    communicationStandard: 'consulting',
+    decisionAsk: 'Approve a controlled discovery and pilot before transactional autonomy.',
+    sourceNotes: ['Qualitative strategic assessment; no external quantitative evidence was supplied.'],
+    slides: [
+      { type: 'cover', title: 'AI travel agents can create value, but autonomy should be earned in stages' },
+      {
+        type: 'executive_summary',
+        title: 'Planning assistance is attractive now while autonomous booking remains the material control boundary',
+        bullets: ['Planning productivity can improve without transaction risk', 'Provider reliability remains uneven', 'Human approval should gate consequential actions'],
+        insight: 'Start with assisted planning and verification; defer autonomous booking until controls prove reliable.',
+      },
+      {
+        type: 'framework',
+        title: 'Value concentrates in planning and orchestration while transaction execution carries the highest control burden',
+        framework: [
+          { heading: 'Discover', detail: 'Research and compare options', status: 'green' },
+          { heading: 'Decide', detail: 'Synthesize trade-offs and recommendations', status: 'green' },
+          { heading: 'Transact', detail: 'Book only behind explicit approval and provider confirmation', status: 'amber' },
+        ],
+        insight: 'Separate low-risk cognition from high-consequence execution.',
+      },
+      {
+        type: 'comparison',
+        title: 'A staged copilot model offers better control than jumping directly to autonomous booking',
+        options: [
+          { name: 'Copilot', summary: 'Assist research and planning', pros: ['Fast learning'], cons: ['Human effort remains'], recommended: true },
+          { name: 'Autonomous agent', summary: 'Execute bookings end to end', pros: ['Maximum automation'], cons: ['Higher transaction and reliability risk'] },
+        ],
+        insight: 'The copilot path preserves learning while containing irreversible-action risk.',
+      },
+      {
+        type: 'roadmap',
+        title: 'Three controlled stages can prove value before Quantora accepts transactional responsibility',
+        actions: [
+          { title: 'Planning pilot', timing: 'Stage 1', status: 'green', detail: 'Research, compare and construct itineraries' },
+          { title: 'Verified handoff', timing: 'Stage 2', status: 'amber', detail: 'Provider-confirmed availability with human approval' },
+          { title: 'Selective execution', timing: 'Stage 3', status: 'amber', detail: 'Only after reliability and audit controls pass' },
+        ],
+        recommendation: 'Approve Stage 1 and define measurable reliability gates before progressing.',
+      },
+    ],
+  });
+
+  assert.equal(result.passed, true, result.issues.join('; '));
 });
 
 test('fails closed when OOXML or preview parity is broken', () => {
