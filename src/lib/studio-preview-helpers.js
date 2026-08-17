@@ -15,7 +15,7 @@ export function extractHtmlFromResponse(rawText) {
 
 export function hasPreviewableContent(rawText) {
   if (!rawText || typeof rawText !== 'string') return false;
-  return Boolean(extractHtmlFromResponse(rawText) || /```/.test(rawText));
+  return Boolean(extractHtmlFromResponse(rawText) || rawText.includes('```') || /(?:import\s+React|export\s+default|<div[\s>]|<body[\s>])/i.test(rawText));
 }
 
 export function preparePreviewHtml(rawText, imageMap = new Map()) {
