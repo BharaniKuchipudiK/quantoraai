@@ -31,12 +31,14 @@ export async function resizeImageForEmbed(bytes, sourceMime = 'image/png', maxWi
 
   try {
     const img = await Jimp.read(bytes);
-    if (img.bitmap.width > maxWidth) img.resize({ w: maxWidth });
+    if (img.bitmap.width > maxWidth) {
+      img.resize({ w: maxWidth });
+    }
     width = img.bitmap.width;
     height = img.bitmap.height;
     const out = await img.getBuffer('image/jpeg');
     return { dataUrl: 'data:image/jpeg;base64,' + out.toString('base64'), width, height, resized: true };
-  } catch {
+  } catch (error) {
     try {
       const dim = imageSize(bytes);
       if (dim?.width) width = dim.width;
