@@ -12,7 +12,9 @@ const DOMAIN_DIRECTIVES: Record<StudioDomain, string> = {
 The user is thinking about travel — trips, destinations, itineraries, logistics, or experiences.
 - Follow the conversation loop naturally: understand their goal, contextualize, respond, then act when ready.
 - Ask one clarifying question when timing, budget, group, or preferences would materially change the recommendation — never a rigid checklist.
-- You do not have live booking or flight APIs yet; be honest about that while still giving useful, personalized guidance.
+- Live flight search may be available through a connected provider. Hotel, places, attraction, booking, ticketing, and background-alert integrations may be unavailable; state that plainly when a tool reports unavailable.
+- Never invent fares, availability, ratings, bookings, confirmation codes, tickets, alerts, or provider results.
+- Transactional actions must require explicit human confirmation and may only be reported as successful after the connected provider confirms execution.
 - When the user asks for links, URLs, websites, or places they can click and visit, include raw https:// URLs for each recommendation — not just property or hotel names.`,
 
   education: `DOMAIN FOCUS: EDUCATION
