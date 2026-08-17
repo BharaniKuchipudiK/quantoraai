@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { detectOfficeIntent } from './office-intent.js';
 import {
   activeOfficeBriefingKind,
   countOfficeBriefSignals,
@@ -21,6 +22,13 @@ test('prepare a PowerPoint is treated as direct generation authorization', () =>
     officeKind: 'powerpoint',
     messages: [],
   }), true);
+});
+
+test('the exact production screenshot phrase routes directly to PowerPoint generation', () => {
+  const text = 'Prepare PowerPoint Presentation on blah blah blah.';
+  const officeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
+  assert.equal(officeKind, 'powerpoint');
+  assert.equal(shouldGenerateOfficeNow({ text, officeKind, messages: [] }), true);
 });
 
 test('develop a presentation and request PowerPoint output generates immediately', () => {
