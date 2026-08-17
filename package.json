@@ -16,7 +16,7 @@
     "test:quantum": "node --test src/lib/quantum/*.test.js",
     "test:studio-synthetic": "node scripts/studio-synthetic-test.mjs",
     "test:outcome-navigator": "tsx scripts/outcome-navigator-eval.ts",
-    "test:ts": "tsx --test api/_lib/conversation-engine.test.ts api/_lib/conversation-policy.test.ts api/_lib/model-payload.test.ts api/_lib/outcome-state.test.ts api/_lib/protected-endpoints.test.ts api/_lib/publish-policy.test.ts api/_lib/repository-preview.test.ts api/_lib/safety-policy.test.ts api/_lib/session-context.test.ts api/_lib/store.test.ts api/_lib/studio-choice-templates.test.ts api/_lib/studio-choices.test.ts api/_lib/studio-domains.test.ts api/_lib/studio-modes.test.ts",
+    "test:ts": "tsx --test api/_lib/conversation-engine.test.ts api/_lib/deck-compose.test.ts api/_lib/conversation-policy.test.ts api/_lib/model-payload.test.ts api/_lib/outcome-state.test.ts api/_lib/protected-endpoints.test.ts api/_lib/publish-policy.test.ts api/_lib/repository-preview.test.ts api/_lib/safety-policy.test.ts api/_lib/session-context.test.ts api/_lib/store.test.ts api/_lib/studio-choice-templates.test.ts api/_lib/studio-choices.test.ts api/_lib/studio-domains.test.ts api/_lib/studio-modes.test.ts",
     "test:all": "npm run test:ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js && npm run test:studio-synthetic && npm run test:outcome-navigator",
     "lint:undef": "eslint 'src/**/*.{js,jsx}'"
   },
@@ -39,6 +39,8 @@
     "express": "^4.21.2",
     "google-auth-library": "^11.0.2",
     "html-docx-js-typescript": "^0.1.5",
+    "image-size": "^2.0.2",
+    "jimp": "^1.6.1",
     "langchain": "^1.5.5",
     "lucide-react": "^0.546.0",
     "p-limit": "^7.3.1",
