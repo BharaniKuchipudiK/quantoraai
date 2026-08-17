@@ -192,18 +192,29 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
         (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. You MUST fix this syntax or structure error.` : "");
 
    if (apiKey) {
-      const client = new GoogleGenAI({ apiKey });
-      const response = await client.models.generateContent({
-         model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
-         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-         config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: "application/json"
-         }
-      });
-      return response.text;
-   } else if (openRouterKey || process.env.OPENROUTER_API_KEY) {
-      const key = openRouterKey || process.env.OPENROUTER_API_KEY;
+      try {
+        const client = new GoogleGenAI({ apiKey });
+        const response = await client.models.generateContent({
+           model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
+           contents: [{ role: 'user', parts: [{ text: prompt }] }],
+           config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: "application/json"
+           }
+        });
+        return response.text;
+      } catch (err: any) {
+        const errorText = String(err?.message || err);
+        const fallbackKey = openRouterKey || process.env.OPENROUTER_API_KEY;
+        const canFallback = Boolean(fallbackKey) &&
+          /(429|quota|rate.?limit|not found|no longer available|not available)/i.test(errorText);
+        if (!canFallback) throw err;
+        console.warn("Gemini Office generation unavailable; falling back to OpenRouter:", errorText);
+      }
+   }
+
+   const key = openRouterKey || process.env.OPENROUTER_API_KEY;
+   if (key) {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
          method: "POST",
          headers: {
@@ -211,7 +222,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
             "Content-Type": "application/json"
          },
          body: JSON.stringify({
-            model: "anthropic/claude-3.5-sonnet",
+            model: process.env.OPENROUTER_OFFICE_MODEL || "anthropic/claude-3.5-sonnet",
             messages: [
                { role: "system", content: systemPrompt },
                { role: "user", content: prompt }
@@ -225,7 +236,6 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
    }
    throw new Error("No available API credentials");
 }
-
 function sanitizeFilename(name) {
   return String(name || 'document')
     .replace(/[^\w\- ]+/g, '')
