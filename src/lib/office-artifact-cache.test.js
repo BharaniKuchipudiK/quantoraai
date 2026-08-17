@@ -6,6 +6,7 @@ import {
   extractOfficeManifest,
   fingerprintOfficePreview,
   getCachedOfficeArtifact,
+  getVerifiedOfficePreviewState,
   manifestMatchesPreview,
   stripOfficeManifest,
   validateOfficeArtifactEnvelope,
@@ -28,6 +29,18 @@ test('extracts the canonical Office manifest and detects preview drift', () => {
   assert.equal(manifestMatchesPreview(html, manifest), true);
   assert.equal(manifestMatchesPreview(html.replace('Deck', 'Changed'), manifest), false);
   assert.doesNotMatch(stripOfficeManifest(html), /quantora-office-manifest/);
+});
+
+test('only treats matching fingerprint-bound Office html as verified preview content', () => {
+  const { html } = htmlWithManifest();
+  assert.deepEqual(getVerifiedOfficePreviewState('<html><body>old generic deck</body></html>', 'powerpoint'), {
+    verified: false,
+    manifest: null,
+    reason: 'missing-manifest',
+  });
+  assert.equal(getVerifiedOfficePreviewState(html, 'powerpoint').verified, true);
+  assert.equal(getVerifiedOfficePreviewState(html, 'word').reason, 'kind-mismatch');
+  assert.equal(getVerifiedOfficePreviewState(html.replace('Deck', 'Changed'), 'powerpoint').reason, 'fingerprint-mismatch');
 });
 
 test('caches only verified artifacts tied to the same preview fingerprint', () => {

@@ -58,6 +58,18 @@ export function manifestMatchesPreview(html, manifest = extractOfficeManifest(ht
   return fingerprintOfficePreview(stripOfficeManifest(html)) === manifest.previewFingerprint;
 }
 
+export function getVerifiedOfficePreviewState(html, expectedKind = null) {
+  const manifest = extractOfficeManifest(html);
+  if (!manifest) return { verified: false, manifest: null, reason: 'missing-manifest' };
+  if (expectedKind && manifest.kind !== expectedKind) {
+    return { verified: false, manifest, reason: 'kind-mismatch' };
+  }
+  if (!manifestMatchesPreview(html, manifest)) {
+    return { verified: false, manifest, reason: 'fingerprint-mismatch' };
+  }
+  return { verified: true, manifest, reason: null };
+}
+
 export function validateOfficeArtifactEnvelope(artifact, expectedKind = null, expectedFingerprint = null) {
   const issues = [];
   const kind = artifact?.kind || artifact?.format;
