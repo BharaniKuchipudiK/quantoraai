@@ -4,6 +4,12 @@ import writeXlsxFile from 'write-excel-file/node';
 import { asBlob } from 'html-docx-js-typescript';
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
 
+// A full-deck LLM call + server-side file compilation takes ~15–30s. Without an
+// explicit budget, Vercel kills the function at its short default limit and
+// returns a raw "A server error" page (which the client then fails to JSON-parse
+// → "Unexpected token 'A'"). Give it real headroom.
+export const config = { maxDuration: 60 };
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -25,7 +31,7 @@ export default async function handler(req, res) {
     // 1. GATEKEEPER: GENERATE & VALIDATE WITH RETRY LOOP
     let validJson = null;
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 2; // bound total time so we stay within maxDuration
     let lastError = '';
 
     while (attempts < maxAttempts && !validJson) {
