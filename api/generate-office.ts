@@ -139,7 +139,14 @@ export default async function handler(req, res) {
           });
       });
       
-      const buffer: any = await (writeXlsxFile as any)(formattedData.length > 0 ? formattedData : [[{ value: 'Empty Data', type: String }]], { buffer: true });
+      // The Node exporter returns a writer object; materialize it before encoding.
+      const xlsxResult: any = (writeXlsxFile as any)(
+        formattedData.length > 0 ? formattedData : [[{ value: 'Empty Data', type: String }]],
+        { buffer: true }
+      );
+      const buffer: any = xlsxResult && typeof xlsxResult.toBuffer === 'function'
+        ? await xlsxResult.toBuffer()
+        : await xlsxResult;
       base64Data = (await toNodeBuffer(buffer)).toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = sanitizeFilename(validJson.filename || 'Spreadsheet') + '.xlsx';
