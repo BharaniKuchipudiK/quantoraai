@@ -13,7 +13,7 @@ import { repairArtifact } from "./_lib/repair.js";
 import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
-import { travelFunctionDeclarations } from './_lib/agent-tools.js';
+import { travelFunctionDeclarations, executeToolCall } from './_lib/agent-tools.js';
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
@@ -110,7 +110,7 @@ function resolveOpenRouterModelId(modelId: string): { slug?: string; error?: str
 }
 
 function buildGeminiContents(history: any[], currentMessage: string, attachedImages: string[] = []) {
-  type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+  type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } } | { functionCall: any } | { functionResponse: any };
   const contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }> = [];
 
   if (Array.isArray(history)) {
@@ -604,18 +604,30 @@ export default async function handler(req: any, res: any) {
         });
       }
 
+      const travelPersona = `\n\nWORLD-CLASS TRAVEL COORDINATOR DIRECTIVE:
+You are a 360-degree, proactive travel agent.
+- DO NOT just spit out flights. Observe, listen, comprehend, and anticipate.
+- If details (dates, vibe, budget) are missing, YOU MUST use the ask_clarifying_question tool. Do not hallucinate details.
+- Once flights/hotels are secured, PROACTIVELY suggest attractions using search_attractions.
+- If the user wants to book, use make_reservation.
+- If prices are high or the trip is far away, proactively offer to use create_price_alert.
+`;
+      const injectedSystemPrompt = finalSystemPrompt + travelPersona;
+
       try {
         const contents = buildGeminiContents(boundedHistory, message, visionImages);
         // Try grounded first; if this key's models don't support the search
         // tool, fall back to an ungrounded stream rather than failing the turn.
-        let responseStream, usedModel;
-        try {
-          ({ stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature, grounding));
-        } catch (groundErr: any) {
-          if (!grounding) throw groundErr;
-          console.warn("Grounded Gemini call failed; retrying without grounding:", groundErr?.message || groundErr);
-          ({ stream: responseStream, usedModel } = await generateGeminiContentStream(effectiveGeminiKey, contents, finalSystemPrompt, dynamicTemperature, false));
-        }
+        
+        const runGemini = async (currentContents: any[]) => {
+          try {
+            return await generateGeminiContentStream(effectiveGeminiKey, currentContents, injectedSystemPrompt, dynamicTemperature, grounding);
+          } catch (groundErr: any) {
+            if (!grounding) throw groundErr;
+            console.warn("Grounded Gemini call failed; retrying without grounding:", groundErr?.message || groundErr);
+            return await generateGeminiContentStream(effectiveGeminiKey, currentContents, injectedSystemPrompt, dynamicTemperature, false);
+          }
+        };
 
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
@@ -626,22 +638,68 @@ export default async function handler(req: any, res: any) {
         let fullReply = "";
         const sources: Array<{ uri: string; title: string }> = [];
         const seenSources = new Set<string>();
-        for await (const chunk of responseStream) {
-          if (chunk.text) {
-            fullReply += chunk.text;
-            res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
-            if (res.flush) res.flush();
-          }
-          // Collect real citations from grounding metadata as they arrive.
-          const gcs = (chunk as any)?.candidates?.[0]?.groundingMetadata?.groundingChunks;
-          if (Array.isArray(gcs)) {
-            for (const gc of gcs) {
-              const uri = gc?.web?.uri;
-              if (uri && !seenSources.has(uri)) {
-                seenSources.add(uri);
-                sources.push({ uri, title: gc?.web?.title || uri });
+        let usedModel: string = "gemini-unknown";
+
+        // --- THE AGENTIC INTERCEPTOR LOOP ---
+        let loopCount = 0;
+        let isLooping = true;
+        
+        while (isLooping && loopCount < 5) {
+          loopCount++;
+          isLooping = false; // Assume text stream unless a functionCall is detected
+          let functionCallData: any = null;
+
+          const { stream, usedModel: m } = await runGemini(contents);
+          usedModel = m;
+
+          for await (const chunk of stream) {
+            if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+              functionCallData = chunk.functionCalls[0];
+              break; // Break the stream parsing loop to execute the tool
+            }
+
+            if (chunk.text) {
+              fullReply += chunk.text;
+              res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+              if (res.flush) res.flush();
+            }
+            // Collect real citations from grounding metadata as they arrive.
+            const gcs = (chunk as any)?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+            if (Array.isArray(gcs)) {
+              for (const gc of gcs) {
+                const uri = gc?.web?.uri;
+                if (uri && !seenSources.has(uri)) {
+                  seenSources.add(uri);
+                  sources.push({ uri, title: gc?.web?.title || uri });
+                }
               }
             }
+          }
+
+          if (functionCallData) {
+            // Notify UI
+            const notifyMsg = `\n\n> 🤖 *Agent executing tool: ${functionCallData.name}*...\n\n`;
+            fullReply += notifyMsg;
+            res.write(`data: ${JSON.stringify({ text: notifyMsg })}\n\n`);
+            if (res.flush) res.flush();
+
+            // Execute the tool
+            const toolResult = await executeToolCall(functionCallData.name, functionCallData.args);
+            
+            if (toolResult?.action === "PAUSE_AND_ASK") {
+               // The agent wants to pause and ask the user directly
+               const askMsg = `\n\n**Clarifying Question:** ${toolResult.message}\n\n`;
+               fullReply += askMsg;
+               res.write(`data: ${JSON.stringify({ text: askMsg })}\n\n`);
+               if (res.flush) res.flush();
+               break; // Exit the loop entirely, wait for user reply
+            }
+
+            // Append to context for the next iteration
+            contents.push({ role: 'model', parts: [{ functionCall: functionCallData }] });
+            contents.push({ role: 'user', parts: [{ functionResponse: { name: functionCallData.name, response: toolResult } }] });
+            
+            isLooping = true;
           }
         }
 
