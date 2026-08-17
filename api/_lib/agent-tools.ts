@@ -1,373 +1,219 @@
 /**
- * Central Registry for Quantora Agentic AI Tools
- * 
- * This module defines the schemas and execution handlers for outcome-based 
- * function calling capabilities passed to the Gemini orchestrator.
+ * Central registry for Quantora travel tools.
+ *
+ * Safety rule: a tool may only report success for an action that was actually
+ * completed by a connected provider. There are deliberately no mock-success
+ * fallbacks for searches, alerts, reservations, tickets, or background jobs.
  */
-
-// -----------------------------------------------------------------------------
 
 import { Duffel } from '@duffel/api';
 
-const duffel = process.env.DUFFEL_API_KEY 
-  ? new Duffel({ token: process.env.DUFFEL_API_KEY }) 
+const defaultDuffelClient = process.env.DUFFEL_API_KEY
+  ? new Duffel({ token: process.env.DUFFEL_API_KEY })
   : null;
 
-// -----------------------------------------------------------------------------
-// 1. Tool Schemas (Passed to Gemini)
-// -----------------------------------------------------------------------------
+export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = new Set([
+  'create_price_alert',
+  'make_reservation',
+  'book_attraction',
+]);
 
+/**
+ * Travel tools are enabled only when the PCL/Studio domain has explicitly
+ * resolved the current turn to travel. They must never be injected globally.
+ */
+export function shouldEnableTravelTools(studioDomain: unknown): boolean {
+  return studioDomain === 'travel';
+}
+
+export function isTransactionalTravelTool(name: unknown): boolean {
+  return typeof name === 'string' && TRANSACTIONAL_TRAVEL_TOOL_NAMES.has(name);
+}
+
+/**
+ * Only non-transactional tools are exposed to Gemini in this production
+ * hotfix. Transactional capabilities remain fail-closed in executeToolCall so
+ * stale clients or unexpected model calls cannot fabricate a booking/alert.
+ */
 export const travelFunctionDeclarations: any[] = [
   {
-    name: "search_flights",
-    description: "Search for real-time flight availability and pricing. Use this when the user asks to plan a trip, find flights, or check travel costs.",
+    name: 'search_flights',
+    description: 'Search live flight availability and pricing through the connected provider. If the provider is unavailable, return an unavailable result; never invent fares or availability.',
     parameters: {
-      type: "OBJECT",
+      type: 'OBJECT',
       properties: {
-        origin: { type: "STRING", description: "The origin city or 3-letter IATA airport code (e.g. SIN, JFK)" },
-        destination: { type: "STRING", description: "The destination city or 3-letter IATA airport code (e.g. DPS, LHR)" },
-        departureDate: { type: "STRING", description: "The departure date in YYYY-MM-DD format, or natural language if unsure (e.g. 'next Friday')" },
-        returnDate: { type: "STRING", description: "Optional. The return date in YYYY-MM-DD format." },
-        passengers: { type: "INTEGER", description: "Number of passengers. Default is 1." }
+        origin: { type: 'STRING', description: 'Origin city or 3-letter IATA airport code (for example SIN or JFK).' },
+        destination: { type: 'STRING', description: 'Destination city or 3-letter IATA airport code (for example DPS or LHR).' },
+        departureDate: { type: 'STRING', description: 'Departure date in YYYY-MM-DD format.' },
+        returnDate: { type: 'STRING', description: 'Optional return date in YYYY-MM-DD format.' },
+        passengers: { type: 'INTEGER', description: 'Number of adult passengers. Default is 1.' },
       },
-      required: ["origin", "destination", "departureDate"]
-    }
+      required: ['origin', 'destination', 'departureDate'],
+    },
   },
   {
-    name: "search_hotels",
-    description: "Search for real-time hotel availability, ratings, and pricing for a specific location and date range.",
+    name: 'search_hotels',
+    description: 'Check live hotel availability only if a provider is connected. If unavailable, report that limitation; never return hard-coded or fabricated hotel results.',
     parameters: {
-      type: "OBJECT",
+      type: 'OBJECT',
       properties: {
-        location: { type: "STRING", description: "The city or specific neighborhood (e.g. 'Seminyak, Bali')" },
-        checkInDate: { type: "STRING", description: "Check-in date (YYYY-MM-DD)" },
-        checkOutDate: { type: "STRING", description: "Check-out date (YYYY-MM-DD)" },
-        guests: { type: "INTEGER", description: "Number of guests. Default is 1." },
-        minStarRating: { type: "INTEGER", description: "Minimum star rating (1-5)." }
+        location: { type: 'STRING', description: 'City or neighborhood.' },
+        checkInDate: { type: 'STRING', description: 'Check-in date in YYYY-MM-DD format.' },
+        checkOutDate: { type: 'STRING', description: 'Check-out date in YYYY-MM-DD format.' },
+        guests: { type: 'INTEGER', description: 'Number of guests. Default is 1.' },
+        minStarRating: { type: 'INTEGER', description: 'Optional minimum star rating from 1 to 5.' },
       },
-      required: ["location", "checkInDate", "checkOutDate"]
-    }
+      required: ['location', 'checkInDate', 'checkOutDate'],
+    },
   },
   {
-    name: "get_places_routing",
-    description: "Search Google Maps Places API to find restaurants, attractions, or calculate commute times between a hotel and a point of interest.",
+    name: 'get_places_routing',
+    description: 'Check live places or routing information only if a provider is connected. If unavailable, report that limitation; never fabricate ratings, addresses, opening status, or commute times.',
     parameters: {
-      type: "OBJECT",
+      type: 'OBJECT',
       properties: {
-        query: { type: "STRING", description: "What to search for (e.g. 'Beach clubs near Seminyak, Bali' or 'Distance from Airport to W Hotel Bali')" },
-        placeType: { type: "STRING", description: "Optional type of place (e.g. 'restaurant', 'tourist_attraction', 'transit_station')" }
+        query: { type: 'STRING', description: 'Place or routing query.' },
+        placeType: { type: 'STRING', description: 'Optional place category.' },
       },
-      required: ["query"]
-    }
+      required: ['query'],
+    },
   },
   {
-    name: "create_price_alert",
-    description: "Create a background price tracker for flights or hotels. Use this when the user says prices are too high, or they are planning far in advance and want to be notified of price drops.",
+    name: 'search_attractions',
+    description: 'Check live attraction availability only if a provider is connected. If unavailable, report that limitation; never invent prices, ratings, availability, or providers.',
     parameters: {
-      type: "OBJECT",
+      type: 'OBJECT',
       properties: {
-        entityType: { type: "STRING", description: "'flight' or 'hotel'" },
-        origin: { type: "STRING", description: "Origin code (if flight)" },
-        destination: { type: "STRING", description: "Destination code (if flight) or location (if hotel)" },
-        dates: { type: "STRING", description: "The travel dates to track" },
-        targetPrice: { type: "INTEGER", description: "The target price threshold to trigger an alert" }
+        location: { type: 'STRING', description: 'Destination city or region.' },
+        category: { type: 'STRING', description: 'Optional activity category.' },
       },
-      required: ["entityType", "destination", "dates"]
-    }
+      required: ['location'],
+    },
   },
   {
-    name: "make_reservation",
-    description: "Finalize a booking reservation for a flight or hotel. Only use this when the user explicitly agrees to book a specific option.",
+    name: 'ask_clarifying_question',
+    description: 'Pause planning and ask one material question when dates, budget, group, or preferences are missing. Use this instead of guessing.',
     parameters: {
-      type: "OBJECT",
+      type: 'OBJECT',
       properties: {
-        bookingType: { type: "STRING", description: "'flight' or 'hotel'" },
-        itemId: { type: "STRING", description: "The flight number or hotel name to book" },
-        dates: { type: "STRING", description: "The dates of the reservation" },
-        price: { type: "INTEGER", description: "The agreed upon price" }
+        question: { type: 'STRING', description: 'The exact question to ask the user.' },
       },
-      required: ["bookingType", "itemId", "dates", "price"]
-    }
+      required: ['question'],
+    },
   },
-  {
-    name: "search_attractions",
-    description: "Search for tourist attractions, experiences, and tours (like Klook/Viator) in a specific destination. Proactively use this to suggest activities to users after their flights/hotels are secured.",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        location: { type: "STRING", description: "The city or region to search for attractions" },
-        category: { type: "STRING", description: "Optional. Type of experience (e.g., 'cultural', 'adventure', 'family', 'food')" }
-      },
-      required: ["location"]
-    }
-  },
-  {
-    name: "book_attraction",
-    description: "Finalize a booking for a specific attraction or tour.",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        attractionName: { type: "STRING", description: "The name of the attraction or tour" },
-        date: { type: "STRING", description: "The date of the experience" },
-        tickets: { type: "INTEGER", description: "Number of tickets to book" }
-      },
-      required: ["attractionName", "date", "tickets"]
-    }
-  },
-  {
-    name: "ask_clarifying_question",
-    description: "Pause the planning process and explicitly ask the user a question to gather missing preferences (e.g., travel dates, budget, preferred vibe). Use this instead of hallucinating details.",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        question: { type: "STRING", description: "The specific question to ask the user" }
-      },
-      required: ["question"]
-    }
-  }
 ];
 
-// -----------------------------------------------------------------------------
-// 2. Execution Handlers (Mocked for high-fidelity architecture proof)
-// -----------------------------------------------------------------------------
+type TravelToolDependencies = {
+  duffelClient?: Duffel | null;
+};
 
-export async function executeToolCall(name: string, args: any): Promise<any> {
+function unavailable(message: string, reason: string = 'PROVIDER_UNAVAILABLE') {
+  return {
+    status: 'unavailable',
+    executed: false,
+    reason,
+    message,
+  };
+}
+
+export async function executeToolCall(
+  name: string,
+  args: any,
+  dependencies: TravelToolDependencies = {},
+): Promise<any> {
   console.log(`[Agentic Orchestrator] Executing Tool: ${name}`, args);
-  
-  // Simulate network latency for API calls
-  await new Promise(resolve => setTimeout(resolve, 800));
+
+  // Defensive backstop: even if a stale client or unexpected model call asks
+  // for a transaction, do not attempt it and never fabricate a confirmation.
+  if (isTransactionalTravelTool(name)) {
+    return unavailable(
+      'This transactional travel action is not enabled in the current production build. Nothing was booked, purchased, ticketed, scheduled, or monitored. A future transaction flow must obtain explicit human confirmation and a provider-confirmed result before reporting success.',
+      'TRANSACTION_DISABLED',
+    );
+  }
+
+  const duffelClient = Object.prototype.hasOwnProperty.call(dependencies, 'duffelClient')
+    ? dependencies.duffelClient
+    : defaultDuffelClient;
 
   switch (name) {
-    case "search_flights":
-      if (duffel) {
-        try {
-          console.log(`[Duffel API] Searching live flights from ${args.origin} to ${args.destination}...`);
-          const response = await duffel.offerRequests.create({
-            slices: [
-              {
-                origin: args.origin,
-                destination: args.destination,
-                departure_date: args.departureDate,
-              } as any,
-            ],
-            passengers: Array(args.passengers || 1).fill({ type: "adult" }),
-            cabin_class: "economy",
-          });
-          
-          const liveFlights = response.data.offers.slice(0, 5).map(offer => {
-             const slice = offer.slices[0];
-             const segment = slice.segments[0];
-             return {
-                id: offer.id,
-                airline: segment.operating_carrier.name,
-                flightNumber: `${segment.operating_carrier.iata_code}${segment.operating_carrier_flight_number}`,
-                departure: segment.departing_at,
-                arrival: segment.arriving_at,
-                duration: slice.duration,
-                price: parseFloat(offer.total_amount),
-                currency: offer.total_currency,
-                direct: slice.segments.length === 1,
-                baggageAllowance: "Varies by fare"
-             };
-          });
-
-          return {
-             status: "success",
-             source: "Live Duffel API",
-             currency: liveFlights[0]?.currency || "USD",
-             flights: liveFlights
-          };
-        } catch (error: any) {
-          console.error("[Duffel API Error] Falling back to mock data:", error.errors || error.message);
-        }
+    case 'search_flights': {
+      if (!duffelClient) {
+        return unavailable('Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.');
       }
 
-      // Graceful Fallback to Mock Data
-      return {
-        status: "success",
-        source: "Mock Data (Duffel API Key missing or failed)",
-        currency: "USD",
-        flights: [
+      try {
+        const slices: any[] = [
           {
-            id: "off_mock1",
-            airline: "Singapore Airlines",
-            flightNumber: "SQ938",
-            departure: `${args.departureDate}T09:00:00`,
-            arrival: `${args.departureDate}T11:45:00`,
-            duration: "2h 45m",
-            price: 245.50,
-            direct: true,
-            baggageAllowance: "30kg"
+            origin: String(args?.origin || '').trim(),
+            destination: String(args?.destination || '').trim(),
+            departure_date: String(args?.departureDate || '').trim(),
           },
-          {
-            id: "off_mock2",
-            airline: "Scoot",
-            flightNumber: "TR280",
-            departure: `${args.departureDate}T15:20:00`,
-            arrival: `${args.departureDate}T18:10:00`,
-            duration: "2h 50m",
-            price: 115.00,
-            direct: true,
-            baggageAllowance: "Cabin only (10kg)"
-          }
-        ]
-      };
-
-    case "search_hotels":
-      return {
-        status: "success",
-        currency: "USD",
-        hotels: [
-          {
-            name: "W Bali - Seminyak",
-            rating: 4.8,
-            stars: 5,
-            pricePerNight: 350.00,
-            amenities: ["Beachfront", "Spa", "3 Pools", "Breakfast Included"],
-            distanceToCenter: "0.5 miles"
-          },
-          {
-            name: "Potato Head Suites & Studios",
-            rating: 4.6,
-            stars: 5,
-            pricePerNight: 210.00,
-            amenities: ["Beach Club Access", "Sustainability Focus", "Pool"],
-            distanceToCenter: "0.2 miles"
-          },
-          {
-            name: "Dash Hotel Seminyak",
-            rating: 4.3,
-            stars: 4,
-            pricePerNight: 85.00,
-            amenities: ["Rooftop Bar", "Pool", "Free WiFi"],
-            distanceToCenter: "0.8 miles"
-          }
-        ]
-      };
-
-    case "get_places_routing":
-      return {
-        status: "success",
-        places: [
-          {
-            name: "Ku De Ta",
-            type: "Beach Club / Restaurant",
-            rating: 4.5,
-            userReviews: 8400,
-            address: "Jalan Kayu Aya No.9, Seminyak",
-            openNow: true,
-            estimatedCommuteFromSeminyakCenter: "5 mins walking"
-          },
-          {
-            name: "Finns Beach Club",
-            type: "Beach Club",
-            rating: 4.4,
-            userReviews: 12000,
-            address: "Jalan Pantai Berawa, Canggu",
-            openNow: true,
-            estimatedCommuteFromSeminyakCenter: "15 mins via Taxi/Gojek"
-          }
-        ]
-      };
-
-    case "create_price_alert":
-      return {
-        status: "success",
-        alertId: `alert_${Math.random().toString(36).substr(2, 9)}`,
-        message: `Successfully created price tracker for ${args.entityType} to ${args.destination} for ${args.dates}. The system will monitor daily and notify the user if prices drop below ${args.targetPrice ? '$' + args.targetPrice : 'current rates'}.`
-      };
-
-    case "make_reservation":
-      if (duffel && args.bookingType === 'flight' && !args.itemId.startsWith('off_mock')) {
-        try {
-          console.log(`[Duffel API] Finalizing live booking for Offer ID: ${args.itemId}...`);
-          const order = await duffel.orders.create({
-            selected_offers: [args.itemId],
-            passengers: [
-              {
-                id: "pas_000000000000000000000000", // Duffel requires passenger ID from the offer request. This is complex to mock without full state.
-                given_name: "Quantora",
-                family_name: "User",
-                gender: "m",
-                born_on: "1990-01-01",
-                email: "test@quantora.com",
-                phone_number: "+442031292200",
-                title: "mr"
-              }
-            ],
-            type: "instant"
+        ];
+        if (args?.returnDate) {
+          slices.push({
+            origin: String(args?.destination || '').trim(),
+            destination: String(args?.origin || '').trim(),
+            departure_date: String(args.returnDate).trim(),
           });
-          
-          return {
-            status: "success",
-            source: "Live Duffel API",
-            bookingReference: order.data.booking_reference,
-            message: `Successfully booked live flight! Booking Reference (PNR): ${order.data.booking_reference}.`,
-            nextSteps: "Inform the user that the live ticket is confirmed and the PNR is generated."
-          };
-        } catch (error: any) {
-           console.error("[Duffel API Error] Booking failed (likely due to missing passenger state), falling back to mock:", error.errors || error.message);
         }
+
+        const passengerCount = Math.min(9, Math.max(1, Number(args?.passengers) || 1));
+        const response = await duffelClient.offerRequests.create({
+          slices,
+          passengers: Array.from({ length: passengerCount }, () => ({ type: 'adult' as const })),
+          cabin_class: 'economy',
+        });
+
+        const offers = Array.isArray(response?.data?.offers) ? response.data.offers.slice(0, 5) : [];
+        return {
+          status: 'success',
+          executed: true,
+          source: 'Duffel',
+          flights: offers.map((offer: any) => {
+            const firstSlice = offer?.slices?.[0];
+            const firstSegment = firstSlice?.segments?.[0];
+            return {
+              id: offer?.id,
+              airline: firstSegment?.operating_carrier?.name || firstSegment?.marketing_carrier?.name || 'Unknown carrier',
+              flightNumber: firstSegment?.operating_carrier?.iata_code && firstSegment?.operating_carrier_flight_number
+                ? `${firstSegment.operating_carrier.iata_code}${firstSegment.operating_carrier_flight_number}`
+                : null,
+              departure: firstSegment?.departing_at || null,
+              arrival: firstSlice?.segments?.[firstSlice.segments.length - 1]?.arriving_at || null,
+              duration: firstSlice?.duration || null,
+              price: Number.parseFloat(offer?.total_amount || '0'),
+              currency: offer?.total_currency || null,
+              direct: Array.isArray(firstSlice?.segments) ? firstSlice.segments.length === 1 : null,
+            };
+          }),
+        };
+      } catch (error: any) {
+        console.error('[Duffel API Error] Live flight search failed:', error?.errors || error?.message || error);
+        return unavailable('Live flight search failed at the provider. No mock fares or availability were substituted.', 'PROVIDER_ERROR');
       }
+    }
 
-      // Graceful Fallback to Mock Data
-      return {
-        status: "success",
-        source: "Mock Data (Duffel API Key missing, failed, or hotel booking)",
-        confirmationCode: `CONF-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-        message: `Successfully booked ${args.bookingType}: ${args.itemId} for ${args.dates} at $${args.price}.`,
-        nextSteps: "Please inform the user that their reservation is confirmed and an itinerary document will be generated."
-      };
+    case 'search_hotels':
+      return unavailable('Live hotel search is not connected in the current production build. No hard-coded hotel results were returned.');
 
-    case "search_attractions":
-      return {
-        status: "success",
-        attractions: [
-          {
-            name: "Mount Batur Sunrise Trek",
-            provider: "Bali Adventure Tours",
-            price: 45.00,
-            duration: "8 hours",
-            rating: 4.9,
-            description: "Guided sunrise hike up an active volcano with breakfast cooked on volcanic steam.",
-            availability: "High"
-          },
-          {
-            name: "Ubud Sacred Monkey Forest Sanctuary",
-            provider: "Direct Entry",
-            price: 8.00,
-            duration: "Flexible",
-            rating: 4.7,
-            description: "Explore lush ancient temples inhabited by hundreds of Balinese long-tailed macaques.",
-            availability: "Always available"
-          },
-          {
-            name: "Nusa Penida Day Trip (Manta Ray Snorkeling)",
-            provider: "Island Hoppers",
-            price: 75.00,
-            duration: "Full Day",
-            rating: 4.8,
-            description: "Speedboat to Nusa Penida, visiting Kelingking Beach and snorkeling with giant Manta Rays.",
-            availability: "Booking fast"
-          }
-        ]
-      };
+    case 'get_places_routing':
+      return unavailable('Live places/routing is not connected in the current production build. No fabricated ratings, addresses, opening status, or commute times were returned.');
 
-    case "book_attraction":
-      return {
-        status: "success",
-        confirmationCode: `TKT-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-        message: `Successfully booked ${args.tickets} tickets for ${args.attractionName} on ${args.date}. E-tickets have been secured.`
-      };
+    case 'search_attractions':
+      return unavailable('Live attraction search is not connected in the current production build. No fabricated prices, ratings, providers, or availability were returned.');
 
-    case "ask_clarifying_question":
+    case 'ask_clarifying_question': {
+      const question = typeof args?.question === 'string' ? args.question.trim() : '';
       return {
-        status: "success",
-        action: "PAUSE_AND_ASK",
-        message: `The agent is instructed to stop invoking tools and surface this question directly to the user: ${args.question}`
+        status: 'success',
+        executed: false,
+        action: 'PAUSE_AND_ASK',
+        message: question || 'What travel detail should I clarify before continuing?',
       };
+    }
 
     default:
-      return { error: `Unknown tool requested: ${name}` };
+      return unavailable(`Unknown or disabled travel tool: ${name}`, 'UNKNOWN_TOOL');
   }
 }
