@@ -7,6 +7,7 @@ import {
   isIgnorableRuntimeError,
   PREVIEW_EMBED_SHELL_HTML,
   PREVIEW_TAILWIND_PROBE_ID,
+  prepareCodeForPreview,
   usesTailwindCdn,
 } from './preview-utils.js';
 
@@ -22,6 +23,15 @@ test('injects harness into head', () => {
   assert.match(out, /kind:'loaded'/);
   assert.match(out, new RegExp(`id="${PREVIEW_TAILWIND_PROBE_ID}"`));
   assert.match(out, new RegExp(`getElementById\\('${PREVIEW_TAILWIND_PROBE_ID}'\\)`));
+});
+
+test('preserves self-contained Office/V2 slide CSS through preview preparation and harness injection', () => {
+  const html = '<!DOCTYPE html><html><head><style>.slide{aspect-ratio:16/9;background:#0B1F33}.kpi{font-weight:700}</style></head><body><section class="slide"><div class="kpi">99%</div></section></body></html>';
+  const prepared = prepareCodeForPreview(html, {});
+  const harnessed = injectPreviewHarness(prepared);
+  assert.match(harnessed, /\.slide\{aspect-ratio:16\/9;background:#0B1F33\}/);
+  assert.match(harnessed, /\.kpi\{font-weight:700\}/);
+  assert.match(harnessed, /<section class="slide">/);
 });
 
 test('treats Tailwind script load failures as critical', () => {
