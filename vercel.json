@@ -2,7 +2,7 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/generate-office.ts": { "maxDuration": 60 }
+    "api/generate-office.ts": { "maxDuration": 300 }
   },
   "crons": [
     {

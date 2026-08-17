@@ -8,11 +8,12 @@ import { DECK_THEME, classifySlide, normalizeChartData, buildDeckPreviewHtml } f
 // require-condition so dual-published Office libraries load their CJS builds.
 const require = createRequire(import.meta.url);
 
-// A full-deck LLM call + server-side file compilation takes ~15–30s. Without an
-// explicit budget, Vercel kills the function at its short default limit and
-// returns a raw "A server error" page (which the client then fails to JSON-parse
-// → "Unexpected token 'A'"). Give it real headroom.
-export const config = { maxDuration: 60 };
+// Generating a full consulting-grade deck spec with Gemini can legitimately
+// take 30–60s+ (large structured JSON), and a slow tail runs longer. The old
+// 60s budget with a 25s per-attempt cap strangled exactly those requests
+// ("The AI model took too long to respond (>25s)"). On the Pro plan Vercel
+// allows up to 300s, so give the function real headroom.
+export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -41,11 +42,13 @@ export default async function handler(req, res) {
     while (attempts < maxAttempts && !validJson) {
       attempts++;
       try {
-        // Bound each attempt (25s) so 2 attempts stay within the 60s function
-        // budget. A hang now surfaces as a real error, not a Vercel hard-kill.
+        // Bound each attempt at 110s so two attempts (+ compilation) stay
+        // within the 300s function budget, while giving a real deck the time it
+        // needs. A genuine hang still surfaces as a clean error, not a Vercel
+        // hard-kill — but a normal 30–60s generation now succeeds.
         const rawResponse = await withTimeout(
           generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError),
-          25000,
+          110000,
           'The AI model took too long to respond',
         );
         validJson = JSON.parse(rawResponse);
