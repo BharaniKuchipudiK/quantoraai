@@ -11,12 +11,21 @@ import {
   validateOfficeSpec,
   verifyCompiledOfficeArtifact,
 } from './_lib/office-artifact.js';
+import { fetchPublicHttpsImage } from './_lib/safe-image-fetch.js';
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
+import { getSessionUser } from './_lib/session.js';
 
 const require = createRequire(import.meta.url);
+const OFFICE_GENERATE_RATE_PER_MINUTE = 6;
+const OFFICE_COMPILE_RATE_PER_MINUTE = 12;
+const MAX_OFFICE_SPEC_BYTES = 3_000_000;
+const MAX_OFFICE_PROMPT_CHARS = 100_000;
 
 export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
+  applyCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const {
@@ -34,11 +43,47 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid format requested' });
   }
 
+  if (String(prompt || '').length > MAX_OFFICE_PROMPT_CHARS) {
+    return res.status(413).json({ error: 'Office request is too large. Please reduce the prompt or attachments and try again.' });
+  }
+
+  if (suppliedSpec) {
+    let specBytes = Infinity;
+    try { specBytes = Buffer.byteLength(JSON.stringify(suppliedSpec), 'utf8'); } catch { /* invalid spec rejected below */ }
+    if (specBytes > MAX_OFFICE_SPEC_BYTES) {
+      return res.status(413).json({ error: 'Office specification is too large to compile reliably. Reduce embedded images or document size and try again.' });
+    }
+  }
+
   const apiKey = userKey || process.env.GEMINI_API_KEY;
   const hasOpenRouter = Boolean(openRouterKey || process.env.OPENROUTER_API_KEY);
   const isCompileRequest = Boolean(compileOnly || suppliedSpec);
   if (!isCompileRequest && !apiKey && !hasOpenRouter) {
     return res.status(401).json({ error: 'API key required' });
+  }
+
+  // Compilation is intentionally available without another model/API key so a
+  // verified preview can be deterministically rebuilt. Bound that CPU surface
+  // with the same two-layer limiter used by chat: local hot-loop protection +
+  // durable shared counters across serverless instances.
+  const sessionUser = getSessionUser(req);
+  const rateLimit = isCompileRequest ? OFFICE_COMPILE_RATE_PER_MINUTE : OFFICE_GENERATE_RATE_PER_MINUTE;
+  const rateKind = isCompileRequest ? 'compile' : 'generate';
+  const identity = sessionUser ? `user:${sessionUser.sub}` : `ip:${clientIp(req)}`;
+  const rateKey = `office:${rateKind}:${identity}`;
+
+  if (isRateLimited(rateKey, rateLimit, 60_000)) {
+    return res.status(429).json({ error: 'Too many Office requests. Please wait a minute and try again.' });
+  }
+  const durable = await isRateLimitedDurable(rateKey, rateLimit, 60);
+  if (durable.limited) {
+    if (durable.resetsAt) {
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durable.resetsAt).getTime() - Date.now()) / 1000)));
+    }
+    return res.status(429).json({
+      error: 'Too many Office requests. Please wait a minute and try again.',
+      resetsAt: durable.resetsAt,
+    });
   }
 
   try {
@@ -335,8 +380,6 @@ async function compileExcel(spec) {
     return rows.map((row) => (Array.isArray(row) ? row : []).map(toExcelLibraryCell));
   });
 
-  // write-excel-file v4 uses one object per worksheet. Keeping each sheet's
-  // data and options together prevents the old first-sheet-only failure mode.
   const workbookSheets = sheets.map((sheet, index) => ({
     data: formattedSheets[index],
     sheet: sheet.name,
@@ -663,18 +706,10 @@ async function imageToDataUrl(url) {
       bytes = Buffer.from(b64, 'base64');
       if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
     } else {
-      if (!/^https?:\/\//i.test(trimmed)) return null;
-      const parsed = new URL(trimmed);
-      if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return null;
-      const response = await withTimeout(fetch(trimmed, {
-        headers: { Accept: 'image/*', 'User-Agent': 'Quantora Office Renderer/1.0' },
-      }), 8000, 'Image download timed out');
-      if (!response.ok) return null;
-      const contentType = response.headers.get('content-type') || '';
-      if (!/^image\//i.test(contentType)) return null;
-      sourceMime = contentType.split(';')[0] || 'image/png';
-      bytes = Buffer.from(await response.arrayBuffer());
-      if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
+      if (!/^https:\/\//i.test(trimmed)) return null;
+      const remote = await fetchPublicHttpsImage(trimmed, { maxBytes: 5 * 1024 * 1024, timeoutMs: 8_000 });
+      sourceMime = remote.contentType || 'image/png';
+      bytes = remote.bytes;
     }
 
     const { dataUrl, width, height } = await resizeImageForEmbed(bytes, sourceMime, 560);
