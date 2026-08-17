@@ -13,6 +13,7 @@ import { repairArtifact } from "./_lib/repair.js";
 import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
+import { travelFunctionDeclarations } from './_lib/agent-tools.js';
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
@@ -215,7 +216,7 @@ async function generateGeminiContentStream(apiKey: string, contents: any[], syst
           // Real web grounding: when on, the model runs an actual Google
           // Search and answers from live results, returning citations in
           // groundingMetadata. Off for builds. Supported on modern Gemini.
-          ...(grounding ? { tools: [{ googleSearch: {} }] } : {}),
+          ...(grounding ? { tools: [{ googleSearch: {} }, { functionDeclarations: travelFunctionDeclarations }] } : { tools: [{ functionDeclarations: travelFunctionDeclarations }] }),
           // JSON mode enforcement for Office files
           ...(systemInstruction?.includes("JSON DECK SPEC") ? { responseMimeType: "application/json" } : {})
         },
