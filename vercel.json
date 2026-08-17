@@ -2,7 +2,8 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "env": {
-    "GEMINI_OFFICE_MODEL": "gemini-pro-latest"
+    "GEMINI_OFFICE_MODEL": "gemini-flash-latest",
+    "ANTHROPIC_OFFICE_MODEL": "claude-sonnet-5"
   },
   "functions": {
     "api/generate-office.ts": { "maxDuration": 300 }

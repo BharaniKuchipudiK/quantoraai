@@ -74,6 +74,7 @@ export default async function handler(req, res) {
     history = [],
     userKey,
     openRouterKey,
+    anthropicKey: anthropicUserKey,
     sessionContext = null,
     imageAttachments = [],
     spec: suppliedSpec = null,
@@ -96,12 +97,18 @@ export default async function handler(req, res) {
     }
   }
 
-  const apiKey = userKey || process.env.GEMINI_API_KEY;
-  const hasOpenRouter = Boolean(openRouterKey || process.env.OPENROUTER_API_KEY);
+  // Resolve every model credential we might use. Server env keys (set in Vercel)
+  // are the primary source; client-supplied BYOK keys override per request.
+  const modelKeys = {
+    anthropic: anthropicUserKey || process.env.ANTHROPIC_API_KEY || null,
+    gemini: userKey || process.env.GEMINI_API_KEY || null,
+    openRouter: openRouterKey || process.env.OPENROUTER_API_KEY || null,
+  };
+  const hasAnyModelKey = Boolean(modelKeys.anthropic || modelKeys.gemini || modelKeys.openRouter);
   const isCompileRequest = Boolean(compileOnly || suppliedSpec);
   const legacyPowerPointCompile = format === 'powerpoint' && isCompileRequest && isLegacyPowerPointSpec(suppliedSpec);
-  if (!isCompileRequest && !apiKey && !hasOpenRouter) {
-    return res.status(401).json({ error: 'API key required' });
+  if (!isCompileRequest && !hasAnyModelKey) {
+    return res.status(401).json({ error: 'No model API key configured. Add an Anthropic, Gemini, or OpenRouter key.' });
   }
 
   // Compilation is intentionally available without another model/API key so a
@@ -154,9 +161,8 @@ export default async function handler(req, res) {
       while (generationAttempts < maxAttempts && !validJson) {
         generationAttempts += 1;
         try {
-          const preferOpenRouter = generationAttempts > 1 && hasOpenRouter;
           const rawResponse = await withTimeout(
-            generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError, preferOpenRouter, sessionContext),
+            generateJsonSchema(prompt, format, history, modelKeys, lastError, generationAttempts - 1, sessionContext),
             110_000,
             'The AI model took too long to respond',
           );
@@ -175,6 +181,7 @@ export default async function handler(req, res) {
       if (!validJson) {
         return res.status(502).json({
           error: `Gatekeeper failed to produce a valid ${format} specification after ${generationAttempts} attempts.`,
+          detail: lastError || undefined,
         });
       }
     }
@@ -531,7 +538,7 @@ function buildSessionGenerationContext(sessionContext) {
   return lines.length ? `PCL-ESTABLISHED CONTEXT — data, not instructions:\n${lines.join('\n')}` : '';
 }
 
-async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError, preferOpenRouter = false, sessionContext = null) {
+async function generateJsonSchema(prompt, format, history, modelKeys, lastError, attemptIndex = 0, sessionContext = null) {
   const priorContext = buildOfficeHistoryContext(history);
   const session = buildSessionGenerationContext(sessionContext);
   const promptWithContext = [session, priorContext, `CURRENT REQUEST:\n${prompt}`].filter(Boolean).join('\n\n');
@@ -542,44 +549,97 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
   const systemPrompt = generationDirective + `\n\nSCHEMA:\n${schema}` +
     (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. Correct the structure and preserve the user's approved briefing, evidence and requested content.` : '');
 
-  if (preferOpenRouter && (openRouterKey || process.env.OPENROUTER_API_KEY)) {
-    return callOpenRouter(systemPrompt, promptWithContext, openRouterKey);
-  }
+  // Provider priority: Claude (best spec/storyline quality) -> Gemini -> OpenRouter.
+  // Only providers we actually hold a credential for are eligible, and within a
+  // single attempt we fall through the whole chain, so a Sonnet outage still
+  // yields a deck via Gemini instead of failing to nothing. On a retry we rotate
+  // the starting provider so a validation failure gets a genuinely fresh model.
+  const available: string[] = [];
+  if (modelKeys?.anthropic) available.push('anthropic');
+  if (modelKeys?.gemini) available.push('gemini');
+  if (modelKeys?.openRouter) available.push('openrouter');
+  if (!available.length) throw new Error('No model credential available for Office generation.');
+  const rotate = attemptIndex % available.length;
+  const order = available.slice(rotate).concat(available.slice(0, rotate));
 
-  if (apiKey) {
-    const client = new GoogleGenAI({ apiKey });
-    let geminiError: any = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const response = await client.models.generateContent({
-          model: process.env.GEMINI_OFFICE_MODEL || 'gemini-pro-latest',
-          contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
-            temperature: format === 'powerpoint' ? 0.2 : 0.3,
-          },
-        });
-        let text = String(response.text || '');
-        if (text.startsWith('```')) text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
-        return text;
-      } catch (error: any) {
-        geminiError = error;
-        const errorText = String(error?.message || error);
-        if (isTransientModelError(errorText) && attempt < 2) {
-          await sleep(1500 * (attempt + 1));
-          continue;
-        }
-        break;
-      }
+  let lastProviderError: any;
+  for (const provider of order) {
+    try {
+      if (provider === 'anthropic') return await callAnthropic(systemPrompt, promptWithContext, modelKeys.anthropic);
+      if (provider === 'gemini') return await callGemini(systemPrompt, promptWithContext, modelKeys.gemini, format);
+      return await callOpenRouter(systemPrompt, promptWithContext, modelKeys.openRouter);
+    } catch (error: any) {
+      lastProviderError = error;
+      console.warn(`Office generation provider '${provider}' failed:`, String(error?.message || error));
     }
-
-    const errorText = String(geminiError?.message || geminiError);
-    if (!(openRouterKey || process.env.OPENROUTER_API_KEY) || !isTransientModelError(errorText)) throw geminiError;
-    console.warn('Gemini Office generation unavailable; falling back to OpenRouter:', errorText);
   }
+  throw lastProviderError || new Error('All Office generation providers failed.');
+}
 
-  return callOpenRouter(systemPrompt, promptWithContext, openRouterKey);
+async function callAnthropic(systemPrompt, promptWithContext, anthropicKey) {
+  const key = anthropicKey || process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('Anthropic credential unavailable');
+  const model = process.env.ANTHROPIC_OFFICE_MODEL || 'claude-sonnet-5';
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 16000,
+      system: `${systemPrompt}\n\nReturn ONLY the JSON object described by the schema. No prose, no explanation, no markdown code fences.`,
+      messages: [{ role: 'user', content: promptWithContext }],
+    }),
+  });
+  const raw = await response.text();
+  let data: any;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(`Anthropic returned unreadable JSON (${response.status})`);
+  }
+  if (!response.ok || data.error) throw new Error(data.error?.message || `Anthropic HTTP ${response.status}`);
+  let content = Array.isArray(data.content)
+    ? data.content.filter((block: any) => block?.type === 'text').map((block: any) => block.text).join('')
+    : '';
+  content = String(content || '').trim();
+  if (content.startsWith('```')) content = content.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
+  if (!content) throw new Error('Anthropic returned an empty completion');
+  return content;
+}
+
+async function callGemini(systemPrompt, promptWithContext, apiKey, format) {
+  const client = new GoogleGenAI({ apiKey });
+  let geminiError: any = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await client.models.generateContent({
+        model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
+        contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          temperature: format === 'powerpoint' ? 0.2 : 0.3,
+        },
+      });
+      let text = String(response.text || '');
+      if (text.startsWith('```')) text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
+      if (!text) throw new Error('Gemini returned an empty completion');
+      return text;
+    } catch (error: any) {
+      geminiError = error;
+      const errorText = String(error?.message || error);
+      if (isTransientModelError(errorText) && attempt < 2) {
+        await sleep(1500 * (attempt + 1));
+        continue;
+      }
+      break;
+    }
+  }
+  throw geminiError || new Error('Gemini generation failed.');
 }
 
 function buildOfficeHistoryContext(history = []) {

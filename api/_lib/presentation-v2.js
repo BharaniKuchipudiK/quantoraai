@@ -352,13 +352,18 @@ export function validatePresentationSpec(input = {}) {
   const issues = [];
   const warnings = [];
 
+  // Hard floor (these block compilation): the deck must exist and carry content.
   if (!spec.slides.length) issues.push('Presentation must contain at least one slide.');
   if (!spec.slides.some(slideHasContent)) issues.push('Presentation contains no meaningful content.');
+  // Everything below is CONSULTING-QUALITY guidance, not a structural gate. It is
+  // reported as warnings so a usable deck still ships instead of failing to
+  // nothing; the model is told to improve on retry, but a thinner-but-valid deck
+  // is always preferable to a 502 with no artifact.
   if (spec.slides.length && spec.slides[0].type !== 'cover') warnings.push('The first slide is not a cover composition.');
   if (cleanArray(input.slides).length > 40) warnings.push('Deck was capped at 40 slides for reliable generation.');
 
   spec.slides.forEach((slide, index) => {
-    requireSemanticPayload(slide, index, issues);
+    requireSemanticPayload(slide, index, warnings);
     const title = slide.title.toLowerCase().replace(/[:–—-].*$/, '').trim();
     if (index > 0 && BODY_TYPES.has(slide.type) && GENERIC_HEADLINES.has(title) && !slide.insight) {
       warnings.push(`Slide ${index + 1} uses a topic-only headline (“${slide.title}”). Prefer a takeaway headline.`);
@@ -370,7 +375,7 @@ export function validatePresentationSpec(input = {}) {
     if (spec.slides[i].type === spec.slides[i - 1].type && BODY_TYPES.has(spec.slides[i].type)) repeated += 1;
     else repeated = 1;
     if (repeated > 2 && !['status_dashboard'].includes(spec.slides[i].type)) {
-      issues.push(`Slides ${i - 1}–${i + 1} repeat the same ${spec.slides[i].type} composition. Use a more purposeful visual grammar.`);
+      warnings.push(`Slides ${i - 1}–${i + 1} repeat the same ${spec.slides[i].type} composition. Use a more purposeful visual grammar.`);
       break;
     }
   }
@@ -378,22 +383,22 @@ export function validatePresentationSpec(input = {}) {
   if (spec.slides.length >= 7) {
     const bodyTypes = new Set(spec.slides.map((slide) => slide.type).filter((type) => BODY_TYPES.has(type)));
     if (bodyTypes.size < 3 && spec.archetype !== 'project_status') {
-      issues.push('Professional decks of seven or more slides must use at least three distinct body composition types.');
+      warnings.push('Professional decks of seven or more slides should use at least three distinct body composition types.');
     }
   }
 
   const types = new Set(spec.slides.map((slide) => slide.type));
   if (spec.archetype === 'business_case' && spec.slides.length >= 5) {
-    if (!types.has('executive_summary')) issues.push('Business case requires an executive_summary composition.');
-    if (!types.has('comparison') && !types.has('financial_case')) issues.push('Business case requires an options comparison or financial/value case.');
+    if (!types.has('executive_summary')) warnings.push('Business case should include an executive_summary composition.');
+    if (!types.has('comparison') && !types.has('financial_case')) warnings.push('Business case should include an options comparison or financial/value case.');
     if (!types.has('roadmap') && !spec.slides.some((slide) => slide.recommendation)) warnings.push('Business case should land a recommendation/action path.');
   }
   if (spec.archetype === 'qbr' && spec.slides.length >= 5) {
-    if (!types.has('executive_summary') && !types.has('status_dashboard')) issues.push('QBR requires an executive summary or status dashboard.');
-    if (!types.has('chart_insight') && !types.has('kpi_strip')) issues.push('QBR requires KPI/trend evidence, not narrative-only slides.');
+    if (!types.has('executive_summary') && !types.has('status_dashboard')) warnings.push('QBR should include an executive summary or status dashboard.');
+    if (!types.has('chart_insight') && !types.has('kpi_strip')) warnings.push('QBR should include KPI/trend evidence, not narrative-only slides.');
   }
   if (spec.archetype === 'project_status' && spec.slides.length >= 4) {
-    if (!types.has('status_dashboard')) issues.push('Project status deck requires a status_dashboard composition.');
+    if (!types.has('status_dashboard')) warnings.push('Project status deck should include a status_dashboard composition.');
     if (!types.has('roadmap') && !types.has('timeline') && !types.has('risk_matrix')) warnings.push('Project status should show next actions, milestone movement, or prioritized risks.');
   }
   if (['business_case', 'executive_briefing'].includes(spec.archetype) && !spec.decisionAsk && !spec.slides.some((slide) => slide.recommendation)) {
