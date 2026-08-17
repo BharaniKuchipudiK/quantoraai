@@ -70,12 +70,18 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: `Gatekeeper failed to produce valid ${format} schema after ${maxAttempts} attempts. Last error: ${lastError}` });
     }
 
-    if (format === 'word' && Array.isArray(imageAttachments) && imageAttachments.length > 0) {
+    if ((format === 'word' || format === 'powerpoint') && Array.isArray(imageAttachments) && imageAttachments.length > 0) {
       const attachedImages = imageAttachments.filter((image) => /^data:image\//i.test(String(image?.dataUrl || ''))).slice(0, 6).map((image) => ({ url: image.dataUrl, caption: image.name || 'Attached image', altText: image.name || 'Attached image' }));
       if (attachedImages.length > 0) {
-        const firstSection = validJson.sections?.[0] || { heading: 'Figures', paragraphs: [], bullets: [] };
-        firstSection.images = [...(firstSection.images || []), ...attachedImages];
-        validJson.sections = validJson.sections?.length ? [firstSection, ...validJson.sections.slice(1)] : [firstSection];
+        if (format === 'word') {
+          const firstSection = validJson.sections?.[0] || { heading: 'Figures', paragraphs: [], bullets: [] };
+          firstSection.images = [...(firstSection.images || []), ...attachedImages];
+          validJson.sections = validJson.sections?.length ? [firstSection, ...validJson.sections.slice(1)] : [firstSection];
+        } else if (format === 'powerpoint') {
+          const firstSlide = validJson.slides?.[0] || { title: 'Figures', bullets: [] };
+          firstSlide.images = [...(firstSlide.images || []), ...attachedImages];
+          validJson.slides = validJson.slides?.length ? [firstSlide, ...validJson.slides.slice(1)] : [firstSlide];
+        }
       }
     }
 
@@ -97,7 +103,8 @@ export default async function handler(req, res) {
         <h1 style="text-align:center;margin-bottom:40px;">${escapeHtml(validJson.title || 'Presentation')}</h1>
         <div style="display:flex;flex-direction:column;gap:30px;align-items:center;">`;
 
-      slides.forEach((s, i) => {
+      for (let i = 0; i < slides.length; i++) {
+        const s = slides[i];
         const slide = pptx.addSlide();
         if (s.speakerNotes) slide.addNotes(s.speakerNotes);
         slide.addText(s.title || "Slide", { x: 0.5, y: 0.5, w: 9, h: 1, fontSize: 24, bold: true, color: '0F172A' });
@@ -113,13 +120,37 @@ export default async function handler(req, res) {
            
            slideHtml += `<ul>${s.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`;
         }
+
+        if (Array.isArray(s.images) && s.images.length > 0) {
+           let imgX = 5.0; // Place images on the right side of the slide by default
+           for (const image of s.images.slice(0, 2)) { // max 2 images per slide
+              const imgData = await imageToDataUrl(image?.url);
+              if (imgData && imgData.dataUrl) {
+                 imageCount += 1;
+                 // PowerPoint dimensions are in inches. Layout is 10 x 5.625
+                 const targetW = 4.0;
+                 const targetH = imgData.width && imgData.height ? (imgData.height / imgData.width) * targetW : 2.5;
+                 
+                 // Constrain Y so it doesn't overflow the bottom of the slide
+                 let imgY = 1.5;
+                 if (imgY + targetH > 5.4) {
+                    imgY = 5.4 - targetH;
+                    if (imgY < 0.5) imgY = 0.5; // don't overlap title too much
+                 }
+                 
+                 slide.addImage({ data: imgData.dataUrl, x: imgX, y: imgY, w: targetW, h: targetH });
+                 slideHtml += `<div style="margin-top:20px;text-align:center;"><img src="${imgData.dataUrl}" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);" /></div>`;
+                 imgX += 0.5; // Offset second image slightly if there is one
+              }
+           }
+        }
         
         if (s.speakerNotes) {
            slideHtml += `<div style="margin-top:20px;padding:10px;background:#f8f9fa;border-left:4px solid #0ea5e9;font-size:0.9em;"><strong>Speaker Notes:</strong><br/>${escapeHtml(s.speakerNotes)}</div>`;
         }
         slideHtml += `</div>`;
         htmlPreview += slideHtml;
-      });
+      }
       htmlPreview += `</div></body></html>`;
       
       const buffer = await pptx.write({ outputType: 'nodebuffer' });
