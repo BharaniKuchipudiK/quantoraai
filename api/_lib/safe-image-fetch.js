@@ -26,30 +26,30 @@ export function isPrivateOrSpecialIp(address) {
   if (family === 4) {
     const value = ipv4ToNumber(address);
     const blocked = [
-      ['0.0.0.0', 8],       // current network / unspecified
-      ['10.0.0.0', 8],      // RFC1918
-      ['100.64.0.0', 10],    // carrier-grade NAT
-      ['127.0.0.0', 8],      // loopback
-      ['169.254.0.0', 16],   // link-local / cloud metadata
-      ['172.16.0.0', 12],    // RFC1918
-      ['192.0.0.0', 24],     // IETF protocol assignments
-      ['192.0.2.0', 24],     // documentation
-      ['192.168.0.0', 16],   // RFC1918
-      ['198.18.0.0', 15],    // benchmarking
-      ['198.51.100.0', 24],  // documentation
-      ['203.0.113.0', 24],   // documentation
-      ['224.0.0.0', 4],      // multicast
-      ['240.0.0.0', 4],      // reserved/broadcast
+      ['0.0.0.0', 8],
+      ['10.0.0.0', 8],
+      ['100.64.0.0', 10],
+      ['127.0.0.0', 8],
+      ['169.254.0.0', 16],
+      ['172.16.0.0', 12],
+      ['192.0.0.0', 24],
+      ['192.0.2.0', 24],
+      ['192.168.0.0', 16],
+      ['198.18.0.0', 15],
+      ['198.51.100.0', 24],
+      ['203.0.113.0', 24],
+      ['224.0.0.0', 4],
+      ['240.0.0.0', 4],
     ];
     return blocked.some(([network, prefix]) => inV4Range(value, network, prefix));
   }
 
   const lower = String(address).toLowerCase();
   if (lower === '::' || lower === '::1') return true;
-  if (/^f[cd]/.test(lower)) return true; // fc00::/7 unique-local
-  if (/^fe[89ab]/.test(lower)) return true; // fe80::/10 link-local
-  if (/^ff/.test(lower)) return true; // multicast
-  if (lower.startsWith('2001:db8:') || lower === '2001:db8::') return true; // documentation
+  if (/^f[cd]/.test(lower)) return true;
+  if (/^fe[89ab]/.test(lower)) return true;
+  if (/^ff/.test(lower)) return true;
+  if (lower.startsWith('2001:db8:') || lower === '2001:db8::') return true;
 
   const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isPrivateOrSpecialIp(mapped[1]);
@@ -91,9 +91,6 @@ export async function resolvePublicImageTarget(value) {
     throw new Error('Image hostname resolves to a private or reserved network.');
   }
 
-  // Resolve once and connect to that exact vetted address. This prevents a
-  // second DNS lookup during the HTTP request from being redirected to an
-  // internal address (DNS rebinding).
   return { url, address: records[0].address, family: records[0].family };
 }
 
@@ -102,12 +99,18 @@ function requestResolvedHttps(target, timeoutMs) {
     const { url, address, family } = target;
     const req = https.request({
       protocol: 'https:',
-      hostname: address,
-      family,
+      hostname: url.hostname,
       port: 443,
       method: 'GET',
       path: `${url.pathname}${url.search}`,
       servername: url.hostname,
+      // Keep the public hostname for TLS certificate/SNI validation but pin the
+      // socket to the exact public IP we already vetted. No second DNS lookup is
+      // allowed, closing the DNS-rebinding gap between validation and connect.
+      lookup: (_hostname, options, callback) => {
+        if (options?.all) callback(null, [{ address, family }]);
+        else callback(null, address, family);
+      },
       headers: {
         Host: url.host,
         Accept: 'image/*',
@@ -122,7 +125,12 @@ function requestResolvedHttps(target, timeoutMs) {
 }
 
 export async function fetchPublicHttpsImage(value, { maxBytes = DEFAULT_MAX_BYTES, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  let current = value instanceof URL ? new URL(value.href) : new URL(String(value || ''));
+  let current;
+  try {
+    current = value instanceof URL ? new URL(value.href) : new URL(String(value || ''));
+  } catch {
+    throw new Error('Image URL is invalid.');
+  }
 
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
     const target = await resolvePublicImageTarget(current);
