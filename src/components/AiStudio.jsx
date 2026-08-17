@@ -554,15 +554,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
   const bubbleAiBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
 
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files);
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const newAttachments = files.map(file => ({
-      name: file.name,
-      size: (file.size / 1024).toFixed(1) + ' KB',
-      type: file.type.includes('image') ? 'image' : 'file'
-    }));
+    const newAttachments = await Promise.all(files.map((file) => new Promise((resolve) => {
+      const base = {
+        name: file.name,
+        size: (file.size / 1024).toFixed(1) + ' KB',
+        type: file.type.includes('image') ? 'image' : 'file'
+      };
+      if (!file.type.includes('image') || file.size > 3 * 1024 * 1024) {
+        resolve(base);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve({ ...base, dataUrl: String(reader.result || '') });
+      reader.onerror = () => resolve(base);
+      reader.readAsDataURL(file);
+    })));
     setAttachments(prev => [...prev, ...newAttachments]);
+    e.target.value = '';
   };
 
   const removeAttachment = (index) => {
