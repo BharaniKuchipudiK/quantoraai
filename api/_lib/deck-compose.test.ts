@@ -6,11 +6,27 @@ import { composePresentation } from '../generate-office.js';
 const require = createRequire(import.meta.url);
 const pptxgenModule: any = require('pptxgenjs');
 const PptxGenJS: any = pptxgenModule.default || pptxgenModule;
-const { Jimp } = require('jimp');
+const jimpModule: any = require('jimp');
+const Jimp: any = jimpModule.Jimp || jimpModule;
+const JIMP_PNG: string = jimpModule.MIME_PNG ?? Jimp.MIME_PNG ?? 'image/png';
 
 async function tinyPngDataUrl() {
-  const buf = await new Jimp({ width: 40, height: 30, color: 0x22aa55ff }).getBuffer('image/png');
-  return 'data:image/png;base64,' + buf.toString('base64');
+  let img: any;
+  if (jimpModule.Jimp) {
+    img = new Jimp({ width: 40, height: 30, color: 0x22aa55ff });
+  } else {
+    img = await new Promise((resolve, reject) => {
+      new Jimp(40, 30, 0x22aa55ff, (error: Error | null, image: any) => {
+        if (error) reject(error);
+        else resolve(image);
+      });
+    });
+  }
+
+  const buf = typeof img.getBufferAsync === 'function'
+    ? await img.getBufferAsync(JIMP_PNG)
+    : await img.getBuffer('image/png');
+  return 'data:image/png;base64,' + Buffer.from(buf).toString('base64');
 }
 
 // A representative deck that exercises EVERY slide type the schema allows, plus
@@ -44,7 +60,6 @@ test('composePresentation renders every slide type into a valid .pptx', async ()
   const buffer: any = await pptx.write({ outputType: 'nodebuffer' });
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   assert.ok(buf.length > 5000, 'produced a non-trivial file');
-  // PK\x03\x04 — a real OOXML zip, not an error string.
   assert.equal(buf.subarray(0, 2).toString('latin1'), 'PK', 'output is a zip container');
 });
 
