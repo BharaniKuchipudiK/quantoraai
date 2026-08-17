@@ -41,7 +41,7 @@
     "google-auth-library": "^11.0.2",
     "html-docx-js-typescript": "^0.1.5",
     "image-size": "^2.0.2",
-    "jimp": "^1.6.1",
+    "jimp": "^0.16.13",
     "langchain": "^1.5.5",
     "lucide-react": "^0.546.0",
     "p-limit": "^7.3.1",
