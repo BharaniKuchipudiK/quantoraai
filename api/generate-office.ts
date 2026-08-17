@@ -259,6 +259,17 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
 
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+// Failures that are transient (worth a retry) or that a DIFFERENT provider could
+// serve (worth a fallback): overload (503 "high demand" / UNAVAILABLE), rate
+// limits (429), other 5xx, deadline/timeouts, and model-availability errors.
+// The old fallback regex missed 503/UNAVAILABLE, so an overloaded Gemini Flash
+// killed the whole request instead of routing around it.
+function isTransientModelError(text = '') {
+  return /\b(429|500|502|503|504)\b|unavailable|overload|high demand|try again|resource.?exhausted|quota|rate.?limit|deadline|timeout|not found|no longer available|not available/i.test(String(text || ''));
+}
+
 async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError) {
    const priorContext = buildOfficeHistoryContext(history);
    const promptWithContext = priorContext ? priorContext + '\n\nCURRENT REQUEST:\n' + prompt : prompt;
@@ -267,8 +278,10 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
         (lastError ? `\n\nCRITICAL FIX REQUIRED: Your last attempt failed validation with this error: ${lastError}. You MUST fix this syntax or structure error.` : "");
 
    if (apiKey) {
-      try {
-        const client = new GoogleGenAI({ apiKey });
+      const client = new GoogleGenAI({ apiKey });
+      let geminiErr: any = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+       try {
         const response = await client.models.generateContent({
            model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
            contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
@@ -283,14 +296,26 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
            text = text.replace(/^\`\`\`(?:json)?\\n/, '').replace(/\\n\`\`\`$/, '');
         }
         return text;
-      } catch (err: any) {
+       } catch (err: any) {
+        geminiErr = err;
         const errorText = String(err?.message || err);
-        const fallbackKey = openRouterKey || process.env.OPENROUTER_API_KEY;
-        const canFallback = Boolean(fallbackKey) &&
-          /(429|quota|rate.?limit|not found|no longer available|not available)/i.test(errorText);
-        if (!canFallback) throw err;
-        console.warn("Gemini Office generation unavailable; falling back to OpenRouter:", errorText);
+        // 503 "high demand" / UNAVAILABLE and 429 / other 5xx are usually
+        // momentary — wait and retry the SAME model before giving up on it.
+        if (isTransientModelError(errorText) && attempt < 2) {
+          await sleep(1500 * (attempt + 1)); // 1.5s, then 3s
+          continue;
+        }
+        break;
+       }
       }
+      // Gemini is exhausted for this request. Route around it to OpenRouter when
+      // a key is present and the failure is one another provider could serve —
+      // so a single overloaded model is no longer a single point of failure.
+      const errorText = String(geminiErr?.message || geminiErr);
+      const fallbackKey = openRouterKey || process.env.OPENROUTER_API_KEY;
+      const canFallback = Boolean(fallbackKey) && isTransientModelError(errorText);
+      if (!canFallback) throw geminiErr;
+      console.warn("Gemini Office generation unavailable; falling back to OpenRouter:", errorText);
    }
 
    const key = openRouterKey || process.env.OPENROUTER_API_KEY;
@@ -302,7 +327,10 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
             "Content-Type": "application/json"
          },
          body: JSON.stringify({
-            model: process.env.OPENROUTER_OFFICE_MODEL || "google/gemini-2.5-flash",
+            // Fall back to a NON-Google model by default: if we're here because
+            // Google is overloaded, routing OpenRouter back to Gemini would just
+            // hit the same outage. Override with OPENROUTER_OFFICE_MODEL.
+            model: process.env.OPENROUTER_OFFICE_MODEL || "openai/gpt-4o-mini",
             messages: [
                { role: "system", content: systemPrompt },
                { role: "user", content: promptWithContext }
