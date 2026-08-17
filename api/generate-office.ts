@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { createRequire } from "node:module";
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
 import { resizeImageForEmbed } from './_lib/office-images.js';
+import { DECK_THEME, classifySlide, normalizeChartData, buildDeckPreviewHtml } from './_lib/deck-theme.js';
 
 // Vercel's Node runtime executes this function as CommonJS. Use Node's
 // require-condition so dual-published Office libraries load their CJS builds.
@@ -78,9 +79,17 @@ export default async function handler(req, res) {
           firstSection.images = [...(firstSection.images || []), ...attachedImages];
           validJson.sections = validJson.sections?.length ? [firstSection, ...validJson.sections.slice(1)] : [firstSection];
         } else if (format === 'powerpoint') {
-          const firstSlide = validJson.slides?.[0] || { title: 'Figures', bullets: [] };
-          firstSlide.images = [...(firstSlide.images || []), ...attachedImages];
-          validJson.slides = validJson.slides?.length ? [firstSlide, ...validJson.slides.slice(1)] : [firstSlide];
+          // Attach uploads to a CONTENT slide (the renderer shows images there),
+          // never the cover — creating one after the cover if the deck has none.
+          const slidesArr = Array.isArray(validJson.slides) ? validJson.slides : [];
+          let target = slidesArr.find((sl, idx) => classifySlide(sl, idx) === 'bullets');
+          if (!target) {
+            target = { type: 'bullets', title: 'Figures', bullets: [] };
+            const insertAt = slidesArr.length && classifySlide(slidesArr[0], 0) === 'cover' ? 1 : 0;
+            slidesArr.splice(insertAt, 0, target);
+          }
+          target.images = [...(target.images || []), ...attachedImages];
+          validJson.slides = slidesArr.length ? slidesArr : [target];
         }
       }
     }
@@ -97,71 +106,15 @@ export default async function handler(req, res) {
       const PptxGenJS: any = pptxgenModule.default || pptxgenModule;
       const pptx = new PptxGenJS();
       pptx.layout = 'LAYOUT_16x9';
-      const slides = validJson.slides || [];
-      
-      htmlPreview = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;">
-        <h1 style="text-align:center;margin-bottom:40px;">${escapeHtml(validJson.title || 'Presentation')}</h1>
-        <div style="display:flex;flex-direction:column;gap:30px;align-items:center;">`;
 
-      for (let i = 0; i < slides.length; i++) {
-        const s = slides[i];
-        const slide = pptx.addSlide();
-        if (s.speakerNotes) slide.addNotes(s.speakerNotes);
-        slide.addText(s.title || "Slide", { x: 0.5, y: 0.5, w: 9, h: 1, fontSize: 24, bold: true, color: '0F172A' });
-        if (s.subtitle) slide.addText(s.subtitle, { x: 0.5, y: 1.2, w: 9, h: 0.5, fontSize: 14, color: '64748B' });
-        
-        let slideHtml = `<div style="width:100%;max-width:800px;border:1px solid #ccc;border-radius:8px;padding:30px;box-shadow:0 4px 6px rgba(0,0,0,0.1);background:#fff;">
-          <h2 style="margin-top:0;">${escapeHtml(s.title || 'Slide ' + (i+1))}</h2>
-          ${s.subtitle ? `<h3 style="color:#666;font-weight:normal;margin-top:0;">${escapeHtml(s.subtitle)}</h3>` : ''}`;
+      // Type-aware, themed rendering. The composer draws each slide per its
+      // schema `type` (cover/section/bullets/data_viz/matrix/quote) and returns
+      // the resolved (already-downscaled) image data URLs per slide so the HTML
+      // preview can mirror the exact deck instead of a divergent approximation.
+      const composed = await composePresentation(pptx, validJson);
+      imageCount = composed.imageCount;
+      htmlPreview = buildDeckPreviewHtml(validJson, composed.slideImages);
 
-        if (s.bullets && s.bullets.length > 0) {
-           const bulletPoints = s.bullets.map(b => ({ text: b, options: { bullet: true } }));
-           slide.addText(bulletPoints, { x: 0.5, y: 2, w: 9, h: 3, fontSize: 16, color: '0F172A' });
-           
-           slideHtml += `<ul>${s.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>`;
-        }
-
-        if (Array.isArray(s.images) && s.images.length > 0) {
-           // Stack up to 2 images down the right column (x 5.0–9.5) in equal,
-           // non-overlapping vertical slots. Each image is fit inside its slot
-           // preserving aspect ratio, so two images never collide.
-           const candidates = s.images.slice(0, 2);
-           const resolved = [];
-           for (const image of candidates) {
-              const imgData = await imageToDataUrl(image?.url);
-              if (imgData && imgData.dataUrl) resolved.push(imgData);
-           }
-           const colX = 5.0;
-           const colW = 4.5;
-           const colTop = 1.5;
-           const colBottom = 5.4;
-           const gap = 0.2;
-           const slotH = resolved.length > 0
-              ? (colBottom - colTop - gap * (resolved.length - 1)) / resolved.length
-              : 0;
-           resolved.forEach((imgData, idx) => {
-              imageCount += 1;
-              const aspect = imgData.width && imgData.height ? imgData.height / imgData.width : 0.66;
-              // Fit within the slot: cap by width, then by slot height.
-              let w = colW;
-              let h = w * aspect;
-              if (h > slotH) { h = slotH; w = h / aspect; }
-              const slotTop = colTop + idx * (slotH + gap);
-              const x = colX + (colW - w) / 2; // centre horizontally in the column
-              const y = slotTop + (slotH - h) / 2; // centre vertically in the slot
-              slide.addImage({ data: imgData.dataUrl, x, y, w, h });
-              slideHtml += `<div style="margin-top:20px;text-align:center;"><img src="${imgData.dataUrl}" style="max-width:100%;height:auto;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,0.1);" /></div>`;
-           });
-        }
-        
-        if (s.speakerNotes) {
-           slideHtml += `<div style="margin-top:20px;padding:10px;background:#f8f9fa;border-left:4px solid #0ea5e9;font-size:0.9em;"><strong>Speaker Notes:</strong><br/>${escapeHtml(s.speakerNotes)}</div>`;
-        }
-        slideHtml += `</div>`;
-        htmlPreview += slideHtml;
-      }
-      htmlPreview += `</div></body></html>`;
-      
       const buffer = await pptx.write({ outputType: 'nodebuffer' });
       base64Data = (await toNodeBuffer(buffer)).toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
@@ -383,6 +336,172 @@ function buildOfficeHistoryContext(history = []) {
     return role + ': ' + text + spec;
   }).filter(Boolean);
   return entries.length ? 'PRIOR CONVERSATION AND DOCUMENT STATE:\n' + entries.join('\n\n') : '';
+}
+
+// --- PowerPoint composition (type-aware, themed) -------------------------------
+
+const T = DECK_THEME.color;
+const F = DECK_THEME.font;
+const MARGIN = DECK_THEME.layout.margin;
+const CONTENT_W = DECK_THEME.layout.contentW;
+
+function defineDeckMasters(pptx) {
+  pptx.defineSlideMaster({
+    title: 'COVER',
+    background: { color: T.coverBg },
+    objects: [{ rect: { x: MARGIN, y: 1.55, w: 0.8, h: 0.08, fill: { color: T.accent } } }],
+  });
+  pptx.defineSlideMaster({
+    title: 'SECTION',
+    background: { color: T.accentSoft },
+  });
+  pptx.defineSlideMaster({
+    title: 'CONTENT',
+    background: { color: T.bg },
+    objects: [{ rect: { x: 0, y: 0, w: '100%', h: 0.12, fill: { color: T.accent } } }],
+  });
+}
+
+function addContentHeader(slide, s, index) {
+  slide.addText(String(s.title || 'Slide ' + (index + 1)), {
+    x: MARGIN, y: 0.55, w: CONTENT_W, h: 0.7, fontSize: 26, bold: true, color: T.ink, fontFace: F.heading,
+  });
+  if (s.subtitle) {
+    slide.addText(String(s.subtitle), {
+      x: MARGIN, y: 1.25, w: CONTENT_W, h: 0.45, fontSize: 14, color: T.muted, fontFace: F.body,
+    });
+  }
+  slide.addShape('rect', { x: MARGIN, y: s.subtitle ? 1.72 : 1.32, w: 0.6, h: 0.045, fill: { color: T.accent } });
+}
+
+function addFooter(slide, deckTitle, page, total) {
+  slide.addText(String(deckTitle || ''), {
+    x: MARGIN, y: 5.25, w: CONTENT_W - 1, h: 0.3, fontSize: 9, color: T.muted, fontFace: F.body,
+  });
+  slide.addText(`${page} / ${total}`, {
+    x: DECK_THEME.layout.w - 1.4, y: 5.25, w: 0.8, h: 0.3, fontSize: 9, color: T.muted, align: 'right',
+  });
+}
+
+function addBullets(slide, bullets, x, y, w) {
+  const items = bullets.map((b) => ({ text: String(b), options: { bullet: { indent: 18 }, breakLine: true } }));
+  slide.addText(items, {
+    x, y, w, h: 5.1 - y, fontSize: 16, color: T.body, fontFace: F.body, valign: 'top', lineSpacingMultiple: 1.15, paraSpaceAfter: 6,
+  });
+}
+
+// Place up to 2 already-resolved images down the right column without overlap.
+function placeImages(slide, resolved, top) {
+  const colX = 5.0;
+  const colW = 4.5;
+  const bottom = 5.1;
+  const gap = 0.2;
+  const slotH = resolved.length > 0 ? (bottom - top - gap * (resolved.length - 1)) / resolved.length : 0;
+  resolved.forEach((img, idx) => {
+    const aspect = img.width && img.height ? img.height / img.width : 0.66;
+    let w = colW;
+    let h = w * aspect;
+    if (h > slotH) { h = slotH; w = h / aspect; }
+    const slotTop = top + idx * (slotH + gap);
+    const x = colX + (colW - w) / 2;
+    const y = slotTop + (slotH - h) / 2;
+    slide.addImage({ data: img.dataUrl, x, y, w, h });
+  });
+  return resolved.length;
+}
+
+/**
+ * Render the whole deck onto `pptx`, drawing each slide by its type.
+ * Returns the resolved image data URLs per slide (for preview parity) and the
+ * total number of images embedded.
+ */
+export async function composePresentation(pptx, spec) {
+  defineDeckMasters(pptx);
+  const slides = Array.isArray(spec.slides) ? spec.slides : [];
+  const slideImages: string[][] = [];
+  let imageCount = 0;
+
+  for (let i = 0; i < slides.length; i++) {
+    const s = slides[i] || {};
+    const type = classifySlide(s, i);
+    const resolvedUrls: string[] = [];
+
+    if (type === 'cover') {
+      const slide = pptx.addSlide({ masterName: 'COVER' });
+      slide.addText(String(s.title || spec.title || 'Presentation'), {
+        x: MARGIN, y: 1.9, w: CONTENT_W, h: 1.5, fontSize: 40, bold: true, color: T.coverText, fontFace: F.heading, valign: 'top',
+      });
+      if (s.subtitle) slide.addText(String(s.subtitle), { x: MARGIN, y: 3.45, w: CONTENT_W, h: 0.8, fontSize: 18, color: T.coverMuted, fontFace: F.body });
+      if (s.author) slide.addText(String(s.author), { x: MARGIN, y: 4.7, w: CONTENT_W, h: 0.4, fontSize: 13, color: T.coverMuted });
+      if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
+    } else if (type === 'section') {
+      const slide = pptx.addSlide({ masterName: 'SECTION' });
+      slide.addText(`SECTION ${String(i + 1).padStart(2, '0')}`, { x: MARGIN, y: 1.9, w: CONTENT_W, h: 0.4, fontSize: 14, bold: true, color: T.accent, charSpacing: 3, fontFace: F.heading });
+      slide.addText(String(s.title || ''), { x: MARGIN, y: 2.35, w: CONTENT_W, h: 1.1, fontSize: 30, bold: true, color: T.ink, fontFace: F.heading });
+      slide.addShape('rect', { x: MARGIN, y: 3.5, w: 0.9, h: 0.05, fill: { color: T.accent } });
+      if (s.subtitle) slide.addText(String(s.subtitle), { x: MARGIN, y: 3.7, w: CONTENT_W * 0.7, h: 0.8, fontSize: 16, color: T.muted, fontFace: F.body });
+      if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
+    } else if (type === 'quote') {
+      const slide = pptx.addSlide({ masterName: 'SECTION' });
+      slide.addText('“', { x: MARGIN - 0.05, y: 0.7, w: 2, h: 1.5, fontSize: 96, bold: true, color: T.accent, fontFace: 'Georgia' });
+      slide.addText(String(s.quote || s.title || ''), { x: MARGIN, y: 2.0, w: CONTENT_W, h: 2.2, fontSize: 26, bold: true, italic: true, color: T.ink, fontFace: 'Georgia', valign: 'top' });
+      if (s.author) slide.addText('— ' + String(s.author), { x: MARGIN, y: 4.35, w: CONTENT_W, h: 0.5, fontSize: 15, color: T.muted, fontFace: F.body });
+      if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
+    } else {
+      // content family: bullets / matrix / data_viz
+      const slide = pptx.addSlide({ masterName: 'CONTENT' });
+      addContentHeader(slide, s, i);
+      addFooter(slide, spec.title, i + 1, slides.length);
+      const bodyTop = s.subtitle ? 2.0 : 1.6;
+
+      if (type === 'data_viz') {
+        const rows = normalizeChartData(s.data);
+        if (rows.length > 0) {
+          slide.addChart('bar', [{ name: 'Value', labels: rows.map((r) => r.label), values: rows.map((r) => r.value) }], {
+            x: MARGIN, y: bodyTop, w: CONTENT_W, h: 5.0 - bodyTop,
+            barDir: 'bar', chartColors: [T.accent], showValue: true, showLegend: false,
+            catAxisLabelColor: T.body, valAxisLabelColor: T.muted, dataLabelColor: T.ink, dataLabelFontSize: 11,
+          });
+        } else if (Array.isArray(s.bullets) && s.bullets.length > 0) {
+          addBullets(slide, s.bullets, MARGIN, bodyTop, CONTENT_W);
+        }
+      } else if (type === 'matrix') {
+        const cells = (Array.isArray(s.bullets) ? s.bullets : []).slice(0, 4);
+        const gx = 0.25;
+        const gy = 0.25;
+        const cellW = (CONTENT_W - gx) / 2;
+        const rowsN = Math.ceil(cells.length / 2) || 1;
+        const cellH = (5.0 - bodyTop - gy * (rowsN - 1)) / rowsN;
+        cells.forEach((b, idx) => {
+          const col = idx % 2;
+          const row = Math.floor(idx / 2);
+          const x = MARGIN + col * (cellW + gx);
+          const y = bodyTop + row * (cellH + gy);
+          slide.addShape('roundRect', { x, y, w: cellW, h: cellH, fill: { color: T.surface }, line: { color: T.line, width: 1 }, rectRadius: 0.08 });
+          slide.addShape('rect', { x, y, w: 0.07, h: cellH, fill: { color: T.accent } });
+          slide.addText(String(b), { x: x + 0.28, y, w: cellW - 0.45, h: cellH, fontSize: 15, color: T.body, valign: 'middle', fontFace: F.body });
+        });
+      } else {
+        // bullets (default) + optional images
+        const hasImages = Array.isArray(s.images) && s.images.length > 0;
+        const bodyW = hasImages ? 4.0 : CONTENT_W;
+        if (Array.isArray(s.bullets) && s.bullets.length > 0) addBullets(slide, s.bullets, MARGIN, bodyTop, bodyW);
+        if (hasImages) {
+          const resolved = [];
+          for (const image of s.images.slice(0, 2)) {
+            const d = await imageToDataUrl(image?.url);
+            if (d && d.dataUrl) { resolved.push(d); resolvedUrls.push(d.dataUrl); }
+          }
+          imageCount += placeImages(slide, resolved, bodyTop);
+        }
+      }
+      if (s.speakerNotes) slide.addNotes(String(s.speakerNotes));
+    }
+
+    slideImages.push(resolvedUrls);
+  }
+
+  return { slideImages, imageCount };
 }
 
 function escapeHtml(value) {
