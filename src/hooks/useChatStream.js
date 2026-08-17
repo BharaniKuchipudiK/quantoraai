@@ -268,7 +268,7 @@ export function useChatStream({
                     finalLatency = parsed.latencyMs || 0;
                     updateActiveMessages(prev => prev.map(m => {
                       if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: displayText, provider: finalProvider, latencyMs: finalLatency };
+                        const updatedModelInfo = { modelName: mod.name, text: sanitizeAssistantStream(currentText), provider: finalProvider, latencyMs: finalLatency };
                         return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
                       }
                       return m;

@@ -272,16 +272,16 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
       try {
          data = JSON.parse(text);
       } catch (err) {
-         throw new Error(\`API Gateway Error (\${response.status}): \${text.substring(0, 100)}\`);
+         throw new Error(`API Gateway Error (${response.status}): ${text.substring(0, 100)}`);
       }
       
       if (!response.ok || data.error) {
-         throw new Error(data.error?.message || \`HTTP \${response.status}\`);
+         throw new Error(data.error?.message || `HTTP ${response.status}`);
       }
       
       let content = data.choices[0].message.content;
-      if (content.startsWith('\`\`\`')) {
-         content = content.replace(/^\`\`\`(?:json)?\\n/, '').replace(/\\n\`\`\`$/, '');
+      if (content.startsWith('```')) {
+         content = content.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
       }
       return content;
    }
