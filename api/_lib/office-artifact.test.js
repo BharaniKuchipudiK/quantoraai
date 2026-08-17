@@ -16,6 +16,10 @@ function fakeZip(...entries) {
   ]);
 }
 
+function previewDocument(body) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}</style></head><body>${body}</body></html>`;
+}
+
 test('normalizes and validates a PowerPoint spec without losing meaningful content', () => {
   const input = {
     title: 'Strategy',
@@ -50,11 +54,10 @@ test('normalizes unique Excel sheet names and preserves number formats', () => {
 
 test('verifies structural parity for all three Office formats', () => {
   const pptSpec = normalizeOfficeSpec('powerpoint', { title: 'Deck', slides: [{ title: 'Deck' }, { title: 'Plan', bullets: ['Do it'] }] });
-  const pptPreview = '<html><body><section>Deck</section><section>Plan Do it</section></body></html>';
   const ppt = verifyCompiledOfficeArtifact('powerpoint', {
     buffer: fakeZip('[Content_Types].xml', 'ppt/slides/slide1.xml'),
     spec: pptSpec,
-    htmlPreview: pptPreview,
+    htmlPreview: previewDocument('<section><h1>Deck</h1></section><section><h2>Plan</h2><p>Do it</p></section>'),
   });
   assert.equal(ppt.passed, true, ppt.issues.join('; '));
 
@@ -62,7 +65,7 @@ test('verifies structural parity for all three Office formats', () => {
   const word = verifyCompiledOfficeArtifact('word', {
     buffer: fakeZip('[Content_Types].xml', 'word/document.xml'),
     spec: wordSpec,
-    htmlPreview: '<html><body><h1>Report</h1><h2>Summary</h2><p>Text</p></body></html>',
+    htmlPreview: previewDocument('<h1>Report</h1><section><h2>Summary</h2><p>Text</p></section>'),
   });
   assert.equal(word.passed, true, word.issues.join('; '));
 
@@ -70,7 +73,7 @@ test('verifies structural parity for all three Office formats', () => {
   const excel = verifyCompiledOfficeArtifact('excel', {
     buffer: fakeZip('[Content_Types].xml', 'xl/workbook.xml'),
     spec: excelSpec,
-    htmlPreview: '<html><body><section data-sheet-name="Summary">Summary</section><section data-sheet-name="Data">Data</section></body></html>',
+    htmlPreview: previewDocument('<section data-sheet-name="Summary"><h2>Summary</h2><table><tr><td>A</td></tr></table></section><section data-sheet-name="Data"><h2>Data</h2><table><tr><td>B</td></tr></table></section>'),
   });
   assert.equal(excel.passed, true, excel.issues.join('; '));
 });
@@ -87,7 +90,7 @@ test('fails closed when OOXML or preview parity is broken', () => {
 });
 
 test('manifest fingerprints the preview before the manifest is injected', () => {
-  const html = '<html><body><h1>Report</h1><h2>Summary</h2></body></html>';
+  const html = previewDocument('<h1>Report</h1><h2>Summary</h2><p>Text</p>');
   const fingerprint = fingerprintOfficePreview(html);
   const withManifest = injectOfficeManifest(html, {
     kind: 'word',
