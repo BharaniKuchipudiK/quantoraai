@@ -1,16 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { OFFICE_KIND } from '../lib/office-intent.js';
 
 /*
- * Format-faithful preview for generated Office artifacts (Roadmap: MS Office
- * integration). Renders the artifact the way its target file will look — a
- * spreadsheet grid for Excel, a slide stage for PowerPoint, a paper page for
- * Word/PDF — so the user previews before the (explicit) download.
+ * Format-aware preview for generated Office artifacts.
  *
- * PowerPoint/Word/PDF reuse the real, CSP-correct preview iframe (`children`)
- * wrapped in format chrome. Excel is rendered as a native React grid parsed
- * from the artifact's <table>, which reads far more like a spreadsheet than the
- * raw HTML table does.
+ * PowerPoint and Word render the canonical server-produced HTML preview inside
+ * Office chrome. Excel parses every server-rendered worksheet and exposes real
+ * worksheet tabs, so the preview no longer hides sheets that are present in the
+ * downloaded workbook. Download is still an explicit human action.
  */
 
 const colLabel = (index) => {
@@ -24,31 +21,67 @@ const colLabel = (index) => {
   return label;
 };
 
-function parseTable(html) {
+function tableRows(table) {
+  if (!table) return [];
+  return Array.from(table.rows).map((tr) => ({
+    cells: Array.from(tr.cells).map((cell) => ({
+      text: cell.textContent.trim(),
+      header: cell.tagName === 'TH' || tr.classList.contains('header-row'),
+    })),
+  }));
+}
+
+function parseSheets(html) {
   const doc = new DOMParser().parseFromString(html || '', 'text/html');
-  const table = doc.querySelector('table');
-  if (table && table.rows.length) {
-    const rows = Array.from(table.rows).map((tr) => ({
-      cells: Array.from(tr.cells).map((c) => ({ text: c.textContent.trim(), header: c.tagName === 'TH' })),
-    }));
-    return { rows, hasTable: true };
+  const sheetSections = Array.from(doc.querySelectorAll('[data-sheet-name]'));
+
+  if (sheetSections.length) {
+    return sheetSections.map((section, index) => {
+      const table = section.querySelector('table');
+      return {
+        name: section.getAttribute('data-sheet-name') || section.querySelector('h2')?.textContent?.trim() || `Sheet${index + 1}`,
+        rows: tableRows(table),
+        hasTable: Boolean(table),
+        note: section.querySelector('.preview-note')?.textContent?.trim() || '',
+      };
+    });
   }
+
+  // Backward-compatible rendering for older artifacts that had one bare table.
+  const table = doc.querySelector('table');
+  if (table) {
+    return [{ name: 'Sheet1', rows: tableRows(table), hasTable: true, note: '' }];
+  }
+
   const lines = Array.from(doc.querySelectorAll('h1, h2, h3, p, li'))
     .map((el) => el.textContent.trim())
     .filter(Boolean);
-  return { rows: lines.map((l) => ({ cells: [{ text: l }] })), hasTable: false };
+  return [{
+    name: 'Sheet1',
+    rows: lines.map((line) => ({ cells: [{ text: line, header: false }] })),
+    hasTable: false,
+    note: 'Text-only legacy preview',
+  }];
 }
 
 function ExcelGrid({ html, isLight }) {
-  const { rows, hasTable } = useMemo(() => parseTable(html), [html]);
-  const maxCols = Math.max(1, ...rows.map((r) => r.cells.length));
+  const sheets = useMemo(() => parseSheets(html), [html]);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveIndex((current) => Math.min(current, Math.max(0, sheets.length - 1)));
+  }, [sheets.length]);
+
+  const active = sheets[activeIndex] || { name: 'Sheet1', rows: [], hasTable: false, note: '' };
+  const rows = active.rows || [];
+  const maxCols = Math.max(1, ...rows.map((row) => row.cells.length));
   const headerBg = isLight ? '#f1f5f9' : '#1e293b';
   const gridLine = isLight ? '#d4d4d8' : '#334155';
   const cornerBg = isLight ? '#e2e8f0' : '#0f172a';
   const cellBg = isLight ? '#ffffff' : '#0b1220';
   const text = isLight ? '#1f2937' : '#e2e8f0';
   const muted = isLight ? '#64748b' : '#94a3b8';
-  const accent = '#107c41'; // Excel green
+  const accent = '#107c41';
 
   const th = {
     position: 'sticky', top: 0, zIndex: 2, background: headerBg, color: muted,
@@ -63,32 +96,35 @@ function ExcelGrid({ html, isLight }) {
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: cellBg }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: `1px solid ${gridLine}`, background: headerBg, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderBottom: `1px solid ${gridLine}`, background: headerBg, flexShrink: 0, flexWrap: 'wrap' }}>
         <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: accent }} />
         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: text }}>Spreadsheet preview</span>
         <span style={{ fontSize: '0.72rem', color: muted }}>
-          {hasTable ? `${rows.length} rows × ${maxCols} cols` : 'text layout — export creates a single column'}
+          {active.hasTable ? `${rows.length} preview rows × ${maxCols} cols` : 'text layout'}
         </span>
+        {sheets.length > 1 && <span style={{ fontSize: '0.72rem', color: muted }}>• {sheets.length} worksheets</span>}
+        {active.note && <span style={{ fontSize: '0.7rem', color: muted, width: '100%' }}>{active.note}</span>}
       </div>
+
       <div style={{ flex: 1, overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead>
             <tr>
               <th style={{ ...th, ...rowNumStyle, top: 0, zIndex: 3, minWidth: '40px', background: cornerBg }} />
-              {Array.from({ length: maxCols }).map((_, c) => (
-                <th key={c} style={th}>{colLabel(c)}</th>
+              {Array.from({ length: maxCols }).map((_, column) => (
+                <th key={column} style={th}>{colLabel(column)}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, r) => (
-              <tr key={r}>
-                <td style={rowNumStyle}>{r + 1}</td>
-                {Array.from({ length: maxCols }).map((_, c) => {
-                  const cell = row.cells[c];
-                  const isHeaderCell = r === 0 && hasTable;
+            {rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                <td style={rowNumStyle}>{rowIndex + 1}</td>
+                {Array.from({ length: maxCols }).map((_, column) => {
+                  const cell = row.cells[column];
+                  const isHeaderCell = rowIndex === 0 && active.hasTable;
                   return (
-                    <td key={c} style={{
+                    <td key={column} style={{
                       border: `1px solid ${gridLine}`, padding: '5px 8px', fontSize: '0.8rem',
                       color: text, background: isHeaderCell ? headerBg : cellBg,
                       fontWeight: isHeaderCell || cell?.header ? 700 : 400,
@@ -101,30 +137,56 @@ function ExcelGrid({ html, isLight }) {
           </tbody>
         </table>
       </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', padding: '6px 8px 0', background: headerBg, borderTop: `1px solid ${gridLine}`, overflowX: 'auto', flexShrink: 0 }}>
+        {sheets.map((sheet, index) => {
+          const selected = index === activeIndex;
+          return (
+            <button
+              key={`${sheet.name}-${index}`}
+              onClick={() => setActiveIndex(index)}
+              title={`Preview worksheet ${sheet.name}`}
+              style={{
+                border: `1px solid ${selected ? accent : gridLine}`,
+                borderBottom: selected ? `3px solid ${accent}` : `1px solid ${gridLine}`,
+                background: selected ? cellBg : headerBg,
+                color: selected ? text : muted,
+                borderRadius: '5px 5px 0 0',
+                padding: '5px 12px',
+                fontSize: '0.72rem',
+                fontWeight: selected ? 700 : 500,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {sheet.name}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 const STAGE = {
-  [OFFICE_KIND.POWERPOINT]: { label: 'Presentation preview', backdrop: (l) => (l ? '#0f172a' : '#020617'), dot: '#c43e1c', aspect: '16 / 9', maxW: '900px', pad: '24px' },
-  [OFFICE_KIND.WORD]: { label: 'Document preview', backdrop: (l) => (l ? '#e2e8f0' : '#1e293b'), dot: '#2b579a', aspect: null, maxW: '820px', pad: '24px' },
-  [OFFICE_KIND.PDF]: { label: 'PDF preview', backdrop: (l) => (l ? '#cbd5e1' : '#111827'), dot: '#b30b00', aspect: null, maxW: '820px', pad: '24px' },
+  [OFFICE_KIND.POWERPOINT]: { label: 'Presentation preview', backdrop: (light) => (light ? '#0f172a' : '#020617'), dot: '#c43e1c', aspect: '16 / 9', maxW: '900px', pad: '24px' },
+  [OFFICE_KIND.WORD]: { label: 'Document preview', backdrop: (light) => (light ? '#e2e8f0' : '#1e293b'), dot: '#2b579a', aspect: null, maxW: '820px', pad: '24px' },
+  [OFFICE_KIND.PDF]: { label: 'PDF preview', backdrop: (light) => (light ? '#cbd5e1' : '#111827'), dot: '#b30b00', aspect: null, maxW: '820px', pad: '24px' },
 };
 
 function DocStage({ kind, isLight, children }) {
-  const s = STAGE[kind];
-  const text = isLight ? '#334155' : '#cbd5e1';
+  const stage = STAGE[kind];
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: s.backdrop(isLight) }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: stage.backdrop(isLight) }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', flexShrink: 0 }}>
-        <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: s.dot }} />
-        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: isLight ? '#e2e8f0' : '#e2e8f0', mixBlendMode: 'difference' }}>{s.label}</span>
+        <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: stage.dot }} />
+        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#e2e8f0', mixBlendMode: 'difference' }}>{stage.label}</span>
       </div>
-      <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', padding: s.pad }}>
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', padding: stage.pad }}>
         <div style={{
-          width: '100%', maxWidth: s.maxW,
-          aspectRatio: s.aspect || undefined,
-          height: s.aspect ? undefined : '100%',
+          width: '100%', maxWidth: stage.maxW,
+          aspectRatio: stage.aspect || undefined,
+          height: stage.aspect ? undefined : '100%',
           background: '#ffffff', borderRadius: '4px', overflow: 'hidden',
           boxShadow: '0 12px 40px rgba(0,0,0,0.45)', position: 'relative', flexShrink: 0,
         }}>
