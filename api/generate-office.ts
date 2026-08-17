@@ -93,7 +93,7 @@ export default async function handler(req, res) {
       });
       
       const buffer = await pptx.write({ outputType: 'nodebuffer' });
-      base64Data = buffer.toString('base64');
+      base64Data = (await toNodeBuffer(buffer)).toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
       fileName = sanitizeFilename(validJson.title || 'Presentation') + '.pptx';
 
@@ -116,7 +116,7 @@ export default async function handler(req, res) {
       
       const blob: any = await asBlob(htmlString);
       const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(await blob.arrayBuffer());
-      base64Data = buffer.toString('base64');
+      base64Data = (await toNodeBuffer(buffer)).toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       fileName = sanitizeFilename(validJson.title || 'Document') + '.docx';
 
@@ -140,7 +140,7 @@ export default async function handler(req, res) {
       });
       
       const buffer: any = await (writeXlsxFile as any)(formattedData.length > 0 ? formattedData : [[{ value: 'Empty Data', type: String }]], { buffer: true });
-      base64Data = buffer.toString('base64');
+      base64Data = (await toNodeBuffer(buffer)).toString('base64');
       mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = sanitizeFilename(validJson.filename || 'Spreadsheet') + '.xlsx';
     }
@@ -160,6 +160,21 @@ export default async function handler(req, res) {
 }
 
 // Helpers
+
+// Office libraries return different binary types across Node and bundlers.
+// Normalize them before base64 encoding so downloads are real Office files.
+async function toNodeBuffer(value: any): Promise<Buffer> {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (value instanceof ArrayBuffer) return Buffer.from(new Uint8Array(value));
+  if (value?.buffer instanceof ArrayBuffer) {
+    return Buffer.from(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength));
+  }
+  if (typeof value?.arrayBuffer === 'function') {
+    return Buffer.from(await value.arrayBuffer());
+  }
+  return Buffer.from(value);
+}
 
 // Reject a promise if it doesn't settle within `ms`, so a slow/hung upstream
 // call becomes a clean, diagnosable error inside our own try/catch instead of a
