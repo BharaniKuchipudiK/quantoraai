@@ -15,6 +15,7 @@ import chat from "./api/chat.js";
 import deploy from "./api/deploy.js";
 import domains from "./api/domains.js";
 import enhance from "./api/enhance.js";
+import generateOffice from "./api/generate-office.js";
 import models from "./api/models.js";
 import moderate from "./api/moderate.js";
 import pipeline from "./api/pipeline.js";
@@ -48,8 +49,8 @@ async function fetchApiGatewayKey(providerName: string): Promise<string | null> 
 
 /**
  * Local/standalone adapter for the same handlers deployed by Vercel.
- * Business, identity, safety, and rate-limit policy lives in api/* only so the
- * development server cannot silently become a second implementation.
+ * Business, identity, safety, rate-limit and Office compilation policy lives in
+ * api/* only so development cannot silently become a second implementation.
  */
 async function startServer() {
   const app = express();
@@ -105,6 +106,7 @@ async function startServer() {
   route("all", "/api/chat", chat);
   route("all", "/api/autocomplete", autocomplete);
   route("all", "/api/enhance", enhance);
+  route("all", "/api/generate-office", generateOffice);
   route("all", "/api/domains", domains);
   route("all", "/api/deploy", deploy);
   route("all", "/api/pipeline", pipeline);
