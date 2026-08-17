@@ -135,7 +135,18 @@ export function useChatStream({
           })
         });
 
-        const data = await res.json();
+        // Defensive parse: on a timeout/crash Vercel returns a raw HTML error
+        // page, not JSON. Never let JSON.parse of that surface as
+        // "Unexpected token 'A'". Give a clean, human message instead.
+        const raw = await res.text();
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          throw new Error(res.status === 504
+            ? 'The document generator timed out. Please try again — a shorter prompt helps.'
+            : 'The server hit an error generating the document. Please try again.');
+        }
         if (!res.ok) throw new Error(data.error || 'Compilation failed');
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
