@@ -3,9 +3,9 @@ import { createRequire } from "node:module";
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
 
 // Vercel's Node runtime executes this function as CommonJS. Use Node's
-// require-condition so dual-published Office libraries load their CJS builds.
 const require = createRequire(import.meta.url);
 const sizeOf = require('image-size');
+const Jimp = require('jimp');
 
 // A full-deck LLM call + server-side file compilation takes ~15–30s. Without an
 // explicit budget, Vercel kills the function at its short default limit and
@@ -381,15 +381,48 @@ async function imageToDataUrl(url) {
        if (!/^image\//i.test(contentType)) return null;
        bytes = Buffer.from(await response.arrayBuffer());
        if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
-       finalDataUrl = 'data:' + contentType.split(';')[0] + ';base64,' + bytes.toString('base64');
     }
 
-    // Extract exact dimensions mathematically using image-size
-    const dimensions = sizeOf(bytes);
+    // TRACE THE FLOW: 
+    // Word imports MHT base64 images by converting them to native OpenXML drawing nodes.
+    // It frequently ignores HTML width/height attributes, and uses the physical DPI of the image payload.
+    // Therefore, the only guaranteed way to constrain the image size is to PHYSICALLY resize the buffer before embedding.
+    let finalWidth = 600;
+    let finalHeight = 400;
+
+    try {
+      // 1. Physically resize the image buffer so it is exactly 600px wide.
+      // Word cannot natively stretch an image to 3000px if the pixels literally do not exist.
+      const jimpImage = await Jimp.read(bytes);
+      if (jimpImage.bitmap.width > 600) {
+         jimpImage.resize(600, Jimp.AUTO);
+      }
+      
+      finalWidth = jimpImage.bitmap.width;
+      finalHeight = jimpImage.bitmap.height;
+      const resizedBytes = await jimpImage.getBufferAsync(Jimp.MIME_JPEG);
+      finalDataUrl = 'data:image/jpeg;base64,' + resizedBytes.toString('base64');
+    } catch (jimpErr) {
+      console.warn('Jimp failed to resize image (unsupported format?), falling back to native dimensions:', jimpErr.message);
+      // Fallback: If it's a format Jimp doesn't support (like SVG or modern WebP), just pass the raw bytes
+      // and use image-size to at least provide the HTML attributes.
+      try {
+        const dimensions = sizeOf(bytes);
+        finalWidth = dimensions.width;
+        finalHeight = dimensions.height;
+      } catch (e) {
+        // Ignore sizeOf errors
+      }
+      const contentType = finalDataUrl === trimmed ? 'image/png' : 'image/jpeg';
+      if (bytes) {
+         finalDataUrl = 'data:' + contentType + ';base64,' + bytes.toString('base64');
+      }
+    }
+
     return {
        dataUrl: finalDataUrl,
-       width: dimensions.width,
-       height: dimensions.height
+       width: finalWidth,
+       height: finalHeight
     };
   } catch (error) {
     console.warn('Image could not be embedded or sized:', error?.message || error);
