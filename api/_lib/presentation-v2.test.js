@@ -44,7 +44,7 @@ test('normalization preserves briefing metadata and semantic payloads', () => {
   assert.equal(spec.slides[1].kpis[0].status, 'amber');
 });
 
-test('rejects a seven-slide deck that repeats an elementary body composition', () => {
+test('flags — but no longer rejects — a seven-slide deck that repeats an elementary body composition', () => {
   const slides = [baseCover];
   for (let i = 0; i < 6; i += 1) {
     slides.push({
@@ -54,8 +54,11 @@ test('rejects a seven-slide deck that repeats an elementary body composition', (
     });
   }
   const result = validatePresentationSpec({ title: 'Weak deck', archetype: 'general', slides });
-  assert.equal(result.valid, false);
-  assert.ok(result.issues.some((issue) => /repeat the same bullets composition/i.test(issue)));
+  // Consulting-quality rules are advisory, not a hard gate: a thin deck still
+  // ships (valid) but is surfaced as a warning so the model is nudged to improve
+  // on retry. Only "no slides"/"no content" block compilation now.
+  assert.equal(result.valid, true, result.issues.join('\n'));
+  assert.ok(result.warnings.some((warning) => /repeat the same bullets composition/i.test(warning)));
 });
 
 test('accepts a context-appropriate QBR with diverse semantic compositions', () => {
