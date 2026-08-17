@@ -14,8 +14,6 @@ import {
 
 const require = createRequire(import.meta.url);
 
-// Full structured Office generation can legitimately take tens of seconds. Keep
-// enough room for one provider retry plus deterministic compilation/verification.
 export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
@@ -66,9 +64,6 @@ export default async function handler(req, res) {
       while (generationAttempts < maxAttempts && !validJson) {
         generationAttempts += 1;
         try {
-          // If the first model produced invalid JSON/semantics, prefer a different
-          // provider on attempt two when possible. This prevents one model from
-          // being both generator and judge of its own malformed output.
           const preferOpenRouter = generationAttempts > 1 && hasOpenRouter;
           const rawResponse = await withTimeout(
             generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError, preferOpenRouter),
@@ -107,8 +102,6 @@ export default async function handler(req, res) {
     validJson = finalSpecValidation.spec;
     generationWarnings.push(...finalSpecValidation.warnings);
 
-    // Deterministic compilation is the single source of truth for BOTH preview
-    // and download. No client-side HTML -> Office reconstruction is required.
     const compiled = await compileOfficeArtifact(format, validJson);
     const verification = verifyCompiledOfficeArtifact(format, {
       buffer: compiled.buffer,
@@ -295,7 +288,7 @@ function toExcelLibraryCell(cell) {
   if (cell?.fontWeight === 'bold') out.fontWeight = 'bold';
   if (cell?.format) out.format = cell.format;
   if (cell?.backgroundColor) out.backgroundColor = `#${String(cell.backgroundColor).replace('#', '')}`;
-  if (cell?.color) out.color = `#${String(cell.color).replace('#', '')}`;
+  if (cell?.color) out.textColor = `#${String(cell.color).replace('#', '')}`;
   if (cell?.align) out.align = cell.align;
   if (typeof cell?.wrap === 'boolean') out.wrap = cell.wrap;
   if (cell?.fontSize) out.fontSize = cell.fontSize;
@@ -341,18 +334,22 @@ async function compileExcel(spec) {
     const rows = Array.isArray(sheet.data) && sheet.data.length ? sheet.data : [[{ value: '', type: 'String' }]];
     return rows.map((row) => (Array.isArray(row) ? row : []).map(toExcelLibraryCell));
   });
-  const sheetNames = sheets.map((sheet) => sheet.name);
 
-  // write-excel-file supports multiple worksheets when `data` is an array of
-  // sheet row arrays and `sheets` supplies the corresponding worksheet names.
-  const xlsxResult: any = writeXlsxFile(formattedSheets, {
-    buffer: true,
-    sheets: sheetNames,
+  // write-excel-file v4 uses one object per worksheet. Keeping each sheet's
+  // data and options together prevents the old first-sheet-only failure mode.
+  const workbookSheets = sheets.map((sheet, index) => ({
+    data: formattedSheets[index],
+    sheet: sheet.name,
+    stickyRowsCount: formattedSheets[index]?.length > 1 ? 1 : 0,
+  }));
+  const writer: any = writeXlsxFile(workbookSheets, {
+    fontFamily: 'Aptos',
+    fontSize: 11,
   });
-  const raw = xlsxResult && typeof xlsxResult.toBuffer === 'function'
-    ? await xlsxResult.toBuffer()
-    : await xlsxResult;
-  const buffer = await toNodeBuffer(raw);
+  if (!writer || typeof writer.toBuffer !== 'function') {
+    throw new Error('Excel writer did not expose a buffer output method.');
+  }
+  const buffer = await toNodeBuffer(await writer.toBuffer());
 
   return {
     buffer,
@@ -476,8 +473,6 @@ function buildOfficeHistoryContext(history = []) {
   }).filter(Boolean);
   return entries.length ? `PRIOR CONVERSATION AND DOCUMENT STATE:\n${entries.join('\n\n')}` : '';
 }
-
-// --- PowerPoint composition ----------------------------------------------------
 
 const T = DECK_THEME.color;
 const F = DECK_THEME.font;
