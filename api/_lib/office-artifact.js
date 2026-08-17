@@ -310,9 +310,10 @@ export function verifyPresentationCommunicationQuality(spec = {}) {
 
     const images = cleanArray(slide?.images);
     if (images.length) {
-      const evidenceReady = Boolean(cleanString(slide?.source, 500)) && images.every((image) => cleanString(image?.caption || image?.altText, 500));
+      const hasEvidenceBoundary = Boolean(cleanString(slide?.source, 500)) || sourceNotes.length > 0;
+      const evidenceReady = hasEvidenceBoundary && images.every((image) => cleanString(image?.caption || image?.altText, 500));
       if (!evidenceReady) {
-        issues.push(`Slide ${slideNumber} contains imagery without a source + meaningful caption. Decorative stock imagery is not allowed in consulting/executive body slides.`);
+        issues.push(`Slide ${slideNumber} contains imagery without a source/evidence boundary + meaningful caption. Decorative stock imagery is not allowed in consulting/executive body slides.`);
       }
     }
 
