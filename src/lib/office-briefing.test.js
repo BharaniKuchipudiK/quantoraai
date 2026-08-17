@@ -7,9 +7,33 @@ import {
   shouldGenerateOfficeNow,
 } from './office-briefing.js';
 
-test('a generic first-turn presentation request does not bypass human briefing', () => {
+test('an explicit first-turn presentation creation request generates immediately', () => {
   assert.equal(shouldGenerateOfficeNow({
     text: 'Make me a presentation about cyber resilience',
+    officeKind: 'powerpoint',
+    messages: [],
+  }), true);
+});
+
+test('prepare a PowerPoint is treated as direct generation authorization', () => {
+  assert.equal(shouldGenerateOfficeNow({
+    text: 'Please prepare a PowerPoint presentation.',
+    officeKind: 'powerpoint',
+    messages: [],
+  }), true);
+});
+
+test('develop a presentation and request PowerPoint output generates immediately', () => {
+  assert.equal(shouldGenerateOfficeNow({
+    text: 'Help me develop a consulting grade presentation on Quantum Computing in 2030 and give me the output in a PowerPoint presentation as a report',
+    officeKind: 'powerpoint',
+    messages: [],
+  }), true);
+});
+
+test('a non-creation statement can still enter briefing instead of compiling immediately', () => {
+  assert.equal(shouldGenerateOfficeNow({
+    text: 'I need a presentation about cyber resilience',
     officeKind: 'powerpoint',
     messages: [],
   }), false);
@@ -23,10 +47,10 @@ test('a deliberately fast-tracked request can bypass briefing', () => {
   }), true);
 });
 
-test('a fully specified first-turn brief still gets one human approval checkpoint', () => {
-  const text = 'As a senior project manager, prepare a QBR for the CIO and executive leadership to secure approval. Use the attached KPIs and financial data.';
+test('a fully specified direct creation brief generates without a redundant approval checkpoint', () => {
+  const text = 'As a senior project manager, prepare a QBR presentation for the CIO and executive leadership to secure approval. Use the attached KPIs and financial data.';
   assert.ok(countOfficeBriefSignals(text) >= 5);
-  assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), false);
+  assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), true);
 });
 
 test('briefing approval on a later turn inherits the artifact kind', () => {
@@ -36,6 +60,17 @@ test('briefing approval on a later turn inherits the artifact kind', () => {
   assert.equal(activeOfficeBriefingKind(messages), 'powerpoint');
   assert.equal(shouldGenerateOfficeNow({
     text: 'Build the requested artifact now using this approved briefing context',
+    officeKind: null,
+    messages,
+  }), true);
+});
+
+test('prepare it after a briefing is treated as approval', () => {
+  const messages = [
+    { sender: 'ai', text: 'Here is the inferred brief.', officeBriefing: true, officeBriefingKind: 'powerpoint' },
+  ];
+  assert.equal(shouldGenerateOfficeNow({
+    text: 'Yes, prepare it.',
     officeKind: null,
     messages,
   }), true);
