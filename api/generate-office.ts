@@ -29,15 +29,38 @@ const OFFICE_GENERATE_RATE_PER_MINUTE = 6;
 const OFFICE_COMPILE_RATE_PER_MINUTE = 12;
 const MAX_OFFICE_SPEC_BYTES = 3_000_000;
 const MAX_OFFICE_PROMPT_CHARS = 100_000;
+const V2_ONLY_SLIDE_TYPES = new Set([
+  'executive_summary', 'kpi_strip', 'timeline', 'comparison', 'status_dashboard',
+  'roadmap', 'risk_matrix', 'financial_case', 'chart_insight', 'framework',
+  'two_column', 'evidence', 'appendix',
+]);
 
 export const config = { maxDuration: 300 };
 
-function validateSpec(format, input) {
-  return format === 'powerpoint' ? validatePresentationSpec(input || {}) : validateOfficeSpec(format, input || {});
+function isLegacyPowerPointSpec(input) {
+  if (!input || typeof input !== 'object') return false;
+  if (Number(input.version || 0) >= 2) return false;
+  if (input.archetype || input.audience || input.purpose || input.decisionAsk || input.communicationStandard || input.sourceNotes) return false;
+  const slides = Array.isArray(input.slides) ? input.slides : [];
+  return !slides.some((slide) => V2_ONLY_SLIDE_TYPES.has(String(slide?.type || '').toLowerCase().trim()));
 }
 
-function normalizeSpec(format, input) {
-  return format === 'powerpoint' ? normalizePresentationSpec(input || {}) : normalizeOfficeSpec(format, input || {});
+function validateSpec(format, input, { legacyPowerPoint = false } = {}) {
+  if (format === 'powerpoint') {
+    return legacyPowerPoint
+      ? validateOfficeSpec('powerpoint', input || {})
+      : validatePresentationSpec(input || {});
+  }
+  return validateOfficeSpec(format, input || {});
+}
+
+function normalizeSpec(format, input, { legacyPowerPoint = false } = {}) {
+  if (format === 'powerpoint') {
+    return legacyPowerPoint
+      ? normalizeOfficeSpec('powerpoint', input || {})
+      : normalizePresentationSpec(input || {});
+  }
+  return normalizeOfficeSpec(format, input || {});
 }
 
 export default async function handler(req, res) {
@@ -76,6 +99,7 @@ export default async function handler(req, res) {
   const apiKey = userKey || process.env.GEMINI_API_KEY;
   const hasOpenRouter = Boolean(openRouterKey || process.env.OPENROUTER_API_KEY);
   const isCompileRequest = Boolean(compileOnly || suppliedSpec);
+  const legacyPowerPointCompile = format === 'powerpoint' && isCompileRequest && isLegacyPowerPointSpec(suppliedSpec);
   if (!isCompileRequest && !apiKey && !hasOpenRouter) {
     return res.status(401).json({ error: 'API key required' });
   }
@@ -108,9 +132,12 @@ export default async function handler(req, res) {
     let validJson;
     let generationAttempts = 0;
     const generationWarnings = [];
+    if (legacyPowerPointCompile) {
+      generationWarnings.push('Legacy V1 presentation recompiled through V2 compatibility mode; the new semantic composition quality gate was not retroactively applied.');
+    }
 
     if (isCompileRequest) {
-      const validation = validateSpec(format, suppliedSpec);
+      const validation = validateSpec(format, suppliedSpec, { legacyPowerPoint: legacyPowerPointCompile });
       if (!validation.valid) {
         return res.status(422).json({
           error: `Office specification failed validation: ${validation.issues.join(' ')}`,
@@ -153,8 +180,8 @@ export default async function handler(req, res) {
     }
 
     validJson = attachUserImages(format, validJson, imageAttachments);
-    validJson = normalizeSpec(format, validJson);
-    const finalSpecValidation = validateSpec(format, validJson);
+    validJson = normalizeSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
+    const finalSpecValidation = validateSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
     if (!finalSpecValidation.valid) {
       return res.status(422).json({
         error: `Office specification could not be repaired safely: ${finalSpecValidation.issues.join(' ')}`,
@@ -205,6 +232,7 @@ export default async function handler(req, res) {
       generation: {
         mode: isCompileRequest ? 'deterministic-recompile' : 'ai-generate-and-compile',
         attempts: generationAttempts,
+        legacyCompatibility: legacyPowerPointCompile,
       },
     });
   } catch (error) {
@@ -568,8 +596,8 @@ function buildOfficeHistoryContext(history = []) {
 
 /*
  * Legacy V1 composer retained temporarily for backward code-reference stability.
- * compilePowerPoint above no longer calls it; all new and compile-only PPTX paths
- * use composePresentationV2 + the V2 semantic quality gate.
+ * compilePowerPoint above no longer calls it; new V2 specs use the semantic quality
+ * gate, while old verified V1 specs can still be deterministically recompiled.
  */
 const T = DECK_THEME.color;
 const F = DECK_THEME.font;
