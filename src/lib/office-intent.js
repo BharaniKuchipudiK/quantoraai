@@ -16,6 +16,12 @@ export const OFFICE_KIND = Object.freeze({
   PDF: 'pdf',
 });
 
+// One-shot explicit selection captured by StudioToolsMenu. This closes a real
+// routing hole: previously choosing PowerPoint only prefilled text; if the user
+// replaced that text, useChatStream could no longer know the PowerPoint tool had
+// been selected and could fall through to generic HTML generation.
+let pendingOfficeTool = null;
+
 // Free-text fallbacks, ordered by specificity. Only used when there is no
 // explicit tool selection. Word-boundaried to avoid matching inside other words.
 const KIND_PATTERNS = [
@@ -37,6 +43,21 @@ export function officeKindFromTool(tool) {
 }
 
 /**
+ * Remember the next explicit Office-tool selection. Non-Office tools clear any
+ * stale Office selection. The selection is deliberately one-shot and consumed
+ * by detectOfficeIntent on the next send.
+ */
+export function rememberOfficeToolSelection(tool) {
+  pendingOfficeTool = officeKindFromTool(tool);
+  return pendingOfficeTool;
+}
+
+/** Primarily exposed for deterministic tests and explicit UI cancellation. */
+export function clearOfficeToolSelection() {
+  pendingOfficeTool = null;
+}
+
+/**
  * Resolve the office kind for a conversation.
  * @param {object} opts
  * @param {string|null} [opts.selectedTool] explicit Tools-menu choice — wins.
@@ -44,8 +65,20 @@ export function officeKindFromTool(tool) {
  * @returns {string|null} an OFFICE_KIND or null.
  */
 export function detectOfficeIntent({ selectedTool = null, messages = [] } = {}) {
-  const explicit = officeKindFromTool(selectedTool);
-  if (explicit) return explicit;
+  const selected = officeKindFromTool(selectedTool);
+  if (selected) {
+    pendingOfficeTool = null;
+    return selected;
+  }
+
+  // Consume the UI selection before any text heuristic. This ensures a user can
+  // choose PowerPoint, completely rewrite the prefilled prompt, and still enter
+  // the canonical Office briefing/generation path exactly once.
+  if (pendingOfficeTool) {
+    const explicit = pendingOfficeTool;
+    pendingOfficeTool = null;
+    return explicit;
+  }
 
   const userText = (Array.isArray(messages) ? messages : [])
     .filter((m) => m && m.sender === 'user' && typeof m.text === 'string')
