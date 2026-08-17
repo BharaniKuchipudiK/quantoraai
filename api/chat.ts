@@ -13,7 +13,7 @@ import { repairArtifact } from "./_lib/repair.js";
 import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
-import { travelFunctionDeclarations, executeToolCall } from './_lib/agent-tools.js';
+import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
@@ -163,7 +163,14 @@ function buildGeminiContents(history: any[], currentMessage: string, attachedIma
   return contents;
 }
 
-async function generateGeminiContentStream(apiKey: string, contents: any[], systemInstruction: string, temperature: number = 0.7, grounding: boolean = false) {
+async function generateGeminiContentStream(
+  apiKey: string,
+  contents: any[],
+  systemInstruction: string,
+  temperature: number = 0.7,
+  grounding: boolean = false,
+  travelToolsEnabled: boolean = false,
+) {
   const client = new GoogleGenAI({ apiKey });
   
   let selectedModel = "";
@@ -202,6 +209,12 @@ async function generateGeminiContentStream(apiKey: string, contents: any[], syst
     throw new Error(`CRITICAL GOOGLE API ERROR: Your API key successfully connected, but Google returned ZERO models. (Google returned: ${availableModelsStr || "nothing"}). This usually means your Google Cloud project has no quota or is region-blocked.`);
   }
 
+  const enabledTools: any[] = [];
+  if (grounding) enabledTools.push({ googleSearch: {} });
+  if (travelToolsEnabled && travelFunctionDeclarations.length > 0) {
+    enabledTools.push({ functionDeclarations: travelFunctionDeclarations });
+  }
+
   let lastError = null;
   
   // 3. Generate content stream using the strictly validated dynamic models
@@ -213,10 +226,7 @@ async function generateGeminiContentStream(apiKey: string, contents: any[], syst
         config: {
           systemInstruction: systemInstruction,
           temperature: temperature,
-          // Real web grounding: when on, the model runs an actual Google
-          // Search and answers from live results, returning citations in
-          // groundingMetadata. Off for builds. Supported on modern Gemini.
-          ...(grounding ? { tools: [{ googleSearch: {} }, { functionDeclarations: travelFunctionDeclarations }] } : { tools: [{ functionDeclarations: travelFunctionDeclarations }] }),
+          ...(enabledTools.length ? { tools: enabledTools } : {}),
           // JSON mode enforcement for Office files
           ...(systemInstruction?.includes("JSON DECK SPEC") ? { responseMimeType: "application/json" } : {})
         },
@@ -437,7 +447,6 @@ export default async function handler(req: any, res: any) {
 
     /*
      * The deployment's own API keys are for signed-in users only.
-     *
      * Verifying a Google token at login does not protect this endpoint: this
      * is a separate request, and without a session check anyone can POST here
      * directly and bill this deployment's keys. Bring-your-own-key callers are
@@ -594,6 +603,7 @@ export default async function handler(req: any, res: any) {
       );
     };
 
+    const travelToolsEnabled = shouldEnableTravelTools(normalizedStudioDomain);
     const isGeminiModel = modelId && modelId.startsWith("gemini");
 
     if (isGeminiModel) {
@@ -604,14 +614,14 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      const travelPersona = `\n\nWORLD-CLASS TRAVEL COORDINATOR DIRECTIVE:
-You are a 360-degree, proactive travel agent.
-- DO NOT just spit out flights. Observe, listen, comprehend, and anticipate.
-- If details (dates, vibe, budget) are missing, YOU MUST use the ask_clarifying_question tool. Do not hallucinate details.
-- Once flights/hotels are secured, PROACTIVELY suggest attractions using search_attractions.
-- If the user wants to book, use make_reservation.
-- If prices are high or the trip is far away, proactively offer to use create_price_alert.
-`;
+      const travelPersona = travelToolsEnabled ? `\n\nTRAVEL TOOL SAFETY DIRECTIVE:
+- Use connected travel tools only for the current travel-domain request.
+- Live flight search may be available through Duffel. If any provider reports unavailable or errors, say so plainly and do not substitute invented results.
+- Hotel, places, attraction, booking, ticketing, and background-alert capabilities may be unavailable.
+- Transactional booking, ticketing, and background price-alert creation are disabled in this production build. Never claim a booking, ticket, PNR, confirmation code, purchase, alert, or background monitor exists unless a connected provider has actually confirmed it.
+- Ask one material clarifying question instead of guessing missing dates, budget, group, or preferences.
+- Any future transaction must require explicit human confirmation immediately before execution.
+` : '';
       const injectedSystemPrompt = finalSystemPrompt + travelPersona;
 
       try {
@@ -621,11 +631,25 @@ You are a 360-degree, proactive travel agent.
         
         const runGemini = async (currentContents: any[]) => {
           try {
-            return await generateGeminiContentStream(effectiveGeminiKey, currentContents, injectedSystemPrompt, dynamicTemperature, grounding);
+            return await generateGeminiContentStream(
+              effectiveGeminiKey,
+              currentContents,
+              injectedSystemPrompt,
+              dynamicTemperature,
+              grounding,
+              travelToolsEnabled,
+            );
           } catch (groundErr: any) {
             if (!grounding) throw groundErr;
             console.warn("Grounded Gemini call failed; retrying without grounding:", groundErr?.message || groundErr);
-            return await generateGeminiContentStream(effectiveGeminiKey, currentContents, injectedSystemPrompt, dynamicTemperature, false);
+            return await generateGeminiContentStream(
+              effectiveGeminiKey,
+              currentContents,
+              injectedSystemPrompt,
+              dynamicTemperature,
+              false,
+              travelToolsEnabled,
+            );
           }
         };
 
@@ -677,17 +701,22 @@ You are a 360-degree, proactive travel agent.
           }
 
           if (functionCallData) {
+            if (!travelToolsEnabled) {
+              throw new Error(`Blocked unexpected travel tool call outside travel domain: ${functionCallData.name || 'unknown'}`);
+            }
+
             // Notify UI
             const notifyMsg = `\n\n> 🤖 *Agent executing tool: ${functionCallData.name}*...\n\n`;
             fullReply += notifyMsg;
             res.write(`data: ${JSON.stringify({ text: notifyMsg })}\n\n`);
             if (res.flush) res.flush();
 
-            // Execute the tool
+            // Execute the tool. The tool layer itself fails closed on disabled
+            // transactions and unavailable providers, so no mock-success path
+            // can turn an error into a fake booking or alert.
             const toolResult = await executeToolCall(functionCallData.name, functionCallData.args);
             
             if (toolResult?.action === "PAUSE_AND_ASK") {
-               // The agent wants to pause and ask the user directly
                const askMsg = `\n\n**Clarifying Question:** ${toolResult.message}\n\n`;
                fullReply += askMsg;
                res.write(`data: ${JSON.stringify({ text: askMsg })}\n\n`);
@@ -695,7 +724,8 @@ You are a 360-degree, proactive travel agent.
                break; // Exit the loop entirely, wait for user reply
             }
 
-            // Append to context for the next iteration
+            // Append provider result (including explicit unavailable results) to
+            // context so the model can explain the limitation honestly.
             contents.push({ role: 'model', parts: [{ functionCall: functionCallData }] });
             contents.push({ role: 'user', parts: [{ functionResponse: { name: functionCallData.name, response: toolResult } }] });
             
