@@ -5,6 +5,7 @@ import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation
 // Vercel's Node runtime executes this function as CommonJS. Use Node's
 // require-condition so dual-published Office libraries load their CJS builds.
 const require = createRequire(import.meta.url);
+const sizeOf = require('image-size');
 
 // A full-deck LLM call + server-side file compilation takes ~15–30s. Without an
 // explicit budget, Vercel kills the function at its short default limit and
@@ -148,17 +149,19 @@ export default async function handler(req, res) {
             htmlString += '</ul>';
          }
          if (Array.isArray(sec.images) && sec.images.length > 0) {
-            for (const image of sec.images.slice(0, 4)) {
-              const dataUrl = await imageToDataUrl(image?.url);
-              const caption = image?.caption || image?.altText || 'Figure';
-              if (dataUrl) {
-                imageCount += 1;
-                // Fix for MS Word image sizing: must use width="..." attributes rather than max-width CSS
-                htmlString += '<figure style="margin:16px 0;text-align:center;"><img src="' + dataUrl + '" alt="' + escapeHtml(image?.altText || caption) + '" width="600" /><figcaption>' + escapeHtml(caption) + '</figcaption></figure>';
-              } else if (image?.url) {
-                htmlString += '<p><em>Figure: ' + escapeHtml(caption) + ' (' + escapeHtml(image.url) + ')</em></p>';
-              }
-            }
+           for (const image of sec.images.slice(0, 4)) {
+             const imgData = await imageToDataUrl(image?.url);
+             const caption = image?.caption || image?.altText || 'Figure';
+             if (imgData && imgData.dataUrl) {
+               imageCount += 1;
+               // Fix for MS Word image sizing: calculate exact proportional height based on a target width
+               const targetWidth = 600;
+               const targetHeight = imgData.width && imgData.height ? Math.round((imgData.height / imgData.width) * targetWidth) : 'auto';
+               htmlString += '<figure style="margin:16px 0;text-align:center;"><img src="' + imgData.dataUrl + '" alt="' + escapeHtml(image?.altText || caption) + '" width="' + targetWidth + '" height="' + targetHeight + '" /><figcaption>' + escapeHtml(caption) + '</figcaption></figure>';
+             } else if (image?.url) {
+               htmlString += '<p><em>Figure: ' + escapeHtml(caption) + ' (' + escapeHtml(image.url) + ')</em></p>';
+             }
+           }
          }
       }
       htmlString += '</body></html>';
@@ -352,28 +355,45 @@ function escapeHtml(value) {
 }
 
 async function imageToDataUrl(url) {
-  if (typeof url !== 'string' || !url.trim()) return '';
+  if (typeof url !== 'string' || !url.trim()) return null;
   const trimmed = url.trim();
-  if (/^data:image\//i.test(trimmed)) return trimmed;
-  if (!/^https?:\/\//i.test(trimmed)) return '';
+  
   try {
-    const parsed = new URL(trimmed);
-    if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return '';
-    const response = await withTimeout(fetch(trimmed, { 
-      headers: { 
-        'Accept': 'image/*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      } 
-    }), 8000, 'Image download timed out');
-    if (!response.ok) return '';
-    const contentType = response.headers.get('content-type') || '';
-    if (!/^image\//i.test(contentType)) return '';
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > 5 * 1024 * 1024) return '';
-    return 'data:' + contentType.split(';')[0] + ';base64,' + bytes.toString('base64');
+    let bytes;
+    let finalDataUrl = trimmed;
+    
+    if (/^data:image\//i.test(trimmed)) {
+       const b64 = trimmed.split(',')[1];
+       if (!b64) return null;
+       bytes = Buffer.from(b64, 'base64');
+    } else {
+       if (!/^https?:\/\//i.test(trimmed)) return null;
+       const parsed = new URL(trimmed);
+       if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return null;
+       const response = await withTimeout(fetch(trimmed, { 
+         headers: { 
+           'Accept': 'image/*',
+           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+         } 
+       }), 8000, 'Image download timed out');
+       if (!response.ok) return null;
+       const contentType = response.headers.get('content-type') || '';
+       if (!/^image\//i.test(contentType)) return null;
+       bytes = Buffer.from(await response.arrayBuffer());
+       if (!bytes.length || bytes.length > 5 * 1024 * 1024) return null;
+       finalDataUrl = 'data:' + contentType.split(';')[0] + ';base64,' + bytes.toString('base64');
+    }
+
+    // Extract exact dimensions mathematically using image-size
+    const dimensions = sizeOf(bytes);
+    return {
+       dataUrl: finalDataUrl,
+       width: dimensions.width,
+       height: dimensions.height
+    };
   } catch (error) {
-    console.warn('Image could not be embedded:', error?.message || error);
-    return '';
+    console.warn('Image could not be embedded or sized:', error?.message || error);
+    return null;
   }
 }
 
