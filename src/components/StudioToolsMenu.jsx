@@ -1,5 +1,6 @@
 import React from 'react';
 import { Globe, Search, Mic, Plane, FilePieChart, Table, FileText, FileBadge } from 'lucide-react';
+import { rememberOfficeToolSelection } from '../lib/office-intent.js';
 
 export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight }) {
   if (!isOpen) return null;
@@ -11,6 +12,13 @@ export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight
   const shadow = isLight 
     ? '0 20px 40px rgba(0,0,0,0.1), 0 1px 3px rgba(0,0,0,0.05)' 
     : '0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)';
+
+  const selectTool = (tool) => {
+    // Keep an explicit Office selection separate from the editable prompt text.
+    // Non-Office tools intentionally clear any stale Office choice.
+    rememberOfficeToolSelection(tool);
+    onSelectTool(tool);
+  };
 
   const HoverItem = ({ icon: Icon, title, subtitle, iconColor, onClick, badge }) => (
     <div
@@ -102,27 +110,27 @@ export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight
               icon={Globe} 
               title="Search" 
               subtitle="Auto-browse the web, YouTube & X" 
-              onClick={() => onSelectTool('Search')}
+              onClick={() => selectTool('Search')}
             />
             <HoverItem 
               icon={Search} 
               title="Deep Research" 
               subtitle="In-depth, multi-source research" 
               badge="Beta"
-              onClick={() => onSelectTool('Deep Research')}
+              onClick={() => selectTool('Deep Research')}
             />
             <HoverItem 
               icon={Mic} 
               title="Podcast" 
               subtitle="Turn content into a podcast" 
-              onClick={() => onSelectTool('Podcast')}
+              onClick={() => selectTool('Podcast')}
             />
             <HoverItem 
               icon={Plane} 
               title="Travel" 
               subtitle="Plan trips, find flights & hotels" 
               badge="Beta"
-              onClick={() => onSelectTool('Travel')}
+              onClick={() => selectTool('Travel')}
             />
           </div>
         </div>
@@ -139,7 +147,7 @@ export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight
               title="PowerPoint" 
               subtitle="Create & edit presentations" 
               badge="Beta"
-              onClick={() => onSelectTool('PowerPoint')}
+              onClick={() => selectTool('PowerPoint')}
             />
             <HoverItem 
               icon={Table} 
@@ -147,7 +155,7 @@ export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight
               title="Excel" 
               subtitle="Create & edit spreadsheets" 
               badge="Beta"
-              onClick={() => onSelectTool('Excel')}
+              onClick={() => selectTool('Excel')}
             />
             <HoverItem 
               icon={FileText} 
@@ -155,7 +163,7 @@ export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight
               title="Word" 
               subtitle="Create & edit documents" 
               badge="Beta"
-              onClick={() => onSelectTool('Word')}
+              onClick={() => selectTool('Word')}
             />
             <HoverItem 
               icon={FileBadge} 
@@ -163,7 +171,7 @@ export default function StudioToolsMenu({ isOpen, onClose, onSelectTool, isLight
               title="PDF" 
               subtitle="Create & edit PDFs" 
               badge="Beta"
-              onClick={() => onSelectTool('PDF')}
+              onClick={() => selectTool('PDF')}
             />
           </div>
         </div>

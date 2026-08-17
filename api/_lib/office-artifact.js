@@ -249,6 +249,118 @@ function tokenPresent(text, token) {
   return !clean || text.includes(clean.slice(0, Math.min(clean.length, 80)));
 }
 
+const CONSULTING_STANDARDS = new Set(['consulting', 'executive']);
+const DECISION_ARCHETYPES = new Set(['strategy', 'business_case', 'executive_briefing', 'qbr', 'proposal']);
+const NON_BODY_TYPES = new Set(['cover', 'section', 'quote', 'appendix']);
+const ANALYTICAL_TYPES = new Set(['chart_insight', 'risk_matrix', 'comparison', 'financial_case', 'framework', 'evidence', 'status_dashboard', 'kpi_strip']);
+const TOPIC_ONLY_HEADLINE = /^(overview|summary|executive summary|background|context|risks?|timeline|roadmap|status|project status|financials?|recommendation|next steps|key findings|findings|pros?\s*(?:&|and|\/)?\s*cons?)\b/i;
+const QUESTION_HEADLINE = /^(what|why|how|should|can|could|will|would|is|are|do|does|when|where)\b|\?\s*$/i;
+
+function countWords(value) {
+  return cleanString(value, 500).split(/\s+/).filter(Boolean).length;
+}
+
+function payloadUnits(slide = {}) {
+  return [
+    slide.bullets,
+    slide.kpis,
+    slide.data,
+    slide.timeline,
+    slide.columns,
+    slide.options,
+    slide.statuses,
+    slide.risks,
+    slide.actions,
+    slide.financials,
+    slide.framework,
+  ].reduce((total, value) => total + cleanArray(value).length, 0);
+}
+
+function isV2Presentation(spec) {
+  return Number(spec?.version || 0) >= 2 || Boolean(spec?.archetype || spec?.communicationStandard);
+}
+
+/**
+ * Fail-closed executive/consulting communication gate. This deliberately checks
+ * the semantic artifact, not CSS aesthetics. It prevents the recurring failure
+ * class where a generic AI/HTML slide (question headline + decorative stock image
+ * + tiny pros/cons cards) is technically valid but professionally unusable.
+ */
+export function verifyPresentationCommunicationQuality(spec = {}) {
+  const issues = [];
+  if (!isV2Presentation(spec)) return { passed: true, issues };
+
+  const standard = cleanString(spec.communicationStandard, 40).toLowerCase();
+  const archetype = cleanString(spec.archetype, 60).toLowerCase();
+  const strict = CONSULTING_STANDARDS.has(standard) || DECISION_ARCHETYPES.has(archetype);
+  if (!strict) return { passed: true, issues };
+
+  const slides = cleanArray(spec.slides);
+  const bodySlides = slides.filter((slide) => !NON_BODY_TYPES.has(cleanString(slide?.type, 40).toLowerCase()));
+  const sourceNotes = cleanArray(spec.sourceNotes).map((value) => cleanString(value, 500)).filter(Boolean);
+
+  bodySlides.forEach((slide, bodyIndex) => {
+    const slideNumber = slides.indexOf(slide) + 1 || bodyIndex + 2;
+    const type = cleanString(slide?.type, 40).toLowerCase();
+    const title = cleanString(slide?.title, 240);
+
+    if (!title || QUESTION_HEADLINE.test(title) || TOPIC_ONLY_HEADLINE.test(title) || countWords(title) < 5) {
+      issues.push(`Slide ${slideNumber} needs an assertion-led executive headline; “${title || 'Untitled slide'}” reads like a topic/question rather than a takeaway.`);
+    }
+
+    const images = cleanArray(slide?.images);
+    if (images.length) {
+      const hasEvidenceBoundary = Boolean(cleanString(slide?.source, 500)) || sourceNotes.length > 0;
+      const evidenceReady = hasEvidenceBoundary && images.every((image) => cleanString(image?.caption || image?.altText, 500));
+      if (!evidenceReady) {
+        issues.push(`Slide ${slideNumber} contains imagery without a source/evidence boundary + meaningful caption. Decorative stock imagery is not allowed in consulting/executive body slides.`);
+      }
+    }
+
+    const units = payloadUnits(slide);
+    if (type === 'bullets' && cleanArray(slide?.bullets).length < 3 && !cleanString(slide?.insight) && !cleanString(slide?.recommendation)) {
+      issues.push(`Slide ${slideNumber} is too thin for an executive slide: generic bullets require at least three substantive points or an explicit governing insight/recommendation.`);
+    } else if (units < 2 && !cleanString(slide?.insight) && !cleanString(slide?.recommendation)) {
+      issues.push(`Slide ${slideNumber} has insufficient decision-support density for a consulting/executive artifact.`);
+    }
+
+    if (type === 'executive_summary' && !cleanString(slide?.insight) && !cleanString(slide?.recommendation) && !cleanString(spec?.decisionAsk)) {
+      issues.push(`Slide ${slideNumber} executive summary has no governing insight, recommendation, or decision ask.`);
+    }
+
+    if (type === 'comparison') {
+      const options = cleanArray(slide?.options);
+      if (options.length < 2 || options.some((option) => !cleanString(option?.summary) || !cleanArray(option?.pros).length || !cleanArray(option?.cons).length)) {
+        issues.push(`Slide ${slideNumber} comparison must show at least two real alternatives with summary, upside, and trade-offs.`);
+      }
+      if (!options.some((option) => option?.recommended === true) && !cleanString(slide?.recommendation) && !cleanString(slide?.insight)) {
+        issues.push(`Slide ${slideNumber} comparison does not land a recommendation or management implication.`);
+      }
+    }
+
+    const hasQuantitativeEvidence = cleanArray(slide?.kpis).length || cleanArray(slide?.data).length || cleanArray(slide?.financials).length;
+    if (hasQuantitativeEvidence && !cleanString(slide?.source, 500) && !sourceNotes.length) {
+      issues.push(`Slide ${slideNumber} uses quantitative evidence without a source or explicit evidence boundary.`);
+    }
+  });
+
+  if (bodySlides.length >= 4) {
+    const types = new Set(bodySlides.map((slide) => cleanString(slide?.type, 40).toLowerCase()));
+    if (archetype !== 'project_status' && !types.has('executive_summary')) {
+      issues.push('Consulting/executive decks with four or more body slides require an executive_summary that states the governing answer early.');
+    }
+    if (![...types].some((type) => ANALYTICAL_TYPES.has(type))) {
+      issues.push('Consulting/executive decks require at least one analytical/evidence composition; narrative-only cards are not sufficient.');
+    }
+    const landsAction = types.has('roadmap') || Boolean(cleanString(spec?.decisionAsk)) || bodySlides.some((slide) => cleanString(slide?.recommendation));
+    if (DECISION_ARCHETYPES.has(archetype) && !landsAction) {
+      issues.push('Decision-oriented deck does not land an explicit recommendation, decision ask, or action path.');
+    }
+  }
+
+  return { passed: issues.length === 0, issues: [...new Set(issues)] };
+}
+
 export function verifyCompiledOfficeArtifact(format, { buffer, spec, htmlPreview } = {}) {
   const meta = OFFICE_META[format];
   const issues = [];
@@ -284,6 +396,10 @@ export function verifyCompiledOfficeArtifact(format, { buffer, spec, htmlPreview
     if (!checks.structureParity) issues.push(`Preview contains ${actual} slide sections but specification contains ${expected} slides.`);
     const keySlides = (spec?.slides || []).slice(0, 4);
     checks.contentParity = keySlides.every((slide) => tokenPresent(previewText, slide.title || slide.quote));
+
+    const communicationQuality = verifyPresentationCommunicationQuality(spec || {});
+    checks.communicationQuality = communicationQuality.passed;
+    if (!communicationQuality.passed) issues.push(...communicationQuality.issues);
   } else if (format === 'word') {
     const expected = spec?.sections?.length || 0;
     const actual = (preview.match(/<h2\b/gi) || []).length;
