@@ -73,6 +73,7 @@ export default async function handler(req, res) {
     let base64Data = '';
     let mimeType = '';
     let fileName = '';
+    let imageCount = 0;
 
     if (format === 'powerpoint') {
       const pptxgenModule: any = require('pptxgenjs');
@@ -102,18 +103,30 @@ export default async function handler(req, res) {
       const asBlob = docxModule.asBlob || docxModule.default?.asBlob;
       if (typeof asBlob !== 'function') throw new Error('Word exporter unavailable.');
 
-      let htmlString = `<!DOCTYPE html><html><body><h1>${validJson.title || 'Document'}</h1>`;
-      (validJson.sections || []).forEach(sec => {
-         htmlString += `<h2>${sec.heading || ''}</h2>`;
-         (sec.paragraphs || []).forEach(p => { htmlString += `<p>${p}</p>`; });
-         if (sec.bullets && sec.bullets.length > 0) {
+      let htmlString = '<!DOCTYPE html><html><body><h1>' + escapeHtml(validJson.title || 'Document') + '</h1>';
+      for (const sec of (validJson.sections || [])) {
+         htmlString += '<h2>' + escapeHtml(sec.heading || '') + '</h2>';
+         for (const paragraph of (sec.paragraphs || [])) htmlString += '<p>' + escapeHtml(paragraph) + '</p>';
+         if (Array.isArray(sec.bullets) && sec.bullets.length > 0) {
             htmlString += '<ul>';
-            sec.bullets.forEach(b => { htmlString += `<li>${b}</li>`; });
+            for (const bullet of sec.bullets) htmlString += '<li>' + escapeHtml(bullet) + '</li>';
             htmlString += '</ul>';
          }
-      });
+         if (Array.isArray(sec.images) && sec.images.length > 0) {
+            for (const image of sec.images.slice(0, 4)) {
+              const dataUrl = await imageToDataUrl(image?.url);
+              const caption = image?.caption || image?.altText || 'Figure';
+              if (dataUrl) {
+                imageCount += 1;
+                htmlString += '<figure style="margin:16px 0;text-align:center;"><img src="' + dataUrl + '" alt="' + escapeHtml(image?.altText || caption) + '" style="max-width:100%;height:auto;" /><figcaption>' + escapeHtml(caption) + '</figcaption></figure>';
+              } else if (image?.url) {
+                htmlString += '<p><em>Figure: ' + escapeHtml(caption) + ' (' + escapeHtml(image.url) + ')</em></p>';
+              }
+            }
+         }
+      }
       htmlString += '</body></html>';
-      
+
       const blob: any = await asBlob(htmlString);
       const buffer = Buffer.isBuffer(blob) ? blob : Buffer.from(await blob.arrayBuffer());
       base64Data = (await toNodeBuffer(buffer)).toString('base64');
@@ -157,7 +170,9 @@ export default async function handler(req, res) {
       success: true,
       fileName,
       mimeType,
-      data: base64Data
+      data: base64Data,
+      spec: validJson,
+      imageCount
     });
 
   } catch (err) {
@@ -203,7 +218,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
         const client = new GoogleGenAI({ apiKey });
         const response = await client.models.generateContent({
            model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
-           contents: [{ role: 'user', parts: [{ text: prompt }] }],
+           contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
            config: {
               systemInstruction: systemPrompt,
               responseMimeType: "application/json"
@@ -237,7 +252,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
             model: process.env.OPENROUTER_OFFICE_MODEL || "google/gemini-2.5-flash",
             messages: [
                { role: "system", content: systemPrompt },
-               { role: "user", content: prompt }
+               { role: "user", content: promptWithContext }
             ],
             response_format: { type: "json_object" }
          })
@@ -263,6 +278,46 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
    }
    throw new Error("No available API credentials");
 }
+function buildOfficeHistoryContext(history = []) {
+  const entries = (Array.isArray(history) ? history : []).slice(-10).map((message) => {
+    const role = message?.sender === 'user' ? 'USER' : 'ASSISTANT';
+    const text = String(message?.text || '').slice(0, 5000);
+    const spec = message?.officeAttachment?.spec ? '\nPREVIOUS OFFICE SPECIFICATION:\n' + JSON.stringify(message.officeAttachment.spec).slice(0, 14000) : '';
+    return role + ': ' + text + spec;
+  }).filter(Boolean);
+  return entries.length ? 'PRIOR CONVERSATION AND DOCUMENT STATE:\n' + entries.join('\n\n') : '';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function imageToDataUrl(url) {
+  if (typeof url !== 'string' || !url.trim()) return '';
+  const trimmed = url.trim();
+  if (/^data:image\//i.test(trimmed)) return trimmed;
+  if (!/^https?:\/\//i.test(trimmed)) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return '';
+    const response = await withTimeout(fetch(trimmed, { headers: { Accept: 'image/*' } }), 8000, 'Image download timed out');
+    if (!response.ok) return '';
+    const contentType = response.headers.get('content-type') || '';
+    if (!/^image\//i.test(contentType)) return '';
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 5 * 1024 * 1024) return '';
+    return 'data:' + contentType.split(';')[0] + ';base64,' + bytes.toString('base64');
+  } catch (error) {
+    console.warn('Image could not be embedded:', error?.message || error);
+    return '';
+  }
+}
+
 function sanitizeFilename(name) {
   return String(name || 'document')
     .replace(/[^\w\- ]+/g, '')
