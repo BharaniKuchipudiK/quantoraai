@@ -37,7 +37,13 @@ export default async function handler(req, res) {
     while (attempts < maxAttempts && !validJson) {
       attempts++;
       try {
-        const rawResponse = await generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError);
+        // Bound each attempt (25s) so 2 attempts stay within the 60s function
+        // budget. A hang now surfaces as a real error, not a Vercel hard-kill.
+        const rawResponse = await withTimeout(
+          generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError),
+          25000,
+          'The AI model took too long to respond',
+        );
         validJson = JSON.parse(rawResponse);
         
         // Basic validation: must have the core structures
@@ -144,6 +150,17 @@ export default async function handler(req, res) {
 }
 
 // Helpers
+
+// Reject a promise if it doesn't settle within `ms`, so a slow/hung upstream
+// call becomes a clean, diagnosable error inside our own try/catch instead of a
+// Vercel function timeout (which returns an opaque raw 500 HTML page).
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: any;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} (>${Math.round(ms / 1000)}s)`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
 
 async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey, lastError) {
    const systemPrompt = OFFICE_GENERATION_DIRECTIVE + `\n\nSCHEMA:\n` + OFFICE_SCHEMAS[format] +
