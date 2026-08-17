@@ -21,7 +21,7 @@ export const OFFICE_KIND = Object.freeze({
 const KIND_PATTERNS = [
   [OFFICE_KIND.POWERPOINT, /\b(powerpoint|pptx?|slide deck|presentation|slideshow)\b/i],
   [OFFICE_KIND.EXCEL, /\b(excel|xlsx?|spreadsheet|worksheet)\b/i],
-  [OFFICE_KIND.WORD, /\b(word document|docx?|\.doc)\b/i],
+  [OFFICE_KIND.WORD, /\b(word(?:\s+(?:document|report|file|doc))|docx?|\.doc)\b/i],
   [OFFICE_KIND.PDF, /\b(pdf)\b/i],
 ];
 
