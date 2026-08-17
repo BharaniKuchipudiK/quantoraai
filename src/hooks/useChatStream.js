@@ -1,6 +1,7 @@
 import { usePCLMemory } from './usePCLMemory';
 import { useRef } from 'react';
 import { detectOfficeIntent, OFFICE_KIND } from '../lib/office-intent.js';
+import { activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow } from '../lib/office-briefing.js';
 import { chooseBestDeckModel } from '../lib/model-routing.js';
 import { sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 export function useChatStream({
@@ -111,17 +112,28 @@ export function useChatStream({
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
 
-    // --- GATEKEEPER FOR OFFICE DOCUMENTS ---
-    // Classify only the current request. Including prior chat messages makes Office
-    // mode sticky: one earlier presentation request would route every later prompt
-    // (including weather, coding, and general questions) to the PPTX generator.
-    const officeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
+    // --- OFFICE BRIEFING + GENERATION GATE ---
+    // A presentation request is no longer synonymous with "compile immediately".
+    // First-turn Office requests go through the PCL briefing conversation so the
+    // system understands presenter, audience, purpose/decision, depth and evidence.
+    // Deterministic generation starts only after explicit human approval, an
+    // explicit fast-track instruction, or an unusually complete one-message brief.
+    const explicitOfficeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
+    const inheritedOfficeKind = activeOfficeBriefingKind(messages);
+    const briefingKind = explicitOfficeKind || inheritedOfficeKind;
+    const briefingPrompt = briefingKind
+      ? officeBriefingContext({ text, officeKind: explicitOfficeKind, messages, sessionContext })
+      : null;
+    const officeKind = shouldGenerateOfficeNow({ text, officeKind: explicitOfficeKind, messages })
+      ? briefingKind
+      : null;
+
     if (officeKind) {
       const aiMsgId = Date.now() + 1;
       updateActiveMessages(prev => [...prev, {
         id: aiMsgId,
         sender: 'ai',
-        text: `⏳ **Architecting ${officeKind.toUpperCase()} document...** (This may take 15-30 seconds to validate the schema and compile the binary).`,
+        text: `⏳ **Architecting ${officeKind.toUpperCase()} document from the approved briefing...**`,
         isGenerating: true,
         latencyMs: 0
       }]);
@@ -157,9 +169,10 @@ export function useChatStream({
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: `✅ **Successfully generated ${officeKind} document.**` + (data.htmlPreview ? `\n\n\`\`\`html\n${data.htmlPreview}\n\`\`\`` : ''),
+          text: `✅ **Successfully generated ${officeKind} document from the approved briefing.**` + (data.htmlPreview ? `\n\n\`\`\`html\n${data.htmlPreview}\n\`\`\`` : ''),
           isGenerating: false,
-          officeAttachment: data
+          officeAttachment: data,
+          officeBriefing: false
         } : m));
       } catch (err) {
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -194,6 +207,12 @@ export function useChatStream({
 
     const isCodingRequest = text.toLowerCase().includes('build') && (text.toLowerCase().includes('react') || text.toLowerCase().includes('app') || text.toLowerCase().includes('code'));
     
+    if (briefingKind && effectiveArenaMode) {
+      // Briefing is a continuity conversation, not an arena comparison. One PCL
+      // voice should accumulate context and ask the next highest-value question.
+      effectiveArenaMode = false;
+    }
+
     if (effectiveArenaMode && (intent === 'deterministic' || isCodingRequest)) {
         // A build request doesn't benefit from side-by-side Arena comparison —
         // switch to the single-model workspace flow. (No artificial delay or
@@ -311,7 +330,8 @@ export function useChatStream({
       componentType: 'formatted_text',
       latencyMs: 0,
       provider: targetModel.name,
-      liveConnected: true
+      liveConnected: true,
+      ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
     };
     updateActiveMessages(prev => [...prev, initialAiMsg]);
 
@@ -412,7 +432,7 @@ export function useChatStream({
                  isFailover: true,
                  text: '' // reset text just in case
                } : m));
-               return executeSingleModel(fallbackModel, 2);
+               return executeSingleModel(fallbackModel, 2, promptOverride);
             }
             
             const errText = errData.error || `The backend server encountered an error with ${modelToUse.name}.`;
@@ -435,7 +455,7 @@ export function useChatStream({
                  isFailover: true,
                  text: ''
                } : m));
-               return executeSingleModel(fallbackModel, 2);
+               return executeSingleModel(fallbackModel, 2, promptOverride);
             }
             
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -457,7 +477,7 @@ export function useChatStream({
              isFailover: true,
              text: ''
            } : m));
-           return executeSingleModel(fallbackModel, 2);
+           return executeSingleModel(fallbackModel, 2, promptOverride);
         }
         
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -469,7 +489,7 @@ export function useChatStream({
     };
     
     // Phase 5: Swarm Mode
-    const isOffice = detectOfficeIntent({ messages: [{ sender: 'user', text }] }) !== null;
+    const isOffice = Boolean(briefingKind);
     if (!effectiveArenaMode && intent === 'subjective' && !isOffice) {
        // Trigger Architect -> Coder Swarm
        
@@ -540,8 +560,10 @@ You can output multiple search/replace blocks if needed.
        }
     }
 
-    // Default Fallback
-    executeSingleModel(targetModel, 1);
+    // Default Fallback. Office briefing context is deliberately appended as a
+    // conversational instruction; generation waits for the user's explicit
+    // approval on a later turn.
+    executeSingleModel(targetModel, 1, briefingPrompt || null);
   };
   return { handleSendMessage, cancelStream };
 }
