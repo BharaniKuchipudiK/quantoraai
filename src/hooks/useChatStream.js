@@ -135,7 +135,9 @@ export function useChatStream({
             format: officeKind,
             history: cleanMessages,
             userKey: geminiApiKey,
-            openRouterKey: openRouterApiKey
+            openRouterKey: openRouterApiKey,
+            sessionContext,
+            imageAttachments: attachments.filter((attachment) => attachment.type === 'image' && attachment.dataUrl).map((attachment) => ({ name: attachment.name, dataUrl: attachment.dataUrl }))
           })
         });
 
