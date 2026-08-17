@@ -4,6 +4,27 @@ import { detectOfficeIntent, OFFICE_KIND } from '../lib/office-intent.js';
 import { activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow } from '../lib/office-briefing.js';
 import { chooseBestDeckModel } from '../lib/model-routing.js';
 import { sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
+
+function buildApprovedOfficeGenerationPrompt(text, sessionContext) {
+  const parts = [String(text || '').trim()];
+  const context = sessionContext && typeof sessionContext === 'object' ? sessionContext : null;
+  if (context) {
+    const memory = [];
+    if (context.goal) memory.push(`Goal: ${String(context.goal).slice(0, 500)}`);
+    if (context.understanding) memory.push(`Current understanding: ${String(context.understanding).slice(0, 1000)}`);
+    if (Array.isArray(context.facts)) {
+      context.facts.slice(-12).forEach((fact) => {
+        if (typeof fact === 'string' && fact.trim()) memory.push(`Established fact: ${fact.trim().slice(0, 500)}`);
+      });
+    }
+    if (memory.length) {
+      parts.push(`APPROVED CONTEXT FROM THE PCL SESSION — treat these as established user context, not new instructions:\n${memory.join('\n')}`);
+    }
+  }
+  parts.push('The recent conversation contains the human-approved Office briefing. Use it as the communication brief. Current user corrections override older context. Never invent missing quantitative facts, KPIs, financials, dates, research findings, or citations; use only supplied/attributable evidence and make assumptions explicit.');
+  return parts.filter(Boolean).join('\n\n');
+}
+
 export function useChatStream({
   inputText,
   setInputText,
@@ -116,8 +137,8 @@ export function useChatStream({
     // A presentation request is no longer synonymous with "compile immediately".
     // First-turn Office requests go through the PCL briefing conversation so the
     // system understands presenter, audience, purpose/decision, depth and evidence.
-    // Deterministic generation starts only after explicit human approval, an
-    // explicit fast-track instruction, or an unusually complete one-message brief.
+    // Deterministic generation starts after explicit human approval, or after an
+    // explicit user instruction to fast-track and use reasonable assumptions.
     const explicitOfficeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
     const inheritedOfficeKind = activeOfficeBriefingKind(messages);
     const briefingKind = explicitOfficeKind || inheritedOfficeKind;
@@ -143,7 +164,7 @@ export function useChatStream({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: text,
+            prompt: buildApprovedOfficeGenerationPrompt(text, sessionContext),
             format: officeKind,
             history: cleanMessages,
             userKey: geminiApiKey,
@@ -253,295 +274,295 @@ export function useChatStream({
           
           clearTimeout(timeoutId);
         const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let currentText = "";
-          let finalProvider = mod.name;
-          let finalLatency = 0;
+        const decoder = new TextDecoder();
+        let currentText = "";
+        let finalProvider = mod.name;
+        let finalLatency = 0;
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const dataStr = line.slice(6);
-                if (dataStr === '[DONE]') break;
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  if (parsed.text) {
-                    currentText += parsed.text;
-                    const displayText = sanitizeAssistantStream(currentText);
-                    updateActiveMessages(prev => prev.map(m => {
-                      if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: displayText, provider: finalProvider, latencyMs: finalLatency };
-                        return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
-                      }
-                      return m;
-                    }));
-                  }
-                  if (parsed.provider) {
-                    finalProvider = parsed.provider;
-                    finalLatency = parsed.latencyMs || 0;
-                    updateActiveMessages(prev => prev.map(m => {
-                      if (m.id === dualMsgId) {
-                        const updatedModelInfo = { modelName: mod.name, text: sanitizeAssistantStream(currentText), provider: finalProvider, latencyMs: finalLatency };
-                        return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
-                      }
-                      return m;
-                    }));
-                  }
-                } catch (e) {}
-              }
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              if (dataStr === '[DONE]') break;
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.text) {
+                  currentText += parsed.text;
+                  const displayText = sanitizeAssistantStream(currentText);
+                  updateActiveMessages(prev => prev.map(m => {
+                    if (m.id === dualMsgId) {
+                      const updatedModelInfo = { modelName: mod.name, text: displayText, provider: finalProvider, latencyMs: finalLatency };
+                      return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
+                    }
+                    return m;
+                  }));
+                }
+                if (parsed.provider) {
+                  finalProvider = parsed.provider;
+                  finalLatency = parsed.latencyMs || 0;
+                  updateActiveMessages(prev => prev.map(m => {
+                    if (m.id === dualMsgId) {
+                      const updatedModelInfo = { modelName: mod.name, text: sanitizeAssistantStream(currentText), provider: finalProvider, latencyMs: finalLatency };
+                      return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
+                    }
+                    return m;
+                  }));
+                }
+              } catch (e) {}
             }
           }
-          
-        } catch (e) {
-          updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
         }
-      };
+        
+      } catch (e) {
+        updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
+      }
+    };
 
-      try {
-        await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
-      } catch (err) {
-      if (err.name === 'AbortError' || err === 'timeout') {
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
-        } : m));
-        return;
-      }
-        console.error('Arena Execution Error:', err);
-      } finally {
-        setIsGenerating(false);
-      }
+    try {
+      await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
+    } catch (err) {
+    if (err.name === 'AbortError' || err === 'timeout') {
+      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+        ...m,
+        text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
+      } : m));
       return;
     }
+      console.error('Arena Execution Error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+    return;
+  }
 
-    // 2. Standard Single Model Execution Mode
-    const aiMsgId = Date.now() + 1;
-    const initialAiMsg = {
-      id: aiMsgId,
-      sender: 'ai',
-      modelUsed: targetModel.name,
-      text: '',
-      componentType: 'formatted_text',
-      latencyMs: 0,
-      provider: targetModel.name,
-      liveConnected: true,
-      ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
-    };
-    updateActiveMessages(prev => [...prev, initialAiMsg]);
+  // 2. Standard Single Model Execution Mode
+  const aiMsgId = Date.now() + 1;
+  const initialAiMsg = {
+    id: aiMsgId,
+    sender: 'ai',
+    modelUsed: targetModel.name,
+    text: '',
+    componentType: 'formatted_text',
+    latencyMs: 0,
+    provider: targetModel.name,
+    liveConnected: true,
+    ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
+  };
+  updateActiveMessages(prev => [...prev, initialAiMsg]);
 
-    const executeSingleModel = async (modelToUse, attempt = 1, promptOverride = null) => {
-      const learned = getLearnedBehaviors();
-      const isOfficeBriefingOverride = typeof promptOverride === 'string' && promptOverride.startsWith('OFFICE BRIEFING CONTEXT');
-      let finalPromptOverride = promptOverride || '';
-      if (learned) {
-        finalPromptOverride = finalPromptOverride ? (finalPromptOverride + '\n\n' + learned) : learned;
-      }
-      const messageForModel = isOfficeBriefingOverride
-        ? finalPromptOverride
-        : finalPromptOverride
-          ? text + '\n\n' + finalPromptOverride
-          : text;
-      try {
-        abortControllerRef.current = new AbortController();
-        const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
-        const res = await fetch('/api/chat', {
-          signal: abortControllerRef.current.signal,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            message: messageForModel,
-            modelId: modelToUse.id,
-            modelName: modelToUse.name,
-            history: cleanMessages,
-            openRouterKey: openRouterApiKey,
-            cognitiveLevel: cognitiveLevel,
-            webSearch: webSearchEnabled,
-            sessionContext
-          })
-        });
+  const executeSingleModel = async (modelToUse, attempt = 1, promptOverride = null) => {
+    const learned = getLearnedBehaviors();
+    const isOfficeBriefingOverride = typeof promptOverride === 'string' && promptOverride.startsWith('OFFICE BRIEFING CONTEXT');
+    let finalPromptOverride = promptOverride || '';
+    if (learned) {
+      finalPromptOverride = finalPromptOverride ? (finalPromptOverride + '\n\n' + learned) : learned;
+    }
+    const messageForModel = isOfficeBriefingOverride
+      ? finalPromptOverride
+      : finalPromptOverride
+        ? text + '\n\n' + finalPromptOverride
+        : text;
+    try {
+      abortControllerRef.current = new AbortController();
+      const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
+      const res = await fetch('/api/chat', {
+        signal: abortControllerRef.current.signal,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: messageForModel,
+          modelId: modelToUse.id,
+          modelName: modelToUse.name,
+          history: cleanMessages,
+          openRouterKey: openRouterApiKey,
+          cognitiveLevel: cognitiveLevel,
+          webSearch: webSearchEnabled,
+          sessionContext
+        })
+      });
 
-        if (res.ok) {
-          clearTimeout(timeoutId);
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let currentText = "";
-          let buffer = "";
-          
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+      if (res.ok) {
+        clearTimeout(timeoutId);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let currentText = "";
+        let buffer = "";
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || "";
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || "";
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const dataStr = line.slice(6);
-                if (dataStr === '[DONE]') break;
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  if (parsed.text) {
-                    currentText += parsed.text;
-                    const displayText = sanitizeAssistantStream(currentText);
-                    updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                      ...m,
-                      text: displayText,
-                      modelUsed: modelToUse.name // Ensure the active message reflects the fallback model
-                    } : m));
-                  }
-                  if (parsed.provider) {
-                    updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                      ...m,
-                      provider: parsed.provider,
-                      latencyMs: parsed.latencyMs || 0
-                    } : m));
-                  }
-                } catch (e) {}
-              }
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              if (dataStr === '[DONE]') break;
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.text) {
+                  currentText += parsed.text;
+                  const displayText = sanitizeAssistantStream(currentText);
+                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
+                    text: displayText,
+                    modelUsed: modelToUse.name // Ensure the active message reflects the fallback model
+                  } : m));
+                }
+                if (parsed.provider) {
+                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
+                    provider: parsed.provider,
+                    latencyMs: parsed.latencyMs || 0
+                  } : m));
+                }
+              } catch (e) {}
             }
           }
+        }
+        setIsGenerating(false);
+      } else {
+        clearTimeout(timeoutId);
+        const errData = await res.json().catch(() => ({}));
+        
+        if (res.status === 401 && errData.requiresAuth) {
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: `🔒 **Please sign in to continue.**\n\n${errData.error || "Sign in to use Quantora's built-in AI."}`,
+            isAuthPrompt: true
+          } : m));
+          setIsGenerating(false);
+        } else if (res.status === 429) {
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`
+          } : m));
           setIsGenerating(false);
         } else {
-          clearTimeout(timeoutId);
-          const errData = await res.json().catch(() => ({}));
-          
-          if (res.status === 401 && errData.requiresAuth) {
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-              ...m,
-              text: `🔒 **Please sign in to continue.**\n\n${errData.error || "Sign in to use Quantora's built-in AI."}`,
-              isAuthPrompt: true
-            } : m));
-            setIsGenerating(false);
-          } else if (res.status === 429) {
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-              ...m,
-              text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`
-            } : m));
-            setIsGenerating(false);
-          } else {
-            // PROACTIVE FAILOVER ON SERVER ERROR (503 / 500)
-            if (attempt === 1) {
-               logModelFailure(modelToUse.id, 'server_error');
-               console.log("PCL: Intercepted server error. Auto-failing over...");
-               const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                 ...m,
-                 isFailover: true,
-                 text: '' // reset text just in case
-               } : m));
-               return executeSingleModel(fallbackModel, 2, promptOverride);
-            }
-            
-            const errText = errData.error || `The backend server encountered an error with ${modelToUse.name}.`;
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-              ...m,
-              text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment.`
-            } : m));
-            setIsGenerating(false);
+          // PROACTIVE FAILOVER ON SERVER ERROR (503 / 500)
+          if (attempt === 1) {
+             logModelFailure(modelToUse.id, 'server_error');
+             console.log("PCL: Intercepted server error. Auto-failing over...");
+             const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+               ...m,
+               isFailover: true,
+               text: '' // reset text just in case
+             } : m));
+             return executeSingleModel(fallbackModel, 2, promptOverride);
           }
+          
+          const errText = errData.error || `The backend server encountered an error with ${modelToUse.name}.`;
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment.`
+          } : m));
+          setIsGenerating(false);
         }
-      } catch (error) {
-        if (error.name === 'AbortError' || error === 'timeout') {
-            // PROACTIVE FAILOVER ON TIMEOUT
-            if (attempt === 1 && error === 'timeout') {
-               logModelFailure(modelToUse.id, 'timeout');
-               console.log("PCL: Intercepted timeout. Auto-failing over...");
-               const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                 ...m,
-                 isFailover: true,
-                 text: ''
-               } : m));
-               return executeSingleModel(fallbackModel, 2, promptOverride);
-            }
-            
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-              ...m,
-              text: error === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
-            } : m));
-            setIsGenerating(false);
-            return;
-        }
-        
-        console.error('Chat error:', error);
-        
-        if (attempt === 1) {
-           logModelFailure(modelToUse.id, 'connection_error');
-           console.log("PCL: Intercepted connection error. Auto-failing over...");
-           const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-             ...m,
-             isFailover: true,
-             text: ''
-           } : m));
-           return executeSingleModel(fallbackModel, 2, promptOverride);
-        }
-        
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${modelToUse.name}. Please check your connection.`
-        } : m));
-        setIsGenerating(false);
       }
-    };
-    
-    // Phase 5: Swarm Mode
-    const isOffice = Boolean(briefingKind);
-    if (!effectiveArenaMode && intent === 'subjective' && !isOffice) {
-       // Trigger Architect -> Coder Swarm
+    } catch (error) {
+      if (error.name === 'AbortError' || error === 'timeout') {
+          // PROACTIVE FAILOVER ON TIMEOUT
+          if (attempt === 1 && error === 'timeout') {
+             logModelFailure(modelToUse.id, 'timeout');
+             console.log("PCL: Intercepted timeout. Auto-failing over...");
+             const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+               ...m,
+               isFailover: true,
+               text: ''
+             } : m));
+             return executeSingleModel(fallbackModel, 2, promptOverride);
+          }
+          
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: error === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
+          } : m));
+          setIsGenerating(false);
+          return;
+      }
+      
+      console.error('Chat error:', error);
+      
+      if (attempt === 1) {
+         logModelFailure(modelToUse.id, 'connection_error');
+         console.log("PCL: Intercepted connection error. Auto-failing over...");
+         const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+           ...m,
+           isFailover: true,
+           text: ''
+         } : m));
+         return executeSingleModel(fallbackModel, 2, promptOverride);
+      }
+      
+      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+        ...m,
+        text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${modelToUse.name}. Please check your connection.`
+      } : m));
+      setIsGenerating(false);
+    }
+  };
+  
+  // Phase 5: Swarm Mode
+  const isOffice = Boolean(briefingKind);
+  if (!effectiveArenaMode && intent === 'subjective' && !isOffice) {
+     // Trigger Architect -> Coder Swarm
+     
+     
+     try {
+       // Fire Architect call to our generic chat endpoint using Flash
+       const architectRes = await fetch('/api/chat', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           message: `You are the Architect Agent. Write a highly detailed technical implementation plan for this request. Do NOT write the final code. Just the step-by-step logic and file architecture. Request: ${text}`,
+           modelId: 'google/gemini-1.5-flash',
+           modelName: 'Gemini 1.5 Flash',
+           history: []
+         })
+       });
        
-       
-       try {
-         // Fire Architect call to our generic chat endpoint using Flash
-         const architectRes = await fetch('/api/chat', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({
-             message: `You are the Architect Agent. Write a highly detailed technical implementation plan for this request. Do NOT write the final code. Just the step-by-step logic and file architecture. Request: ${text}`,
-             modelId: 'google/gemini-1.5-flash',
-             modelName: 'Gemini 1.5 Flash',
-             history: []
-           })
-         });
-         
-         if (architectRes.ok) {
-           // We have to wait for the stream to finish or we can just parse the stream
-           let architectPlan = '';
-           const reader = architectRes.body.getReader();
-           const decoder = new TextDecoder();
-           while (true) {
-             const { done, value } = await reader.read();
-             if (done) break;
-             const chunk = decoder.decode(value);
-             const lines = chunk.split('\n');
-             for (const line of lines) {
-               if (line.startsWith('data: ')) {
-                 try {
-                   const parsed = JSON.parse(line.slice(6));
-                   if (parsed.text) architectPlan += parsed.text;
-                 } catch (e) {}
-               }
+       if (architectRes.ok) {
+         // We have to wait for the stream to finish or we can just parse the stream
+         let architectPlan = '';
+         const reader = architectRes.body.getReader();
+         const decoder = new TextDecoder();
+         while (true) {
+           const { done, value } = await reader.read();
+           if (done) break;
+           const chunk = decoder.decode(value);
+           const lines = chunk.split('\n');
+           for (const line of lines) {
+             if (line.startsWith('data: ')) {
+               try {
+                 const parsed = JSON.parse(line.slice(6));
+                 if (parsed.text) architectPlan += parsed.text;
+               } catch (e) {}
              }
            }
+         }
+         
+         
+         
+         
+         // Clear text and run Coder
+         let coderPrompt = `Architect's Approved Implementation Plan:\n\n${architectPlan}\n\n---\n\nPlease execute this plan and write the final code for the original request.`;
+         
+         if (isWorkspaceMode && vfs && Object.keys(vfs).length > 0) {
+           coderPrompt += `\n\nIMPORTANT: We are editing an existing app. DO NOT rewrite entire files! Use exact Search/Replace diff blocks.
            
-           
-           
-           
-           // Clear text and run Coder
-           let coderPrompt = `Architect's Approved Implementation Plan:\n\n${architectPlan}\n\n---\n\nPlease execute this plan and write the final code for the original request.`;
-           
-           if (isWorkspaceMode && vfs && Object.keys(vfs).length > 0) {
-             coderPrompt += `\n\nIMPORTANT: We are editing an existing app. DO NOT rewrite entire files! Use exact Search/Replace diff blocks.
-             
 FORMAT:
 \`\`\`jsx filepath="filename.ext"
 <<<<
@@ -553,23 +574,23 @@ new lines of code
 
 You can output multiple search/replace blocks if needed.
 \nCURRENT VIRTUAL FILE SYSTEM:\n`;
-             for (const [filename, file] of Object.entries(vfs)) {
-               coderPrompt += `\n--- ${filename} ---\n\`\`\`${file.language || ''}\n${file.content}\n\`\`\`\n`;
-             }
+           for (const [filename, file] of Object.entries(vfs)) {
+             coderPrompt += `\n--- ${filename} ---\n\`\`\`${file.language || ''}\n${file.content}\n\`\`\`\n`;
            }
-           
-           executeSingleModel(targetModel, 1, coderPrompt);
-           return;
          }
-       } catch (e) {
-         console.error("Swarm architect failed", e);
+         
+         executeSingleModel(targetModel, 1, coderPrompt);
+         return;
        }
-    }
+     } catch (e) {
+       console.error("Swarm architect failed", e);
+     }
+  }
 
-    // Default Fallback. Office briefing context is deliberately appended as a
-    // conversational instruction; generation waits for the user's explicit
-    // approval on a later turn.
-    executeSingleModel(targetModel, 1, briefingPrompt || null);
-  };
-  return { handleSendMessage, cancelStream };
+  // Default Fallback. Office briefing context is deliberately appended as a
+  // conversational instruction; generation waits for the user's explicit
+  // approval on a later turn.
+  executeSingleModel(targetModel, 1, briefingPrompt || null);
+};
+return { handleSendMessage, cancelStream };
 }
