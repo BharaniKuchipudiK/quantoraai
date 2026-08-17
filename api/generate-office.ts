@@ -179,7 +179,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
    if (apiKey) {
       const client = new GoogleGenAI({ apiKey });
       const response = await client.models.generateContent({
-         model: 'gemini-2.5-flash',
+         model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
          contents: [{ role: 'user', parts: [{ text: prompt }] }],
          config: {
             systemInstruction: systemPrompt,
