@@ -23,10 +23,10 @@ test('a deliberately fast-tracked request can bypass briefing', () => {
   }), true);
 });
 
-test('a fully specified power-user brief can compile on the first turn', () => {
+test('a fully specified first-turn brief still gets one human approval checkpoint', () => {
   const text = 'As a senior project manager, prepare a QBR for the CIO and executive leadership to secure approval. Use the attached KPIs and financial data.';
   assert.ok(countOfficeBriefSignals(text) >= 5);
-  assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), true);
+  assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), false);
 });
 
 test('briefing approval on a later turn inherits the artifact kind', () => {
@@ -52,4 +52,5 @@ test('briefing prompt is isolated from immediate Office generator trigger words'
   assert.doesNotMatch(prompt, /\b(powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|docx?)\b/i);
   assert.match(prompt, /CIO\/board\/executive/);
   assert.match(prompt, /Ask exactly ONE highest-value question/);
+  assert.match(prompt, /Analytical workbook\/model/);
 });
