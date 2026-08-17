@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { OFFICE_KIND } from '../lib/office-intent.js';
-import { extractOfficeManifest, manifestMatchesPreview } from '../lib/office-artifact-cache.js';
+import { getVerifiedOfficePreviewState } from '../lib/office-artifact-cache.js';
 
 /*
  * Format-aware preview for generated Office artifacts.
@@ -12,6 +12,11 @@ import { extractOfficeManifest, manifestMatchesPreview } from '../lib/office-art
  * is fingerprint-bound to the server-compiled Office artifact. It deliberately
  * does NOT imply that business facts, figures or citations were independently
  * verified; content review remains an explicit human responsibility.
+ *
+ * SECURITY/UX INVARIANT: presentation intent alone is never enough to activate
+ * Office chrome. The current HTML must carry a matching canonical Office manifest
+ * whose fingerprint matches the preview. This prevents stale/generic canvas HTML
+ * from masquerading as the presentation currently being briefed or generated.
  */
 
 const colLabel = (index) => {
@@ -226,17 +231,62 @@ function DocStage({ kind, isLight, children, verified }) {
   );
 }
 
+function PendingOfficePreview({ kind, isLight, reason }) {
+  const label = kind === OFFICE_KIND.POWERPOINT
+    ? 'Presentation'
+    : kind === OFFICE_KIND.EXCEL
+      ? 'Spreadsheet'
+      : 'Document';
+  const detail = reason === 'fingerprint-mismatch'
+    ? 'The previous preview no longer matches its verified Office artifact.'
+    : reason === 'kind-mismatch'
+      ? 'The available Office artifact belongs to a different document type.'
+      : 'The current conversation has not produced a verified Office artifact yet.';
+
+  const card = (
+    <div style={{
+      width: '100%', height: '100%', minHeight: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '36px', background: '#ffffff', color: '#142433', textAlign: 'center',
+      fontFamily: 'Aptos, "Segoe UI", Arial, sans-serif',
+    }}>
+      <div style={{ maxWidth: '500px' }}>
+        <div style={{
+          width: '44px', height: '44px', margin: '0 auto 18px', borderRadius: '12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: '#eff6ff', color: '#2563eb', fontSize: '20px', fontWeight: 800,
+        }}>Q</div>
+        <div style={{ fontSize: '20px', fontWeight: 800, marginBottom: '9px' }}>{label} preview pending</div>
+        <div style={{ fontSize: '13px', lineHeight: 1.55, color: '#64748b' }}>{detail}</div>
+        <div style={{ fontSize: '12px', lineHeight: 1.5, color: '#334155', marginTop: '13px' }}>
+          Quantora will show this panel only after generation and fingerprint verification. Stale or generic HTML is never presented as an Office artifact.
+        </div>
+      </div>
+    </div>
+  );
+
+  if (kind === OFFICE_KIND.POWERPOINT || kind === OFFICE_KIND.WORD) {
+    return <DocStage kind={kind} isLight={isLight} verified={false}>{card}</DocStage>;
+  }
+
+  return <div style={{ width: '100%', height: '100%', background: isLight ? '#e2e8f0' : '#0b1220', padding: '24px' }}>{card}</div>;
+}
+
 export default function OfficePreview({ kind, html, isLight, children }) {
-  const reviewState = useMemo(() => {
-    const manifest = extractOfficeManifest(html);
-    return { manifest, verified: Boolean(manifest && manifestMatchesPreview(html, manifest)) };
-  }, [html]);
+  const reviewState = useMemo(() => getVerifiedOfficePreviewState(html, kind), [html, kind]);
+
+  if (kind === OFFICE_KIND.PDF) {
+    return <DocStage kind={kind} isLight={isLight} verified={false}>{children}</DocStage>;
+  }
+
+  if ([OFFICE_KIND.POWERPOINT, OFFICE_KIND.WORD, OFFICE_KIND.EXCEL].includes(kind) && !reviewState.verified) {
+    return <PendingOfficePreview kind={kind} isLight={isLight} reason={reviewState.reason} />;
+  }
 
   if (kind === OFFICE_KIND.EXCEL) {
     return <ExcelGrid html={html} isLight={isLight} verified={reviewState.verified} />;
   }
-  if (kind === OFFICE_KIND.POWERPOINT || kind === OFFICE_KIND.WORD || kind === OFFICE_KIND.PDF) {
-    return <DocStage kind={kind} isLight={isLight} verified={kind !== OFFICE_KIND.PDF && reviewState.verified}>{children}</DocStage>;
+  if (kind === OFFICE_KIND.POWERPOINT || kind === OFFICE_KIND.WORD) {
+    return <DocStage kind={kind} isLight={isLight} verified={reviewState.verified}>{children}</DocStage>;
   }
   return children;
 }
