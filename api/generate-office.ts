@@ -209,7 +209,12 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
               responseMimeType: "application/json"
            }
         });
-        return response.text;
+        let text = response.text;
+        // Strip markdown code blocks if the model ignored the directive
+        if (text.startsWith('\`\`\`')) {
+           text = text.replace(/^\`\`\`(?:json)?\\n/, '').replace(/\\n\`\`\`$/, '');
+        }
+        return text;
       } catch (err: any) {
         const errorText = String(err?.message || err);
         const fallbackKey = openRouterKey || process.env.OPENROUTER_API_KEY;
@@ -237,9 +242,24 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
             response_format: { type: "json_object" }
          })
       });
-      const data = await response.json();
-      if (data.error) throw new Error(data.error.message);
-      return data.choices[0].message.content;
+      
+      const text = await response.text();
+      let data;
+      try {
+         data = JSON.parse(text);
+      } catch (err) {
+         throw new Error(\`API Gateway Error (\${response.status}): \${text.substring(0, 100)}\`);
+      }
+      
+      if (!response.ok || data.error) {
+         throw new Error(data.error?.message || \`HTTP \${response.status}\`);
+      }
+      
+      let content = data.choices[0].message.content;
+      if (content.startsWith('\`\`\`')) {
+         content = content.replace(/^\`\`\`(?:json)?\\n/, '').replace(/\\n\`\`\`$/, '');
+      }
+      return content;
    }
    throw new Error("No available API credentials");
 }
