@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt, format, history = [], userKey, openRouterKey } = req.body;
+  const { prompt, format, history = [], userKey, openRouterKey, imageAttachments = [] } = req.body;
 
   if (!['powerpoint', 'word', 'excel'].includes(format)) {
     return res.status(400).json({ error: 'Invalid format requested' });
@@ -67,6 +67,15 @@ export default async function handler(req, res) {
 
     if (!validJson) {
       return res.status(500).json({ error: `Gatekeeper failed to produce valid ${format} schema after ${maxAttempts} attempts. Last error: ${lastError}` });
+    }
+
+    if (format === 'word' && Array.isArray(imageAttachments) && imageAttachments.length > 0) {
+      const attachedImages = imageAttachments.filter((image) => /^data:image\//i.test(String(image?.dataUrl || ''))).slice(0, 6).map((image) => ({ url: image.dataUrl, caption: image.name || 'Attached image', altText: image.name || 'Attached image' }));
+      if (attachedImages.length > 0) {
+        const firstSection = validJson.sections?.[0] || { heading: 'Figures', paragraphs: [], bullets: [] };
+        firstSection.images = [...(firstSection.images || []), ...attachedImages];
+        validJson.sections = validJson.sections?.length ? [firstSection, ...validJson.sections.slice(1)] : [firstSection];
+      }
     }
 
     // 2. SERVER-SIDE COMPILATION
