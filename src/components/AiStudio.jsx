@@ -861,7 +861,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
-      const runnableCode = msg.sender === 'ai' ? extractRunnableCode(msg.text) : null;
+      const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text) || extractHtmlFromResponse(msg.text)) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       const isFailover = isActiveGenerating && msg.isFailover;
       
