@@ -14,6 +14,10 @@ function recentOfficeBriefing(messages = []) {
     .find((message) => message?.officeBriefing === true && message?.officeBriefingKind);
 }
 
+export function activeOfficeBriefingKind(messages = []) {
+  return recentOfficeBriefing(messages)?.officeBriefingKind || null;
+}
+
 export function countOfficeBriefSignals(text = '') {
   const value = String(text || '');
   return [
