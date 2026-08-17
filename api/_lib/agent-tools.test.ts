@@ -35,7 +35,10 @@ test('transactional travel calls fail closed and never fabricate success', async
   assert.equal(booking.status, 'unavailable');
   assert.equal(booking.executed, false);
   assert.equal(booking.reason, 'TRANSACTION_DISABLED');
-  assert.doesNotMatch(booking.message, /successfully booked|confirmed|pnr generated/i);
+  assert.match(booking.message, /nothing was booked/i);
+  assert.equal('confirmationCode' in booking, false);
+  assert.equal('bookingReference' in booking, false);
+  assert.equal('pnr' in booking, false);
 
   const alert = await executeToolCall('create_price_alert', {
     entityType: 'flight',
@@ -45,7 +48,8 @@ test('transactional travel calls fail closed and never fabricate success', async
 
   assert.equal(alert.status, 'unavailable');
   assert.equal(alert.executed, false);
-  assert.doesNotMatch(alert.message, /monitor daily|alert created|successfully/i);
+  assert.equal('alertId' in alert, false);
+  assert.match(alert.message, /nothing was .*monitored|not enabled/i);
 });
 
 test('unconnected read-only travel providers return unavailable instead of mock data', async () => {
