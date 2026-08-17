@@ -39,6 +39,31 @@ test('develop a presentation and request PowerPoint output generates immediately
   }), true);
 });
 
+test('polite command variants generate immediately', () => {
+  for (const text of [
+    'Can you please create a PowerPoint presentation on cloud security?',
+    'I want you to generate an Excel workbook for this budget.',
+    'Please draft a Word document summarizing the findings.',
+  ]) {
+    const officeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
+    assert.ok(officeKind);
+    assert.equal(shouldGenerateOfficeNow({ text, officeKind, messages: [] }), true, text);
+  }
+});
+
+test('meta questions and negated commands do not trigger artifact generation', () => {
+  for (const text of [
+    'Explain how to create a PowerPoint presentation.',
+    'How do I make a good PowerPoint presentation?',
+    "Don't create a PowerPoint presentation yet.",
+    'Can you not generate the PowerPoint yet?',
+  ]) {
+    const officeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
+    assert.equal(officeKind, 'powerpoint');
+    assert.equal(shouldGenerateOfficeNow({ text, officeKind, messages: [] }), false, text);
+  }
+});
+
 test('a non-creation statement can still enter briefing instead of compiling immediately', () => {
   assert.equal(shouldGenerateOfficeNow({
     text: 'I need a presentation about cyber resilience',
