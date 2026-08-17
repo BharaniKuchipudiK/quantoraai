@@ -552,7 +552,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         const response = await client.models.generateContent({
-          model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
+          model: process.env.GEMINI_OFFICE_MODEL || 'gemini-pro-latest',
           contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
           config: {
             systemInstruction: systemPrompt,

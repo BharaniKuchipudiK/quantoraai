@@ -2,7 +2,6 @@ import { usePCLMemory } from './usePCLMemory';
 import { useRef } from 'react';
 import { detectOfficeIntent, OFFICE_KIND } from '../lib/office-intent.js';
 import { activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow } from '../lib/office-briefing.js';
-import { chooseBestDeckModel } from '../lib/model-routing.js';
 import { sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext) {
@@ -261,10 +260,13 @@ export function useChatStream({
 
       const streamSingleModel = async (mod, isModelA) => {
         try {
-          abortControllerRef.current = new AbortController();
-      const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
+          // Each parallel stream owns its controller so one stream's timeout
+          // can't abort the other's fetch (they previously shared a single ref).
+          const controller = new AbortController();
+          abortControllerRef.current = controller; // Stop button targets the latest stream
+      const timeoutId = setTimeout(() => controller.abort('timeout'), 60000);
       const res = await fetch('/api/chat', {
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text, modelId: mod.id, modelName: mod.name, history: cleanMessages, userKey: geminiApiKey, openRouterKey: openRouterApiKey })
@@ -328,7 +330,7 @@ export function useChatStream({
       await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
     } catch (err) {
     if (err.name === 'AbortError' || err === 'timeout') {
-      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+      updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? {
         ...m,
         text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
       } : m));
@@ -521,10 +523,16 @@ export function useChatStream({
      // Trigger Architect -> Coder Swarm
      
      
+     // Bound the architect call: without this, a hung request left the AI
+     // bubble blank and generation stuck forever. On abort we fall through to
+     // the normal single-model path below.
+     const architectController = new AbortController();
+     const architectTimeout = setTimeout(() => architectController.abort('timeout'), 45000);
      try {
        // Fire Architect call to our generic chat endpoint using Flash
        const architectRes = await fetch('/api/chat', {
          method: 'POST',
+         signal: architectController.signal,
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({
            message: `You are the Architect Agent. Write a highly detailed technical implementation plan for this request. Do NOT write the final code. Just the step-by-step logic and file architecture. Request: ${text}`,
@@ -584,6 +592,8 @@ You can output multiple search/replace blocks if needed.
        }
      } catch (e) {
        console.error("Swarm architect failed", e);
+     } finally {
+       clearTimeout(architectTimeout);
      }
   }
 
