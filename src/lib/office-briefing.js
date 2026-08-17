@@ -4,9 +4,10 @@ const DOCUMENT_ARCHETYPE = /\b(qbr|quarterly business review|business case|weekl
 const PRESENTER_SIGNAL = /\b(as (?:a|an)\b|i am\b|i'm\b|my role\b|project manager|program manager|programme manager|engagement manager|consultant|analyst|student|researcher|architect|engineer|director|vice president|vp\b)/i;
 const PURPOSE_SIGNAL = /\b(approve|approval|decision|decide|funding|investment|buy[- ]?in|align|alignment|inform|update|review|recommend|recommendation|persuade|convince|teach|present findings|status|governance|escalat)/i;
 const EVIDENCE_SIGNAL = /\b(attached|source|sources|metrics|kpi|kpis|data|financials?|budget|cost|benefit|roi|npv|timeline|milestone|risk register|research|citation|citations|references|findings|results)\b/i;
-const APPROVAL_PHRASE = /\b(go ahead|proceed|approved|approve it|build it|generate it|create it|make it|build the requested artifact|generate the requested artifact|yes[, ]+(?:build|generate|create|proceed)|ready to build)\b/i;
-const FAST_TRACK_PHRASE = /\b(just build|build it now|generate it now|create it now|use (?:your|reasonable) (?:judg(?:e)?ment|assumptions)|assume reasonable|do not ask|don't ask|skip the questions|no questions)\b/i;
+const APPROVAL_PHRASE = /\b(go ahead|proceed|approved|approve it|build it|generate it|create it|make it|prepare it|build the requested artifact|generate the requested artifact|create the requested artifact|prepare the requested artifact|yes[, ]+(?:build|generate|create|prepare|proceed)|ready to build)\b/i;
+const FAST_TRACK_PHRASE = /\b(just build|build it now|generate it now|create it now|prepare it now|use (?:your|reasonable) (?:judg(?:e)?ment|assumptions)|assume reasonable|do not ask|don't ask|skip the questions|no questions)\b/i;
 const GENERATOR_TRIGGER_WORDS = /\b(powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b/gi;
+const DIRECT_CREATE_PHRASE = /(?:\b(?:create|make|prepare|generate|build|produce|draft|develop|assemble|compose)\b[\s\S]{0,140}\b(?:powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b)|(?:\b(?:give|provide|return|deliver)\b[\s\S]{0,140}\b(?:output|file|artifact)\b[\s\S]{0,100}\b(?:powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b)/i;
 
 function recentOfficeBriefing(messages = []) {
   return [...(Array.isArray(messages) ? messages : [])]
@@ -39,13 +40,19 @@ export function shouldGenerateOfficeNow({ text = '', officeKind = null, messages
   const activeKind = officeKind || prior?.officeBriefingKind || null;
   if (!activeKind) return false;
 
-  // Normal path: briefing first, then one explicit human approval. Even a fully
-  // specified first message gets the confirmation beat so the user can catch a
-  // mistaken audience/purpose inference before the system spends time compiling.
+  // Explicit artifact creation language is already authorization to create.
+  // Do not make the user say the same thing twice. A direct request such as
+  // "prepare a PowerPoint", "make me a presentation", or "give me the output
+  // as a PPT" should enter the canonical Office generator immediately. The
+  // generator may make reasonable, clearly stated assumptions when the brief is
+  // incomplete; clarification is reserved for genuinely blocking ambiguity.
+  if (officeKind && DIRECT_CREATE_PHRASE.test(value)) return true;
+
+  // When the conversation previously paused for a briefing, ordinary approval
+  // language should hand off immediately to generation.
   if (prior && APPROVAL_PHRASE.test(value)) return true;
 
-  // Deliberate bypass: the user can explicitly tell Quantora to skip discovery.
-  // This is the only first-turn bypass; ordinary "make me a presentation" is not.
+  // Deliberate bypass for an explicit fast-track instruction on a first turn.
   if (officeKind && FAST_TRACK_PHRASE.test(value)) return true;
 
   return false;
