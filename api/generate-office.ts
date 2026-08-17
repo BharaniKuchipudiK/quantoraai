@@ -222,7 +222,7 @@ async function generateJsonSchema(prompt, format, history, apiKey, openRouterKey
             "Content-Type": "application/json"
          },
          body: JSON.stringify({
-            model: process.env.OPENROUTER_OFFICE_MODEL || "anthropic/claude-3.5-sonnet",
+            model: process.env.OPENROUTER_OFFICE_MODEL || "google/gemini-2.5-flash",
             messages: [
                { role: "system", content: systemPrompt },
                { role: "user", content: prompt }
