@@ -2,6 +2,7 @@ import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { requireActiveSession } from "./_lib/authz.js";
 import { clearSessionCookie } from "./_lib/session.js";
 import { deleteUserData, exportUserData, isStoreConfigured } from "./_lib/store.js";
+import { exportProjectData } from "./_lib/project-store.js";
 
 /*
  * Account privacy controls (Roadmap 0.2 — "a user can erase their footprint").
@@ -9,7 +10,7 @@ import { deleteUserData, exportUserData, isStoreConfigured } from "./_lib/store.
  * One serverless function, two actions:
  *   - export: return everything we store keyed to this account, as JSON.
  *   - delete: hard-delete the account footprint (cascades living memory + site
- *     ownership, anonymizes usage). Live published sites are left running.
+ *     ownership + Projects, anonymizes usage). Live published sites are left running.
  *
  * Unlike the fire-and-forget bookkeeping in store.ts, these fail loud: a
  * privacy action that silently no-ops is worse than an honest error.
@@ -35,12 +36,15 @@ export default async function handler(req: any, res: any) {
   const action = String(req.body?.action || "");
 
   if (action === "export") {
-    const data = await exportUserData(sessionUser.sub);
-    if (!data) {
+    const [data, projectData] = await Promise.all([
+      exportUserData(sessionUser.sub),
+      exportProjectData(sessionUser.sub),
+    ]);
+    if (!data || !projectData) {
       return res.status(503).json({ error: "Could not assemble your data export. Please try again." });
     }
     res.setHeader("Content-Disposition", 'attachment; filename="quantora-my-data.json"');
-    return res.status(200).json(data);
+    return res.status(200).json({ ...data, ...projectData });
   }
 
   if (action === "delete") {
