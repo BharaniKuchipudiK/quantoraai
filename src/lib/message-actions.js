@@ -1,7 +1,7 @@
 /*
  * Contextual message actions (Roadmap: chat UX).
  *
- * A message's action bar should be DERIVED from its content, not a fixed row
+ * A message's action bar should be DERIVED from its content/state, not a fixed row
  * dumped on every reply. This is the single source of truth for "which actions
  * does THIS message support?" so every bar renders the same, correct set:
  *  - always: copy, feedback (up/down), regenerate
@@ -19,31 +19,25 @@ export function isSummarizable(text = '') {
   return clean.length > 500 || words > 90 || paragraphs >= 3;
 }
 
-function isOfficeArtifactCompletion(text = '') {
-  return /\b(?:successfully\s+)?(?:generated|updated)\s+(?:the\s+)?(?:powerpoint|word|excel)\s+document\b/i.test(String(text || ''))
-    || /\boffice\s+artifact\b/i.test(String(text || ''));
-}
-
 /**
  * Resolve the action set for a message.
- * @param {{ text?: string, hasPreview?: boolean }} opts
+ * @param {{ text?: string, hasPreview?: boolean, isOfficeArtifact?: boolean }} opts
  * @returns {{ copy:boolean, feedback:boolean, regenerate:boolean,
  *             summarize:boolean, preview:boolean, overflow:string[] }}
  */
-export function resolveMessageActions({ text = '', hasPreview = false } = {}) {
+export function resolveMessageActions({ text = '', hasPreview = false, isOfficeArtifact = false } = {}) {
   const clean = String(text || '').trim();
   const overflow = [];
   if (clean.length > 0) overflow.push('read-aloud');
   overflow.push('report');
-  const officeArtifact = isOfficeArtifactCompletion(clean);
   return {
     copy: clean.length > 0,
     feedback: true,
     regenerate: true,
     summarize: isSummarizable(clean),
-    // Verified Office artifacts already live in the right-side workspace. Do not
-    // offer a second "Preview" action that opens the legacy full-screen overlay.
-    preview: Boolean(hasPreview) && !officeArtifact,
+    // Verified Office artifacts already live in the right-side workspace. Their
+    // presence is explicit message state; never infer this from assistant wording.
+    preview: Boolean(hasPreview) && !isOfficeArtifact,
     overflow,
   };
 }
