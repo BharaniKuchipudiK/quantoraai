@@ -27,6 +27,7 @@ import {
   verifyCompiledOfficeArtifact,
 } from './_lib/office-artifact.js';
 import { fetchPublicHttpsImage } from './_lib/safe-image-fetch.js';
+import { PRESENTATION_CANVAS } from './_lib/presentation-layout.js';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
 
@@ -366,7 +367,7 @@ async function compilePowerPoint(spec) {
   const pptxgenModule: any = require('pptxgenjs');
   const PptxGenJS: any = pptxgenModule.default || pptxgenModule;
   const pptx = new PptxGenJS();
-  pptx.layout = 'LAYOUT_16x9';
+  pptx.layout = PRESENTATION_CANVAS.pptxLayout;
   pptx.author = 'Quantora';
   pptx.subject = String(spec.title || 'Presentation');
   pptx.title = String(spec.title || 'Presentation');

@@ -7,6 +7,8 @@
  * depend on reconstructing a presentation from finished HTML.
  */
 
+import { PRESENTATION_CANVAS } from './presentation-layout.js';
+
 export const PRESENTATION_V2_VERSION = 2;
 
 export const PRESENTATION_V2_TYPES = Object.freeze([
@@ -131,7 +133,7 @@ export const PRESENTATION_THEME = Object.freeze({
     softBlue: 'F1F5FA',
   },
   font: { heading: 'Aptos Display', body: 'Aptos' },
-  layout: { w: 13.333, h: 7.5, marginX: 0.72, top: 0.5, bottom: 0.34 },
+  layout: { w: PRESENTATION_CANVAS.w, h: PRESENTATION_CANVAS.h, marginX: 0.72, top: 0.5, bottom: 0.34 },
 });
 
 const C = PRESENTATION_THEME.color;
