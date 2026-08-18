@@ -8,8 +8,11 @@ import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } f
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
 import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources, normalizeProjectSessionIds } from "./_lib/project-state.js";
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
+import { saveUserFeedback } from "./_lib/feedback-store.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
+const FEEDBACK_RATE_LIMIT_PER_MINUTE = 5;
+const FEEDBACK_MAX_CHARS = 500;
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res);
@@ -30,6 +33,34 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { node, targetStage, repoUrl, task } = req.body || {};
+
+    if (targetStage === 'feedback') {
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
+      const { sessionUser: activeSessionUser } = auth.value;
+
+      if (isRateLimited(`feedback:user:${activeSessionUser.sub}`, FEEDBACK_RATE_LIMIT_PER_MINUTE, 60_000)) {
+        return res.status(429).json({ error: 'Please wait a moment before sending more feedback.' });
+      }
+
+      const feedbackType = req.body?.feedbackType === 'suggestion' ? 'suggestion' : 'feedback';
+      const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+      if (!message || message.length > FEEDBACK_MAX_CHARS) {
+        return res.status(400).json({ error: `Feedback must be between 1 and ${FEEDBACK_MAX_CHARS} characters.` });
+      }
+
+      const saved = await saveUserFeedback({
+        userSub: activeSessionUser.sub,
+        feedbackType,
+        message,
+        pagePath: typeof req.body?.pagePath === 'string' ? req.body.pagePath : null,
+        surface: typeof req.body?.surface === 'string' ? req.body.surface : null,
+      });
+
+      return saved
+        ? res.status(201).json({ submitted: true })
+        : res.status(503).json({ error: 'Feedback is temporarily unavailable. Please try again.' });
+    }
 
     if (targetStage === 'project-state') {
       const auth = await requireActiveSession(req, res);
