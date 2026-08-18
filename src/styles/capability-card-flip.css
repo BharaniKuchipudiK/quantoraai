@@ -1,0 +1,109 @@
+/* User-triggered capability reveal. No automatic signal choreography.
+ * The existing paragraph is the card's back face, so the explanatory copy has
+ * one source of truth and returns to the clean front when hover/focus ends.
+ */
+
+.q-future-card {
+  perspective: 1100px;
+  transform-style: preserve-3d;
+}
+
+.q-future-card > .q-future-card__meta,
+.q-future-card > h3,
+.q-future-card > strong,
+.q-future-card > .q-future-visual {
+  backface-visibility: hidden;
+  transition: opacity 360ms ease, transform 620ms cubic-bezier(.2,.78,.2,1) !important;
+}
+
+.q-future-card > p,
+.q-future-card.is-active > p,
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
+  position: absolute !important;
+  inset: 58px 20px 22px !important;
+  z-index: 12;
+  display: flex !important;
+  align-items: center;
+  margin: 0 !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  color: color-mix(in srgb, var(--q-text) 88%, var(--q-muted)) !important;
+  font-size: clamp(.72rem, .86vw, .84rem) !important;
+  line-height: 1.55 !important;
+  opacity: 0 !important;
+  transform: rotateY(88deg) translateX(10px) !important;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  transition: opacity 300ms ease, transform 620ms cubic-bezier(.2,.78,.2,1) !important;
+}
+
+.q-future-card > p::before {
+  content: 'WHAT IT DOES';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--q-accent);
+  font-size: .5rem;
+  font-weight: 860;
+  letter-spacing: .12em;
+}
+
+.q-future-card:hover,
+.q-future-card:focus-visible {
+  transform: translateY(-6px) scale(1.012) !important;
+}
+
+.q-future-card:hover > .q-future-card__meta,
+.q-future-card:hover > h3,
+.q-future-card:hover > strong,
+.q-future-card:hover > .q-future-visual,
+.q-future-card:focus-visible > .q-future-card__meta,
+.q-future-card:focus-visible > h3,
+.q-future-card:focus-visible > strong,
+.q-future-card:focus-visible > .q-future-visual {
+  opacity: 0 !important;
+  transform: rotateY(-88deg) translateX(-10px) !important;
+}
+
+.q-future-card:hover > p,
+.q-future-card:focus-visible > p {
+  opacity: 1 !important;
+  transform: rotateY(0deg) translateX(0) !important;
+}
+
+.q-future-card:hover::after,
+.q-future-card:focus-visible::after {
+  content: '↺';
+  position: absolute;
+  right: 18px;
+  bottom: 15px;
+  z-index: 13;
+  color: var(--q-muted);
+  font-size: .72rem;
+  opacity: .62;
+}
+
+.q-landing--light .q-future-card > p {
+  color: rgba(17,18,23,.78) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-future-card > .q-future-card__meta,
+  .q-future-card > h3,
+  .q-future-card > strong,
+  .q-future-card > .q-future-visual,
+  .q-future-card > p {
+    transition: opacity 120ms ease !important;
+    transform: none !important;
+  }
+}
+
+@media (max-width: 700px) {
+  /* Touch users can focus/tap the card to reveal the back face. */
+  .q-future-card > p,
+  .q-future-card.is-active > p,
+  .q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
+    inset: 54px 18px 20px !important;
+  }
+}
