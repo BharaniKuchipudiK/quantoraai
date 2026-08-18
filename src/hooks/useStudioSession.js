@@ -1,9 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { mergeSessionListeningSignals } from '../lib/listening-layer.js';
+import { loadRemoteProjects, saveRemoteProject, syncRemoteProjectResources } from '../lib/project-store.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
 export const DEFAULT_PROJECT_ID = 'project-personal';
+
+const PROJECT_LIMITS = Object.freeze({ name: 120, description: 2000, goal: 2000 });
+const DEFAULT_PROJECT_COLOR = '#f97316';
+const NEW_PROJECT_COLOR = '#3b82f6';
 
 export function createDefaultGreeting(user, selectedModel) {
   return {
@@ -16,14 +21,30 @@ export function createDefaultGreeting(user, selectedModel) {
 }
 
 function createDefaultProject() {
+  const now = Date.now();
   return {
     id: DEFAULT_PROJECT_ID,
+    version: 0,
     name: 'Personal Workspace',
     description: 'A flexible space for everyday questions and ideas.',
     goal: '',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    color: '#f97316',
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+    color: DEFAULT_PROJECT_COLOR,
+  };
+}
+
+function normalizeLocalProject(project) {
+  if (!project || typeof project !== 'object' || !project.id) return null;
+  return {
+    ...project,
+    version: Number.isInteger(project.version) && project.version >= 0 ? project.version : 0,
+    name: String(project.name || 'Untitled Project').trim().slice(0, PROJECT_LIMITS.name) || 'Untitled Project',
+    description: String(project.description || '').trim().slice(0, PROJECT_LIMITS.description),
+    goal: String(project.goal || '').trim().slice(0, PROJECT_LIMITS.goal),
+    status: ['active', 'paused', 'completed', 'archived'].includes(project.status) ? project.status : 'active',
+    color: project.color || null,
   };
 }
 
@@ -32,7 +53,10 @@ function loadProjects() {
     const saved = localStorage.getItem(PROJECTS_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const normalized = parsed.flatMap((project) => normalizeLocalProject(project) || []);
+        if (normalized.length > 0) return normalized;
+      }
     }
   } catch (e) {
     console.error(e);
@@ -94,6 +118,26 @@ function makeSession(projectId, defaultGreetingMsg) {
   };
 }
 
+function createProjectId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `project-${crypto.randomUUID()}`;
+  }
+  return 'project-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function timeValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function sortProjects(projects) {
+  return [...projects].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
+}
+
 /** Chat session state plus durable project/workspace state. */
 export function useStudioSession({ user, selectedModel }) {
   const defaultGreetingMsg = useMemo(
@@ -107,6 +151,7 @@ export function useStudioSession({ user, selectedModel }) {
   );
   const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg));
   const [activeSessionId, setActiveSessionId] = useState(() => allChatSessions[0]?.id || 'session-1');
+  const accountKey = user?.sub || user?.email || null;
 
   const activeProject = projects.find((project) => project.id === activeProjectId) || projects[0] || createDefaultProject();
   const projectSessions = useMemo(
@@ -125,13 +170,28 @@ export function useStudioSession({ user, selectedModel }) {
   const conversationContext = activeSession.conversationContext || {};
   const listeningSignals = activeSession.listeningSignals || [];
   const projectArtifacts = useMemo(() => projectSessions.flatMap((session) => (
-    (session.messages || []).filter((message) => message.officeAttachment || message.codeSnippet || message.previewUrl).map((message) => ({
-      id: message.id,
-      sessionId: session.id,
-      title: message.officeAttachment?.fileName || message.title || 'Generated artifact',
-      type: message.officeAttachment ? 'office' : 'workspace',
-      createdAt: message.createdAt || session.createdAt,
-    }))
+    (session.messages || []).filter((message) => message.officeAttachment || message.codeSnippet || message.previewUrl).map((message) => {
+      const office = message.officeAttachment;
+      const ref = office?.fingerprint
+        || office?.downloadUrl
+        || message.previewUrl
+        || `message:${session.id}:${String(message.id)}`;
+      return {
+        id: message.id,
+        sessionId: session.id,
+        ref,
+        title: office?.fileName || message.title || 'Generated artifact',
+        type: office ? 'office' : 'workspace',
+        kind: office?.kind ? `office-${office.kind}` : (office ? 'office' : 'workspace'),
+        createdAt: message.createdAt || session.createdAt,
+        metadata: {
+          sessionId: session.id,
+          messageId: String(message.id),
+          ...(office?.kind ? { officeKind: office.kind } : {}),
+          ...(office?.fingerprint ? { fingerprint: office.fingerprint } : {}),
+        },
+      };
+    })
   )), [projectSessions]);
   const projectContext = useMemo(() => ({
     projectId: activeProject.id,
@@ -140,6 +200,98 @@ export function useStudioSession({ user, selectedModel }) {
     understanding: activeProject.description || '',
     facts: projectArtifacts.slice(0, 20).map((artifact) => artifact.title),
   }), [activeProject, projectArtifacts]);
+
+  // Signed-in Projects are local-first, then reconciled with the durable store.
+  // If Supabase or the migration is unavailable, the current browser behavior
+  // remains untouched rather than blocking Studio.
+  useEffect(() => {
+    if (!accountKey) return undefined;
+    let cancelled = false;
+
+    const reconcile = async () => {
+      try {
+        const response = await loadRemoteProjects();
+        if (cancelled) return;
+        const remoteProjects = Array.isArray(response.projects)
+          ? response.projects.flatMap((project) => normalizeLocalProject(project) || [])
+          : [];
+        const localProjects = loadProjects();
+        const remoteById = new Map(remoteProjects.map((project) => [project.id, project]));
+        const reconciled = [];
+
+        for (const localProject of localProjects) {
+          const remote = remoteById.get(localProject.id);
+          if (!remote) {
+            try {
+              const saved = await saveRemoteProject({ project: localProject, expectedVersion: 0 });
+              reconciled.push(normalizeLocalProject(saved.project) || localProject);
+            } catch {
+              reconciled.push(localProject);
+            }
+            continue;
+          }
+
+          remoteById.delete(localProject.id);
+          if (timeValue(localProject.updatedAt) > timeValue(remote.updatedAt) + 1000) {
+            try {
+              const saved = await saveRemoteProject({ project: localProject, expectedVersion: remote.version || 0 });
+              reconciled.push(normalizeLocalProject(saved.project) || remote);
+            } catch {
+              reconciled.push(remote);
+            }
+          } else {
+            reconciled.push(remote);
+          }
+        }
+
+        reconciled.push(...remoteById.values());
+        if (!cancelled && reconciled.length > 0) {
+          const next = sortProjects(reconciled);
+          setProjects(next);
+          persistProjects(next);
+          if (!next.some((project) => project.id === activeProjectId)) {
+            setActiveProjectIdState(next[0].id);
+          }
+        }
+      } catch {
+        // Local Projects remain authoritative while remote sync is unavailable.
+      }
+    };
+
+    void reconcile();
+    return () => { cancelled = true; };
+  }, [accountKey]);
+
+  const persistProjectRemote = useCallback((project, expectedVersion) => {
+    if (!accountKey) return;
+    const localUpdatedAt = project.updatedAt;
+    void saveRemoteProject({ project, expectedVersion }).then((response) => {
+      const saved = normalizeLocalProject(response.project);
+      if (!saved) return;
+      setProjects((prev) => {
+        const updated = prev.map((current) => (
+          current.id === saved.id && current.updatedAt === localUpdatedAt ? saved : current
+        ));
+        persistProjects(updated);
+        return updated;
+      });
+    }).catch(() => {
+      // Never roll back a successful local edit because remote persistence is down.
+    });
+  }, [accountKey]);
+
+  useEffect(() => {
+    if (!accountKey || !activeProject?.id || (activeProject.version || 0) < 1 || projectArtifacts.length === 0) return;
+    const resources = projectArtifacts.map((artifact) => ({
+      kind: artifact.kind,
+      ref: artifact.ref,
+      title: artifact.title,
+      metadata: artifact.metadata,
+    }));
+    void syncRemoteProjectResources(activeProject.id, resources).catch(() => {
+      // Artifact metadata remains available in the local Project even if sync is offline.
+    });
+  }, [accountKey, activeProject.id, activeProject.version, projectArtifacts]);
 
   const updateActiveSession = useCallback((updates) => {
     setAllChatSessions((prevSessions) => {
@@ -209,21 +361,26 @@ export function useStudioSession({ user, selectedModel }) {
   }, [allChatSessions, defaultGreetingMsg, projects]);
 
   const handleCreateProject = useCallback((input = {}) => {
+    const now = Date.now();
     const name = String(input.name || '').trim() || 'Untitled Project';
     const project = {
-      id: 'project-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-      name: name.slice(0, 60),
-      description: String(input.description || '').trim().slice(0, 240),
-      goal: String(input.goal || '').trim().slice(0, 240),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      color: input.color || '#3b82f6',
+      id: createProjectId(),
+      version: 0,
+      name: name.slice(0, PROJECT_LIMITS.name),
+      description: String(input.description || '').trim().slice(0, PROJECT_LIMITS.description),
+      goal: String(input.goal || '').trim().slice(0, PROJECT_LIMITS.goal),
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+      color: input.color || NEW_PROJECT_COLOR,
     };
     setProjects((prev) => {
       const updated = [project, ...prev];
       persistProjects(updated);
       return updated;
     });
+    persistProjectRemote(project, 0);
+
     const newSession = makeSession(project.id, defaultGreetingMsg);
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
@@ -233,15 +390,18 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveProjectIdState(project.id);
     setActiveSessionId(newSession.id);
     return project;
-  }, [defaultGreetingMsg]);
+  }, [defaultGreetingMsg, persistProjectRemote]);
 
   const updateActiveProject = useCallback((updates) => {
+    const nextProject = normalizeLocalProject({ ...activeProject, ...updates, updatedAt: Date.now() });
+    if (!nextProject) return;
     setProjects((prev) => {
-      const updated = prev.map((project) => project.id === activeProject.id ? { ...project, ...updates, updatedAt: Date.now() } : project);
+      const updated = prev.map((project) => project.id === activeProject.id ? nextProject : project);
       persistProjects(updated);
       return updated;
     });
-  }, [activeProject.id]);
+    persistProjectRemote(nextProject, activeProject.version || 0);
+  }, [activeProject, persistProjectRemote]);
 
   const handleDeleteChat = useCallback((e, sessionId) => {
     e.stopPropagation();
