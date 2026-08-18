@@ -63,7 +63,15 @@ export function assertProviderSchemaCompatible(provider, format, schema = office
   return schema;
 }
 
-export async function runProviderFailover({ providers = [], invoke, onFailure = null } = {}) {
+/**
+ * @param {{
+ *   providers?: string[],
+ *   invoke: (provider: string) => Promise<any> | any,
+ *   onFailure?: ((provider: string, error: any) => void) | null
+ * }} options
+ */
+export async function runProviderFailover(options) {
+  const { providers = [], invoke, onFailure = null } = options || {};
   if (typeof invoke !== 'function') throw new Error('Provider failover requires an invoke callback.');
   const available = providers.filter((provider) => PROVIDERS.has(provider));
   if (!available.length) throw new Error('No model credential available for Office generation.');
