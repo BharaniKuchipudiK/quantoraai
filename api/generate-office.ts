@@ -26,6 +26,7 @@ import {
   validateOfficeSpec,
   verifyCompiledOfficeArtifact,
 } from './_lib/office-artifact.js';
+import { validateGeneratedPresentationSpec } from './_lib/presentation-generation-gate.js';
 import { fetchPublicHttpsImage } from './_lib/safe-image-fetch.js';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
@@ -221,7 +222,9 @@ export default async function handler(req, res) {
           const candidate = format === 'powerpoint'
             ? materializePresentationTransportSpec(parsed)
             : parsed;
-          const validation = validateSpec(format, candidate);
+          const validation = format === 'powerpoint'
+            ? validateGeneratedPresentationSpec(candidate)
+            : validateSpec(format, candidate);
           if (!validation.valid) {
             lastStage = 'semantic-gate';
             if (format === 'powerpoint') lastCandidate = parsed;
@@ -248,7 +251,9 @@ export default async function handler(req, res) {
 
     validJson = attachUserImages(format, validJson, imageAttachments);
     validJson = normalizeSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
-    const finalSpecValidation = validateSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
+    const finalSpecValidation = (!isCompileRequest && format === 'powerpoint')
+      ? validateGeneratedPresentationSpec(validJson)
+      : validateSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
     if (!finalSpecValidation.valid) {
       return res.status(422).json({
         error: `Office specification could not be repaired safely: ${finalSpecValidation.issues.join(' ')}`,
