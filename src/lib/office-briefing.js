@@ -1,19 +1,32 @@
+import { latestVerifiedOfficeArtifact } from './office-session-state.js';
+
 const EXECUTIVE_AUDIENCE = /\b(cio|cto|cfo|ceo|coo|ciso|chief\s+\w+\s+officer|board|executive(?:s| leadership)?|leadership team|steering committee|steerco|client leadership|senior management)\b/i;
 const ACADEMIC_AUDIENCE = /\b(professor|lecturer|faculty|teacher|classmates?|students?|academic|university|college|school|research committee|thesis|dissertation)\b/i;
 const DOCUMENT_ARCHETYPE = /\b(qbr|quarterly business review|business case|weekly (?:project )?status|project status|status report|steerco|steering committee|board update|executive briefing|research presentation|academic presentation|thesis defense|sales pitch|proposal|strategy deck|roadmap)\b/i;
 const PRESENTER_SIGNAL = /\b(as (?:a|an)\b|i am\b|i'm\b|my role\b|project manager|program manager|programme manager|engagement manager|consultant|analyst|student|researcher|architect|engineer|director|vice president|vp\b)/i;
 const PURPOSE_SIGNAL = /\b(approve|approval|decision|decide|funding|investment|buy[- ]?in|align|alignment|inform|update|review|recommend|recommendation|persuade|convince|teach|present findings|status|governance|escalat)/i;
 const EVIDENCE_SIGNAL = /\b(attached|source|sources|metrics|kpi|kpis|data|financials?|budget|cost|benefit|roi|npv|timeline|milestone|risk register|research|citation|citations|references|findings|results)\b/i;
-const APPROVAL_PHRASE = /\b(go ahead|proceed|approved|approve it|build it|generate it|create it|make it|build the requested artifact|generate the requested artifact|yes[, ]+(?:build|generate|create|proceed)|ready to build)\b/i;
-const FAST_TRACK_PHRASE = /\b(just build|build it now|generate it now|create it now|use (?:your|reasonable) (?:judg(?:e)?ment|assumptions)|assume reasonable|do not ask|don't ask|skip the questions|no questions)\b/i;
 const GENERATOR_TRIGGER_WORDS = /\b(powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|word(?:\s+(?:document|report|file|doc))|docx?)\b/gi;
 
 export const OFFICE_CONTINUE_VALUE = 'Build the requested artifact now using this approved briefing context';
 
 function recentOfficeBriefing(messages = []) {
-  return [...(Array.isArray(messages) ? messages : [])]
-    .reverse()
-    .find((message) => message?.officeBriefing === true && message?.officeBriefingKind);
+  const list = Array.isArray(messages) ? messages : [];
+  let latestArtifactIndex = -1;
+  let latestBriefing = null;
+  let latestBriefingIndex = -1;
+
+  list.forEach((message, index) => {
+    if (message?.officeAttachment?.verification?.passed === true) latestArtifactIndex = index;
+    if (message?.officeBriefing === true && message?.officeBriefingKind) {
+      latestBriefing = message;
+      latestBriefingIndex = index;
+    }
+  });
+
+  // A generated artifact closes the briefing transaction. Old briefing markers
+  // remain in history for traceability but must never hijack later artifact edits.
+  return latestBriefingIndex > latestArtifactIndex ? latestBriefing : null;
 }
 
 function maskGeneratorTriggerWords(value = '') {
@@ -24,6 +37,15 @@ function maskGeneratorTriggerWords(value = '') {
 
 export function activeOfficeBriefingKind(messages = []) {
   return recentOfficeBriefing(messages)?.officeBriefingKind || null;
+}
+
+export function activeOfficeArtifact(messages = []) {
+  return latestVerifiedOfficeArtifact(messages);
+}
+
+export function activeOfficeArtifactKind(messages = []) {
+  const artifact = activeOfficeArtifact(messages);
+  return artifact?.kind || artifact?.format || null;
 }
 
 export function countOfficeBriefSignals(text = '') {
@@ -37,24 +59,74 @@ export function countOfficeBriefSignals(text = '') {
   ].filter(Boolean).length;
 }
 
-export function shouldGenerateOfficeNow({ text = '', officeKind = null, messages = [] } = {}) {
+async function interpretOfficeTurn({ text, messages, officeKind, activeArtifact, priorBriefing }) {
+  try {
+    const history = (Array.isArray(messages) ? messages : []).slice(-10).map((message) => ({
+      sender: message?.sender === 'user' ? 'user' : 'ai',
+      text: String(message?.text || '').slice(0, 1800),
+    }));
+    const res = await fetch('/api/classify-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: String(text || ''),
+        history,
+        activeOfficeArtifact: activeArtifact ? {
+          kind: activeArtifact.kind || activeArtifact.format || null,
+          fileName: activeArtifact.fileName || '',
+          title: activeArtifact.spec?.title || activeArtifact.spec?.filename || '',
+          previewFingerprint: activeArtifact.verification?.previewFingerprint || '',
+        } : null,
+        activeOfficeBriefing: priorBriefing ? { kind: priorBriefing.officeBriefingKind } : null,
+        requestedOfficeKind: officeKind || null,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.office || null;
+  } catch (error) {
+    console.warn('Office semantic turn interpretation failed:', error);
+    return null;
+  }
+}
+
+export async function shouldGenerateOfficeNow({ text = '', officeKind = null, messages = [] } = {}) {
   const value = String(text || '').trim();
   const prior = recentOfficeBriefing(messages);
-  const activeKind = officeKind || prior?.officeBriefingKind || null;
+  const artifact = activeOfficeArtifact(messages);
+  const activeKind = artifact?.kind || artifact?.format || officeKind || prior?.officeBriefingKind || null;
   if (!activeKind) return false;
 
-  // Normal path: briefing first, then one explicit human approval. The UI
-  // Continue button sends OFFICE_CONTINUE_VALUE internally, so users never need
-  // to discover or type an approval phrase themselves.
-  if (prior && APPROVAL_PHRASE.test(value)) return true;
+  // Continue is a deterministic UI action, not natural-language intent parsing.
+  if (prior && value === OFFICE_CONTINUE_VALUE) return true;
 
-  // Deliberate bypass: the user can explicitly tell Quantora to skip discovery.
-  if (officeKind && FAST_TRACK_PHRASE.test(value)) return true;
+  // Natural-language create/refine/discuss semantics belong to the model-based
+  // turn interpreter. Frontend code must not grow another English keyword list.
+  const interpretation = await interpretOfficeTurn({
+    text: value,
+    messages,
+    officeKind,
+    activeArtifact: artifact,
+    priorBriefing: prior,
+  });
+  if (!interpretation) return false;
 
-  return false;
+  if (artifact) {
+    return interpretation.action === 'refine'
+      && (!interpretation.kind || interpretation.kind === activeKind);
+  }
+
+  // First-turn creation normally briefs first. A direct build is allowed only
+  // when the semantic interpreter concludes the user explicitly wants discovery
+  // skipped; this is meaning-based, not phrase-based.
+  return interpretation.action === 'create' && interpretation.skipBriefing === true;
 }
 
 export function officeBriefingContext({ text = '', officeKind = null, messages = [], sessionContext = null } = {}) {
+  // Once a verified artifact exists this is no longer a briefing transaction.
+  // Follow-ups are either semantic refinements (Office generator) or normal chat.
+  if (activeOfficeArtifact(messages)) return null;
+
   const prior = recentOfficeBriefing(messages);
   const activeKind = officeKind || prior?.officeBriefingKind || null;
   if (!activeKind) return null;

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  activeOfficeArtifactKind,
   activeOfficeBriefingKind,
   countOfficeBriefSignals,
   officeBriefingContext,
@@ -8,38 +9,90 @@ import {
   OFFICE_CONTINUE_VALUE,
 } from './office-briefing.js';
 
-test('a generic first-turn presentation request does not bypass human briefing', () => {
-  assert.equal(shouldGenerateOfficeNow({
+async function withFetchResult(payload, fn) {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => payload });
+  try { return await fn(); } finally { globalThis.fetch = previous; }
+}
+
+test('a generic first-turn presentation request does not bypass human briefing', async () => {
+  const result = await withFetchResult({ office: { action: 'create', kind: 'powerpoint', skipBriefing: false, confidence: 0.99 } }, () => shouldGenerateOfficeNow({
     text: 'Make me a presentation about cyber resilience',
     officeKind: 'powerpoint',
     messages: [],
-  }), false);
+  }));
+  assert.equal(result, false);
 });
 
-test('a deliberately fast-tracked request can bypass briefing', () => {
-  assert.equal(shouldGenerateOfficeNow({
-    text: 'Just build it now and use reasonable assumptions',
+test('semantic intent can deliberately fast-track a first-turn Office build', async () => {
+  const result = await withFetchResult({ office: { action: 'create', kind: 'powerpoint', skipBriefing: true, confidence: 0.99 } }, () => shouldGenerateOfficeNow({
+    text: 'Build immediately without discovery',
     officeKind: 'powerpoint',
     messages: [],
-  }), true);
+  }));
+  assert.equal(result, true);
 });
 
-test('a fully specified first-turn brief still gets one human approval checkpoint', () => {
+test('a fully specified first-turn brief still gets one human approval checkpoint', async () => {
   const text = 'As a senior project manager, prepare a QBR for the CIO and executive leadership to secure approval. Use the attached KPIs and financial data.';
   assert.ok(countOfficeBriefSignals(text) >= 5);
-  assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), false);
+  const result = await withFetchResult({ office: { action: 'create', kind: 'powerpoint', skipBriefing: false, confidence: 0.99 } }, () => shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }));
+  assert.equal(result, false);
 });
 
-test('Continue UI value hands the approved briefing to Office generation', () => {
+test('Continue UI value deterministically hands the approved briefing to Office generation', async () => {
   const messages = [
     { sender: 'ai', text: 'Brief approved?', officeBriefing: true, officeBriefingKind: 'powerpoint' },
   ];
   assert.equal(activeOfficeBriefingKind(messages), 'powerpoint');
-  assert.equal(shouldGenerateOfficeNow({
+  assert.equal(await shouldGenerateOfficeNow({
     text: OFFICE_CONTINUE_VALUE,
     officeKind: null,
     messages,
   }), true);
+});
+
+test('verified artifact closes briefing and semantic refinement routes directly to generation', async () => {
+  const messages = [
+    { sender: 'ai', text: 'Brief', officeBriefing: true, officeBriefingKind: 'powerpoint' },
+    {
+      sender: 'ai',
+      text: 'Generated',
+      officeAttachment: {
+        kind: 'powerpoint',
+        fileName: 'deck.pptx',
+        spec: { version: 2, title: 'Deck', slides: [] },
+        htmlPreview: '<html>deck</html>',
+        verification: { passed: true, previewFingerprint: 'abc12345' },
+      },
+    },
+  ];
+  assert.equal(activeOfficeBriefingKind(messages), null);
+  assert.equal(activeOfficeArtifactKind(messages), 'powerpoint');
+  assert.equal(officeBriefingContext({ text: 'Please correct the wording across the deck', messages }), null);
+  const result = await withFetchResult({ office: { action: 'refine', kind: 'powerpoint', skipBriefing: false, confidence: 0.99 } }, () => shouldGenerateOfficeNow({
+    text: 'Please correct the wording across the deck',
+    messages,
+  }));
+  assert.equal(result, true);
+});
+
+test('discussion about an active artifact does not silently rewrite it', async () => {
+  const messages = [{
+    sender: 'ai',
+    officeAttachment: {
+      kind: 'powerpoint',
+      fileName: 'deck.pptx',
+      spec: { version: 2, title: 'Deck', slides: [] },
+      htmlPreview: '<html>deck</html>',
+      verification: { passed: true, previewFingerprint: 'abc12345' },
+    },
+  }];
+  const result = await withFetchResult({ office: { action: 'discuss', kind: 'powerpoint', skipBriefing: false, confidence: 0.98 } }, () => shouldGenerateOfficeNow({
+    text: 'Why did you choose this structure?',
+    messages,
+  }));
+  assert.equal(result, false);
 });
 
 test('completed briefing instructs the active chat UI to render one direct Continue action', () => {

@@ -128,7 +128,7 @@ export function useStudioSession({ user, selectedModel }) {
     (session.messages || []).filter((message) => message.officeAttachment || message.codeSnippet || message.previewUrl).map((message) => ({
       id: message.id,
       sessionId: session.id,
-      title: message.officeAttachment?.filename || message.title || 'Generated artifact',
+      title: message.officeAttachment?.fileName || message.title || 'Generated artifact',
       type: message.officeAttachment ? 'office' : 'workspace',
       createdAt: message.createdAt || session.createdAt,
     }))

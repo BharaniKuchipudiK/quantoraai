@@ -7,24 +7,35 @@ import { applyDiffPatch } from './diff-patcher.js';
  * Example: { 'App.jsx': { content: '...', language: 'jsx' } }
  */
 export function parseVFSFromMarkdown(text, currentVfs = {}) {
-  // Deep clone currentVfs to prevent mutating React state directly
-  const vfs = JSON.parse(JSON.stringify(currentVfs));
+  // Deep clone currentVfs to prevent mutating React state directly.
+  let vfs = JSON.parse(JSON.stringify(currentVfs));
   if (!text) return vfs;
 
-  // Regex to match markdown code blocks
-  // Matches: ```language filepath="something" ... ```
+  // Regex to match markdown code blocks. Spaces/tabs are allowed between the
+  // language and optional attributes, but never consume the newline that begins
+  // the code body. This matters for one-line canonical Office HTML documents.
   // Group 1: language (optional)
   // Group 2: attributes (optional, e.g. filepath="App.jsx")
   // Group 3: code content
-  const codeBlockRegex = /```(\w+)?\s*(.*?)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(\w+)?[ \t]*(.*?)\r?\n([\s\S]*?)```/g;
   
   let match;
-  let blockCount = 0;
   while ((match = codeBlockRegex.exec(text)) !== null) {
-    blockCount++;
     const language = (match[1] || '').toLowerCase();
     const attributes = match[2] || '';
     const code = match[3];
+
+    // A server-verified Office preview is an atomic artifact state, not another
+    // generic HTML file to merge into a stale app/deck VFS. Reset the VFS and
+    // preserve the exact canonical HTML so its embedded fingerprint remains valid.
+    if (language === 'html' && /id=["']quantora-office-manifest["']/i.test(code)) {
+      return {
+        'presentation.html': {
+          content: code,
+          language: 'html',
+        },
+      };
+    }
 
     // Try to extract filepath="filename" or filename="filename"
     const filepathMatch = attributes.match(/(?:filepath|filename)="([^"]+)"/) || attributes.match(/(?:filepath|filename)='([^']+)'/);
@@ -66,9 +77,7 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
     }
   }
   
-  // Backward compatibility: If no valid code blocks were found using standard markdown, 
-  // maybe the AI just spit out raw HTML/React (like the old LivePreviewCanvas logic did).
-  // We'll leave that to the caller to handle, or we can assume if no blocks exist, return empty.
-  
+  // Backward compatibility: If no valid code blocks were found using standard markdown,
+  // maybe the AI just spit out raw HTML/React. The caller handles that path.
   return vfs;
 }
