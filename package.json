@@ -15,9 +15,10 @@
     "test:repository-preview": "tsx --test api/_lib/repository-preview.test.ts",
     "test:quantum": "node --test src/lib/quantum/*.test.js",
     "test:studio-synthetic": "node scripts/studio-synthetic-test.mjs",
+    "test:office-synthetic": "tsx scripts/office-synthetic-test.ts",
     "test:outcome-navigator": "tsx scripts/outcome-navigator-eval.ts",
     "test:ts": "tsx --test api/_lib/agent-tools.test.ts api/_lib/conversation-engine.test.ts api/_lib/deck-compose.test.ts api/_lib/conversation-policy.test.ts api/_lib/model-payload.test.ts api/_lib/outcome-state.test.ts api/_lib/protected-endpoints.test.ts api/_lib/publish-policy.test.ts api/_lib/repository-preview.test.ts api/_lib/safety-policy.test.ts api/_lib/session-context.test.ts api/_lib/store.test.ts api/_lib/studio-choice-templates.test.ts api/_lib/studio-choices.test.ts api/_lib/studio-domains.test.ts api/_lib/studio-modes.test.ts",
-    "test:all": "npm run test:ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js && npm run test:studio-synthetic && npm run test:outcome-navigator",
+    "test:all": "npm run test:ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js && npm run test:office-synthetic && npm run test:studio-synthetic && npm run test:outcome-navigator",
     "lint:undef": "eslint 'src/**/*.{js,jsx}'"
   },
   "dependencies": {
