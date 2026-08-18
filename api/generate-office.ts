@@ -164,6 +164,7 @@ export default async function handler(req, res) {
   try {
     let validJson;
     let generationAttempts = 0;
+    let successfulGeneration: { provider: string | null; model: string | null } | null = null;
     const generationWarnings = [];
     if (legacyPowerPointCompile) {
       generationWarnings.push('Legacy V1 presentation recompiled through V2 compatibility mode; the new semantic composition quality gate was not retroactively applied.');
@@ -190,8 +191,9 @@ export default async function handler(req, res) {
         generationAttempts += 1;
         try {
           let rawResponse;
+          let providerResult: any;
           try {
-            rawResponse = await withTimeout(
+            providerResult = await withTimeout(
               generateJsonSchema(
                 prompt,
                 format,
@@ -206,6 +208,7 @@ export default async function handler(req, res) {
               110_000,
               'The AI model took too long to respond',
             );
+            rawResponse = typeof providerResult === 'string' ? providerResult : String(providerResult?.text || '');
           } catch (error) {
             lastStage = 'provider';
             throw error;
@@ -231,6 +234,9 @@ export default async function handler(req, res) {
             throw new Error(validation.issues.join(' '));
           }
 
+          successfulGeneration = providerResult && typeof providerResult === 'object'
+            ? { provider: providerResult.provider || null, model: providerResult.model || null }
+            : null;
           validJson = validation.spec;
           generationWarnings.push(...validation.warnings);
         } catch (error) {
@@ -288,6 +294,16 @@ export default async function handler(req, res) {
       previewFingerprint: verification.previewFingerprint,
     });
 
+    if (!isCompileRequest) {
+      console.info('Office generation succeeded', {
+        format,
+        operation,
+        provider: successfulGeneration?.provider || null,
+        model: successfulGeneration?.model || null,
+        attempts: generationAttempts,
+      });
+    }
+
     return res.status(200).json({
       success: true,
       artifactVersion: OFFICE_ARTIFACT_VERSION,
@@ -311,6 +327,9 @@ export default async function handler(req, res) {
           ? 'deterministic-recompile'
           : operation === 'refine' ? 'ai-refine-and-compile' : 'ai-generate-and-compile',
         attempts: generationAttempts,
+        provider: isCompileRequest ? null : successfulGeneration?.provider || null,
+        model: isCompileRequest ? null : successfulGeneration?.model || null,
+        repaired: !isCompileRequest && generationAttempts > 1,
         legacyCompatibility: legacyPowerPointCompile,
       },
     });
@@ -577,6 +596,7 @@ async function callOpenRouter(systemPrompt, promptWithContext, openRouterKey, fo
   const key = openRouterKey || process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OpenRouter credential unavailable');
   const schema = outputSchemaFor(format);
+  const model = process.env.OPENROUTER_OFFICE_MODEL || 'openai/gpt-4o-mini';
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -584,7 +604,7 @@ async function callOpenRouter(systemPrompt, promptWithContext, openRouterKey, fo
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_OFFICE_MODEL || 'openai/gpt-4o-mini',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: promptWithContext },
@@ -612,7 +632,7 @@ async function callOpenRouter(systemPrompt, promptWithContext, openRouterKey, fo
   let content = String(data.choices?.[0]?.message?.content || '');
   if (content.startsWith('```')) content = content.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
   if (!content.trim()) throw new Error('OpenRouter returned an empty completion');
-  return content;
+  return { text: content, provider: 'openrouter', model };
 }
 
 function buildSessionGenerationContext(sessionContext) {
@@ -714,16 +734,17 @@ async function callAnthropic(systemPrompt, promptWithContext, anthropicKey, form
     ? data.content.filter((block: any) => block?.type === 'text').map((block: any) => block.text).join('')
     : '';
   if (!String(content || '').trim()) throw new Error('Anthropic returned an empty completion');
-  return String(content).trim();
+  return { text: String(content).trim(), provider: 'anthropic', model };
 }
 
 async function callGemini(systemPrompt, promptWithContext, apiKey, format) {
   const client = new GoogleGenAI({ apiKey });
+  const model = process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest';
   let geminiError: any = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const response = await client.models.generateContent({
-        model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
+        model,
         contents: [{ role: 'user', parts: [{ text: promptWithContext }] }],
         config: {
           systemInstruction: systemPrompt,
@@ -735,7 +756,7 @@ async function callGemini(systemPrompt, promptWithContext, apiKey, format) {
       let text = String(response.text || '');
       if (text.startsWith('```')) text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
       if (!text) throw new Error('Gemini returned an empty completion');
-      return text;
+      return { text, provider: 'gemini', model };
     } catch (error: any) {
       geminiError = error;
       const errorText = String(error?.message || error);
