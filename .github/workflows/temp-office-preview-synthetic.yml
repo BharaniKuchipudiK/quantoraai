@@ -20,10 +20,10 @@ jobs:
           node-version: 22
       - name: Establish temporary Vercel preview session
         run: |
-          curl -sS -L -c /tmp/quantora-vercel-cookies 'https://quantora-platform-git-integration-office-quality-bf844f-sartho.vercel.app/?_vercel_share=U9A78LmNSe3Uuhs6P4dEcOjJEDDUzbSb' -o /tmp/quantora-preview-home.html
+          curl -sS -L -c /tmp/quantora-vercel-cookies 'https://quantora-platform-5e9h4xs1l-sartho.vercel.app/?_vercel_share=3JSIhiKzVu1TR8stpHsgBWJqcE1XzlZY' -o /tmp/quantora-preview-home.html
           test -s /tmp/quantora-vercel-cookies
       - name: Create, refine, and recompile on integration preview
         env:
-          QUANTORA_SYNTHETIC_BASE_URL: https://quantora-platform-git-integration-office-quality-bf844f-sartho.vercel.app
+          QUANTORA_SYNTHETIC_BASE_URL: https://quantora-platform-5e9h4xs1l-sartho.vercel.app
           QUANTORA_SYNTHETIC_COOKIE_JAR: /tmp/quantora-vercel-cookies
         run: node scripts/office-preview-synthetic-temp.mjs
