@@ -45,8 +45,17 @@
   margin-top: clamp(30px, 4vw, 48px) !important;
 }
 
+.q-pcl-wave--future::before { animation-duration: 24s !important; }
+.q-pcl-wave--future::after { animation-duration: 32s !important; }
+
 .q-pcl-wave--future .q-pcl-wave__line {
   top: 31% !important;
+}
+
+/* The card reveal is now the only travelling highlight. Removing the separate
+ * line pulse avoids two unrelated animations competing for attention. */
+.q-pcl-wave--future .q-pcl-wave__line::after {
+  display: none !important;
 }
 
 .q-pcl-wave--future .q-pcl-wave__core {
@@ -55,6 +64,10 @@
   top: 23px !important;
   transform: none !important;
   padding: 8px 13px !important;
+}
+
+.q-pcl-wave--future .q-pcl-wave__track span {
+  animation-duration: 10.5s !important;
 }
 
 .q-pcl-wave--future .q-pcl-wave__track span:nth-child(1)  { left: 5%;  top: 20%; }
@@ -84,30 +97,61 @@
 }
 
 .q-future-card {
+  position: relative;
   min-width: 0;
   min-height: 286px;
   padding: 18px;
-  border: 1px solid rgba(255,255,255,.105);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.095);
   border-radius: 18px;
   outline: none;
-  background: rgba(11,13,18,.78);
+  background: rgba(11,13,18,.76);
   color: var(--q-text);
-  box-shadow: 0 20px 45px rgba(0,0,0,.22);
+  box-shadow: 0 20px 45px rgba(0,0,0,.20);
   backdrop-filter: blur(18px);
-  opacity: .68;
-  transform: translateY(8px) scale(.985);
-  transition: opacity 360ms ease, transform 480ms cubic-bezier(.2,.8,.2,1), border-color 320ms ease, background 320ms ease;
+  opacity: .74;
+  transform: translateY(6px) scale(.988);
+  transition: opacity 620ms ease, transform 760ms cubic-bezier(.2,.8,.2,1), border-color 620ms ease, background 620ms ease;
+}
+
+/* A single soft beam sweeps the active card. The card only comes forward as
+ * the beam reaches it, giving one readable cause-and-effect motion. */
+.q-future-card::before {
+  content: '';
+  position: absolute;
+  z-index: 20;
+  top: -16%;
+  bottom: -16%;
+  left: -34%;
+  width: 30%;
+  pointer-events: none;
+  opacity: 0;
+  transform: skewX(-15deg);
+  background: linear-gradient(90deg, transparent, rgba(255,139,65,.05), rgba(255,185,126,.20), rgba(255,106,0,.14), transparent);
+  filter: blur(1px);
+}
+
+.q-future-card.is-active::before {
+  animation: q-future-card-sweep 1.55s cubic-bezier(.22,.72,.2,1) both;
 }
 
 .q-future-card.is-active,
 .q-future-card:hover,
 .q-future-card:focus-visible {
   opacity: 1;
-  transform: translateY(0) scale(1);
-  border-color: rgba(255,106,0,.34);
+  border-color: rgba(255,106,0,.30);
   background:
-    radial-gradient(circle at 50% 100%, rgba(255,106,0,.075), transparent 44%),
-    rgba(14,16,22,.92);
+    radial-gradient(circle at 50% 100%, rgba(255,106,0,.065), transparent 44%),
+    rgba(14,16,22,.91);
+}
+
+.q-future-card.is-active {
+  animation: q-future-card-turn 1.05s cubic-bezier(.2,.78,.2,1) both;
+}
+
+.q-future-card:hover,
+.q-future-card:focus-visible {
+  transform: translateY(0) scale(1);
 }
 
 .q-future-card__meta {
@@ -145,12 +189,28 @@
   font-size: .72rem;
 }
 
+/* Inactive cards stay clean. The explanation reveals only when the signal
+ * activates the card (or the visitor deliberately hovers/focuses it). */
 .q-future-card > p {
-  margin: 8px 0 0;
-  min-height: 48px;
+  margin: 0;
+  max-height: 0;
+  min-height: 0;
+  overflow: hidden;
   color: var(--q-muted);
   font-size: .64rem;
   line-height: 1.48;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: max-height 720ms ease, margin 520ms ease, opacity 520ms ease 260ms, transform 600ms ease 220ms;
+}
+
+.q-future-card.is-active > p,
+.q-future-card:hover > p,
+.q-future-card:focus-visible > p {
+  margin-top: 8px;
+  max-height: 70px;
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .q-future-visual {
@@ -160,6 +220,12 @@
   border: 1px solid rgba(255,255,255,.075);
   border-radius: 12px;
   background: rgba(255,255,255,.025);
+  transition: transform 720ms ease, opacity 620ms ease;
+}
+
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) .q-future-visual {
+  opacity: .72;
+  transform: translateY(5px);
 }
 
 /* Cognitive intelligence: no model picker, just an automatic route. */
@@ -203,7 +269,7 @@
   border-radius: 50%;
   background: var(--q-accent);
   box-shadow: 0 0 14px rgba(255,106,0,.7);
-  animation: q-future-route 3.2s linear infinite;
+  animation: q-future-route 4.8s linear infinite;
 }
 
 .q-route-output {
@@ -362,6 +428,25 @@
   to { left: calc(100% - 7px); opacity: 0; }
 }
 
+@keyframes q-future-card-sweep {
+  0% { left: -34%; opacity: 0; }
+  14% { opacity: .82; }
+  76% { opacity: .72; }
+  100% { left: 112%; opacity: 0; }
+}
+
+@keyframes q-future-card-turn {
+  0%, 14% {
+    transform: translateY(6px) perspective(900px) rotateX(0deg) scale(.988);
+  }
+  42% {
+    transform: translateY(1px) perspective(900px) rotateX(-1.6deg) scale(.997);
+  }
+  100% {
+    transform: translateY(0) perspective(900px) rotateX(0deg) scale(1);
+  }
+}
+
 @media (max-width: 1020px) {
   .q-future-copy__grid {
     grid-template-columns: 1fr;
@@ -423,5 +508,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .q-route-line i { animation: none !important; left: calc(100% - 7px); opacity: 1; }
-  .q-future-card { transition: none !important; }
+  .q-future-card,
+  .q-future-card.is-active,
+  .q-future-card::before,
+  .q-pcl-wave--future::before,
+  .q-pcl-wave--future::after,
+  .q-pcl-wave--future .q-pcl-wave__track span {
+    animation: none !important;
+    transition: none !important;
+  }
+  .q-future-card.is-active { transform: translateY(0) scale(1); }
 }
