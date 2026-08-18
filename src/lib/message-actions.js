@@ -1,7 +1,7 @@
 /*
  * Contextual message actions (Roadmap: chat UX).
  *
- * A message's action bar should be DERIVED from its content, not a fixed row
+ * A message's action bar should be DERIVED from its content/state, not a fixed row
  * dumped on every reply. This is the single source of truth for "which actions
  * does THIS message support?" so every bar renders the same, correct set:
  *  - always: copy, feedback (up/down), regenerate
@@ -21,11 +21,11 @@ export function isSummarizable(text = '') {
 
 /**
  * Resolve the action set for a message.
- * @param {{ text?: string, hasPreview?: boolean }} opts
+ * @param {{ text?: string, hasPreview?: boolean, isOfficeArtifact?: boolean }} opts
  * @returns {{ copy:boolean, feedback:boolean, regenerate:boolean,
  *             summarize:boolean, preview:boolean, overflow:string[] }}
  */
-export function resolveMessageActions({ text = '', hasPreview = false } = {}) {
+export function resolveMessageActions({ text = '', hasPreview = false, isOfficeArtifact = false } = {}) {
   const clean = String(text || '').trim();
   const overflow = [];
   if (clean.length > 0) overflow.push('read-aloud');
@@ -35,7 +35,9 @@ export function resolveMessageActions({ text = '', hasPreview = false } = {}) {
     feedback: true,
     regenerate: true,
     summarize: isSummarizable(clean),
-    preview: Boolean(hasPreview),
+    // Verified Office artifacts already live in the right-side workspace. Their
+    // presence is explicit message state; never infer this from assistant wording.
+    preview: Boolean(hasPreview) && !isOfficeArtifact,
     overflow,
   };
 }
