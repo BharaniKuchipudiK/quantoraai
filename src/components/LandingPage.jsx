@@ -1,129 +1,214 @@
 import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
+  Bot,
   CheckCircle2,
-  ChevronDown,
+  Code2,
+  Cpu,
+  FileSpreadsheet,
   FileText,
-  FolderKanban,
-  Globe2,
   Moon,
-  Paperclip,
-  Search,
+  Presentation,
+  ShieldCheck,
   Sparkles,
   Sun,
 } from 'lucide-react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import './LandingPage.css';
 
-const PROMPT_EXAMPLES = [
-  'Turn this idea into something I can use…',
-  'Research this and tell me what actually matters…',
-  'Build the presentation, not just the outline…',
-  'Create the app and get it running…',
+const PLATFORM_PANELS = [
+  { id: 'pcl', number: '01', eyebrow: 'Context', title: 'PCL', subtitle: 'Persistent Cognitive Layer' },
+  { id: 'agents', number: '02', eyebrow: 'Intelligence', title: 'AI Agents', subtitle: 'Reason. Research. Act.' },
+  { id: 'office', number: '03', eyebrow: 'Creation', title: 'Microsoft Office', subtitle: 'From thought to usable work' },
+  { id: 'quantum', number: '04', eyebrow: 'Frontier', title: 'Quantum', subtitle: 'Explore what comes next' },
 ];
 
-const OUTCOME_STEPS = ['Understand', 'Research', 'Create', 'Verify', 'Ship'];
-
-function startFromPrompt({ prompt, onStartBuild, onLaunchStudio, onOpenAuth, user }) {
-  const value = String(prompt || '').trim();
-  if (onStartBuild) {
-    onStartBuild(value);
-    return;
-  }
+function enterQuantora({ user, onLaunchStudio, onOpenAuth }) {
   if (user) onLaunchStudio?.();
   else onOpenAuth?.();
 }
 
-function ProductScene() {
+function PclVisual() {
   return (
-    <div className="q-product-scene" aria-label="Quantora Studio product preview">
-      <aside className="q-product-sidebar">
-        <div className="q-product-sidebar__brand">Q</div>
-        <button type="button" className="q-product-new">+ New chat</button>
-
-        <div className="q-product-sidebar__label">Projects</div>
-        <div className="q-product-project q-product-project--active">
-          <FolderKanban size={14} />
-          <span>Quantora Platform</span>
-        </div>
-        <div className="q-product-project">
-          <FolderKanban size={14} />
-          <span>Product Ideas</span>
-        </div>
-
-        <div className="q-product-sidebar__label q-product-sidebar__label--later">Recent</div>
-        <div className="q-product-recent">Website direction</div>
-        <div className="q-product-recent">Token consumption</div>
-        <div className="q-product-recent">IDE workspace</div>
-      </aside>
-
-      <section className="q-product-chat">
-        <header className="q-product-chat__header">
-          <div>
-            <strong>Quantora Platform</strong>
-            <span>Project</span>
-          </div>
-          <div className="q-product-model">Gemini Flash <ChevronDown size={13} /></div>
-        </header>
-
-        <div className="q-product-thread">
-          <div className="q-product-user">
-            Prepare the launch narrative. Make the value obvious and use what we already decided in this project.
-          </div>
-
-          <div className="q-product-assistant">
-            <div className="q-product-assistant__mark"><Sparkles size={15} /></div>
-            <div>
-              <strong>Understood.</strong>
-              <p>I’m using the Project goal, product decisions and existing artifacts as the working context.</p>
-              <div className="q-product-action">Creating presentation</div>
-            </div>
-          </div>
-
-          <div className="q-product-composer">
-            <Paperclip size={15} />
-            <span>Ask Quantora…</span>
-            <div className="q-product-composer__tool"><Search size={13} /> Web Search</div>
-            <button type="button" aria-label="Send"><ArrowRight size={14} /></button>
-          </div>
-        </div>
-      </section>
-
-      <section className="q-product-workspace">
-        <header className="q-product-workspace__header">
-          <div>
-            <FileText size={15} />
-            <strong>Quantora Product Vision.pptx</strong>
-          </div>
-          <span>Preview</span>
-        </header>
-
-        <div className="q-slide-stage">
-          <div className="q-slide-preview">
-            <div className="q-slide-brand">QUANTORA</div>
-            <div className="q-slide-title">From intent to outcome</div>
-            <div className="q-slide-subtitle">One context · the right intelligence · usable work</div>
-            <div className="q-slide-rule" />
-
-            <div className="q-slide-kpis">
-              <div><span>01</span><strong>Understand</strong><small>Keep the objective in view</small></div>
-              <div><span>02</span><strong>Create</strong><small>Turn thinking into artifacts</small></div>
-              <div><span>03</span><strong>Deliver</strong><small>Verify and move work forward</small></div>
-            </div>
-
-            <div className="q-slide-callout">
-              <span>THE AMBITION</span>
-              <strong>Make AI useful beyond the conversation.</strong>
-            </div>
-          </div>
-        </div>
-
-        <footer className="q-product-workspace__footer">
-          <div><CheckCircle2 size={14} /> Verified</div>
-          <span>PowerPoint · Ready</span>
-        </footer>
-      </section>
+    <div className="q-panel-visual q-pcl-visual" aria-label="Persistent Cognitive Layer context graph">
+      <div className="q-pcl-core">
+        <span>PCL</span>
+        <strong>Objective</strong>
+      </div>
+      <div className="q-pcl-node q-pcl-node--goal"><span>Goal</span><b>Launch Quantora</b></div>
+      <div className="q-pcl-node q-pcl-node--decisions"><span>Decisions</span><b>Outcome first</b></div>
+      <div className="q-pcl-node q-pcl-node--memory"><span>Memory</span><b>Project context</b></div>
+      <div className="q-pcl-node q-pcl-node--next"><span>Next action</span><b>Move work forward</b></div>
+      <div className="q-pcl-link q-pcl-link--one" />
+      <div className="q-pcl-link q-pcl-link--two" />
+      <div className="q-pcl-link q-pcl-link--three" />
+      <div className="q-pcl-link q-pcl-link--four" />
     </div>
+  );
+}
+
+function AgentVisual() {
+  return (
+    <div className="q-panel-visual q-agent-visual" aria-label="AI agent orchestration">
+      <div className="q-agent-command">
+        <Sparkles size={14} />
+        <span>Turn this objective into an investor-ready launch.</span>
+      </div>
+      <div className="q-agent-stack">
+        <div className="q-agent-row q-agent-row--active">
+          <Bot size={15} />
+          <div><strong>Research agent</strong><span>Scanning evidence</span></div>
+          <b>RUNNING</b>
+        </div>
+        <div className="q-agent-row">
+          <Bot size={15} />
+          <div><strong>Strategy agent</strong><span>Shaping the narrative</span></div>
+          <b>READY</b>
+        </div>
+        <div className="q-agent-row">
+          <Bot size={15} />
+          <div><strong>Build agent</strong><span>Preparing the outcome</span></div>
+          <b>QUEUED</b>
+        </div>
+      </div>
+      <div className="q-agent-route"><span>ROUTING</span><strong>Right model · right tool · right moment</strong></div>
+    </div>
+  );
+}
+
+function OfficeVisual() {
+  return (
+    <div className="q-panel-visual q-office-visual" aria-label="Microsoft Office artifact generation">
+      <div className="q-office-stack">
+        <div className="q-office-card q-office-card--ppt">
+          <div className="q-office-card__head"><Presentation size={15} /><span>PowerPoint</span><b>READY</b></div>
+          <div className="q-office-slide">
+            <small>QUANTORA</small>
+            <strong>From intent to outcome</strong>
+            <span>Executive narrative · verified</span>
+            <div><i /><i /><i /></div>
+          </div>
+        </div>
+        <div className="q-office-card q-office-card--doc">
+          <div className="q-office-card__head"><FileText size={15} /><span>Word</span><b>VERIFIED</b></div>
+          <div className="q-office-lines"><i /><i /><i /><i /></div>
+        </div>
+        <div className="q-office-card q-office-card--xls">
+          <div className="q-office-card__head"><FileSpreadsheet size={15} /><span>Excel</span><b>LIVE</b></div>
+          <div className="q-office-grid"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuantumVisual() {
+  return (
+    <div className="q-panel-visual q-quantum-visual" aria-label="Quantora quantum exploration space">
+      <div className="q-quantum-head"><Cpu size={16} /><span>QUANTUM SPACE</span><b>SIMULATE</b></div>
+      <div className="q-circuit">
+        <div className="q-circuit-wire q-circuit-wire--one"><span>q0</span><i className="q-gate">H</i><i className="q-control" /><i className="q-meter">M</i></div>
+        <div className="q-circuit-wire q-circuit-wire--two"><span>q1</span><i className="q-gate">X</i><i className="q-target">⊕</i><i className="q-meter">M</i></div>
+        <div className="q-circuit-wire q-circuit-wire--three"><span>q2</span><i className="q-gate">R</i><i className="q-gate">Z</i><i className="q-meter">M</i></div>
+      </div>
+      <div className="q-quantum-result">
+        <span>STATE</span>
+        <div><i style={{ '--bar': '72%' }} /><i style={{ '--bar': '42%' }} /><i style={{ '--bar': '88%' }} /><i style={{ '--bar': '56%' }} /></div>
+        <strong>Explore beyond classical workflows.</strong>
+      </div>
+    </div>
+  );
+}
+
+function PlatformPanel({ panel, active, onActivate }) {
+  const Visual = panel.id === 'pcl'
+    ? PclVisual
+    : panel.id === 'agents'
+      ? AgentVisual
+      : panel.id === 'office'
+        ? OfficeVisual
+        : QuantumVisual;
+
+  return (
+    <article
+      className={`q-platform-panel${active ? ' is-active' : ''}`}
+      onMouseEnter={onActivate}
+      onFocus={onActivate}
+      tabIndex={0}
+    >
+      <div className="q-platform-panel__head">
+        <span>{panel.number} / {panel.eyebrow}</span>
+        <b>{active ? 'ACTIVE' : 'EXPLORE'}</b>
+      </div>
+      <div className="q-platform-panel__title">
+        <h3>{panel.title}</h3>
+        <p>{panel.subtitle}</p>
+      </div>
+      <Visual />
+    </article>
+  );
+}
+
+function CognitiveStage() {
+  const [activePanel, setActivePanel] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActivePanel((value) => (value + 1) % PLATFORM_PANELS.length);
+    }, 4200);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="q-cognitive-stage">
+      <header className="q-cognitive-stage__header">
+        <div><span className="q-live-dot" /> QUANTORA COGNITIVE PLATFORM</div>
+        <span>PRODUCT VISION</span>
+      </header>
+
+      <div className="q-cognitive-stage__panels">
+        {PLATFORM_PANELS.map((panel, index) => (
+          <PlatformPanel
+            key={panel.id}
+            panel={panel}
+            active={activePanel === index}
+            onActivate={() => setActivePanel(index)}
+          />
+        ))}
+        <div className="q-cognitive-signal" aria-hidden="true">
+          <span className="q-cognitive-signal__pulse" />
+        </div>
+      </div>
+
+      <footer className="q-cognitive-stage__footer">
+        <div className="q-stage-status"><ShieldCheck size={15} /><span>Verify</span><strong>Quality gate</strong></div>
+        <div className="q-stage-arrow">→</div>
+        <div className="q-stage-status"><Code2 size={15} /><span>Execute</span><strong>Real artifact</strong></div>
+        <div className="q-stage-arrow">→</div>
+        <div className="q-stage-status"><CheckCircle2 size={15} /><span>Deliver</span><strong>Usable outcome</strong></div>
+      </footer>
+    </div>
+  );
+}
+
+function PclSignalSection() {
+  const signals = ['GOAL', 'DECISIONS', 'CONSTRAINTS', 'MEMORY', 'ARTIFACTS', 'NEXT ACTION'];
+  return (
+    <section className="q-pcl-story">
+      <div className="q-pcl-story__copy q-shell">
+        <span>PERSISTENT COGNITIVE LAYER</span>
+        <h2>The context doesn’t disappear<br />when the conversation ends.</h2>
+      </div>
+      <div className="q-pcl-wave" aria-label="Project context signal">
+        <div className="q-pcl-wave__line" />
+        <div className="q-pcl-wave__track">
+          {[...signals, ...signals].map((signal, index) => (
+            <span key={`${signal}-${index}`}>{signal}</span>
+          ))}
+        </div>
+        <div className="q-pcl-wave__core"><strong>PCL</strong><span>Context in motion</span></div>
+      </div>
+    </section>
   );
 }
 
@@ -136,28 +221,17 @@ export default function LandingPage({
   setThemeMode,
 }) {
   const isLight = themeMode === 'light';
-  const [prompt, setPrompt] = useState('');
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  // Keep onStartBuild in the public contract; the investor-facing landing page
+  // intentionally enters Studio through one confident CTA instead of leading
+  // with a large prompt box that visually reduces Quantora to a chatbot.
+  void onStartBuild;
 
-  useEffect(() => {
-    if (prompt) return undefined;
-    const timer = window.setInterval(() => {
-      setPlaceholderIndex((index) => (index + 1) % PROMPT_EXAMPLES.length);
-    }, 3200);
-    return () => window.clearInterval(timer);
-  }, [prompt]);
-
-  const submit = () => startFromPrompt({ prompt, onStartBuild, onLaunchStudio, onOpenAuth, user });
+  const openQuantora = () => enterQuantora({ user, onLaunchStudio, onOpenAuth });
 
   return (
     <main className={`q-landing${isLight ? ' q-landing--light' : ''}`}>
       <header className="q-nav">
-        <button
-          type="button"
-          className="q-nav__brand"
-          onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
-          aria-label="Open Quantora"
-        >
+        <button type="button" className="q-nav__brand" onClick={openQuantora} aria-label="Open Quantora">
           <QuantoraFullLogoSvg height={32} isDark={!isLight} tagline="PROMPT TO ACTION" />
         </button>
 
@@ -170,11 +244,7 @@ export default function LandingPage({
           >
             {isLight ? <Moon size={16} /> : <Sun size={16} />}
           </button>
-          <button
-            type="button"
-            className="q-nav__cta"
-            onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
-          >
+          <button type="button" className="q-nav__cta" onClick={openQuantora}>
             {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={16} />
           </button>
         </div>
@@ -183,82 +253,46 @@ export default function LandingPage({
       <section className="q-hero">
         <div className="q-shell q-hero__copy">
           <span className="q-kicker">QUANTORA / PROMPT TO ACTION</span>
-          <h1>Turn thought into<br /><em>something real.</em></h1>
-          <p>Think. Create. Deliver.</p>
-
-          <div className="q-prompt" role="group" aria-label="Start with Quantora">
-            <textarea
-              rows={1}
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  submit();
-                }
-              }}
-              placeholder={PROMPT_EXAMPLES[placeholderIndex]}
-              aria-label="What do you want to make happen?"
-            />
-            <button type="button" onClick={submit} aria-label="Start with Quantora">
-              <ArrowRight size={19} />
-            </button>
-          </div>
-          <button
-            type="button"
-            className="q-hero__try"
-            onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
-          >
-            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={16} />
+          <h1>Ideas deserve<br /><em>more than answers.</em></h1>
+          <p>Turn intent into verified work.</p>
+          <button type="button" className="q-hero__try" onClick={openQuantora}>
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={17} />
           </button>
         </div>
 
-        <div className="q-shell q-hero__product">
-          <ProductScene />
+        <div className="q-shell q-hero__stage">
+          <CognitiveStage />
         </div>
       </section>
 
       <section className="q-punch">
         <div className="q-shell">
-          <span>THE VALUE</span>
-          <h2>Less prompting.<br /><em>More progress.</em></h2>
+          <span>THE AMBITION</span>
+          <h2>Not another chatbot.<br /><em>An execution layer for knowledge work.</em></h2>
         </div>
       </section>
 
-      <section className="q-flow">
+      <PclSignalSection />
+
+      <section className="q-outcomes">
         <div className="q-shell">
-          <div className="q-flow__eyebrow">One project. One context. One direction.</div>
-          <div className="q-flow__track">
-            {OUTCOME_STEPS.map((step, index) => (
-              <React.Fragment key={step}>
-                <div className="q-flow__step">
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <strong>{step}</strong>
-                </div>
-                {index < OUTCOME_STEPS.length - 1 && <div className="q-flow__line" aria-hidden="true" />}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="q-proof">
-        <div className="q-shell q-proof__inner">
-          <span>THE DIFFERENCE</span>
-          <h2>Work that leaves the conversation.</h2>
-          <div className="q-proof__outcomes">
-            <div><Search size={18} /><strong>Research</strong><span>Evidence</span></div>
-            <div><FileText size={18} /><strong>Office</strong><span>Artifacts</span></div>
-            <div><FolderKanban size={18} /><strong>Projects</strong><span>Continuity</span></div>
-            <div><Globe2 size={18} /><strong>Ship</strong><span>Live</span></div>
+          <span className="q-outcomes__eyebrow">ONE INTENT · MANY OUTCOMES</span>
+          <div className="q-outcomes__rail">
+            <div><strong>Research</strong><span>Evidence</span></div>
+            <div><strong>Present</strong><span>PowerPoint</span></div>
+            <div><strong>Document</strong><span>Word</span></div>
+            <div><strong>Analyse</strong><span>Excel</span></div>
+            <div><strong>Build</strong><span>Software</span></div>
+            <div><strong>Ship</strong><span>Live</span></div>
           </div>
         </div>
       </section>
 
       <section className="q-final">
         <div className="q-shell q-final__inner">
+          <span>THE NEXT MOVE</span>
           <h2>Start with what you want done.</h2>
-          <button type="button" onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}>
+          <button type="button" onClick={openQuantora}>
             {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={18} />
           </button>
         </div>
