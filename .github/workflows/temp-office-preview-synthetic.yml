@@ -1,0 +1,31 @@
+name: Temporary Office Integration Preview Synthetic
+
+on:
+  push:
+    branches:
+      - integration/office-quality-workspace
+
+permissions:
+  contents: read
+
+jobs:
+  preview-office:
+    if: ${{ github.event.head_commit.message == 'Run authenticated Office synthetic against integration preview' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: integration/office-quality-workspace
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Establish temporary Vercel preview session
+        run: |
+          curl -sS -L -c /tmp/quantora-vercel-cookies 'https://quantora-platform-git-integration-office-quality-bf844f-sartho.vercel.app/?_vercel_share=U9A78LmNSe3Uuhs6P4dEcOjJEDDUzbSb' -o /tmp/quantora-preview-home.html
+          test -s /tmp/quantora-vercel-cookies
+      - name: Create, refine, and recompile on integration preview
+        env:
+          QUANTORA_SYNTHETIC_BASE_URL: https://quantora-platform-git-integration-office-quality-bf844f-sartho.vercel.app
+          QUANTORA_SYNTHETIC_COOKIE_JAR: /tmp/quantora-vercel-cookies
+        run: node scripts/office-preview-synthetic-temp.mjs
