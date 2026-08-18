@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { mergeSessionListeningSignals } from '../lib/listening-layer.js';
+import { sanitizeSessionsForPersistence } from '../lib/office-session-state.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -71,7 +72,10 @@ function loadSessions(defaultGreeting) {
 
 function persistSessions(sessions) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    // Office binaries can be megabytes. Persist only canonical spec/preview/
+    // verification state; the exact OOXML file is deterministically recompiled
+    // from that verified state after a reload.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeSessionsForPersistence(sessions)));
   } catch (e) {
     console.error(e);
   }
@@ -128,7 +132,7 @@ export function useStudioSession({ user, selectedModel }) {
     (session.messages || []).filter((message) => message.officeAttachment || message.codeSnippet || message.previewUrl).map((message) => ({
       id: message.id,
       sessionId: session.id,
-      title: message.officeAttachment?.filename || message.title || 'Generated artifact',
+      title: message.officeAttachment?.fileName || message.title || 'Generated artifact',
       type: message.officeAttachment ? 'office' : 'workspace',
       createdAt: message.createdAt || session.createdAt,
     }))
