@@ -1,0 +1,115 @@
+/* Synchronize the investor-facing capability story around one visible signal.
+ * This overrides presentation only; no Studio, Office, routing, or PCL runtime
+ * behavior is changed. The 28s sweep matches the 7s x 4-card React cadence.
+ */
+
+.q-future-cards {
+  isolation: isolate;
+  overflow: visible;
+}
+
+/* One continuous beam moves across the complete capability rail. Its center
+ * reaches each card at 0s / 7s / 14s / 21s, matching activeCapability. */
+.q-future-cards::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: -20px;
+  bottom: -20px;
+  left: 4%;
+  width: 18%;
+  border-radius: 32px;
+  pointer-events: none;
+  opacity: .42;
+  background:
+    radial-gradient(ellipse at center,
+      rgba(255,176,112,.20) 0%,
+      rgba(255,106,0,.10) 36%,
+      rgba(255,106,0,.035) 58%,
+      transparent 76%);
+  filter: blur(8px);
+  animation: q-capability-rail-sweep 28s cubic-bezier(.42,0,.58,1) infinite;
+  will-change: left, opacity;
+}
+
+.q-future-card {
+  z-index: 1;
+}
+
+/* Remove the old per-card shimmer. The rail sweep is now the single travelling
+ * light source, so cause and effect are visually obvious. */
+.q-future-card::before {
+  display: none !important;
+}
+
+.q-future-card.is-active {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: translateY(-8px) scale(1.018) !important;
+  border-color: rgba(255,126,45,.48) !important;
+  background:
+    radial-gradient(circle at 50% 115%, rgba(255,106,0,.13), transparent 48%),
+    rgba(15,17,23,.96) !important;
+  box-shadow:
+    0 28px 64px rgba(0,0,0,.34),
+    0 0 0 1px rgba(255,106,0,.08),
+    0 0 42px rgba(255,106,0,.10) !important;
+}
+
+/* The explanation should read as the payoff when the signal reaches the card. */
+.q-future-card.is-active > p {
+  max-height: 82px !important;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) {
+  opacity: .56 !important;
+  transform: translateY(5px) scale(.985) !important;
+}
+
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
+  opacity: 0 !important;
+}
+
+/* Keep the tiny internal route pulse quiet until Cognitive Intelligence itself
+ * is active, preventing a second unrelated moving light. */
+.q-future-card:not(.is-active) .q-route-line i {
+  animation-play-state: paused !important;
+  opacity: 0 !important;
+}
+
+@keyframes q-capability-rail-sweep {
+  0%   { left: 3.5%; opacity: .18; }
+  4%   { opacity: .52; }
+  22%  { opacity: .52; }
+  25%  { left: 28.5%; opacity: .46; }
+  47%  { opacity: .52; }
+  50%  { left: 53.5%; opacity: .46; }
+  72%  { opacity: .52; }
+  75%  { left: 78.5%; opacity: .46; }
+  94%  { opacity: .48; }
+  100% { left: 103.5%; opacity: 0; }
+}
+
+.q-landing--light .q-future-card.is-active {
+  background:
+    radial-gradient(circle at 50% 115%, rgba(234,88,12,.08), transparent 48%),
+    rgba(255,255,255,.98) !important;
+  box-shadow:
+    0 24px 52px rgba(17,18,23,.10),
+    0 0 0 1px rgba(234,88,12,.08),
+    0 0 34px rgba(234,88,12,.07) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-future-cards::after { display: none; }
+  .q-future-card.is-active { transform: none !important; }
+}
+
+@media (max-width: 700px) {
+  /* Horizontal card scrolling is user-controlled on mobile, so do not send a
+   * desktop-style beam across off-screen cards. */
+  .q-future-cards::after { display: none; }
+  .q-future-card.is-active { transform: translateY(-3px) scale(1) !important; }
+}
