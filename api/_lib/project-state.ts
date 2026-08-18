@@ -196,7 +196,7 @@ export function buildProjectContextPack({
     .slice(0, MAX_CONTEXT_ITEMS);
 
   const artifactSeen = new Set<string>();
-  const artifacts = [
+  const artifactCandidates: ProjectContextPack["artifacts"] = [
     ...resources.map((resource) => ({
       type: resource.kind,
       ref: resource.ref,
@@ -206,9 +206,11 @@ export function buildProjectContextPack({
     ...normalizedOutcomes.flatMap((source) => source.state.artifacts.map((artifact) => ({
       type: artifact.type,
       ref: artifact.ref,
+      title: undefined,
       verifiedAt: artifact.verifiedAt || null,
     }))),
-  ].filter((artifact) => {
+  ];
+  const artifacts = artifactCandidates.filter((artifact) => {
     const key = `${artifact.type}\u0000${artifact.ref}`.toLocaleLowerCase();
     if (!artifact.type || !artifact.ref || artifactSeen.has(key)) return false;
     artifactSeen.add(key);
