@@ -16,6 +16,8 @@ import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
+import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
+import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -658,30 +660,42 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
   const handleMagicWandEnhance = async () => {
-    if (!inputText.trim()) {
-      const samplePrompts = [
-        "Build a full-stack AI dashboard with real-time analytics, dark theme, and interactive widgets",
-        "Create a Singapore SGD to INR currency exchange app with live charts and historical conversion rates",
-        "Build an interactive AI Beat Synthesizer with customizable BPM and multi-track audio controls",
-        "Design a sleek iOS-style calculator with currency conversion and history memory",
-        "Create an intelligent recipe finder that generates meal plans based on leftover ingredients"
-      ];
-      setInputText(samplePrompts[Math.floor(Math.random() * samplePrompts.length)]);
+    const draftValueAtStart = inputText;
+    const draftAtStart = draftValueAtStart.trim();
+    if (!draftAtStart) {
+      textareaRef.current?.focus();
       return;
     }
+
+    const requestSessionId = activeSessionId;
+    const recentHistory = messages
+      .filter((message) => message?.text && (message.sender === 'user' || message.sender === 'ai'))
+      .slice(-8)
+      .map((message) => ({ sender: message.sender, text: message.text }));
 
     setIsEnhancingPrompt(true);
     try {
       const res = await fetch('/api/enhance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: inputText })
+        body: JSON.stringify({
+          prompt: draftAtStart,
+          depth: 'auto',
+          history: recentHistory,
+          sessionContext: projectContext,
+        })
       });
       const data = await res.json();
-      if (res.ok && data.enhancedPrompt) {
+      const currentDraft = textareaRef.current?.value ?? inputText;
+      if (res.ok && data.enhancedPrompt && shouldApplyPromptPolishResult({
+        requestSessionId,
+        currentSessionId: activeSessionId,
+        draftAtStart: draftValueAtStart,
+        currentDraft,
+      })) {
         setInputText(data.enhancedPrompt);
-        setShowHeroCardModal(true);
-      } else {
+        setShowHeroCardModal(false);
+      } else if (!res.ok) {
         console.error("Magic Wand failed:", data.error);
       }
     } catch (e) {
@@ -840,6 +854,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
+
+    if ((isWorkspaceMode || canvasOpen) && !shouldKeepWorkspaceForPrompt({
+      prompt: textToSend,
+      hasWorkspace: true,
+      officeKind: detectOfficeIntent({ messages }),
+    })) {
+      setIsWorkspaceMode(false);
+      setCanvasOpen(false);
+    }
 
     // HUMAN IN THE LOOP: only intercept when the selected model recently failed
     // AND a genuinely different healthy model exists to offer.
@@ -1437,12 +1460,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {
-              // Heuristic context switch: if no code is generated and the user didn't reference code
-              const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text.toLowerCase() : '';
-              const isCodeContext = /this|code|it|why|how|explain|fix|add|change|color|button|layout/i.test(userPrompt);
-              if (!isCodeContext) {
-                 setIsWorkspaceMode(false);
-                 setCanvasOpen(false);
+              const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
+              const keepWorkspace = shouldKeepWorkspaceForPrompt({
+                prompt: userPrompt,
+                hasWorkspace: isWorkspaceMode || canvasOpen,
+                officeKind: detectOfficeIntent({ messages }),
+              });
+              if (!keepWorkspace) {
+                setIsWorkspaceMode(false);
+                setCanvasOpen(false);
               }
            }
         }
@@ -2464,7 +2490,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <button
                 onClick={handleMagicWandEnhance}
                 disabled={isEnhancingPrompt}
-                title="AI Magic Wand - Enhance & Expand Prompt"
+                title="Refine prompt"
                 style={{
                   background: isEnhancingPrompt ? (isLight ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.2)') : 'transparent',
                   border: 'none',
@@ -2484,7 +2510,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 {isEnhancingPrompt ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
-                    Enhancing Prompt...
+                    Polishing...
                   </>
                 ) : (
                   <Wand2 size={18} color={subtextColor} />
