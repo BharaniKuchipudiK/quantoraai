@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820">
+  <rect width="1400" height="820" rx="28" fill="#0a0c11"/>
+  <rect x="48" y="44" width="1304" height="732" rx="24" fill="#141820" stroke="#2b3340"/>
+  <rect x="80" y="78" width="1240" height="56" rx="14" fill="#0f1319"/>
+  <text x="110" y="113" font-family="Arial,Helvetica,sans-serif" font-size="16" font-weight="700" fill="#f4f4f1">Quantora Product Vision.pptx</text>
+  <text x="1174" y="113" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" fill="#50c7b2">✓ VERIFIED</text>
+  <rect x="118" y="170" width="1164" height="546" rx="6" fill="#f7f7f3"/>
+  <g font-family="Arial,Helvetica,sans-serif">
+    <text x="164" y="220" font-size="12" font-weight="800" letter-spacing="2" fill="#ff6a00">QUANTORA</text>
+    <text x="164" y="294" font-size="52" font-weight="700" letter-spacing="-2" fill="#172033">From idea to done.</text>
+    <text x="164" y="327" font-size="16" fill="#758095">A platform that carries intent through to a usable outcome.</text>
+    <rect x="164" y="354" width="62" height="5" fill="#ff6a00"/>
+    <text x="164" y="418" font-size="12" font-weight="700" letter-spacing="1" fill="#ff6a00">01</text>
+    <text x="164" y="448" font-size="22" font-weight="700" fill="#172033">Understand</text>
+    <text x="164" y="474" font-size="13" fill="#748095">Keep the objective, context and constraints in view.</text>
+    <line x1="164" x2="446" y1="502" y2="502" stroke="#d7dde5"/>
+    <text x="510" y="418" font-size="12" font-weight="700" letter-spacing="1" fill="#ff6a00">02</text>
+    <text x="510" y="448" font-size="22" font-weight="700" fill="#172033">Create</text>
+    <text x="510" y="474" font-size="13" fill="#748095">Turn thinking into documents, software and decisions.</text>
+    <line x1="510" x2="792" y1="502" y2="502" stroke="#d7dde5"/>
+    <text x="856" y="418" font-size="12" font-weight="700" letter-spacing="1" fill="#ff6a00">03</text>
+    <text x="856" y="448" font-size="22" font-weight="700" fill="#172033">Deliver</text>
+    <text x="856" y="474" font-size="13" fill="#748095">Verify the result and move the work forward.</text>
+    <line x1="856" x2="1138" y1="502" y2="502" stroke="#d7dde5"/>
+    <rect x="164" y="550" width="974" height="104" rx="3" fill="#eef3f3"/>
+    <rect x="164" y="550" width="5" height="104" fill="#2aa892"/>
+    <text x="192" y="584" font-size="11" font-weight="800" letter-spacing="1" fill="#258878">THE AMBITION</text>
+    <text x="192" y="618" font-size="21" font-weight="700" fill="#172033">Make useful work leave the conversation.</text>
+    <text x="110" y="752" font-size="12" font-weight="700" letter-spacing="2" fill="#8f98a8">EXAMPLE OUTPUT · EXECUTIVE-READY PRESENTATION</text>
+  </g>
+</svg>
