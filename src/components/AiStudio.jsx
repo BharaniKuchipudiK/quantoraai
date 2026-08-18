@@ -1154,6 +1154,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               <p style={{ margin: 0, fontSize: '0.85rem', color: subtextColor }}>
                                 Ready for download
                               </p>
+                              {msg.officeAttachment.generation?.provider && (
+                                <p style={{ margin: '5px 0 0 0', fontSize: '0.7rem', color: subtextColor, opacity: 0.82 }}>
+                                  Engine: {msg.officeAttachment.generation?.model || 'unknown'} ({msg.officeAttachment.generation.provider})
+                                  {Number.isFinite(msg.officeAttachment.generation?.attempts) && msg.officeAttachment.generation.attempts > 1
+                                    ? ` · repaired in ${msg.officeAttachment.generation.attempts} attempts`
+                                    : ''}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <button
