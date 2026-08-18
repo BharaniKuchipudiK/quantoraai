@@ -295,7 +295,7 @@ function PclSignalSection() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setActiveCapability((value) => (value + 1) % FUTURE_CAPABILITIES.length);
-    }, 4800);
+    }, 7000);
     return () => window.clearInterval(timer);
   }, []);
 
