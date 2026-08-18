@@ -16,7 +16,7 @@ import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import './LandingPage.css';
 
 const PROMPT_EXAMPLES = [
-  'Turn this idea into a board-ready decision…',
+  'Turn this idea into something I can use…',
   'Research this and tell me what actually matters…',
   'Build the presentation, not just the outline…',
   'Create the app and get it running…',
@@ -44,23 +44,23 @@ function ProductScene() {
         <div className="q-product-sidebar__label">Projects</div>
         <div className="q-product-project q-product-project--active">
           <FolderKanban size={14} />
-          <span>Cloud Modernization</span>
+          <span>Quantora Platform</span>
         </div>
         <div className="q-product-project">
           <FolderKanban size={14} />
-          <span>Quantora Platform</span>
+          <span>Product Ideas</span>
         </div>
 
         <div className="q-product-sidebar__label q-product-sidebar__label--later">Recent</div>
-        <div className="q-product-recent">CIO decision pack</div>
-        <div className="q-product-recent">Cost assumptions</div>
-        <div className="q-product-recent">Target architecture</div>
+        <div className="q-product-recent">Website direction</div>
+        <div className="q-product-recent">Token consumption</div>
+        <div className="q-product-recent">IDE workspace</div>
       </aside>
 
       <section className="q-product-chat">
         <header className="q-product-chat__header">
           <div>
-            <strong>Cloud Modernization</strong>
+            <strong>Quantora Platform</strong>
             <span>Project</span>
           </div>
           <div className="q-product-model">Gemini Flash <ChevronDown size={13} /></div>
@@ -68,14 +68,14 @@ function ProductScene() {
 
         <div className="q-product-thread">
           <div className="q-product-user">
-            Prepare the CIO decision pack. Make the recommendation explicit and use what we already agreed in this project.
+            Prepare the launch narrative. Make the value obvious and use what we already decided in this project.
           </div>
 
           <div className="q-product-assistant">
             <div className="q-product-assistant__mark"><Sparkles size={15} /></div>
             <div>
-              <strong>Got it.</strong>
-              <p>I’m using the approved recommendation, current constraints and financial evidence already in this project.</p>
+              <strong>Understood.</strong>
+              <p>I’m using the Project goal, product decisions and existing artifacts as the working context.</p>
               <div className="q-product-action">Creating presentation</div>
             </div>
           </div>
@@ -93,7 +93,7 @@ function ProductScene() {
         <header className="q-product-workspace__header">
           <div>
             <FileText size={15} />
-            <strong>Strategic Path Forward.pptx</strong>
+            <strong>Quantora Product Vision.pptx</strong>
           </div>
           <span>Preview</span>
         </header>
@@ -101,19 +101,19 @@ function ProductScene() {
         <div className="q-slide-stage">
           <div className="q-slide-preview">
             <div className="q-slide-brand">QUANTORA</div>
-            <div className="q-slide-title">Strategic path forward</div>
-            <div className="q-slide-subtitle">Cloud modernization · CIO decision</div>
+            <div className="q-slide-title">From intent to outcome</div>
+            <div className="q-slide-subtitle">One context · the right intelligence · usable work</div>
             <div className="q-slide-rule" />
 
             <div className="q-slide-kpis">
-              <div><span>01</span><strong>Stabilize</strong><small>Protect critical services</small></div>
-              <div><span>02</span><strong>Modernize</strong><small>Prioritize value pools</small></div>
-              <div><span>03</span><strong>Scale</strong><small>Industrialize delivery</small></div>
+              <div><span>01</span><strong>Understand</strong><small>Keep the objective in view</small></div>
+              <div><span>02</span><strong>Create</strong><small>Turn thinking into artifacts</small></div>
+              <div><span>03</span><strong>Deliver</strong><small>Verify and move work forward</small></div>
             </div>
 
             <div className="q-slide-callout">
-              <span>RECOMMENDATION</span>
-              <strong>Approve a phased modernization path with a 90-day mobilization.</strong>
+              <span>THE AMBITION</span>
+              <strong>Make AI useful beyond the conversation.</strong>
             </div>
           </div>
         </div>
@@ -175,7 +175,7 @@ export default function LandingPage({
             className="q-nav__cta"
             onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
           >
-            {user ? 'Open Quantora' : 'Start'} <ArrowRight size={16} />
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={16} />
           </button>
         </div>
       </header>
@@ -204,6 +204,13 @@ export default function LandingPage({
               <ArrowRight size={19} />
             </button>
           </div>
+          <button
+            type="button"
+            className="q-hero__try"
+            onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
+          >
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={16} />
+          </button>
         </div>
 
         <div className="q-shell q-hero__product">
@@ -252,7 +259,7 @@ export default function LandingPage({
         <div className="q-shell q-final__inner">
           <h2>Start with what you want done.</h2>
           <button type="button" onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}>
-            Open Quantora <ArrowRight size={18} />
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={18} />
           </button>
         </div>
       </section>
