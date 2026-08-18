@@ -1200,7 +1200,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       {msg.sender === 'ai' && !isActiveGenerating && (() => {
                         // Actions are DERIVED from the message content — not a
                         // fixed row dumped on every reply. Right-aligned.
-                        const actions = resolveMessageActions({ text: cleanText, hasPreview: !!runnableCode });
+                        const actions = resolveMessageActions({ text: cleanText, hasPreview: !!runnableCode, isOfficeArtifact: Boolean(msg.officeAttachment) });
                         const iconBtn = { background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' };
                         return (
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1353,8 +1353,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   {msg.componentType === 'beat' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading BeatMaker...</div>}><LiveBeatMaker /></Suspense>}
                   {msg.componentType === 'quantum' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading Quantum Simulator...</div>}><LiveQuantumSimulator /></Suspense>}
 
-                  {/* Source Code Toggle Button */}
-                  {msg.codeSnippet && (
+                  {/* Source Code Toggle Button — developer-only, never shown for Office artifacts */}
+                  {msg.codeSnippet && !msg.officeAttachment && (
                     <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <button
                         onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
@@ -1373,7 +1373,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   )}
 
                   {/* Optional Source Code Panel */}
-                  {showCodeMap[msg.id] && msg.codeSnippet && (
+                  {showCodeMap[msg.id] && msg.codeSnippet && !msg.officeAttachment && (
                     <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                       <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
                         {msg.codeSnippet}
@@ -2885,17 +2885,41 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           {/* Workspace Content Area */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden' }}>
              {workspaceActiveTab === 'preview' ? (
-                  <LivePreviewCanvas 
-                    code={workspaceCode} 
-                    isLight={isLight} 
-                    onClose={() => setIsWorkspaceMode(false)}
-                    showHeader={false}
-                    vfs={vfs}
-                    suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
-                    isPresentationIntent={detectSlideDeck(messages)}
-                    officeKind={detectOfficeIntent({ messages })}
-                    modelId={selectedModel?.id}
-                  />
+                  <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                    <LivePreviewCanvas 
+                      code={workspaceCode} 
+                      isLight={isLight} 
+                      onClose={() => setIsWorkspaceMode(false)}
+                      showHeader={false}
+                      vfs={vfs}
+                      suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
+                      isPresentationIntent={detectSlideDeck(messages)}
+                      officeKind={detectOfficeIntent({ messages })}
+                      modelId={selectedModel?.id}
+                    />
+                    {isGenerating && workspaceCode && messages.some((message) => message?.officeAttachment?.verification?.passed === true) && detectOfficeIntent({ messages }) && (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        style={{
+                          position: 'absolute', top: '14px', right: '16px', zIndex: 30,
+                          display: 'flex', alignItems: 'center', gap: '10px',
+                          padding: '10px 14px', borderRadius: '12px',
+                          background: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.94)',
+                          border: isLight ? '1px solid #dbeafe' : '1px solid rgba(96,165,250,0.35)',
+                          boxShadow: '0 8px 24px rgba(15,23,42,0.18)',
+                          color: isLight ? '#1e3a8a' : '#bfdbfe',
+                          maxWidth: '360px',
+                        }}
+                      >
+                        <RefreshCw size={15} className="animate-spin" />
+                        <div>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 800 }}>Updating presentation…</div>
+                          <div style={{ fontSize: '0.68rem', marginTop: '2px', opacity: 0.78 }}>Last verified version stays visible until the revision passes verification.</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
              ) : (
                <>
                  {/* Line Numbers */}
