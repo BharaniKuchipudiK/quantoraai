@@ -89,6 +89,14 @@ COMMUNICATION JUDGMENT
 - For weekly project status: emphasize RAG health, milestone movement, RAID/dependencies, escalations/decisions and next-week focus. Avoid decorative filler.
 - For academic/research: distinguish research question, methodology/evidence, findings, interpretation, limitations and sources. Avoid executive sales language.
 
+VISUAL EDITING STANDARD
+- Design for executive scanability: one dominant message per slide, a clear visual hierarchy, and deliberate whitespace.
+- Avoid "box soup". Do not turn every point into an equal-weight rounded card; use rules, bands, sequence, contrast and open space to establish hierarchy.
+- Roadmaps must read as a connected progression of stages/waves, not a row of unrelated cards.
+- Comparisons should make the recommended option visually obvious without making every option equally loud.
+- Use color sparingly: neutral structure first, one primary accent, and semantic RAG colors only when they carry meaning.
+- Prefer short labels, large evidence, thin separators and a single governing implication over dense decorative chrome.
+
 EVIDENCE DISCIPLINE
 - Never invent quantitative facts, KPIs, financials, dates, research findings or citations. Use only values supplied in the approved context or attributable source material.
 - If evidence is missing, state the gap in text rather than fabricating precision. Do not create synthetic numeric chart data merely to make a slide visual.
@@ -103,27 +111,27 @@ DENSITY + EDITABILITY
 
 export const PRESENTATION_THEME = Object.freeze({
   color: {
-    navy: '0B1F33',
-    ink: '142433',
-    body: '334155',
-    muted: '64748B',
-    line: 'D8E1EA',
-    surface: 'F4F7FA',
-    surface2: 'EAF0F6',
+    navy: '102438',
+    ink: '172433',
+    body: '3B4652',
+    muted: '6B7582',
+    line: 'DCE2E8',
+    surface: 'F7F9FB',
+    surface2: 'EEF2F6',
     white: 'FFFFFF',
-    accent: '2563EB',
-    accentDark: '1D4ED8',
-    teal: '0F766E',
-    green: '15803D',
-    amber: 'B45309',
-    red: 'B91C1C',
-    softGreen: 'ECFDF3',
-    softAmber: 'FFF7ED',
-    softRed: 'FEF2F2',
-    softBlue: 'EFF6FF',
+    accent: '1F5AA6',
+    accentDark: '183B63',
+    teal: '0E6F68',
+    green: '197443',
+    amber: 'A96013',
+    red: 'B13A3A',
+    softGreen: 'EDF7F1',
+    softAmber: 'FBF3E8',
+    softRed: 'FBEDEE',
+    softBlue: 'F1F5FA',
   },
   font: { heading: 'Aptos Display', body: 'Aptos' },
-  layout: { w: 13.333, h: 7.5, marginX: 0.68, top: 0.54, bottom: 0.36 },
+  layout: { w: 13.333, h: 7.5, marginX: 0.72, top: 0.5, bottom: 0.34 },
 });
 
 const C = PRESENTATION_THEME.color;
@@ -197,7 +205,6 @@ function normalizeOptions(value) {
     recommended: item?.recommended === true,
   })).filter((item) => item.name);
 }
-
 function normalizeStatuses(value) {
   return cleanArray(value).slice(0, 6).map((item) => ({
     label: cleanString(item?.label, 90),
@@ -453,12 +460,13 @@ function addStatusPill(slide, label, status, x, y, w = 0.9) {
 }
 
 function addHeader(slide, spec, s, index) {
-  if (s.kicker) addText(slide, s.kicker.toUpperCase(), L.marginX, 0.42, 3.4, 0.25, { fontSize: 9.5, bold: true, color: C.accent, charSpacing: 1.4 });
-  addText(slide, s.title, L.marginX, s.kicker ? 0.72 : 0.52, 11.95, 0.62, { fontFace: F.heading, fontSize: 24, bold: true, color: C.ink, valign: 'mid' });
-  if (s.subtitle) addText(slide, s.subtitle, L.marginX, s.kicker ? 1.32 : 1.12, 11.4, 0.34, { fontSize: 11.5, color: C.muted });
-  slide.addShape('line', { x: L.marginX, y: s.subtitle ? 1.62 : 1.38, w: 11.98, h: 0, line: { color: C.line, width: 1 } });
-  if (s.insight && !['executive_summary', 'chart_insight', 'evidence'].includes(s.type)) {
-    addText(slide, s.insight, 9.4, 0.42, 3.25, 0.28, { fontSize: 9.5, bold: true, color: C.teal, align: 'right' });
+  const titleY = s.kicker ? 0.68 : 0.48;
+  if (s.kicker) addText(slide, s.kicker.toUpperCase(), L.marginX, 0.36, 4.4, 0.22, { fontSize: 8.8, bold: true, color: C.accent, charSpacing: 1.7 });
+  addText(slide, s.title, L.marginX, titleY, 11.75, 0.66, { fontFace: F.heading, fontSize: 23, bold: true, color: C.ink, valign: 'mid' });
+  if (s.subtitle) addText(slide, s.subtitle, L.marginX, titleY + 0.7, 10.9, 0.3, { fontSize: 10.8, color: C.muted });
+  addRect(slide, L.marginX, s.subtitle ? titleY + 1.1 : titleY + 0.86, 0.72, 0.035, C.accent, C.accent);
+  if (s.insight && s.insight.length <= 150 && !['executive_summary', 'chart_insight', 'evidence'].includes(s.type)) {
+    addText(slide, s.insight, 9.15, 0.35, 3.45, 0.28, { fontSize: 8.8, bold: true, color: C.teal, align: 'right' });
   }
 }
 
@@ -482,47 +490,49 @@ function addBullets(slide, items, x, y, w, h, fontSize = 13.5) {
 function addKpiCards(slide, kpis, y, h = 1.18) {
   const items = kpis.slice(0, 5);
   if (!items.length) return;
-  const gap = 0.16;
-  const usable = 11.98;
+  const gap = 0.12;
+  const usable = 11.9;
   const cardW = (usable - gap * (items.length - 1)) / items.length;
   items.forEach((kpi, i) => {
     const x = L.marginX + i * (cardW + gap);
-    addRect(slide, x, y, cardW, h, C.white, C.line, true);
-    addRect(slide, x, y, 0.06, h, statusColor(kpi.status), statusColor(kpi.status), false);
-    addText(slide, kpi.label, x + 0.18, y + 0.13, cardW - 0.3, 0.24, { fontSize: 9.5, color: C.muted, bold: true });
-    addText(slide, kpi.value, x + 0.18, y + 0.38, cardW - 0.3, 0.38, { fontFace: F.heading, fontSize: 21, color: C.ink, bold: true });
-    if (kpi.delta) addText(slide, kpi.delta, x + 0.18, y + 0.82, cardW - 0.3, 0.17, { fontSize: 8.7, color: statusColor(kpi.status), bold: kpi.status !== 'neutral' });
-    else if (kpi.note) addText(slide, kpi.note, x + 0.18, y + 0.82, cardW - 0.3, 0.17, { fontSize: 8.7, color: C.muted });
+    addRect(slide, x, y, cardW, h, C.surface, C.surface, false);
+    addRect(slide, x, y, cardW, 0.045, statusColor(kpi.status), statusColor(kpi.status), false);
+    addText(slide, kpi.label.toUpperCase(), x + 0.16, y + 0.14, cardW - 0.32, 0.2, { fontSize: 8.5, color: C.muted, bold: true, charSpacing: 0.5 });
+    addText(slide, kpi.value, x + 0.16, y + 0.37, cardW - 0.32, 0.4, { fontFace: F.heading, fontSize: 21.5, color: C.ink, bold: true });
+    if (kpi.delta) addText(slide, kpi.delta, x + 0.16, y + 0.84, cardW - 0.32, 0.17, { fontSize: 8.5, color: statusColor(kpi.status), bold: kpi.status !== 'neutral' });
+    else if (kpi.note) addText(slide, kpi.note, x + 0.16, y + 0.84, cardW - 0.32, 0.17, { fontSize: 8.5, color: C.muted });
   });
 }
 
 function addInsightBox(slide, text, x, y, w, h, label = 'MANAGEMENT IMPLICATION') {
-  addRect(slide, x, y, w, h, C.softBlue, C.softBlue, true);
-  addRect(slide, x, y, 0.06, h, C.accent, C.accent);
-  addText(slide, label, x + 0.2, y + 0.14, w - 0.35, 0.2, { fontSize: 8.5, bold: true, color: C.accent, charSpacing: 1 });
-  addText(slide, text, x + 0.2, y + 0.42, w - 0.35, h - 0.55, { fontSize: 12.5, bold: true, color: C.ink, valign: 'mid' });
+  addRect(slide, x, y, w, h, C.surface2, C.surface2, false);
+  addRect(slide, x, y, 0.055, h, C.accent, C.accent);
+  addText(slide, label, x + 0.2, y + 0.14, w - 0.36, 0.2, { fontSize: 8.2, bold: true, color: C.accent, charSpacing: 1.2 });
+  addText(slide, text, x + 0.2, y + 0.43, w - 0.38, h - 0.58, { fontSize: 12.2, bold: true, color: C.ink, valign: 'mid' });
 }
 
 function addCover(slide, spec, s) {
-  slide.background = { color: C.navy };
-  addRect(slide, 9.6, 0, 3.733, 7.5, C.accentDark, C.accentDark);
-  addRect(slide, 9.6, 5.85, 3.733, 1.65, C.teal, C.teal);
-  addText(slide, s.kicker || spec.archetype.replace(/_/g, ' ').toUpperCase(), 0.78, 0.78, 5.6, 0.3, { fontSize: 10, bold: true, color: '93C5FD', charSpacing: 1.6 });
-  addText(slide, s.title || spec.title, 0.78, 1.42, 8.1, 2.25, { fontFace: F.heading, fontSize: 31, bold: true, color: C.white, valign: 'mid' });
-  if (s.subtitle) addText(slide, s.subtitle, 0.82, 3.92, 7.55, 0.8, { fontSize: 15, color: 'CBD5E1', valign: 'top' });
+  slide.background = { color: C.white };
+  addRect(slide, 11.82, 0, 1.513, 7.5, C.navy, C.navy);
+  addRect(slide, 11.82, 5.95, 1.513, 1.55, C.teal, C.teal);
+  addRect(slide, 0.82, 0.9, 0.72, 0.055, C.accent, C.accent);
+  addText(slide, s.kicker || spec.archetype.replace(/_/g, ' ').toUpperCase(), 0.82, 1.14, 5.8, 0.28, { fontSize: 9, bold: true, color: C.accent, charSpacing: 1.7 });
+  addText(slide, s.title || spec.title, 0.82, 1.68, 9.95, 2.25, { fontFace: F.heading, fontSize: 30.5, bold: true, color: C.ink, valign: 'mid' });
+  if (s.subtitle) addText(slide, s.subtitle, 0.84, 4.15, 8.85, 0.76, { fontSize: 14.2, color: C.body, valign: 'top' });
   const meta = [spec.audience, spec.period].filter(Boolean).join('  •  ');
-  if (meta) addText(slide, meta, 0.82, 6.36, 8.2, 0.28, { fontSize: 10.5, color: 'CBD5E1' });
-  if (s.author) addText(slide, s.author, 0.82, 6.72, 8.2, 0.28, { fontSize: 10.5, color: '94A3B8' });
-  addText(slide, 'QUANTORA', 10.05, 0.78, 2.65, 0.3, { fontSize: 10, bold: true, color: 'DBEAFE', charSpacing: 2.4, align: 'right' });
+  if (meta) addText(slide, meta, 0.84, 6.28, 9.6, 0.28, { fontSize: 10, color: C.muted });
+  if (s.author) addText(slide, s.author, 0.84, 6.65, 9.6, 0.28, { fontSize: 10, color: C.muted });
+  addText(slide, 'QUANTORA', 11.9, 0.74, 1.34, 0.28, { fontSize: 8.8, bold: true, color: C.white, charSpacing: 1.7, align: 'center' });
 }
 
 function addSection(slide, s, index) {
   slide.background = { color: C.surface };
-  addText(slide, String(index).padStart(2, '0'), 0.72, 1.45, 2.2, 1.5, { fontFace: F.heading, fontSize: 70, bold: true, color: 'D7E2EE' });
-  addText(slide, s.kicker || 'SECTION', 3.2, 1.56, 2.8, 0.28, { fontSize: 10, bold: true, color: C.accent, charSpacing: 1.8 });
-  addText(slide, s.title, 3.2, 2.02, 8.9, 1.25, { fontFace: F.heading, fontSize: 30, bold: true, color: C.ink, valign: 'mid' });
-  if (s.subtitle) addText(slide, s.subtitle, 3.22, 3.52, 7.8, 0.7, { fontSize: 14, color: C.muted });
-  addRect(slide, 3.2, 4.55, 1.2, 0.06, C.accent, C.accent);
+  addRect(slide, 0, 0, 0.16, 7.5, C.accent, C.accent);
+  addText(slide, String(index).padStart(2, '0'), 0.78, 1.45, 2.2, 1.5, { fontFace: F.heading, fontSize: 68, bold: true, color: 'D9E0E7' });
+  addText(slide, s.kicker || 'SECTION', 3.05, 1.54, 3.2, 0.28, { fontSize: 9.2, bold: true, color: C.accent, charSpacing: 1.9 });
+  addText(slide, s.title, 3.05, 2.0, 8.8, 1.3, { fontFace: F.heading, fontSize: 29, bold: true, color: C.ink, valign: 'mid' });
+  if (s.subtitle) addText(slide, s.subtitle, 3.08, 3.55, 7.8, 0.72, { fontSize: 13.2, color: C.muted });
+  addRect(slide, 3.05, 4.58, 0.82, 0.045, C.accent, C.accent);
 }
 
 function addExecutiveSummary(slide, spec, s) {
@@ -630,19 +640,33 @@ function addRoadmap(slide, spec, s) {
   addHeader(slide, spec, s, 0);
   const actions = s.actions.slice(0, 6);
   const n = Math.max(1, actions.length);
-  const gap = 0.16;
-  const cardW = (11.98 - gap * (n - 1)) / n;
+  const overlap = n > 1 ? 0.14 : 0;
+  const usable = 11.9;
+  const stageW = (usable + overlap * (n - 1)) / n;
+  const step = stageW - overlap;
+  const trackY = 2.18;
+  const trackH = 1.5;
+
+  addText(slide, 'DELIVERY PATH', L.marginX, 1.78, 2.1, 0.2, { fontSize: 8.2, bold: true, color: C.muted, charSpacing: 1.1 });
   actions.forEach((action, i) => {
-    const x = L.marginX + i * (cardW + gap);
-    addText(slide, String(i + 1).padStart(2, '0'), x, 1.92, cardW, 0.42, { fontFace: F.heading, fontSize: 24, bold: true, color: 'CBD5E1' });
-    addRect(slide, x, 2.46, cardW, 3.62, C.white, C.line, true);
-    addRect(slide, x, 2.46, cardW, 0.07, statusColor(action.status), statusColor(action.status));
-    addText(slide, action.timing || 'NEXT', x + 0.16, 2.72, cardW - 0.32, 0.2, { fontSize: 8.2, bold: true, color: C.muted, charSpacing: 0.8 });
-    addText(slide, action.title, x + 0.16, 3.04, cardW - 0.32, 0.72, { fontSize: 13, bold: true, color: C.ink, valign: 'mid' });
-    if (action.detail) addText(slide, action.detail, x + 0.16, 3.94, cardW - 0.32, 1.05, { fontSize: 9.6, color: C.body });
-    if (action.owner) addText(slide, `Owner: ${action.owner}`, x + 0.16, 5.36, cardW - 0.32, 0.26, { fontSize: 8.8, color: C.muted, bold: true });
+    const x = L.marginX + i * step;
+    const fill = i % 2 === 0 ? C.surface2 : C.surface;
+    slide.addShape('chevron', {
+      x, y: trackY, w: stageW, h: trackH,
+      fill: { color: fill },
+      line: { color: C.white, width: 1.2 },
+    });
+    addRect(slide, x + 0.13, trackY + 0.1, Math.max(0.35, stageW - 0.42), 0.045, statusColor(action.status), statusColor(action.status));
+    addText(slide, action.timing || 'NEXT', x + 0.18, trackY + 0.25, Math.max(0.5, stageW - 0.48), 0.2, { fontSize: 7.9, bold: true, color: C.muted, charSpacing: 0.7 });
+    addText(slide, action.title, x + 0.18, trackY + 0.53, Math.max(0.55, stageW - 0.5), 0.58, { fontSize: n >= 5 ? 10.4 : 11.4, bold: true, color: C.ink, valign: 'mid' });
+    addText(slide, String(i + 1).padStart(2, '0'), x + 0.18, trackY + 1.13, 0.42, 0.2, { fontFace: F.heading, fontSize: 9, bold: true, color: C.accent });
+    if (action.owner) addText(slide, action.owner, x + 0.58, trackY + 1.14, Math.max(0.45, stageW - 0.88), 0.18, { fontSize: 7.8, color: C.muted, bold: true });
+    if (action.detail) {
+      slide.addShape('line', { x: x + 0.12, y: 4.02, w: Math.max(0.42, stageW - 0.34), h: 0, line: { color: C.line, width: 0.7 } });
+      addText(slide, action.detail, x + 0.12, 4.18, Math.max(0.48, stageW - 0.34), 0.9, { fontSize: n >= 5 ? 8.5 : 9.2, color: C.body, valign: 'top' });
+    }
   });
-  if (s.recommendation) addText(slide, s.recommendation, 0.75, 6.35, 11.8, 0.4, { fontSize: 11.5, bold: true, color: C.teal, align: 'center' });
+  if (s.recommendation) addInsightBox(slide, s.recommendation, 2.15, 5.55, 9.0, 0.96, 'OUTCOME / MANAGEMENT COMMITMENT');
 }
 
 function addRiskMatrix(slide, spec, s) {
@@ -735,13 +759,15 @@ function addFramework(slide, spec, s) {
 function addTwoColumn(slide, spec, s) {
   addHeader(slide, spec, s, 0);
   const cols = s.columns.slice(0, 2);
+  slide.addShape('line', { x: 6.64, y: 2.02, w: 0, h: 4.12, line: { color: C.line, width: 1 } });
   cols.forEach((col, i) => {
-    const x = i === 0 ? 0.72 : 6.83;
-    addRect(slide, x, 1.92, 5.78, 4.62, i === 0 ? C.white : C.surface, C.line, true);
-    addText(slide, col.heading, x + 0.28, 2.18, 5.2, 0.46, { fontFace: F.heading, fontSize: 18, bold: true, color: i === 0 ? C.ink : C.accentDark });
-    addBullets(slide, col.bullets, x + 0.3, 2.86, 5.05, 3.25, 12.2);
+    const x = i === 0 ? 0.78 : 6.95;
+    const w = i === 0 ? 5.45 : 5.58;
+    addRect(slide, x, 2.02, 0.06, 0.62, i === 0 ? C.accent : C.teal, i === 0 ? C.accent : C.teal);
+    addText(slide, col.heading, x + 0.2, 2.08, w - 0.2, 0.5, { fontFace: F.heading, fontSize: 17.5, bold: true, color: C.ink });
+    addBullets(slide, col.bullets, x + 0.2, 2.86, w - 0.25, 3.18, 12);
   });
-  if (s.insight) addText(slide, s.insight, 2.2, 6.68, 8.95, 0.3, { fontSize: 10.5, bold: true, color: C.teal, align: 'center' });
+  if (s.insight) addText(slide, s.insight, 2.05, 6.46, 9.2, 0.34, { fontSize: 10.3, bold: true, color: C.teal, align: 'center' });
 }
 
 async function addEvidence(slide, spec, s, resolveImage, resolvedUrls) {
@@ -797,7 +823,6 @@ function addAppendix(slide, spec, s) {
   addText(slide, s.kicker || 'APPENDIX / SOURCES', 0.78, 1.92, 2.7, 0.24, { fontSize: 8.8, bold: true, color: C.accent, charSpacing: 0.9 });
   addBullets(slide, s.bullets.length ? s.bullets : spec.sourceNotes, 0.82, 2.35, 11.45, 4.35, 10.5);
 }
-
 export async function composePresentationV2(pptx, inputSpec, { resolveImage } = {}) {
   const spec = normalizePresentationSpec(inputSpec);
   const slideImages = [];
@@ -838,7 +863,7 @@ export async function composePresentationV2(pptx, inputSpec, { resolveImage } = 
 }
 
 function esc(value) {
-  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function cssStatus(status) {
@@ -878,7 +903,7 @@ export function renderPresentationPreviewSlide(inputSlide, index, total, imageUr
   } else if (s.type === 'status_dashboard') {
     body = `<div class="status-grid">${s.statuses.map((item) => `<div class="status-card" style="--status:${cssStatus(item.status)}"><div><span>${esc(item.label)}</span><b>${esc(item.metric)}</b></div><em>${esc(item.status)}</em><p>${esc(item.detail)}</p></div>`).join('')}</div>${s.columns.length ? `<div class="cols">${s.columns.map((col) => `<div><div class="micro">${esc(col.heading)}</div><ul>${col.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul></div>`).join('')}</div>` : previewInsight(s.insight, 'Management attention')}`;
   } else if (s.type === 'roadmap') {
-    body = `<div class="roadmap">${s.actions.map((a, i) => `<div class="action" style="--status:${cssStatus(a.status)}"><div class="action-num">${String(i + 1).padStart(2, '0')}</div><div class="micro">${esc(a.timing)}</div><h3>${esc(a.title)}</h3><p>${esc(a.detail)}</p><span>${a.owner ? `Owner: ${esc(a.owner)}` : ''}</span></div>`).join('')}</div>`;
+    body = `<div class="roadmap roadmap-track">${s.actions.map((a, i) => `<div class="action" style="--status:${cssStatus(a.status)}"><div class="micro">${esc(a.timing || 'NEXT')}</div><h3>${esc(a.title)}</h3><div class="action-meta"><b>${String(i + 1).padStart(2, '0')}</b><span>${a.owner ? esc(a.owner) : ''}</span></div><p>${esc(a.detail)}</p></div>`).join('')}</div>${previewInsight(s.recommendation, 'Outcome / management commitment')}`;
   } else if (s.type === 'risk_matrix') {
     body = `<div class="risk-layout"><div class="risk-matrix">${Array.from({length:25}).map((_, i) => { const impact = 5 - Math.floor(i / 5); const likelihood = (i % 5) + 1; const score = impact * likelihood; const cls = score >= 16 ? 'risk-red' : score >= 9 ? 'risk-amber' : 'risk-green'; return `<div class="${cls}"></div>`; }).join('')}${s.risks.map((r, i) => `<span class="risk-dot" style="left:${((r.likelihood - .5) / 5) * 100}%;top:${((5 - r.impact + .5) / 5) * 100}%;background:${cssStatus(r.status)}">${i + 1}</span>`).join('')}</div><div class="risk-list">${[...s.risks].sort((a,b)=>b.impact*b.likelihood-a.impact*a.likelihood).slice(0,5).map((r,i)=>`<div><b>${i+1}. ${esc(r.risk)}</b><p>${esc(r.mitigation)}</p></div>`).join('')}</div></div>`;
   } else if (s.type === 'financial_case') {
@@ -906,6 +931,6 @@ export function buildPresentationPreviewHtml(inputSpec = {}, slideImages = []) {
   const spec = normalizePresentationSpec(inputSpec);
   const cards = spec.slides.map((slide, index) => renderPresentationPreviewSlide(slide, index, spec.slides.length, slideImages[index] || [], spec)).join('');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><style>
-  *{box-sizing:border-box}body{margin:0;padding:28px;background:#e9eef4;font-family:Aptos,"Segoe UI",Arial,sans-serif;color:#${C.body}}.deck{max-width:1120px;margin:auto;display:flex;flex-direction:column;gap:24px}.slide{position:relative;width:100%;aspect-ratio:16/9;background:#fff;overflow:hidden;box-shadow:0 10px 32px rgba(11,31,51,.12);border:1px solid #${C.line}}.content{padding:32px 48px 28px}.p-head{border-bottom:1px solid #${C.line};padding-bottom:13px}.p-head h2{font:700 28px/1.12 "Aptos Display",Aptos,sans-serif;margin:2px 0 0;color:#${C.ink}}.p-head p{font-size:14px;color:#${C.muted};margin:7px 0 0}.kicker,.micro{text-transform:uppercase;font-size:10px;letter-spacing:1.4px;font-weight:700;color:#${C.accent}}.body{padding-top:20px;height:calc(100% - 95px)}.foot{position:absolute;left:48px;right:48px;bottom:14px;display:flex;justify-content:space-between;font-size:9px;color:#${C.muted}}ul{padding-left:20px;margin:8px 0}li{margin:7px 0;line-height:1.3}.cover{background:#${C.navy};color:#fff}.cover-main{width:72%;height:100%;padding:72px 62px;display:flex;flex-direction:column;justify-content:center}.cover h1{font:700 43px/1.08 "Aptos Display",Aptos,sans-serif;margin:18px 0;color:#fff}.cover p{font-size:20px;line-height:1.35;color:#cbd5e1;max-width:86%}.cover-meta{position:absolute;bottom:42px;color:#cbd5e1;font-size:13px}.cover-band{position:absolute;right:0;top:0;width:28%;height:100%;background:linear-gradient(180deg,#${C.accentDark} 0 76%,#${C.teal} 76%);padding:60px 38px;text-align:right;font-size:11px;letter-spacing:2px}.section{background:#${C.surface};display:grid;grid-template-columns:25% 75%;align-items:center;padding:70px}.section-num{font:700 88px "Aptos Display";color:#d7e2ee}.section h2{font:700 40px/1.1 "Aptos Display";color:#${C.ink};margin:16px 0}.section p{color:#${C.muted};font-size:18px}.quote{background:#${C.surface};padding:80px 100px}.quote-mark{font:700 94px Georgia;color:#${C.accent};height:70px}.quote blockquote{font:700 italic 31px/1.35 Georgia;color:#${C.ink};margin:18px 0 30px}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}.kpi{border:1px solid #${C.line};border-left:5px solid var(--status);border-radius:8px;padding:13px 15px;background:#fff}.kpi-label{font-size:10px;font-weight:700;color:#${C.muted};text-transform:uppercase}.kpi-value{font:700 25px "Aptos Display";color:#${C.ink};margin:6px 0}.kpi-delta{font-size:10px;color:var(--status)}.summary-grid,.chart-layout,.financial-body,.evidence-layout{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:18px}.insight{background:#${C.softBlue};border-left:5px solid #${C.accent};border-radius:8px;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;min-height:130px}.insight span{font-size:9px;letter-spacing:1px;text-transform:uppercase;font-weight:700;color:#${C.accent};margin-bottom:10px}.insight strong{font-size:17px;line-height:1.28;color:#${C.ink}}.timeline{display:flex;justify-content:space-between;position:relative;margin:40px 10px 20px}.timeline:before{content:"";position:absolute;top:37px;left:3%;right:3%;height:2px;background:#${C.line}}.time-item{width:16%;text-align:center;position:relative}.time-date{font-size:10px;font-weight:700;color:#${C.muted};height:28px}.dot{width:13px;height:13px;border-radius:50%;margin:3px auto 18px;position:relative;z-index:2;border:2px solid #fff}.time-card{border:1px solid #${C.line};border-radius:8px;padding:12px;min-height:110px;background:#fff}.time-card b{font-size:12px;color:#${C.ink}}.time-card p{font-size:10px;color:#${C.body};line-height:1.3}.compare,.roadmap{display:flex;gap:14px;height:88%}.option,.action{flex:1;border:1px solid #${C.line};border-radius:9px;padding:18px;background:#fff}.option.recommended{background:#${C.softBlue};border-color:#${C.accent}}.option-top{display:flex;justify-content:space-between;gap:8px}.option-top h3,.action h3{font-size:18px;margin:0;color:#${C.ink}}.option-top span{font-size:8px;font-weight:700;color:#${C.green};background:#${C.softGreen};padding:4px 6px;border-radius:10px}.option p,.action p{font-size:11px;line-height:1.35;color:#${C.body}}.score{display:block;color:#${C.accent};margin:12px 0}.good{color:#${C.green};margin-top:14px}.trade{color:#${C.amber};margin-top:14px}.action{border-top:5px solid var(--status);padding-top:12px}.action-num{font:700 26px "Aptos Display";color:#cbd5e1;margin-bottom:10px}.action span{font-size:9px;color:#${C.muted};font-weight:700}.status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.status-card{border:1px solid #${C.line};border-left:5px solid var(--status);border-radius:8px;padding:13px 15px;min-height:95px}.status-card>div{display:flex;justify-content:space-between}.status-card span{font-size:10px;text-transform:uppercase;font-weight:700;color:#${C.muted}}.status-card b{font:700 20px "Aptos Display";color:#${C.ink}}.status-card em{font-size:9px;text-transform:uppercase;color:var(--status);font-style:normal;font-weight:700}.status-card p{font-size:10px;margin:8px 0 0}.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px}.cols li{font-size:10px}.risk-layout{display:grid;grid-template-columns:42% 58%;gap:28px;height:90%}.risk-matrix{position:relative;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);border:1px solid #fff}.risk-green{background:#${C.softGreen};border:1px solid #fff}.risk-amber{background:#${C.softAmber};border:1px solid #fff}.risk-red{background:#${C.softRed};border:1px solid #fff}.risk-dot{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;border:2px solid #fff}.risk-list>div{border-bottom:1px solid #${C.line};padding:8px 0}.risk-list b{font-size:11px;color:#${C.ink}}.risk-list p{font-size:9px;color:#${C.body};margin:4px 0}.bars{display:flex;flex-direction:column;gap:11px;padding:8px 0}.bars>div{display:grid;grid-template-columns:22% 1fr 12%;align-items:center;gap:8px;font-size:10px}.bars i{height:14px;border-radius:4px;background:#${C.accent};display:block}.bars b{font-size:10px;color:#${C.ink}}.framework{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.framework>div{border:1px solid #${C.line};border-left:5px solid var(--status);border-radius:8px;padding:18px;min-height:150px}.framework h3{margin:0 0 10px;color:#${C.ink};font-size:16px}.framework b{color:#${C.accent};font-size:20px}.framework p{font-size:11px;line-height:1.35}.two-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;height:92%}.two-cols>div{border:1px solid #${C.line};border-radius:8px;padding:22px}.two-cols>div:nth-child(2){background:#${C.surface}}.two-cols h3{font-size:20px;color:#${C.ink};margin:0 0 14px}.evidence-visual{height:270px;display:flex;align-items:center;justify-content:center}.evidence-visual img{max-width:100%;max-height:100%;object-fit:contain}.numbered>div{display:grid;grid-template-columns:50px 1fr;gap:10px;border-bottom:1px solid #${C.line};padding:9px 0}.numbered span{font:700 14px "Aptos Display";color:#${C.accent}}.numbered p{font-size:13px;margin:0;line-height:1.35}.appendix{font-size:11px;line-height:1.35}
-  </style></head><body><div class="deck">${cards}</div></body></html>`;
+  *{box-sizing:border-box}body{margin:0;padding:28px;background:#edf1f4;font-family:Aptos,"Segoe UI",Arial,sans-serif;color:#${C.body}}.deck{max-width:1120px;margin:auto;display:flex;flex-direction:column;gap:24px}.slide{position:relative;width:100%;aspect-ratio:16/9;background:#fff;overflow:hidden;box-shadow:0 8px 26px rgba(16,36,56,.09);border:1px solid #${C.line}}.content{padding:30px 50px 28px}.p-head{position:relative;padding-bottom:15px}.p-head:after{content:"";position:absolute;left:0;bottom:0;width:58px;height:3px;background:#${C.accent}}.p-head h2{font:700 27px/1.12 "Aptos Display",Aptos,sans-serif;margin:3px 0 0;color:#${C.ink}}.p-head p{font-size:13px;color:#${C.muted};margin:7px 0 0}.kicker,.micro{text-transform:uppercase;font-size:9px;letter-spacing:1.5px;font-weight:700;color:#${C.accent}}.body{padding-top:20px;height:calc(100% - 95px)}.foot{position:absolute;left:48px;right:48px;bottom:14px;display:flex;justify-content:space-between;font-size:9px;color:#${C.muted}}ul{padding-left:20px;margin:8px 0}li{margin:7px 0;line-height:1.3}.cover{background:#fff;color:#${C.ink}}.cover-main{width:89%;height:100%;padding:74px 68px;display:flex;flex-direction:column;justify-content:center}.cover h1{font:700 42px/1.08 "Aptos Display",Aptos,sans-serif;margin:20px 0;color:#${C.ink};max-width:88%}.cover p{font-size:18px;line-height:1.35;color:#${C.body};max-width:82%}.cover-meta{position:absolute;bottom:42px;color:#${C.muted};font-size:12px}.cover-band{position:absolute;right:0;top:0;width:11%;height:100%;background:linear-gradient(180deg,#${C.navy} 0 79%,#${C.teal} 79%);padding:58px 14px;text-align:center;font-size:9px;letter-spacing:1.5px;color:#fff}.section{background:#${C.surface};display:grid;grid-template-columns:24% 76%;align-items:center;padding:70px;border-left:10px solid #${C.accent}}.section-num{font:700 84px "Aptos Display";color:#d9e0e7}.section h2{font:700 40px/1.1 "Aptos Display";color:#${C.ink};margin:16px 0}.section p{color:#${C.muted};font-size:18px}.quote{background:#${C.surface};padding:80px 100px}.quote-mark{font:700 94px Georgia;color:#${C.accent};height:70px}.quote blockquote{font:700 italic 31px/1.35 Georgia;color:#${C.ink};margin:18px 0 30px}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}.kpi{border:0;border-top:4px solid var(--status);border-radius:0;padding:13px 15px;background:#${C.surface}}.kpi-label{font-size:10px;font-weight:700;color:#${C.muted};text-transform:uppercase}.kpi-value{font:700 25px "Aptos Display";color:#${C.ink};margin:6px 0}.kpi-delta{font-size:10px;color:var(--status)}.summary-grid,.chart-layout,.financial-body,.evidence-layout{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:18px}.insight{background:#${C.surface2};border-left:5px solid #${C.accent};border-radius:0;padding:18px 20px;display:flex;flex-direction:column;justify-content:center;min-height:130px}.insight span{font-size:9px;letter-spacing:1px;text-transform:uppercase;font-weight:700;color:#${C.accent};margin-bottom:10px}.insight strong{font-size:17px;line-height:1.28;color:#${C.ink}}.timeline{display:flex;justify-content:space-between;position:relative;margin:40px 10px 20px}.timeline:before{content:"";position:absolute;top:37px;left:3%;right:3%;height:2px;background:#${C.line}}.time-item{width:16%;text-align:center;position:relative}.time-date{font-size:10px;font-weight:700;color:#${C.muted};height:28px}.dot{width:13px;height:13px;border-radius:50%;margin:3px auto 18px;position:relative;z-index:2;border:2px solid #fff}.time-card{border-top:2px solid #${C.line};padding:12px 8px;min-height:110px;background:#fff}.time-card b{font-size:12px;color:#${C.ink}}.time-card p{font-size:10px;color:#${C.body};line-height:1.3}.compare{display:flex;gap:14px;height:88%}.roadmap{display:flex;align-items:stretch;gap:0;margin-top:18px;min-height:235px}.option,.action{flex:1;border:1px solid #${C.line};border-radius:0;padding:18px;background:#fff}.option.recommended{background:#${C.surface2};border-color:#${C.accent};border-top:4px solid #${C.accent}}.option-top{display:flex;justify-content:space-between;gap:8px}.option-top h3{font-size:18px;margin:0;color:#${C.ink}}.action h3{font-size:15px;line-height:1.2;margin:7px 0 10px;color:#${C.ink}}.option-top span{font-size:8px;font-weight:700;color:#${C.green};background:#${C.softGreen};padding:4px 6px;border-radius:10px}.option p{font-size:11px;line-height:1.35;color:#${C.body}}.action p{font-size:10px;line-height:1.35;color:#${C.body};margin:14px 0 0}.score{display:block;color:#${C.accent};margin:12px 0}.good{color:#${C.green};margin-top:14px}.trade{color:#${C.amber};margin-top:14px}.action{position:relative;border:0;border-top:4px solid var(--status);background:#${C.surface};padding:16px 28px 16px 25px;clip-path:polygon(0 0,calc(100% - 18px) 0,100% 50%,calc(100% - 18px) 100%,0 100%,18px 50%);margin-left:-8px;min-width:0}.action:first-child{clip-path:polygon(0 0,calc(100% - 18px) 0,100% 50%,calc(100% - 18px) 100%,0 100%);margin-left:0}.action:nth-child(even){background:#${C.surface2}}.action-num{font:700 26px "Aptos Display";color:#cbd5e1;margin-bottom:10px}.action-meta{display:flex;align-items:center;gap:8px;margin-top:8px}.action-meta b{font:700 11px "Aptos Display";color:#${C.accent}}.action span{font-size:9px;color:#${C.muted};font-weight:700}.roadmap+.insight{margin-top:18px;min-height:92px}.status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.status-card{border:1px solid #${C.line};border-top:4px solid var(--status);border-radius:0;padding:13px 15px;min-height:95px;background:#fff}.status-card>div{display:flex;justify-content:space-between}.status-card span{font-size:10px;text-transform:uppercase;font-weight:700;color:#${C.muted}}.status-card b{font:700 20px "Aptos Display";color:#${C.ink}}.status-card em{font-size:9px;text-transform:uppercase;color:var(--status);font-style:normal;font-weight:700}.status-card p{font-size:10px;margin:8px 0 0}.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:18px}.cols li{font-size:10px}.risk-layout{display:grid;grid-template-columns:42% 58%;gap:28px;height:90%}.risk-matrix{position:relative;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);border:1px solid #fff}.risk-green{background:#${C.softGreen};border:1px solid #fff}.risk-amber{background:#${C.softAmber};border:1px solid #fff}.risk-red{background:#${C.softRed};border:1px solid #fff}.risk-dot{position:absolute;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;border:2px solid #fff}.risk-list>div{border-bottom:1px solid #${C.line};padding:8px 0}.risk-list b{font-size:11px;color:#${C.ink}}.risk-list p{font-size:9px;color:#${C.body};margin:4px 0}.bars{display:flex;flex-direction:column;gap:11px;padding:8px 0}.bars>div{display:grid;grid-template-columns:22% 1fr 12%;align-items:center;gap:8px;font-size:10px}.bars i{height:14px;border-radius:4px;background:#${C.accent};display:block}.bars b{font-size:10px;color:#${C.ink}}.framework{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.framework>div{border:1px solid #${C.line};border-top:4px solid var(--status);border-radius:0;padding:18px;min-height:150px;background:#fff}.framework h3{margin:0 0 10px;color:#${C.ink};font-size:16px}.framework b{color:#${C.accent};font-size:20px}.framework p{font-size:11px;line-height:1.35}.two-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;height:92%}.two-cols>div{border:0;border-left:5px solid #${C.accent};padding:6px 22px}.two-cols>div:nth-child(2){background:#fff;border-left-color:#${C.teal}}.two-cols h3{font-size:20px;color:#${C.ink};margin:0 0 14px}.evidence-visual{height:270px;display:flex;align-items:center;justify-content:center}.evidence-visual img{max-width:100%;max-height:100%;object-fit:contain}.numbered>div{display:grid;grid-template-columns:50px 1fr;gap:10px;border-bottom:1px solid #${C.line};padding:9px 0}.numbered span{font:700 14px "Aptos Display";color:#${C.accent}}.numbered p{font-size:13px;margin:0;line-height:1.35}.appendix{font-size:11px;line-height:1.35}
+  </style></head><body><div class="deck" data-visual-system="consulting-v3">${cards}</div></body></html>`;
 }

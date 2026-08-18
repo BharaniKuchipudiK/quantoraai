@@ -220,7 +220,8 @@ test('V2 semantic PowerPoint compiler creates a real editable OOXML deck across 
   assert.match(compiled.htmlPreview, /class="status-grid"/);
   assert.match(compiled.htmlPreview, /class="risk-matrix"/);
   assert.match(compiled.htmlPreview, /class="compare"/);
-  assert.match(compiled.htmlPreview, /class="roadmap"/);
+  assert.match(compiled.htmlPreview, /class="roadmap(?: roadmap-track)?"/);
+  assert.match(compiled.htmlPreview, /data-visual-system="consulting-v3"/);
   assert.ok(compiled.buffer.length > 20_000, 'semantic deck should be a substantive OOXML package');
   assert.equal(compiled.imageCount, 1, 'evidence image is embedded through the production compiler');
 });
