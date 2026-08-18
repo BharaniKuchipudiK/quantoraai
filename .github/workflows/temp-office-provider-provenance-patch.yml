@@ -1,0 +1,35 @@
+name: Temporary Office Provider Provenance Patch
+
+on:
+  push:
+    branches:
+      - test/office-synthetic-release-gate
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[office-provenance-patched]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: test/office-synthetic-release-gate
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Apply asserted patch
+        run: node scripts/apply-office-provider-provenance-patch.mjs
+      - name: Commit patched generator
+        run: |
+          if git diff --quiet -- api/generate-office.ts; then
+            echo "No patch needed"
+            exit 0
+          fi
+          git config user.name "quantora-ci"
+          git config user.email "actions@users.noreply.github.com"
+          git add api/generate-office.ts
+          git commit -m "Record Office generation provider provenance [office-provenance-patched]"
+          git push origin HEAD:test/office-synthetic-release-gate
