@@ -1,62 +1,37 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
-  Check,
+  CheckCircle2,
   Code2,
   FileText,
-  FolderKanban,
   Globe2,
-  Layers3,
   Moon,
   Search,
-  ShieldCheck,
-  Sparkles,
   Sun,
-  Workflow,
 } from 'lucide-react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import './LandingPage.css';
 
 const PROMPT_EXAMPLES = [
-  'Build a board-ready cloud modernization case…',
-  'Research this market and prepare the decision brief…',
-  'Turn these notes into a clean PowerPoint…',
-  'Build a working dashboard from this idea…',
+  'Turn this idea into a board-ready decision…',
+  'Research this and tell me what actually matters…',
+  'Build the presentation, not just the outline…',
+  'Create the app and get it running…',
 ];
 
-const DIFFERENTIATORS = [
-  {
-    icon: FolderKanban,
-    eyebrow: '01 / Context',
-    title: 'Understands the outcome.',
-    body: 'Projects keep the goal, decisions, constraints, artifacts and next actions connected across conversations.',
-  },
-  {
-    icon: Workflow,
-    eyebrow: '02 / Action',
-    title: 'Does the work.',
-    body: 'Research, Office, code, analysis and publishing happen in the same workflow instead of disappearing into separate tools.',
-  },
-  {
-    icon: ShieldCheck,
-    eyebrow: '03 / Quality',
-    title: 'Checks the result.',
-    body: 'Generated artifacts can be compiled, executed, repaired and verified before Quantora treats them as finished.',
-  },
+const OUTCOME_STEPS = [
+  { label: 'Understand', mark: '01' },
+  { label: 'Research', mark: '02' },
+  { label: 'Create', mark: '03' },
+  { label: 'Verify', mark: '04' },
+  { label: 'Ship', mark: '05' },
 ];
 
 const SURFACES = [
-  { icon: Search, label: 'Research', body: 'Find, compare and turn evidence into a usable decision.' },
-  { icon: FileText, label: 'Office', body: 'Create and refine PowerPoint, Word and Excel artifacts.' },
-  { icon: Code2, label: 'Build', body: 'Generate working software, inspect the code and run it live.' },
-  { icon: Globe2, label: 'Ship', body: 'Preview, verify and publish when the web is the right outcome.' },
-];
-
-const TRUST_POINTS = [
-  'Project-aware context',
-  'Multi-model routing',
-  'Bring your own keys',
-  'Verified artifact paths',
+  { icon: Search, label: 'Research', result: 'Evidence' },
+  { icon: FileText, label: 'Office', result: 'Artifacts' },
+  { icon: Code2, label: 'Build', result: 'Software' },
+  { icon: Globe2, label: 'Ship', result: 'Live' },
 ];
 
 function startFromPrompt({ prompt, onStartBuild, onLaunchStudio, onOpenAuth, user }) {
@@ -74,7 +49,6 @@ export default function LandingPage({
   onStartBuild,
   onOpenAuth,
   user,
-  availableModels = [],
   themeMode,
   setThemeMode,
 }) {
@@ -90,11 +64,6 @@ export default function LandingPage({
     return () => window.clearInterval(timer);
   }, [prompt]);
 
-  const liveModelCount = useMemo(
-    () => availableModels.filter((model) => model && model.available !== false).length,
-    [availableModels],
-  );
-
   const submit = () => startFromPrompt({ prompt, onStartBuild, onLaunchStudio, onOpenAuth, user });
 
   return (
@@ -106,14 +75,8 @@ export default function LandingPage({
           onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
           aria-label="Open Quantora"
         >
-          <QuantoraFullLogoSvg height={34} isDark={!isLight} tagline="PROMPT TO ACTION" />
+          <QuantoraFullLogoSvg height={32} isDark={!isLight} tagline="PROMPT TO ACTION" />
         </button>
-
-        <nav className="q-nav__links" aria-label="Primary navigation">
-          <a href="#why">Why Quantora</a>
-          <a href="#platform">Platform</a>
-          <a href="#trust">Trust</a>
-        </nav>
 
         <div className="q-nav__actions">
           <button
@@ -122,26 +85,24 @@ export default function LandingPage({
             onClick={() => setThemeMode?.(isLight ? 'dark' : 'light')}
             aria-label={`Switch to ${isLight ? 'dark' : 'light'} mode`}
           >
-            {isLight ? <Moon size={17} /> : <Sun size={17} />}
+            {isLight ? <Moon size={16} /> : <Sun size={16} />}
           </button>
           <button
             type="button"
             className="q-nav__cta"
             onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}
           >
-            {user ? 'Open Studio' : 'Start free'} <ArrowRight size={16} />
+            {user ? 'Open Quantora' : 'Start'} <ArrowRight size={16} />
           </button>
         </div>
       </header>
 
       <section className="q-hero">
-        <div className="q-shell q-hero__grid">
+        <div className="q-shell q-hero__inner">
           <div className="q-hero__copy">
-            <span className="q-kicker"><span /> Quantora</span>
-            <h1>From intent to <em>outcome.</em></h1>
-            <p className="q-hero__lead">
-              Research it. Decide it. Build it. Present it. Ship it. One project, one context, the right intelligence for the job.
-            </p>
+            <span className="q-kicker">QUANTORA / PROMPT TO ACTION</span>
+            <h1>Turn thought<br />into <em>something real.</em></h1>
+            <p>Research. Decide. Create. Build. Ship.</p>
 
             <div className="q-prompt" role="group" aria-label="Start with Quantora">
               <textarea
@@ -155,105 +116,95 @@ export default function LandingPage({
                   }
                 }}
                 placeholder={PROMPT_EXAMPLES[placeholderIndex]}
-                aria-label="What do you need done?"
+                aria-label="What do you want to make happen?"
               />
-              <button type="button" onClick={submit}>
-                Run with it <ArrowRight size={17} />
+              <button type="button" onClick={submit} aria-label="Start with Quantora">
+                <ArrowRight size={19} />
               </button>
             </div>
-
-            <div className="q-hero__proof">
-              <span>{liveModelCount > 0 ? `${liveModelCount} available models` : 'Multi-model intelligence'}</span>
-              <span>Project context</span>
-              <span>Verified artifacts</span>
-            </div>
           </div>
 
-          <div className="q-product-frame" aria-label="Quantora product workflow preview">
-            <div className="q-product-frame__bar">
-              <span className="q-product-frame__dot" />
-              <span>Cloud Modernization</span>
-              <small>Project</small>
+          <div className="q-orbit" aria-label="Quantora outcome flow">
+            <div className="q-orbit__glow" />
+            <div className="q-orbit__core">
+              <span>YOUR INTENT</span>
+              <strong>One outcome</strong>
             </div>
-            <div className="q-product-frame__body">
-              <div className="q-product-frame__prompt">Prepare the CIO decision pack and make the recommendation explicit.</div>
-              <div className="q-product-frame__response">
-                <Sparkles size={17} />
-                <div>
-                  <strong>Outcome understood.</strong>
-                  <p>Use the approved recommendation, current constraints and verified financial evidence already in this project.</p>
+            <div className="q-orbit__ring q-orbit__ring--one" />
+            <div className="q-orbit__ring q-orbit__ring--two" />
+            <div className="q-orbit__node q-orbit__node--research"><Search size={16} /><span>Research</span></div>
+            <div className="q-orbit__node q-orbit__node--office"><FileText size={16} /><span>Office</span></div>
+            <div className="q-orbit__node q-orbit__node--build"><Code2 size={16} /><span>Build</span></div>
+            <div className="q-orbit__node q-orbit__node--ship"><Globe2 size={16} /><span>Ship</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="q-punch">
+        <div className="q-shell">
+          <span>THE VALUE</span>
+          <h2>Less prompting.<br /><em>More progress.</em></h2>
+        </div>
+      </section>
+
+      <section className="q-flow">
+        <div className="q-shell">
+          <div className="q-flow__eyebrow">One project. One context. One direction.</div>
+          <div className="q-flow__track">
+            {OUTCOME_STEPS.map((step, index) => (
+              <React.Fragment key={step.label}>
+                <div className="q-flow__step">
+                  <span>{step.mark}</span>
+                  <strong>{step.label}</strong>
                 </div>
+                {index < OUTCOME_STEPS.length - 1 && <div className="q-flow__line" aria-hidden="true" />}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="q-proof">
+        <div className="q-shell q-proof__grid">
+          <div className="q-proof__statement">
+            <span>NOT ANOTHER CHAT WINDOW</span>
+            <h2>Work that leaves the conversation.</h2>
+          </div>
+
+          <div className="q-proof__demo" aria-label="Example Quantora outcome">
+            <div className="q-proof__prompt">Prepare the CIO decision pack.</div>
+            <div className="q-proof__artifact">
+              <div>
+                <FileText size={19} />
+                <span>Strategic Path Forward.pptx</span>
               </div>
-              <div className="q-product-frame__artifacts">
-                <div><FileText size={16} /><span>Strategic Path Forward.pptx</span><b>Verified</b></div>
-                <div><Layers3 size={16} /><span>Architecture Assessment.docx</span><b>Ready</b></div>
+              <b><CheckCircle2 size={14} /> Verified</b>
+            </div>
+            <div className="q-proof__artifact">
+              <div>
+                <Code2 size={19} />
+                <span>Executive dashboard</span>
               </div>
-              <div className="q-product-frame__next">
-                <span>Next best action</span>
-                <strong>Finalize the CIO decision slide</strong>
-              </div>
+              <b><CheckCircle2 size={14} /> Running</b>
+            </div>
+            <div className="q-proof__next">
+              <span>NEXT</span>
+              <strong>Move the decision forward.</strong>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="q-statement">
+      <section className="q-surfaces">
         <div className="q-shell">
-          <p>Not another AI chat.</p>
-          <h2>Quantora keeps the objective in view and moves the work forward.</h2>
-        </div>
-      </section>
-
-      <section id="why" className="q-section">
-        <div className="q-shell">
-          <div className="q-section__head">
-            <span>Why Quantora</span>
-            <h2>The difference is continuity.</h2>
-            <p>A good model can answer a prompt. Quantora is designed to understand what the work is trying to achieve, carry context forward and deliver something usable.</p>
-          </div>
-          <div className="q-diff-grid">
-            {DIFFERENTIATORS.map(({ icon: Icon, eyebrow, title, body }) => (
-              <article key={title} className="q-diff-card">
-                <div className="q-diff-card__top"><span>{eyebrow}</span><Icon size={20} /></div>
-                <h3>{title}</h3>
-                <p>{body}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="platform" className="q-section q-section--muted">
-        <div className="q-shell q-platform">
-          <div className="q-platform__copy">
-            <span>One project. Every surface.</span>
-            <h2>Stay in the work instead of rebuilding context.</h2>
-            <p>Move from research to a decision, from a decision to an artifact, and from an artifact to working software without starting over in another product.</p>
-            <button type="button" onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}>
-              Explore the Studio <ArrowRight size={17} />
-            </button>
-          </div>
-          <div className="q-surface-grid">
-            {SURFACES.map(({ icon: Icon, label, body }) => (
-              <article key={label} className="q-surface-card">
-                <Icon size={19} />
-                <h3>{label}</h3>
-                <p>{body}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="trust" className="q-section">
-        <div className="q-shell q-trust">
-          <div>
-            <span>Built for serious work</span>
-            <h2>Less prompt theatre. More evidence, control and completion.</h2>
-          </div>
-          <div className="q-trust__list">
-            {TRUST_POINTS.map((item) => (
-              <div key={item}><Check size={17} /><span>{item}</span></div>
+          <div className="q-surfaces__headline">Whatever the outcome needs.</div>
+          <div className="q-surfaces__grid">
+            {SURFACES.map(({ icon: Icon, label, result }) => (
+              <div key={label} className="q-surface">
+                <Icon size={20} />
+                <span>{label}</span>
+                <strong>{result}</strong>
+              </div>
             ))}
           </div>
         </div>
@@ -261,8 +212,7 @@ export default function LandingPage({
 
       <section className="q-final">
         <div className="q-shell q-final__inner">
-          <span>Start with the outcome.</span>
-          <h2>What do you need done?</h2>
+          <h2>Start with what you want done.</h2>
           <button type="button" onClick={() => (user ? onLaunchStudio?.() : onOpenAuth?.())}>
             Open Quantora <ArrowRight size={18} />
           </button>
