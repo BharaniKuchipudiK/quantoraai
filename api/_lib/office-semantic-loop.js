@@ -1,10 +1,21 @@
-export async function runOfficeSemanticLoop({
-  format,
-  maxAttempts,
-  requestCandidate,
-  materializeCandidate = (value) => value,
-  validateCandidate,
-} = {}) {
+/**
+ * @param {{
+ *   format: string,
+ *   maxAttempts: number,
+ *   requestCandidate: (context: { attemptIndex: number, lastError: string, repairCandidate: any }) => Promise<any> | any,
+ *   materializeCandidate?: (value: any) => any,
+ *   validateCandidate: (candidate: any) => { valid: boolean, issues?: string[], warnings?: string[], spec?: any }
+ * }} options
+ */
+export async function runOfficeSemanticLoop(options) {
+  const {
+    format,
+    maxAttempts,
+    requestCandidate,
+    materializeCandidate = (value) => value,
+    validateCandidate,
+  } = options || {};
+
   if (typeof requestCandidate !== 'function') throw new Error('Office semantic loop requires requestCandidate.');
   if (typeof validateCandidate !== 'function') throw new Error('Office semantic loop requires validateCandidate.');
 
