@@ -1,13 +1,12 @@
-/* Investor-facing landing conclusion experiment.
- * Presentation only: keeps Studio, Office, routing and PCL runtime untouched.
- * This pass removes the decorative signal-as-controller idea, makes future
- * capability explanations user-triggered, compresses vertical dead space and
- * turns the bottom of the page into proof of what "done" looks like.
+/* Final investor-facing landing correction.
+ * Presentation only: Studio, Office generation, routing, Projects and PCL runtime
+ * remain untouched. This pass does three things: keeps future cards compact,
+ * turns DONE into cinematic hero outcomes, and removes the blank page tail.
  */
 
-/* --- Future capability block: ambient wave, no automatic light choreography --- */
+/* --- Future capability block: compact, ambient, user-triggered explanations --- */
 .q-future-story {
-  padding: clamp(50px, 5vw, 68px) 0 clamp(54px, 5vw, 72px) !important;
+  padding: clamp(46px, 4.5vw, 62px) 0 clamp(48px, 4.5vw, 66px) !important;
 }
 
 .q-future-copy__grid {
@@ -15,292 +14,344 @@
 }
 
 .q-pcl-wave--future {
-  height: clamp(350px, 31vw, 410px) !important;
-  margin-top: clamp(20px, 2.8vw, 32px) !important;
+  height: clamp(330px, 28vw, 385px) !important;
+  margin-top: clamp(18px, 2.2vw, 26px) !important;
 }
 
 .q-pcl-wave--future .q-pcl-wave__line {
-  opacity: .54 !important;
+  opacity: .46 !important;
 }
 
-/* No travelling beam. The wave is atmosphere, not an interaction controller. */
 .q-future-cards::after,
 .q-pcl-wave--future .q-pcl-wave__line::after {
   display: none !important;
 }
 
 .q-future-cards {
-  bottom: 16px !important;
+  bottom: 14px !important;
   gap: 10px !important;
 }
 
 .q-future-card,
 .q-future-card.is-active,
-.q-future-card:not(.is-active):not(:hover):not(:focus-visible) {
-  min-height: 246px !important;
-  opacity: .88 !important;
+.q-future-card:not(.is-active):not(:hover):not(:focus) {
+  min-height: 244px !important;
+  opacity: .92 !important;
   transform: none !important;
   animation: none !important;
   border-color: rgba(255,255,255,.10) !important;
-  background: rgba(11,13,18,.82) !important;
+  background: rgba(11,13,18,.84) !important;
   box-shadow: 0 18px 42px rgba(0,0,0,.20) !important;
-  transition: transform 560ms cubic-bezier(.2,.8,.2,1), border-color 420ms ease, background 420ms ease, box-shadow 420ms ease !important;
 }
 
-.q-future-card::before {
-  display: none !important;
-}
+.q-future-card::before { display: none !important; }
 
 .q-future-card > p,
 .q-future-card.is-active > p,
-.q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
+.q-future-card:not(.is-active):not(:hover):not(:focus) > p {
   margin: 0 !important;
   max-height: 0 !important;
   min-height: 0 !important;
   opacity: 0 !important;
   overflow: hidden !important;
-  transform: translateY(7px) !important;
 }
 
 .q-future-card .q-future-visual {
-  opacity: .78 !important;
+  opacity: .82 !important;
   transform: none !important;
-  transition: opacity 420ms ease, transform 520ms cubic-bezier(.2,.8,.2,1) !important;
 }
 
-/* Hover/focus is now the only reveal. The card turns toward the visitor and the
- * explanation becomes the payoff. It returns to its clean front state on leave. */
-.q-future-card:hover,
-.q-future-card:focus-visible {
-  opacity: 1 !important;
-  transform: perspective(1000px) translateY(-7px) rotateY(-4deg) scale(1.015) !important;
-  border-color: rgba(255,106,0,.42) !important;
-  background:
-    radial-gradient(circle at 50% 112%, rgba(255,106,0,.11), transparent 48%),
-    rgba(14,16,22,.97) !important;
-  box-shadow: 0 30px 68px rgba(0,0,0,.32), 0 0 38px rgba(255,106,0,.08) !important;
-}
-
-.q-future-card:hover > p,
-.q-future-card:focus-visible > p {
-  margin-top: 9px !important;
-  max-height: 82px !important;
-  opacity: 1 !important;
-  transform: translateY(0) !important;
-  transition: max-height 520ms ease, margin 420ms ease, opacity 420ms ease 90ms, transform 480ms ease 60ms !important;
-}
-
-.q-future-card:hover .q-future-visual,
-.q-future-card:focus-visible .q-future-visual {
-  opacity: .28 !important;
-  transform: translateY(4px) scale(.985) !important;
-}
-
-/* Internal route pulse only moves when Cognitive Intelligence is deliberately
- * explored; otherwise the section stays still and premium. */
 .q-future-card .q-route-line i {
   animation-play-state: paused !important;
   opacity: 0 !important;
 }
 .q-future-card:hover .q-route-line i,
+.q-future-card:focus .q-route-line i,
 .q-future-card:focus-visible .q-route-line i {
   animation-play-state: running !important;
   opacity: 1 !important;
 }
 
-/* --- Replace generic outcome list with three concrete examples of DONE --- */
+/* --- DONE: a cinematic sticky hero sequence, not a feature-card grid --- */
 .q-outcomes {
-  padding: clamp(58px, 6vw, 82px) 0 clamp(64px, 6vw, 88px) !important;
+  position: relative;
+  padding: clamp(58px, 5.5vw, 78px) 0 clamp(34px, 4vw, 54px) !important;
+  overflow: visible !important;
+  border-top: 1px solid var(--q-line);
   background:
-    radial-gradient(circle at 18% 22%, rgba(255,106,0,.055), transparent 24%),
-    radial-gradient(circle at 82% 70%, rgba(80,199,178,.035), transparent 28%),
+    radial-gradient(circle at 10% 12%, rgba(255,106,0,.065), transparent 24%),
+    radial-gradient(circle at 86% 68%, rgba(117,67,162,.055), transparent 26%),
     var(--q-surface) !important;
 }
 
 .q-outcomes__eyebrow {
+  display: block !important;
   font-size: 0 !important;
+  text-transform: none !important;
 }
-.q-outcomes__eyebrow::after {
-  content: 'THIS IS WHAT DONE LOOKS LIKE';
-  color: var(--q-muted);
+
+.q-outcomes__eyebrow::before {
+  content: 'DONE WITH QUANTORA';
+  display: block;
+  color: var(--q-accent);
   font-size: .68rem;
-  font-weight: 840;
-  letter-spacing: .13em;
+  font-weight: 850;
+  letter-spacing: .14em;
+}
+
+.q-outcomes__eyebrow::after {
+  content: 'Work that leaves the conversation.';
+  display: block;
+  margin-top: 14px;
+  max-width: 980px;
+  color: var(--q-text);
+  font-size: clamp(2.8rem, 5.2vw, 5.6rem);
+  line-height: .98;
+  font-weight: 760;
+  letter-spacing: -.058em;
 }
 
 .q-outcomes__rail {
-  margin-top: 24px !important;
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 12px !important;
+  margin-top: clamp(30px, 4vw, 52px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  overflow: visible !important;
   border: 0 !important;
 }
 
-/* Keep Present, Document and Build as the three semantic DOM anchors; the other
- * generic outcomes are hidden in this visual experiment. */
 .q-outcomes__rail > div:nth-child(1),
 .q-outcomes__rail > div:nth-child(4),
 .q-outcomes__rail > div:nth-child(6) {
   display: none !important;
 }
 
+.q-outcomes__rail > div:nth-child(5) { order: 1; z-index: 3; }
+.q-outcomes__rail > div:nth-child(2) { order: 2; z-index: 4; }
+.q-outcomes__rail > div:nth-child(3) { order: 3; z-index: 5; }
+
 .q-outcomes__rail > div {
-  position: relative;
-  min-height: 320px !important;
-  padding: 190px 22px 22px !important;
+  position: sticky !important;
+  top: 88px;
+  align-self: stretch;
+  width: 100%;
+  min-height: clamp(430px, 52vw, 560px) !important;
+  margin: 0 0 44px !important;
+  padding: clamp(38px, 4vw, 58px) 62% clamp(38px, 4vw, 58px) clamp(30px, 4vw, 54px) !important;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center !important;
   overflow: hidden;
-  justify-content: flex-end !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
-  border-radius: 18px;
-  background: rgba(10,12,17,.78);
-  box-shadow: 0 24px 58px rgba(0,0,0,.22);
+  border: 1px solid rgba(255,255,255,.11) !important;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(255,106,0,.10), transparent 28%),
+    linear-gradient(135deg, rgba(17,20,28,.98), rgba(8,10,15,.98)) !important;
+  box-shadow: 0 34px 90px rgba(0,0,0,.34), 0 0 0 1px rgba(255,255,255,.015) inset;
 }
+
+.q-outcomes__rail > div:nth-child(2) {
+  top: 102px;
+  padding-left: 64% !important;
+  padding-right: clamp(30px, 4vw, 54px) !important;
+}
+
+.q-outcomes__rail > div:nth-child(3) { top: 116px; }
 
 .q-outcomes__rail > div::before {
   content: '';
   position: absolute;
-  left: 18px;
-  right: 18px;
-  top: 18px;
-  height: 154px;
-  border: 1px solid rgba(255,255,255,.09);
-  border-radius: 11px;
-  background-color: rgba(255,255,255,.025);
-  box-shadow: 0 16px 36px rgba(0,0,0,.18);
+  top: clamp(26px, 3vw, 38px);
+  right: clamp(26px, 3vw, 38px);
+  bottom: clamp(26px, 3vw, 38px);
+  width: 56%;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 18px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  box-shadow: 0 26px 70px rgba(0,0,0,.30);
+}
+
+.q-outcomes__rail > div:nth-child(2)::before {
+  left: clamp(26px, 3vw, 38px);
+  right: auto;
+  background-image: url('/landing/done-presentation.svg');
+}
+
+.q-outcomes__rail > div:nth-child(3)::before {
+  background-image: url('/landing/done-document.svg');
+}
+
+.q-outcomes__rail > div:nth-child(5)::before {
+  background-image: url('/landing/done-website.svg');
 }
 
 .q-outcomes__rail > div::after {
-  position: absolute;
-  left: 30px;
-  top: 31px;
-  z-index: 2;
-  padding: 5px 8px;
+  position: relative !important;
+  inset: auto !important;
+  order: -1;
+  width: fit-content;
+  margin-bottom: 18px;
+  padding: 6px 9px;
   border: 1px solid rgba(80,199,178,.20);
   border-radius: 999px;
-  background: rgba(7,9,13,.72);
+  background: rgba(7,9,13,.64);
   color: var(--q-teal);
-  font-size: .48rem;
-  font-weight: 840;
-  letter-spacing: .08em;
+  font-size: .52rem;
+  font-weight: 850;
+  letter-spacing: .10em;
 }
 
-/* Presentation: a clean consulting-style slide. */
-.q-outcomes__rail > div:nth-child(2)::before {
-  background:
-    linear-gradient(#ff6a00,#ff6a00) 26px 42px / 44px 3px no-repeat,
-    linear-gradient(#172033,#172033) 26px 60px / 62% 8px no-repeat,
-    linear-gradient(#8b95a8,#8b95a8) 26px 77px / 46% 4px no-repeat,
-    linear-gradient(#dfe4ea,#dfe4ea) 26px 108px / 26% 30px no-repeat,
-    linear-gradient(#eef1f4,#eef1f4) 36% 108px / 26% 30px no-repeat,
-    linear-gradient(#eef1f4,#eef1f4) 72% 108px / 20% 30px no-repeat,
-    #f6f6f4;
-}
-.q-outcomes__rail > div:nth-child(2)::after { content: '✓ VERIFIED'; }
-.q-outcomes__rail > div:nth-child(2) strong { font-size: 0 !important; }
-.q-outcomes__rail > div:nth-child(2) strong::after { content: 'Presentation'; font-size: 1.2rem; }
-.q-outcomes__rail > div:nth-child(2) span { font-size: 0 !important; }
-.q-outcomes__rail > div:nth-child(2) span::after { content: 'Executive-ready · ready to present'; font-size: .69rem; }
-
-/* Professional business document. */
-.q-outcomes__rail > div:nth-child(3)::before {
-  background:
-    linear-gradient(#ff6a00,#ff6a00) 24px 26px / 34px 3px no-repeat,
-    linear-gradient(#e6e9ee,#e6e9ee) 24px 47px / 72% 5px no-repeat,
-    linear-gradient(#e6e9ee,#e6e9ee) 24px 61px / 82% 5px no-repeat,
-    linear-gradient(#e6e9ee,#e6e9ee) 24px 75px / 67% 5px no-repeat,
-    linear-gradient(#eef1f4,#eef1f4) 24px 100px / 82% 34px no-repeat,
-    #f8f8f6;
-}
-.q-outcomes__rail > div:nth-child(3)::after { content: '✓ READY TO SHARE'; }
-.q-outcomes__rail > div:nth-child(3) strong { font-size: 0 !important; }
-.q-outcomes__rail > div:nth-child(3) strong::after { content: 'Business document'; font-size: 1.2rem; }
-.q-outcomes__rail > div:nth-child(3) span { font-size: 0 !important; }
-.q-outcomes__rail > div:nth-child(3) span::after { content: 'Structured · polished · usable'; font-size: .69rem; }
-
-/* Published website/app: actual delivery state, not a mock customer claim. */
-.q-outcomes__rail > div:nth-child(5)::before {
-  background:
-    linear-gradient(90deg, #111827 0 20%, transparent 20%) 0 0 / 100% 26px no-repeat,
-    radial-gradient(circle at 32px 13px, #ff6a00 0 3px, transparent 4px),
-    linear-gradient(135deg, rgba(255,106,0,.22), rgba(80,199,178,.10)) 20px 44px / calc(100% - 40px) 72px no-repeat,
-    linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.10)) 28px 126px / 24% 8px no-repeat,
-    linear-gradient(rgba(255,255,255,.07),rgba(255,255,255,.07)) 36% 126px / 24% 8px no-repeat,
-    linear-gradient(rgba(255,255,255,.07),rgba(255,255,255,.07)) 68% 126px / 22% 8px no-repeat,
-    #0c1018;
-}
 .q-outcomes__rail > div:nth-child(5)::after { content: '● PUBLISHED · LIVE'; }
-.q-outcomes__rail > div:nth-child(5) strong { font-size: 0 !important; }
-.q-outcomes__rail > div:nth-child(5) strong::after { content: 'Website / App'; font-size: 1.2rem; }
-.q-outcomes__rail > div:nth-child(5) span { font-size: 0 !important; }
-.q-outcomes__rail > div:nth-child(5) span::after { content: 'Built · verified · published'; font-size: .69rem; }
+.q-outcomes__rail > div:nth-child(2)::after { content: '✓ VERIFIED'; }
+.q-outcomes__rail > div:nth-child(3)::after { content: '✓ READY TO SHARE'; }
 
-/* --- Close the story deliberately; no giant empty gradient tail --- */
-.q-final {
+.q-outcomes__rail strong {
   position: relative;
-  padding: clamp(68px, 7vw, 96px) 0 clamp(74px, 7vw, 104px) !important;
+  z-index: 2;
+  margin: 0 !important;
+  color: var(--q-text);
+  font-size: 0 !important;
+  line-height: 1;
+}
+.q-outcomes__rail > div:nth-child(5) strong::after { content: 'Website / App'; }
+.q-outcomes__rail > div:nth-child(2) strong::after { content: 'Presentation'; }
+.q-outcomes__rail > div:nth-child(3) strong::after { content: 'Executive document'; }
+.q-outcomes__rail strong::after {
+  font-size: clamp(2rem, 3vw, 3.4rem);
+  font-weight: 760;
+  letter-spacing: -.05em;
+}
+
+.q-outcomes__rail span {
+  position: relative;
+  z-index: 2;
+  margin-top: 12px !important;
+  max-width: 330px;
+  color: var(--q-muted);
+  font-size: 0 !important;
+  line-height: 1.5;
+}
+.q-outcomes__rail > div:nth-child(5) span::after { content: 'Built, verified and published — a usable product, not a code dump.'; }
+.q-outcomes__rail > div:nth-child(2) span::after { content: 'Executive-ready storytelling with a slide that is designed to be presented, not repaired.'; }
+.q-outcomes__rail > div:nth-child(3) span::after { content: 'Structured, polished and ready to share with the people who need to act on it.'; }
+.q-outcomes__rail span::after {
+  font-size: clamp(.9rem, 1.15vw, 1.05rem);
+}
+
+/* --- Deliberate conclusion: force normal flow and visible content --- */
+.q-final {
+  position: relative !important;
+  display: block !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: clamp(64px, 6vw, 88px) 0 clamp(72px, 6vw, 92px) !important;
+  overflow: visible !important;
   border-top: 1px solid var(--q-line);
   background:
-    radial-gradient(circle at 50% 0%, rgba(255,106,0,.08), transparent 34%),
+    radial-gradient(circle at 50% 0%, rgba(255,106,0,.09), transparent 34%),
     var(--q-bg) !important;
 }
 
 .q-final__inner {
   min-height: 0 !important;
+  height: auto !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  text-align: center;
 }
 
 .q-final__inner > span {
-  color: var(--q-muted) !important;
+  display: block !important;
+  color: var(--q-accent) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  font-size: 0 !important;
+}
+.q-final__inner > span::after {
+  content: 'FROM IDEA TO DONE';
   font-size: .68rem;
-  font-weight: 840;
-  letter-spacing: .13em;
+  font-weight: 850;
+  letter-spacing: .14em;
 }
 
 .q-final h2 {
-  margin-top: 14px !important;
+  display: block !important;
+  margin: 14px auto 0 !important;
   max-width: 900px !important;
   color: var(--q-text) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
   font-size: clamp(2.8rem, 5vw, 5.2rem) !important;
 }
 
 .q-final button {
+  display: inline-flex !important;
   margin-top: 26px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none;
 }
 
 .q-landing--light .q-future-card,
 .q-landing--light .q-future-card.is-active,
-.q-landing--light .q-future-card:not(.is-active):not(:hover):not(:focus-visible) {
-  background: rgba(255,255,255,.88) !important;
+.q-landing--light .q-future-card:not(.is-active):not(:hover):not(:focus) {
+  background: rgba(255,255,255,.90) !important;
   border-color: rgba(17,18,23,.10) !important;
 }
 
 .q-landing--light .q-outcomes__rail > div {
-  background: rgba(255,255,255,.90);
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(246,246,242,.98)) !important;
   border-color: rgba(17,18,23,.10) !important;
-  box-shadow: 0 20px 46px rgba(17,18,23,.08);
+  box-shadow: 0 28px 70px rgba(17,18,23,.10);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .q-future-card,
-  .q-future-card:hover,
-  .q-future-card:focus-visible {
-    transform: none !important;
-  }
+  .q-outcomes__rail > div { position: relative !important; top: auto !important; }
 }
 
 @media (max-width: 1020px) {
-  .q-pcl-wave--future { height: 590px !important; }
-  .q-outcomes__rail { grid-template-columns: 1fr !important; }
-  .q-outcomes__rail > div { min-height: 300px !important; }
+  .q-pcl-wave--future { height: 560px !important; }
+  .q-outcomes__rail > div,
+  .q-outcomes__rail > div:nth-child(2) {
+    position: relative !important;
+    top: auto !important;
+    min-height: 560px !important;
+    padding: 330px 28px 34px !important;
+  }
+  .q-outcomes__rail > div::before,
+  .q-outcomes__rail > div:nth-child(2)::before {
+    left: 24px;
+    right: 24px;
+    top: 24px;
+    bottom: auto;
+    width: auto;
+    height: 280px;
+  }
 }
 
 @media (max-width: 700px) {
-  .q-future-story { padding-block: 44px 54px !important; }
-  .q-pcl-wave--future { height: 410px !important; }
-  .q-future-card:hover,
-  .q-future-card:focus-visible {
-    transform: translateY(-3px) !important;
+  .q-future-story { padding-block: 42px 50px !important; }
+  .q-pcl-wave--future { height: 405px !important; }
+  .q-outcomes { padding-block: 48px 30px !important; }
+  .q-outcomes__eyebrow::after { font-size: clamp(2.5rem, 11vw, 4rem); }
+  .q-outcomes__rail > div,
+  .q-outcomes__rail > div:nth-child(2) {
+    min-height: 500px !important;
+    margin-bottom: 22px !important;
+    padding: 286px 22px 28px !important;
+    border-radius: 20px;
   }
-  .q-outcomes { padding-block: 52px 60px !important; }
-  .q-outcomes__rail > div { padding-top: 178px !important; }
-  .q-final { padding-block: 60px 72px !important; }
+  .q-outcomes__rail > div::before,
+  .q-outcomes__rail > div:nth-child(2)::before {
+    left: 18px;
+    right: 18px;
+    top: 18px;
+    height: 244px;
+  }
+  .q-final { padding-block: 56px 68px !important; }
 }
