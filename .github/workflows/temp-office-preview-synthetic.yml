@@ -1,16 +1,14 @@
 name: Temporary Office Integration Preview Synthetic
 
 on:
-  push:
-    branches:
-      - integration/office-quality-workspace
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   preview-office:
-    if: ${{ github.event.head_commit.message == 'Run authenticated Office synthetic against integration preview' }}
+    if: ${{ github.event.pull_request.number == 159 }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
