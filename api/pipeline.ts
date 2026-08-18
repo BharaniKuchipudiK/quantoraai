@@ -6,8 +6,8 @@ import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
-import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources } from "./_lib/project-state.js";
-import { deleteProject, isProjectStoreConfigured, listProjects, saveProject, upsertProjectResources } from "./_lib/project-store.js";
+import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources, normalizeProjectSessionIds } from "./_lib/project-state.js";
+import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 
@@ -95,6 +95,29 @@ export default async function handler(req: any, res: any) {
         return synced
           ? res.status(200).json({ synced: true, count: resources.length })
           : res.status(503).json({ error: 'Project resources could not be synchronized. Local artifacts are unchanged.' });
+      }
+
+      if (action === 'sync-sessions') {
+        const projectId = normalizeProjectId(req.body?.projectId);
+        if (!projectId) return res.status(400).json({ error: 'A valid projectId is required.' });
+        const sessionIds = normalizeProjectSessionIds(req.body?.sessionIds);
+        const synced = await syncProjectSessions({
+          userSub: activeSessionUser.sub,
+          projectId,
+          sessionIds,
+        });
+        return synced
+          ? res.status(200).json({ synced: true, count: sessionIds.length })
+          : res.status(503).json({ error: 'Project conversations could not be synchronized. Your local chats are unchanged.' });
+      }
+
+      if (action === 'context') {
+        const projectId = normalizeProjectId(req.body?.projectId);
+        if (!projectId) return res.status(400).json({ error: 'A valid projectId is required.' });
+        const context = await readProjectContext(activeSessionUser.sub, projectId);
+        return context
+          ? res.status(200).json({ context })
+          : res.status(503).json({ error: 'Project context is temporarily unavailable. The current conversation is unchanged.' });
       }
 
       return res.status(400).json({ error: 'Invalid Project action.' });

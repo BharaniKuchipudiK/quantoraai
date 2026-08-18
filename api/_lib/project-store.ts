@@ -1,4 +1,12 @@
-import { normalizeProjectInput, normalizeProjectResources, type ProjectRecord, type ProjectResource } from "./project-state.js";
+import {
+  buildProjectContextPack,
+  normalizeProjectInput,
+  normalizeProjectResources,
+  normalizeProjectSessionIds,
+  type ProjectContextPack,
+  type ProjectRecord,
+  type ProjectResource,
+} from "./project-state.js";
 
 const REST_TIMEOUT_MS = 4_000;
 
@@ -138,21 +146,98 @@ export async function upsertProjectResources(entry: {
   return Boolean(response && response.ok);
 }
 
+export async function syncProjectSessions(entry: {
+  userSub: string;
+  projectId: string;
+  sessionIds: string[];
+}): Promise<boolean> {
+  const sessionIds = normalizeProjectSessionIds(entry.sessionIds);
+  if (!entry.userSub || !entry.projectId) return false;
+  const response = await requestRaw("rpc/sync_project_sessions", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      p_user_sub: entry.userSub,
+      p_project_id: entry.projectId,
+      p_session_ids: sessionIds,
+    }),
+  });
+  if (!response?.ok) {
+    if (response) console.warn(`Supabase POST rpc/sync_project_sessions -> ${response.status}`, await response.text());
+    return false;
+  }
+  return true;
+}
+
+export async function readProjectContext(userSub: string, projectId: string): Promise<ProjectContextPack | null> {
+  if (!userSub || !projectId) return null;
+  const sub = encodeURIComponent(userSub);
+  const id = encodeURIComponent(projectId);
+  const [projectRes, resourcesRes, sessionsRes] = await Promise.all([
+    requestRaw(`projects?select=id,version,name,description,goal,status,color,created_at,updated_at&user_sub=eq.${sub}&id=eq.${id}&limit=1`, { method: "GET" }),
+    requestRaw(`project_resources?select=kind,ref,title,metadata,created_at,updated_at&user_sub=eq.${sub}&project_id=eq.${id}&order=updated_at.desc&limit=100`, { method: "GET" }),
+    requestRaw(`project_sessions?select=session_id,updated_at&user_sub=eq.${sub}&project_id=eq.${id}&order=updated_at.desc&limit=200`, { method: "GET" }),
+  ]);
+  if (!projectRes?.ok || !resourcesRes?.ok || !sessionsRes?.ok) return null;
+
+  try {
+    const projectRows = await projectRes.json();
+    const project = projectRecord(Array.isArray(projectRows) ? projectRows[0] : null);
+    if (!project) return null;
+
+    const resourceRows = await resourcesRes.json();
+    const resources = normalizeProjectResources(Array.isArray(resourceRows) ? resourceRows.map((row: any) => ({
+      kind: row.kind,
+      ref: row.ref,
+      title: row.title,
+      metadata: row.metadata,
+    })) : []);
+
+    const sessionRows = await sessionsRes.json();
+    const sessionIds = normalizeProjectSessionIds(Array.isArray(sessionRows) ? sessionRows.map((row: any) => row.session_id) : []);
+    let outcomes: Array<{ sessionId: string; state: unknown; updatedAt?: string | null }> = [];
+
+    if (sessionIds.length > 0) {
+      // Session IDs are restricted to the safe identifier grammar in
+      // normalizeProjectSessionIds, so the PostgREST `in` list cannot inject a filter.
+      const inList = sessionIds.join(",");
+      const outcomesRes = await requestRaw(
+        `outcome_states?select=session_id,state,updated_at&user_sub=eq.${sub}&session_id=in.(${inList})&order=updated_at.desc&limit=200`,
+        { method: "GET" },
+      );
+      if (!outcomesRes?.ok) return null;
+      const outcomeRows = await outcomesRes.json();
+      outcomes = Array.isArray(outcomeRows) ? outcomeRows.map((row: any) => ({
+        sessionId: row.session_id,
+        state: row.state,
+        updatedAt: row.updated_at,
+      })) : [];
+    }
+
+    return buildProjectContextPack({ project, resources, outcomes });
+  } catch {
+    return null;
+  }
+}
+
 export async function exportProjectData(userSub: string): Promise<{
   projects: unknown[];
   project_resources: unknown[];
+  project_sessions: unknown[];
 } | null> {
   if (!userSub) return null;
   const sub = encodeURIComponent(userSub);
-  const [projectsRes, resourcesRes] = await Promise.all([
+  const [projectsRes, resourcesRes, sessionsRes] = await Promise.all([
     requestRaw(`projects?select=id,version,name,description,goal,status,color,created_at,updated_at&user_sub=eq.${sub}&order=updated_at.desc`, { method: "GET" }),
     requestRaw(`project_resources?select=project_id,kind,ref,title,metadata,created_at,updated_at&user_sub=eq.${sub}&order=updated_at.desc`, { method: "GET" }),
+    requestRaw(`project_sessions?select=project_id,session_id,created_at,updated_at&user_sub=eq.${sub}&order=updated_at.desc`, { method: "GET" }),
   ]);
-  if (!projectsRes?.ok || !resourcesRes?.ok) return null;
+  if (!projectsRes?.ok || !resourcesRes?.ok || !sessionsRes?.ok) return null;
   try {
     return {
       projects: await projectsRes.json(),
       project_resources: await resourcesRes.json(),
+      project_sessions: await sessionsRes.json(),
     };
   } catch {
     return null;

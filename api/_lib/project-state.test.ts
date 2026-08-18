@@ -1,12 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources } from './project-state.js';
+import {
+  buildProjectContextPack,
+  DEFAULT_PROJECT_ID,
+  normalizeProjectId,
+  normalizeProjectInput,
+  normalizeProjectResources,
+  normalizeProjectSessionIds,
+} from './project-state.js';
 
 test('project ids are bounded and compatible with the existing default workspace', () => {
   assert.equal(normalizeProjectId(DEFAULT_PROJECT_ID), DEFAULT_PROJECT_ID);
   assert.equal(normalizeProjectId('project-550e8400-e29b-41d4-a716-446655440000'), 'project-550e8400-e29b-41d4-a716-446655440000');
   assert.equal(normalizeProjectId('../other-user'), null);
   assert.equal(normalizeProjectId(''), null);
+});
+
+test('project session membership is bounded, de-duplicated and identifier-safe', () => {
+  assert.deepEqual(
+    normalizeProjectSessionIds(['session-1', 'session-1', 'session:2', '../bad']),
+    ['session-1', 'session:2'],
+  );
 });
 
 test('project normalization is bounded and preserves optimistic version state', () => {
@@ -41,4 +55,78 @@ test('project resource sync is bounded and de-duplicates the same kind/ref', () 
   assert.equal(resources.length, 2);
   assert.equal(resources[0].title, 'Deck.pptx');
   assert.deepEqual(resources[0].metadata, { sessionId: 's1' });
+});
+
+test('Project Outcome Graph merges trusted session state without inventing context', () => {
+  const project = normalizeProjectInput({
+    id: 'project-cloud',
+    version: 2,
+    name: 'Cloud Modernization',
+    description: 'CIO decision workspace',
+    goal: 'Secure approval for Phase 1',
+    status: 'active',
+  });
+  assert.ok(project);
+
+  const context = buildProjectContextPack({
+    project,
+    resources: [
+      { kind: 'office-powerpoint', ref: 'fp-1', title: 'Strategic Path Forward.pptx', metadata: { verifiedAt: '2026-08-18T01:00:00Z' } },
+    ],
+    outcomes: [
+      {
+        sessionId: 'session-1',
+        updatedAt: '2026-08-18T02:00:00Z',
+        state: {
+          understanding: { statement: 'Prepare the CIO decision pack', status: 'confirmed' },
+          definitionOfDone: [],
+          constraints: [{ value: 'Keep the migration phased', confidence: 0.95 }],
+          assumptions: [{ value: 'Landing zone first', status: 'confirmed' }],
+          openQuestions: [{ question: 'Confirm final funding envelope', material: true }],
+          decisions: [{ value: 'Use hybrid replatforming', rationale: 'Balances risk and speed' }],
+          artifacts: [],
+          nextActions: [{ action: 'Finalize the CIO decision slide', risk: 'low' }],
+          memory: { scope: 'project', consented: true },
+          safety: { unresolvedFlags: [] },
+        },
+      },
+    ],
+  });
+
+  assert.equal(context.projectId, 'project-cloud');
+  assert.equal(context.goal, 'Secure approval for Phase 1');
+  assert.deepEqual(context.decisions, ['Use hybrid replatforming']);
+  assert.deepEqual(context.constraints, ['Keep the migration phased']);
+  assert.deepEqual(context.openQuestions, ['Confirm final funding envelope']);
+  assert.equal(context.nextActions[0].action, 'Finalize the CIO decision slide');
+  assert.equal(context.artifacts[0].title, 'Strategic Path Forward.pptx');
+  assert.ok(context.facts.includes('Decision: Use hybrid replatforming'));
+  assert.ok(context.facts.includes('Constraint: Keep the migration phased'));
+  assert.ok(context.facts.includes('Next action: Finalize the CIO decision slide'));
+});
+
+test('Project Outcome Graph excludes low-confidence and unconfirmed memory', () => {
+  const project = normalizeProjectInput({ id: 'project-safe', name: 'Safe', version: 1 });
+  assert.ok(project);
+  const context = buildProjectContextPack({
+    project,
+    outcomes: [{
+      sessionId: 'session-1',
+      state: {
+        definitionOfDone: [],
+        constraints: [{ value: 'Weak inference', confidence: 0.4 }],
+        assumptions: [{ value: 'Not confirmed', status: 'inferred' }],
+        openQuestions: [{ question: 'Minor question', material: false }],
+        decisions: [],
+        artifacts: [],
+        nextActions: [],
+        memory: { scope: 'session', consented: false },
+        safety: { unresolvedFlags: [] },
+      },
+    }],
+  });
+  assert.deepEqual(context.constraints, []);
+  assert.deepEqual(context.assumptions, []);
+  assert.deepEqual(context.openQuestions, []);
+  assert.deepEqual(context.facts, []);
 });
