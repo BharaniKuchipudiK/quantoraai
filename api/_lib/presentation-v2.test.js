@@ -162,6 +162,7 @@ test('preview is generated from the same semantic spec and carries the executive
   });
   assert.match(html, /class="kpis"/);
   assert.match(html, /class="compare"/);
-  assert.match(html, /class="roadmap"/);
+  assert.match(html, /class="roadmap(?: roadmap-track)?"/);
+  assert.match(html, /data-visual-system="consulting-v3"/);
   assert.match(html, /Approve phase-one funding/);
 });
