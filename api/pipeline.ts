@@ -6,6 +6,8 @@ import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
+import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources } from "./_lib/project-state.js";
+import { deleteProject, isProjectStoreConfigured, listProjects, saveProject, upsertProjectResources } from "./_lib/project-store.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 
@@ -28,6 +30,75 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { node, targetStage, repoUrl, task } = req.body || {};
+
+    if (targetStage === 'project-state') {
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
+      const { sessionUser: activeSessionUser } = auth.value;
+      if (!isProjectStoreConfigured()) {
+        return res.status(503).json({ error: 'Project sync is not configured on this deployment.' });
+      }
+
+      const action = String(req.body?.action || 'list');
+      if (action === 'list') {
+        const projects = await listProjects(activeSessionUser.sub);
+        return projects === null
+          ? res.status(503).json({ error: 'Projects are temporarily unavailable. Your local projects are unchanged.' })
+          : res.status(200).json({ projects });
+      }
+
+      if (action === 'save') {
+        const expectedVersion = req.body?.expectedVersion;
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+          return res.status(400).json({ error: 'expectedVersion must be a non-negative integer.' });
+        }
+        const project = normalizeProjectInput(req.body?.project);
+        if (!project) return res.status(400).json({ error: 'A valid project is required.' });
+        const result = await saveProject({
+          userSub: activeSessionUser.sub,
+          expectedVersion,
+          project,
+        });
+        if (result.status === 'conflict') {
+          return res.status(409).json({
+            error: 'This Project changed in another session. Reload it before retrying.',
+            conflict: true,
+          });
+        }
+        if (result.status === 'unavailable') {
+          return res.status(503).json({ error: 'Project sync is temporarily unavailable. Your local project is unchanged.' });
+        }
+        return res.status(200).json({ project: result.record });
+      }
+
+      if (action === 'delete') {
+        const projectId = normalizeProjectId(req.body?.projectId);
+        if (!projectId) return res.status(400).json({ error: 'A valid projectId is required.' });
+        if (projectId === DEFAULT_PROJECT_ID) {
+          return res.status(400).json({ error: 'The default Personal Workspace cannot be deleted.' });
+        }
+        const deleted = await deleteProject(activeSessionUser.sub, projectId);
+        return deleted
+          ? res.status(200).json({ deleted: true, projectId })
+          : res.status(503).json({ error: 'Project could not be deleted. Please try again.' });
+      }
+
+      if (action === 'sync-resources') {
+        const projectId = normalizeProjectId(req.body?.projectId);
+        if (!projectId) return res.status(400).json({ error: 'A valid projectId is required.' });
+        const resources = normalizeProjectResources(req.body?.resources);
+        const synced = await upsertProjectResources({
+          userSub: activeSessionUser.sub,
+          projectId,
+          resources,
+        });
+        return synced
+          ? res.status(200).json({ synced: true, count: resources.length })
+          : res.status(503).json({ error: 'Project resources could not be synchronized. Local artifacts are unchanged.' });
+      }
+
+      return res.status(400).json({ error: 'Invalid Project action.' });
+    }
 
     if (targetStage === 'outcome-state') {
       const auth = await requireActiveSession(req, res);

@@ -72,6 +72,10 @@
       "destination": "/api/pipeline"
     },
     {
+      "source": "/api/projects",
+      "destination": "/api/pipeline"
+    },
+    {
       "source": "/api/chat",
       "destination": "/api/chat"
     },
