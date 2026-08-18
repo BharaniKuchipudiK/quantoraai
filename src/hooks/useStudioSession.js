@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
 import { mergeSessionListeningSignals } from '../lib/listening-layer.js';
-import { sanitizeSessionsForPersistence } from '../lib/office-session-state.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -72,10 +71,7 @@ function loadSessions(defaultGreeting) {
 
 function persistSessions(sessions) {
   try {
-    // Office binaries can be megabytes. Persist only canonical spec/preview/
-    // verification state; the exact OOXML file is deterministically recompiled
-    // from that verified state after a reload.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeSessionsForPersistence(sessions)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
   } catch (e) {
     console.error(e);
   }
