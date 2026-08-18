@@ -9,9 +9,9 @@ test('one-line replies are NOT summarizable', () => {
 });
 
 test('long / multi-paragraph replies ARE summarizable', () => {
-  assert.equal(isSummarizable('a '.repeat(120)), true);              // many words
-  assert.equal(isSummarizable('x'.repeat(600)), true);               // long
-  assert.equal(isSummarizable('Para one.\n\nPara two.\n\nPara three.'), true); // 3 paragraphs
+  assert.equal(isSummarizable('a '.repeat(120)), true);
+  assert.equal(isSummarizable('x'.repeat(600)), true);
+  assert.equal(isSummarizable('Para one.\n\nPara two.\n\nPara three.'), true);
 });
 
 test('resolveMessageActions: one-liner shows no summarize, no preview', () => {
@@ -23,24 +23,26 @@ test('resolveMessageActions: one-liner shows no summarize, no preview', () => {
 });
 
 test('resolveMessageActions: normal previewable code enables preview', () => {
-  const a = resolveMessageActions({ text: '```html\n<div/>\n```', hasPreview: true });
+  const a = resolveMessageActions({ text: '```html\n<div/>\n```', hasPreview: true, isOfficeArtifact: false });
   assert.equal(a.preview, true);
 });
 
-test('resolveMessageActions: generated PowerPoint stays in inline workspace', () => {
+test('resolveMessageActions: Office artifact state keeps generated presentation in inline workspace', () => {
   const a = resolveMessageActions({
-    text: '✅ Successfully generated powerpoint document from the approved briefing.',
+    text: 'Any assistant wording is allowed here.',
     hasPreview: true,
+    isOfficeArtifact: true,
   });
   assert.equal(a.preview, false);
 });
 
-test('resolveMessageActions: refined PowerPoint stays in inline workspace', () => {
+test('resolveMessageActions: Office handling does not depend on success-message wording', () => {
   const a = resolveMessageActions({
-    text: '✅ Successfully updated the powerpoint document from the active verified artifact.',
+    text: '✅ Successfully generated powerpoint document from the approved briefing.',
     hasPreview: true,
+    isOfficeArtifact: false,
   });
-  assert.equal(a.preview, false);
+  assert.equal(a.preview, true);
 });
 
 test('overflow always has items (so "…" is never a dead button), and read-aloud only with text', () => {
