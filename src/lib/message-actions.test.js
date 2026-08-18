@@ -22,9 +22,25 @@ test('resolveMessageActions: one-liner shows no summarize, no preview', () => {
   assert.equal(a.regenerate, true);
 });
 
-test('resolveMessageActions: previewable content enables preview', () => {
+test('resolveMessageActions: normal previewable code enables preview', () => {
   const a = resolveMessageActions({ text: '```html\n<div/>\n```', hasPreview: true });
   assert.equal(a.preview, true);
+});
+
+test('resolveMessageActions: generated PowerPoint stays in inline workspace', () => {
+  const a = resolveMessageActions({
+    text: '✅ Successfully generated powerpoint document from the approved briefing.',
+    hasPreview: true,
+  });
+  assert.equal(a.preview, false);
+});
+
+test('resolveMessageActions: refined PowerPoint stays in inline workspace', () => {
+  const a = resolveMessageActions({
+    text: '✅ Successfully updated the powerpoint document from the active verified artifact.',
+    hasPreview: true,
+  });
+  assert.equal(a.preview, false);
 });
 
 test('overflow always has items (so "…" is never a dead button), and read-aloud only with text', () => {
