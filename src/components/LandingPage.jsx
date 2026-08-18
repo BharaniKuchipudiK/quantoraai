@@ -17,10 +17,38 @@ import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import './LandingPage.css';
 
 const PLATFORM_PANELS = [
-  { id: 'pcl', number: '01', eyebrow: 'Context', title: 'PCL', subtitle: 'Persistent Cognitive Layer' },
-  { id: 'agents', number: '02', eyebrow: 'Intelligence', title: 'AI Agents', subtitle: 'Reason. Research. Act.' },
-  { id: 'office', number: '03', eyebrow: 'Creation', title: 'Microsoft Office', subtitle: 'From thought to usable work' },
-  { id: 'quantum', number: '04', eyebrow: 'Frontier', title: 'Quantum', subtitle: 'Explore what comes next' },
+  {
+    id: 'pcl',
+    number: '01',
+    eyebrow: 'Context',
+    title: 'PCL',
+    subtitle: 'Persistent Cognitive Layer',
+    explanation: 'Keeps the objective, decisions, memory and artifacts connected across the work — so Quantora does not start from zero every turn.',
+  },
+  {
+    id: 'agents',
+    number: '02',
+    eyebrow: 'Intelligence',
+    title: 'AI Agents',
+    subtitle: 'Reason. Research. Act.',
+    explanation: 'Specialized intelligence can research, create, build and verify around the same goal instead of working as isolated chat responses.',
+  },
+  {
+    id: 'office',
+    number: '03',
+    eyebrow: 'Creation',
+    title: 'Microsoft Office',
+    subtitle: 'From thought to usable work',
+    explanation: 'Turn an objective into professional PowerPoint, Word and Excel artifacts that are structured, verified and ready to use.',
+  },
+  {
+    id: 'quantum',
+    number: '04',
+    eyebrow: 'Frontier',
+    title: 'Quantum',
+    subtitle: 'Explore what comes next',
+    explanation: 'A frontier workspace for experimenting with emerging computational ideas alongside the classical tools you already use.',
+  },
 ];
 
 const FUTURE_CAPABILITIES = [
@@ -55,6 +83,36 @@ const FUTURE_CAPABILITIES = [
     title: 'AI Agents',
     strapline: 'Specialists. Shared context.',
     description: 'Research, create, build and verify through specialized agents working toward the same outcome.',
+  },
+];
+
+const DONE_STORIES = [
+  {
+    id: 'website',
+    tab: 'Website',
+    label: 'WEBSITE / APP',
+    prompt: 'Create a premium boutique website selling sarees and ready-made dresses. Add a product catalogue, cart and checkout experience, then make it ready to publish.',
+    outcome: 'Boutique storefront',
+    status: 'PUBLISHED · LIVE',
+    proof: 'Catalogue · cart · checkout · responsive',
+  },
+  {
+    id: 'presentation',
+    tab: 'Presentation',
+    label: 'POWERPOINT',
+    prompt: 'Prepare a consulting-grade cloud migration strategy for executives. Cover current-state challenges, target architecture, roadmap, risks and business value.',
+    outcome: 'Cloud migration strategy',
+    status: 'VERIFIED · READY',
+    proof: 'Executive narrative · roadmap · architecture',
+  },
+  {
+    id: 'document',
+    tab: 'Document',
+    label: 'BUSINESS DOCUMENT',
+    prompt: 'Create an executive brief on AI adoption opportunities in insurance with use cases, risks, recommendations and a clear decision summary.',
+    outcome: 'Executive decision brief',
+    status: 'READY TO SHARE',
+    proof: 'Structured · polished · decision-ready',
   },
 ];
 
@@ -155,7 +213,7 @@ function QuantumVisual() {
   );
 }
 
-function PlatformPanel({ panel, active, onActivate }) {
+function PlatformPanel({ panel, active, flipped, onActivate, onFlip }) {
   const Visual = panel.id === 'pcl'
     ? PclVisual
     : panel.id === 'agents'
@@ -165,40 +223,59 @@ function PlatformPanel({ panel, active, onActivate }) {
         : QuantumVisual;
 
   return (
-    <article
-      className={`q-platform-panel${active ? ' is-active' : ''}`}
+    <button
+      type="button"
+      className={`q-platform-panel${active ? ' is-active' : ''}${flipped ? ' is-flipped' : ''}`}
       onMouseEnter={onActivate}
       onFocus={onActivate}
-      tabIndex={0}
+      onClick={onFlip}
+      aria-pressed={flipped}
+      aria-label={`${panel.title}. ${flipped ? 'Hide' : 'Show'} explanation`}
     >
-      <div className="q-platform-panel__head">
-        <span>{panel.number} / {panel.eyebrow}</span>
-        <b>{active ? 'ACTIVE' : 'EXPLORE'}</b>
-      </div>
-      <div className="q-platform-panel__title">
-        <h3>{panel.title}</h3>
-        <p>{panel.subtitle}</p>
-      </div>
-      <Visual />
-    </article>
+      <span className="q-platform-panel__face q-platform-panel__face--front">
+        <span className="q-platform-panel__head">
+          <span>{panel.number} / {panel.eyebrow}</span>
+          <b>{flipped ? 'BACK' : active ? 'ACTIVE' : 'EXPLORE'}</b>
+        </span>
+        <span className="q-platform-panel__title">
+          <span className="q-platform-panel__h3">{panel.title}</span>
+          <span className="q-platform-panel__subtitle">{panel.subtitle}</span>
+        </span>
+        <Visual />
+      </span>
+
+      <span className="q-platform-panel__face q-platform-panel__face--back">
+        <span className="q-platform-panel__back-kicker">WHY IT MATTERS</span>
+        <span className="q-platform-panel__back-title">{panel.title}</span>
+        <span className="q-platform-panel__back-copy">{panel.explanation}</span>
+        <span className="q-platform-panel__back-action">Click to return ↺</span>
+      </span>
+    </button>
   );
 }
 
 function CognitiveStage() {
   const [activePanel, setActivePanel] = useState(0);
+  const [flippedPanel, setFlippedPanel] = useState(null);
 
   useEffect(() => {
+    if (flippedPanel !== null) return undefined;
     const timer = window.setInterval(() => {
       setActivePanel((value) => (value + 1) % PLATFORM_PANELS.length);
     }, 4200);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [flippedPanel]);
+
+  const togglePanel = (index) => {
+    setActivePanel(index);
+    setFlippedPanel((current) => (current === index ? null : index));
+  };
 
   return (
     <div className="q-cognitive-stage">
       <header className="q-cognitive-stage__header">
         <div><span className="q-live-dot" /> QUANTORA COGNITIVE PLATFORM</div>
-        <span>PRODUCT VISION</span>
+        <span>PRODUCT VISION · CLICK A PANEL</span>
       </header>
 
       <div className="q-cognitive-stage__panels">
@@ -207,7 +284,9 @@ function CognitiveStage() {
             key={panel.id}
             panel={panel}
             active={activePanel === index}
+            flipped={flippedPanel === index}
             onActivate={() => setActivePanel(index)}
+            onFlip={() => togglePanel(index)}
           />
         ))}
         <div className="q-cognitive-signal" aria-hidden="true">
@@ -271,33 +350,33 @@ function FutureCapabilityVisual({ capability }) {
   );
 }
 
-function FutureCapabilityCard({ capability, active, onActivate }) {
+function FutureCapabilityCard({ capability, flipped, onFlip }) {
   return (
-    <article
-      className={`q-future-card${active ? ' is-active' : ''}`}
-      onMouseEnter={onActivate}
-      onFocus={onActivate}
-      tabIndex={0}
+    <button
+      type="button"
+      className={`q-future-card${flipped ? ' is-flipped' : ''}`}
+      onClick={onFlip}
+      aria-pressed={flipped}
     >
-      <div className="q-future-card__meta"><span>{capability.number}</span><b>{capability.status}</b></div>
-      <h3>{capability.title}</h3>
-      <strong>{capability.strapline}</strong>
-      <p>{capability.description}</p>
-      <FutureCapabilityVisual capability={capability} />
-    </article>
+      <span className="q-future-card__front">
+        <span className="q-future-card__meta"><span>{capability.number}</span><b>{capability.status}</b></span>
+        <span className="q-future-card__title">{capability.title}</span>
+        <span className="q-future-card__strapline">{capability.strapline}</span>
+        <FutureCapabilityVisual capability={capability} />
+      </span>
+      <span className="q-future-card__back">
+        <span>WHAT IT DOES</span>
+        <strong>{capability.title}</strong>
+        <p>{capability.description}</p>
+        <small>Click to return ↺</small>
+      </span>
+    </button>
   );
 }
 
 function PclSignalSection() {
   const signals = ['GOAL', 'CONTEXT', 'MEMORY', 'DECISIONS', 'ARTIFACTS', 'NEXT ACTION'];
-  const [activeCapability, setActiveCapability] = useState(0);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setActiveCapability((value) => (value + 1) % FUTURE_CAPABILITIES.length);
-    }, 7000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const [flippedCapability, setFlippedCapability] = useState(null);
 
   return (
     <section className="q-pcl-story q-future-story">
@@ -309,24 +388,130 @@ function PclSignalSection() {
         </div>
       </div>
 
-      <div className="q-pcl-wave q-pcl-wave--future" aria-label="Quantora context and capability signal">
+      <div className="q-pcl-wave q-pcl-wave--compact" aria-label="Shared project context moving through Quantora">
         <div className="q-pcl-wave__line" />
         <div className="q-pcl-wave__track">
-          {[...signals, ...signals].map((signal, index) => (
-            <span key={`${signal}-${index}`}>{signal}</span>
-          ))}
+          {signals.map((signal) => <span key={signal}>{signal}</span>)}
         </div>
         <div className="q-pcl-wave__core"><strong>PCL</strong><span>Shared context across every surface</span></div>
+      </div>
 
-        <div className="q-shell q-future-cards">
-          {FUTURE_CAPABILITIES.map((capability, index) => (
-            <FutureCapabilityCard
-              key={capability.id}
-              capability={capability}
-              active={activeCapability === index}
-              onActivate={() => setActiveCapability(index)}
-            />
-          ))}
+      <div className="q-shell q-future-cards q-future-cards--below">
+        {FUTURE_CAPABILITIES.map((capability, index) => (
+          <FutureCapabilityCard
+            key={capability.id}
+            capability={capability}
+            flipped={flippedCapability === index}
+            onFlip={() => setFlippedCapability((current) => (current === index ? null : index))}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DoneWebsiteVisual() {
+  return (
+    <div className="q-done-visual q-done-visual--website" aria-label="Boutique website outcome preview">
+      <div className="q-browser-bar"><i /><i /><i /><span>vastra-boutique.com</span><b>LIVE</b></div>
+      <div className="q-store-nav"><strong>VASTRA</strong><span>New arrivals</span><span>Sarees</span><span>Ready-to-wear</span><b>Bag · 2</b></div>
+      <div className="q-store-hero"><small>FESTIVE EDIT</small><strong>Tradition, made contemporary.</strong><span>Shop the collection →</span></div>
+      <div className="q-store-products">
+        <div><i className="q-product q-product--one" /><span>Silk Saree</span><b>$128</b></div>
+        <div><i className="q-product q-product--two" /><span>Kurta Set</span><b>$92</b></div>
+        <div><i className="q-product q-product--three" /><span>Drape Dress</span><b>$110</b></div>
+      </div>
+      <div className="q-store-proof"><span>✓ Cart</span><span>✓ Checkout</span><span>✓ Responsive</span><span>✓ Published</span></div>
+    </div>
+  );
+}
+
+function DonePresentationVisual() {
+  return (
+    <div className="q-done-visual q-done-visual--presentation" aria-label="Cloud migration presentation outcome preview">
+      <div className="q-deck-top"><span>QUANTORA · CLOUD TRANSFORMATION</span><b>07 / 12</b></div>
+      <h4>Migration succeeds when the roadmap connects technology to business value.</h4>
+      <div className="q-deck-columns">
+        <div><small>01</small><strong>Stabilize</strong><span>Inventory · risk · landing zone</span></div>
+        <div><small>02</small><strong>Migrate</strong><span>Wave plan · factory · controls</span></div>
+        <div><small>03</small><strong>Modernize</strong><span>Platform · data · operating model</span></div>
+      </div>
+      <div className="q-deck-roadmap"><span>0–90 days</span><i /><span>3–9 months</span><i /><span>9–18 months</span></div>
+      <div className="q-deck-proof"><span>✓ Executive narrative</span><span>✓ Roadmap</span><span>✓ Architecture</span></div>
+    </div>
+  );
+}
+
+function DoneDocumentVisual() {
+  return (
+    <div className="q-done-visual q-done-visual--document" aria-label="Executive business document outcome preview">
+      <div className="q-doc-brand">QUANTORA</div>
+      <h4>AI adoption in insurance</h4>
+      <p>Executive decision brief</p>
+      <div className="q-doc-summary"><small>EXECUTIVE SUMMARY</small><strong>Prioritize high-volume, human-reviewed use cases first.</strong></div>
+      <div className="q-doc-grid">
+        <div><span>01</span><strong>Claims</strong><small>Assist triage and summarization</small></div>
+        <div><span>02</span><strong>Underwriting</strong><small>Surface evidence and risk signals</small></div>
+        <div><span>03</span><strong>Service</strong><small>Grounded customer responses</small></div>
+      </div>
+      <div className="q-doc-proof"><span>✓ Structured</span><span>✓ Decision-ready</span><span>✓ Ready to share</span></div>
+    </div>
+  );
+}
+
+function DoneVisual({ story }) {
+  if (story.id === 'website') return <DoneWebsiteVisual />;
+  if (story.id === 'presentation') return <DonePresentationVisual />;
+  return <DoneDocumentVisual />;
+}
+
+function PromptToActionShowcase() {
+  const [activeStory, setActiveStory] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveStory((value) => (value + 1) % DONE_STORIES.length);
+    }, 7200);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const story = DONE_STORIES[activeStory];
+
+  return (
+    <section className="q-done-showcase">
+      <div className="q-shell">
+        <div className="q-done-showcase__header">
+          <div><span>PROMPT TO ACTION</span><h2>This is what <em>done</em> looks like.</h2></div>
+          <div className="q-done-tabs" role="tablist" aria-label="Quantora outcome examples">
+            {DONE_STORIES.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                className={activeStory === index ? 'is-active' : ''}
+                onClick={() => setActiveStory(index)}
+                role="tab"
+                aria-selected={activeStory === index}
+              >
+                {item.tab}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="q-done-stage" key={story.id}>
+          <div className="q-done-prompt">
+            <span>QUANTORA AI STUDIO · PROMPT</span>
+            <p>{story.prompt}</p>
+            <div><Sparkles size={15} /><strong>Quantora takes it forward</strong></div>
+          </div>
+
+          <div className="q-done-arrow" aria-hidden="true"><ArrowRight size={24} /></div>
+
+          <div className="q-done-output">
+            <div className="q-done-output__meta"><span>{story.label}</span><b>{story.status}</b></div>
+            <DoneVisual story={story} />
+            <div className="q-done-output__caption"><strong>{story.outcome}</strong><span>{story.proof}</span></div>
+          </div>
         </div>
       </div>
     </section>
@@ -342,9 +527,6 @@ export default function LandingPage({
   setThemeMode,
 }) {
   const isLight = themeMode === 'light';
-  // Keep onStartBuild in the public contract; the investor-facing landing page
-  // intentionally enters Studio through one confident CTA instead of leading
-  // with a large prompt box that visually reduces Quantora to a chatbot.
   void onStartBuild;
 
   const openQuantora = () => enterQuantora({ user, onLaunchStudio, onOpenAuth });
@@ -394,24 +576,11 @@ export default function LandingPage({
       </section>
 
       <PclSignalSection />
-
-      <section className="q-outcomes">
-        <div className="q-shell">
-          <span className="q-outcomes__eyebrow">ONE INTENT · MANY OUTCOMES</span>
-          <div className="q-outcomes__rail">
-            <div><strong>Research</strong><span>Evidence</span></div>
-            <div><strong>Present</strong><span>PowerPoint</span></div>
-            <div><strong>Document</strong><span>Word</span></div>
-            <div><strong>Analyse</strong><span>Excel</span></div>
-            <div><strong>Build</strong><span>Software</span></div>
-            <div><strong>Ship</strong><span>Live</span></div>
-          </div>
-        </div>
-      </section>
+      <PromptToActionShowcase />
 
       <section className="q-final">
         <div className="q-shell q-final__inner">
-          <span>THE NEXT MOVE</span>
+          <span>FROM IDEA TO DONE</span>
           <h2>Start with what you want done.</h2>
           <button type="button" onClick={openQuantora}>
             {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={18} />
