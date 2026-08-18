@@ -23,6 +23,41 @@ const PLATFORM_PANELS = [
   { id: 'quantum', number: '04', eyebrow: 'Frontier', title: 'Quantum', subtitle: 'Explore what comes next' },
 ];
 
+const FUTURE_CAPABILITIES = [
+  {
+    id: 'cognitive',
+    number: '01',
+    status: 'EVOLVING NOW',
+    title: 'Cognitive Intelligence',
+    strapline: 'The right intelligence. Automatically.',
+    description: 'Quantora reads the task, project context and intended outcome, then routes the right model, tools and workflow without making you manage the machinery.',
+  },
+  {
+    id: 'ide',
+    number: '02',
+    status: 'COMING',
+    title: 'Integrated IDE',
+    strapline: 'Build without leaving the work.',
+    description: 'Plan, code, test, preview and ship software inside one Quantora project workspace.',
+  },
+  {
+    id: 'automation',
+    number: '03',
+    status: 'COMING',
+    title: 'Workflow Automation',
+    strapline: 'Automate what repeats.',
+    description: 'Turn recurring research, analysis, reporting and follow-up work into reusable flows that keep moving.',
+  },
+  {
+    id: 'agents',
+    number: '04',
+    status: 'COMING',
+    title: 'AI Agents',
+    strapline: 'Specialists. Shared context.',
+    description: 'Research, create, build and verify through specialized agents working toward the same outcome.',
+  },
+];
+
 function enterQuantora({ user, onLaunchStudio, onOpenAuth }) {
   if (user) onLaunchStudio?.();
   else onOpenAuth?.();
@@ -191,22 +226,108 @@ function CognitiveStage() {
   );
 }
 
-function PclSignalSection() {
-  const signals = ['GOAL', 'DECISIONS', 'CONSTRAINTS', 'MEMORY', 'ARTIFACTS', 'NEXT ACTION'];
-  return (
-    <section className="q-pcl-story">
-      <div className="q-pcl-story__copy q-shell">
-        <span>PERSISTENT COGNITIVE LAYER</span>
-        <h2>The context doesn’t disappear<br />when the conversation ends.</h2>
+function FutureCapabilityVisual({ capability }) {
+  if (capability.id === 'cognitive') {
+    return (
+      <div className="q-future-visual q-future-visual--cognitive" aria-hidden="true">
+        <div className="q-route-input"><span>Task</span><b>Context</b><strong>Outcome</strong></div>
+        <div className="q-route-line"><i /></div>
+        <div className="q-route-output"><Sparkles size={15} /><span>AUTO ROUTE</span><b>Right model · tools · workflow</b></div>
       </div>
-      <div className="q-pcl-wave" aria-label="Project context signal">
+    );
+  }
+
+  if (capability.id === 'ide') {
+    return (
+      <div className="q-future-visual q-future-visual--ide" aria-hidden="true">
+        <div className="q-ide-tabs"><span className="is-active">App.tsx</span><span>Preview</span><span>Terminal</span></div>
+        <div className="q-ide-body">
+          <div className="q-ide-files"><i /><i /><i /><i /></div>
+          <div className="q-ide-code"><i /><i /><i /><i /><i /></div>
+        </div>
+        <div className="q-ide-terminal">✓ build passed · ready to ship</div>
+      </div>
+    );
+  }
+
+  if (capability.id === 'automation') {
+    return (
+      <div className="q-future-visual q-future-visual--automation" aria-hidden="true">
+        <div className="q-flow-node"><span>TRIGGER</span><b>Weekly update</b></div>
+        <ArrowRight size={14} />
+        <div className="q-flow-node is-active"><span>WORK</span><b>Research + analyse</b></div>
+        <ArrowRight size={14} />
+        <div className="q-flow-node"><span>DELIVER</span><b>Verified report</b></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="q-future-visual q-future-visual--agents" aria-hidden="true">
+      <div><Bot size={15} /><span>Research</span><b>RUNNING</b></div>
+      <div><Bot size={15} /><span>Create</span><b>READY</b></div>
+      <div><ShieldCheck size={15} /><span>Verify</span><b>NEXT</b></div>
+    </div>
+  );
+}
+
+function FutureCapabilityCard({ capability, active, onActivate }) {
+  return (
+    <article
+      className={`q-future-card${active ? ' is-active' : ''}`}
+      onMouseEnter={onActivate}
+      onFocus={onActivate}
+      tabIndex={0}
+    >
+      <div className="q-future-card__meta"><span>{capability.number}</span><b>{capability.status}</b></div>
+      <h3>{capability.title}</h3>
+      <strong>{capability.strapline}</strong>
+      <p>{capability.description}</p>
+      <FutureCapabilityVisual capability={capability} />
+    </article>
+  );
+}
+
+function PclSignalSection() {
+  const signals = ['GOAL', 'CONTEXT', 'MEMORY', 'DECISIONS', 'ARTIFACTS', 'NEXT ACTION'];
+  const [activeCapability, setActiveCapability] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveCapability((value) => (value + 1) % FUTURE_CAPABILITIES.length);
+    }, 4800);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <section className="q-pcl-story q-future-story">
+      <div className="q-pcl-story__copy q-future-copy q-shell">
+        <span>FROM IDEA TO DONE</span>
+        <div className="q-future-copy__grid">
+          <h2>Create what matters.<br /><em>Automate what repeats.</em></h2>
+          <p>Tell Quantora what you need. It chooses the right intelligence, tools and workflow for the job.</p>
+        </div>
+      </div>
+
+      <div className="q-pcl-wave q-pcl-wave--future" aria-label="Quantora context and capability signal">
         <div className="q-pcl-wave__line" />
         <div className="q-pcl-wave__track">
           {[...signals, ...signals].map((signal, index) => (
             <span key={`${signal}-${index}`}>{signal}</span>
           ))}
         </div>
-        <div className="q-pcl-wave__core"><strong>PCL</strong><span>Context in motion</span></div>
+        <div className="q-pcl-wave__core"><strong>PCL</strong><span>Shared context across every surface</span></div>
+
+        <div className="q-shell q-future-cards">
+          {FUTURE_CAPABILITIES.map((capability, index) => (
+            <FutureCapabilityCard
+              key={capability.id}
+              capability={capability}
+              active={activeCapability === index}
+              onActivate={() => setActiveCapability(index)}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -252,9 +373,9 @@ export default function LandingPage({
 
       <section className="q-hero">
         <div className="q-shell q-hero__copy">
-          <span className="q-kicker">QUANTORA / PROMPT TO ACTION</span>
-          <h1>Ideas deserve<br /><em>more than answers.</em></h1>
-          <p>Turn intent into verified work.</p>
+          <span className="q-kicker">IDEAS DESERVE MORE THAN ANSWERS</span>
+          <h1>From idea<br /><em>to done.</em></h1>
+          <p>Create what matters. Automate what repeats.</p>
           <button type="button" className="q-hero__try" onClick={openQuantora}>
             {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={17} />
           </button>
@@ -267,8 +388,8 @@ export default function LandingPage({
 
       <section className="q-punch">
         <div className="q-shell">
-          <span>THE AMBITION</span>
-          <h2>Not another chatbot.<br /><em>An execution layer for knowledge work.</em></h2>
+          <span>THE DIFFERENCE</span>
+          <h2>No model picking. No prompt gymnastics.<br /><em>Just the right intelligence at the right moment.</em></h2>
         </div>
       </section>
 
