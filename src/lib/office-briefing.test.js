@@ -29,19 +29,20 @@ test('a fully specified first-turn brief still gets one human approval checkpoin
   assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), false);
 });
 
-test('briefing approval on a later turn inherits the artifact kind', () => {
+test('Continue UI value hands the approved briefing to Office generation', () => {
   const messages = [
-    { sender: 'ai', text: 'Who is the audience?', officeBriefing: true, officeBriefingKind: 'powerpoint' },
+    { sender: 'ai', text: 'Brief approved?', officeBriefing: true, officeBriefingKind: 'powerpoint' },
   ];
+  const continueValue = 'Build the requested artifact now using this approved briefing context';
   assert.equal(activeOfficeBriefingKind(messages), 'powerpoint');
   assert.equal(shouldGenerateOfficeNow({
-    text: 'Build the requested artifact now using this approved briefing context',
+    text: continueValue,
     officeKind: null,
     messages,
   }), true);
 });
 
-test('briefing prompt is isolated from immediate Office generator trigger words', () => {
+test('completed briefing instructs the model to emit one visible Continue action', () => {
   const prompt = officeBriefingContext({
     text: 'I need a PowerPoint presentation for a CIO business case',
     officeKind: 'powerpoint',
@@ -49,8 +50,22 @@ test('briefing prompt is isolated from immediate Office generator trigger words'
     sessionContext: { facts: ['I am a senior project manager'] },
   });
   assert.ok(prompt);
-  assert.doesNotMatch(prompt, /\b(powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|docx?)\b/i);
+  assert.match(prompt, /"label":"Continue"/);
+  assert.match(prompt, /"value":"Build the requested artifact now using this approved briefing context"/);
+  assert.match(prompt, /quantora-continues/);
+  assert.match(prompt, /Do NOT ask the user to type an approval phrase/);
+});
+
+test('briefing prompt masks user Office trigger words while preserving the briefing contract', () => {
+  const prompt = officeBriefingContext({
+    text: 'I need a PowerPoint presentation for a CIO business case',
+    officeKind: 'powerpoint',
+    messages: [],
+    sessionContext: { facts: ['I am a senior project manager'] },
+  });
+  assert.ok(prompt);
   assert.match(prompt, /CIO\/board\/executive/);
   assert.match(prompt, /Ask exactly ONE highest-value question/);
   assert.match(prompt, /Analytical workbook\/model/);
+  assert.match(prompt, /Current user message: I need a requested artifact for a CIO business case/);
 });
