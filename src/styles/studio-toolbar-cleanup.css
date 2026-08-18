@@ -1,0 +1,29 @@
+/*
+ * Studio prompt-bar cleanup.
+ *
+ * Keep one attachment entry point (the richer file/image/GitHub menu), hide the
+ * unfinished voice affordance, and use plain-language Web Search terminology.
+ * These selectors are deliberately scoped to the Studio shell so other product
+ * surfaces with similarly named controls are unaffected.
+ */
+.app-shell--studio button[title="Attach File"],
+.app-shell--studio button[title="Voice Input"] {
+  display: none !important;
+}
+
+.app-shell--studio button[title="Live Web Search Enabled"],
+.app-shell--studio button[title="Enable Web Search Grounding"] {
+  font-size: 0 !important;
+}
+
+.app-shell--studio button[title="Live Web Search Enabled"]::after,
+.app-shell--studio button[title="Enable Web Search Grounding"]::after {
+  content: "Web Search";
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Office refinement should communicate progress, not implementation detail. */
+.app-shell--studio [role="status"][aria-live="polite"] > div > div:last-child {
+  display: none;
+}

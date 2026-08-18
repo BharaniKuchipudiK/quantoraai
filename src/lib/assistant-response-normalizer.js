@@ -1,6 +1,7 @@
 import { extractContextFromAssistantText } from './session-context.js';
 import { extractChoicesFromAssistantText, stripPartialAssistantMarkers } from './studio-choices.js';
 import { extractContinuesFromAssistantText } from './studio-continues.js';
+import { polishOfficeUiCopy } from './office-ui-copy.js';
 
 const CLEAR_WORKSPACE_MARKER = /<clear-workspace\s*\/?\s*>/gi;
 const PARTIAL_CLEAR_WORKSPACE_MARKER = /<clear-workspace[^>]*$/i;
@@ -21,7 +22,7 @@ function stripClearWorkspaceMarker(text) {
  */
 export function sanitizeAssistantStream(text) {
   const partialSafe = stripPartialAssistantMarkers(typeof text === 'string' ? text : '');
-  return stripClearWorkspaceMarker(partialSafe);
+  return polishOfficeUiCopy(stripClearWorkspaceMarker(partialSafe));
 }
 
 /**
@@ -42,7 +43,7 @@ export function normalizeAssistantResponse(text) {
   const { displayText, choiceSet } = extractChoicesFromAssistantText(afterContinues);
 
   return {
-    displayText,
+    displayText: polishOfficeUiCopy(displayText),
     choiceSet,
     continueSet,
     contextUpdate,

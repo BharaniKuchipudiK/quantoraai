@@ -2,9 +2,11 @@
  * Build Communication Layer — chat stays conversational; HTML routes to preview.
  */
 
+import { polishOfficeUiCopy } from './office-ui-copy.js';
+
 export function stripArtifactFromChatDisplay(rawText = '') {
   if (!rawText || typeof rawText !== 'string') return '';
-  let text = rawText.trim();
+  let text = polishOfficeUiCopy(rawText).trim();
 
   // Code and generated artifacts belong in the preview panel, never in the chat.
   // Strip EVERY fenced code block — any language — closed or still streaming.
