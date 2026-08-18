@@ -1,9 +1,6 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "env": {
-    "GEMINI_OFFICE_MODEL": "gemini-pro-latest"
-  },
   "functions": {
     "api/generate-office.ts": { "maxDuration": 300 }
   },
