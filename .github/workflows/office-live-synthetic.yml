@@ -2,6 +2,9 @@ name: Quantora Office Live Synthetic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - test/office-synthetic-release-gate
   schedule:
     - cron: '17 2 * * 1'
 
