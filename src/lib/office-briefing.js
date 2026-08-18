@@ -17,7 +17,9 @@ function recentOfficeBriefing(messages = []) {
 }
 
 function maskGeneratorTriggerWords(value = '') {
-  return String(value || '').replace(GENERATOR_TRIGGER_WORDS, 'requested artifact');
+  return String(value || '')
+    .replace(GENERATOR_TRIGGER_WORDS, 'requested artifact')
+    .replace(/\brequested artifact(?:\s+requested artifact)+\b/gi, 'requested artifact');
 }
 
 export function activeOfficeBriefingKind(messages = []) {
