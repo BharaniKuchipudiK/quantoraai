@@ -38,6 +38,12 @@ function verifyEnvelope(data, expectedOperation) {
   assert(typeof data?.htmlPreview === 'string' && data.htmlPreview.includes('quantora-office-manifest'), 'verified Office manifest missing from preview');
 }
 
+function verifyGenerationProvenance(data, label) {
+  assert(typeof data?.generation?.provider === 'string' && data.generation.provider.length > 0, `${label} provider provenance missing`);
+  assert(typeof data?.generation?.model === 'string' && data.generation.model.length > 0, `${label} model provenance missing`);
+  assert(Number.isFinite(data?.generation?.attempts) && data.generation.attempts >= 1, `${label} generation attempt count missing`);
+}
+
 console.log(`Quantora live Office synthetic target: ${endpoint}`);
 
 const create = await post({
@@ -51,7 +57,8 @@ const create = await post({
   },
 });
 verifyEnvelope(create.data, 'create');
-console.log(`✔ CREATE verified in ${create.latencyMs}ms — ${create.data.fileName}`);
+verifyGenerationProvenance(create.data, 'create');
+console.log(`✔ CREATE verified in ${create.latencyMs}ms — ${create.data.generation.provider}/${create.data.generation.model} — ${create.data.fileName}`);
 
 const firstFingerprint = create.data.verification.previewFingerprint;
 const refine = await post({
@@ -64,10 +71,11 @@ const refine = await post({
   sessionContext: { goal: 'Synthetic Office refinement reliability check', facts: ['Preserve slide count and evidence boundaries'] },
 });
 verifyEnvelope(refine.data, 'refine');
+verifyGenerationProvenance(refine.data, 'refine');
 assert(refine.data.revision.basedOnFingerprint === firstFingerprint, 'refinement lineage does not point to the created artifact');
 assert(refine.data.verification.previewFingerprint !== firstFingerprint, 'refinement did not produce a new preview fingerprint');
 assert(refine.data.spec.slides.length === create.data.spec.slides.length, 'refinement unexpectedly changed slide count');
-console.log(`✔ REFINE verified in ${refine.latencyMs}ms — ${refine.data.revision.resultFingerprint}`);
+console.log(`✔ REFINE verified in ${refine.latencyMs}ms — ${refine.data.generation.provider}/${refine.data.generation.model} — ${refine.data.revision.resultFingerprint}`);
 
 const recompile = await post({
   prompt: '',
