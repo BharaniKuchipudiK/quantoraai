@@ -5,6 +5,7 @@ import {
   countOfficeBriefSignals,
   officeBriefingContext,
   shouldGenerateOfficeNow,
+  OFFICE_CONTINUE_VALUE,
 } from './office-briefing.js';
 
 test('a generic first-turn presentation request does not bypass human briefing', () => {
@@ -29,19 +30,19 @@ test('a fully specified first-turn brief still gets one human approval checkpoin
   assert.equal(shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }), false);
 });
 
-test('briefing approval on a later turn inherits the artifact kind', () => {
+test('Continue UI value hands the approved briefing to Office generation', () => {
   const messages = [
-    { sender: 'ai', text: 'Who is the audience?', officeBriefing: true, officeBriefingKind: 'powerpoint' },
+    { sender: 'ai', text: 'Brief approved?', officeBriefing: true, officeBriefingKind: 'powerpoint' },
   ];
   assert.equal(activeOfficeBriefingKind(messages), 'powerpoint');
   assert.equal(shouldGenerateOfficeNow({
-    text: 'Build the requested artifact now using this approved briefing context',
+    text: OFFICE_CONTINUE_VALUE,
     officeKind: null,
     messages,
   }), true);
 });
 
-test('briefing prompt is isolated from immediate Office generator trigger words', () => {
+test('completed briefing instructs the active chat UI to render one direct Continue action', () => {
   const prompt = officeBriefingContext({
     text: 'I need a PowerPoint presentation for a CIO business case',
     officeKind: 'powerpoint',
@@ -49,8 +50,24 @@ test('briefing prompt is isolated from immediate Office generator trigger words'
     sessionContext: { facts: ['I am a senior project manager'] },
   });
   assert.ok(prompt);
-  assert.doesNotMatch(prompt, /\b(powerpoint|pptx?|slide deck|slides?|presentation|slideshow|excel|xlsx?|spreadsheet|worksheet|docx?)\b/i);
+  assert.match(prompt, /<quantora-modal>/);
+  assert.match(prompt, /"direct":true/);
+  assert.match(prompt, /"title":"Continue"/);
+  assert.match(prompt, new RegExp(`"value":"${OFFICE_CONTINUE_VALUE}"`));
+  assert.match(prompt, /Do NOT ask the user to type an approval phrase/);
+  assert.match(prompt, /user must see only the Continue action/);
+});
+
+test('briefing prompt masks user Office trigger words while preserving the briefing contract', () => {
+  const prompt = officeBriefingContext({
+    text: 'I need a PowerPoint presentation for a CIO business case',
+    officeKind: 'powerpoint',
+    messages: [],
+    sessionContext: { facts: ['I am a senior project manager'] },
+  });
+  assert.ok(prompt);
   assert.match(prompt, /CIO\/board\/executive/);
   assert.match(prompt, /Ask exactly ONE highest-value question/);
   assert.match(prompt, /Analytical workbook\/model/);
+  assert.match(prompt, /Current user message: I need a requested artifact for a CIO business case/);
 });
