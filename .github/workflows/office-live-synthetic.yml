@@ -1,0 +1,33 @@
+name: Quantora Office Live Synthetic
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quantora-office-live-synthetic
+  cancel-in-progress: false
+
+jobs:
+  office-live:
+    name: Create, refine, and recompile production PowerPoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Run live Office synthetic transaction
+        env:
+          QUANTORA_SYNTHETIC_BASE_URL: https://quantoraai.app
+        run: node scripts/office-live-synthetic.mjs
