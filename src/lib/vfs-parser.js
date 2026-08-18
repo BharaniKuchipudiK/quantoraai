@@ -7,8 +7,8 @@ import { applyDiffPatch } from './diff-patcher.js';
  * Example: { 'App.jsx': { content: '...', language: 'jsx' } }
  */
 export function parseVFSFromMarkdown(text, currentVfs = {}) {
-  // Deep clone currentVfs to prevent mutating React state directly
-  const vfs = JSON.parse(JSON.stringify(currentVfs));
+  // Deep clone currentVfs to prevent mutating React state directly.
+  let vfs = JSON.parse(JSON.stringify(currentVfs));
   if (!text) return vfs;
 
   // Regex to match markdown code blocks
@@ -25,6 +25,18 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
     const language = (match[1] || '').toLowerCase();
     const attributes = match[2] || '';
     const code = match[3];
+
+    // A server-verified Office preview is an atomic artifact state, not another
+    // generic HTML file to merge into a stale app/deck VFS. Reset the VFS and
+    // preserve the exact canonical HTML so its embedded fingerprint remains valid.
+    if (language === 'html' && /id=["']quantora-office-manifest["']/i.test(code)) {
+      return {
+        'presentation.html': {
+          content: code,
+          language: 'html',
+        },
+      };
+    }
 
     // Try to extract filepath="filename" or filename="filename"
     const filepathMatch = attributes.match(/(?:filepath|filename)="([^"]+)"/) || attributes.match(/(?:filepath|filename)='([^']+)'/);
@@ -66,9 +78,7 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
     }
   }
   
-  // Backward compatibility: If no valid code blocks were found using standard markdown, 
-  // maybe the AI just spit out raw HTML/React (like the old LivePreviewCanvas logic did).
-  // We'll leave that to the caller to handle, or we can assume if no blocks exist, return empty.
-  
+  // Backward compatibility: If no valid code blocks were found using standard markdown,
+  // maybe the AI just spit out raw HTML/React. The caller handles that path.
   return vfs;
 }
