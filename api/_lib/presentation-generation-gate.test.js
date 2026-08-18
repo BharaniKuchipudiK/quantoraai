@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateGeneratedPresentationSpec } from './presentation-generation-gate.js';
+import { validateGeneratedPresentationSpec, verifyPresentationReadability } from './presentation-generation-gate.js';
 
 function deck(overrides = {}) {
   return {
@@ -62,6 +62,12 @@ function deck(overrides = {}) {
   };
 }
 
+function repairedDeck() {
+  const candidate = deck();
+  candidate.slides[2].title = 'Replatforming balances modernization value with manageable delivery risk';
+  return candidate;
+}
+
 test('generation gate rejects a structurally valid deck with a question-style executive headline', () => {
   const result = validateGeneratedPresentationSpec(deck());
   assert.equal(result.valid, false);
@@ -69,8 +75,33 @@ test('generation gate rejects a structurally valid deck with a question-style ex
 });
 
 test('generation gate accepts the same deck after the communication defect is repaired', () => {
-  const candidate = deck();
-  candidate.slides[2].title = 'Replatforming balances modernization value with manageable delivery risk';
-  const result = validateGeneratedPresentationSpec(candidate);
+  const result = validateGeneratedPresentationSpec(repairedDeck());
   assert.equal(result.valid, true, result.issues?.join('\n'));
+});
+
+test('readability gate rejects an executive summary that is likely to overflow', () => {
+  const candidate = repairedDeck();
+  candidate.slides[1].bullets = [
+    'The current environment contains multiple legacy constraints that slow delivery, increase operational complexity, create dependency risk, and require substantial manual intervention across several teams.',
+    'The modernization program needs governance, landing-zone controls, security architecture, operating-model changes, skills development, workload discovery, sequencing, and executive sponsorship before broad migration begins.',
+    'Three migration paths have materially different trade-offs across speed, technical-debt reduction, delivery risk, organizational readiness, change impact, and the amount of redesign required before value is realized.',
+    'A phased replatforming approach creates a balanced transition path while allowing the organization to validate assumptions, establish evidence, control risk, and preserve flexibility before scaling migration waves.',
+  ];
+  const result = verifyPresentationReadability(candidate);
+  assert.equal(result.passed, false);
+  assert.ok(result.issues.some((issue) => /bullet region is too dense|bullet 1 is too long/i.test(issue)));
+});
+
+test('readability gate rejects duplicated visible copy within a slide', () => {
+  const candidate = repairedDeck();
+  candidate.slides[1].subtitle = 'A phased replatforming path balances modernization value with delivery risk';
+  candidate.slides[1].insight = 'A phased replatforming path balances modernization value with delivery risk';
+  const result = verifyPresentationReadability(candidate);
+  assert.equal(result.passed, false);
+  assert.ok(result.issues.some((issue) => /repeats the same visible message/i.test(issue)));
+});
+
+test('readability gate accepts concise consulting-grade slide copy', () => {
+  const result = verifyPresentationReadability(repairedDeck());
+  assert.equal(result.passed, true, result.issues?.join('\n'));
 });
