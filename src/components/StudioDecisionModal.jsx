@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, X, Check } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, ArrowRight } from 'lucide-react';
 
 export default function StudioDecisionModal({
   modalData,
@@ -13,7 +13,7 @@ export default function StudioDecisionModal({
 
   if (!modalData) return null;
 
-  const { question, options } = modalData;
+  const { question, options = [] } = modalData;
 
   const bgColor = isLight ? '#ffffff' : '#1e1e1e';
   const borderColor = isLight ? '#e5e7eb' : '#333333';
@@ -21,6 +21,63 @@ export default function StudioDecisionModal({
   const subtextColor = isLight ? '#6b7280' : '#9ca3af';
   const hoverBg = isLight ? '#f9fafb' : '#2a2a2a';
   const selectedBg = isLight ? '#f3f4f6' : '#2d2d2d';
+
+  // A direct single-action modal is used for approval checkpoints such as the
+  // Office briefing handoff. One click means "accept the brief and continue";
+  // there is deliberately no select-then-submit ceremony or free-text field.
+  const directOption = modalData.direct === true && options.length === 1 ? options[0] : null;
+  if (directOption) {
+    return (
+      <div style={{
+        width: '100%',
+        maxWidth: '700px',
+        margin: '16px 0',
+        padding: '14px 16px',
+        background: bgColor,
+        border: `1px solid ${borderColor}`,
+        borderRadius: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        flexWrap: 'wrap',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{ flex: 1, minWidth: '220px' }}>
+          {question && (
+            <div style={{ fontWeight: '600', color: textColor, fontSize: '0.92rem', marginBottom: directOption.description ? '3px' : 0 }}>
+              {question}
+            </div>
+          )}
+          {directOption.description && (
+            <div style={{ color: subtextColor, fontSize: '0.8rem' }}>
+              {directOption.description}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => onSubmit(directOption.value || directOption.title)}
+          style={{
+            background: '#f97316',
+            color: '#ffffff',
+            border: 'none',
+            padding: '9px 16px',
+            borderRadius: '9px',
+            fontSize: '0.86rem',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '7px',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {directOption.title || 'Continue'} <ArrowRight size={14} />
+        </button>
+      </div>
+    );
+  }
   
   const handleOptionClick = (id) => {
     setSelectedId(id);
@@ -37,7 +94,7 @@ export default function StudioDecisionModal({
     } else if (selectedId) {
       const selectedOption = options.find(o => o.id === selectedId);
       if (selectedOption) {
-        onSubmit(selectedOption.title);
+        onSubmit(selectedOption.value || selectedOption.title);
       }
     }
   };
