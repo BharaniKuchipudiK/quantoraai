@@ -1,6 +1,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { mergeSessionListeningSignals } from '../lib/listening-layer.js';
-import { loadRemoteProjects, saveRemoteProject, syncRemoteProjectResources } from '../lib/project-store.js';
+import {
+  loadRemoteProjectContext,
+  loadRemoteProjects,
+  saveRemoteProject,
+  syncRemoteProjectResources,
+  syncRemoteProjectSessions,
+} from '../lib/project-store.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -9,6 +15,7 @@ export const DEFAULT_PROJECT_ID = 'project-personal';
 const PROJECT_LIMITS = Object.freeze({ name: 120, description: 2000, goal: 2000 });
 const DEFAULT_PROJECT_COLOR = '#f97316';
 const NEW_PROJECT_COLOR = '#3b82f6';
+const MAX_PROJECT_CONTEXT_FACTS = 16;
 
 export function createDefaultGreeting(user, selectedModel) {
   return {
@@ -46,6 +53,21 @@ function normalizeLocalProject(project) {
     status: ['active', 'paused', 'completed', 'archived'].includes(project.status) ? project.status : 'active',
     color: project.color || null,
   };
+}
+
+function dedupeStrings(values, limit = MAX_PROJECT_CONTEXT_FACTS) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values || []) {
+    if (typeof value !== 'string') continue;
+    const clean = value.trim().slice(0, 500);
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    result.push(clean);
+    if (result.length >= limit) break;
+  }
+  return result;
 }
 
 function loadProjects() {
@@ -151,6 +173,7 @@ export function useStudioSession({ user, selectedModel }) {
   );
   const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg));
   const [activeSessionId, setActiveSessionId] = useState(() => allChatSessions[0]?.id || 'session-1');
+  const [remoteProjectContext, setRemoteProjectContext] = useState(null);
   const accountKey = user?.sub || user?.email || null;
 
   const activeProject = projects.find((project) => project.id === activeProjectId) || projects[0] || createDefaultProject();
@@ -189,17 +212,69 @@ export function useStudioSession({ user, selectedModel }) {
           messageId: String(message.id),
           ...(office?.kind ? { officeKind: office.kind } : {}),
           ...(office?.fingerprint ? { fingerprint: office.fingerprint } : {}),
+          ...(office?.verifiedAt ? { verifiedAt: office.verifiedAt } : {}),
         },
       };
     })
   )), [projectSessions]);
+
+  const projectSessionSyncKey = useMemo(
+    () => projectSessions.map((session) => `${session.id}:${session.outcomeVersion || 0}`).sort().join('|'),
+    [projectSessions],
+  );
+  const projectArtifactSyncKey = useMemo(
+    () => projectArtifacts.map((artifact) => `${artifact.kind}:${artifact.ref}:${artifact.title}`).sort().join('|'),
+    [projectArtifacts],
+  );
+
+  const projectOutcome = useMemo(() => {
+    const remote = remoteProjectContext && remoteProjectContext.projectId === activeProject.id
+      ? remoteProjectContext
+      : null;
+    const localArtifacts = projectArtifacts.map((artifact) => ({
+      type: artifact.kind,
+      ref: artifact.ref,
+      title: artifact.title,
+      verifiedAt: artifact.metadata?.verifiedAt || null,
+    }));
+    const artifactSeen = new Set();
+    const artifacts = [...(remote?.artifacts || []), ...localArtifacts].filter((artifact) => {
+      const key = `${artifact.type || ''}\u0000${artifact.ref || ''}`.toLowerCase();
+      if (!artifact.type || !artifact.ref || artifactSeen.has(key)) return false;
+      artifactSeen.add(key);
+      return true;
+    }).slice(0, 40);
+    const facts = dedupeStrings([
+      ...(remote?.facts || []),
+      ...projectArtifacts.map((artifact) => `Artifact: ${artifact.title}`),
+    ]);
+
+    return {
+      projectId: activeProject.id,
+      projectName: activeProject.name,
+      goal: activeProject.goal || remote?.goal || '',
+      understanding: activeProject.description || remote?.understanding || '',
+      facts,
+      decisions: remote?.decisions || [],
+      constraints: remote?.constraints || [],
+      assumptions: remote?.assumptions || [],
+      openQuestions: remote?.openQuestions || [],
+      nextActions: remote?.nextActions || [],
+      artifacts,
+      sessionCount: remote?.sessionCount ?? projectSessions.length,
+      updatedAt: remote?.updatedAt || activeProject.updatedAt || null,
+    };
+  }, [activeProject, projectArtifacts, projectSessions.length, remoteProjectContext]);
+
+  // Keep the existing compact session-context contract used by chat and Office,
+  // but source its facts from the richer Project Outcome Graph.
   const projectContext = useMemo(() => ({
-    projectId: activeProject.id,
-    projectName: activeProject.name,
-    goal: activeProject.goal || '',
-    understanding: activeProject.description || '',
-    facts: projectArtifacts.slice(0, 20).map((artifact) => artifact.title),
-  }), [activeProject, projectArtifacts]);
+    projectId: projectOutcome.projectId,
+    projectName: projectOutcome.projectName,
+    goal: projectOutcome.goal,
+    understanding: projectOutcome.understanding,
+    facts: projectOutcome.facts,
+  }), [projectOutcome]);
 
   // Signed-in Projects are local-first, then reconciled with the durable store.
   // If Supabase or the migration is unavailable, the current browser behavior
@@ -280,18 +355,48 @@ export function useStudioSession({ user, selectedModel }) {
     });
   }, [accountKey]);
 
+  // Link chats + generated artifacts to the durable Project, then refresh the
+  // context projection from trusted Outcome State. This does not persist chat
+  // transcripts; it stores only membership and already-approved state/resources.
   useEffect(() => {
-    if (!accountKey || !activeProject?.id || (activeProject.version || 0) < 1 || projectArtifacts.length === 0) return;
-    const resources = projectArtifacts.map((artifact) => ({
-      kind: artifact.kind,
-      ref: artifact.ref,
-      title: artifact.title,
-      metadata: artifact.metadata,
-    }));
-    void syncRemoteProjectResources(activeProject.id, resources).catch(() => {
-      // Artifact metadata remains available in the local Project even if sync is offline.
-    });
-  }, [accountKey, activeProject.id, activeProject.version, projectArtifacts]);
+    if (!accountKey || !activeProject?.id || (activeProject.version || 0) < 1) {
+      setRemoteProjectContext(null);
+      return undefined;
+    }
+    let cancelled = false;
+
+    const syncProjectGraph = async () => {
+      try {
+        const sessionIds = projectSessions.map((session) => session.id);
+        const resources = projectArtifacts.map((artifact) => ({
+          kind: artifact.kind,
+          ref: artifact.ref,
+          title: artifact.title,
+          metadata: artifact.metadata,
+        }));
+
+        const tasks = [syncRemoteProjectSessions(activeProject.id, sessionIds)];
+        if (resources.length > 0) tasks.push(syncRemoteProjectResources(activeProject.id, resources));
+        await Promise.all(tasks);
+
+        const response = await loadRemoteProjectContext(activeProject.id);
+        if (!cancelled && response?.context?.projectId === activeProject.id) {
+          setRemoteProjectContext(response.context);
+        }
+      } catch {
+        // Preserve the local context and last known remote graph on any outage.
+      }
+    };
+
+    void syncProjectGraph();
+    return () => { cancelled = true; };
+  }, [
+    accountKey,
+    activeProject.id,
+    activeProject.version,
+    projectSessionSyncKey,
+    projectArtifactSyncKey,
+  ]);
 
   const updateActiveSession = useCallback((updates) => {
     setAllChatSessions((prevSessions) => {
@@ -345,6 +450,7 @@ export function useStudioSession({ user, selectedModel }) {
   const setActiveProjectId = useCallback((projectId) => {
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
+    setRemoteProjectContext(null);
     setActiveProjectIdState(projectId);
     const firstSession = allChatSessions.find((session) => (session.projectId || DEFAULT_PROJECT_ID) === projectId);
     if (firstSession) {
@@ -387,6 +493,7 @@ export function useStudioSession({ user, selectedModel }) {
       persistSessions(updated);
       return updated;
     });
+    setRemoteProjectContext(null);
     setActiveProjectIdState(project.id);
     setActiveSessionId(newSession.id);
     return project;
@@ -446,6 +553,7 @@ export function useStudioSession({ user, selectedModel }) {
     handleCreateProject,
     updateActiveProject,
     projectContext,
+    projectOutcome,
     projectArtifacts,
   };
 }
