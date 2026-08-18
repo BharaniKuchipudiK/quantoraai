@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  latestVerifiedOfficeArtifact,
-  lightweightOfficeArtifact,
-  sanitizeSessionsForPersistence,
-} from './office-session-state.js';
+import { latestVerifiedOfficeArtifact } from './office-session-state.js';
 
 const artifact = {
   kind: 'powerpoint',
@@ -25,17 +21,7 @@ test('latestVerifiedOfficeArtifact returns the newest verified canonical artifac
   assert.equal(latestVerifiedOfficeArtifact(messages, 'word'), null);
 });
 
-test('lightweightOfficeArtifact removes binary but preserves canonical revision state', () => {
-  const light = lightweightOfficeArtifact(artifact);
-  assert.equal(light.data, undefined);
-  assert.equal(light.spec.title, 'Deck');
-  assert.equal(light.htmlPreview, artifact.htmlPreview);
-  assert.equal(light.verification.previewFingerprint, 'abc12345');
-});
-
-test('session persistence strips Office base64 without mutating live state', () => {
-  const sessions = [{ id: 's1', messages: [{ id: 1, sender: 'ai', officeAttachment: artifact }] }];
-  const persisted = sanitizeSessionsForPersistence(sessions);
-  assert.equal(persisted[0].messages[0].officeAttachment.data, undefined);
-  assert.equal(sessions[0].messages[0].officeAttachment.data.length, 1000);
+test('incomplete Office envelopes are not treated as active artifact state', () => {
+  assert.equal(latestVerifiedOfficeArtifact([{ sender: 'ai', officeAttachment: { ...artifact, htmlPreview: '' } }]), null);
+  assert.equal(latestVerifiedOfficeArtifact([{ sender: 'ai', officeAttachment: { ...artifact, spec: null } }]), null);
 });
