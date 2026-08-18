@@ -1,0 +1,306 @@
+/* Investor-facing landing conclusion experiment.
+ * Presentation only: keeps Studio, Office, routing and PCL runtime untouched.
+ * This pass removes the decorative signal-as-controller idea, makes future
+ * capability explanations user-triggered, compresses vertical dead space and
+ * turns the bottom of the page into proof of what "done" looks like.
+ */
+
+/* --- Future capability block: ambient wave, no automatic light choreography --- */
+.q-future-story {
+  padding: clamp(50px, 5vw, 68px) 0 clamp(54px, 5vw, 72px) !important;
+}
+
+.q-future-copy__grid {
+  margin-top: 12px !important;
+}
+
+.q-pcl-wave--future {
+  height: clamp(350px, 31vw, 410px) !important;
+  margin-top: clamp(20px, 2.8vw, 32px) !important;
+}
+
+.q-pcl-wave--future .q-pcl-wave__line {
+  opacity: .54 !important;
+}
+
+/* No travelling beam. The wave is atmosphere, not an interaction controller. */
+.q-future-cards::after,
+.q-pcl-wave--future .q-pcl-wave__line::after {
+  display: none !important;
+}
+
+.q-future-cards {
+  bottom: 16px !important;
+  gap: 10px !important;
+}
+
+.q-future-card,
+.q-future-card.is-active,
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) {
+  min-height: 246px !important;
+  opacity: .88 !important;
+  transform: none !important;
+  animation: none !important;
+  border-color: rgba(255,255,255,.10) !important;
+  background: rgba(11,13,18,.82) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.20) !important;
+  transition: transform 560ms cubic-bezier(.2,.8,.2,1), border-color 420ms ease, background 420ms ease, box-shadow 420ms ease !important;
+}
+
+.q-future-card::before {
+  display: none !important;
+}
+
+.q-future-card > p,
+.q-future-card.is-active > p,
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
+  margin: 0 !important;
+  max-height: 0 !important;
+  min-height: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  transform: translateY(7px) !important;
+}
+
+.q-future-card .q-future-visual {
+  opacity: .78 !important;
+  transform: none !important;
+  transition: opacity 420ms ease, transform 520ms cubic-bezier(.2,.8,.2,1) !important;
+}
+
+/* Hover/focus is now the only reveal. The card turns toward the visitor and the
+ * explanation becomes the payoff. It returns to its clean front state on leave. */
+.q-future-card:hover,
+.q-future-card:focus-visible {
+  opacity: 1 !important;
+  transform: perspective(1000px) translateY(-7px) rotateY(-4deg) scale(1.015) !important;
+  border-color: rgba(255,106,0,.42) !important;
+  background:
+    radial-gradient(circle at 50% 112%, rgba(255,106,0,.11), transparent 48%),
+    rgba(14,16,22,.97) !important;
+  box-shadow: 0 30px 68px rgba(0,0,0,.32), 0 0 38px rgba(255,106,0,.08) !important;
+}
+
+.q-future-card:hover > p,
+.q-future-card:focus-visible > p {
+  margin-top: 9px !important;
+  max-height: 82px !important;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  transition: max-height 520ms ease, margin 420ms ease, opacity 420ms ease 90ms, transform 480ms ease 60ms !important;
+}
+
+.q-future-card:hover .q-future-visual,
+.q-future-card:focus-visible .q-future-visual {
+  opacity: .28 !important;
+  transform: translateY(4px) scale(.985) !important;
+}
+
+/* Internal route pulse only moves when Cognitive Intelligence is deliberately
+ * explored; otherwise the section stays still and premium. */
+.q-future-card .q-route-line i {
+  animation-play-state: paused !important;
+  opacity: 0 !important;
+}
+.q-future-card:hover .q-route-line i,
+.q-future-card:focus-visible .q-route-line i {
+  animation-play-state: running !important;
+  opacity: 1 !important;
+}
+
+/* --- Replace generic outcome list with three concrete examples of DONE --- */
+.q-outcomes {
+  padding: clamp(58px, 6vw, 82px) 0 clamp(64px, 6vw, 88px) !important;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255,106,0,.055), transparent 24%),
+    radial-gradient(circle at 82% 70%, rgba(80,199,178,.035), transparent 28%),
+    var(--q-surface) !important;
+}
+
+.q-outcomes__eyebrow {
+  font-size: 0 !important;
+}
+.q-outcomes__eyebrow::after {
+  content: 'THIS IS WHAT DONE LOOKS LIKE';
+  color: var(--q-muted);
+  font-size: .68rem;
+  font-weight: 840;
+  letter-spacing: .13em;
+}
+
+.q-outcomes__rail {
+  margin-top: 24px !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  border: 0 !important;
+}
+
+/* Keep Present, Document and Build as the three semantic DOM anchors; the other
+ * generic outcomes are hidden in this visual experiment. */
+.q-outcomes__rail > div:nth-child(1),
+.q-outcomes__rail > div:nth-child(4),
+.q-outcomes__rail > div:nth-child(6) {
+  display: none !important;
+}
+
+.q-outcomes__rail > div {
+  position: relative;
+  min-height: 320px !important;
+  padding: 190px 22px 22px !important;
+  overflow: hidden;
+  justify-content: flex-end !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  border-radius: 18px;
+  background: rgba(10,12,17,.78);
+  box-shadow: 0 24px 58px rgba(0,0,0,.22);
+}
+
+.q-outcomes__rail > div::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 18px;
+  height: 154px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 11px;
+  background-color: rgba(255,255,255,.025);
+  box-shadow: 0 16px 36px rgba(0,0,0,.18);
+}
+
+.q-outcomes__rail > div::after {
+  position: absolute;
+  left: 30px;
+  top: 31px;
+  z-index: 2;
+  padding: 5px 8px;
+  border: 1px solid rgba(80,199,178,.20);
+  border-radius: 999px;
+  background: rgba(7,9,13,.72);
+  color: var(--q-teal);
+  font-size: .48rem;
+  font-weight: 840;
+  letter-spacing: .08em;
+}
+
+/* Presentation: a clean consulting-style slide. */
+.q-outcomes__rail > div:nth-child(2)::before {
+  background:
+    linear-gradient(#ff6a00,#ff6a00) 26px 42px / 44px 3px no-repeat,
+    linear-gradient(#172033,#172033) 26px 60px / 62% 8px no-repeat,
+    linear-gradient(#8b95a8,#8b95a8) 26px 77px / 46% 4px no-repeat,
+    linear-gradient(#dfe4ea,#dfe4ea) 26px 108px / 26% 30px no-repeat,
+    linear-gradient(#eef1f4,#eef1f4) 36% 108px / 26% 30px no-repeat,
+    linear-gradient(#eef1f4,#eef1f4) 72% 108px / 20% 30px no-repeat,
+    #f6f6f4;
+}
+.q-outcomes__rail > div:nth-child(2)::after { content: '✓ VERIFIED'; }
+.q-outcomes__rail > div:nth-child(2) strong { font-size: 0 !important; }
+.q-outcomes__rail > div:nth-child(2) strong::after { content: 'Presentation'; font-size: 1.2rem; }
+.q-outcomes__rail > div:nth-child(2) span { font-size: 0 !important; }
+.q-outcomes__rail > div:nth-child(2) span::after { content: 'Executive-ready · ready to present'; font-size: .69rem; }
+
+/* Professional business document. */
+.q-outcomes__rail > div:nth-child(3)::before {
+  background:
+    linear-gradient(#ff6a00,#ff6a00) 24px 26px / 34px 3px no-repeat,
+    linear-gradient(#e6e9ee,#e6e9ee) 24px 47px / 72% 5px no-repeat,
+    linear-gradient(#e6e9ee,#e6e9ee) 24px 61px / 82% 5px no-repeat,
+    linear-gradient(#e6e9ee,#e6e9ee) 24px 75px / 67% 5px no-repeat,
+    linear-gradient(#eef1f4,#eef1f4) 24px 100px / 82% 34px no-repeat,
+    #f8f8f6;
+}
+.q-outcomes__rail > div:nth-child(3)::after { content: '✓ READY TO SHARE'; }
+.q-outcomes__rail > div:nth-child(3) strong { font-size: 0 !important; }
+.q-outcomes__rail > div:nth-child(3) strong::after { content: 'Business document'; font-size: 1.2rem; }
+.q-outcomes__rail > div:nth-child(3) span { font-size: 0 !important; }
+.q-outcomes__rail > div:nth-child(3) span::after { content: 'Structured · polished · usable'; font-size: .69rem; }
+
+/* Published website/app: actual delivery state, not a mock customer claim. */
+.q-outcomes__rail > div:nth-child(5)::before {
+  background:
+    linear-gradient(90deg, #111827 0 20%, transparent 20%) 0 0 / 100% 26px no-repeat,
+    radial-gradient(circle at 32px 13px, #ff6a00 0 3px, transparent 4px),
+    linear-gradient(135deg, rgba(255,106,0,.22), rgba(80,199,178,.10)) 20px 44px / calc(100% - 40px) 72px no-repeat,
+    linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.10)) 28px 126px / 24% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,.07),rgba(255,255,255,.07)) 36% 126px / 24% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,.07),rgba(255,255,255,.07)) 68% 126px / 22% 8px no-repeat,
+    #0c1018;
+}
+.q-outcomes__rail > div:nth-child(5)::after { content: '● PUBLISHED · LIVE'; }
+.q-outcomes__rail > div:nth-child(5) strong { font-size: 0 !important; }
+.q-outcomes__rail > div:nth-child(5) strong::after { content: 'Website / App'; font-size: 1.2rem; }
+.q-outcomes__rail > div:nth-child(5) span { font-size: 0 !important; }
+.q-outcomes__rail > div:nth-child(5) span::after { content: 'Built · verified · published'; font-size: .69rem; }
+
+/* --- Close the story deliberately; no giant empty gradient tail --- */
+.q-final {
+  position: relative;
+  padding: clamp(68px, 7vw, 96px) 0 clamp(74px, 7vw, 104px) !important;
+  border-top: 1px solid var(--q-line);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,106,0,.08), transparent 34%),
+    var(--q-bg) !important;
+}
+
+.q-final__inner {
+  min-height: 0 !important;
+}
+
+.q-final__inner > span {
+  color: var(--q-muted) !important;
+  font-size: .68rem;
+  font-weight: 840;
+  letter-spacing: .13em;
+}
+
+.q-final h2 {
+  margin-top: 14px !important;
+  max-width: 900px !important;
+  color: var(--q-text) !important;
+  font-size: clamp(2.8rem, 5vw, 5.2rem) !important;
+}
+
+.q-final button {
+  margin-top: 26px !important;
+}
+
+.q-landing--light .q-future-card,
+.q-landing--light .q-future-card.is-active,
+.q-landing--light .q-future-card:not(.is-active):not(:hover):not(:focus-visible) {
+  background: rgba(255,255,255,.88) !important;
+  border-color: rgba(17,18,23,.10) !important;
+}
+
+.q-landing--light .q-outcomes__rail > div {
+  background: rgba(255,255,255,.90);
+  border-color: rgba(17,18,23,.10) !important;
+  box-shadow: 0 20px 46px rgba(17,18,23,.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-future-card,
+  .q-future-card:hover,
+  .q-future-card:focus-visible {
+    transform: none !important;
+  }
+}
+
+@media (max-width: 1020px) {
+  .q-pcl-wave--future { height: 590px !important; }
+  .q-outcomes__rail { grid-template-columns: 1fr !important; }
+  .q-outcomes__rail > div { min-height: 300px !important; }
+}
+
+@media (max-width: 700px) {
+  .q-future-story { padding-block: 44px 54px !important; }
+  .q-pcl-wave--future { height: 410px !important; }
+  .q-future-card:hover,
+  .q-future-card:focus-visible {
+    transform: translateY(-3px) !important;
+  }
+  .q-outcomes { padding-block: 52px 60px !important; }
+  .q-outcomes__rail > div { padding-top: 178px !important; }
+  .q-final { padding-block: 60px 72px !important; }
+}
