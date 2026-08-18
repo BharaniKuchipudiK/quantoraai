@@ -1,11 +1,11 @@
-/* User-triggered capability reveal. No automatic signal choreography.
- * The existing paragraph is the card's back face, so the explanatory copy has
- * one source of truth and returns to the clean front when hover/focus ends.
+/* Deliberate capability reveal: hover on desktop, click/tap via focus everywhere.
+ * The explanation is the back face. Clicking elsewhere returns the card to front.
  */
 
 .q-future-card {
   perspective: 1100px;
   transform-style: preserve-3d;
+  cursor: pointer;
 }
 
 .q-future-card > .q-future-card__meta,
@@ -13,14 +13,14 @@
 .q-future-card > strong,
 .q-future-card > .q-future-visual {
   backface-visibility: hidden;
-  transition: opacity 360ms ease, transform 620ms cubic-bezier(.2,.78,.2,1) !important;
+  transition: opacity 320ms ease, transform 560ms cubic-bezier(.2,.78,.2,1) !important;
 }
 
 .q-future-card > p,
 .q-future-card.is-active > p,
-.q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
+.q-future-card:not(.is-active):not(:hover):not(:focus) > p {
   position: absolute !important;
-  inset: 58px 20px 22px !important;
+  inset: 56px 20px 22px !important;
   z-index: 12;
   display: flex !important;
   align-items: center;
@@ -28,14 +28,14 @@
   max-height: none !important;
   min-height: 0 !important;
   overflow: visible !important;
-  color: color-mix(in srgb, var(--q-text) 88%, var(--q-muted)) !important;
-  font-size: clamp(.72rem, .86vw, .84rem) !important;
-  line-height: 1.55 !important;
+  color: color-mix(in srgb, var(--q-text) 90%, var(--q-muted)) !important;
+  font-size: clamp(.73rem, .88vw, .86rem) !important;
+  line-height: 1.56 !important;
   opacity: 0 !important;
   transform: rotateY(88deg) translateX(10px) !important;
   transform-origin: 50% 50%;
   backface-visibility: hidden;
-  transition: opacity 300ms ease, transform 620ms cubic-bezier(.2,.78,.2,1) !important;
+  transition: opacity 280ms ease, transform 560ms cubic-bezier(.2,.78,.2,1) !important;
 }
 
 .q-future-card > p::before {
@@ -50,7 +50,9 @@
 }
 
 .q-future-card:hover,
+.q-future-card:focus,
 .q-future-card:focus-visible {
+  outline: none;
   transform: translateY(-6px) scale(1.012) !important;
 }
 
@@ -58,6 +60,10 @@
 .q-future-card:hover > h3,
 .q-future-card:hover > strong,
 .q-future-card:hover > .q-future-visual,
+.q-future-card:focus > .q-future-card__meta,
+.q-future-card:focus > h3,
+.q-future-card:focus > strong,
+.q-future-card:focus > .q-future-visual,
 .q-future-card:focus-visible > .q-future-card__meta,
 .q-future-card:focus-visible > h3,
 .q-future-card:focus-visible > strong,
@@ -67,12 +73,14 @@
 }
 
 .q-future-card:hover > p,
+.q-future-card:focus > p,
 .q-future-card:focus-visible > p {
   opacity: 1 !important;
   transform: rotateY(0deg) translateX(0) !important;
 }
 
 .q-future-card:hover::after,
+.q-future-card:focus::after,
 .q-future-card:focus-visible::after {
   content: '↺';
   position: absolute;
@@ -85,7 +93,7 @@
 }
 
 .q-landing--light .q-future-card > p {
-  color: rgba(17,18,23,.78) !important;
+  color: rgba(17,18,23,.80) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -100,10 +108,9 @@
 }
 
 @media (max-width: 700px) {
-  /* Touch users can focus/tap the card to reveal the back face. */
   .q-future-card > p,
   .q-future-card.is-active > p,
-  .q-future-card:not(.is-active):not(:hover):not(:focus-visible) > p {
-    inset: 54px 18px 20px !important;
+  .q-future-card:not(.is-active):not(:hover):not(:focus) > p {
+    inset: 52px 18px 20px !important;
   }
 }
