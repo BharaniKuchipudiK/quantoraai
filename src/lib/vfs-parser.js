@@ -11,17 +11,16 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
   let vfs = JSON.parse(JSON.stringify(currentVfs));
   if (!text) return vfs;
 
-  // Regex to match markdown code blocks
-  // Matches: ```language filepath="something" ... ```
+  // Regex to match markdown code blocks. Spaces/tabs are allowed between the
+  // language and optional attributes, but never consume the newline that begins
+  // the code body. This matters for one-line canonical Office HTML documents.
   // Group 1: language (optional)
   // Group 2: attributes (optional, e.g. filepath="App.jsx")
   // Group 3: code content
-  const codeBlockRegex = /```(\w+)?\s*(.*?)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(\w+)?[ \t]*(.*?)\r?\n([\s\S]*?)```/g;
   
   let match;
-  let blockCount = 0;
   while ((match = codeBlockRegex.exec(text)) !== null) {
-    blockCount++;
     const language = (match[1] || '').toLowerCase();
     const attributes = match[2] || '';
     const code = match[3];
