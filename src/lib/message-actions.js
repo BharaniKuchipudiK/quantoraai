@@ -19,6 +19,11 @@ export function isSummarizable(text = '') {
   return clean.length > 500 || words > 90 || paragraphs >= 3;
 }
 
+function isOfficeArtifactCompletion(text = '') {
+  return /\b(?:successfully\s+)?(?:generated|updated)\s+(?:the\s+)?(?:powerpoint|word|excel)\s+document\b/i.test(String(text || ''))
+    || /\boffice\s+artifact\b/i.test(String(text || ''));
+}
+
 /**
  * Resolve the action set for a message.
  * @param {{ text?: string, hasPreview?: boolean }} opts
@@ -30,12 +35,15 @@ export function resolveMessageActions({ text = '', hasPreview = false } = {}) {
   const overflow = [];
   if (clean.length > 0) overflow.push('read-aloud');
   overflow.push('report');
+  const officeArtifact = isOfficeArtifactCompletion(clean);
   return {
     copy: clean.length > 0,
     feedback: true,
     regenerate: true,
     summarize: isSummarizable(clean),
-    preview: Boolean(hasPreview),
+    // Verified Office artifacts already live in the right-side workspace. Do not
+    // offer a second "Preview" action that opens the legacy full-screen overlay.
+    preview: Boolean(hasPreview) && !officeArtifact,
     overflow,
   };
 }
