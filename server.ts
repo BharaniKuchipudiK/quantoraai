@@ -116,14 +116,18 @@ async function startServer() {
   route("all", "/api/admin/metrics", adminMetrics);
   route("all", "/api/product-event", productEvent);
 
-  // Production rewrites this friendly route to /api/pipeline. Mirror that
-  // behavior locally while keeping one implementation of repository preview.
+  // Production rewrites these friendly routes to /api/pipeline. Mirror that
+  // behavior locally while keeping one implementation and one function budget.
   route("post", "/api/github/preview", (req, res) => {
     req.body = { ...(req.body || {}), targetStage: "repository-preview" };
     return pipeline(req, res);
   });
   route("post", "/api/outcomes", (req, res) => {
     req.body = { ...(req.body || {}), targetStage: "outcome-state" };
+    return pipeline(req, res);
+  });
+  route("post", "/api/projects", (req, res) => {
+    req.body = { ...(req.body || {}), targetStage: "project-state" };
     return pipeline(req, res);
   });
 
