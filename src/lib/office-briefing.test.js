@@ -5,8 +5,8 @@ import {
   countOfficeBriefSignals,
   officeBriefingContext,
   shouldGenerateOfficeNow,
+  OFFICE_CONTINUE_VALUE,
 } from './office-briefing.js';
-import { extractContinuesFromAssistantText } from './studio-continues.js';
 
 test('a generic first-turn presentation request does not bypass human briefing', () => {
   assert.equal(shouldGenerateOfficeNow({
@@ -34,16 +34,15 @@ test('Continue UI value hands the approved briefing to Office generation', () =>
   const messages = [
     { sender: 'ai', text: 'Brief approved?', officeBriefing: true, officeBriefingKind: 'powerpoint' },
   ];
-  const continueValue = 'Build the requested artifact now using this approved briefing context';
   assert.equal(activeOfficeBriefingKind(messages), 'powerpoint');
   assert.equal(shouldGenerateOfficeNow({
-    text: continueValue,
+    text: OFFICE_CONTINUE_VALUE,
     officeKind: null,
     messages,
   }), true);
 });
 
-test('completed briefing instructs the model to emit one visible Continue action', () => {
+test('completed briefing instructs the active chat UI to render one direct Continue action', () => {
   const prompt = officeBriefingContext({
     text: 'I need a PowerPoint presentation for a CIO business case',
     officeKind: 'powerpoint',
@@ -51,24 +50,12 @@ test('completed briefing instructs the model to emit one visible Continue action
     sessionContext: { facts: ['I am a senior project manager'] },
   });
   assert.ok(prompt);
-  assert.match(prompt, /"label":"Continue"/);
-  assert.match(prompt, /"value":"Build the requested artifact now using this approved briefing context"/);
-  assert.match(prompt, /quantora-continues/);
+  assert.match(prompt, /<quantora-modal>/);
+  assert.match(prompt, /"direct":true/);
+  assert.match(prompt, /"title":"Continue"/);
+  assert.match(prompt, new RegExp(`"value":"${OFFICE_CONTINUE_VALUE}"`));
   assert.match(prompt, /Do NOT ask the user to type an approval phrase/);
-});
-
-test('the instructed Office marker parses into the Continue pill used by the chat UI', () => {
-  const reply = 'If this looks right, choose Continue below.\n<!-- quantora-continues:{"prompt":"Ready to build?","items":[{"id":"office_continue","label":"Continue","value":"Build the requested artifact now using this approved briefing context"}]} -->';
-  const parsed = extractContinuesFromAssistantText(reply);
-  assert.equal(parsed.displayText, 'If this looks right, choose Continue below.');
-  assert.deepEqual(parsed.continueSet, {
-    prompt: 'Ready to build?',
-    items: [{
-      id: 'office_continue',
-      label: 'Continue',
-      value: 'Build the requested artifact now using this approved briefing context',
-    }],
-  });
+  assert.match(prompt, /user must see only the Continue action/);
 });
 
 test('briefing prompt masks user Office trigger words while preserving the briefing contract', () => {
