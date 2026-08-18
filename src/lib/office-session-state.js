@@ -10,28 +10,3 @@ export function latestVerifiedOfficeArtifact(messages = [], expectedKind = null)
   }
   return null;
 }
-
-export function lightweightOfficeArtifact(artifact) {
-  if (!artifact || typeof artifact !== 'object') return artifact;
-  const { data: _binary, ...rest } = artifact;
-  return rest;
-}
-
-export function sanitizeMessagesForPersistence(messages = []) {
-  if (!Array.isArray(messages)) return [];
-  return messages.map((message) => {
-    if (!message?.officeAttachment) return message;
-    return {
-      ...message,
-      officeAttachment: lightweightOfficeArtifact(message.officeAttachment),
-    };
-  });
-}
-
-export function sanitizeSessionsForPersistence(sessions = []) {
-  if (!Array.isArray(sessions)) return [];
-  return sessions.map((session) => ({
-    ...session,
-    messages: sanitizeMessagesForPersistence(session?.messages || []),
-  }));
-}
