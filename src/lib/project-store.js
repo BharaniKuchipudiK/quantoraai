@@ -30,3 +30,11 @@ export function deleteRemoteProject(projectId) {
 export function syncRemoteProjectResources(projectId, resources) {
   return projectRequest({ action: 'sync-resources', projectId, resources });
 }
+
+export function syncRemoteProjectSessions(projectId, sessionIds) {
+  return projectRequest({ action: 'sync-sessions', projectId, sessionIds });
+}
+
+export function loadRemoteProjectContext(projectId) {
+  return projectRequest({ action: 'context', projectId });
+}
