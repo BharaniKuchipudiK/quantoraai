@@ -16,6 +16,13 @@ test("supports amount suffixes and currency after amount", () => {
   );
 });
 
+test("US dollar symbol cannot be misread as Singapore dollars", () => {
+  assert.deepEqual(
+    parseAffordabilityIntent("Can I afford US$ 3,000 for this?"),
+    { matched: true, proposedCost: 3000, currency: "USD" },
+  );
+});
+
 test("plain dollar symbol is intentionally ambiguous", () => {
   assert.deepEqual(
     parseAffordabilityIntent("Can I afford a $3,000 trip?"),
