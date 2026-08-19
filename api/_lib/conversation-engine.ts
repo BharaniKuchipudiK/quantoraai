@@ -1,5 +1,6 @@
 import type { OutcomeStateRecord } from "./outcome-state.js";
 import type { ListeningSignal, SessionContext } from "./session-context.js";
+import type { CognitiveLedgerEntry } from "./cognitive-ledger.js";
 import { evaluateSafetyText } from "./safety-policy.js";
 import { formatPclNavigatorDirective, publicPclNavigatorMetadata } from "./pcl-navigator-adapter.js";
 
@@ -32,6 +33,7 @@ export type ConversationSnapshot = {
   decisions: string[];
   artifacts: Array<{ type: string; ref: string; verified: boolean }>;
   nextActions: Array<{ action: string; risk: "low" | "medium" | "high" }>;
+  cognitiveLedger: CognitiveLedgerEntry[];
   safetyFlags: string[];
   recentSignals: ListeningSignal[];
   currentTurn: {
@@ -117,6 +119,8 @@ function unique(values: Array<string | undefined>, max = MAX_FACTS): string[] {
  * Build one provider-neutral view of the conversation. A consented server
  * record wins over browser-supplied context; local context is an explicitly
  * untrusted, ephemeral fallback so anonymous/BYOK conversations still work.
+ * Cognitive Ledger history is authoritative-only: the browser cannot invent
+ * prior decisions, rejections, approvals or evidence.
  */
 export function buildConversationSnapshot(input: SnapshotInput): ConversationSnapshot {
   const state = input.outcomeRecord?.state;
@@ -169,6 +173,7 @@ export function buildConversationSnapshot(input: SnapshotInput): ConversationSna
       const action = compact(item.action);
       return action ? [{ action, risk: item.risk }] : [];
     }),
+    cognitiveLedger: authoritative ? [...(state?.cognitiveLedger || [])].slice(-40) : [],
     safetyFlags: unique(state?.safety?.unresolvedFlags || [], 20),
     recentSignals: Array.isArray(input.listeningSignals) ? input.listeningSignals.slice(0, 8) : [],
     currentTurn: {
