@@ -4,9 +4,7 @@ const MAX_VALUE_LEN = 400;
 const MAX_TITLE_LEN = 120;
 
 const CHOICES_MARKER = /<!--\s*quantora-choices:\s*(\{[\s\S]*?\})\s*-->/i;
-const PARTIAL_CHOICES = /<!--\s*quantora-choices:[\s\S]*$/i;
-const PARTIAL_CONTINUES = /<!--\s*quantora-continues:[\s\S]*$/i;
-const PARTIAL_CTX = /<!--\s*quantora-ctx:[\s\S]*$/i;
+const PARTIAL_PROTOCOL_START = /<!--\s*quantora-(?:choices|continues|ctx):/ig;
 
 export function normalizeStudioChoiceSet(value) {
   if (!value || typeof value !== 'object') return null;
@@ -38,12 +36,37 @@ export function normalizeStudioChoiceSet(value) {
   };
 }
 
+/**
+ * Streaming providers occasionally leave a machine-readable marker incomplete.
+ * Hide that marker, but never throw away later user-visible prose. Quantora's
+ * protocol requires metadata comments to occupy their own line, so a malformed
+ * marker is removed line-by-line rather than truncating the entire response.
+ */
 export function stripPartialAssistantMarkers(text) {
-  let out = text;
-  for (const re of [PARTIAL_CHOICES, PARTIAL_CONTINUES, PARTIAL_CTX]) {
-    const idx = out.search(re);
-    if (idx !== -1) out = out.slice(0, idx).trimEnd();
+  let out = typeof text === 'string' ? text : '';
+  PARTIAL_PROTOCOL_START.lastIndex = 0;
+
+  while (true) {
+    const match = PARTIAL_PROTOCOL_START.exec(out);
+    if (!match || match.index == null) break;
+
+    const start = match.index;
+    const close = out.indexOf('-->', start);
+    if (close !== -1) {
+      PARTIAL_PROTOCOL_START.lastIndex = close + 3;
+      continue;
+    }
+
+    const lineEnd = out.indexOf('\n', start);
+    if (lineEnd === -1) {
+      out = out.slice(0, start).trimEnd();
+      break;
+    }
+
+    out = `${out.slice(0, start).trimEnd()}\n${out.slice(lineEnd + 1).trimStart()}`.trim();
+    PARTIAL_PROTOCOL_START.lastIndex = 0;
   }
+
   return out;
 }
 
