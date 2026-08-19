@@ -1,0 +1,169 @@
+.q-feedback-widget {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 120;
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.q-feedback-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  background: rgba(12,14,20,.86);
+  color: rgba(255,255,255,.78);
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 28px rgba(0,0,0,.22);
+}
+
+.q-feedback-trigger:hover {
+  color: #fff;
+  border-color: rgba(249,115,22,.38);
+}
+
+.q-feedback-card {
+  width: min(340px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  background: rgba(11,13,18,.96);
+  color: #f5f5f2;
+  box-shadow: 0 24px 60px rgba(0,0,0,.38);
+  backdrop-filter: blur(18px);
+}
+
+.q-feedback-head,
+.q-feedback-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.q-feedback-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.q-feedback-head strong {
+  font-size: .88rem;
+}
+
+.q-feedback-head span,
+.q-feedback-card label > span,
+.q-feedback-foot small {
+  color: #9398a4;
+  font-size: .68rem;
+}
+
+.q-feedback-head > button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #9398a4;
+  cursor: pointer;
+}
+
+.q-feedback-card label {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.q-feedback-card select,
+.q-feedback-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 10px;
+  background: #11141b;
+  color: #f5f5f2;
+  font: inherit;
+  font-size: .78rem;
+  outline: none;
+}
+
+.q-feedback-card select {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.q-feedback-card textarea {
+  resize: vertical;
+  min-height: 108px;
+  max-height: 210px;
+  padding: 10px 11px;
+  line-height: 1.5;
+}
+
+.q-feedback-card select:focus,
+.q-feedback-card textarea:focus {
+  border-color: rgba(249,115,22,.52);
+  box-shadow: 0 0 0 3px rgba(249,115,22,.08);
+}
+
+.q-feedback-foot {
+  margin-top: 10px;
+}
+
+.q-feedback-foot > button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 9px;
+  background: #f97316;
+  color: #fff;
+  font: inherit;
+  font-size: .73rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.q-feedback-foot > button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.q-feedback-notice {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  color: #a7f3d0;
+  font-size: .7rem;
+}
+
+html[data-theme='light'] .q-feedback-trigger,
+html[data-theme='light'] .q-feedback-card {
+  background: rgba(255,255,255,.96);
+  color: #111217;
+  border-color: rgba(17,18,23,.12);
+}
+
+html[data-theme='light'] .q-feedback-card select,
+html[data-theme='light'] .q-feedback-card textarea {
+  background: #f7f7f4;
+  color: #111217;
+  border-color: rgba(17,18,23,.12);
+}
+
+@media (max-width: 720px) {
+  .q-feedback-widget {
+    left: 12px;
+    bottom: 12px;
+  }
+  .q-feedback-trigger {
+    padding-inline: 10px;
+  }
+}
