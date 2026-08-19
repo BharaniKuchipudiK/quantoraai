@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./_lib/store.js";
+import { isProjectStoreConfigured, readProjectContext } from "./_lib/project-store.js";
 import { requireActiveSession } from "./_lib/authz.js";
 import { getRequestGeo } from "./_lib/geo.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
@@ -345,6 +346,7 @@ export default async function handler(req: any, res: any) {
     const {
       message,
       sessionId,
+      projectId,
       studioMode: mode,
       studioDomain: normalizedStudioDomain,
       memoryConsented,
@@ -523,9 +525,17 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const authoritativeOutcome = activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
-      ? await readOutcomeState(activeSessionUser.sub, normalizedSessionId)
-      : null;
+    // Session Outcome State and Project Outcome Graph are independent sources of
+    // trusted continuity. Read them concurrently so Project PCL does not add a
+    // serial database round-trip to every chat turn.
+    const [authoritativeOutcome, authoritativeProjectContext] = await Promise.all([
+      activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
+        ? readOutcomeState(activeSessionUser.sub, normalizedSessionId)
+        : Promise.resolve(null),
+      activeSessionUser && projectId && isProjectStoreConfigured()
+        ? readProjectContext(activeSessionUser.sub, projectId)
+        : Promise.resolve(null),
+    ]);
     const registryModels = await readModelRegistryCached();
     const modelRouting = selectModelsForTurn({
       models: registryModels.length ? registryModels : [],
@@ -538,6 +548,7 @@ export default async function handler(req: any, res: any) {
     });
     const conversationSnapshot = buildConversationSnapshot({
       outcomeRecord: authoritativeOutcome,
+      projectContext: authoritativeProjectContext,
       sessionContext: normalizedSessionContext,
       listeningSignals: normalizedListeningSignals,
       message,
@@ -551,7 +562,7 @@ export default async function handler(req: any, res: any) {
     const conversationDecision = chooseNextConversationMove(conversationSnapshot);
     const responseContract = buildResponseContract(conversationSnapshot, conversationDecision);
     const navigatorDirective = formatConversationDecisionForPrompt(conversationSnapshot, conversationDecision);
-    const promptSessionContext = authoritativeOutcome
+    const promptSessionContext = conversationSnapshot.stateSource === "authoritative"
       ? {
           ...(conversationSnapshot.goal ? { goal: conversationSnapshot.goal.statement } : {}),
           ...(conversationSnapshot.inferredFacts[0] ? { understanding: conversationSnapshot.inferredFacts[0] } : {}),
@@ -597,6 +608,7 @@ export default async function handler(req: any, res: any) {
           communicationRequest: {
             studioMode: communicationRequest.studioMode,
             studioDomain: communicationRequest.studioDomain,
+            projectId: communicationRequest.projectId,
             hasPreviewCode,
           },
         },
