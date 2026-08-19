@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { TravelProvider, TravelProviderName } from './travel-contracts.js';
-import { searchAttractions, searchFlights, searchHotels, travelProviderHealth } from './travel-provider-gateway.js';
+import {
+  canonicalTravelLocationQuery,
+  searchAttractions,
+  searchFlights,
+  searchHotels,
+  travelProviderHealth,
+} from './travel-provider-gateway.js';
 import { TravelProviderError } from './travel-provider-errors.js';
 
 function fakeProvider(
@@ -26,9 +32,28 @@ function fakeProvider(
   };
 }
 
-test('flight search uses Duffel first and does not call Amadeus when Duffel succeeds', async () => {
+test('canonicalizes Bali to DPS before any travel provider call', () => {
+  assert.equal(canonicalTravelLocationQuery('Bali'), 'DPS');
+  assert.equal(canonicalTravelLocationQuery('Bali, Indonesia'), 'DPS');
+  assert.equal(canonicalTravelLocationQuery('Singapore'), 'Singapore');
+});
+
+test('flight search uses Duffel first and sends canonical DPS instead of fuzzy Bali', async () => {
   let amadeusCalls = 0;
+  const resolvedQueries: string[] = [];
   const duffel = fakeProvider('duffel', {
+    resolvePlace: async (query: string) => {
+      resolvedQueries.push(query);
+      return {
+        provider: 'duffel',
+        name: query === 'DPS' ? 'Ngurah Rai' : 'Singapore',
+        iataCode: query === 'DPS' ? 'DPS' : 'SIN',
+        type: 'airport',
+        countryCode: query === 'DPS' ? 'ID' : 'SG',
+        latitude: query === 'DPS' ? -8.748 : 1.364,
+        longitude: query === 'DPS' ? 115.167 : 103.991,
+      };
+    },
     searchFlights: async () => [{
       id: 'off_duffel',
       provider: 'duffel',
@@ -55,6 +80,8 @@ test('flight search uses Duffel first and does not call Amadeus when Duffel succ
 
   assert.equal(result.status, 'success');
   if (result.status !== 'success') return;
+  assert.deepEqual(resolvedQueries, ['Singapore', 'DPS']);
+  assert.equal(result.destination.iataCode, 'DPS');
   assert.equal(result.provider, 'duffel');
   assert.equal(result.offers[0].id, 'off_duffel');
   assert.equal(amadeusCalls, 0);
