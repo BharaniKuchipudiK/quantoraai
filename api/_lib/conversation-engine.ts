@@ -4,6 +4,7 @@ import { mergeCognitiveLedgers, type CognitiveLedgerEntry } from "./cognitive-le
 import type { ProjectContextPack } from "./project-state.js";
 import { evaluateSafetyText } from "./safety-policy.js";
 import { formatPclNavigatorDirective, publicPclNavigatorMetadata } from "./pcl-navigator-adapter.js";
+import { evaluateProofOfDone } from "./outcome-contract.js";
 
 export const CONVERSATION_POLICY_VERSION = "outcome-navigator-2026-08-19.3";
 
@@ -419,6 +420,14 @@ export function verifyConversationResponse(input: {
   const claimsExternalCompletion = /\b(?:i(?:'ve| have)?|we(?:'ve| have)?)\s+(?:published|deployed|emailed|sent|booked|purchased|paid|deleted|submitted)\b/i.test(response);
   if (claimsExternalCompletion && evidence.length === 0) {
     issue(issues, "external_action_without_evidence", "failure");
+  }
+
+  const claimsOutcomeDone = /(?:\b(?:i(?:'ve| have)|we(?:'ve| have))\s+(?:completed|finished)\b|\b(?:it|this|the (?:work|task|project|artifact|document|presentation|deck|site|website|app)|your (?:request|document|presentation|deck|site|website|app))\s+(?:is|has been)\s+(?:done|complete|completed|finished|ready)\b)/i.test(response);
+  if (claimsOutcomeDone) {
+    const proof = evaluateProofOfDone(input.snapshot);
+    if (proof.status !== "verified") {
+      issue(issues, "outcome_done_without_proof", "failure");
+    }
   }
 
   const gap = input.snapshot.recentSignals.find((signal) => signal.type === "outcome_gap_detected");
