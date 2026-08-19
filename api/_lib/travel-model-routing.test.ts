@@ -21,10 +21,11 @@ test("routes ordinary Travel conversation away from a Gemini-only path", () => {
     modelId: TRAVEL_CONVERSATION_MODEL_ID,
     modelName: "Quantora Travel Advisor",
     fallbackFrom: "gemini-flash-latest",
+    travelToolExecutionDeferred: false,
   });
 });
 
-test("keeps live flight and hotel turns on the tool-capable path", () => {
+test("keeps live flight and hotel intent out of the broken Gemini tool loop", () => {
   const body = {
     studioDomain: "travel",
     modelId: "gemini-flash-latest",
@@ -32,7 +33,14 @@ test("keeps live flight and hotel turns on the tool-capable path", () => {
   };
 
   assert.equal(isLiveTravelToolTurn(body), true);
-  assert.equal(shouldPreferTravelConversationProvider(body), false);
+  assert.equal(shouldPreferTravelConversationProvider(body), true);
+  assert.deepEqual(routeTravelConversationBody(body), {
+    ...body,
+    modelId: TRAVEL_CONVERSATION_MODEL_ID,
+    modelName: "Quantora Travel Advisor",
+    fallbackFrom: "gemini-flash-latest",
+    travelToolExecutionDeferred: true,
+  });
 });
 
 test("does not rewrite a user supplied Gemini key", () => {
