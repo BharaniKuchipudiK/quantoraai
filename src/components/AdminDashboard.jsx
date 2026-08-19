@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Users, ChevronLeft, Cpu, BarChart3, Fingerprint, AlertTriangle } from 'lucide-react';
+import { Activity, Users, ChevronLeft, Cpu, BarChart3, Fingerprint, AlertTriangle, MessageSquareText } from 'lucide-react';
 
 const AdminDashboard = ({ onBack }) => {
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('user'); // 'user' | 'technical'
+  const [activeTab, setActiveTab] = useState('user'); // 'user' | 'technical' | 'feedback'
 
   useEffect(() => {
     let cancelled = false;
@@ -146,13 +146,21 @@ const AdminDashboard = ({ onBack }) => {
             icon={<Cpu size={16} />}
             label="Technical & Telemetry"
           />
+          <TabButton
+            active={activeTab === 'feedback'}
+            onClick={() => setActiveTab('feedback')}
+            icon={<MessageSquareText size={16} />}
+            label="Feedback"
+          />
         </div>
       </div>
 
       {activeTab === 'user' ? (
         <UserAnalyticsTab metrics={metrics} />
-      ) : (
+      ) : activeTab === 'technical' ? (
         <TechnicalPredictiveTab metrics={metrics} />
+      ) : (
+        <AdminFeedbackPanel />
       )}
     </div>
   );
@@ -183,6 +191,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
 
 import ProductAnalyticsPanel from './ProductAnalyticsPanel';
 import TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';
+import AdminFeedbackPanel from './AdminFeedbackPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
   const g = metrics.growth || {};
