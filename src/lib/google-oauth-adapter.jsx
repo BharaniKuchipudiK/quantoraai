@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 
 const GoogleAuthContext = createContext({ clientId: '' });
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
+const PREVIEW_HOST = 'quantora-platform-git-travel-provider-gateway-v1-sartho.vercel.app';
+const MAIN_VERCEL_HOST = 'quantora-platform-git-main-sartho.vercel.app';
 
 let scriptPromise = null;
 
@@ -20,7 +22,6 @@ function loadGoogleIdentityScript() {
     if (existing) {
       existing.addEventListener('load', finish, { once: true });
       existing.addEventListener('error', () => reject(new Error('Google Identity Services failed to load.')), { once: true });
-      // The script may already have completed before the listeners were attached.
       setTimeout(() => {
         if (window.google?.accounts?.id) resolve(window.google);
       }, 0);
@@ -69,28 +70,38 @@ export function GoogleLogin({
       return undefined;
     }
 
+    const host = window.location.hostname.toLowerCase();
+    const isVercelPreview = host.endsWith('.vercel.app') && host !== MAIN_VERCEL_HOST;
+
+    /*
+     * Google requires redirect URIs to match exactly. Vercel generates a new
+     * random deployment hostname for every build, so using window.location.origin
+     * makes OAuth break on every deployment. Canonicalise all Travel Preview
+     * traffic to the stable branch alias before Google initialises. This also
+     * keeps Google's GIS CSRF cookie and the callback on the same origin.
+     */
+    if (isVercelPreview && host !== PREVIEW_HOST) {
+      const canonical = new URL(window.location.href);
+      canonical.protocol = 'https:';
+      canonical.host = PREVIEW_HOST;
+      window.location.replace(canonical.toString());
+      return undefined;
+    }
+
     loadGoogleIdentityScript()
       .then((google) => {
         if (cancelled || !buttonRef.current) return;
 
-        const host = window.location.hostname.toLowerCase();
-        const isVercelPreview = host.endsWith('.vercel.app') && host !== 'quantora-platform-git-main-sartho.vercel.app';
-
         buttonRef.current.replaceChildren();
 
         if (isVercelPreview) {
-          // Preview uses a full-page redirect instead of a popup. This avoids
-          // popup/FedCM/ITP communication failures and guarantees Google posts
-          // the credential to an observable server endpoint.
           google.accounts.id.initialize({
             client_id: clientId,
             ux_mode: 'redirect',
-            login_uri: `${window.location.origin}/api/auth/verify`,
+            login_uri: `https://${PREVIEW_HOST}/api/auth/verify`,
             auto_select: false,
           });
         } else {
-          // Preserve the existing production behaviour until Preview proves the
-          // redirect flow end-to-end.
           google.accounts.id.initialize({
             client_id: clientId,
             ux_mode: 'popup',
