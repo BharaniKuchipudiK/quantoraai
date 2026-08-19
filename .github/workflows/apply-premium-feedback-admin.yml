@@ -1,0 +1,63 @@
+name: Apply Premium Feedback Admin Patch
+
+on:
+  push:
+    branches:
+      - feat/premium-feedback-admin
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[premium-feedback-admin-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/premium-feedback-admin
+      - name: Patch Admin Dashboard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/AdminDashboard.jsx')
+          text = path.read_text()
+
+          old_import = "import { Activity, Users, ChevronLeft, Cpu, BarChart3, Fingerprint, AlertTriangle } from 'lucide-react';"
+          new_import = "import { Activity, Users, ChevronLeft, Cpu, BarChart3, Fingerprint, AlertTriangle, MessageSquareText } from 'lucide-react';"
+          if old_import not in text:
+              raise SystemExit('Admin icon import anchor not found')
+          text = text.replace(old_import, new_import, 1)
+
+          old_state = "const [activeTab, setActiveTab] = useState('user'); // 'user' | 'technical'"
+          new_state = "const [activeTab, setActiveTab] = useState('user'); // 'user' | 'technical' | 'feedback'"
+          if old_state not in text:
+              raise SystemExit('Admin tab state anchor not found')
+          text = text.replace(old_state, new_state, 1)
+
+          old_tabs = """          <TabButton \n            active={activeTab === 'technical'} \n            onClick={() => setActiveTab('technical')}\n            icon={<Cpu size={16} />}\n            label=\"Technical & Telemetry\"\n          />"""
+          new_tabs = old_tabs + """\n          <TabButton\n            active={activeTab === 'feedback'}\n            onClick={() => setActiveTab('feedback')}\n            icon={<MessageSquareText size={16} />}\n            label=\"Feedback\"\n          />"""
+          if old_tabs not in text:
+              raise SystemExit('Admin tabs anchor not found')
+          text = text.replace(old_tabs, new_tabs, 1)
+
+          old_render = """      {activeTab === 'user' ? (\n        <UserAnalyticsTab metrics={metrics} />\n      ) : (\n        <TechnicalPredictiveTab metrics={metrics} />\n      )}"""
+          new_render = """      {activeTab === 'user' ? (\n        <UserAnalyticsTab metrics={metrics} />\n      ) : activeTab === 'technical' ? (\n        <TechnicalPredictiveTab metrics={metrics} />\n      ) : (\n        <AdminFeedbackPanel />\n      )}"""
+          if old_render not in text:
+              raise SystemExit('Admin render anchor not found')
+          text = text.replace(old_render, new_render, 1)
+
+          old_panel_imports = """import ProductAnalyticsPanel from './ProductAnalyticsPanel';\nimport TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';"""
+          new_panel_imports = old_panel_imports + "\nimport AdminFeedbackPanel from './AdminFeedbackPanel';"
+          if old_panel_imports not in text:
+              raise SystemExit('Admin panel imports anchor not found')
+          text = text.replace(old_panel_imports, new_panel_imports, 1)
+
+          path.write_text(text)
+          PY
+          git add src/components/AdminDashboard.jsx
+          git config user.name "Quantora Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Integrate Feedback workspace into Admin Dashboard [premium-feedback-admin-applied]"
+          git push origin feat/premium-feedback-admin
