@@ -14,6 +14,7 @@ import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
 import { OFFICE_KIND } from '../lib/office-intent.js';
+import { readActivePclSessionId } from '../lib/pcl-session-runtime.js';
 import OfficePreview from './OfficePreview.jsx';
 
 // Office kind → download-button label / extension.
@@ -359,8 +360,18 @@ export default function LivePreviewCanvas({
     setConnectResult(null);
     try {
       const res = await fetch('/api/domains', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: 'connect', domain, projectName: deployResult?.projectName })
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Quantora-Human-Confirmed': 'connect-domain-button',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          task: 'connect',
+          domain,
+          projectName: deployResult?.projectName,
+          sessionId: readActivePclSessionId() || undefined,
+        })
       });
       const data = await res.json();
       if (!res.ok) setConnectResult({ error: data.error || 'Could not connect the domain.' });
@@ -430,9 +441,16 @@ export default function LivePreviewCanvas({
     try {
       const deployRes = await fetch('/api/deploy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Quantora-Human-Confirmed': 'publish-dialog',
+        },
         credentials: 'include',
-        body: JSON.stringify({ code: currentCode, projectName: projectNameInput || 'quantora-app' }),
+        body: JSON.stringify({
+          code: currentCode,
+          projectName: projectNameInput || 'quantora-app',
+          sessionId: readActivePclSessionId() || undefined,
+        }),
       });
       const deployData = await deployRes.json();
       if (!deployRes.ok) throw new Error(deployData.error || 'Deploy failed');
@@ -483,9 +501,16 @@ export default function LivePreviewCanvas({
       const previewName = `preview-${Date.now().toString(36).slice(-8)}`;
       const deployRes = await fetch('/api/deploy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Quantora-Human-Confirmed': 'share-preview-button',
+        },
         credentials: 'include',
-        body: JSON.stringify({ code: currentCode, projectName: previewName }),
+        body: JSON.stringify({
+          code: currentCode,
+          projectName: previewName,
+          sessionId: readActivePclSessionId() || undefined,
+        }),
       });
       const deployData = await deployRes.json();
       if (!deployRes.ok) throw new Error(deployData.error || 'Share failed');
@@ -620,9 +645,16 @@ export default function LivePreviewCanvas({
     try {
       const res = await fetch('/api/deploy-gcp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Quantora-Human-Confirmed': 'gcp-deploy-button',
+        },
         credentials: 'include',
-        body: JSON.stringify({ vfs, projectName: suggestedProjectName || 'quantora-app' }),
+        body: JSON.stringify({
+          vfs,
+          projectName: suggestedProjectName || 'quantora-app',
+          sessionId: readActivePclSessionId() || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'GCP deployment failed');
@@ -804,7 +836,7 @@ export default function LivePreviewCanvas({
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001 }}>
           <div style={{ background: isLight ? '#ffffff' : '#0f172a', padding: '28px', borderRadius: '20px', width: '90%', maxWidth: '420px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: isLight ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
             <h2 style={{ margin: '0 0 8px', fontSize: '1.15rem', color: isLight ? '#0f172a' : '#ffffff' }}>Publish to Vercel</h2>
-            <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8' }}>Choose a project name for your live URL.</p>
+            <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: isLight ? '#64748b' : '#94a3b8' }}>This makes the current build publicly accessible. Confirm the project name, then publish.</p>
             <input
               value={projectNameInput}
               onChange={(e) => setProjectNameInput(e.target.value)}
@@ -815,7 +847,7 @@ export default function LivePreviewCanvas({
             />
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
               <button type="button" onClick={() => setShowPublishDialog(false)} style={{ flex: 1, padding: '10px', background: 'transparent', border: isLight ? '1px solid #cbd5e1' : '1px solid #334155', color: isLight ? '#475569' : '#94a3b8', borderRadius: '10px', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
-              <button type="button" onClick={handlePublish} disabled={isDeploying} style={{ flex: 1, padding: '10px', background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', borderRadius: '10px', cursor: isDeploying ? 'not-allowed' : 'pointer', fontWeight: 700 }}>{isDeploying ? 'Deploying…' : 'Publish'}</button>
+              <button type="button" onClick={handlePublish} disabled={isDeploying} style={{ flex: 1, padding: '10px', background: isDeploying ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', borderRadius: '10px', cursor: isDeploying ? 'not-allowed' : 'pointer', fontWeight: 700 }}>{isDeploying ? 'Deploying…' : 'Confirm & Publish'}</button>
             </div>
           </div>
         </div>
