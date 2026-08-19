@@ -59,47 +59,41 @@ export async function readUserContextGraph(userSub: string): Promise<UserContext
 }
 
 export type UserContextWrite = Omit<UserContextNode, "id" | "status" | "updatedAt"> & {
-  id?: string;
   status?: "active" | "superseded";
 };
 
 /**
- * Server-only upsert used by trusted ingestion/tooling. It intentionally does
- * not accept userSub inside the context node, so one user's payload cannot name
- * another account as the owner.
+ * Server-only append used by trusted ingestion/tooling. V1 deliberately does
+ * not allow caller-supplied row ids or cross-owner updates: every write creates
+ * a new node owned by the verified session subject. Supersession can be added
+ * later through an owner-scoped RPC once the ingestion workflow needs it.
  */
 export async function saveUserContextNode(userSub: string, node: UserContextWrite): Promise<UserContextNode | null> {
   if (!userSub) return null;
   const normalized = normalizeUserContextGraph([{
     ...node,
-    id: node.id || "pending",
+    id: "pending",
     status: node.status || "active",
     updatedAt: new Date().toISOString(),
   }])[0];
   if (!normalized) return null;
 
-  const row = {
-    ...(node.id ? { id: node.id } : {}),
-    user_sub: userSub,
-    category: normalized.category,
-    context_key: normalized.key,
-    value: normalized.value,
-    provenance: normalized.provenance,
-    confidence: normalized.confidence,
-    status: normalized.status,
-    source_ref: normalized.sourceRef || null,
-    valid_from: normalized.validFrom || null,
-    valid_until: normalized.validUntil || null,
-    updated_at: new Date().toISOString(),
-  };
-
-  const path = node.id ? "user_context_nodes?on_conflict=id" : "user_context_nodes";
-  const response = await request(path, {
+  const response = await request("user_context_nodes", {
     method: "POST",
-    headers: node.id
-      ? { Prefer: "resolution=merge-duplicates,return=representation" }
-      : { Prefer: "return=representation" },
-    body: JSON.stringify([row]),
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify([{
+      user_sub: userSub,
+      category: normalized.category,
+      context_key: normalized.key,
+      value: normalized.value,
+      provenance: normalized.provenance,
+      confidence: normalized.confidence,
+      status: normalized.status,
+      source_ref: normalized.sourceRef || null,
+      valid_from: normalized.validFrom || null,
+      valid_until: normalized.validUntil || null,
+      updated_at: new Date().toISOString(),
+    }]),
   });
   if (!response) return null;
 
