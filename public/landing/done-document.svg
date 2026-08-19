@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820">
+  <rect width="1400" height="820" rx="28" fill="#0a0c11"/>
+  <rect x="72" y="48" width="1256" height="724" rx="24" fill="#141820" stroke="#2b3340"/>
+  <rect x="108" y="82" width="1184" height="54" rx="14" fill="#0f1319"/>
+  <text x="136" y="116" font-family="Arial,Helvetica,sans-serif" font-size="16" font-weight="700" fill="#f4f4f1">Executive Brief.docx</text>
+  <text x="1145" y="116" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" fill="#50c7b2">✓ READY TO SHARE</text>
+  <rect x="248" y="166" width="904" height="548" rx="5" fill="#fbfbf8"/>
+  <g font-family="Arial,Helvetica,sans-serif">
+    <text x="304" y="214" font-size="11" font-weight="800" letter-spacing="2" fill="#ff6a00">QUANTORA</text>
+    <text x="304" y="268" font-size="38" font-weight="700" letter-spacing="-1.4" fill="#172033">Executive Brief</text>
+    <text x="304" y="298" font-size="15" fill="#798497">What matters, why it matters, and what to do next.</text>
+    <line x1="304" x2="1096" y1="330" y2="330" stroke="#d9dee6"/>
+    <text x="304" y="374" font-size="12" font-weight="800" letter-spacing="1" fill="#172033">EXECUTIVE SUMMARY</text>
+    <rect x="304" y="392" width="560" height="6" rx="3" fill="#dfe4ea"/><rect x="304" y="410" width="676" height="6" rx="3" fill="#e5e9ee"/><rect x="304" y="428" width="628" height="6" rx="3" fill="#e5e9ee"/>
+    <rect x="304" y="474" width="356" height="124" rx="4" fill="#f2f4f5"/>
+    <text x="330" y="510" font-size="11" font-weight="800" letter-spacing="1" fill="#2a8e7c">RECOMMENDATION</text>
+    <text x="330" y="545" font-size="18" font-weight="700" fill="#172033">Move from discussion</text>
+    <text x="330" y="570" font-size="18" font-weight="700" fill="#172033">to verified execution.</text>
+    <rect x="690" y="474" width="406" height="124" rx="4" fill="#fff4ec"/>
+    <text x="716" y="510" font-size="11" font-weight="800" letter-spacing="1" fill="#ff6a00">NEXT ACTIONS</text>
+    <text x="716" y="542" font-size="13" fill="#455064">01  Confirm objective and constraints</text>
+    <text x="716" y="566" font-size="13" fill="#455064">02  Create and verify the artifact</text>
+    <text x="716" y="590" font-size="13" fill="#455064">03  Deliver the finished outcome</text>
+    <text x="132" y="750" font-size="12" font-weight="700" letter-spacing="2" fill="#8f98a8">EXAMPLE OUTPUT · POLISHED BUSINESS DOCUMENT</text>
+  </g>
+</svg>

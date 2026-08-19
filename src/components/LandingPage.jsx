@@ -1,616 +1,592 @@
-import React, { useState, useRef, useEffect } from 'react';
-import AuroraBackground from './AuroraBackground';
-import { QuantoraEmblemSvg, QuantoraFullLogoSvg } from './QuantoraLogoSvg';
+import React, { useEffect, useState } from 'react';
 import {
-  Sparkles,
-  Workflow,
-  Cpu,
-  ShieldCheck,
   ArrowRight,
-  ArrowLeft,
-  LogIn,
+  Bot,
   CheckCircle2,
-  Zap,
-  Sun,
-  Moon,
-  Lock,
-  Search,
-  BarChart3,
-  Terminal,
   Code2,
-  Layers,
-  Key,
-  Play,
-  RotateCcw,
-  Check,
-  ChevronRight,
-  Gauge,
-  Globe2,
-  Atom,
-  BookOpen,
-  GraduationCap,
-  Smartphone,
+  Cpu,
+  FileSpreadsheet,
+  FileText,
+  Moon,
+  Presentation,
+  ShieldCheck,
+  Sparkles,
+  Sun,
 } from 'lucide-react';
+import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import './LandingPage.css';
 
-/*
- * Reveal-on-scroll wrapper. Content starts slightly lowered and transparent,
- * then eases into place the first time it enters the viewport — so the page
- * unfolds as you scroll instead of presenting a static wall of text. Honors
- * reduced-motion and degrades to "always visible" without IntersectionObserver.
- */
-function Reveal({ children, delay = 0, style, className }) {
-  const ref = useRef(null);
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce || typeof IntersectionObserver === 'undefined') { setShown(true); return; }
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((e) => { if (e.isIntersecting) { setShown(true); io.disconnect(); } });
-    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+const PLATFORM_PANELS = [
+  {
+    id: 'pcl',
+    number: '01',
+    eyebrow: 'Context',
+    title: 'PCL',
+    subtitle: 'Persistent Cognitive Layer',
+    explanation: 'Keeps the objective, decisions, memory and artifacts connected across the work — so Quantora does not start from zero every turn.',
+  },
+  {
+    id: 'agents',
+    number: '02',
+    eyebrow: 'Intelligence',
+    title: 'AI Agents',
+    subtitle: 'Reason. Research. Act.',
+    explanation: 'Specialized intelligence can research, create, build and verify around the same goal instead of working as isolated chat responses.',
+  },
+  {
+    id: 'office',
+    number: '03',
+    eyebrow: 'Creation',
+    title: 'Microsoft Office',
+    subtitle: 'From thought to usable work',
+    explanation: 'Turn an objective into professional PowerPoint, Word and Excel artifacts that are structured, verified and ready to use.',
+  },
+  {
+    id: 'quantum',
+    number: '04',
+    eyebrow: 'Frontier',
+    title: 'Quantum',
+    subtitle: 'Explore what comes next',
+    explanation: 'A frontier workspace for experimenting with emerging computational ideas alongside the classical tools you already use.',
+  },
+];
+
+const FUTURE_CAPABILITIES = [
+  {
+    id: 'cognitive',
+    number: '01',
+    status: 'EVOLVING NOW',
+    title: 'Cognitive Intelligence',
+    strapline: 'The right intelligence. Automatically.',
+    description: 'Quantora reads the task, project context and intended outcome, then routes the right model, tools and workflow without making you manage the machinery.',
+  },
+  {
+    id: 'ide',
+    number: '02',
+    status: 'COMING',
+    title: 'Integrated IDE',
+    strapline: 'Build without leaving the work.',
+    description: 'Plan, code, test, preview and ship software inside one Quantora project workspace.',
+  },
+  {
+    id: 'automation',
+    number: '03',
+    status: 'COMING',
+    title: 'Workflow Automation',
+    strapline: 'Automate what repeats.',
+    description: 'Turn recurring research, analysis, reporting and follow-up work into reusable flows that keep moving.',
+  },
+  {
+    id: 'agents',
+    number: '04',
+    status: 'COMING',
+    title: 'AI Agents',
+    strapline: 'Specialists. Shared context.',
+    description: 'Research, create, build and verify through specialized agents working toward the same outcome.',
+  },
+];
+
+const DONE_STORIES = [
+  {
+    id: 'website',
+    tab: 'Website',
+    label: 'WEBSITE / APP',
+    prompt: 'Create a premium boutique website selling sarees and ready-made dresses. Add a product catalogue, cart and checkout experience, then make it ready to publish.',
+    outcome: 'Boutique storefront',
+    status: 'PUBLISHED · LIVE',
+    proof: 'Catalogue · cart · checkout · responsive',
+  },
+  {
+    id: 'presentation',
+    tab: 'Presentation',
+    label: 'POWERPOINT',
+    prompt: 'Prepare a consulting-grade cloud migration strategy for executives. Cover current-state challenges, target architecture, roadmap, risks and business value.',
+    outcome: 'Cloud migration strategy',
+    status: 'VERIFIED · READY',
+    proof: 'Executive narrative · roadmap · architecture',
+  },
+  {
+    id: 'document',
+    tab: 'Document',
+    label: 'BUSINESS DOCUMENT',
+    prompt: 'Create an executive brief on AI adoption opportunities in insurance with use cases, risks, recommendations and a clear decision summary.',
+    outcome: 'Executive decision brief',
+    status: 'READY TO SHARE',
+    proof: 'Structured · polished · decision-ready',
+  },
+];
+
+function enterQuantora({ user, onLaunchStudio, onOpenAuth }) {
+  if (user) onLaunchStudio?.();
+  else onOpenAuth?.();
+}
+
+function PclVisual() {
   return (
-    <div ref={ref} className={className} style={{
-      ...style,
-      opacity: shown ? 1 : 0,
-      transform: shown ? 'none' : 'translateY(30px)',
-      transition: `opacity 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms, transform 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms`,
-      willChange: 'opacity, transform'
-    }}>{children}</div>
+    <div className="q-panel-visual q-pcl-visual" aria-label="Persistent Cognitive Layer context graph">
+      <div className="q-pcl-core">
+        <span>PCL</span>
+        <strong>Objective</strong>
+      </div>
+      <div className="q-pcl-node q-pcl-node--goal"><span>Goal</span><b>Launch Quantora</b></div>
+      <div className="q-pcl-node q-pcl-node--decisions"><span>Decisions</span><b>Outcome first</b></div>
+      <div className="q-pcl-node q-pcl-node--memory"><span>Memory</span><b>Project context</b></div>
+      <div className="q-pcl-node q-pcl-node--next"><span>Next action</span><b>Move work forward</b></div>
+      <div className="q-pcl-link q-pcl-link--one" />
+      <div className="q-pcl-link q-pcl-link--two" />
+      <div className="q-pcl-link q-pcl-link--three" />
+      <div className="q-pcl-link q-pcl-link--four" />
+    </div>
   );
 }
 
-export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
-  const [activeCapability, setActiveCapability] = useState('studio');
+function AgentVisual() {
+  return (
+    <div className="q-panel-visual q-agent-visual" aria-label="AI agent orchestration">
+      <div className="q-agent-command">
+        <Sparkles size={14} />
+        <span>Turn this objective into an investor-ready launch.</span>
+      </div>
+      <div className="q-agent-stack">
+        <div className="q-agent-row q-agent-row--active">
+          <Bot size={15} />
+          <div><strong>Research agent</strong><span>Scanning evidence</span></div>
+          <b>RUNNING</b>
+        </div>
+        <div className="q-agent-row">
+          <Bot size={15} />
+          <div><strong>Strategy agent</strong><span>Shaping the narrative</span></div>
+          <b>READY</b>
+        </div>
+        <div className="q-agent-row">
+          <Bot size={15} />
+          <div><strong>Build agent</strong><span>Preparing the outcome</span></div>
+          <b>QUEUED</b>
+        </div>
+      </div>
+      <div className="q-agent-route"><span>ROUTING</span><strong>Right model · right tool · right moment</strong></div>
+    </div>
+  );
+}
 
-  // The hero's real prompt box — the same idea a build starts from. Not a
-  // simulation: submitting it drops the visitor straight into a live build.
-  const [heroPrompt, setHeroPrompt] = useState('');
-  const [phIdx, setPhIdx] = useState(0);
+function OfficeVisual() {
+  return (
+    <div className="q-panel-visual q-office-visual" aria-label="Microsoft Office artifact generation">
+      <div className="q-office-stack">
+        <div className="q-office-card q-office-card--ppt">
+          <div className="q-office-card__head"><Presentation size={15} /><span>PowerPoint</span><b>READY</b></div>
+          <div className="q-office-slide">
+            <small>QUANTORA</small>
+            <strong>From intent to outcome</strong>
+            <span>Executive narrative · verified</span>
+            <div><i /><i /><i /></div>
+          </div>
+        </div>
+        <div className="q-office-card q-office-card--doc">
+          <div className="q-office-card__head"><FileText size={15} /><span>Word</span><b>VERIFIED</b></div>
+          <div className="q-office-lines"><i /><i /><i /><i /></div>
+        </div>
+        <div className="q-office-card q-office-card--xls">
+          <div className="q-office-card__head"><FileSpreadsheet size={15} /><span>Excel</span><b>LIVE</b></div>
+          <div className="q-office-grid"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const heroExamples = [
-    'A research assistant that searches papers and summarizes them…',
-    'A study planner that turns my syllabus into daily goals…',
-    'A dashboard to track weekly metrics for my team…',
-    'A tool that turns my lecture notes into flashcards…',
-    'An invoice generator for my consulting clients…',
-    'A cozy cafe website with online ordering…',
-    'A literature-review helper for my thesis…',
-    'A portfolio for a photographer with a booking form…'
-  ];
+function QuantumVisual() {
+  return (
+    <div className="q-panel-visual q-quantum-visual" aria-label="Quantora quantum exploration space">
+      <div className="q-quantum-head"><Cpu size={16} /><span>QUANTUM SPACE</span><b>SIMULATE</b></div>
+      <div className="q-circuit">
+        <div className="q-circuit-wire q-circuit-wire--one"><span>q0</span><i className="q-gate">H</i><i className="q-control" /><i className="q-meter">M</i></div>
+        <div className="q-circuit-wire q-circuit-wire--two"><span>q1</span><i className="q-gate">X</i><i className="q-target">⊕</i><i className="q-meter">M</i></div>
+        <div className="q-circuit-wire q-circuit-wire--three"><span>q2</span><i className="q-gate">R</i><i className="q-gate">Z</i><i className="q-meter">M</i></div>
+      </div>
+      <div className="q-quantum-result">
+        <span>STATE</span>
+        <div><i style={{ '--bar': '72%' }} /><i style={{ '--bar': '42%' }} /><i style={{ '--bar': '88%' }} /><i style={{ '--bar': '56%' }} /></div>
+        <strong>Explore beyond classical workflows.</strong>
+      </div>
+    </div>
+  );
+}
 
-  // Cycle the prompt placeholder so ideas suggest themselves as gentle motion,
-  // instead of a static block of example chips sitting on the page. Pauses
-  // while the visitor is actually typing.
-  useEffect(() => {
-    if (heroPrompt) return;
-    const t = setInterval(() => setPhIdx((i) => (i + 1) % heroExamples.length), 2600);
-    return () => clearInterval(t);
-  }, [heroPrompt, heroExamples.length]);
-
-  const startBuild = (prompt) => {
-    const text = (prompt ?? heroPrompt ?? '').toString();
-    if (onStartBuild) onStartBuild(text);
-    else if (user) onLaunchStudio();
-    else onOpenAuth();
-  };
-
-  // The four steps that make Quantora outcome-first — all real product
-  // behaviour, no mock. This is the journey, told as a filmstrip.
-  const journey = [
-    { icon: Sparkles, color: '#f97316', step: '01', title: 'Define the outcome', body: 'State what you need in plain language — no templates, configuration, or code required.' },
-    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'Refine through dialogue', body: 'Quantora clarifies requirements, proposes options, and iterates with you until the result is right.' },
-    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'Validate before delivery', body: 'Apps and builds run in a live sandbox; research and plans are checked for gaps before you commit.' },
-    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Finish and share', body: 'Submit a thesis section, ship an app, publish a page when you need to — or keep iterating in the same thread.' }
-  ];
-
-  const techPillars = [
-    { icon: Layers, color: '#f97316', title: 'Multi-model orchestration', body: 'Requests route across approved frontier models — selecting the right capability for each task.' },
-    { icon: ShieldCheck, color: '#10b981', title: 'Self-healing build loop', body: 'Generated artifacts are executed, verified, and repaired automatically before delivery.' },
-    { icon: Workflow, color: '#8b5cf6', title: 'Conversation-first workflow', body: 'No rigid forms. Requirements emerge naturally through structured dialogue.' },
-    { icon: Lock, color: '#06b6d4', title: 'Privacy by design', body: 'Bring your own API keys. Your data, models, and outputs remain under your control.' }
-  ];
-
-  // Use global theme
-  const isLight = themeMode === 'light';
-
-  const bgColor = isLight ? '#f8fafc' : '#070913';
-  const textColor = isLight ? '#0f172a' : '#ffffff';
-  const subtextColor = isLight ? '#475569' : '#94a3b8';
-  const cardBg = isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.75)';
-  const cardBorder = isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)';
-  const navBg = isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 9, 19, 0.88)';
-
-  // Live model facts for the trust strip — sourced from the real registry the
-  // app already fetched, so nothing here can drift out of date.
-  const onlineModels = (availableModels || []).filter((m) => m && m.available !== false);
-  const liveModelCount = onlineModels.length;
-  const liveModelNames = onlineModels.slice(0, 5).map((m) => m.name).filter(Boolean);
-
-  const outcomes = [
-    { metric: 'Ask', title: 'Research & writing', body: 'Thesis chapters, literature reviews, study plans, and project submissions — clarified and drafted through dialogue.' },
-    { metric: 'Build', title: 'Apps & tools', body: 'Interactive apps, dashboards, and utilities you can preview, refine, and use — not just describe.' },
-    { metric: 'Ship', title: 'When the web fits', body: 'Publish a page or shop when that is the outcome. Quantora is an AI studio, not a website builder with a chat box.' }
-  ];
-
-  // Placeholder slots — swap for real quotes, metrics, and names as stories arrive.
-  const successStorySlots = [
-    {
-      category: 'Research',
-      icon: BookOpen,
-      color: '#8b5cf6',
-      title: 'Thesis chapter, structured',
-      teaser: 'A graduate student turns a vague topic into an outline, draft sections, and a submission checklist — in one week of sessions.',
-      status: 'Coming soon',
-    },
-    {
-      category: 'App',
-      icon: Smartphone,
-      color: '#06b6d4',
-      title: 'Study planner app',
-      teaser: 'A syllabus becomes a daily goal tracker with flashcards — built, previewed, and shared with classmates.',
-      status: 'Coming soon',
-    },
-    {
-      category: 'Plan',
-      icon: GraduationCap,
-      color: '#10b981',
-      title: 'Research project intake',
-      teaser: 'Scope, methodology, and milestones clarified before writing — so the first draft is intentional, not generic.',
-      status: 'Coming soon',
-    },
-  ];
-
-  const flagshipCapabilities = [
-    {
-      id: 'studio',
-      number: '01',
-      label: 'Create',
-      title: 'Build from a conversation.',
-      description: 'Turn an idea into a working artifact — an app, a research draft, a plan, or a page when you need one. Refine with an AI partner that remembers context.',
-      action: 'Open AI Studio',
-      color: '#f97316',
-      icon: Code2
-    },
-    {
-      id: 'canvas',
-      number: '02',
-      label: 'Shape',
-      title: 'Track what you finish, not just what you start.',
-      description: 'Build Journey keeps your outcomes in three lanes — captured, in progress, and done — linked back to AI Studio.',
-      action: 'Open Build Journey',
-      color: '#f59e0b',
-      icon: Workflow
-    },
-    {
-      id: 'quantum',
-      number: '03',
-      label: 'Explore',
-      title: 'Make quantum ideas tangible.',
-      description: 'Simulate circuits, inspect state probabilities and learn by interacting instead of starting with a wall of mathematics.',
-      action: 'Explore Quantum Horizon',
-      color: '#06b6d4',
-      icon: Atom
-    },
-    {
-      id: 'vault',
-      number: '04',
-      label: 'Protect',
-      title: 'Keep access under your control.',
-      description: 'Connect your own model keys through a privacy-minded gateway without turning security into another complicated workflow.',
-      action: 'Open Privacy Vault',
-      color: '#10b981',
-      icon: ShieldCheck
-    }
-  ];
-
-  const selectedCapability = flagshipCapabilities.find((item) => item.id === activeCapability) || flagshipCapabilities[0];
-  const SelectedCapabilityIcon = selectedCapability.icon;
+function PlatformPanel({ panel, active, flipped, onActivate, onFlip }) {
+  const Visual = panel.id === 'pcl'
+    ? PclVisual
+    : panel.id === 'agents'
+      ? AgentVisual
+      : panel.id === 'office'
+        ? OfficeVisual
+        : QuantumVisual;
 
   return (
-    <div className="landing-page" style={{
-      minHeight: '100vh',
-      background: bgColor,
-      color: textColor,
-      position: 'relative',
-      overflowX: 'hidden',
-      fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-      transition: 'background 0.4s ease, color 0.4s ease'
-    }}>
-      {/* Header Navigation */}
-      <header className="landing-header" style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        background: navBg,
-        backdropFilter: 'blur(20px)',
-        borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)',
-        padding: '14px 5%',
-        transition: 'all 0.3s ease'
-      }}>
-        <div className="landing-header__inner" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-          {/* Brand Logo */}
-          <button
-            type="button"
-            className="landing-header__brand"
-            aria-label="Open Quantora AI Studio"
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
-            <QuantoraFullLogoSvg height={38} isDark={!isLight} tagline="PROMPT TO ACTION" />
-          </button>
+    <button
+      type="button"
+      className={`q-platform-panel${active ? ' is-active' : ''}${flipped ? ' is-flipped' : ''}`}
+      onMouseEnter={onActivate}
+      onFocus={onActivate}
+      onClick={onFlip}
+      aria-pressed={flipped}
+      aria-label={`${panel.title}. ${flipped ? 'Hide' : 'Show'} explanation`}
+    >
+      <span className="q-platform-panel__face q-platform-panel__face--front">
+        <span className="q-platform-panel__head">
+          <span>{panel.number} / {panel.eyebrow}</span>
+          <b>{flipped ? 'BACK' : active ? 'ACTIVE' : 'EXPLORE'}</b>
+        </span>
+        <span className="q-platform-panel__title">
+          <span className="q-platform-panel__h3">{panel.title}</span>
+          <span className="q-platform-panel__subtitle">{panel.subtitle}</span>
+        </span>
+        <Visual />
+      </span>
 
-          {/* Navigation Links */}
-          <nav className="landing-header__nav" aria-label="Primary navigation" style={{ display: 'flex', alignItems: 'center', gap: '28px', fontSize: '0.92rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1' }}>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              AI Studio
-            </button>
-            <button
-              type="button"
-              onClick={() => document.getElementById('success-stories')?.scrollIntoView({ behavior: 'smooth' })}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Success stories
-            </button>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Dream Canvas
-            </button>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Quantum Horizon
-            </button>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Privacy Vault
-            </button>
-          </nav>
+      <span className="q-platform-panel__face q-platform-panel__face--back">
+        <span className="q-platform-panel__back-kicker">WHY IT MATTERS</span>
+        <span className="q-platform-panel__back-title">{panel.title}</span>
+        <span className="q-platform-panel__back-copy">{panel.explanation}</span>
+        <span className="q-platform-panel__back-action">Click to return ↺</span>
+      </span>
+    </button>
+  );
+}
 
-          {/* Theme Switcher */}
-          <div className="landing-header__actions" style={{ display: 'flex', alignItems: 'center', gap: '14px', zIndex: 60 }}>
-            <button
-              type="button"
-              onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
-              style={{
-                background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
-                border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                color: textColor,
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease'
-              }}
-              title="Toggle Theme"
-              aria-label={`Switch to ${isLight ? 'dark' : 'light'} theme`}
-            >
-              {isLight ? <Moon size={18} color="#8b5cf6" /> : <Sun size={18} color="#fb923c" />}
-            </button>
+function CognitiveStage() {
+  const [activePanel, setActivePanel] = useState(0);
+  const [flippedPanel, setFlippedPanel] = useState(null);
 
-            {user && (
-              <button
-                onClick={onLaunchStudio}
-                style={{
-                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '10px 22px',
-                  borderRadius: '9999px',
-                  fontSize: '0.9rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 18px rgba(249, 115, 22, 0.4)'
-                }}
-              >
-                <Sparkles size={16} color="#ffffff" /> Enter Portal
-              </button>
-            )}
-          </div>
-        </div>
+  useEffect(() => {
+    if (flippedPanel !== null) return undefined;
+    const timer = window.setInterval(() => {
+      setActivePanel((value) => (value + 1) % PLATFORM_PANELS.length);
+    }, 7000);
+    return () => window.clearInterval(timer);
+  }, [flippedPanel]);
+
+  const togglePanel = (index) => {
+    setActivePanel(index);
+    setFlippedPanel((current) => (current === index ? null : index));
+  };
+
+  return (
+    <div className="q-cognitive-stage">
+      <header className="q-cognitive-stage__header">
+        <div><span className="q-live-dot" /> QUANTORA COGNITIVE PLATFORM</div>
+        <span>PRODUCT VISION · CLICK A PANEL</span>
       </header>
 
-      {/* Hero — same column width as every section below */}
-      <section
-        className="landing-hero"
-        style={{
-          position: 'relative',
-          zIndex: 10,
-          background: isLight
-            ? 'radial-gradient(1000px 480px at 50% -10%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
-            : 'radial-gradient(1000px 520px at 50% -8%, rgba(249,115,22,0.14), rgba(7,9,19,0) 60%), #070913'
-        }}
-      >
-        <div className="landing-container animate-fade-in-up">
-          <div className="landing-hero__inner">
-          <div className="landing-hero__eyebrow" style={{ color: isLight ? '#9a3412' : '#fdba74' }}>
-            <span className="landing-hero__eyebrow-dot" />
-            Possibility, built with purpose
-          </div>
-
-          <h1 className="landing-hero__title" style={{ color: isLight ? '#0b1220' : '#ffffff' }}>
-            From intent to <span style={{ color: '#ea580c' }}>outcome.</span>
-          </h1>
-
-          <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-            An AI studio for curious builders — research a thesis, shape a project, build an app, or ship a page when that is the outcome. One conversation, something finished.
-          </p>
-
-          <div
-            className="landing-hero__prompt"
-            style={{
-              background: isLight ? '#ffffff' : 'rgba(17,23,38,0.92)',
-              border: isLight ? '1px solid #e5e7eb' : '1px solid rgba(255,255,255,0.1)',
-              boxShadow: isLight ? '0 14px 44px rgba(15,23,42,0.10)' : '0 14px 48px rgba(0,0,0,0.5)'
-            }}
-          >
-            <textarea
-              aria-label="Describe what you want to build"
-              value={heroPrompt}
-              onChange={(e) => setHeroPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
-              rows={1}
-              placeholder={heroExamples[phIdx]}
-              style={{
-                flex: 1, resize: 'none', border: 'none', outline: 'none',
-                background: 'transparent', color: textColor,
-                fontSize: '1.02rem', lineHeight: 1.5, fontFamily: 'inherit',
-                padding: '11px 0', maxHeight: '120px'
-              }}
-            />
-            <button type="button" className="landing-hero__submit" onClick={() => startBuild()} style={{
-              flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '8px',
-              background: '#ea580c', color: '#ffffff', border: 'none',
-              padding: '13px 24px', borderRadius: '11px',
-              fontSize: '0.98rem', fontWeight: '700', cursor: 'pointer'
-            }}>
-              Build free <ArrowRight size={17} strokeWidth={2.5} />
-            </button>
-          </div>
-
-          <div className="landing-hero__models" style={{ color: isLight ? '#64748b' : '#94a3b8' }}>
-            <span>{liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}</span>
-            {liveModelNames.map((name, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ opacity: 0.4 }}>·</span> {name}
-              </span>
-            ))}
-          </div>
-          </div>
+      <div className="q-cognitive-stage__panels">
+        {PLATFORM_PANELS.map((panel, index) => (
+          <PlatformPanel
+            key={panel.id}
+            panel={panel}
+            active={activePanel === index}
+            flipped={flippedPanel === index}
+            onActivate={() => setActivePanel(index)}
+            onFlip={() => togglePanel(index)}
+          />
+        ))}
+        <div className="q-cognitive-signal" aria-hidden="true">
+          <span className="q-cognitive-signal__pulse" />
         </div>
-      </section>
+      </div>
 
-      {/* Outcomes — value-first, same width rhythm as hero */}
-      <section className={`landing-section landing-outcomes ${isLight ? 'is-light' : ''}`}>
-        <div className="landing-container">
-          <Reveal>
-            <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow" style={{ color: '#fdba74' }}>What you get</span>
-              <h2 className="landing-section__title" style={{ color: '#ffffff' }}>Real outcomes, not chat logs.</h2>
-              <p className="landing-section__lead" style={{ color: 'rgba(255,255,255,0.72)' }}>
-                Every session aims to finish with something you can use — a draft, a preview, a plan, or a live link when the web is the right medium.
-              </p>
-            </div>
-            <div className="landing-outcomes__grid">
-              {outcomes.map((item) => (
-                <div key={item.metric} className="landing-outcome-card">
-                  <em>{item.metric}</em>
-                  <strong>{item.title}</strong>
-                  <span>{item.body}</span>
-                </div>
-              ))}
-            </div>
-            <p style={{
-              margin: 'clamp(28px, 4vh, 36px) auto 0',
-              fontSize: 'clamp(1.05rem, 1.6vw, 1.25rem)',
-              lineHeight: 1.55,
-              fontWeight: 500,
-              color: 'rgba(255,255,255,0.88)',
-              maxWidth: '680px',
-              textAlign: 'center',
-              textWrap: 'balance'
-            }}>
-              The distance between an idea and a deployed outcome should be measured in conversation — not in quarters, headcount, or capital.
-            </p>
-          </Reveal>
-        </div>
-      </section>
+      <footer className="q-cognitive-stage__footer">
+        <div className="q-stage-status"><ShieldCheck size={15} /><span>Verify</span><strong>Quality gate</strong></div>
+        <div className="q-stage-arrow">→</div>
+        <div className="q-stage-status"><Code2 size={15} /><span>Execute</span><strong>Real artifact</strong></div>
+        <div className="q-stage-arrow">→</div>
+        <div className="q-stage-status"><CheckCircle2 size={15} /><span>Deliver</span><strong>Usable outcome</strong></div>
+      </footer>
+    </div>
+  );
+}
 
-      {/* How it works */}
-      <section className="landing-section" style={{ position: 'relative', zIndex: 10 }}>
-        <div className="landing-container">
-        <Reveal>
-          <div className="landing-section__header is-center">
-            <span className="landing-section__eyebrow">How it works</span>
-            <h2 className="landing-section__title" style={{ color: textColor }}>Four stages. One continuous workflow.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>From first prompt to a finished artifact — research, apps, plans, or a published page when you need one.</p>
-          </div>
-        </Reveal>
-        <div className="landing-card-grid">
-          {journey.map((s, i) => {
-            const Icon = s.icon;
-            return (
-              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
-              <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
-                <div className="landing-card__step" style={{ color: s.color }}>{s.step}</div>
-                <div className="landing-card__icon" style={{ background: `${s.color}1f`, border: `1px solid ${s.color}55` }}>
-                  <Icon size={22} color={s.color} />
-                </div>
-                <h3 style={{ color: textColor }}>{s.title}</h3>
-                <p style={{ color: subtextColor }}>{s.body}</p>
-              </div>
-              </Reveal>
-            );
-          })}
-        </div>
-        <Reveal delay={120}>
-          <div style={{ textAlign: 'center', marginTop: '36px' }}>
-            <button onClick={() => startBuild()} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '15px 32px', borderRadius: '14px', fontSize: '1.05rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 10px 28px rgba(249,115,22,0.4)' }}>
-              Start building free <ArrowRight size={19} strokeWidth={2.5} />
-            </button>
-          </div>
-        </Reveal>
-        </div>
-      </section>
+function FutureCapabilityVisual({ capability }) {
+  if (capability.id === 'cognitive') {
+    return (
+      <div className="q-future-visual q-future-visual--cognitive" aria-hidden="true">
+        <div className="q-route-input"><span>Task</span><b>Context</b><strong>Outcome</strong></div>
+        <div className="q-route-line"><i /></div>
+        <div className="q-route-output"><Sparkles size={15} /><span>AUTO ROUTE</span><b>Right model · tools · workflow</b></div>
+      </div>
+    );
+  }
 
-      {/* Success stories — placeholder until real builder quotes land */}
-      <section id="success-stories" className="landing-section landing-stories" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
-        <div className="landing-container">
-          <Reveal>
-            <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Success stories</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>Builders who finished something meaningful.</h2>
-              <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Researchers, students, and curious makers — not just web designers. Real stories from early Quantora sessions will live here.
-              </p>
-            </div>
-          </Reveal>
-          <div className="landing-stories__grid">
-            {successStorySlots.map((story, i) => {
-              const StoryIcon = story.icon;
-              return (
-                <Reveal key={story.title} delay={i * 80} style={{ height: '100%' }}>
-                  <article
-                    className={`landing-story-card${isLight ? ' is-light' : ''}`}
-                    style={{ background: cardBg, border: cardBorder }}
-                  >
-                    <span className="landing-story-card__status">{story.status}</span>
-                    <div className="landing-story-card__icon" style={{ background: `${story.color}18`, border: `1px solid ${story.color}44` }}>
-                      <StoryIcon size={20} color={story.color} />
-                    </div>
-                    <span className="landing-story-card__category" style={{ color: story.color }}>{story.category}</span>
-                    <h3 style={{ color: textColor }}>{story.title}</h3>
-                    <p style={{ color: subtextColor }}>{story.teaser}</p>
-                  </article>
-                </Reveal>
-              );
-            })}
-          </div>
-          <Reveal delay={120}>
-            <p className="landing-stories__footnote" style={{ color: subtextColor }}>
-              Early access is open. When you finish a thesis section, app, or project with Quantora,{' '}
-              <button
-                type="button"
-                onClick={() => (user ? onLaunchStudio() : onOpenAuth())}
-                style={{ background: 'none', border: 'none', padding: 0, color: '#ea580c', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}
-              >
-                your story could be featured here
-              </button>
-              .
-            </p>
-          </Reveal>
+  if (capability.id === 'ide') {
+    return (
+      <div className="q-future-visual q-future-visual--ide" aria-hidden="true">
+        <div className="q-ide-tabs"><span className="is-active">App.tsx</span><span>Preview</span><span>Terminal</span></div>
+        <div className="q-ide-body">
+          <div className="q-ide-files"><i /><i /><i /><i /></div>
+          <div className="q-ide-code"><i /><i /><i /><i /><i /></div>
         </div>
-      </section>
+        <div className="q-ide-terminal">✓ build passed · ready to ship</div>
+      </div>
+    );
+  }
 
-      {/* Platform */}
-      <section className="landing-section" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
-        <div className="landing-container">
-        <Reveal>
-          <div className="landing-section__header is-center">
-            <span className="landing-section__eyebrow">Platform</span>
-            <h2 className="landing-section__title" style={{ color: textColor }}>Engineered for reliability, not hype.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>Model routing, automated verification, and a privacy-first gateway — built to turn dialogue into dependable outcomes.</p>
-          </div>
-        </Reveal>
-        <div className="landing-card-grid">
-          {techPillars.map((t, i) => {
-            const Icon = t.icon;
-            return (
-              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
-              <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
-                <div className="landing-card__icon" style={{ background: `${t.color}1f`, border: `1px solid ${t.color}55` }}>
-                  <Icon size={22} color={t.color} />
-                </div>
-                <h3 style={{ color: textColor }}>{t.title}</h3>
-                <p style={{ color: subtextColor }}>{t.body}</p>
-              </div>
-              </Reveal>
-            );
-          })}
+  if (capability.id === 'automation') {
+    return (
+      <div className="q-future-visual q-future-visual--automation" aria-hidden="true">
+        <div className="q-flow-node"><span>TRIGGER</span><b>Weekly update</b></div>
+        <ArrowRight size={14} />
+        <div className="q-flow-node is-active"><span>WORK</span><b>Research + analyse</b></div>
+        <ArrowRight size={14} />
+        <div className="q-flow-node"><span>DELIVER</span><b>Verified report</b></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="q-future-visual q-future-visual--agents" aria-hidden="true">
+      <div><Bot size={15} /><span>Research</span><b>RUNNING</b></div>
+      <div><Bot size={15} /><span>Create</span><b>READY</b></div>
+      <div><ShieldCheck size={15} /><span>Verify</span><b>NEXT</b></div>
+    </div>
+  );
+}
+
+function FutureCapabilityCard({ capability, flipped, onFlip }) {
+  return (
+    <button
+      type="button"
+      className={`q-future-card${flipped ? ' is-flipped' : ''}`}
+      onClick={onFlip}
+      aria-pressed={flipped}
+    >
+      <span className="q-future-card__front">
+        <span className="q-future-card__meta"><span>{capability.number}</span><b>{capability.status}</b></span>
+        <span className="q-future-card__title">{capability.title}</span>
+        <span className="q-future-card__strapline">{capability.strapline}</span>
+        <FutureCapabilityVisual capability={capability} />
+      </span>
+      <span className="q-future-card__back">
+        <span>WHAT IT DOES</span>
+        <strong>{capability.title}</strong>
+        <p>{capability.description}</p>
+        <small>Click to return ↺</small>
+      </span>
+    </button>
+  );
+}
+
+function PclSignalSection() {
+  const signals = ['GOAL', 'CONTEXT', 'MEMORY', 'DECISIONS', 'ARTIFACTS', 'NEXT ACTION'];
+  const [flippedCapability, setFlippedCapability] = useState(null);
+
+  return (
+    <section className="q-pcl-story q-future-story">
+      <div className="q-pcl-story__copy q-future-copy q-shell">
+        <span>FROM IDEA TO DONE</span>
+        <div className="q-future-copy__grid">
+          <h2>Create what matters.<br /><em>Automate what repeats.</em></h2>
+          <p>Tell Quantora what you need. It chooses the right intelligence, tools and workflow for the job.</p>
         </div>
+      </div>
+
+      <div className="q-pcl-wave q-pcl-wave--compact" aria-label="Shared project context moving through Quantora">
+        <div className="q-pcl-wave__line" />
+        <div className="q-pcl-wave__track">
+          {signals.map((signal) => <span key={signal}>{signal}</span>)}
         </div>
-      </section>
+        <div className="q-pcl-wave__core"><strong>PCL</strong><span>Shared context across every surface</span></div>
+      </div>
 
-      {/* Studio modules — text-first, no heavy photography */}
-      <section className="landing-section" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
-        <div className="landing-container">
-        <Reveal>
-          <div className="landing-section__header">
-            <span className="landing-section__eyebrow">The studio</span>
-            <h2 className="landing-section__title" style={{ color: textColor }}>Four surfaces. One build loop.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>
-              Create, shape, explore, and protect — each module connects back to the same conversation, so you never lose context between idea and delivery.
-            </p>
-          </div>
-        </Reveal>
+      <div className="q-shell q-future-cards q-future-cards--below">
+        {FUTURE_CAPABILITIES.map((capability, index) => (
+          <FutureCapabilityCard
+            key={capability.id}
+            capability={capability}
+            flipped={flippedCapability === index}
+            onFlip={() => setFlippedCapability((current) => (current === index ? null : index))}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
-        <div className="landing-card-grid">
-          {flagshipCapabilities.map((item) => {
-            const ItemIcon = item.icon;
-            const isActive = item.id === selectedCapability.id;
-            return (
+function DoneWebsiteVisual() {
+  return (
+    <div className="q-done-visual q-done-visual--website" aria-label="Boutique website outcome preview">
+      <div className="q-browser-bar"><i /><i /><i /><span>vastra-boutique.com</span><b>LIVE</b></div>
+      <div className="q-store-nav"><strong>VASTRA</strong><span>New arrivals</span><span>Sarees</span><span>Ready-to-wear</span><b>Bag · 2</b></div>
+      <div className="q-store-hero"><small>FESTIVE EDIT</small><strong>Tradition, made contemporary.</strong><span>Shop the collection →</span></div>
+      <div className="q-store-products">
+        <div><i className="q-product q-product--one" /><span>Silk Saree</span><b>$128</b></div>
+        <div><i className="q-product q-product--two" /><span>Kurta Set</span><b>$92</b></div>
+        <div><i className="q-product q-product--three" /><span>Drape Dress</span><b>$110</b></div>
+      </div>
+      <div className="q-store-proof"><span>✓ Cart</span><span>✓ Checkout</span><span>✓ Responsive</span><span>✓ Published</span></div>
+    </div>
+  );
+}
+
+function DonePresentationVisual() {
+  return (
+    <div className="q-done-visual q-done-visual--presentation" aria-label="Cloud migration presentation outcome preview">
+      <div className="q-deck-top"><span>QUANTORA · CLOUD TRANSFORMATION</span><b>07 / 12</b></div>
+      <h4>Migration succeeds when the roadmap connects technology to business value.</h4>
+      <div className="q-deck-columns">
+        <div><small>01</small><strong>Stabilize</strong><span>Inventory · risk · landing zone</span></div>
+        <div><small>02</small><strong>Migrate</strong><span>Wave plan · factory · controls</span></div>
+        <div><small>03</small><strong>Modernize</strong><span>Platform · data · operating model</span></div>
+      </div>
+      <div className="q-deck-roadmap"><span>0–90 days</span><i /><span>3–9 months</span><i /><span>9–18 months</span></div>
+      <div className="q-deck-proof"><span>✓ Executive narrative</span><span>✓ Roadmap</span><span>✓ Architecture</span></div>
+    </div>
+  );
+}
+
+function DoneDocumentVisual() {
+  return (
+    <div className="q-done-visual q-done-visual--document" aria-label="Executive business document outcome preview">
+      <div className="q-doc-brand">QUANTORA</div>
+      <h4>AI adoption in insurance</h4>
+      <p>Executive decision brief</p>
+      <div className="q-doc-summary"><small>EXECUTIVE SUMMARY</small><strong>Prioritize high-volume, human-reviewed use cases first.</strong></div>
+      <div className="q-doc-grid">
+        <div><span>01</span><strong>Claims</strong><small>Assist triage and summarization</small></div>
+        <div><span>02</span><strong>Underwriting</strong><small>Surface evidence and risk signals</small></div>
+        <div><span>03</span><strong>Service</strong><small>Grounded customer responses</small></div>
+      </div>
+      <div className="q-doc-proof"><span>✓ Structured</span><span>✓ Decision-ready</span><span>✓ Ready to share</span></div>
+    </div>
+  );
+}
+
+function DoneVisual({ story }) {
+  if (story.id === 'website') return <DoneWebsiteVisual />;
+  if (story.id === 'presentation') return <DonePresentationVisual />;
+  return <DoneDocumentVisual />;
+}
+
+function PromptToActionShowcase() {
+  const [activeStory, setActiveStory] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveStory((value) => (value + 1) % DONE_STORIES.length);
+    }, 7200);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const story = DONE_STORIES[activeStory];
+
+  return (
+    <section className="q-done-showcase">
+      <div className="q-shell">
+        <div className="q-done-showcase__header">
+          <div><span>PROMPT TO ACTION</span><h2>This is what <em>done</em> looks like.</h2></div>
+          <div className="q-done-tabs" role="tablist" aria-label="Quantora outcome examples">
+            {DONE_STORIES.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
-                className={`landing-capability ${isLight ? 'is-light' : ''}${isActive ? ' is-active' : ''}`}
-                style={{ '--cap-accent': item.color, color: textColor }}
-                onClick={() => setActiveCapability(item.id)}
+                className={activeStory === index ? 'is-active' : ''}
+                onClick={() => setActiveStory(index)}
+                role="tab"
+                aria-selected={activeStory === index}
               >
-                <div className="landing-capability__label">{item.number} · {item.label}</div>
-                <h3>{item.title}</h3>
-                <p style={{ color: subtextColor }}>{item.description}</p>
-                <ItemIcon size={16} style={{ position: 'absolute', top: 16, right: 16, opacity: 0.35, color: item.color }} />
+                {item.tab}
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
 
-        <Reveal delay={60}>
-          <div className={`landing-capability-panel ${isLight ? 'is-light' : ''}`} style={{ '--panel-accent': selectedCapability.color }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', color: selectedCapability.color, fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              <SelectedCapabilityIcon size={16} />
-              {selectedCapability.number} / {selectedCapability.label}
-            </div>
-            <h3 style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', fontWeight: 600, margin: '0 0 10px', color: textColor }}>{selectedCapability.title}</h3>
-            <p style={{ margin: '0 0 20px', maxWidth: '560px', lineHeight: 1.6, color: subtextColor }}>{selectedCapability.description}</p>
-            <button
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: selectedCapability.color, color: '#fff', border: 'none',
-                padding: '12px 22px', borderRadius: '10px',
-                fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer'
-              }}
-            >
-              {selectedCapability.action} <ArrowRight size={16} />
-            </button>
+        <div className="q-done-stage" key={story.id}>
+          <div className="q-done-prompt">
+            <span>QUANTORA AI STUDIO · PROMPT</span>
+            <p>{story.prompt}</p>
+            <div><Sparkles size={15} /><strong>Quantora takes it forward</strong></div>
           </div>
-        </Reveal>
+
+          <div className="q-done-arrow" aria-hidden="true"><ArrowRight size={24} /></div>
+
+          <div className="q-done-output">
+            <div className="q-done-output__meta"><span>{story.label}</span><b>{story.status}</b></div>
+            <DoneVisual story={story} />
+            <div className="q-done-output__caption"><strong>{story.outcome}</strong><span>{story.proof}</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default function LandingPage({
+  onLaunchStudio,
+  onStartBuild,
+  onOpenAuth,
+  user,
+  themeMode,
+  setThemeMode,
+}) {
+  const isLight = themeMode === 'light';
+  void onStartBuild;
+
+  const openQuantora = () => enterQuantora({ user, onLaunchStudio, onOpenAuth });
+
+  return (
+    <main className={`q-landing${isLight ? ' q-landing--light' : ''}`}>
+      <header className="q-nav">
+        <button type="button" className="q-nav__brand" onClick={openQuantora} aria-label="Open Quantora">
+          <QuantoraFullLogoSvg height={32} isDark={!isLight} tagline="PROMPT TO ACTION" />
+        </button>
+
+        <div className="q-nav__actions">
+          <button
+            type="button"
+            className="q-icon-button"
+            onClick={() => setThemeMode?.(isLight ? 'dark' : 'light')}
+            aria-label={`Switch to ${isLight ? 'dark' : 'light'} mode`}
+          >
+            {isLight ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+          <button type="button" className="q-nav__cta" onClick={openQuantora}>
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={16} />
+          </button>
+        </div>
+      </header>
+
+      <section className="q-hero">
+        <div className="q-shell q-hero__copy">
+          <span className="q-kicker">IDEAS DESERVE MORE THAN ANSWERS</span>
+          <h1>From idea<br /><em>to done.</em></h1>
+          <p>Create what matters. Automate what repeats.</p>
+          <button type="button" className="q-hero__try" onClick={openQuantora}>
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={17} />
+          </button>
+        </div>
+
+        <div className="q-shell q-hero__stage">
+          <CognitiveStage />
         </div>
       </section>
 
-      {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
-    </div>
+      <section className="q-punch">
+        <div className="q-shell">
+          <span>THE DIFFERENCE</span>
+          <h2>No model picking. No prompt gymnastics.<br /><em>Just the right intelligence at the right moment.</em></h2>
+        </div>
+      </section>
+
+      <PclSignalSection />
+      <PromptToActionShowcase />
+
+      <section className="q-final">
+        <div className="q-shell q-final__inner">
+          <span>FROM IDEA TO DONE</span>
+          <h2>Start with what you want done.</h2>
+          <button type="button" onClick={openQuantora}>
+            {user ? 'Open Quantora' : 'Try Quantora now'} <ArrowRight size={18} />
+          </button>
+        </div>
+      </section>
+    </main>
   );
 }

@@ -5,6 +5,9 @@ import FeedbackWidget from './components/FeedbackWidget.jsx'
 import './index.css'
 import './styles/density.css'
 import './styles/studio-toolbar-cleanup.css'
+import './styles/pcl-motion.css'
+import './styles/future-capabilities.css'
+import './styles/landing-convergence.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

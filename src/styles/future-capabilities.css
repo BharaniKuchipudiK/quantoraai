@@ -1,0 +1,521 @@
+/* Tight investor-facing capability story. This layer is intentionally isolated
+ * from Studio/Office runtime styles so the public experiment remains reversible. */
+
+.q-future-story {
+  padding: clamp(64px, 6vw, 88px) 0 clamp(72px, 7vw, 96px) !important;
+}
+
+.q-future-copy {
+  position: relative;
+  z-index: 10;
+}
+
+.q-future-copy__grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+  align-items: end;
+  gap: clamp(32px, 5vw, 72px);
+}
+
+.q-future-copy__grid h2 {
+  margin: 0 !important;
+  max-width: 840px !important;
+  font-size: clamp(2.7rem, 5.2vw, 5rem) !important;
+  line-height: .98 !important;
+  letter-spacing: -.06em !important;
+}
+
+.q-future-copy__grid h2 em {
+  color: var(--q-accent);
+  font-style: normal;
+}
+
+.q-future-copy__grid p {
+  margin: 0 0 7px;
+  max-width: 460px;
+  color: var(--q-muted);
+  font-size: clamp(.92rem, 1.25vw, 1.08rem);
+  line-height: 1.58;
+  letter-spacing: -.02em;
+}
+
+.q-pcl-wave--future {
+  height: clamp(470px, 38vw, 540px) !important;
+  margin-top: clamp(30px, 4vw, 48px) !important;
+}
+
+.q-pcl-wave--future::before { animation-duration: 24s !important; }
+.q-pcl-wave--future::after { animation-duration: 32s !important; }
+
+.q-pcl-wave--future .q-pcl-wave__line {
+  top: 31% !important;
+}
+
+/* The card reveal is now the only travelling highlight. Removing the separate
+ * line pulse avoids two unrelated animations competing for attention. */
+.q-pcl-wave--future .q-pcl-wave__line::after {
+  display: none !important;
+}
+
+.q-pcl-wave--future .q-pcl-wave__core {
+  left: auto !important;
+  right: max(24px, calc((100vw - 1240px) / 2)) !important;
+  top: 23px !important;
+  transform: none !important;
+  padding: 8px 13px !important;
+}
+
+.q-pcl-wave--future .q-pcl-wave__track span {
+  animation-duration: 10.5s !important;
+}
+
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(1)  { left: 5%;  top: 20%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(2)  { left: 16%; top: 38%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(3)  { left: 28%; top: 13%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(4)  { left: 40%; top: 34%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(5)  { left: 54%; top: 15%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(6)  { left: 68%; top: 38%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(7)  { left: 79%; top: 18%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(8)  { left: 10%; top: 30%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(9)  { left: 23%; top: 44%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(10) { left: 48%; top: 25%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(11) { left: 63%; top: 11%; }
+.q-pcl-wave--future .q-pcl-wave__track span:nth-child(12) { left: 86%; top: 35%; }
+
+.q-future-cards {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  width: min(1240px, calc(100% - 48px));
+  margin: 0;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  z-index: 9;
+}
+
+.q-future-card {
+  position: relative;
+  min-width: 0;
+  min-height: 286px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.095);
+  border-radius: 18px;
+  outline: none;
+  background: rgba(11,13,18,.76);
+  color: var(--q-text);
+  box-shadow: 0 20px 45px rgba(0,0,0,.20);
+  backdrop-filter: blur(18px);
+  opacity: .74;
+  transform: translateY(6px) scale(.988);
+  transition: opacity 620ms ease, transform 760ms cubic-bezier(.2,.8,.2,1), border-color 620ms ease, background 620ms ease;
+}
+
+/* A single soft beam sweeps the active card. The card only comes forward as
+ * the beam reaches it, giving one readable cause-and-effect motion. */
+.q-future-card::before {
+  content: '';
+  position: absolute;
+  z-index: 20;
+  top: -16%;
+  bottom: -16%;
+  left: -34%;
+  width: 30%;
+  pointer-events: none;
+  opacity: 0;
+  transform: skewX(-15deg);
+  background: linear-gradient(90deg, transparent, rgba(255,139,65,.05), rgba(255,185,126,.20), rgba(255,106,0,.14), transparent);
+  filter: blur(1px);
+}
+
+.q-future-card.is-active::before {
+  animation: q-future-card-sweep 1.55s cubic-bezier(.22,.72,.2,1) both;
+}
+
+.q-future-card.is-active,
+.q-future-card:hover,
+.q-future-card:focus-visible {
+  opacity: 1;
+  border-color: rgba(255,106,0,.30);
+  background:
+    radial-gradient(circle at 50% 100%, rgba(255,106,0,.065), transparent 44%),
+    rgba(14,16,22,.91);
+}
+
+.q-future-card.is-active {
+  animation: q-future-card-turn 1.05s cubic-bezier(.2,.78,.2,1) both;
+}
+
+.q-future-card:hover,
+.q-future-card:focus-visible {
+  transform: translateY(0) scale(1);
+}
+
+.q-future-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--q-muted);
+  font-size: .53rem;
+  font-weight: 820;
+  letter-spacing: .11em;
+}
+
+.q-future-card__meta b {
+  color: var(--q-muted);
+  font-size: .48rem;
+}
+
+.q-future-card:first-child .q-future-card__meta b,
+.q-future-card.is-active .q-future-card__meta b {
+  color: var(--q-accent);
+}
+
+.q-future-card h3 {
+  margin: 20px 0 0;
+  font-size: clamp(1.12rem, 1.45vw, 1.42rem);
+  line-height: 1.04;
+  letter-spacing: -.04em;
+}
+
+.q-future-card > strong {
+  display: block;
+  margin-top: 7px;
+  color: color-mix(in srgb, var(--q-text) 88%, var(--q-muted));
+  font-size: .72rem;
+}
+
+/* Inactive cards stay clean. The explanation reveals only when the signal
+ * activates the card (or the visitor deliberately hovers/focuses it). */
+.q-future-card > p {
+  margin: 0;
+  max-height: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--q-muted);
+  font-size: .64rem;
+  line-height: 1.48;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: max-height 720ms ease, margin 520ms ease, opacity 520ms ease 260ms, transform 600ms ease 220ms;
+}
+
+.q-future-card.is-active > p,
+.q-future-card:hover > p,
+.q-future-card:focus-visible > p {
+  margin-top: 8px;
+  max-height: 70px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.q-future-visual {
+  height: 94px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+  transition: transform 720ms ease, opacity 620ms ease;
+}
+
+.q-future-card:not(.is-active):not(:hover):not(:focus-visible) .q-future-visual {
+  opacity: .72;
+  transform: translateY(5px);
+}
+
+/* Cognitive intelligence: no model picker, just an automatic route. */
+.q-future-visual--cognitive {
+  padding: 11px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 7px;
+}
+
+.q-route-input {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--q-muted);
+  font-size: .48rem;
+}
+
+.q-route-input span,
+.q-route-input b,
+.q-route-input strong {
+  padding: 4px 6px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  font-weight: 720;
+}
+
+.q-route-line {
+  position: relative;
+  height: 1px;
+  align-self: center;
+  background: linear-gradient(90deg, rgba(255,106,0,.12), rgba(255,106,0,.66), rgba(80,199,178,.26));
+}
+
+.q-route-line i {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--q-accent);
+  box-shadow: 0 0 14px rgba(255,106,0,.7);
+  animation: q-future-route 4.8s linear infinite;
+}
+
+.q-route-output {
+  display: grid;
+  grid-template-columns: 18px auto 1fr;
+  align-items: center;
+  gap: 5px;
+  font-size: .48rem;
+}
+
+.q-route-output svg { color: var(--q-accent); }
+.q-route-output span { color: var(--q-accent); font-weight: 850; letter-spacing: .07em; }
+.q-route-output b { color: var(--q-muted); font-weight: 620; text-align: right; }
+
+/* IDE product-vision surface. */
+.q-future-visual--ide {
+  display: grid;
+  grid-template-rows: 24px 1fr 19px;
+}
+
+.q-ide-tabs {
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  color: var(--q-muted);
+  font-size: .45rem;
+}
+
+.q-ide-tabs .is-active { color: var(--q-text); }
+
+.q-ide-body {
+  display: grid;
+  grid-template-columns: 28% 1fr;
+}
+
+.q-ide-files,
+.q-ide-code {
+  padding: 7px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.q-ide-files { border-right: 1px solid rgba(255,255,255,.06); }
+.q-ide-files i,
+.q-ide-code i {
+  display: block;
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(255,255,255,.12);
+}
+.q-ide-files i:nth-child(2) { width: 72%; }
+.q-ide-files i:nth-child(3) { width: 82%; }
+.q-ide-code i:nth-child(1) { width: 42%; background: rgba(255,106,0,.45); }
+.q-ide-code i:nth-child(2) { width: 78%; }
+.q-ide-code i:nth-child(3) { width: 61%; background: rgba(80,199,178,.25); }
+.q-ide-code i:nth-child(4) { width: 86%; }
+.q-ide-code i:nth-child(5) { width: 52%; }
+
+.q-ide-terminal {
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid rgba(255,255,255,.06);
+  color: var(--q-teal);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .43rem;
+}
+
+/* Workflow automation vision. */
+.q-future-visual--automation {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr 14px 1.15fr 14px 1fr;
+  align-items: center;
+  gap: 3px;
+}
+
+.q-future-visual--automation > svg { color: rgba(255,106,0,.6); }
+
+.q-flow-node {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+}
+
+.q-flow-node.is-active {
+  border-color: rgba(255,106,0,.28);
+  box-shadow: inset 2px 0 0 var(--q-accent);
+}
+
+.q-flow-node span,
+.q-flow-node b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-flow-node span { color: var(--q-muted); font-size: .38rem; letter-spacing: .08em; }
+.q-flow-node b { margin-top: 4px; font-size: .46rem; }
+
+/* Agent collaboration vision. */
+.q-future-visual--agents {
+  padding: 8px;
+  display: grid;
+  gap: 5px;
+}
+
+.q-future-visual--agents > div {
+  display: grid;
+  grid-template-columns: 17px 1fr auto;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 7px;
+  font-size: .45rem;
+}
+
+.q-future-visual--agents svg { color: var(--q-accent); }
+.q-future-visual--agents span { color: var(--q-text); }
+.q-future-visual--agents b { color: var(--q-muted); font-size: .36rem; letter-spacing: .07em; }
+.q-future-visual--agents > div:first-child b { color: var(--q-teal); }
+
+.q-landing--light .q-future-card {
+  background: rgba(255,255,255,.82);
+  border-color: rgba(17,18,23,.10);
+  box-shadow: 0 20px 45px rgba(17,18,23,.08);
+}
+
+.q-landing--light .q-future-card.is-active,
+.q-landing--light .q-future-card:hover,
+.q-landing--light .q-future-card:focus-visible {
+  background: rgba(255,255,255,.96);
+  border-color: rgba(234,88,12,.30);
+}
+
+.q-landing--light .q-future-visual,
+.q-landing--light .q-flow-node,
+.q-landing--light .q-route-input span,
+.q-landing--light .q-route-input b,
+.q-landing--light .q-route-input strong {
+  border-color: rgba(17,18,23,.08);
+  background-color: rgba(17,18,23,.02);
+}
+
+@keyframes q-future-route {
+  from { left: 0; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  to { left: calc(100% - 7px); opacity: 0; }
+}
+
+@keyframes q-future-card-sweep {
+  0% { left: -34%; opacity: 0; }
+  14% { opacity: .82; }
+  76% { opacity: .72; }
+  100% { left: 112%; opacity: 0; }
+}
+
+@keyframes q-future-card-turn {
+  0%, 14% {
+    transform: translateY(6px) perspective(900px) rotateX(0deg) scale(.988);
+  }
+  42% {
+    transform: translateY(1px) perspective(900px) rotateX(-1.6deg) scale(.997);
+  }
+  100% {
+    transform: translateY(0) perspective(900px) rotateX(0deg) scale(1);
+  }
+}
+
+@media (max-width: 1020px) {
+  .q-future-copy__grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .q-future-copy__grid p { max-width: 660px; }
+
+  .q-pcl-wave--future {
+    height: 650px !important;
+  }
+
+  .q-future-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .q-future-card { min-height: 248px; }
+}
+
+@media (max-width: 700px) {
+  .q-future-story {
+    padding-top: 56px !important;
+    padding-bottom: 64px !important;
+  }
+
+  .q-pcl-wave--future {
+    height: 430px !important;
+  }
+
+  .q-pcl-wave--future .q-pcl-wave__core {
+    right: 18px !important;
+  }
+
+  .q-pcl-wave--future .q-pcl-wave__core span { display: none !important; }
+
+  .q-future-cards {
+    left: 0;
+    bottom: 16px;
+    width: 100%;
+    padding: 0 20px 5px;
+    transform: none;
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .q-future-cards::-webkit-scrollbar { display: none; }
+
+  .q-future-card {
+    flex: 0 0 min(82vw, 310px);
+    min-height: 278px;
+    scroll-snap-align: center;
+  }
+
+  .q-pcl-wave--future .q-pcl-wave__track span:nth-child(n+7) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .q-route-line i { animation: none !important; left: calc(100% - 7px); opacity: 1; }
+  .q-future-card,
+  .q-future-card.is-active,
+  .q-future-card::before,
+  .q-pcl-wave--future::before,
+  .q-pcl-wave--future::after,
+  .q-pcl-wave--future .q-pcl-wave__track span {
+    animation: none !important;
+    transition: none !important;
+  }
+  .q-future-card.is-active { transform: translateY(0) scale(1); }
+}
