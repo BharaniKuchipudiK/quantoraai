@@ -77,7 +77,7 @@
     },
     {
       "source": "/api/chat",
-      "destination": "/api/chat"
+      "destination": "/api/chat-gateway"
     },
     {
       "source": "/((?!api/.*|preview/.*).*)",
