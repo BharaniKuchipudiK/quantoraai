@@ -12,9 +12,9 @@ const AFFORDABILITY_PATTERNS = [
 ];
 
 const CURRENCY_ALIASES: Array<{ regex: RegExp; currency: string }> = [
-  { regex: /\bSGD\b|S\$/i, currency: "SGD" },
+  { regex: /\bSGD\b|(?<![A-Z])S\$/i, currency: "SGD" },
   { regex: /\bUSD\b|US\$/i, currency: "USD" },
-  { regex: /\bAUD\b|A\$/i, currency: "AUD" },
+  { regex: /\bAUD\b|(?<![A-Z])A\$/i, currency: "AUD" },
   { regex: /\bGBP\b|£/i, currency: "GBP" },
   { regex: /\bEUR\b|€/i, currency: "EUR" },
   { regex: /\bINR\b|₹/i, currency: "INR" },
@@ -45,7 +45,7 @@ function amountFromMessage(message: string, currency: string | null): number | n
   if (currency) {
     const aliases = CURRENCY_ALIASES
       .filter((entry) => entry.currency === currency)
-      .map((entry) => entry.regex.source.replace(/^\\b|\\b$/g, ""));
+      .map((entry) => entry.regex.source);
     const aliasGroup = `(?:${aliases.join("|")})`;
     const before = message.match(new RegExp(`${aliasGroup}\\s*${amountPattern}`, "i"));
     if (before) return normalizeAmount(before[1], before[2]);
