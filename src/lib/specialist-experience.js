@@ -77,12 +77,16 @@ function firstTextElement(predicate) {
     .find((element) => element.children.length === 0 && predicate(element.textContent?.trim() || '')) || null;
 }
 
+function setText(element, value) {
+  if (element && element.textContent !== value) element.textContent = value;
+}
+
 function setDisplay(element, display) {
   if (!element) return;
   if (!element.dataset.quantoraOriginalDisplay) {
     element.dataset.quantoraOriginalDisplay = element.style.display || '__empty__';
   }
-  element.style.display = display;
+  if (element.style.display !== display) element.style.display = display;
 }
 
 function hideInternalModelControls() {
@@ -107,7 +111,7 @@ function applyHero(config) {
   const prompt = genericPrompt || existingDomainPrompt;
   if (!prompt) return;
 
-  prompt.textContent = config.hero;
+  setText(prompt, config.hero);
   prompt.style.marginBottom = '10px';
 
   const hero = prompt.parentElement;
@@ -124,7 +128,7 @@ function applyHero(config) {
     support.dataset.quantoraSpecialistSupport = 'true';
     prompt.insertAdjacentElement('afterend', support);
   }
-  support.textContent = config.supporting;
+  setText(support, config.supporting);
   Object.assign(support.style, {
     margin: '0 auto 18px',
     maxWidth: '620px',
@@ -139,7 +143,7 @@ function applyHero(config) {
     capability.dataset.quantoraSpecialistCapabilities = 'true';
     support.insertAdjacentElement('afterend', capability);
   }
-  capability.textContent = config.capabilities;
+  setText(capability, config.capabilities);
   Object.assign(capability.style, {
     margin: '0 auto 4px',
     fontSize: '0.78rem',
@@ -171,52 +175,63 @@ function applyHeader(config) {
 
   const title = header.querySelector('h2');
   if (title) {
-    title.textContent = config.label;
+    setText(title, config.label);
     title.style.opacity = '1';
     title.style.fontSize = '1.05rem';
   }
 
   const mainColumn = header.parentElement;
-  if (mainColumn) {
-    mainColumn.style.paddingTop = '6px';
-  }
+  if (mainColumn) mainColumn.style.paddingTop = '6px';
 }
 
 function applySidebar(config) {
-  exactTextElements('Specialized Agents').forEach((element) => {
-    element.textContent = 'Advisors';
-  });
+  exactTextElements('Specialized Agents').forEach((element) => setText(element, 'Advisors'));
 
   const travelLabels = [...exactTextElements('Travel Guide AI'), ...exactTextElements('Travel Advisor')];
-  travelLabels.forEach((label) => {
-    label.textContent = 'Travel Advisor';
+  travelLabels.forEach((label) => setText(label, 'Travel Advisor'));
+
+  document.querySelectorAll('[data-quantora-active-specialist]').forEach((row) => {
+    if (row.dataset.quantoraActiveSpecialist === config.domain) return;
+    delete row.dataset.quantoraActiveSpecialist;
+    row.style.background = 'transparent';
+    row.style.borderColor = 'transparent';
+    row.style.fontWeight = '500';
   });
 
   for (const label of exactTextElements(config.label)) {
     const row = label.parentElement;
     if (!row) continue;
     row.dataset.quantoraActiveSpecialist = config.domain;
-    row.style.background = 'rgba(37, 99, 235, 0.10)';
-    row.style.borderColor = 'rgba(37, 99, 235, 0.28)';
+    row.style.background = config.domain === 'travel' ? 'rgba(37, 99, 235, 0.10)' : 'rgba(249, 115, 22, 0.10)';
+    row.style.borderColor = config.domain === 'travel' ? 'rgba(37, 99, 235, 0.28)' : 'rgba(249, 115, 22, 0.28)';
     row.style.fontWeight = '700';
   }
 }
 
 function applyInput(config) {
-  const textarea = document.querySelector('textarea[placeholder*="Ask Quantora"], textarea[placeholder*="Where would you like"], textarea[placeholder*="financial"], textarea[placeholder*="research"]');
-  if (textarea) textarea.setAttribute('placeholder', config.placeholder);
+  const textarea = document.querySelector('textarea[placeholder*="Ask Quantora"], textarea[placeholder*="Where would you like"], textarea[placeholder*="financial"], textarea[placeholder*="research"], textarea[placeholder*="learn"]');
+  if (textarea && textarea.getAttribute('placeholder') !== config.placeholder) {
+    textarea.setAttribute('placeholder', config.placeholder);
+  }
 }
 
+let applying = false;
 function applyExperience() {
-  const domain = currentDomain();
-  const config = domain ? DOMAIN_CONFIG[domain] : null;
-  document.documentElement.dataset.quantoraDomain = domain || '';
-  if (!config) return;
+  if (applying) return;
+  applying = true;
+  try {
+    const domain = currentDomain();
+    const config = domain ? DOMAIN_CONFIG[domain] : null;
+    document.documentElement.dataset.quantoraDomain = domain || '';
+    if (!config) return;
 
-  applySidebar(config);
-  applyHeader(config);
-  applyHero(config);
-  applyInput(config);
+    applySidebar(config);
+    applyHeader(config);
+    applyHero(config);
+    applyInput(config);
+  } finally {
+    applying = false;
+  }
 }
 
 function specialistFromClick(target) {
@@ -277,13 +292,18 @@ export function installSpecialistExperience() {
     requestAnimationFrame(applyExperience);
     setTimeout(applyExperience, 80);
 
-    if (window.innerWidth < 768) {
-      // Let the existing responsive sidebar close itself on the next genuine turn.
-      document.activeElement?.blur?.();
-    }
+    if (window.innerWidth < 768) document.activeElement?.blur?.();
   }, true);
 
-  const observer = new MutationObserver(() => requestAnimationFrame(applyExperience));
+  let scheduled = false;
+  const observer = new MutationObserver(() => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      applyExperience();
+    });
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
   requestAnimationFrame(applyExperience);
 }
