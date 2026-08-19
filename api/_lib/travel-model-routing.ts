@@ -12,8 +12,7 @@ export function shouldPreferTravelConversationProvider(body: any): boolean {
   const modelId = typeof body?.modelId === "string" ? body.modelId : "";
   return body?.studioDomain === "travel"
     && modelId.startsWith("gemini")
-    && !body?.userKey
-    && !isLiveTravelToolTurn(body);
+    && !body?.userKey;
 }
 
 export function routeTravelConversationBody(body: any) {
@@ -23,5 +22,11 @@ export function routeTravelConversationBody(body: any) {
     modelId: TRAVEL_CONVERSATION_MODEL_ID,
     modelName: TRAVEL_CONVERSATION_MODEL_NAME,
     fallbackFrom: body.modelId,
+    // The Gemini function-call continuation path is currently unsafe for
+    // Travel: quota/model roulette plus missing thought signatures can leave
+    // the UI frozen after a provider tool has already run. Until the direct
+    // provider gateway owns execution end-to-end, keep every Travel turn on
+    // the stable conversational provider instead of re-entering that loop.
+    travelToolExecutionDeferred: isLiveTravelToolTurn(body),
   };
 }
