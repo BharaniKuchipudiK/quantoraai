@@ -1,3 +1,5 @@
+import { normalizeCognitiveLedger, type CognitiveLedgerEntry } from "./cognitive-ledger.js";
+
 const MAX_SESSION_ID = 128;
 const MAX_TEXT = 500;
 const MAX_ITEMS = 40;
@@ -12,6 +14,7 @@ export type OutcomeState = {
   decisions: Array<{ value: string; rationale?: string; sourceTurn?: string | null }>;
   artifacts: Array<{ type: string; ref: string; verifiedAt?: string | null }>;
   nextActions: Array<{ action: string; risk: "low" | "medium" | "high" }>;
+  cognitiveLedger: CognitiveLedgerEntry[];
   memory: { scope: "session" | "project" | "account"; consented: boolean };
   safety: { policyVersion?: string; unresolvedFlags: string[] };
 };
@@ -54,7 +57,7 @@ export function normalizeOutcomeSessionId(value: unknown): string | null {
 export function emptyOutcomeState(): OutcomeState {
   return {
     definitionOfDone: [], constraints: [], assumptions: [], openQuestions: [],
-    decisions: [], artifacts: [], nextActions: [],
+    decisions: [], artifacts: [], nextActions: [], cognitiveLedger: [],
     memory: { scope: "session", consented: false },
     safety: { unresolvedFlags: [] },
   };
@@ -110,6 +113,7 @@ export function normalizeOutcomeState(value: unknown): OutcomeState {
       const action = text(item.action);
       return action ? [{ action, risk: enumValue(item.risk, ["low", "medium", "high"] as const, "low") }] : [];
     }),
+    cognitiveLedger: normalizeCognitiveLedger(raw.cognitiveLedger),
     memory: {
       scope: enumValue(raw.memory?.scope, ["session", "project", "account"] as const, "session"),
       consented: raw.memory?.consented === true,
