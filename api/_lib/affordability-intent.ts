@@ -4,6 +4,11 @@ export type AffordabilityIntent = {
   currency: string | null;
 };
 
+export type ExplicitMoney = {
+  amount: number | null;
+  currency: string | null;
+};
+
 const AFFORDABILITY_PATTERNS = [
   /\bcan\s+(?:i|we)\s+afford\b/i,
   /\bcould\s+(?:i|we)\s+afford\b/i,
@@ -63,6 +68,12 @@ function amountFromMessage(message: string, currency: string | null): number | n
   return null;
 }
 
+export function parseExplicitMoney(message: unknown): ExplicitMoney {
+  if (typeof message !== "string" || !message.trim()) return { amount: null, currency: null };
+  const currency = currencyFromMessage(message);
+  return { currency, amount: amountFromMessage(message, currency) };
+}
+
 export function parseAffordabilityIntent(message: unknown): AffordabilityIntent {
   if (typeof message !== "string" || !message.trim()) {
     return { matched: false, proposedCost: null, currency: null };
@@ -70,10 +81,10 @@ export function parseAffordabilityIntent(message: unknown): AffordabilityIntent 
   const matched = AFFORDABILITY_PATTERNS.some((pattern) => pattern.test(message));
   if (!matched) return { matched: false, proposedCost: null, currency: null };
 
-  const currency = currencyFromMessage(message);
+  const money = parseExplicitMoney(message);
   return {
     matched: true,
-    currency,
-    proposedCost: amountFromMessage(message, currency),
+    currency: money.currency,
+    proposedCost: money.amount,
   };
 }
