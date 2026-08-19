@@ -14,7 +14,8 @@ export type OutcomeState = {
   decisions: Array<{ value: string; rationale?: string; sourceTurn?: string | null }>;
   artifacts: Array<{ type: string; ref: string; verifiedAt?: string | null }>;
   nextActions: Array<{ action: string; risk: "low" | "medium" | "high" }>;
-  cognitiveLedger: CognitiveLedgerEntry[];
+  /** Optional on input for backward compatibility; normalizers always emit an array. */
+  cognitiveLedger?: CognitiveLedgerEntry[];
   memory: { scope: "session" | "project" | "account"; consented: boolean };
   safety: { policyVersion?: string; unresolvedFlags: string[] };
 };
@@ -63,7 +64,7 @@ export function emptyOutcomeState(): OutcomeState {
   };
 }
 
-export function normalizeOutcomeState(value: unknown): OutcomeState {
+export function normalizeOutcomeState(value: unknown): OutcomeState & { cognitiveLedger: CognitiveLedgerEntry[] } {
   const raw = value && typeof value === "object" ? value as Record<string, any> : {};
   const goalStatement = text(raw.goal?.statement);
   const understandingStatement = text(raw.understanding?.statement, 1_000);
