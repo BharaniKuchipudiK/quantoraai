@@ -511,7 +511,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
 
 
-                  {user?.email === 'bharanik.h@gmail.com' && (
+                  {user?.isAdmin && (
                     <div
                       onClick={() => {
                         setActiveTab('dashboard');
@@ -533,7 +533,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       }}
                     >
                       <Activity size={16} color="#10b981" />
-                      <span>Admin Analytics Dashboard</span>
+                      <span>Admin Dashboard</span>
                     </div>
                   )}
 
