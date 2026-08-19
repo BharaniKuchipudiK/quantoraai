@@ -59,8 +59,14 @@ function currentDomain() {
 
 function setCurrentDomain(domain) {
   try {
-    if (domain) localStorage.setItem(ACTIVE_DOMAIN_KEY, domain);
-    else localStorage.removeItem(ACTIVE_DOMAIN_KEY);
+    if (domain) {
+      localStorage.setItem(ACTIVE_DOMAIN_KEY, domain);
+      // A generic Studio preference must never suppress a specialist landing
+      // state. Specialists always own their own welcome experience.
+      localStorage.setItem('quantora_hide_welcome', 'false');
+    } else {
+      localStorage.removeItem(ACTIVE_DOMAIN_KEY);
+    }
   } catch {
     // Domain state is a UX enhancement; storage failure must not block Studio.
   }
@@ -82,6 +88,22 @@ function setDisplay(element, display) {
     element.dataset.quantoraOriginalDisplay = element.style.display || '__empty__';
   }
   if (element.style.display !== display) element.style.display = display;
+}
+
+function restoreDisplay(element) {
+  if (!element?.dataset?.quantoraOriginalDisplay) return;
+  const original = element.dataset.quantoraOriginalDisplay;
+  element.style.display = original === '__empty__' ? '' : original;
+  delete element.dataset.quantoraOriginalDisplay;
+}
+
+function hideGlobalStudioHeader() {
+  const appHeader = document.querySelector('.app-shell--studio .app-header');
+  if (appHeader) setDisplay(appHeader, 'none');
+}
+
+function restoreGlobalStudioHeader() {
+  document.querySelectorAll('.app-header[data-quantora-original-display]').forEach(restoreDisplay);
 }
 
 function hideInternalModelControls() {
@@ -109,14 +131,102 @@ function hideInternalModelControls() {
   });
 }
 
+function profileFirstName() {
+  const image = document.querySelector('.app-header img[alt]');
+  const alt = image?.getAttribute('alt')?.trim();
+  if (!alt || alt.toLowerCase() === 'user') return '';
+  return alt.split(/\s+/)[0] || '';
+}
+
+function findSpecialistChatStream() {
+  const resetButton = [...document.querySelectorAll('button')]
+    .find((button) => button.textContent?.trim() === 'Reset Chat');
+  const header = resetButton?.parentElement?.parentElement || null;
+  return header?.nextElementSibling || null;
+}
+
+function ensureFallbackLanding(config) {
+  const stream = findSpecialistChatStream();
+  if (!stream) return;
+
+  let landing = stream.querySelector('[data-quantora-specialist-landing]');
+  const meaningfulChildren = [...stream.children].filter((child) => {
+    if (child === landing) return false;
+    return (child.textContent?.trim() || '').length > 0;
+  });
+
+  if (meaningfulChildren.length > 0) {
+    landing?.remove();
+    return;
+  }
+
+  if (!landing) {
+    landing = document.createElement('div');
+    landing.dataset.quantoraSpecialistLanding = config.domain;
+    const title = document.createElement('h1');
+    title.dataset.quantoraSpecialistLandingTitle = 'true';
+    const support = document.createElement('p');
+    support.dataset.quantoraSpecialistLandingSupport = 'true';
+    const capabilities = document.createElement('div');
+    capabilities.dataset.quantoraSpecialistLandingCapabilities = 'true';
+    landing.append(title, support, capabilities);
+    stream.prepend(landing);
+  }
+
+  const firstName = profileFirstName();
+  const title = landing.querySelector('[data-quantora-specialist-landing-title]');
+  const support = landing.querySelector('[data-quantora-specialist-landing-support]');
+  const capabilities = landing.querySelector('[data-quantora-specialist-landing-capabilities]');
+
+  setText(title, firstName ? `Welcome back, ${firstName}. ${config.hero}` : `Welcome back. ${config.hero}`);
+  setText(support, config.supporting);
+  setText(capabilities, config.capabilities);
+
+  Object.assign(landing.style, {
+    width: '100%',
+    maxWidth: '780px',
+    margin: 'auto',
+    padding: '24px 28px 18px',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+  });
+  Object.assign(title.style, {
+    margin: '0 0 12px',
+    color: 'var(--text-primary, #fff)',
+    fontSize: 'clamp(1.9rem, 3.2vw, 2.8rem)',
+    lineHeight: '1.12',
+    letterSpacing: '-0.035em',
+    fontWeight: '800',
+  });
+  Object.assign(support.style, {
+    margin: '0 auto 18px',
+    maxWidth: '650px',
+    color: 'var(--text-secondary, #94a3b8)',
+    fontSize: '1rem',
+    lineHeight: '1.65',
+  });
+  Object.assign(capabilities.style, {
+    margin: '0 auto',
+    color: config.domain === 'travel' ? '#60a5fa' : '#fb923c',
+    fontSize: '0.8rem',
+    fontWeight: '700',
+    letterSpacing: '0.02em',
+  });
+}
+
 function applyHero(config) {
   const genericPrompt = exactTextElements('What would you like to build today?')[0];
   const existingDomainPrompt = Object.values(DOMAIN_CONFIG)
     .map((item) => item.hero)
     .flatMap((hero) => exactTextElements(hero))[0];
   const prompt = genericPrompt || existingDomainPrompt;
-  if (!prompt) return;
 
+  if (!prompt) {
+    ensureFallbackLanding(config);
+    return;
+  }
+
+  findSpecialistChatStream()?.querySelector('[data-quantora-specialist-landing]')?.remove();
   setText(prompt, config.hero);
   prompt.style.marginBottom = '10px';
 
@@ -127,6 +237,12 @@ function applyHero(config) {
   hero.style.paddingBottom = '26px';
   hero.style.marginTop = '8px';
   hero.style.maxWidth = '760px';
+
+  const greeting = [...hero.querySelectorAll('h1')][0];
+  if (greeting) {
+    const firstName = profileFirstName();
+    setText(greeting, firstName ? `Welcome back, ${firstName}` : 'Welcome back');
+  }
 
   let support = hero.querySelector('[data-quantora-specialist-support]');
   if (!support) {
@@ -158,17 +274,16 @@ function applyHero(config) {
     color: config.domain === 'travel' ? '#2563eb' : '#f97316',
   });
 
-  // The generic empty state advertises models. In a specialist workspace the
-  // user is buying an outcome, not choosing infrastructure.
   [...hero.children].forEach((child) => {
     const text = child.textContent?.trim() || '';
-    if (child === prompt || child === support || child === capability) return;
+    if (child === prompt || child === support || child === capability || child === greeting) return;
     if (text.includes('Do not show this next time')) setDisplay(child, 'none');
     if (child.querySelectorAll('h3').length > 0) setDisplay(child, 'none');
   });
 }
 
 function applyHeader(config) {
+  hideGlobalStudioHeader();
   hideInternalModelControls();
 
   const resetButton = [...document.querySelectorAll('button')]
@@ -228,8 +343,13 @@ function applyExperience() {
   try {
     const domain = currentDomain();
     const config = domain ? DOMAIN_CONFIG[domain] : null;
+    const studioShell = document.querySelector('.app-shell--studio');
     document.documentElement.dataset.quantoraDomain = domain || '';
-    if (!config) return;
+
+    if (!config || !studioShell) {
+      restoreGlobalStudioHeader();
+      return;
+    }
 
     applySidebar(config);
     applyHeader(config);
@@ -292,9 +412,6 @@ export function installSpecialistExperience() {
     const specialist = specialistFromClick(event.target);
     if (!specialist) return;
 
-    // The legacy Studio onClick sends a fake prompt such as "Act as a world-class
-    // travel planner". Capture the click before React and turn it into a mode
-    // switch instead. The user's first visible message must be their own words.
     event.preventDefault();
     event.stopPropagation();
     if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
