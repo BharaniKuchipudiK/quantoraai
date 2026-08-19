@@ -60,14 +60,15 @@ function datedWithinHorizon(node: UserContextNode, asOfMs: number, horizonMs: nu
  * Deterministic financial guardrail for the first Quantora vertical slice.
  *
  * Canonical context keys:
- * - finance.liquid_cash              aggregate currently available liquid cash
- * - finance.minimum_reserve          cash floor the user does not want touched
- * - finance.expected_inflow.*        dated/known inflows within the horizon
- * - finance.commitment.*             dated/known obligations within the horizon
+ * - finance.liquid_cash                   aggregate currently available liquid cash
+ * - finance.minimum_reserve               cash floor the user does not want touched
+ * - finance.commitments_reviewed_through  evidence that obligations were reviewed through the horizon
+ * - finance.expected_inflow.*             dated/known inflows within the horizon
+ * - finance.commitment.*                  dated/known obligations within the horizon
  *
  * This deliberately does not use portfolio value, market gains, or model
- * judgement as spendable cash. If core cash/reserve facts are missing, it fails
- * closed with insufficient_data rather than inventing an affordability answer.
+ * judgement as spendable cash. Absence of commitment rows is never interpreted
+ * as zero obligations unless coverage explicitly confirms the review horizon.
  */
 export function evaluateAffordability({
   graph,
@@ -111,12 +112,23 @@ export function evaluateAffordability({
   const active = activeUserContextNodes(graph, { asOf: asOfDate, minConfidence: 0.8 });
   const liquidNode = latestNode(userContextNodesForKey(active, "finance.liquid_cash", { asOf: asOfDate, minConfidence: 0.8 }));
   const reserveNode = latestNode(userContextNodesForKey(active, "finance.minimum_reserve", { asOf: asOfDate, minConfidence: 0.8 }));
+  const commitmentCoverageNode = latestNode(userContextNodesForKey(
+    active,
+    "finance.commitments_reviewed_through",
+    { asOf: asOfDate, minConfidence: 0.8 },
+  ));
 
   const liquidCash = liquidNode ? amountOf(liquidNode, normalizedCurrency) : null;
   const minimumReserve = reserveNode ? amountOf(reserveNode, normalizedCurrency) : null;
+  const commitmentCoverageMs = commitmentCoverageNode?.value.date
+    ? Date.parse(commitmentCoverageNode.value.date)
+    : Number.NaN;
   const missing: string[] = [];
   if (liquidCash === null) missing.push(`finance.liquid_cash in ${normalizedCurrency}`);
   if (minimumReserve === null) missing.push(`finance.minimum_reserve in ${normalizedCurrency}`);
+  if (!Number.isFinite(commitmentCoverageMs) || commitmentCoverageMs < horizonMs) {
+    missing.push(`finance.commitments_reviewed_through >= ${horizon.toISOString().slice(0, 10)}`);
+  }
 
   const inflowNodes = userContextNodesForKey(active, "finance.expected_inflow", {
     asOf: asOfDate,
@@ -153,6 +165,7 @@ export function evaluateAffordability({
   const consideredNodeIds = [
     ...(liquidNode ? [liquidNode.id] : []),
     ...(reserveNode ? [reserveNode.id] : []),
+    ...(commitmentCoverageNode ? [commitmentCoverageNode.id] : []),
     ...inflowNodes.filter((node) => amountOf(node, normalizedCurrency) !== null).map((node) => node.id),
     ...commitmentNodes.filter((node) => amountOf(node, normalizedCurrency) !== null).map((node) => node.id),
     ...unpricedCommitments.map((node) => node.id),
@@ -173,8 +186,8 @@ export function evaluateAffordability({
       consideredNodeIds: [...new Set(consideredNodeIds)],
       missing,
       reasons: [
-        "Quantora is missing one or more required financial guardrails.",
-        "It will not substitute portfolio value, market performance, inferred income, or an assumed FX rate for spendable cash.",
+        "Quantora is missing one or more required financial guardrails or coverage checks.",
+        "It will not assume unrecorded commitments are zero, or substitute portfolio value, market performance, inferred income, or an assumed FX rate for spendable cash.",
       ],
     };
   }
@@ -191,6 +204,7 @@ export function evaluateAffordability({
     `Liquid cash: ${normalizedCurrency} ${liquidCash.toFixed(2)}.`,
     `Known inflows through ${horizon.toISOString().slice(0, 10)}: ${normalizedCurrency} ${expectedInflows.toFixed(2)}.`,
     `Known commitments through ${horizon.toISOString().slice(0, 10)}: ${normalizedCurrency} ${commitments.toFixed(2)}.`,
+    `Commitments reviewed through: ${commitmentCoverageNode!.value.date!.slice(0, 10)}.`,
     `Protected reserve: ${normalizedCurrency} ${minimumReserve.toFixed(2)}.`,
     `Safe discretionary spend before this purchase: ${normalizedCurrency} ${safeSpend.toFixed(2)}.`,
   ];
