@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import chat from "./chat.js";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { requireActiveSession } from "./_lib/authz.js";
@@ -10,12 +11,21 @@ import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeSta
 import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources, normalizeProjectSessionIds } from "./_lib/project-state.js";
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
 import { saveUserFeedback } from "./_lib/feedback-store.js";
+import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 const FEEDBACK_RATE_LIMIT_PER_MINUTE = 5;
 const FEEDBACK_MAX_CHARS = 500;
 
 export default async function handler(req: any, res: any) {
+  // Vercel rewrites /api/chat here to preserve the twelve-function budget.
+  // The deterministic decision gate gets first refusal; every non-matching
+  // request is delegated to the proven chat runtime unchanged.
+  if (req.query?.route === "chat") {
+    if (await handleAffordabilityDecision(req, res)) return;
+    return chat(req, res);
+  }
+
   applyCors(req, res);
 
   if (req.method === 'OPTIONS') {

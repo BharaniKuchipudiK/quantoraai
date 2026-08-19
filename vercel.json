@@ -77,7 +77,7 @@
     },
     {
       "source": "/api/chat",
-      "destination": "/api/chat"
+      "destination": "/api/pipeline?route=chat"
     },
     {
       "source": "/((?!api/.*|preview/.*).*)",

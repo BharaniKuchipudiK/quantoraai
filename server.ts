@@ -12,6 +12,7 @@ import authSession from "./api/auth/session.js";
 import authVerify from "./api/auth/verify.js";
 import autocomplete from "./api/autocomplete.js";
 import chat from "./api/chat.js";
+import { handleAffordabilityDecision } from "./api/_lib/chat-decision-gateway.js";
 import deploy from "./api/deploy.js";
 import domains from "./api/domains.js";
 import enhance from "./api/enhance.js";
@@ -103,7 +104,10 @@ async function startServer() {
   route("all", "/api/auth/verify", authVerify);
   route("all", "/api/auth/session", authSession);
   route("all", "/api/auth/logout", authLogout);
-  route("all", "/api/chat", chat);
+  route("all", "/api/chat", async (req, res) => {
+    if (await handleAffordabilityDecision(req, res)) return;
+    return chat(req, res);
+  });
   route("all", "/api/autocomplete", autocomplete);
   route("all", "/api/enhance", enhance);
   route("all", "/api/generate-office", generateOffice);
