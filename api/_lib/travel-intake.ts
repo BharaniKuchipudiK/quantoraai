@@ -28,8 +28,12 @@ function userHistoryText(body: any): string[] {
     .filter(Boolean);
 }
 
+function userTurns(body: any): string[] {
+  return [...userHistoryText(body).slice(-8), String(body?.message || '').trim()].filter(Boolean);
+}
+
 export function travelUserTranscript(body: any): string {
-  return [...userHistoryText(body).slice(-8), String(body?.message || '').trim()].filter(Boolean).join('\n');
+  return userTurns(body).join('\n');
 }
 
 function classifyTravelText(text: string): DirectTravelIntent {
@@ -51,10 +55,6 @@ export function detectDirectTravelIntent(body: any): DirectTravelIntent {
   const explicit = classifyTravelText(current);
   if (explicit) return explicit;
 
-  // A clarification answer such as "Return 3 September" still belongs to the
-  // active provider flow. Walk recent user turns newest-first and recover the
-  // most recent explicit travel-search intent without letting assistant text
-  // contaminate the decision.
   const recent = userHistoryText(body).slice(-6).reverse();
   for (const turn of recent) {
     const inferred = classifyTravelText(turn);
@@ -107,22 +107,32 @@ function addDays(isoDate: string, days: number): string {
 function cleanLocation(value: string): string {
   return value
     .replace(/\([^)]*\)/g, ' ')
-    .replace(/\b(?:on|departing|leaving|returning|back|for)\s+\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+[\s\S]*$/i, '')
+    .replace(/\b(?:on|departing|leaving|returning|return|back|for)\s+\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+[\s\S]*$/i, '')
     .replace(/\bfor\s+\d+\s+(?:nights?|days?)\b[\s\S]*$/i, '')
     .replace(/[,.!?]+$/g, '')
     .trim();
 }
 
 function extractRoute(text: string): { origin?: string; destination?: string } {
-  const toFrom = text.match(/\bto\s+(.+?)\s+from\s+(.+?)(?=\s+(?:on|departing|leaving|returning|back|for\s+\d+\s+(?:nights?|days?))\b|$)/i);
+  const toFrom = text.match(/\bto\s+(.+?)\s+from\s+(.+?)(?=\s+(?:on|departing|depart|leaving|returning|return|back|for\s+\d+\s+(?:nights?|days?))\b|$)/i);
   if (toFrom) {
     return { destination: cleanLocation(toFrom[1]), origin: cleanLocation(toFrom[2]) };
   }
-  const fromTo = text.match(/\bfrom\s+(.+?)\s+to\s+(.+?)(?=\s+(?:on|departing|leaving|returning|back|for\s+\d+\s+(?:nights?|days?))\b|$)/i);
+  const fromTo = text.match(/\bfrom\s+(.+?)\s+to\s+(.+?)(?=\s+(?:on|departing|depart|leaving|returning|return|back|for\s+\d+\s+(?:nights?|days?))\b|$)/i);
   if (fromTo) {
     return { origin: cleanLocation(fromTo[1]), destination: cleanLocation(fromTo[2]) };
   }
   return {};
+}
+
+function extractRouteFromTurns(body: any): { origin?: string; destination?: string } {
+  const resolved: { origin?: string; destination?: string } = {};
+  for (const turn of userTurns(body)) {
+    const route = extractRoute(turn);
+    if (route.origin) resolved.origin = route.origin;
+    if (route.destination) resolved.destination = route.destination;
+  }
+  return resolved;
 }
 
 function extractReturnDate(text: string, now: Date): string | null {
@@ -150,7 +160,7 @@ export type FlightDraft = {
 
 export function buildFlightSearchDraft(body: any, now: Date = new Date()): FlightDraft {
   const transcript = travelUserTranscript(body);
-  const route = extractRoute(transcript);
+  const route = extractRouteFromTurns(body);
   const departureDate = parseTravelDate(transcript, now);
   const returnDate = extractReturnDate(transcript, now);
   const nights = extractNights(transcript);
@@ -184,7 +194,7 @@ export type HotelDraft = {
 
 export function buildHotelSearchDraft(body: any, now: Date = new Date()): HotelDraft {
   const transcript = travelUserTranscript(body);
-  const route = extractRoute(transcript);
+  const route = extractRouteFromTurns(body);
   const locationMatch = transcript.match(/\b(?:hotel|hotels|stay|stays|accommodation|resort|room|rooms)\s+(?:in|at|near)\s+([^\n,.!?]+?)(?=\s+(?:from|on|for\s+\d+\s+nights?)\b|$)/i);
   const location = cleanLocation(locationMatch?.[1] || route.destination || '');
   const checkInDate = parseTravelDate(transcript, now);
@@ -210,6 +220,6 @@ export function buildHotelSearchDraft(body: any, now: Date = new Date()): HotelD
 export function attractionLocation(body: any): string | null {
   const transcript = travelUserTranscript(body);
   const inMatch = transcript.match(/\b(?:attractions?|activities|tours?|things to do)\s+(?:in|at|near)\s+([^\n,.!?]+)/i);
-  const route = extractRoute(transcript);
+  const route = extractRouteFromTurns(body);
   return cleanLocation(inMatch?.[1] || route.destination || '') || null;
 }
