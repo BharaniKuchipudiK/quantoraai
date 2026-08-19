@@ -8,7 +8,10 @@ export type PclActionAssessment = PclActionContext & {
   reasonCode: string;
 };
 
-const HARD_EXTERNAL = /\b(?:send|email|message|post|publish|submit|book|purchase|buy|pay|transfer|invite|revoke|cancel|terminate|merge|release|deploy\s+(?:to\s+)?production|ship\s+(?:to\s+)?production)\b/i;
+// Match explicit side-effect verbs, not nouns. "Draft an email" and "write a
+// release note" are reversible internal work; "send the email" and "deploy to
+// production" cross the human-approval boundary.
+const HARD_EXTERNAL = /\b(?:send|submit|publish|invite|revoke|cancel|terminate|merge)\b|\b(?:deploy|ship|release)\s+(?:to\s+)?production\b|\bpost\s+(?:it|this|that|to)\b|\b(?:email|message)\s+(?:the|a|an|him|her|them|customer|client|team|vendor|supplier)\b/i;
 const DESTRUCTIVE = /\b(?:delete|drop|destroy|erase|purge|wipe|remove\s+(?:the\s+)?(?:production|account|database|data)|reset\s+(?:the\s+)?(?:production|database))\b/i;
 const TRANSACTIONAL = /\b(?:pay|purchase|buy|transfer|book|subscribe|order|charge|refund|withdraw)\b/i;
 const REVERSIBLE_INTERNAL = /\b(?:draft|write|rewrite|summari[sz]e|analy[sz]e|compare|plan|recommend|prepare|generate|create|edit|revise|refactor|preview|simulate|mock|outline)\b/i;
