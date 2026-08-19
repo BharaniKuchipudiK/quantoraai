@@ -6,6 +6,7 @@ import {
   formatPclCognitiveContract,
   type PclCognitiveAssessment,
 } from "./pcl-cognitive-kernel.js";
+import { evaluateProofOfDone, formatOutcomeContractForPrompt } from "./outcome-contract.js";
 
 /**
  * Thin integration seam between the existing Outcome Navigator and PCL.
@@ -32,8 +33,9 @@ export function formatPclNavigatorDirective(
   decision: ConversationDecision,
 ): string {
   const governance = formatPclCognitiveContract(assessPclNavigatorTurn(snapshot, decision));
+  const outcomeContract = formatOutcomeContractForPrompt(snapshot);
   const ledger = formatCognitiveLedgerForPrompt(snapshot.cognitiveLedger);
-  return governance + ledger;
+  return governance + outcomeContract + ledger;
 }
 
 /** Safe additive metadata for observability and future evaluation. */
@@ -44,6 +46,7 @@ export function publicPclNavigatorMetadata(
   const cognition = assessPclNavigatorTurn(snapshot, decision);
   const action = inferPclActionContext(snapshot, decision);
   const activeLedger = activeCognitiveLedgerEntries(snapshot.cognitiveLedger);
+  const proof = evaluateProofOfDone(snapshot);
   return {
     kernelVersion: cognition.kernelVersion,
     outcomeAlignment: cognition.outcomeAlignment,
@@ -54,6 +57,9 @@ export function publicPclNavigatorMetadata(
     confidence: cognition.confidence,
     completion: cognition.completion,
     evidenceCoverage: cognition.evidenceCoverage,
+    proofOfDoneStatus: proof.status,
+    proofOfDoneScore: proof.score,
+    proofOfDoneBlockers: proof.blockers.slice(0, 6),
     sideEffect: action.sideEffect,
     actionReasonCode: action.reasonCode,
     projectContextAvailable: cognition.continuity.projectContextAvailable,
