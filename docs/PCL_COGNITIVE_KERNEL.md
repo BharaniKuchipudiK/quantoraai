@@ -1,137 +1,126 @@
-# PCL Cognitive Kernel
+# Quantora PCL Cognitive Kernel
 
-## Purpose
+Status: Phase 2 implementation on `feat/pcl-cognitive-kernel-v2`
 
-PCL is Quantora's provider-neutral continuity and judgment layer. Models generate language and candidate work; PCL owns the durable objective, the state of the outcome, the human-control boundary, and the evidence required to call work done.
+## North star
 
-The architectural promise is:
+**PCL does not merely remember the conversation. PCL remembers the mission.**
 
-> Safe + reversible + confident -> act. Ambiguous but reversible -> make the smallest reasonable assumption and inform. Consequential, hard-to-reverse, unsafe, or conflicted -> keep the human as governor.
+Quantora's canonical cognitive loop is:
 
-PCL must remain independent of any individual model provider, Office renderer, IDE/runtime, or tool integration.
+**Understand → Judge → Act → Verify → Remember**
 
-## Existing foundations to preserve
+Models are replaceable generators. Adapters execute capabilities. PCL owns outcome continuity, judgment history, human governance, execution authorization and evidence.
 
-The existing Quantora architecture already provides the right building blocks:
+## One brain, not two
 
-- Outcome State: goal, understanding, definition of done, constraints, assumptions, questions, decisions, artifacts, next actions, memory scope and safety.
-- Project Outcome Graph: deterministic aggregation of durable project context across sessions and project resources.
-- Outcome Navigator: provider-neutral conversation snapshot plus explainable moves such as answer, clarify, recommend, challenge, act, verify, recover, anticipate and close.
-- Listening Layer: product signals such as preview, publish, user choice and detected outcome gaps.
-- Model routing: provider/model selection remains downstream of PCL.
+There is one authoritative PCL memory path:
 
-PCL Cognitive Kernel composes these capabilities; it does not create a second memory system or a second intent router.
+1. Session Outcome State — the most specific current-session outcome and consented continuity.
+2. Project Outcome Graph — cross-chat project continuity assembled from trusted project/session state.
+3. Cognitive Ledger — append-oriented judgment history for decisions, rejections, corrections, approvals, evidence, artifact versions and outcome transitions.
 
-## Cognitive loop
+Ephemeral browser `SessionContext` is a fallback/hint, not durable authority.
 
-```text
-OBSERVE
-  user turn + project + session + artifacts + tool/UI signals
-    |
-UNDERSTAND
-  objective + current state + definition of done + known/inferred context
-    |
-JUDGE
-  alignment + confidence + risk + reversibility + conflict + missing critical context
-    |
-GOVERN
-  none | inform | approve | choose
-    |
-ACT
-  best capability/model/tool selected downstream
-    |
-VERIFY
-  evidence + quality + definition of done
-    |
-REMEMBER
-  durable decisions, corrections, evidence and outcome progress
-    +-----> next turn
-```
+The former local `usePCLMemory` model-health store is not PCL mission memory. It is now `useModelExperienceMemory`; the legacy hook is only a deprecated compatibility shim. Model failures, preference scores and recent negative-feedback snippets may influence failover/experience, but may not create mission facts, user approvals, decisions, rejections, corrections or evidence.
 
-## Human-in-the-loop contract
+## Session PCL runtime
 
-Human participation is not a permanent approval dialog. It is proportional to consequence.
+Normal user-facing chat carries a bounded `sessionId`, `projectId`, and `memoryConsented` flag to `/api/chat`.
 
-| Situation | Gate | Behavior |
-| --- | --- | --- |
-| Low risk, easy to reverse, sufficient confidence | `none` | Act now; lead with the result. |
-| Medium impact, partial reversibility, or low-confidence but safe work | `inform` | Proceed with the smallest reasonable assumption; state only the material assumption. |
-| Material ambiguity or conflicting confirmed direction | `choose` | Ask one concise question that resolves the highest-impact uncertainty. |
-| High risk, hard to reverse, safety-sensitive or consequential external action | `approve` | Do not execute until explicit approval. |
-| Outcome achieved and evidenced | no new work | Close cleanly; do not manufacture follow-up work. |
+Durable Session Outcome Memory is explicit and revocable:
 
-This is the intended human quality: Quantora should neither interrogate the user before harmless work nor silently take consequential action.
+- existing consent is honored;
+- explicit user remember intent enables durable memory for that session;
+- explicit forget/revoke intent disables consent immediately and requests deletion;
+- without consent, no new durable Session Outcome State is written.
 
-## Durable moat: Outcome ownership, not model ownership
+At stream completion, control markers are normalized once. Only compact continuity is projected into Outcome State:
 
-PCL should accumulate structured outcome intelligence that remains useful when the underlying model changes:
+- assistant-produced continuity is inferred;
+- direct user answers to a material question may be confirmed;
+- raw transcripts are not copied into the Cognitive Ledger;
+- existing server ledger history is preserved and reconciled server-side.
 
-1. Objective and definition of done.
-2. Confirmed decisions and the rationale behind them.
-3. Constraints and commitments.
-4. Confirmed versus inferred assumptions.
-5. Rejected directions so Quantora does not repeatedly propose paths the user already rejected.
-6. Artifact lineage, verification and restore points.
-7. Evidence supporting claims of completion.
-8. Current next action and its risk/reversibility.
-9. Corrections and outcome gaps from prior turns.
-10. User approval boundaries and memory scope.
+Synthetic internal worker prompts, such as the Architect subcall used by the build swarm, deliberately receive no Session Outcome identity and therefore cannot author durable PCL memory.
 
-A later state-schema phase should add explicit rejected-option, evidence-ledger and artifact-lineage records without removing the current Outcome State contract.
+## Project PCL
 
-## Provider boundary
+The server loads Project Outcome Graph context directly for signed-in project chat. Authority order is:
 
-PCL decides **what should happen next and how much human control is required**.
+**Session Outcome State → Project Outcome Graph → ephemeral SessionContext**
 
-The capability router decides **which capability should perform it**.
+A new chat can resume project goals, decisions, constraints, active rejections/corrections, artifacts, evidence and unfinished actions without turning old browser text into authority.
 
-The model router decides **which available model is best for that capability under quality/cost/latency constraints**.
+## Cognitive governance
 
-This keeps all model vendors replaceable. Model names must never become PCL business logic.
+The Outcome Navigator still selects the dialogue move. PCL adds consequence-aware governance:
 
-## Verification and "done"
+- `NONE` — safe/reversible work proceeds autonomously;
+- `INFORM` — medium-impact/reversible work proceeds under supervision;
+- `CHOOSE` — one material ambiguity is resolved by the human;
+- `APPROVE` — consequential, transactional, external or hard-to-reverse work waits for exact human approval.
 
-PCL may only call an outcome complete when the definition of done and available evidence support it. A model asserting "done" is not evidence.
+Action intent and execution permission are separate. `Send`, `pay`, `delete`, `deploy`, etc. are recognized as action intent first; PCL then decides whether the side effect is permitted.
 
-Examples of evidence include:
+Examples:
 
-- verified Office artifact
-- successful build/test report
-- confirmed deployment URL
-- tool/provider confirmation for an external action
-- user confirmation for a subjective acceptance criterion
+- draft an email → autonomous internal work;
+- send the email → external/hard-to-reverse → approve;
+- deploy to staging/preview → medium/partial → inform;
+- deploy to production → external/hard → approve;
+- pay or delete production data → high/hard → approve.
 
-## Evolution path
+## Cognitive Ledger
 
-### Phase 1 - Governance kernel
+Ledger event types:
 
-Pure deterministic assessment of outcome alignment, autonomy, human gate, risk, reversibility, completion, evidence coverage, missing critical context and explicit conflicts. No additional model call.
+- `decision`
+- `rejection`
+- `correction`
+- `approval`
+- `evidence`
+- `artifact_version`
+- `outcome_transition`
 
-### Phase 2 - Navigator integration
+Normal Outcome State saves cannot replace or erase prior server ledger history. Trusted state transitions deterministically derive new events for goal changes, decisions, rejected assumptions, artifact creation/verification, definition-of-done confirmation and achieved outcomes.
 
-Append the kernel's provider-neutral governance contract to the existing Outcome Navigator directive. Preserve the existing conversation move and verification paths.
+Explicit human decision/rejection/correction/approval events use an authenticated append path; the server stamps `actor=user`.
 
-### Phase 3 - Cognitive ledger
+## Execution authorization
 
-Persist decisions, rejected directions, evidence, corrections, approvals and artifact lineage as versioned events with source/provenance.
+Prompt wording is not an execution boundary.
 
-### Phase 4 - Semantic judge only when needed
+Executable external adapters use the shared `pcl-side-effect-guard` before contacting their provider. The guard derives a stable `actionRef` from the exact scope, tool, consequence and consequence-bearing arguments/content fingerprint.
 
-Use a cheap model call only for genuinely semantic ambiguity that deterministic state cannot resolve. Never classify every turn by default.
+Current integrations:
 
-### Phase 5 - Cross-surface execution
+- Vercel production publish — exact human confirmation required;
+- Vercel shareable preview — supervised/reversible, no production-style approval gate;
+- GCP Cloud Run deploy — exact human confirmation required;
+- Vercel custom-domain attachment — exact human confirmation required.
 
-Use the same PCL state and governance across chat, research, Office, IDE/build, agents and workflow automation.
+When consented Session Outcome Memory exists, matching approval and provider evidence are recorded against the same `actionRef`. Existing matching evidence blocks accidental replay. Without memory consent, a first-party confirmation may authorize only the current request and is not written to a hidden secondary store.
 
-## Non-negotiable invariants
+## Cost and provider model
 
-- No provider hardcoding in PCL.
-- Authoritative server state outranks browser-supplied memory.
-- One material question at a time.
-- Safe reversible work should not be blocked by unnecessary intake.
-- High-risk/hard-to-reverse actions require explicit approval.
-- Assumptions are not silently promoted to facts.
-- A prior rejected direction must not be reintroduced as if new.
-- Completion requires evidence.
-- Failures produce recovery/correction state, not fabricated success.
-- When the outcome is achieved, stop.
+PCL adds no additional LLM call per normal turn and no new model/provider dependency. Cognition, state projection, action classification and authorization checks are deterministic application logic around the existing provider call.
+
+No second database is introduced. Existing Outcome State / Project persistence remains the authoritative durable store.
+
+## Regression protection
+
+The CI test runner explicitly executes the PCL TypeScript behavioral tests in addition to legacy tests. Protected Golden Transactions cover:
+
+- safe autonomy;
+- consequential approval;
+- staging vs production;
+- project isolation and cross-chat continuity;
+- durable rejection/correction lineage;
+- server-maintained ledger integrity;
+- browser-context non-forgeability;
+- explicit session-memory consent and revocation;
+- synthetic-worker isolation;
+- shared adapter execution authorization.
+
+See `docs/pcl/PCL_CONSTITUTION.md` and `docs/pcl/GOLDEN_TRANSACTIONS.md` for the protected production contract.
