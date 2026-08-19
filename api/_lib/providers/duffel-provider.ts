@@ -29,6 +29,17 @@ function headers(): Record<string, string> {
   };
 }
 
+function normalizedText(value: unknown): string {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 function asNumber(value: unknown): number | null {
   const parsed = Number.parseFloat(String(value ?? ''));
   return Number.isFinite(parsed) ? parsed : null;
@@ -99,24 +110,30 @@ export const duffelProvider: TravelProvider = {
     const places = Array.isArray(payload?.data) ? payload.data : [];
     if (!places.length) return null;
 
-    const normalizedQuery = clean.toLowerCase();
-    const exact = places.find((place: any) =>
-      String(place?.iata_code || '').toLowerCase() === normalizedQuery ||
-      String(place?.name || '').toLowerCase() === normalizedQuery ||
-      String(place?.city_name || '').toLowerCase() === normalizedQuery,
-    );
-    const place = exact || places[0];
-    const iataCode = String(place?.iata_code || place?.iata_city_code || '').trim().toUpperCase();
+    const normalizedQuery = normalizedText(clean);
+    const isIata = /^[a-z]{3}$/i.test(clean);
+    const exact = places.find((place: any) => {
+      const iataCode = String(place?.iata_code || '').trim().toLowerCase();
+      const iataCityCode = String(place?.iata_city_code || '').trim().toLowerCase();
+      if (isIata && (iataCode === normalizedQuery || iataCityCode === normalizedQuery)) return true;
+      return normalizedText(place?.name) === normalizedQuery || normalizedText(place?.city_name) === normalizedQuery;
+    });
+
+    // Never trust the first fuzzy result for a natural-language place. A wrong
+    // airport is worse than asking the traveller to clarify.
+    if (!exact) return null;
+
+    const iataCode = String(exact?.iata_code || exact?.iata_city_code || '').trim().toUpperCase();
     if (!iataCode) return null;
 
     return {
       provider: 'duffel',
-      name: String(place?.name || place?.city_name || clean),
+      name: String(exact?.name || exact?.city_name || clean),
       iataCode,
-      type: place?.type === 'city' ? 'city' : 'airport',
-      countryCode: place?.iata_country_code || null,
-      latitude: typeof place?.latitude === 'number' ? place.latitude : null,
-      longitude: typeof place?.longitude === 'number' ? place.longitude : null,
+      type: exact?.type === 'city' ? 'city' : 'airport',
+      countryCode: exact?.iata_country_code || null,
+      latitude: typeof exact?.latitude === 'number' ? exact.latitude : null,
+      longitude: typeof exact?.longitude === 'number' ? exact.longitude : null,
     };
   },
 
