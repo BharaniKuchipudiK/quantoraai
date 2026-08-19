@@ -140,6 +140,65 @@ test("verifier flags interrogation and unsupported external-action claims", () =
   assert.ok(unsupported.issues.some((item) => item.code === "external_action_without_evidence"));
 });
 
+test("verifier flags a Done claim when Proof of Done is not verified", () => {
+  const snapshot = buildConversationSnapshot({
+    outcomeRecord: {
+      sessionId: "session-done-1",
+      version: 1,
+      state: {
+        goal: { statement: "Create the executive deck", status: "confirmed" },
+        definitionOfDone: [{ criterion: "Deck is verified", confirmed: false }],
+        constraints: [], assumptions: [], openQuestions: [], decisions: [], artifacts: [], nextActions: [],
+        memory: { scope: "session", consented: true }, safety: { unresolvedFlags: [] },
+      },
+    },
+    message: "Continue.",
+  });
+  const decision = { ...chooseNextConversationMove(snapshot), move: "answer" as const };
+  const verification = verifyConversationResponse({
+    snapshot,
+    decision,
+    response: "The presentation is complete and ready for you to use.",
+  });
+
+  assert.equal(verification.status, "fail");
+  assert.ok(verification.issues.some((item) => item.code === "outcome_done_without_proof"));
+});
+
+test("verifier permits a Done claim when the Outcome Contract is fully verified", () => {
+  const snapshot = buildConversationSnapshot({
+    outcomeRecord: {
+      sessionId: "session-done-2",
+      version: 3,
+      state: {
+        goal: { statement: "Create the executive deck", status: "achieved" },
+        definitionOfDone: [{ criterion: "Deck is verified", confirmed: true }],
+        constraints: [], assumptions: [], openQuestions: [], decisions: [],
+        artifacts: [{ type: "presentation", ref: "artifact:pptx:verified", verifiedAt: "2026-08-19T04:00:00.000Z" }],
+        nextActions: [],
+        cognitiveLedger: [{
+          id: "done-evidence",
+          type: "evidence",
+          statement: "Presentation verification passed",
+          actor: "tool",
+          status: "active",
+          ref: "artifact:pptx:verified",
+        }],
+        memory: { scope: "session", consented: true }, safety: { unresolvedFlags: [] },
+      },
+    },
+    message: "Is it complete?",
+  });
+  const decision = { ...chooseNextConversationMove(snapshot), move: "answer" as const };
+  const verification = verifyConversationResponse({
+    snapshot,
+    decision,
+    response: "The presentation is complete and ready for you to use.",
+  });
+
+  assert.ok(!verification.issues.some((item) => item.code === "outcome_done_without_proof"));
+});
+
 test("recovery verifier checks the missing value rather than response length", () => {
   const snapshot = buildConversationSnapshot({
     message: "Continue",

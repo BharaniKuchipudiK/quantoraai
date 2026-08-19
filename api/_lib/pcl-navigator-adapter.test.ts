@@ -74,15 +74,20 @@ test("preview deployment can proceed under supervision", () => {
   assert.equal(cognition.autonomy, "supervised");
 });
 
-test("PCL directive is provider neutral and metadata is bounded", () => {
+test("PCL directive carries governance plus the living Outcome Contract", () => {
   const { snapshot, decision } = turn("Draft the analysis now.");
   const directive = formatPclNavigatorDirective(snapshot, decision);
   const metadata = publicPclNavigatorMetadata(snapshot, decision);
 
   assert.match(directive, /PCL COGNITIVE GOVERNANCE/);
+  assert.match(directive, /PCL OUTCOME CONTRACT/);
+  assert.match(directive, /Proof of Done:/);
   assert.doesNotMatch(directive, /Gemini|Claude|OpenAI|Ollama|Cursor/i);
   assert.equal(metadata.humanGate, "none");
   assert.equal(metadata.sideEffect, "internal");
+  assert.equal(metadata.proofOfDoneStatus, "not_ready");
+  assert.ok(typeof metadata.proofOfDoneScore === "number");
+  assert.ok(Array.isArray(metadata.proofOfDoneBlockers));
   assert.ok(!("reasons" in metadata));
   assert.ok(!("conflicts" in metadata));
 });
