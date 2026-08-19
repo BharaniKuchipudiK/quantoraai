@@ -66,16 +66,10 @@ export function inferPclActionContext(
     };
   }
 
-  if (HARD_EXTERNAL.test(message)) {
-    return {
-      description: message,
-      risk: stateRisk === "high" ? "high" : "medium",
-      reversibility: "hard",
-      sideEffect: "external",
-      reasonCode: "irreversible_external_side_effect",
-    };
-  }
-
+  // Preview/staging/test/sandbox changes are deliberately checked before the
+  // generic publish/deploy matcher: they are externally visible but normally
+  // reversible, so PCL should supervise rather than demand production-style
+  // approval on every iteration.
   if (PREVIEW_DEPLOY.test(message)) {
     return {
       description: message,
@@ -83,6 +77,16 @@ export function inferPclActionContext(
       reversibility: "partial",
       sideEffect: "internal",
       reasonCode: "reversible_environment_change",
+    };
+  }
+
+  if (HARD_EXTERNAL.test(message)) {
+    return {
+      description: message,
+      risk: stateRisk === "high" ? "high" : "medium",
+      reversibility: "hard",
+      sideEffect: "external",
+      reasonCode: "irreversible_external_side_effect",
     };
   }
 
