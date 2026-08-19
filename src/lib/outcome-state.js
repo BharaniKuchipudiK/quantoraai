@@ -26,6 +26,8 @@ export function outcomeStateToConversationContext(state) {
 /**
  * Translate legacy UI notes into the trusted schema. Model-authored notes stay
  * inferred. Only direct user answers, choices, or edits set confirmed=true.
+ * Cognitive Ledger is preserved verbatim here; authoritative normalization is
+ * performed server-side before any durable save.
  */
 export function contextToOutcomeState(context, {
   existingState = {}, sourceTurn = null, confirmed = false, consented = true,
@@ -57,6 +59,7 @@ export function contextToOutcomeState(context, {
     decisions: existingState.decisions || [],
     artifacts: existingState.artifacts || [],
     nextActions: existingState.nextActions || [],
+    cognitiveLedger: Array.isArray(existingState.cognitiveLedger) ? existingState.cognitiveLedger : [],
     memory: { scope: existingState.memory?.scope || 'session', consented },
     safety: existingState.safety || { unresolvedFlags: [] },
   };

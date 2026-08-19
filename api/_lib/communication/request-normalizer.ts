@@ -1,10 +1,12 @@
 import { normalizeSessionContext, type ListeningSignal, type SessionContext } from "../session-context.js";
+import { normalizeProjectId } from "../project-state.js";
 import { normalizeStudioDomain, type StudioDomain } from "../studio-domains.js";
 import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
 
 export type CommunicationRequest = {
   message: string;
   sessionId: string | null;
+  projectId: string | null;
   studioMode: StudioMode;
   studioDomain: StudioDomain | null;
   taskCategory: string;
@@ -27,10 +29,14 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const attachedImages = Array.isArray(body?.attachedImages)
     ? body.attachedImages.filter((value: unknown): value is string => typeof value === "string" && value.startsWith("data:image/")).slice(0, 4)
     : [];
+  const nestedProjectId = body?.sessionContext && typeof body.sessionContext === "object"
+    ? body.sessionContext.projectId
+    : null;
 
   return {
     message: typeof body?.message === "string" ? body.message : "",
     sessionId: typeof body?.sessionId === "string" && body.sessionId.trim() ? body.sessionId : null,
+    projectId: normalizeProjectId(body?.projectId ?? nestedProjectId),
     studioMode,
     studioDomain,
     taskCategory: typeof body?.taskCategory === "string" && body.taskCategory.trim() ? body.taskCategory : "general",

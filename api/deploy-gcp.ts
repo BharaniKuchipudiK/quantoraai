@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { ownedProjectName } from './_lib/publish-policy.js';
+import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
 import { GoogleAuth } from 'google-auth-library';
 import archiver from 'archiver';
 import { Writable } from 'stream';
@@ -25,6 +27,17 @@ const zipVFS = async (vfs: Record<string, { content: string }>): Promise<Buffer>
   });
 };
 
+function vfsFingerprint(vfs: Record<string, { content: string }>): string {
+  const hash = createHash('sha256');
+  for (const path of Object.keys(vfs).sort()) {
+    hash.update(path);
+    hash.update('\0');
+    hash.update(String(vfs[path]?.content || ''));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'POST,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -42,7 +55,7 @@ export default async function handler(req: any, res: any) {
   const { sessionUser } = auth.value;
 
   try {
-    const { vfs, projectName = 'quantora-app' } = req.body || {};
+    const { vfs, projectName = 'quantora-app', sessionId } = req.body || {};
     if (!vfs || typeof vfs !== 'object') return res.status(400).json({ error: "No VFS provided for deployment" });
 
     const projectId = process.env.GCP_PROJECT_ID;
@@ -54,6 +67,29 @@ export default async function handler(req: any, res: any) {
     }
 
     const safeName = ownedProjectName(projectName, sessionUser.sub).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const confirmation = pclHumanConfirmation(req, ['gcp-deploy-button']);
+    const pcl = await guardPclSideEffect({
+      userSub: sessionUser.sub,
+      sessionId,
+      humanConfirmed: confirmation.confirmed,
+      confirmationSource: confirmation.source,
+      description: `Deploy ${safeName} to GCP Cloud Run`,
+      tool: 'gcp.cloud-run.deploy',
+      args: { projectName: safeName, contentHash: vfsFingerprint(vfs) },
+      scope: `gcp:${projectId}:${safeName}`,
+      risk: 'high',
+      reversibility: 'hard',
+      sideEffect: 'external',
+      requiresApproval: true,
+    });
+    if (!pcl.canExecute) {
+      return res.status(pcl.status === 'require_approval' ? 428 : 409).json({
+        error: pcl.status === 'require_approval'
+          ? 'GCP deployment requires explicit confirmation immediately before execution.'
+          : 'PCL blocked this deployment because the exact side effect is not currently authorized.',
+        pcl: { status: pcl.status, actionRef: pcl.actionRef, reasonCode: pcl.reasonCode },
+      });
+    }
     
     // Auth
     const googleAuth = new GoogleAuth({
@@ -157,10 +193,25 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({ error: buildData.error?.message || "Failed to trigger Cloud Build." });
     }
 
+    const buildId = buildData.metadata.build.id;
+    const pclEvidenceRecorded = await recordPclExecutionEvidence({
+      userSub: sessionUser.sub,
+      sessionId,
+      actionRef: pcl.actionRef,
+      statement: 'GCP Cloud Run deployment build triggered',
+      evidenceRef: buildId,
+      sourceTurn: 'gcp-deploy-result',
+    });
+
     return res.status(200).json({
-      buildId: buildData.metadata.build.id,
+      buildId,
       projectName: safeName,
-      status: buildData.metadata.build.status
+      status: buildData.metadata.build.status,
+      pcl: {
+        actionRef: pcl.actionRef,
+        authorization: pcl.status,
+        evidenceRecorded: pclEvidenceRecorded,
+      },
     });
 
   } catch (error: any) {

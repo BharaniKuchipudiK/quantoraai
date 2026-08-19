@@ -1,3 +1,4 @@
+import { mergeCognitiveLedgers, type CognitiveLedgerEntry } from "./cognitive-ledger.js";
 import { normalizeOutcomeState, type OutcomeState } from "./outcome-state.js";
 
 export const DEFAULT_PROJECT_ID = "project-personal";
@@ -50,6 +51,7 @@ export type ProjectContextPack = {
   openQuestions: string[];
   nextActions: Array<{ action: string; risk: "low" | "medium" | "high" }>;
   artifacts: Array<{ type: string; ref: string; title?: string; verifiedAt?: string | null }>;
+  cognitiveLedger: CognitiveLedgerEntry[];
   sessionCount: number;
   updatedAt: string | number | null;
 };
@@ -185,6 +187,12 @@ export function buildProjectContextPack({
     .filter((item) => item.material)
     .map((item) => item.question)));
 
+  // Project PCL merges session judgment histories oldest -> newest so a later
+  // correction/supersede wins without deleting the historical decision trail.
+  const cognitiveLedger = mergeCognitiveLedgers(
+    [...normalizedOutcomes].reverse().map((source) => source.state.cognitiveLedger || []),
+  );
+
   const nextActionSeen = new Set<string>();
   const nextActions = normalizedOutcomes.flatMap((source) => source.state.nextActions)
     .filter((item) => {
@@ -243,6 +251,7 @@ export function buildProjectContextPack({
     openQuestions,
     nextActions,
     artifacts,
+    cognitiveLedger,
     sessionCount: normalizedOutcomes.length,
     updatedAt,
   };

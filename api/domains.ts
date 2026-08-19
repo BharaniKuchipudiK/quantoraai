@@ -5,6 +5,7 @@ import { requireActiveSession } from "./_lib/authz.js";
 import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
 import { isPublishedSiteOwner } from './_lib/store.js';
 import { normalizeDomainName } from './_lib/publish-policy.js';
+import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
 
 const MAX_CONTEXT_CHARS = 10_000;
 const REQUESTS_PER_MINUTE = 20;
@@ -28,7 +29,7 @@ export default async function handler(req: any, res: any) {
   if (durable.limited) return res.status(429).json({ error: 'Too many domain requests. Please wait a minute.' });
 
   try {
-    const { context, task, domain, projectName } = req.body;
+    const { context, task, domain, projectName, sessionId } = req.body;
 
     /*
      * Connect a custom domain to a published site. Folded into this endpoint
@@ -46,6 +47,30 @@ export default async function handler(req: any, res: any) {
       const ownsProject = await isPublishedSiteOwner(sessionUser.sub, String(projectName));
       if (ownsProject !== true) {
         return res.status(403).json({ error: 'This Vercel project is not owned by your Quantora account.' });
+      }
+
+      const confirmation = pclHumanConfirmation(req, ['connect-domain-button']);
+      const pcl = await guardPclSideEffect({
+        userSub: sessionUser.sub,
+        sessionId,
+        humanConfirmed: confirmation.confirmed,
+        confirmationSource: confirmation.source,
+        description: `Attach ${name} to published project ${String(projectName)}`,
+        tool: 'vercel.domain.connect',
+        args: { domain: name, projectName: String(projectName) },
+        scope: `vercel-domain:${String(projectName)}:${name}`,
+        risk: 'high',
+        reversibility: 'hard',
+        sideEffect: 'external',
+        requiresApproval: true,
+      });
+      if (!pcl.canExecute) {
+        return res.status(pcl.status === 'require_approval' ? 428 : 409).json({
+          error: pcl.status === 'require_approval'
+            ? 'Connecting a custom domain requires explicit confirmation immediately before the change.'
+            : 'PCL blocked this domain change because the exact side effect is not currently authorized.',
+          pcl: { status: pcl.status, actionRef: pcl.actionRef, reasonCode: pcl.reasonCode },
+        });
       }
 
       const vercelToken = await fetchApiGatewayKey('VERCEL') || process.env.VERCEL_ACCESS_TOKEN;
@@ -69,11 +94,25 @@ export default async function handler(req: any, res: any) {
         ? [{ type: 'A', name: '@', value: '76.76.21.21' }]
         : [{ type: 'CNAME', name: name.split('.')[0], value: 'cname.vercel-dns.com' }];
 
+      const pclEvidenceRecorded = await recordPclExecutionEvidence({
+        userSub: sessionUser.sub,
+        sessionId,
+        actionRef: pcl.actionRef,
+        statement: 'Custom domain attached to published Vercel project',
+        evidenceRef: name,
+        sourceTurn: 'domain-connect-result',
+      });
+
       return res.status(200).json({
         connected: true,
         domain: name,
         verified: Boolean(addData?.verified),
         records,
+        pcl: {
+          actionRef: pcl.actionRef,
+          authorization: pcl.status,
+          evidenceRecorded: pclEvidenceRecorded,
+        },
       });
     }
 

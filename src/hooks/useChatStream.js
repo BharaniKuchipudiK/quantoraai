@@ -1,10 +1,20 @@
-import { usePCLMemory } from './usePCLMemory';
+import { useModelExperienceMemory } from './useModelExperienceMemory.js';
 import { useRef } from 'react';
 import { detectOfficeIntent, OFFICE_KIND } from '../lib/office-intent.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
 import { chooseBestDeckModel } from '../lib/model-routing.js';
-import { sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
+import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
+import { captureUserAnswerAsContext } from '../lib/session-context.js';
+import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
+import { applyPclContinuityToOutcomeState } from '../lib/pcl-outcome-sync.js';
+import {
+  detectPclMemoryConsentIntent,
+  readPclConversationEnvelope,
+  rememberActivePclSession,
+  setPclSessionMemoryConsent,
+  updatePclSessionOutcomeVersion,
+} from '../lib/pcl-session-runtime.js';
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];
@@ -35,6 +45,49 @@ function buildActiveOfficeDiscussionContext(artifact) {
   return `ACTIVE VERIFIED OFFICE ARTIFACT — use this as document state when answering questions about the current file. Do not claim to have edited it unless the Office generator is invoked.\nKind: ${artifact.kind || artifact.format || 'office'}\nFile: ${artifact.fileName || ''}\nSpecification:\n${JSON.stringify(artifact.spec).slice(0, 24000)}`;
 }
 
+async function persistPclContinuity({
+  sessionId,
+  memoryConsented,
+  assistantContext,
+  confirmedUserFact,
+  sourceTurn,
+}) {
+  if (!sessionId || memoryConsented !== true || (!assistantContext && !confirmedUserFact)) return null;
+
+  const saveAgainst = async (record) => {
+    const state = applyPclContinuityToOutcomeState(record?.state || {}, {
+      assistantContext,
+      confirmedUserFact,
+      sourceTurn,
+    });
+    return persistOutcomeState({
+      sessionId,
+      expectedVersion: Number.isInteger(record?.version) ? record.version : 0,
+      state,
+      sourceTurn,
+    });
+  };
+
+  try {
+    let record = await loadOutcomeState(sessionId);
+    try {
+      record = await saveAgainst(record);
+    } catch (error) {
+      if (!error?.conflict) throw error;
+      // One optimistic retry after re-reading the authoritative version. Never
+      // overwrite another tab's more recent Outcome State.
+      record = await saveAgainst(await loadOutcomeState(sessionId));
+    }
+    if (Number.isInteger(record?.version)) updatePclSessionOutcomeVersion(sessionId, record.version);
+    return record;
+  } catch (error) {
+    // Durable PCL continuity is best-effort at the UI boundary. A transient
+    // persistence outage must never discard the assistant response the user saw.
+    console.warn('Outcome State continuity sync failed:', error?.message || error);
+    return null;
+  }
+}
+
 export function useChatStream({
   inputText,
   setInputText,
@@ -59,7 +112,7 @@ export function useChatStream({
   sessionContext
 }) {
   const abortControllerRef = useRef(null);
-  const { logModelFailure, getLearnedBehaviors } = usePCLMemory();
+  const { logModelFailure, getLearnedBehaviors } = useModelExperienceMemory();
   
   const cancelStream = () => {
     if (abortControllerRef.current) {
@@ -81,6 +134,22 @@ export function useChatStream({
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
+
+    const visibleUserText = text.trim();
+    rememberActivePclSession(activeSessionId);
+    const memoryIntent = detectPclMemoryConsentIntent(visibleUserText);
+    if (memoryIntent === 'grant') {
+      setPclSessionMemoryConsent(activeSessionId, true);
+    } else if (memoryIntent === 'revoke') {
+      setPclSessionMemoryConsent(activeSessionId, false);
+      void forgetOutcomeState(activeSessionId).catch(() => {
+        // Local consent is revoked immediately even if durable deletion is temporarily unavailable.
+      });
+    }
+    const pclEnvelope = readPclConversationEnvelope({ sessionId: activeSessionId, sessionContext });
+    const confirmedUserFact = pclEnvelope.memoryConsented && !memoryIntent
+      ? captureUserAnswerAsContext(visibleUserText, messages)
+      : null;
 
     // Inject Context Chips
     const contextChips = attachments.filter(a => a.type === 'context');
@@ -296,7 +365,16 @@ export function useChatStream({
         signal: abortControllerRef.current.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, modelId: mod.id, modelName: mod.name, history: cleanMessages, userKey: geminiApiKey, openRouterKey: openRouterApiKey })
+            body: JSON.stringify({
+              message: text,
+              modelId: mod.id,
+              modelName: mod.name,
+              history: cleanMessages,
+              userKey: geminiApiKey,
+              openRouterKey: openRouterApiKey,
+              sessionContext,
+              ...pclEnvelope,
+            })
           });
           
           if (!res.ok) throw new Error('API Error');
@@ -420,7 +498,8 @@ export function useChatStream({
           openRouterKey: openRouterApiKey,
           cognitiveLevel: cognitiveLevel,
           webSearch: webSearchEnabled,
-          sessionContext
+          sessionContext,
+          ...pclEnvelope,
         })
       });
 
@@ -458,13 +537,30 @@ export function useChatStream({
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     provider: parsed.provider,
-                    latencyMs: parsed.latencyMs || 0
+                    latencyMs: parsed.latencyMs || 0,
+                    ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
                   } : m));
                 }
               } catch (e) {}
             }
           }
         }
+
+        const normalized = normalizeAssistantResponse(currentText);
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: normalized.displayText,
+          ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
+          ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
+          ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
+        } : m));
+        await persistPclContinuity({
+          sessionId: pclEnvelope.sessionId,
+          memoryConsented: pclEnvelope.memoryConsented,
+          assistantContext: normalized.contextUpdate,
+          confirmedUserFact,
+          sourceTurn: String(userMsg.id),
+        });
         setIsGenerating(false);
       } else {
         clearTimeout(timeoutId);
@@ -487,7 +583,7 @@ export function useChatStream({
           // PROACTIVE FAILOVER ON SERVER ERROR (503 / 500)
           if (attempt === 1) {
              logModelFailure(modelToUse.id, 'server_error');
-             console.log("PCL: Intercepted server error. Auto-failing over...");
+             console.log("Model experience: intercepted server error. Auto-failing over...");
              const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                ...m,
@@ -510,7 +606,7 @@ export function useChatStream({
           // PROACTIVE FAILOVER ON TIMEOUT
           if (attempt === 1 && error === 'timeout') {
              logModelFailure(modelToUse.id, 'timeout');
-             console.log("PCL: Intercepted timeout. Auto-failing over...");
+             console.log("Model experience: intercepted timeout. Auto-failing over...");
              const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                ...m,
@@ -532,7 +628,7 @@ export function useChatStream({
       
       if (attempt === 1) {
          logModelFailure(modelToUse.id, 'connection_error');
-         console.log("PCL: Intercepted connection error. Auto-failing over...");
+         console.log("Model experience: intercepted connection error. Auto-failing over...");
          const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
            ...m,
@@ -557,7 +653,9 @@ export function useChatStream({
      
      
      try {
-       // Fire Architect call to our generic chat endpoint using Flash
+       // Fire Architect call to our generic chat endpoint using Flash. This is a
+       // synthetic worker turn, so it deliberately receives no Session Outcome
+       // identity and cannot author durable PCL memory.
        const architectRes = await fetch('/api/chat', {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
