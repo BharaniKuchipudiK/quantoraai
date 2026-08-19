@@ -37,6 +37,16 @@ async function timedFetch(label, url, init = {}, timeoutMs = 7_000) {
   }
 }
 
+function selectIata(payload, expectedCode) {
+  const places = Array.isArray(payload?.data) ? payload.data : [];
+  const expected = String(expectedCode || '').toUpperCase();
+  const exact = places.find((place) =>
+    String(place?.iata_code || '').toUpperCase() === expected ||
+    String(place?.iata_city_code || '').toUpperCase() === expected,
+  );
+  return exact?.iata_code || exact?.iata_city_code || null;
+}
+
 async function duffelCanary() {
   if (!DUFFEL_TOKEN) throw new Error('DUFFEL_API_KEY is required for the Travel provider canary.');
   const headers = {
@@ -48,11 +58,17 @@ async function duffelCanary() {
 
   const [origin, destination] = await Promise.all([
     timedFetch('Duffel place: Singapore', 'https://api.duffel.com/places/suggestions?query=Singapore', { headers }, 4_000),
-    timedFetch('Duffel place: Bali', 'https://api.duffel.com/places/suggestions?query=Bali', { headers }, 4_000),
+    timedFetch('Duffel place: Bali Indonesia', 'https://api.duffel.com/places/suggestions?query=Bali%20Indonesia', { headers }, 4_000),
   ]);
-  const originCode = origin?.data?.[0]?.iata_code || origin?.data?.[0]?.iata_city_code;
-  const destinationCode = destination?.data?.[0]?.iata_code || destination?.data?.[0]?.iata_city_code;
-  if (!originCode || !destinationCode) throw new Error('Duffel place resolution did not return IATA codes for the canary route.');
+  const originCode = selectIata(origin, 'SIN');
+  const destinationCode = selectIata(destination, 'DPS');
+  if (originCode !== 'SIN') throw new Error(`Duffel place resolution failed route validation for Singapore: expected SIN, got ${originCode || 'none'}.`);
+  if (destinationCode !== 'DPS') {
+    const returned = Array.isArray(destination?.data)
+      ? destination.data.slice(0, 5).map((place) => `${place?.iata_code || place?.iata_city_code || '?'}:${place?.city_name || place?.name || '?'}/${place?.iata_country_code || '?'}`).join(', ')
+      : 'none';
+    throw new Error(`Duffel place resolution failed route validation for Bali: expected DPS, candidates ${returned}.`);
+  }
 
   const departure = futureIso(30);
   const returning = futureIso(33);
@@ -76,6 +92,7 @@ async function duffelCanary() {
     7_500,
   );
   if (!Array.isArray(offerRequest?.data?.offers)) throw new Error('Duffel flight response is missing data.offers.');
+  if (offerRequest.data.offers.length === 0) throw new Error('Duffel returned zero offers for the validated SIN-DPS canary route.');
   console.log(`  Duffel offers: ${offerRequest.data.offers.length}`);
 }
 
