@@ -2,15 +2,15 @@
  * Central registry for Quantora travel tools.
  *
  * Safety rule: a tool may only report success for an action that was actually
- * completed by a connected provider. There are deliberately no mock-success
- * fallbacks for searches, alerts, reservations, tickets, or background jobs.
+ * completed by a connected provider. Provider-specific APIs live behind the
+ * Travel Provider Gateway so Gemini and the rest of Quantora never depend on a
+ * vendor's payload shape or secret directly.
  */
 
 import { Duffel } from '@duffel/api';
-
-const defaultDuffelClient = process.env.DUFFEL_API_KEY
-  ? new Duffel({ token: process.env.DUFFEL_API_KEY })
-  : null;
+import { DuffelTravelProvider } from './travel/duffel-provider.js';
+import { GooglePlacesTravelProvider } from './travel/google-places-provider.js';
+import { getDefaultTravelGateway, TravelProviderGateway } from './travel/travel-gateway.js';
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = new Set([
   'create_price_alert',
@@ -31,14 +31,14 @@ export function isTransactionalTravelTool(name: unknown): boolean {
 }
 
 /**
- * Only non-transactional tools are exposed to Gemini in this production
- * hotfix. Transactional capabilities remain fail-closed in executeToolCall so
- * stale clients or unexpected model calls cannot fabricate a booking/alert.
+ * Only non-transactional tools are exposed to Gemini. Transactional tools stay
+ * behind the explicit approval boundary until we have idempotent, provider-
+ * confirmed booking flows and durable outcome evidence.
  */
 export const travelFunctionDeclarations: any[] = [
   {
     name: 'search_flights',
-    description: 'Search live flight availability and pricing through the connected provider. If the provider is unavailable, return an unavailable result; never invent fares or availability.',
+    description: 'Search live flight availability and pricing through Quantora Travel. If providers are unavailable, return unavailable; never invent fares or availability.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -47,20 +47,22 @@ export const travelFunctionDeclarations: any[] = [
         departureDate: { type: 'STRING', description: 'Departure date in YYYY-MM-DD format.' },
         returnDate: { type: 'STRING', description: 'Optional return date in YYYY-MM-DD format.' },
         passengers: { type: 'INTEGER', description: 'Number of adult passengers. Default is 1.' },
+        cabinClass: { type: 'STRING', description: 'Optional cabin: economy, premium_economy, business, or first.' },
       },
       required: ['origin', 'destination', 'departureDate'],
     },
   },
   {
     name: 'search_hotels',
-    description: 'Check live hotel availability only if a provider is connected. If unavailable, report that limitation; never return hard-coded or fabricated hotel results.',
+    description: 'Search live accommodation availability and pricing through Quantora Travel. Location is resolved upstream and rates must be re-quoted before any booking.',
     parameters: {
       type: 'OBJECT',
       properties: {
         location: { type: 'STRING', description: 'City or neighborhood.' },
         checkInDate: { type: 'STRING', description: 'Check-in date in YYYY-MM-DD format.' },
         checkOutDate: { type: 'STRING', description: 'Check-out date in YYYY-MM-DD format.' },
-        guests: { type: 'INTEGER', description: 'Number of guests. Default is 1.' },
+        guests: { type: 'INTEGER', description: 'Number of adult guests. Default is 1.' },
+        rooms: { type: 'INTEGER', description: 'Number of rooms. Default is 1.' },
         minStarRating: { type: 'INTEGER', description: 'Optional minimum star rating from 1 to 5.' },
       },
       required: ['location', 'checkInDate', 'checkOutDate'],
@@ -68,24 +70,24 @@ export const travelFunctionDeclarations: any[] = [
   },
   {
     name: 'get_places_routing',
-    description: 'Check live places or routing information only if a provider is connected. If unavailable, report that limitation; never fabricate ratings, addresses, opening status, or commute times.',
+    description: 'Resolve a live destination/place through Quantora Travel. This currently returns place metadata and coordinates; route-time computation is not enabled yet.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        query: { type: 'STRING', description: 'Place or routing query.' },
-        placeType: { type: 'STRING', description: 'Optional place category.' },
+        query: { type: 'STRING', description: 'Place or destination query.' },
+        placeType: { type: 'STRING', description: 'Optional place category retained for compatibility.' },
       },
       required: ['query'],
     },
   },
   {
     name: 'search_attractions',
-    description: 'Check live attraction availability only if a provider is connected. If unavailable, report that limitation; never invent prices, ratings, availability, or providers.',
+    description: 'Discover live attractions and destination places. Discovery metadata does not imply ticket inventory or booking availability.',
     parameters: {
       type: 'OBJECT',
       properties: {
         location: { type: 'STRING', description: 'Destination city or region.' },
-        category: { type: 'STRING', description: 'Optional activity category.' },
+        category: { type: 'STRING', description: 'Optional activity category, such as museums or family attractions.' },
       },
       required: ['location'],
     },
@@ -104,6 +106,9 @@ export const travelFunctionDeclarations: any[] = [
 ];
 
 type TravelToolDependencies = {
+  /** Explicit gateway for tests or future multi-provider routing. */
+  travelGateway?: TravelProviderGateway | null;
+  /** Legacy test seam retained while callers migrate to travelGateway. */
   duffelClient?: Duffel | null;
 };
 
@@ -113,6 +118,35 @@ function unavailable(message: string, reason: string = 'PROVIDER_UNAVAILABLE') {
     executed: false,
     reason,
     message,
+  };
+}
+
+function gatewayFor(dependencies: TravelToolDependencies): TravelProviderGateway {
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'travelGateway')) {
+    return dependencies.travelGateway || new TravelProviderGateway({ flights: null, hotels: null, places: null });
+  }
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'duffelClient')) {
+    const duffel = new DuffelTravelProvider(dependencies.duffelClient || null);
+    return new TravelProviderGateway({
+      flights: duffel,
+      hotels: duffel,
+      places: new GooglePlacesTravelProvider(null),
+    });
+  }
+  return getDefaultTravelGateway();
+}
+
+function providerPayload<T extends string>(key: T, result: any) {
+  if (result?.status !== 'success') {
+    return unavailable(result?.message || 'The live travel provider is unavailable.', result?.reason || 'PROVIDER_UNAVAILABLE');
+  }
+  return {
+    status: 'success',
+    executed: true,
+    source: result.provider,
+    fetchedAt: result.fetchedAt,
+    [key]: result.data || [],
+    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
   };
 }
 
@@ -127,81 +161,63 @@ export async function executeToolCall(
   // for a transaction, do not attempt it and never fabricate a confirmation.
   if (isTransactionalTravelTool(name)) {
     return unavailable(
-      'This transactional travel action is not enabled in the current production build. Nothing was booked, purchased, ticketed, scheduled, or monitored. A future transaction flow must obtain explicit human confirmation and a provider-confirmed result before reporting success.',
+      'This transactional travel action is not enabled in the current production build. Nothing was booked, purchased, ticketed, scheduled, or monitored. A future transaction flow must obtain explicit human confirmation, use an idempotency key, and persist provider-confirmed evidence before reporting success.',
       'TRANSACTION_DISABLED',
     );
   }
 
-  const duffelClient = Object.prototype.hasOwnProperty.call(dependencies, 'duffelClient')
-    ? dependencies.duffelClient
-    : defaultDuffelClient;
+  const gateway = gatewayFor(dependencies);
 
   switch (name) {
     case 'search_flights': {
-      if (!duffelClient) {
-        return unavailable('Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.');
-      }
-
-      try {
-        const slices: any[] = [
-          {
-            origin: String(args?.origin || '').trim(),
-            destination: String(args?.destination || '').trim(),
-            departure_date: String(args?.departureDate || '').trim(),
-          },
-        ];
-        if (args?.returnDate) {
-          slices.push({
-            origin: String(args?.destination || '').trim(),
-            destination: String(args?.origin || '').trim(),
-            departure_date: String(args.returnDate).trim(),
-          });
-        }
-
-        const passengerCount = Math.min(9, Math.max(1, Number(args?.passengers) || 1));
-        const response = await duffelClient.offerRequests.create({
-          slices,
-          passengers: Array.from({ length: passengerCount }, () => ({ type: 'adult' as const })),
-          cabin_class: 'economy',
-        });
-
-        const offers = Array.isArray(response?.data?.offers) ? response.data.offers.slice(0, 5) : [];
-        return {
-          status: 'success',
-          executed: true,
-          source: 'Duffel',
-          flights: offers.map((offer: any) => {
-            const firstSlice = offer?.slices?.[0];
-            const firstSegment = firstSlice?.segments?.[0];
-            return {
-              id: offer?.id,
-              airline: firstSegment?.operating_carrier?.name || firstSegment?.marketing_carrier?.name || 'Unknown carrier',
-              flightNumber: firstSegment?.operating_carrier?.iata_code && firstSegment?.operating_carrier_flight_number
-                ? `${firstSegment.operating_carrier.iata_code}${firstSegment.operating_carrier_flight_number}`
-                : null,
-              departure: firstSegment?.departing_at || null,
-              arrival: firstSlice?.segments?.[firstSlice.segments.length - 1]?.arriving_at || null,
-              duration: firstSlice?.duration || null,
-              price: Number.parseFloat(offer?.total_amount || '0'),
-              currency: offer?.total_currency || null,
-              direct: Array.isArray(firstSlice?.segments) ? firstSlice.segments.length === 1 : null,
-            };
-          }),
-        };
-      } catch (error: any) {
-        console.error('[Duffel API Error] Live flight search failed:', error?.errors || error?.message || error);
-        return unavailable('Live flight search failed at the provider. No mock fares or availability were substituted.', 'PROVIDER_ERROR');
-      }
+      const result = await gateway.searchFlights({
+        origin: String(args?.origin || '').trim(),
+        destination: String(args?.destination || '').trim(),
+        departureDate: String(args?.departureDate || '').trim(),
+        ...(args?.returnDate ? { returnDate: String(args.returnDate).trim() } : {}),
+        passengers: Math.min(9, Math.max(1, Number(args?.passengers) || 1)),
+        cabinClass: ['economy', 'premium_economy', 'business', 'first'].includes(args?.cabinClass)
+          ? args.cabinClass
+          : 'economy',
+      });
+      return providerPayload('flights', result);
     }
 
-    case 'search_hotels':
-      return unavailable('Live hotel search is not connected in the current production build. No hard-coded hotel results were returned.');
+    case 'search_hotels': {
+      const result = await gateway.searchHotels({
+        location: String(args?.location || '').trim(),
+        checkInDate: String(args?.checkInDate || '').trim(),
+        checkOutDate: String(args?.checkOutDate || '').trim(),
+        guests: Math.min(9, Math.max(1, Number(args?.guests) || 1)),
+        rooms: Math.min(9, Math.max(1, Number(args?.rooms) || 1)),
+        minStarRating: Math.max(0, Math.min(5, Number(args?.minStarRating) || 0)),
+      });
+      return providerPayload('hotels', result);
+    }
 
-    case 'get_places_routing':
-      return unavailable('Live places/routing is not connected in the current production build. No fabricated ratings, addresses, opening status, or commute times were returned.');
+    case 'get_places_routing': {
+      const result = await gateway.resolveLocation(String(args?.query || '').trim());
+      if (result?.status !== 'success') {
+        return unavailable(result?.message || 'Live place resolution is unavailable.', result?.reason || 'PROVIDER_UNAVAILABLE');
+      }
+      return {
+        status: 'success',
+        executed: true,
+        source: result.provider,
+        fetchedAt: result.fetchedAt,
+        place: result.data,
+        warnings: ['Route-time calculation is not enabled yet; this result contains live place metadata and coordinates only.'],
+      };
+    }
 
-    case 'search_attractions':
-      return unavailable('Live attraction search is not connected in the current production build. No fabricated prices, ratings, providers, or availability were returned.');
+    case 'search_attractions': {
+      const result = await gateway.searchAttractions({
+        location: String(args?.location || '').trim(),
+        ...(args?.category ? { category: String(args.category).trim() } : {}),
+        maxResults: 10,
+      });
+      return providerPayload('attractions', result);
+    }
 
     case 'ask_clarifying_question': {
       const question = typeof args?.question === 'string' ? args.question.trim() : '';
