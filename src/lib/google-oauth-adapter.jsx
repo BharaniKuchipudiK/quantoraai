@@ -74,11 +74,10 @@ export function GoogleLogin({
     const isVercelPreview = host.endsWith('.vercel.app') && host !== MAIN_VERCEL_HOST;
 
     /*
-     * Google requires redirect URIs to match exactly. Vercel generates a new
-     * random deployment hostname for every build, so using window.location.origin
-     * makes OAuth break on every deployment. Canonicalise all Travel Preview
-     * traffic to the stable branch alias before Google initialises. This also
-     * keeps Google's GIS CSRF cookie and the callback on the same origin.
+     * Google popup mode only requires the page origin to be authorized; it does
+     * not depend on an Authorized Redirect URI. Vercel creates random deployment
+     * hosts, so canonicalise Preview traffic to the stable branch alias before
+     * Google initializes. Production remains on its existing hostname.
      */
     if (isVercelPreview && host !== PREVIEW_HOST) {
       const canonical = new URL(window.location.href);
@@ -94,21 +93,12 @@ export function GoogleLogin({
 
         buttonRef.current.replaceChildren();
 
-        if (isVercelPreview) {
-          google.accounts.id.initialize({
-            client_id: clientId,
-            ux_mode: 'redirect',
-            login_uri: `https://${PREVIEW_HOST}/api/auth/verify`,
-            auto_select: false,
-          });
-        } else {
-          google.accounts.id.initialize({
-            client_id: clientId,
-            ux_mode: 'popup',
-            callback: (credentialResponse) => onSuccess?.(credentialResponse),
-            auto_select: false,
-          });
-        }
+        google.accounts.id.initialize({
+          client_id: clientId,
+          ux_mode: 'popup',
+          callback: (credentialResponse) => onSuccess?.(credentialResponse),
+          auto_select: false,
+        });
 
         google.accounts.id.renderButton(buttonRef.current, {
           type: 'standard',
