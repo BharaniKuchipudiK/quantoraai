@@ -1,0 +1,63 @@
+name: Apply Arena Reliability Patch
+
+on:
+  push:
+    branches:
+      - fix/arena-architect-reliability
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[arena-reliability-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/arena-architect-reliability
+
+      - name: Apply exact guarded patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/hooks/useChatStream.js')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  """        try {\n          abortControllerRef.current = new AbortController();\n      const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);\n      const res = await fetch('/api/chat', {\n        signal: abortControllerRef.current.signal,""",
+                  """        try {\n          // Each Arena stream owns its controller. A timeout from one model must\n          // never abort the other model's request. The shared ref remains the\n          // latest controller so the existing Stop action keeps its behavior.\n          const controller = new AbortController();\n          abortControllerRef.current = controller;\n      const timeoutId = setTimeout(() => controller.abort('timeout'), 60000);\n      const res = await fetch('/api/chat', {\n        signal: controller.signal,""",
+              ),
+              (
+                  """      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {\n        ...m,\n        text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'\n      } : m));""",
+                  """      updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? {\n        ...m,\n        text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'\n      } : m));""",
+              ),
+              (
+                  """     try {\n       // Fire Architect call to our generic chat endpoint using Flash. This is a\n       // synthetic worker turn, so it deliberately receives no Session Outcome\n       // identity and cannot author durable PCL memory.\n       const architectRes = await fetch('/api/chat', {\n         method: 'POST',""",
+                  """     // Bound the synthetic Architect worker. If it hangs, Quantora falls\n     // through to the normal single-model path instead of leaving generation\n     // indefinitely stuck.\n     const architectController = new AbortController();\n     const architectTimeout = setTimeout(() => architectController.abort('timeout'), 45000);\n     try {\n       // Fire Architect call to our generic chat endpoint using Flash. This is a\n       // synthetic worker turn, so it deliberately receives no Session Outcome\n       // identity and cannot author durable PCL memory.\n       const architectRes = await fetch('/api/chat', {\n         method: 'POST',\n         signal: architectController.signal,""",
+              ),
+              (
+                  """     } catch (e) {\n       console.error(\"Swarm architect failed\", e);\n     }\n  }""",
+                  """     } catch (e) {\n       console.error(\"Swarm architect failed\", e);\n     } finally {\n       clearTimeout(architectTimeout);\n     }\n  }""",
+              ),
+          ]
+
+          for index, (old, new) in enumerate(replacements, start=1):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Guard {index} expected exactly one match; found {count}. No patch committed.')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit guarded patch
+        run: |
+          git config user.name "Quantora Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/hooks/useChatStream.js
+          git diff --cached --check
+          git commit -m "Fix Arena and Architect request reliability [arena-reliability-applied]"
+          git push origin HEAD:fix/arena-architect-reliability
