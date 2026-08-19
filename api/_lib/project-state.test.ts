@@ -100,9 +100,55 @@ test('Project Outcome Graph merges trusted session state without inventing conte
   assert.deepEqual(context.openQuestions, ['Confirm final funding envelope']);
   assert.equal(context.nextActions[0].action, 'Finalize the CIO decision slide');
   assert.equal(context.artifacts[0].title, 'Strategic Path Forward.pptx');
+  assert.deepEqual(context.cognitiveLedger, []);
   assert.ok(context.facts.includes('Decision: Use hybrid replatforming'));
   assert.ok(context.facts.includes('Constraint: Keep the migration phased'));
   assert.ok(context.facts.includes('Next action: Finalize the CIO decision slide'));
+});
+
+test('Project PCL preserves cross-session rejection and correction lineage', () => {
+  const project = normalizeProjectInput({ id: 'project-site', name: 'Website', version: 3, goal: 'Improve the homepage' });
+  assert.ok(project);
+
+  const context = buildProjectContextPack({
+    project,
+    outcomes: [
+      // readProjectContext returns newest sessions first.
+      {
+        sessionId: 'session-new',
+        updatedAt: '2026-08-19T02:00:00Z',
+        state: {
+          definitionOfDone: [], constraints: [], assumptions: [], openQuestions: [], decisions: [], artifacts: [], nextActions: [],
+          cognitiveLedger: [{
+            id: 'correction-1',
+            type: 'correction',
+            statement: 'Use one continuous outcome story instead',
+            actor: 'user',
+            status: 'active',
+            supersedes: 'decision-old',
+          }],
+          memory: { scope: 'project', consented: true }, safety: { unresolvedFlags: [] },
+        },
+      },
+      {
+        sessionId: 'session-old',
+        updatedAt: '2026-08-18T02:00:00Z',
+        state: {
+          definitionOfDone: [], constraints: [], assumptions: [], openQuestions: [], decisions: [], artifacts: [], nextActions: [],
+          cognitiveLedger: [
+            { id: 'decision-old', type: 'decision', statement: 'Use three outcome cards', actor: 'user', status: 'active' },
+            { id: 'rejection-1', type: 'rejection', statement: 'Do not return to the three-card homepage', actor: 'user', status: 'active' },
+          ],
+          memory: { scope: 'project', consented: true }, safety: { unresolvedFlags: [] },
+        },
+      },
+    ],
+  });
+
+  assert.equal(context.cognitiveLedger.length, 3);
+  assert.equal(context.cognitiveLedger.find((entry) => entry.id === 'decision-old')?.status, 'superseded');
+  assert.equal(context.cognitiveLedger.find((entry) => entry.id === 'rejection-1')?.status, 'active');
+  assert.equal(context.cognitiveLedger.find((entry) => entry.id === 'correction-1')?.status, 'active');
 });
 
 test('Project Outcome Graph excludes low-confidence and unconfirmed memory', () => {
@@ -129,4 +175,5 @@ test('Project Outcome Graph excludes low-confidence and unconfirmed memory', () 
   assert.deepEqual(context.assumptions, []);
   assert.deepEqual(context.openQuestions, []);
   assert.deepEqual(context.facts, []);
+  assert.deepEqual(context.cognitiveLedger, []);
 });
