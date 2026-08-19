@@ -1,0 +1,38 @@
+/* Conversation-quality overrides.
+ * Keep the AI response visually closer to a natural dialogue than a dense memo.
+ * These rules only affect rendered assistant prose; user bubbles and structured
+ * code/table output retain their existing treatment.
+ */
+.ai-studio-thread .chat-message-body--ai .markdown-prose {
+  max-width: 860px;
+  font-size: 0.96rem;
+  line-height: 1.72 !important;
+}
+
+.ai-studio-thread .chat-message-body--ai .markdown-prose p {
+  margin-top: 0 !important;
+  margin-bottom: 0.9em !important;
+}
+
+.ai-studio-thread .chat-message-body--ai .markdown-prose p:last-child {
+  margin-bottom: 0 !important;
+}
+
+.ai-studio-thread .chat-message-body--ai .markdown-prose ul,
+.ai-studio-thread .chat-message-body--ai .markdown-prose ol {
+  margin-top: 0.6em;
+  margin-bottom: 0.9em;
+}
+
+.ai-studio-thread .chat-message-body--ai .markdown-prose h1,
+.ai-studio-thread .chat-message-body--ai .markdown-prose h2,
+.ai-studio-thread .chat-message-body--ai .markdown-prose h3 {
+  margin-top: 1.25em;
+  margin-bottom: 0.55em;
+}
+
+@media (max-width: 900px) {
+  .ai-studio-thread .chat-message-body--ai .markdown-prose {
+    max-width: 100%;
+  }
+}
