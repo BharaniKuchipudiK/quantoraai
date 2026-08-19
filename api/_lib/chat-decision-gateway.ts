@@ -5,6 +5,7 @@ import { requireActiveSession } from "./authz.js";
 import { endOfUtcDay, parseFinancialContextCommand, type FinancialContextCommand } from "./financial-context-command.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
+import { handleDirectTravelRequest } from "./travel-direct-gateway.js";
 import { isUserContextStoreConfigured, readUserContextGraph, saveUserContextNode } from "./user-context-store.js";
 
 const DECISION_RATE_LIMIT_PER_MINUTE = 60;
@@ -149,13 +150,18 @@ function contextConfirmation(command: FinancialContextCommand): string {
 }
 
 /**
- * Narrow deterministic gateway in front of ordinary chat. It handles only:
- * 1) explicit user-approved financial context commands, and
- * 2) explicit affordability questions.
- * Everything else returns false and continues through the existing chat runtime.
+ * Shared deterministic gateway in front of ordinary chat.
+ *
+ * Travel provider execution gets first refusal so a live flight/hotel/activity
+ * request never depends on a model function-call loop. Finance retains the
+ * existing deterministic affordability path. Everything else returns false and
+ * continues through the ordinary conversational model runtime.
  */
-export async function handleAffordabilityDecision(req: any, res: any): Promise<boolean> {
+export async function handleDeterministicDecisionGateway(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
+
+  if (await handleDirectTravelRequest(req, res)) return true;
+
   const command = parseFinancialContextCommand(req.body?.message);
   const intent = parseAffordabilityIntent(req.body?.message);
   if (!command && !intent.matched) return false;
@@ -218,3 +224,7 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
   });
   return true;
 }
+
+// Backward-compatible export while /api/pipeline still imports the historical
+// name. The behavior is now a generic deterministic pre-chat gateway.
+export const handleAffordabilityDecision = handleDeterministicDecisionGateway;

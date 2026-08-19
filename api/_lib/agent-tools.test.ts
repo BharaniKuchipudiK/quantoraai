@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { TravelProvider, TravelProviderName } from './travel-contracts.js';
 import {
   executeToolCall,
   isTransactionalTravelTool,
@@ -7,30 +8,64 @@ import {
   travelFunctionDeclarations,
 } from './agent-tools.js';
 
-const declaredNames = travelFunctionDeclarations.map((tool: any) => tool?.name);
+function provider(name: TravelProviderName): TravelProvider {
+  return {
+    name,
+    isConfigured: () => true,
+    resolvePlace: async (query: string) => ({
+      provider: name,
+      name: query,
+      iataCode: query.toLowerCase().includes('singapore') ? 'SIN' : 'DPS',
+      type: 'city',
+      latitude: 1.3,
+      longitude: 103.8,
+    }),
+    searchFlights: async () => [{
+      id: `${name}_flight`,
+      provider: name,
+      totalAmount: 200,
+      currency: 'SGD',
+      direct: true,
+      duration: 'PT2H40M',
+      segments: [],
+    }],
+    searchHotels: async () => [{
+      id: `${name}_hotel`,
+      provider: name,
+      name: 'Beach Hotel',
+      totalAmount: 500,
+      currency: 'SGD',
+    }],
+    searchAttractions: async () => [{
+      id: `${name}_activity`,
+      provider: name,
+      name: 'Sunset Tour',
+    }],
+  };
+}
 
-test('travel tools are scoped only to the travel domain', () => {
-  assert.equal(shouldEnableTravelTools('travel'), true);
+const providers = {
+  duffel: provider('duffel'),
+  amadeus: provider('amadeus'),
+};
+
+test('travel provider tools are not exposed to any language model', () => {
+  assert.equal(shouldEnableTravelTools('travel'), false);
   assert.equal(shouldEnableTravelTools('research'), false);
-  assert.equal(shouldEnableTravelTools('finance'), false);
-  assert.equal(shouldEnableTravelTools(null), false);
-  assert.equal(shouldEnableTravelTools(undefined), false);
+  assert.deepEqual(travelFunctionDeclarations, []);
 });
 
-test('transactional travel tools are not exposed to the model', () => {
+test('transactional travel tools remain disabled and fail closed', async () => {
   for (const name of ['create_price_alert', 'make_reservation', 'book_attraction']) {
     assert.equal(isTransactionalTravelTool(name), true);
-    assert.equal(declaredNames.includes(name), false, `${name} must not be in Gemini function declarations`);
   }
-});
 
-test('transactional travel calls fail closed and never fabricate success', async () => {
   const booking = await executeToolCall('make_reservation', {
     bookingType: 'flight',
     itemId: 'off_test',
-    dates: '2026-09-01',
+    dates: '2099-09-01',
     price: 100,
-  }, { duffelClient: null });
+  }, { providers });
 
   assert.equal(booking.status, 'unavailable');
   assert.equal(booking.executed, false);
@@ -39,46 +74,39 @@ test('transactional travel calls fail closed and never fabricate success', async
   assert.equal('confirmationCode' in booking, false);
   assert.equal('bookingReference' in booking, false);
   assert.equal('pnr' in booking, false);
-
-  const alert = await executeToolCall('create_price_alert', {
-    entityType: 'flight',
-    destination: 'LHR',
-    dates: '2026-09-01',
-  }, { duffelClient: null });
-
-  assert.equal(alert.status, 'unavailable');
-  assert.equal(alert.executed, false);
-  assert.equal('alertId' in alert, false);
-  assert.match(alert.message, /nothing was .*monitored|not enabled/i);
 });
 
-test('unconnected read-only travel providers return unavailable instead of mock data', async () => {
-  const flight = await executeToolCall('search_flights', {
-    origin: 'SIN',
-    destination: 'LHR',
-    departureDate: '2026-09-01',
-  }, { duffelClient: null });
-  assert.equal(flight.status, 'unavailable');
-  assert.equal(flight.executed, false);
-  assert.equal('flights' in flight, false, 'must not substitute mock flight results');
+test('server-owned compatibility flight search delegates to provider gateway', async () => {
+  const result = await executeToolCall('search_flights', {
+    origin: 'Singapore',
+    destination: 'Bali',
+    departureDate: '2099-09-01',
+    returnDate: '2099-09-04',
+  }, { providers });
 
+  assert.equal(result.status, 'success');
+  assert.equal(result.provider, 'duffel');
+  assert.equal(result.offers[0].id, 'duffel_flight');
+});
+
+test('server-owned hotel and attraction search delegate to provider gateway', async () => {
   const hotel = await executeToolCall('search_hotels', {
-    location: 'London',
-    checkInDate: '2026-09-01',
-    checkOutDate: '2026-09-03',
-  }, { duffelClient: null });
-  assert.equal(hotel.status, 'unavailable');
-  assert.equal('hotels' in hotel, false, 'must not substitute hard-coded hotels');
+    location: 'Bali',
+    checkInDate: '2099-09-01',
+    checkOutDate: '2099-09-04',
+  }, { providers });
+  assert.equal(hotel.status, 'success');
+  assert.equal(hotel.hotels[0].name, 'Beach Hotel');
 
-  const attraction = await executeToolCall('search_attractions', { location: 'London' }, { duffelClient: null });
-  assert.equal(attraction.status, 'unavailable');
-  assert.equal('attractions' in attraction, false, 'must not substitute hard-coded attractions');
+  const attraction = await executeToolCall('search_attractions', { location: 'Bali' }, { providers });
+  assert.equal(attraction.status, 'success');
+  assert.equal(attraction.attractions[0].name, 'Sunset Tour');
 });
 
-test('clarification remains a non-transactional human-in-loop action', async () => {
-  const result = await executeToolCall('ask_clarifying_question', { question: 'What is your travel budget?' }, { duffelClient: null });
+test('clarification remains non-transactional', async () => {
+  const result = await executeToolCall('ask_clarifying_question', { question: 'What is your return date?' }, { providers });
   assert.equal(result.status, 'success');
   assert.equal(result.executed, false);
   assert.equal(result.action, 'PAUSE_AND_ASK');
-  assert.equal(result.message, 'What is your travel budget?');
+  assert.equal(result.message, 'What is your return date?');
 });
