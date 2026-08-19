@@ -83,15 +83,13 @@ export function useModelExperienceMemory() {
     saveRawMemory(memory);
   };
 
-  const getLearnedBehaviors = () => {
-    const memory = readRawMemory();
-    if (!memory.learnedBehaviors?.length) return null;
-    let instructions = 'MODEL EXPERIENCE SIGNAL — avoid repeating these recent response failures. These are local quality hints, not durable PCL facts or user approvals.\n';
-    memory.learnedBehaviors.forEach((behavior, index) => {
-      instructions += `\n[Failure ${index + 1}] Prompt: ${JSON.stringify(behavior.failedPrompt)}; bad response snippet: ${JSON.stringify(behavior.badResponseSnippet)}.`;
-    });
-    return instructions;
-  };
+  /**
+   * Legacy compatibility only. We still collect local quality telemetry for
+   * diagnostics/experimentation, but it must never be concatenated into the
+   * user's next prompt. Doing so contaminates intent and can make the model
+   * expose evaluator language to the customer.
+   */
+  const getLearnedBehaviors = () => null;
 
   return { logModelFailure, checkModelHealth, clearModelHealth, logPreference, logFeedback, getLearnedBehaviors };
 }
