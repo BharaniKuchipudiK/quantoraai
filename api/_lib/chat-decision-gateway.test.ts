@@ -41,5 +41,6 @@ test("insufficient context never becomes an invented yes or no", () => {
   }));
   assert.match(response, /can't give you a safe yes\/no yet/i);
   assert.match(response, /finance\.minimum_reserve in SGD/);
-  assert.match(response, /won't treat portfolio value/i);
+  assert.match(response, /won't assume unrecorded commitments are zero/i);
+  assert.match(response, /treat portfolio value/i);
 });
