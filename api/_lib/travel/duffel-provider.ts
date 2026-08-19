@@ -135,7 +135,11 @@ export class DuffelTravelProvider implements FlightSearchProvider, HotelSearchPr
             ? accommodation.photos.map((photo: any) => photo?.url).filter(Boolean).slice(0, 5)
             : [],
         };
-      }).filter((hotel: HotelOption) => hotel.id && hotel.searchResultId && (hotel.rating === null || hotel.rating >= minRating));
+      }).filter((hotel: HotelOption) => (
+        hotel.id
+        && hotel.searchResultId
+        && (minRating === 0 || (hotel.rating !== null && hotel.rating >= minRating))
+      ));
 
       return success(this.name, hotels.slice(0, 20), [
         'Hotel prices are live search results and must be re-quoted before booking because availability and rates can change.',
