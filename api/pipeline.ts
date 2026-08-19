@@ -5,6 +5,7 @@ import { requireActiveSession } from "./_lib/authz.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
+import { appendExplicitHumanLedgerEvent, reconcileOutcomeCognitiveLedger } from "./_lib/cognitive-ledger-transitions.js";
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
 import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources, normalizeProjectSessionIds } from "./_lib/project-state.js";
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
@@ -150,11 +151,17 @@ export default async function handler(req: any, res: any) {
         if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
           return res.status(400).json({ error: 'expectedVersion must be a non-negative integer.' });
         }
-        const state = normalizeOutcomeState(req.body?.state);
-        if (!state.memory.consented) {
+        const incomingState = normalizeOutcomeState(req.body?.state);
+        if (!incomingState.memory.consented) {
           return res.status(400).json({ error: 'Outcome Memory requires explicit consent before saving.' });
         }
         const sourceTurn = typeof req.body?.sourceTurn === 'string' ? req.body.sourceTurn.slice(0, 128) : null;
+        const previousRecord = await readOutcomeState(activeSessionUser.sub, sessionId);
+        const state = reconcileOutcomeCognitiveLedger(
+          previousRecord?.state || emptyOutcomeState(),
+          incomingState,
+          { sourceTurn },
+        );
         const result = await saveOutcomeState({
           userSub: activeSessionUser.sub,
           sessionId,
@@ -170,6 +177,39 @@ export default async function handler(req: any, res: any) {
         }
         if (result.status === 'unavailable') {
           return res.status(503).json({ error: 'Outcome Memory is temporarily unavailable. Your local conversation is unchanged.' });
+        }
+        return res.status(200).json(result.record);
+      }
+
+      if (action === 'append-ledger') {
+        const expectedVersion = req.body?.expectedVersion;
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+          return res.status(400).json({ error: 'expectedVersion must be a non-negative integer.' });
+        }
+        const currentRecord = await readOutcomeState(activeSessionUser.sub, sessionId);
+        if (!currentRecord || !currentRecord.state.memory.consented) {
+          return res.status(400).json({ error: 'Outcome Memory consent is required before recording cognitive history.' });
+        }
+        const sourceTurn = typeof req.body?.sourceTurn === 'string' ? req.body.sourceTurn.slice(0, 128) : null;
+        const state = appendExplicitHumanLedgerEvent(currentRecord.state, req.body?.entry, { sourceTurn });
+        if (!state) {
+          return res.status(400).json({ error: 'A valid decision, rejection, correction, or approval entry is required.' });
+        }
+        const result = await saveOutcomeState({
+          userSub: activeSessionUser.sub,
+          sessionId,
+          expectedVersion,
+          state,
+          sourceTurn,
+        });
+        if (result.status === 'conflict') {
+          return res.status(409).json({
+            error: 'Outcome Memory changed in another session. Reload it before retrying.',
+            conflict: true,
+          });
+        }
+        if (result.status === 'unavailable') {
+          return res.status(503).json({ error: 'Cognitive history is temporarily unavailable. No local state was changed.' });
         }
         return res.status(200).json(result.record);
       }
