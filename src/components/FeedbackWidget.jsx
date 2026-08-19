@@ -17,6 +17,15 @@ export default function FeedbackWidget() {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
+    const openFromProductNav = () => {
+      setVisible(true);
+      setOpen(true);
+    };
+    window.addEventListener('quantora:open-feedback', openFromProductNav);
+    return () => window.removeEventListener('quantora:open-feedback', openFromProductNav);
+  }, []);
+
+  useEffect(() => {
     const sync = () => setVisible(hasCachedUser());
     sync();
     const timer = window.setInterval(sync, 2000);
@@ -67,12 +76,7 @@ export default function FeedbackWidget() {
 
   return (
     <div className="q-feedback-widget">
-      {!open ? (
-        <button type="button" className="q-feedback-trigger" onClick={() => setOpen(true)}>
-          <MessageSquareText size={15} />
-          Feedback
-        </button>
-      ) : (
+      {!open ? null : (
         <section className="q-feedback-card" aria-label="Give Quantora feedback">
           <div className="q-feedback-head">
             <div>

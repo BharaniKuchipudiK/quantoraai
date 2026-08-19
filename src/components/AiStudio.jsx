@@ -1693,6 +1693,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             );
           })}
         </div>
+
+        {/* Product feedback — explicit signed-in Studio entry point. */}
+        <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-feedback'))}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '9px 12px',
+              borderRadius: '8px',
+              background: 'transparent',
+              border: '1px solid transparent',
+              color: textColor,
+              fontSize: '0.82rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+              e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderColor = 'transparent';
+            }}
+          >
+            <MessageSquare size={15} color="#f97316" />
+            <span>Feedback & Suggestions</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
