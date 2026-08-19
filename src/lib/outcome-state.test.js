@@ -29,3 +29,24 @@ test('only confirmed durable facts are restored into conversation context', () =
   });
   assert.deepEqual(ctx.facts, ['Confirmed fact']);
 });
+
+test('working-note edits preserve Cognitive Ledger history', () => {
+  const existingState = {
+    cognitiveLedger: [{
+      id: 'reject-1',
+      type: 'rejection',
+      statement: 'Do not use the old layout again',
+      actor: 'user',
+      status: 'active',
+    }],
+  };
+  const state = contextToOutcomeState({ goal: 'Improve the homepage' }, {
+    existingState,
+    sourceTurn: 'user-3',
+    confirmed: true,
+    consented: true,
+  });
+
+  assert.equal(state.cognitiveLedger.length, 1);
+  assert.equal(state.cognitiveLedger[0].id, 'reject-1');
+});
