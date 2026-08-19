@@ -78,6 +78,10 @@ export type HotelSearchInput = {
   radiusKm?: number;
 };
 
+export type HotelProviderSearchInput = Omit<HotelSearchInput, 'location'> & {
+  location: PlaceResolution;
+};
+
 export type HotelOffer = {
   id: string;
   provider: TravelProviderName;
@@ -105,6 +109,10 @@ export type HotelSearchResult = HotelSearchSuccess | TravelProviderFailure;
 export type AttractionSearchInput = {
   location: string;
   radiusKm?: number;
+};
+
+export type AttractionProviderSearchInput = Omit<AttractionSearchInput, 'location'> & {
+  location: PlaceResolution;
 };
 
 export type AttractionOffer = {
@@ -135,6 +143,6 @@ export type TravelProvider = {
   isConfigured(): boolean;
   resolvePlace(query: string): Promise<PlaceResolution | null>;
   searchFlights(input: FlightSearchInput & { originCode: string; destinationCode: string }): Promise<FlightOffer[]>;
-  searchHotels?(input: HotelSearchInput & { location: PlaceResolution }): Promise<HotelOffer[]>;
-  searchAttractions?(input: AttractionSearchInput & { location: PlaceResolution }): Promise<AttractionOffer[]>;
+  searchHotels?(input: HotelProviderSearchInput): Promise<HotelOffer[]>;
+  searchAttractions?(input: AttractionProviderSearchInput): Promise<AttractionOffer[]>;
 };
