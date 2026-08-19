@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+// This gate intentionally runs only on the Travel provider Preview branch so
+// Vercel-held provider credentials are exercised without exposing them to CI.
 const isTargetPreview =
   process.env.VERCEL === '1' &&
   process.env.VERCEL_ENV === 'preview' &&
