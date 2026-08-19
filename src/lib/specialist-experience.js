@@ -158,8 +158,7 @@ function applyHero(config) {
     const text = child.textContent?.trim() || '';
     if (child === prompt || child === support || child === capability) return;
     if (text.includes('Do not show this next time')) setDisplay(child, 'none');
-    const hasModelCards = text.includes('Gemini') && child.querySelectorAll('h3').length > 0;
-    if (hasModelCards) setDisplay(child, 'none');
+    if (child.querySelectorAll('h3').length > 0) setDisplay(child, 'none');
   });
 }
 
@@ -269,6 +268,11 @@ function installFetchDomainBridge() {
   };
 }
 
+function openCleanWorkspace() {
+  const newChat = exactTextElements('New Chat')[0];
+  if (newChat instanceof HTMLElement) newChat.click();
+}
+
 export function installSpecialistExperience() {
   if (typeof window === 'undefined' || window.__quantoraSpecialistExperienceInstalled) return;
   window.__quantoraSpecialistExperienceInstalled = true;
@@ -289,6 +293,7 @@ export function installSpecialistExperience() {
     if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
 
     setCurrentDomain(specialist.domain);
+    openCleanWorkspace();
     requestAnimationFrame(applyExperience);
     setTimeout(applyExperience, 80);
 
