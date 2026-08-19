@@ -12,6 +12,7 @@ import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normaliz
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
 import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
+import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
 
 const RATE_LIMIT_PER_MINUTE = 15;
 const FEEDBACK_RATE_LIMIT_PER_MINUTE = 5;
@@ -19,10 +20,29 @@ const FEEDBACK_MAX_CHARS = 500;
 
 export default async function handler(req: any, res: any) {
   // Vercel rewrites /api/chat here to preserve the twelve-function budget.
-  // The deterministic decision gate gets first refusal; every non-matching
-  // request is delegated to the proven chat runtime unchanged.
+  // Deterministic decisions still get first refusal. Ordinary Travel dialogue
+  // may use a provider-neutral conversational model when one is configured;
+  // live travel-tool turns remain on the tool-capable path.
   if (req.query?.route === "chat") {
     if (await handleAffordabilityDecision(req, res)) return;
+
+    if (shouldPreferTravelConversationProvider(req.body)) {
+      const signedIn = Boolean(getSessionUser(req));
+      let openRouterAvailable = Boolean(req.body?.openRouterKey || (signedIn && process.env.OPENROUTER_API_KEY));
+
+      if (!openRouterAvailable && signedIn) {
+        try {
+          openRouterAvailable = Boolean(await fetchApiGatewayKey('OPENROUTER'));
+        } catch (error: any) {
+          console.warn("Travel provider routing could not resolve OpenRouter availability:", error?.message || error);
+        }
+      }
+
+      if (openRouterAvailable) {
+        req.body = routeTravelConversationBody(req.body);
+      }
+    }
+
     return chat(req, res);
   }
 
