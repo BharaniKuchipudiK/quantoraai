@@ -207,6 +207,24 @@ Use separate test/live credentials and Vercel environment scopes.
 Keys must never enter model prompts, client bundles, telemetry payloads, or
 Context Graph values.
 
+## Rollout validation sequence
+
+Environment-variable changes are not retroactive to an already-built Vercel
+deployment. After adding or changing provider credentials:
+
+1. confirm the secret is scoped to the intended Vercel environment(s);
+2. create a fresh Preview deployment from the Travel/Fabric branch;
+3. run a read-only flight search with IATA codes to validate Duffel;
+4. run destination/attraction discovery to validate Google Places;
+5. run a hotel search only after destination resolution succeeds and Duffel
+   Stays entitlement is confirmed;
+6. inspect provider/runtime logs for errors, latency and zero-result behaviour;
+7. promote to production only after the Preview flow is clean.
+
+A production redeploy of `main` does not validate branch-only Travel code. Keep
+provider rollout testing on Preview until the Travel slice itself is ready to
+merge.
+
 ## Observability required before booking goes live
 
 For every provider operation record non-sensitive telemetry:
