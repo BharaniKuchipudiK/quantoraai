@@ -26,9 +26,38 @@ test("routes ordinary Travel conversation away from a Gemini-only path", () => {
   });
 });
 
+test("routes Google-prefixed Gemini IDs used by the production UI", () => {
+  const body = {
+    studioDomain: "travel",
+    modelId: "google/gemini-3-flash-preview",
+    modelName: "Gemini Flash",
+    message: "Help me book flights to Bali from Singapore on 31 August",
+  };
+
+  assert.equal(hasTravelConversationContext(body), true);
+  assert.equal(isLiveTravelToolTurn(body), true);
+  assert.equal(shouldPreferTravelConversationProvider(body), true);
+  const routed = routeTravelConversationBody(body);
+  assert.equal(routed.modelId, TRAVEL_CONVERSATION_MODEL_ID);
+  assert.equal(routed.fallbackFrom, "google/gemini-3-flash-preview");
+  assert.equal(routed.travelToolExecutionDeferred, true);
+});
+
+test("server-owned Travel routing is independent of the currently selected UI model", () => {
+  const body = {
+    studioDomain: "travel",
+    modelId: "deepseek/deepseek-chat",
+    modelName: "DeepSeek",
+    message: "Plan Bali for three nights",
+  };
+
+  assert.equal(shouldPreferTravelConversationProvider(body), true);
+  assert.equal(routeTravelConversationBody(body).modelId, TRAVEL_CONVERSATION_MODEL_ID);
+});
+
 test("recovers Travel context from conversation history when client omits studioDomain", () => {
   const body = {
-    modelId: "gemini-flash-latest",
+    modelId: "google/gemini-3-flash-preview",
     modelName: "Gemini Flash",
     message: "Singapore (SIN)",
     history: [
@@ -44,7 +73,7 @@ test("recovers Travel context from conversation history when client omits studio
 
 test("recognizes a Travel first turn even before specialist metadata arrives", () => {
   const body = {
-    modelId: "gemini-flash-latest",
+    modelId: "google/gemini-3-flash-preview",
     message: "Help me plan a trip to Bali for 3 nights",
     history: [],
   };
@@ -56,7 +85,7 @@ test("recognizes a Travel first turn even before specialist metadata arrives", (
 test("keeps live flight and hotel intent out of the broken Gemini tool loop", () => {
   const body = {
     studioDomain: "travel",
-    modelId: "gemini-flash-latest",
+    modelId: "google/gemini-3-flash-preview",
     message: "Show me live flight options from Singapore to Bali",
   };
 
@@ -66,15 +95,15 @@ test("keeps live flight and hotel intent out of the broken Gemini tool loop", ()
     ...body,
     modelId: TRAVEL_CONVERSATION_MODEL_ID,
     modelName: "Quantora Travel Advisor",
-    fallbackFrom: "gemini-flash-latest",
+    fallbackFrom: "google/gemini-3-flash-preview",
     travelToolExecutionDeferred: true,
   });
 });
 
-test("does not rewrite a user supplied Gemini key", () => {
+test("does not rewrite a user supplied provider key", () => {
   const body = {
     studioDomain: "travel",
-    modelId: "gemini-flash-latest",
+    modelId: "google/gemini-3-flash-preview",
     userKey: "user-owned-key",
     message: "I like beaches",
   };
@@ -82,10 +111,21 @@ test("does not rewrite a user supplied Gemini key", () => {
   assert.equal(shouldPreferTravelConversationProvider(body), false);
 });
 
+test("does not reroute an already-routed Travel request", () => {
+  const body = {
+    studioDomain: "travel",
+    modelId: TRAVEL_CONVERSATION_MODEL_ID,
+    message: "I like beaches",
+  };
+
+  assert.equal(shouldPreferTravelConversationProvider(body), false);
+  assert.equal(routeTravelConversationBody(body), body);
+});
+
 test("does not affect clearly non-Travel Studio requests", () => {
   const body = {
     studioDomain: "finance",
-    modelId: "gemini-flash-latest",
+    modelId: "google/gemini-3-flash-preview",
     message: "Help me budget my monthly expenses",
     history: [],
   };
