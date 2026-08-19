@@ -12,13 +12,12 @@ if (!isTargetPreview) {
   process.exit(0);
 }
 
-// Safe Preview auth diagnostics: booleans only, never secret values.
-console.log('Preview auth configuration:');
-console.log(`  VITE_GOOGLE_CLIENT_ID=${Boolean(String(process.env.VITE_GOOGLE_CLIENT_ID || '').trim())}`);
-console.log(`  GOOGLE_CLIENT_ID=${Boolean(String(process.env.GOOGLE_CLIENT_ID || '').trim())}`);
-console.log(`  SESSION_SECRET=${Boolean(String(process.env.SESSION_SECRET || '').trim())}`);
-console.log(`  SUPABASE_URL=${Boolean(String(process.env.SUPABASE_URL || '').trim())}`);
-console.log(`  SUPABASE_SERVICE_ROLE_KEY=${Boolean(String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim())}`);
+// Temporary auth diagnostic. Google OAuth web client IDs are public identifiers,
+// but compare only a boolean so the build log remains minimal.
+const productionGoogleClientId = '611965897691-f0438nl28r23au5lbc0t7naqub6f66j5.apps.googleusercontent.com';
+const previewGoogleClientId = String(process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+console.log(`Preview Google OAuth client matches Production=${previewGoogleClientId === productionGoogleClientId}`);
+console.log(`Preview SESSION_SECRET configured=${Boolean(String(process.env.SESSION_SECRET || '').trim())}`);
 
 console.log('Running PR #187 live Duffel provider gate with Vercel Preview credentials...');
 await import('./travel-provider-canary.mjs');
