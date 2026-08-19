@@ -5,7 +5,7 @@ import type { ProjectContextPack } from "./project-state.js";
 import { evaluateSafetyText } from "./safety-policy.js";
 import { formatPclNavigatorDirective, publicPclNavigatorMetadata } from "./pcl-navigator-adapter.js";
 
-export const CONVERSATION_POLICY_VERSION = "outcome-navigator-2026-08-19.2";
+export const CONVERSATION_POLICY_VERSION = "outcome-navigator-2026-08-19.3";
 
 export const CONVERSATION_MOVES = [
   "answer",
@@ -287,6 +287,8 @@ function hasAny(text: string, pattern: RegExp): boolean {
   return pattern.test(text);
 }
 
+const ACTION_INTENT = /\b(?:build|implement|write|create|generate|make|fix|ship|produce|draft|update|edit|revise|refactor|send|submit|publish|deploy|delete|remove|pay|purchase|buy|transfer|book|subscribe|order|charge|refund|withdraw|invite|revoke|cancel|terminate|merge|release)\b/i;
+
 /**
  * Explainable v1 policy. It chooses a dialogue act, never user-facing canned
  * copy. The selected provider remains responsible for natural language while
@@ -303,7 +305,7 @@ export function chooseNextConversationMove(snapshot: ConversationSnapshot): Conv
   const explicitProceed = hasAny(message, /\b(?:go ahead|proceed|do it|build it now|implement it now|ship it|use defaults|assume reasonable defaults|skip (?:the )?questions?)\b/i);
   const explicitAction = explicitProceed
     || snapshot.currentTurn.studioMode === "build"
-    || hasAny(message, /\b(?:build|implement|write|create|generate|make|fix|ship|produce|draft)\b/i);
+    || hasAny(message, ACTION_INTENT);
   const asksRecommendation = hasAny(message, /\b(?:recommend|best option|which (?:one|option)|compare|versus|vs\.?|pros and cons|what should i choose)\b/i);
   const asksVerification = hasAny(message, /\b(?:verify|validate|review|check|audit|test|is this (?:right|correct|complete|safe)|did (?:it|that) work)\b/i);
   const asksQuestion = message.includes("?") || hasAny(message, /^(?:what|why|how|when|where|who|can|could|should|would|is|are|do|does)\b/i);
