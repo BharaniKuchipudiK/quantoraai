@@ -72,11 +72,6 @@ function exactTextElements(text) {
     .filter((element) => element.children.length === 0 && element.textContent?.trim() === text);
 }
 
-function firstTextElement(predicate) {
-  return [...document.querySelectorAll('div,span,p,h1,h2,h3,button')]
-    .find((element) => element.children.length === 0 && predicate(element.textContent?.trim() || '')) || null;
-}
-
 function setText(element, value) {
   if (element && element.textContent !== value) element.textContent = value;
 }
@@ -90,14 +85,25 @@ function setDisplay(element, display) {
 }
 
 function hideInternalModelControls() {
-  const selectedModel = firstTextElement((text) => text.startsWith('Selected Model:'));
+  const selectedModel = [...document.querySelectorAll('span')]
+    .find((element) => (element.textContent?.trim() || '').startsWith('Selected Model:'));
   if (selectedModel) setDisplay(selectedModel, 'none');
 
-  exactTextElements('Live API Engine Active').forEach((element) => setDisplay(element, 'none'));
+  [...document.querySelectorAll('span')]
+    .filter((element) => element.textContent?.trim() === 'Live API Engine Active')
+    .forEach((element) => setDisplay(element, 'none'));
 
   [...document.querySelectorAll('button')].forEach((button) => {
     const text = button.textContent?.trim() || '';
-    if (text.includes('Dual Arena Mode') || text.includes('Arena Mode Active')) {
+    const title = button.getAttribute('title') || '';
+    if (
+      text.includes('Dual Arena Mode')
+      || text.includes('Arena Mode Active')
+      || title === 'Select AI Engine'
+      || title.includes('Web Search Grounding')
+      || title.includes('Live Web Search Enabled')
+      || title === 'Push raw prompt to Dream Canvas'
+    ) {
       setDisplay(button, 'none');
     }
   });
@@ -165,7 +171,8 @@ function applyHero(config) {
 function applyHeader(config) {
   hideInternalModelControls();
 
-  const resetButton = exactTextElements('Reset Chat')[0];
+  const resetButton = [...document.querySelectorAll('button')]
+    .find((button) => button.textContent?.trim() === 'Reset Chat');
   const header = resetButton?.parentElement?.parentElement || null;
   if (!header) return;
 
@@ -269,8 +276,8 @@ function installFetchDomainBridge() {
 }
 
 function openCleanWorkspace() {
-  const newChat = exactTextElements('New Chat')[0];
-  if (newChat instanceof HTMLElement) newChat.click();
+  const newChatLabel = exactTextElements('New Chat')[0];
+  if (newChatLabel instanceof HTMLElement) newChatLabel.click();
 }
 
 export function installSpecialistExperience() {
