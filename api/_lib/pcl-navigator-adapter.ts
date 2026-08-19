@@ -1,4 +1,5 @@
 import type { ConversationDecision, ConversationSnapshot } from "./conversation-engine.js";
+import { activeCognitiveLedgerEntries, formatCognitiveLedgerForPrompt } from "./cognitive-ledger.js";
 import { inferPclActionContext } from "./pcl-action-policy.js";
 import {
   assessPclCognition,
@@ -25,7 +26,9 @@ export function formatPclNavigatorDirective(
   snapshot: ConversationSnapshot,
   decision: ConversationDecision,
 ): string {
-  return formatPclCognitiveContract(assessPclNavigatorTurn(snapshot, decision));
+  const governance = formatPclCognitiveContract(assessPclNavigatorTurn(snapshot, decision));
+  const ledger = formatCognitiveLedgerForPrompt(snapshot.cognitiveLedger);
+  return governance + ledger;
 }
 
 /** Safe additive metadata for observability and future evaluation. */
@@ -35,6 +38,7 @@ export function publicPclNavigatorMetadata(
 ) {
   const cognition = assessPclNavigatorTurn(snapshot, decision);
   const action = inferPclActionContext(snapshot, decision);
+  const activeLedger = activeCognitiveLedgerEntries(snapshot.cognitiveLedger);
   return {
     kernelVersion: cognition.kernelVersion,
     outcomeAlignment: cognition.outcomeAlignment,
@@ -47,5 +51,8 @@ export function publicPclNavigatorMetadata(
     evidenceCoverage: cognition.evidenceCoverage,
     sideEffect: action.sideEffect,
     actionReasonCode: action.reasonCode,
+    ledgerEntries: snapshot.cognitiveLedger.length,
+    activeRejections: activeLedger.filter((entry) => entry.type === "rejection").length,
+    activeCorrections: activeLedger.filter((entry) => entry.type === "correction").length,
   };
 }
