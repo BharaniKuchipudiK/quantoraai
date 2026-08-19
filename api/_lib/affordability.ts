@@ -130,6 +130,14 @@ export function evaluateAffordability({
     prefix: true,
   }).filter((node) => datedWithinHorizon(node, asOfMs, horizonMs));
 
+  const unpricedCommitments = commitmentNodes.filter((node) => (
+    money(node.value.amount) !== null && currencyOf(node) !== normalizedCurrency
+  ));
+  if (unpricedCommitments.length) {
+    const currencies = [...new Set(unpricedCommitments.map((node) => currencyOf(node) || "UNKNOWN"))].join(", ");
+    missing.push(`currency conversion for commitments in ${currencies}`);
+  }
+
   // Unknown-date commitments are included conservatively; unknown-date inflows
   // are excluded because optimistic cash assumptions should never inflate spend.
   const expectedInflows = Number(inflowNodes.reduce((sum, node) => {
@@ -147,6 +155,7 @@ export function evaluateAffordability({
     ...(reserveNode ? [reserveNode.id] : []),
     ...inflowNodes.filter((node) => amountOf(node, normalizedCurrency) !== null).map((node) => node.id),
     ...commitmentNodes.filter((node) => amountOf(node, normalizedCurrency) !== null).map((node) => node.id),
+    ...unpricedCommitments.map((node) => node.id),
   ];
 
   if (missing.length) {
@@ -161,11 +170,11 @@ export function evaluateAffordability({
       commitments,
       minimumReserve,
       horizonEnd: horizon.toISOString(),
-      consideredNodeIds,
+      consideredNodeIds: [...new Set(consideredNodeIds)],
       missing,
       reasons: [
         "Quantora is missing one or more required financial guardrails.",
-        "It will not substitute portfolio value, market performance, or inferred income for spendable cash.",
+        "It will not substitute portfolio value, market performance, inferred income, or an assumed FX rate for spendable cash.",
       ],
     };
   }
@@ -197,7 +206,7 @@ export function evaluateAffordability({
     commitments,
     minimumReserve,
     horizonEnd: horizon.toISOString(),
-    consideredNodeIds,
+    consideredNodeIds: [...new Set(consideredNodeIds)],
     missing: [],
     reasons,
   };
