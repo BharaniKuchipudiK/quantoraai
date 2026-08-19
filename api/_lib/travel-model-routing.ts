@@ -28,11 +28,16 @@ export function isLiveTravelToolTurn(body: any): boolean {
   return LIVE_TRAVEL_TOOL_INTENT.test(message);
 }
 
+/**
+ * Server-owned Travel must never depend on the model identifier shape sent by
+ * the browser. Some clients send `gemini-*`, others `google/gemini-*`, and a
+ * stale UI can send another selected model entirely. If Quantora owns the
+ * credentials and the turn is Travel, route it through the independent Travel
+ * conversation provider. BYOK remains the one explicit opt-out.
+ */
 export function shouldPreferTravelConversationProvider(body: any): boolean {
-  const modelId = typeof body?.modelId === "string" ? body.modelId : "";
-  return hasTravelConversationContext(body)
-    && modelId.startsWith("gemini")
-    && !body?.userKey;
+  if (!hasTravelConversationContext(body) || body?.userKey) return false;
+  return body?.modelId !== TRAVEL_CONVERSATION_MODEL_ID;
 }
 
 export function routeTravelConversationBody(body: any) {
@@ -41,7 +46,7 @@ export function routeTravelConversationBody(body: any) {
     ...body,
     modelId: TRAVEL_CONVERSATION_MODEL_ID,
     modelName: TRAVEL_CONVERSATION_MODEL_NAME,
-    fallbackFrom: body.modelId,
+    fallbackFrom: body?.modelId || null,
     // The Gemini function-call continuation path is currently unsafe for
     // Travel: quota/model roulette plus missing thought signatures can leave
     // the UI frozen after a provider tool has already run. Until the direct
