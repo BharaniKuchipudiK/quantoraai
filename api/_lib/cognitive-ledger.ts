@@ -1,4 +1,4 @@
-export const COGNITIVE_LEDGER_VERSION = "pcl-ledger-2026-08-19.1";
+export const COGNITIVE_LEDGER_VERSION = "pcl-ledger-2026-08-19.2";
 export const COGNITIVE_LEDGER_TYPES = [
   "decision",
   "rejection",
@@ -105,6 +105,24 @@ export function normalizeCognitiveLedger(value: unknown): CognitiveLedgerEntry[]
     result.push(entry);
   }
   return result.slice(-MAX_ENTRIES);
+}
+
+/**
+ * Merge session ledgers oldest -> newest so later status/correction records win.
+ * This is the Project PCL bridge: one mission history across multiple chats.
+ */
+export function mergeCognitiveLedgers(ledgers: unknown[], maxEntries = MAX_ENTRIES): CognitiveLedgerEntry[] {
+  const byId = new Map<string, CognitiveLedgerEntry>();
+  for (const ledger of ledgers) {
+    for (const entry of normalizeCognitiveLedger(ledger)) {
+      byId.set(entry.id, entry);
+      if (entry.supersedes && byId.has(entry.supersedes)) {
+        const previous = byId.get(entry.supersedes)!;
+        byId.set(entry.supersedes, { ...previous, status: "superseded" });
+      }
+    }
+  }
+  return [...byId.values()].slice(-Math.max(1, Math.min(MAX_ENTRIES, maxEntries)));
 }
 
 export function appendCognitiveLedgerEntry(
