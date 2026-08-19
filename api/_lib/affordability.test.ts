@@ -97,6 +97,22 @@ test("unknown-date commitments are included conservatively", () => {
   assert.equal(decision.verdict, "not_affordable");
 });
 
+test("foreign-currency commitments fail closed until Quantora has an FX conversion", () => {
+  const usdCommitment = node("usd-debt", "commitment", "finance.commitment.usd_debt", 1000, "2026-09-15T00:00:00Z");
+  usdCommitment.value.currency = "USD";
+  const graph = normalizeUserContextGraph([
+    node("cash", "financial_state", "finance.liquid_cash", 10000),
+    node("reserve", "constraint", "finance.minimum_reserve", 2000),
+    usdCommitment,
+  ]);
+
+  const decision = evaluateAffordability({ graph, proposedCost: 2000, currency: "SGD", asOf: AS_OF });
+  assert.equal(decision.verdict, "insufficient_data");
+  assert.equal(decision.safeSpend, null);
+  assert.match(decision.missing.join(" "), /currency conversion/);
+  assert.ok(decision.consideredNodeIds.includes("usd-debt"));
+});
+
 test("missing reserve or liquid cash fails closed instead of using model intuition", () => {
   const graph = normalizeUserContextGraph([
     node("cash", "financial_state", "finance.liquid_cash", 10000),
