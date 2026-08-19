@@ -1,5 +1,5 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "vite build && node scripts/preview-travel-provider-gate.mjs",
   "outputDirectory": "dist",
   "functions": {
     "api/generate-office.ts": { "maxDuration": 300 }
