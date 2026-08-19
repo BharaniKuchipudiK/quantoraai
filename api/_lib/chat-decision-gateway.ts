@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { evaluateAffordability, type AffordabilityDecision } from "./affordability.js";
 import { parseAffordabilityIntent } from "./affordability-intent.js";
 import { requireActiveSession } from "./authz.js";
+import { endOfUtcDay, parseFinancialContextCommand, type FinancialContextCommand } from "./financial-context-command.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
-import { isUserContextStoreConfigured, readUserContextGraph } from "./user-context-store.js";
+import { isUserContextStoreConfigured, readUserContextGraph, saveUserContextNode } from "./user-context-store.js";
 
 const DECISION_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -12,14 +13,33 @@ function money(currency: string, amount: number | null): string {
   return amount === null ? "unknown" : `${currency} ${amount.toFixed(2)}`;
 }
 
+function setupHints(decision: AffordabilityDecision): string[] {
+  const hints: string[] = [];
+  if (decision.missing.some((item) => item.startsWith("finance.liquid_cash"))) {
+    hints.push(`- \`Set my liquid cash to ${decision.currency || "SGD"} <amount>\``);
+  }
+  if (decision.missing.some((item) => item.startsWith("finance.minimum_reserve"))) {
+    hints.push(`- \`Set my minimum reserve to ${decision.currency || "SGD"} <amount>\``);
+  }
+  const coverage = decision.missing.find((item) => item.startsWith("finance.commitments_reviewed_through"));
+  if (coverage) {
+    const date = coverage.match(/>=\s+(\d{4}-\d{2}-\d{2})/)?.[1] || decision.horizonEnd.slice(0, 10);
+    hints.push(`- Add any known obligation first with \`Add commitment: <name>, ${decision.currency || "SGD"} <amount>, due YYYY-MM-DD\``);
+    hints.push(`- Then confirm coverage with \`Commitments reviewed through ${date}\``);
+  }
+  return hints;
+}
+
 export function formatAffordabilityResponse(decision: AffordabilityDecision): string {
   if (decision.verdict === "insufficient_data") {
+    const hints = setupHints(decision);
     return [
       "I can't give you a safe yes/no yet.",
       "",
       `I'm missing: **${decision.missing.join(", ") || "required financial guardrails"}**.`,
       "",
-      "Quantora won't treat portfolio value, market gains, inferred income, or an assumed FX rate as spendable cash. Once the missing inputs are available, I'll calculate the decision from your actual cash, commitments and protected reserve.",
+      "Quantora won't assume unrecorded commitments are zero or treat portfolio value, market gains, inferred income, or an assumed FX rate as spendable cash.",
+      ...(hints.length ? ["", "**To complete the baseline:**", ...hints] : []),
     ].join("\n");
   }
 
@@ -50,6 +70,7 @@ function sendStream(res: any, payload: {
   text: string;
   requestId: string;
   decision?: AffordabilityDecision | null;
+  contextSaved?: string | null;
 }) {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -59,24 +80,85 @@ function sendStream(res: any, payload: {
   res.write(`data: ${JSON.stringify({ text: payload.text })}\n\n`);
   res.write(`data: ${JSON.stringify({
     provider: "Quantora Decision Engine",
-    modelId: "quantora-affordability-v1",
+    modelId: "quantora-personal-decision-v1",
     requestId: payload.requestId,
     liveConnected: true,
     deterministic: true,
     ...(payload.decision ? { affordability: payload.decision } : {}),
+    ...(payload.contextSaved ? { contextSaved: payload.contextSaved } : {}),
   })}\n\n`);
   res.write("data: [DONE]\n\n");
   res.end();
 }
 
+function contextNodeForCommand(command: FinancialContextCommand, requestId: string) {
+  const common = {
+    provenance: "user" as const,
+    confidence: 1,
+    sourceRef: `chat-explicit:${requestId}`,
+  };
+
+  if (command.kind === "set_liquid_cash") {
+    return {
+      ...common,
+      category: "financial_state" as const,
+      key: "finance.liquid_cash",
+      value: { amount: command.amount, currency: command.currency },
+    };
+  }
+  if (command.kind === "set_minimum_reserve") {
+    return {
+      ...common,
+      category: "constraint" as const,
+      key: "finance.minimum_reserve",
+      value: { amount: command.amount, currency: command.currency },
+    };
+  }
+  if (command.kind === "set_commitments_reviewed_through") {
+    return {
+      ...common,
+      category: "fact" as const,
+      key: "finance.commitments_reviewed_through",
+      value: { date: endOfUtcDay(command.reviewedThrough) },
+    };
+  }
+  return {
+    ...common,
+    category: "commitment" as const,
+    key: command.key,
+    value: {
+      text: command.label,
+      amount: command.amount,
+      currency: command.currency,
+      date: endOfUtcDay(command.dueDate),
+    },
+  };
+}
+
+function contextConfirmation(command: FinancialContextCommand): string {
+  if (command.kind === "set_liquid_cash") {
+    return `Saved: **liquid cash = ${money(command.currency, command.amount)}**.`;
+  }
+  if (command.kind === "set_minimum_reserve") {
+    return `Saved: **minimum reserve = ${money(command.currency, command.amount)}**.`;
+  }
+  if (command.kind === "set_commitments_reviewed_through") {
+    return `Saved: **commitments reviewed through ${command.reviewedThrough}**.`;
+  }
+  return `Saved commitment: **${command.label} — ${money(command.currency, command.amount)}, due ${command.dueDate}**.`;
+}
+
 /**
- * Intercept only explicit affordability questions. Returns false when the
- * ordinary chat runtime should continue unchanged.
+ * Narrow deterministic gateway in front of ordinary chat. It handles only:
+ * 1) explicit user-approved financial context commands, and
+ * 2) explicit affordability questions.
+ * Everything else returns false and continues through the existing chat runtime.
  */
-export async function handleAffordabilityDecision(req: any, res: any): Promise<boolean> {
+export async function handlePersonalDecisionGateway(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
+  const command = parseFinancialContextCommand(req.body?.message);
   const intent = parseAffordabilityIntent(req.body?.message);
-  if (!intent.matched) return false;
+  if (!command && !intent.matched) return false;
 
   applyCors(req, res, "POST,OPTIONS");
   const requestId = randomUUID();
@@ -87,14 +169,6 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
     return true;
   }
 
-  if (!intent.currency || intent.proposedCost === null) {
-    sendStream(res, {
-      requestId,
-      text: "I can calculate that, but I need an **explicit currency and amount** — for example, `SGD 3,000`. I won't guess what a plain `$` means.",
-    });
-    return true;
-  }
-
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return true;
 
@@ -102,6 +176,28 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
     res.status(503).json({
       error: "Quantora personal context is not configured on this deployment yet.",
       requestId,
+    });
+    return true;
+  }
+
+  if (command) {
+    const saved = await saveUserContextNode(auth.value.sessionUser!.sub, contextNodeForCommand(command, requestId));
+    if (!saved) {
+      res.status(503).json({ error: "Quantora could not save this personal context right now.", requestId });
+      return true;
+    }
+    sendStream(res, {
+      requestId,
+      contextSaved: saved.key,
+      text: `${contextConfirmation(command)}\n\nThis was stored because you used an explicit financial-context command; ordinary conversation is not silently captured.`,
+    });
+    return true;
+  }
+
+  if (!intent.currency || intent.proposedCost === null) {
+    sendStream(res, {
+      requestId,
+      text: "I can calculate that, but I need an **explicit currency and amount** — for example, `SGD 3,000`. I won't guess what a plain `$` means.",
     });
     return true;
   }
