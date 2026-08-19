@@ -11,15 +11,20 @@ import {
  * Thin integration seam between the existing Outcome Navigator and PCL.
  *
  * The Navigator still decides the conversational move. PCL adds consequence,
- * reversibility, evidence and human-governance policy. No provider/model call
- * is made here, and no second memory/state store is introduced.
+ * reversibility, project continuity, evidence and human-governance policy. No
+ * provider/model call is made here, and no second memory/state store is introduced.
  */
 export function assessPclNavigatorTurn(
   snapshot: ConversationSnapshot,
   decision: ConversationDecision,
 ): PclCognitiveAssessment {
   const action = inferPclActionContext(snapshot, decision);
-  return assessPclCognition({ snapshot, decision, action });
+  return assessPclCognition({
+    snapshot,
+    decision,
+    action,
+    projectContext: snapshot.projectContext,
+  });
 }
 
 export function formatPclNavigatorDirective(
@@ -51,6 +56,7 @@ export function publicPclNavigatorMetadata(
     evidenceCoverage: cognition.evidenceCoverage,
     sideEffect: action.sideEffect,
     actionReasonCode: action.reasonCode,
+    projectContextAvailable: cognition.continuity.projectContextAvailable,
     ledgerEntries: snapshot.cognitiveLedger.length,
     activeRejections: activeLedger.filter((entry) => entry.type === "rejection").length,
     activeCorrections: activeLedger.filter((entry) => entry.type === "correction").length,
