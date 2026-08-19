@@ -15,7 +15,7 @@ const HARD_EXTERNAL = /\b(?:send|submit|publish|invite|revoke|cancel|terminate|m
 const DESTRUCTIVE = /\b(?:delete|drop|destroy|erase|purge|wipe|remove\s+(?:the\s+)?(?:production|account|database|data)|reset\s+(?:the\s+)?(?:production|database))\b/i;
 const TRANSACTIONAL = /\b(?:pay|purchase|buy|transfer|book|subscribe|order|charge|refund|withdraw)\b/i;
 const REVERSIBLE_INTERNAL = /\b(?:draft|write|rewrite|summari[sz]e|analy[sz]e|compare|plan|recommend|prepare|generate|create|edit|revise|refactor|preview|simulate|mock|outline)\b/i;
-const PREVIEW_DEPLOY = /\b(?:deploy|publish)\s+(?:a\s+)?(?:preview|staging|test|sandbox)\b/i;
+const PREVIEW_DEPLOY = /\b(?:deploy|publish)\b(?:\s+(?:this|it|that|the\s+[a-z0-9_-]+))?\s+(?:to\s+)?(?:a\s+)?(?:preview|staging|test|sandbox)\b/i;
 
 function knownRisk(snapshot: ConversationSnapshot): PclRisk {
   if (snapshot.safetyFlags.length) return "high";
