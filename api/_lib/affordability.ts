@@ -50,6 +50,18 @@ function latestNode(nodes: UserContextNode[]): UserContextNode | null {
   })[0] || null;
 }
 
+function latestNodesByKey(nodes: UserContextNode[]): UserContextNode[] {
+  const byKey = new Map<string, UserContextNode>();
+  for (const node of [...nodes].sort((a, b) => {
+    const aTime = Date.parse(a.updatedAt || "") || 0;
+    const bTime = Date.parse(b.updatedAt || "") || 0;
+    return bTime - aTime;
+  })) {
+    if (!byKey.has(node.key)) byKey.set(node.key, node);
+  }
+  return [...byKey.values()];
+}
+
 function datedWithinHorizon(node: UserContextNode, asOfMs: number, horizonMs: number): boolean {
   if (!node.value.date) return true;
   const due = Date.parse(node.value.date);
@@ -130,17 +142,17 @@ export function evaluateAffordability({
     missing.push(`finance.commitments_reviewed_through >= ${horizon.toISOString().slice(0, 10)}`);
   }
 
-  const inflowNodes = userContextNodesForKey(active, "finance.expected_inflow", {
+  const inflowNodes = latestNodesByKey(userContextNodesForKey(active, "finance.expected_inflow", {
     asOf: asOfDate,
     minConfidence: 0.8,
     prefix: true,
-  }).filter((node) => datedWithinHorizon(node, asOfMs, horizonMs));
+  })).filter((node) => datedWithinHorizon(node, asOfMs, horizonMs));
 
-  const commitmentNodes = userContextNodesForKey(active, "finance.commitment", {
+  const commitmentNodes = latestNodesByKey(userContextNodesForKey(active, "finance.commitment", {
     asOf: asOfDate,
     minConfidence: 0.8,
     prefix: true,
-  }).filter((node) => datedWithinHorizon(node, asOfMs, horizonMs));
+  })).filter((node) => datedWithinHorizon(node, asOfMs, horizonMs));
 
   const unpricedCommitments = commitmentNodes.filter((node) => (
     money(node.value.amount) !== null && currencyOf(node) !== normalizedCurrency
