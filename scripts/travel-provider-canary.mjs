@@ -56,19 +56,17 @@ async function duffelCanary() {
     'Duffel-Version': 'v2',
   };
 
+  // The product layer canonicalizes common region names such as Bali -> DPS.
+  // The provider canary therefore verifies Duffel's exact canonical route rather
+  // than trusting fuzzy natural-language suggestion ordering.
   const [origin, destination] = await Promise.all([
-    timedFetch('Duffel place: Singapore', 'https://api.duffel.com/places/suggestions?query=Singapore', { headers }, 4_000),
-    timedFetch('Duffel place: Bali Indonesia', 'https://api.duffel.com/places/suggestions?query=Bali%20Indonesia', { headers }, 4_000),
+    timedFetch('Duffel place: SIN', 'https://api.duffel.com/places/suggestions?query=SIN', { headers }, 4_000),
+    timedFetch('Duffel place: DPS', 'https://api.duffel.com/places/suggestions?query=DPS', { headers }, 4_000),
   ]);
   const originCode = selectIata(origin, 'SIN');
   const destinationCode = selectIata(destination, 'DPS');
-  if (originCode !== 'SIN') throw new Error(`Duffel place resolution failed route validation for Singapore: expected SIN, got ${originCode || 'none'}.`);
-  if (destinationCode !== 'DPS') {
-    const returned = Array.isArray(destination?.data)
-      ? destination.data.slice(0, 5).map((place) => `${place?.iata_code || place?.iata_city_code || '?'}:${place?.city_name || place?.name || '?'}/${place?.iata_country_code || '?'}`).join(', ')
-      : 'none';
-    throw new Error(`Duffel place resolution failed route validation for Bali: expected DPS, candidates ${returned}.`);
-  }
+  if (originCode !== 'SIN') throw new Error(`Duffel place resolution failed route validation for SIN: got ${originCode || 'none'}.`);
+  if (destinationCode !== 'DPS') throw new Error(`Duffel place resolution failed route validation for DPS: got ${destinationCode || 'none'}.`);
 
   const departure = futureIso(30);
   const returning = futureIso(33);
