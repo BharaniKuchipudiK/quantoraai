@@ -54,3 +54,61 @@ jobs:
         run: |
           npm audit --json > audit.json || true
           node -e "const a=require('./audit.json');const allow=new Set(['image-size','pptxgenjs']);const bad=Object.entries(a.vulnerabilities||{}).filter(([k,v])=>['high','critical'].includes(v.severity)&&!allow.has(k));if(bad.length){console.error('Disallowed high/critical advisories:',bad.map(([k])=>k).join(', '));process.exit(1);}console.log('Audit OK (allowlisted unreachable transitives:',[...allow].join(', '),')');"
+
+  travel-browser-gate:
+    name: Travel browser release gate
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked application dependencies
+        run: npm ci
+
+      - name: Build production frontend
+        run: npm run build
+
+      - name: Install browser test runtime
+        # Kept outside package-lock initially so this quality gate can land
+        # without changing runtime dependencies. Pin the major/minor to avoid
+        # surprise browser-runner behaviour between commits.
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start production-like Vite preview
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/quantora-preview.log 2>&1 &
+          echo $! > /tmp/quantora-preview.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/quantora-preview.log
+          exit 1
+
+      - name: Execute Travel browser journey
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+          QUANTORA_E2E_TURN_SLA_MS: 8000
+        run: node scripts/travel-browser-release-gate.mjs
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: travel-browser-release-gate
+          path: artifacts/e2e
+          if-no-files-found: ignore
+          retention-days: 7
