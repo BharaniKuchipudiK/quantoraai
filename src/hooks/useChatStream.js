@@ -359,10 +359,14 @@ export function useChatStream({
 
       const streamSingleModel = async (mod, isModelA) => {
         try {
-          abortControllerRef.current = new AbortController();
-      const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
+          // Each Arena stream owns its controller. A timeout from one model must
+          // never abort the other model's request. The shared ref remains the
+          // latest controller so the existing Stop action keeps its behavior.
+          const controller = new AbortController();
+          abortControllerRef.current = controller;
+      const timeoutId = setTimeout(() => controller.abort('timeout'), 60000);
       const res = await fetch('/api/chat', {
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -435,7 +439,7 @@ export function useChatStream({
       await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
     } catch (err) {
     if (err.name === 'AbortError' || err === 'timeout') {
-      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+      updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? {
         ...m,
         text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
       } : m));
@@ -652,12 +656,18 @@ export function useChatStream({
      // Trigger Architect -> Coder Swarm
      
      
+     // Bound the synthetic Architect worker. If it hangs, Quantora falls
+     // through to the normal single-model path instead of leaving generation
+     // indefinitely stuck.
+     const architectController = new AbortController();
+     const architectTimeout = setTimeout(() => architectController.abort('timeout'), 45000);
      try {
        // Fire Architect call to our generic chat endpoint using Flash. This is a
        // synthetic worker turn, so it deliberately receives no Session Outcome
        // identity and cannot author durable PCL memory.
        const architectRes = await fetch('/api/chat', {
          method: 'POST',
+         signal: architectController.signal,
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({
            message: `You are the Architect Agent. Write a highly detailed technical implementation plan for this request. Do NOT write the final code. Just the step-by-step logic and file architecture. Request: ${text}`,
@@ -717,6 +727,8 @@ You can output multiple search/replace blocks if needed.
        }
      } catch (e) {
        console.error("Swarm architect failed", e);
+     } finally {
+       clearTimeout(architectTimeout);
      }
   }
 
