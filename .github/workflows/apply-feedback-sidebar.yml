@@ -1,0 +1,52 @@
+name: Apply Feedback Sidebar Fix
+
+on:
+  push:
+    branches:
+      - fix/feedback-sidebar-entry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[feedback-sidebar-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/feedback-sidebar-entry
+      - name: Patch Feedback UI placement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          feedback = Path('src/components/FeedbackWidget.jsx')
+          text = feedback.read_text()
+          anchor = """  useEffect(() => {\n    const sync = () => setVisible(hasCachedUser());"""
+          replacement = """  useEffect(() => {\n    const openFromProductNav = () => {\n      setVisible(true);\n      setOpen(true);\n    };\n    window.addEventListener('quantora:open-feedback', openFromProductNav);\n    return () => window.removeEventListener('quantora:open-feedback', openFromProductNav);\n  }, []);\n\n  useEffect(() => {\n    const sync = () => setVisible(hasCachedUser());"""
+          if anchor not in text:
+              raise SystemExit('FeedbackWidget effect anchor not found')
+          text = text.replace(anchor, replacement, 1)
+
+          old_trigger = """      {!open ? (\n        <button type=\"button\" className=\"q-feedback-trigger\" onClick={() => setOpen(true)}>\n          <MessageSquareText size={15} />\n          Feedback\n        </button>\n      ) : ("""
+          new_trigger = """      {!open ? null : ("""
+          if old_trigger not in text:
+              raise SystemExit('FeedbackWidget trigger anchor not found')
+          text = text.replace(old_trigger, new_trigger, 1)
+          feedback.write_text(text)
+
+          studio = Path('src/components/AiStudio.jsx')
+          text = studio.read_text()
+          close_anchor = """        </div>\n      </div>\n\n      {/* Main Chat Interface (Center or Left if Workspace is Open) */}"""
+          replacement = """        </div>\n\n        {/* Product feedback — explicit signed-in Studio entry point. */}\n        <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>\n          <button\n            type=\"button\"\n            onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-feedback'))}\n            style={{\n              width: '100%',\n              display: 'flex',\n              alignItems: 'center',\n              gap: '10px',\n              padding: '9px 12px',\n              borderRadius: '8px',\n              background: 'transparent',\n              border: '1px solid transparent',\n              color: textColor,\n              fontSize: '0.82rem',\n              fontWeight: '600',\n              cursor: 'pointer',\n              textAlign: 'left'\n            }}\n            onMouseEnter={(e) => {\n              e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';\n              e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';\n            }}\n            onMouseLeave={(e) => {\n              e.currentTarget.style.background = 'transparent';\n              e.currentTarget.style.borderColor = 'transparent';\n            }}\n          >\n            <MessageSquare size={15} color=\"#f97316\" />\n            <span>Feedback & Suggestions</span>\n          </button>\n        </div>\n      </div>\n\n      {/* Main Chat Interface (Center or Left if Workspace is Open) */}"""
+          if close_anchor not in text:
+              raise SystemExit('AiStudio sidebar close anchor not found')
+          text = text.replace(close_anchor, replacement, 1)
+          studio.write_text(text)
+          PY
+          git add src/components/FeedbackWidget.jsx src/components/AiStudio.jsx
+          git config user.name "Quantora Release Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Place Feedback in Studio sidebar [feedback-sidebar-applied]"
+          git push origin fix/feedback-sidebar-entry
