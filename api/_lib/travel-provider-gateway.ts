@@ -24,6 +24,32 @@ const defaultProviders: TravelProviderSet = {
   amadeus: amadeusProvider,
 };
 
+// Provider-neutral aliases for well-known travel regions whose commonly used
+// destination name does not match the airport/city name returned by suppliers.
+// Keep this list deliberately small and explicit; unknown locations fail closed
+// instead of silently accepting a fuzzy provider result.
+const TRAVEL_LOCATION_ALIASES: Record<string, string> = {
+  'bali': 'DPS',
+  'bali indonesia': 'DPS',
+  'bali, indonesia': 'DPS',
+  'denpasar': 'DPS',
+};
+
+function normalizeLocationKey(value: string): string {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+export function canonicalTravelLocationQuery(query: string): string {
+  const clean = String(query || '').trim();
+  if (!clean) return clean;
+  return TRAVEL_LOCATION_ALIASES[normalizeLocationKey(clean)] || clean;
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -74,17 +100,20 @@ async function resolvePlace(
   providers: TravelProviderSet,
   attempts: TravelProviderAttempt[],
 ): Promise<PlaceResolution | null> {
+  const canonicalQuery = canonicalTravelLocationQuery(query);
   for (const provider of [providers.duffel, providers.amadeus]) {
     if (!provider.isConfigured()) continue;
     const startedAt = Date.now();
     try {
-      const place = await provider.resolvePlace(query);
+      const place = await provider.resolvePlace(canonicalQuery);
       if (place) {
         attempts.push({
           provider: provider.name,
           outcome: 'success',
           latencyMs: Date.now() - startedAt,
-          detail: `resolved ${query} -> ${place.iataCode}`,
+          detail: canonicalQuery === query
+            ? `resolved ${query} -> ${place.iataCode}`
+            : `resolved ${query} via ${canonicalQuery} -> ${place.iataCode}`,
         });
         return place;
       }
@@ -92,7 +121,9 @@ async function resolvePlace(
         provider: provider.name,
         outcome: 'unavailable',
         latencyMs: Date.now() - startedAt,
-        detail: `no place match for ${query}`,
+        detail: canonicalQuery === query
+          ? `no confident place match for ${query}`
+          : `no confident place match for ${query} via ${canonicalQuery}`,
       });
     } catch (error: any) {
       attempts.push(attemptFromError(provider, startedAt, error));
@@ -132,9 +163,9 @@ export async function searchFlights(
 
   const attempts: TravelProviderAttempt[] = [];
   const origin = await resolvePlace(input.origin, providers, attempts);
-  if (!origin) return unavailable(`I could not resolve the departure location "${input.origin}" with the connected travel providers.`, attempts);
+  if (!origin) return unavailable(`I could not confidently resolve the departure location "${input.origin}". Please use a city or airport code.`, attempts);
   const destination = await resolvePlace(input.destination, providers, attempts);
-  if (!destination) return unavailable(`I could not resolve the destination "${input.destination}" with the connected travel providers.`, attempts);
+  if (!destination) return unavailable(`I could not confidently resolve the destination "${input.destination}". Please use a city or airport code.`, attempts);
 
   for (const provider of [providers.duffel, providers.amadeus]) {
     if (!provider.isConfigured()) continue;
@@ -180,7 +211,7 @@ export async function searchHotels(
 
   const attempts: TravelProviderAttempt[] = [];
   const location = await resolvePlace(input.location, providers, attempts);
-  if (!location) return unavailable(`I could not resolve the hotel destination "${input.location}".`, attempts);
+  if (!location) return unavailable(`I could not confidently resolve the hotel destination "${input.location}". Please use a city or airport code.`, attempts);
 
   for (const provider of [providers.duffel, providers.amadeus]) {
     if (!provider.isConfigured() || !provider.searchHotels) continue;
@@ -220,7 +251,7 @@ export async function searchAttractions(
 
   const attempts: TravelProviderAttempt[] = [];
   const location = await resolvePlace(input.location, providers, attempts);
-  if (!location) return unavailable(`I could not resolve the attraction destination "${input.location}".`, attempts);
+  if (!location) return unavailable(`I could not confidently resolve the attraction destination "${input.location}". Please use a city or airport code.`, attempts);
 
   for (const provider of [providers.amadeus, providers.duffel]) {
     if (!provider.isConfigured() || !provider.searchAttractions) continue;
