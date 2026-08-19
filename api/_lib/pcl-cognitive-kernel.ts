@@ -1,7 +1,8 @@
 import type { ConversationDecision, ConversationSnapshot } from "./conversation-engine.js";
 import type { ProjectContextPack } from "./project-state.js";
+import { cognitiveLedgerEvidenceCoverage } from "./cognitive-ledger.js";
 
-export const PCL_COGNITIVE_KERNEL_VERSION = "pcl-cognitive-kernel-2026-08-19.1";
+export const PCL_COGNITIVE_KERNEL_VERSION = "pcl-cognitive-kernel-2026-08-19.2";
 
 export const PCL_HUMAN_GATES = ["none", "inform", "approve", "choose"] as const;
 export type PclHumanGate = (typeof PCL_HUMAN_GATES)[number];
@@ -55,6 +56,9 @@ export type PclCognitiveAssessment = {
     decisionsKnown: number;
     artifactsKnown: number;
     verifiedArtifacts: number;
+    ledgerEntriesKnown: number;
+    activeRejectionsKnown: number;
+    activeCorrectionsKnown: number;
   };
 };
 
@@ -103,9 +107,11 @@ function completionScore(snapshot: ConversationSnapshot): number {
 }
 
 function evidenceScore(snapshot: ConversationSnapshot): number {
-  if (!snapshot.artifacts.length) return 0;
-  const verified = snapshot.artifacts.filter((item) => item.verified).length;
-  return bounded(verified / snapshot.artifacts.length);
+  const artifactCoverage = snapshot.artifacts.length
+    ? bounded(snapshot.artifacts.filter((item) => item.verified).length / snapshot.artifacts.length)
+    : 0;
+  const ledgerCoverage = cognitiveLedgerEvidenceCoverage(snapshot.cognitiveLedger);
+  return bounded(Math.max(artifactCoverage, ledgerCoverage));
 }
 
 function chooseHumanGate(input: {
@@ -165,6 +171,7 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
   else if (humanGate === "approve" || humanGate === "choose") autonomy = "gated";
   else if (humanGate === "inform") autonomy = "supervised";
 
+  const activeLedger = input.snapshot.cognitiveLedger.filter((entry) => entry.status === "active");
   const reasons = unique([
     input.decision.reasonCode,
     ...(input.snapshot.safetyFlags.length ? ["unresolved_safety_flags"] : []),
@@ -174,6 +181,8 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
     ...(missingCritical.length ? ["material_context_missing"] : []),
     ...(input.snapshot.stateSource === "ephemeral" ? ["ephemeral_state_only"] : []),
     ...(input.projectContext ? ["project_continuity_available"] : []),
+    ...(activeLedger.some((entry) => entry.type === "rejection") ? ["active_rejections_known"] : []),
+    ...(activeLedger.some((entry) => entry.type === "correction") ? ["active_corrections_known"] : []),
   ]);
 
   const verifiedArtifacts = input.snapshot.artifacts.filter((item) => item.verified).length;
@@ -183,7 +192,7 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
     discloseMaterialAssumption: humanGate === "inform" || input.snapshot.inferredFacts.length > 0,
     requireApprovalBeforeAction: humanGate === "approve",
     surfaceConflict: conflicts.length > 0,
-    verifyBeforeClaimingDone: input.decision.move === "verify" || input.snapshot.artifacts.length > 0,
+    verifyBeforeClaimingDone: input.decision.move === "verify" || input.snapshot.artifacts.length > 0 || evidenceCoverage > 0,
     stopWhenOutcomeAchieved: alignment === "complete",
   };
 
@@ -207,6 +216,9 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
       decisionsKnown: input.snapshot.decisions.length + (input.projectContext?.decisions.length || 0),
       artifactsKnown: input.snapshot.artifacts.length + (input.projectContext?.artifacts.length || 0),
       verifiedArtifacts,
+      ledgerEntriesKnown: input.snapshot.cognitiveLedger.length,
+      activeRejectionsKnown: activeLedger.filter((entry) => entry.type === "rejection").length,
+      activeCorrectionsKnown: activeLedger.filter((entry) => entry.type === "correction").length,
     },
   };
 }
