@@ -76,7 +76,7 @@ test("evidence coverage is based on linked active outcome events", () => {
     { id: "d2", type: "decision", statement: "Move finance references out", actor: "user", ref: "deck:v4" },
   ]);
 
-  assert.equal(cognitiveLedgerEvidenceCoverage(ledger), 2 / 3);
+  assert.equal(cognitiveLedgerEvidenceCoverage(ledger), 0.667);
 });
 
 test("ledger is bounded and de-duplicates ids", () => {
