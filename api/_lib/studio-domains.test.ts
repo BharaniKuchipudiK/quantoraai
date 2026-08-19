@@ -9,10 +9,14 @@ test("normalizeStudioDomain accepts known domains", () => {
   assert.equal(normalizeStudioDomain(null), null);
 });
 
-test("buildDomainDirective returns travel focus text", () => {
+test("buildDomainDirective makes Travel an engaged outcome partner", () => {
   const directive = buildDomainDirective("travel");
-  assert.match(directive, /DOMAIN FOCUS: TRAVEL/);
-  assert.match(directive, /conversation loop naturally/);
+  assert.match(directive, /DOMAIN FOCUS: TRAVEL ADVISOR/);
+  assert.match(directive, /move the planning forward/i);
+  assert.match(directive, /ONE highest-value next question or offer/i);
+  assert.match(directive, /Never re-ask details/i);
+  assert.match(directive, /dates.*travellers.*budget.*passport\/visa/is);
+  assert.match(directive, /end with a short conversational bridge/i);
 });
 
 test("buildDomainDirective is empty for general chat", () => {
