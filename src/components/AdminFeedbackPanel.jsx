@@ -87,6 +87,15 @@ export default function AdminFeedbackPanel() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!selected) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setSelected(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selected]);
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items.filter((item) => {
@@ -123,7 +132,7 @@ export default function AdminFeedbackPanel() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Could not update feedback status.');
-      const updated = { ...selected, ...(data.item || {}), status };
+      const updated = { ...selected, ...(data.item || {}), user: selected.user, status };
       setSelected(updated);
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
       setSummary(null); // recompute from live items until next refresh
