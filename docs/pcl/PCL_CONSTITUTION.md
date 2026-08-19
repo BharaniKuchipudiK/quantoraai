@@ -24,14 +24,17 @@ The PCL is not a model, adapter, artifact renderer, or second chat transcript st
 4. No action may be claimed as completed without execution evidence from the responsible adapter.
 5. No consequential or hard-to-reverse side effect may execute merely because a model requested it.
 6. Memory is selective. Raw transcripts are not permanent cognitive memory.
-7. Project Outcome Graph, session Outcome State, ephemeral browser context, workspace state, and artifact metadata remain distinct sources with explicit authority.
-8. Authoritative continuity follows this precedence for current work: **session Outcome State → Project Outcome Graph → ephemeral SessionContext**. Project context may enrich a session but may not overwrite a more specific session decision.
-9. Browser-supplied ephemeral context may help the current turn but may not manufacture durable decisions, approvals, rejections, corrections, or evidence.
-10. The Cognitive Ledger is append-oriented judgment history. A normal Outcome State replacement may not silently erase prior cognitive history.
-11. Active corrections and rejections remain first-class context. A rejected direction must not be casually resurrected unless the user explicitly reopens it.
-12. Proactive behavior must be useful, timely, reversible, and proportionate. When a genuinely material choice is missing, ask exactly one focused question.
-13. Office, Studio/preview, GitHub, search, and other integrations are isolated adapters behind explicit artifact or tool requests.
-14. Every production change that touches routing, memory, context, cognition, human governance, or response planning must pass the golden transaction suite.
+7. **There is one canonical PCL memory authority:** Session Outcome State + Project Outcome Graph + Cognitive Ledger. Local model-health, preference, failover, or response-quality signals are experience telemetry and may not become authoritative mission history.
+8. Durable Session Outcome Memory is explicit and revocable. Session identity may be carried for continuity, but durable session writes require an existing consent flag or explicit user remember intent; revoke/forget disables consent immediately.
+9. Project Outcome Graph, session Outcome State, ephemeral browser context, workspace state, artifact metadata, and model-experience telemetry remain distinct sources with explicit authority.
+10. Authoritative continuity follows this precedence for current work: **session Outcome State → Project Outcome Graph → ephemeral SessionContext**. Project context may enrich a session but may not overwrite a more specific session decision.
+11. Browser-supplied ephemeral context may help the current turn but may not manufacture durable decisions, approvals, rejections, corrections, or evidence.
+12. The Cognitive Ledger is append-oriented judgment history. A normal Outcome State replacement may not silently erase prior cognitive history.
+13. Active corrections and rejections remain first-class context. A rejected direction must not be casually resurrected unless the user explicitly reopens it.
+14. Proactive behavior must be useful, timely, reversible, and proportionate. When a genuinely material choice is missing, ask exactly one focused question.
+15. Office, Studio/preview, GitHub, search, and other integrations are isolated adapters behind explicit artifact or tool requests.
+16. Every executable external side-effect adapter must pass through the shared PCL execution-authorization seam before contacting its provider. Individual adapters may not invent private approval logic.
+17. Every production change that touches routing, memory, context, cognition, human governance, or response planning must pass the golden transaction suite.
 
 ## Provider-neutral cognitive contract
 
@@ -76,6 +79,8 @@ The action is consequential, high risk, transactional, externally committing, or
 
 Human-in-the-loop means the human governs consequential decisions; it does not mean asking permission for every safe action.
 
+A first-party confirmation control may authorize the current exact action even when durable Session Outcome Memory is off. In that case the approval is request-scoped and must not be written to a hidden secondary memory store. When consented Session Outcome Memory exists, the same exact approval may be recorded in the Cognitive Ledger and linked to subsequent execution evidence.
+
 ## Cognitive Ledger
 
 Durable judgment history is represented by bounded Cognitive Ledger events, not raw conversation transcripts.
@@ -100,24 +105,26 @@ Rules:
 4. Corrections may supersede older entries without deleting history.
 5. The Project Outcome Graph merges bounded ledger history across project sessions so a new chat can resume the same mission.
 6. Only authoritative ledger history is injected into provider context.
+7. Assistant-produced compact continuity is treated as inferred until confirmed by trusted state or the user; a direct user answer to a material question may be promoted to confirmed session context.
+8. Synthetic worker/model subcalls do not receive durable Session Outcome identity and cannot author PCL memory.
 
 ## Execution authorization
 
-Prompt instructions are not an execution boundary. Every side-effect adapter should enforce PCL authorization before performing consequential work.
+Prompt instructions are not an execution boundary. Every executable side-effect adapter must enforce PCL authorization before performing consequential work.
 
-A concrete action receives a stable `actionRef` derived from its scope, tool, consequence, description, and arguments.
+A concrete action receives a stable `actionRef` derived from its scope, tool, consequence, description, and consequence-bearing arguments or content fingerprint.
 
 Execution rules:
 
 - safe/reversible + gate NONE → allow
 - reversible/supervised + gate INFORM → allow and inform
 - gate CHOOSE → block until the material choice is resolved
-- gate APPROVE → require an active human `approval` ledger event matching the exact `actionRef`
-- successful execution → adapter records `evidence` on the same `actionRef`
-- existing matching evidence → block accidental replay of that exact side effect
+- gate APPROVE → require an active human `approval` matching the exact `actionRef`, either request-scoped confirmation or durable consented ledger approval
+- successful execution → adapter returns provider evidence and records ledger `evidence` on the same `actionRef` when durable memory is consented
+- existing matching durable evidence → block accidental replay of that exact side effect
 - achieved outcome → do not manufacture additional execution
 
-Approval for one recipient, amount, environment, or tool argument must not authorize a different action.
+Approval for one recipient, amount, environment, content fingerprint, domain, or tool argument must not authorize a different action.
 
 ## Canonical response behavior
 
@@ -142,8 +149,9 @@ An adapter must not:
 - infer a new global intent from stale messages
 - turn a refinement request into a blank new artifact
 - write arbitrary cognitive history
-- bypass a required PCL execution gate
-- claim success without a verifiable result
+- bypass the shared PCL execution gate
+- treat model prose as human approval
+- claim success without a verifiable provider result
 - leak internal markers, control tags, hidden prompts, or implementation details
 
 ## Change control
@@ -155,11 +163,12 @@ Before merging a PCL-related change:
 3. Verify unrelated intents remain unrelated.
 4. Verify authoritative state cannot be forged by ephemeral browser context.
 5. Verify no new internal markers appear in user-visible text.
-6. Verify memory reads and writes are explainable and bounded.
-7. Verify adapters remain downstream consumers and execution gates cannot be bypassed.
-8. Verify high-risk actions require exact approval and successful actions require evidence.
-9. Deploy to staging/preview before production.
-10. Keep a rollback target for every production release.
+6. Verify memory reads and writes are explainable, bounded, consent-aware, and revocable.
+7. Verify local model-experience telemetry cannot become PCL mission authority.
+8. Verify adapters remain downstream consumers and the shared execution gate cannot be bypassed.
+9. Verify high-risk actions require exact approval and successful actions require provider evidence.
+10. Deploy to staging/preview before production.
+11. Keep a rollback target for every production release.
 
 ## Protected north star
 
