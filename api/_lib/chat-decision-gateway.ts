@@ -154,7 +154,7 @@ function contextConfirmation(command: FinancialContextCommand): string {
  * 2) explicit affordability questions.
  * Everything else returns false and continues through the existing chat runtime.
  */
-export async function handlePersonalDecisionGateway(req: any, res: any): Promise<boolean> {
+export async function handleAffordabilityDecision(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   const command = parseFinancialContextCommand(req.body?.message);
   const intent = parseAffordabilityIntent(req.body?.message);
