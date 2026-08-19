@@ -20,10 +20,43 @@ export type TravelGatewayDependencies = {
   places?: PlaceDiscoveryProvider | null;
 };
 
+function isoDate(value: string | undefined): number | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value ? parsed : null;
+}
+
+function validateFlightInput(input: FlightSearchInput): string | null {
+  if (!input.origin.trim() || !input.destination.trim()) return 'Origin and destination are required.';
+  if (input.origin.trim().toUpperCase() === input.destination.trim().toUpperCase()) return 'Origin and destination must be different.';
+  const departure = isoDate(input.departureDate);
+  if (departure === null) return 'Departure date must be a valid YYYY-MM-DD date.';
+  if (input.returnDate) {
+    const returning = isoDate(input.returnDate);
+    if (returning === null) return 'Return date must be a valid YYYY-MM-DD date.';
+    if (returning < departure) return 'Return date cannot be before departure date.';
+  }
+  return null;
+}
+
+function validateHotelInput(input: HotelSearchInput): string | null {
+  if (!input.location.trim() && !input.coordinates) return 'Hotel location or coordinates are required.';
+  const checkIn = isoDate(input.checkInDate);
+  const checkOut = isoDate(input.checkOutDate);
+  if (checkIn === null || checkOut === null) return 'Hotel dates must be valid YYYY-MM-DD dates.';
+  if (checkOut <= checkIn) return 'Check-out must be after check-in.';
+  const nights = Math.round((checkOut - checkIn) / 86_400_000);
+  if (nights > 99) return 'Hotel stay cannot exceed 99 nights.';
+  return null;
+}
+
 export class TravelProviderGateway {
   constructor(private readonly providers: TravelGatewayDependencies) {}
 
   async searchFlights(input: FlightSearchInput): Promise<TravelProviderResult<FlightOption[]>> {
+    const validation = validateFlightInput(input);
+    if (validation) return unavailable(null, validation, 'INVALID_INPUT');
+
     const provider = this.providers.flights;
     if (!provider) return unavailable(null, 'No live flight provider is configured.');
     return runProviderCall({
@@ -35,6 +68,9 @@ export class TravelProviderGateway {
   }
 
   async searchHotels(input: HotelSearchInput): Promise<TravelProviderResult<HotelOption[]>> {
+    const validation = validateHotelInput(input);
+    if (validation) return unavailable(null, validation, 'INVALID_INPUT');
+
     const hotelProvider = this.providers.hotels;
     if (!hotelProvider) return unavailable(null, 'No live hotel provider is configured.');
 
@@ -71,6 +107,7 @@ export class TravelProviderGateway {
   }
 
   async searchAttractions(input: AttractionSearchInput): Promise<TravelProviderResult<AttractionOption[]>> {
+    if (!input.location.trim()) return unavailable(null, 'Attraction location is required.', 'INVALID_INPUT');
     const provider = this.providers.places;
     if (!provider) return unavailable(null, 'No live attraction discovery provider is configured.');
     return runProviderCall({
@@ -82,6 +119,7 @@ export class TravelProviderGateway {
   }
 
   async resolveLocation(query: string) {
+    if (!query.trim()) return unavailable(null, 'A destination query is required.', 'INVALID_INPUT');
     const provider = this.providers.places;
     if (!provider) return unavailable(null, 'No destination resolver is configured.');
     return runProviderCall({
