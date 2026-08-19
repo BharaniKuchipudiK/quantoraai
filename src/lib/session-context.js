@@ -1,6 +1,7 @@
 const MAX_FACTS = 16;
 const MAX_FIELD_LEN = 280;
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;
+const CTX_START = /<!--\s*quantora-ctx:/i;
 
 export function emptySessionContext() {
   return {};
@@ -37,10 +38,21 @@ export function mergeSessionContext(existing, update) {
   });
 }
 
+/**
+ * Hide an incomplete machine marker without discarding visible prose that may
+ * follow it. Protocol comments are required to be one-line metadata; if a
+ * provider violates that contract, remove only the malformed marker line.
+ */
 export function stripPartialContextMarker(text) {
-  const idx = text.search(/<!--\s*quantora-ctx:/i);
-  if (idx === -1) return text;
-  return text.slice(0, idx).trimEnd();
+  const value = typeof text === 'string' ? text : '';
+  const match = value.match(CTX_START);
+  if (!match || match.index == null) return value;
+
+  const start = match.index;
+  const lineEnd = value.indexOf('\n', start);
+  if (lineEnd === -1) return value.slice(0, start).trimEnd();
+
+  return `${value.slice(0, start).trimEnd()}\n${value.slice(lineEnd + 1).trimStart()}`.trim();
 }
 
 export function extractContextFromAssistantText(text) {
