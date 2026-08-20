@@ -101,6 +101,11 @@ jobs:
           QUANTORA_E2E_TURN_SLA_MS: 8000
         run: node scripts/travel-browser-release-gate.mjs
 
+      - name: Execute Study media browser journey
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/study-media-browser-gate.mjs
+
       - name: Execute media and profile browser journey
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
