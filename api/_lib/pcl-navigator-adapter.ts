@@ -7,6 +7,7 @@ import {
   type PclCognitiveAssessment,
 } from "./pcl-cognitive-kernel.js";
 import { evaluateProofOfDone, formatOutcomeContractForPrompt } from "./outcome-contract.js";
+import { buildPclAgentExecutionPlan, publicAgentPlanSummary } from "./agent-execution-fabric.js";
 
 /**
  * Thin integration seam between the existing Outcome Navigator and PCL.
@@ -47,6 +48,12 @@ export function publicPclNavigatorMetadata(
   const action = inferPclActionContext(snapshot, decision);
   const activeLedger = activeCognitiveLedgerEntries(snapshot.cognitiveLedger);
   const proof = evaluateProofOfDone(snapshot);
+  const agentPlan = buildPclAgentExecutionPlan({
+    message: snapshot.currentTurn.message,
+    studioDomain: snapshot.currentTurn.studioDomain,
+    cognition,
+    action,
+  });
   return {
     kernelVersion: cognition.kernelVersion,
     outcomeAlignment: cognition.outcomeAlignment,
@@ -66,5 +73,6 @@ export function publicPclNavigatorMetadata(
     ledgerEntries: snapshot.cognitiveLedger.length,
     activeRejections: activeLedger.filter((entry) => entry.type === "rejection").length,
     activeCorrections: activeLedger.filter((entry) => entry.type === "correction").length,
+    agentExecution: publicAgentPlanSummary(agentPlan),
   };
 }
