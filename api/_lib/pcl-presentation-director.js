@@ -30,7 +30,7 @@ function clean(value, max = 12_000) {
 function historyText(history = []) {
   return (Array.isArray(history) ? history : [])
     .slice(-12)
-    .map((message) => clean(message?.text, 2_000))
+    .map((message) => clean(message?.text ?? message?.content, 2_000))
     .filter(Boolean)
     .join(' ');
 }
