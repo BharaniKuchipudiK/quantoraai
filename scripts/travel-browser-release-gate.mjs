@@ -80,6 +80,8 @@ await page.route('**/api/**', async (route) => {
     const canvasReply = [
       'Here is a simple visual workspace for the trip.',
       '',
+      '[Synthetic learning video](https://www.youtube.com/watch?v=synthetic123)',
+      '',
       '```html',
       '<html><body style="font-family:sans-serif;padding:32px"><h1>Bali trip visual</h1><p>Singapore → Bali</p></body></html>',
       '```',
@@ -138,6 +140,14 @@ try {
     page.locator('[data-quantora-sidebar-canvas]').first(),
     'Canvas navigation is missing from the Studio sidebar.',
   );
+
+  const collapseSidebar = page.locator('button[title="Collapse sidebar"]').first();
+  await assertVisible(collapseSidebar, 'Sidebar collapse control is missing.');
+  await collapseSidebar.click();
+  const restoreSidebar = page.locator('[data-quantora-sidebar-restore]').first();
+  await assertVisible(restoreSidebar, 'Collapsed sidebar has no persistent restore/navigation control.');
+  await restoreSidebar.click();
+  await assertVisible(page.locator('[data-quantora-sidebar-profile]').first(), 'Sidebar did not restore after using the persistent navigation handle.');
 
   const globalHeader = page.locator('.app-header').first();
   if (await globalHeader.isVisible().catch(() => false)) {
@@ -262,6 +272,15 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.quantoraCanvasFullscreen === 'true');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.documentElement.dataset.quantoraCanvasFullscreen !== 'true');
+
+  const youtubeLink = page.getByRole('link', { name: 'Synthetic learning video', exact: true }).first();
+  await assertVisible(youtubeLink, 'Verified YouTube recommendation is not rendered as a clickable source link.');
+  const watchVideo = page.locator('[data-quantora-youtube-watch]').first();
+  await assertVisible(watchVideo, 'YouTube recommendation does not expose an in-Quantora Watch action.');
+  await watchVideo.click();
+  await assertVisible(page.locator('[data-quantora-media-canvas="youtube"]').first(), 'Watch action did not open the video inside the current Quantora session.');
+  await page.keyboard.press('Escape');
+  await assertHidden(page.locator('[data-quantora-media-canvas="youtube"]').first(), 'Esc did not close the in-workspace media player.');
 
   await screenshot('travel-release-gate-pass');
   console.log(`Travel browser release gate passed in ${elapsed}ms for first turn.`);
