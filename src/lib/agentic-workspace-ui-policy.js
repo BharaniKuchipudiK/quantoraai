@@ -149,6 +149,17 @@ function findStudioSidebar() {
 function sidebarIsOpen() {
   const sidebar = findStudioSidebar();
   if (!sidebar) return true;
+
+  // React flips these inline values immediately when the user collapses the
+  // sidebar, while the rendered width continues animating for ~300ms. Trust the
+  // state-bearing inline styles first so the restore control appears immediately.
+  const inlineWidth = String(sidebar.style.width || '').trim();
+  const inlineOpacity = String(sidebar.style.opacity || '').trim();
+  const inlinePointerEvents = String(sidebar.style.pointerEvents || '').trim();
+  if (inlineWidth === '0px' || inlineWidth === '0' || inlineOpacity === '0' || inlinePointerEvents === 'none') {
+    return false;
+  }
+
   const rect = sidebar.getBoundingClientRect();
   const opacity = Number.parseFloat(window.getComputedStyle(sidebar).opacity || '1');
   return rect.width > 80 && opacity > 0.4;
@@ -200,6 +211,7 @@ function ensureSidebarRestoreControl() {
     const nativeOpen = document.querySelector('.app-shell--studio button[title="Open Chat History Sidebar"]');
     nativeOpen?.click();
     setTimeout(() => ensureSidebarRestoreControl(), 80);
+    setTimeout(() => ensureSidebarRestoreControl(), 360);
   });
   shell.append(button);
 }
@@ -415,7 +427,8 @@ export function installAgenticWorkspaceUiPolicy() {
     if (!button) return;
     const title = button.getAttribute('title') || '';
     if (/Collapse sidebar|Open Chat History Sidebar/i.test(title)) {
-      setTimeout(schedule, 80);
+      setTimeout(schedule, 40);
+      setTimeout(schedule, 360);
     }
   };
   const onResize = () => schedule();
