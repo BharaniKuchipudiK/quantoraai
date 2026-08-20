@@ -76,6 +76,10 @@
       "destination": "/api/pipeline"
     },
     {
+      "source": "/api/code/cognition",
+      "destination": "/api/autocomplete?mode=code-cognition"
+    },
+    {
       "source": "/api/chat",
       "destination": "/api/pipeline?route=chat"
     },
