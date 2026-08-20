@@ -30,7 +30,7 @@ test('transactional travel calls fail closed and never fabricate success', async
     itemId: 'off_test',
     dates: '2026-09-01',
     price: 100,
-  }, { duffelClient: null });
+  }, { duffelClient: null, googleMapsApiKey: null });
 
   assert.equal(booking.status, 'unavailable');
   assert.equal(booking.executed, false);
@@ -44,7 +44,7 @@ test('transactional travel calls fail closed and never fabricate success', async
     entityType: 'flight',
     destination: 'LHR',
     dates: '2026-09-01',
-  }, { duffelClient: null });
+  }, { duffelClient: null, googleMapsApiKey: null });
 
   assert.equal(alert.status, 'unavailable');
   assert.equal(alert.executed, false);
@@ -57,7 +57,7 @@ test('unconnected read-only travel providers return unavailable instead of mock 
     origin: 'SIN',
     destination: 'LHR',
     departureDate: '2026-09-01',
-  }, { duffelClient: null });
+  }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(flight.status, 'unavailable');
   assert.equal(flight.executed, false);
   assert.equal('flights' in flight, false, 'must not substitute mock flight results');
@@ -66,17 +66,130 @@ test('unconnected read-only travel providers return unavailable instead of mock 
     location: 'London',
     checkInDate: '2026-09-01',
     checkOutDate: '2026-09-03',
-  }, { duffelClient: null });
+  }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
   assert.equal('hotels' in hotel, false, 'must not substitute hard-coded hotels');
 
-  const attraction = await executeToolCall('search_attractions', { location: 'London' }, { duffelClient: null });
+  const attraction = await executeToolCall('search_attractions', { location: 'London' }, {
+    duffelClient: null,
+    googleMapsApiKey: null,
+  });
   assert.equal(attraction.status, 'unavailable');
   assert.equal('attractions' in attraction, false, 'must not substitute hard-coded attractions');
 });
 
+test('Google Places hotel discovery returns provider-backed facts without fake inventory or room rates', async () => {
+  let capturedRequest: any = null;
+  const fetchFn = (async (url: any, init: any) => {
+    capturedRequest = { url, init };
+    return new Response(JSON.stringify({
+      places: [
+        {
+          id: 'hotel-1',
+          displayName: { text: 'Example Hotel' },
+          formattedAddress: '1 Example Road, London, UK',
+          location: { latitude: 51.5, longitude: -0.12 },
+          rating: 4.6,
+          userRatingCount: 1234,
+          primaryType: 'hotel',
+          types: ['hotel', 'lodging'],
+          businessStatus: 'OPERATIONAL',
+          websiteUri: 'https://example.test',
+          googleMapsUri: 'https://maps.google.test/example',
+        },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  const result = await executeToolCall('search_hotels', {
+    location: 'London',
+    checkInDate: '2026-09-01',
+    checkOutDate: '2026-09-03',
+    guests: 2,
+    minStarRating: 4,
+  }, {
+    duffelClient: null,
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.source, 'Google Places API (New)');
+  assert.equal(result.hotels.length, 1);
+  assert.equal(result.hotels[0].name, 'Example Hotel');
+  assert.equal(result.hotels[0].userRating, 4.6);
+  assert.equal('price' in result.hotels[0], false);
+  assert.equal('nightlyRate' in result.hotels[0], false);
+  assert.equal('available' in result.hotels[0], false);
+  assert.equal(result.searchContext.inventoryAndRatesAvailable, false);
+
+  assert.equal(capturedRequest.url, 'https://places.googleapis.com/v1/places:searchText');
+  const requestBody = JSON.parse(capturedRequest.init.body);
+  assert.equal(requestBody.includedType, 'hotel');
+  assert.equal(requestBody.strictTypeFiltering, true);
+  assert.match(requestBody.textQuery, /hotels in London/i);
+  assert.equal(capturedRequest.init.headers['X-Goog-Api-Key'], 'test-google-key');
+  assert.match(capturedRequest.init.headers['X-Goog-FieldMask'], /places\.rating/);
+});
+
+test('Google Places powers attraction and generic destination discovery', async () => {
+  const fetchFn = (async () => new Response(JSON.stringify({
+    places: [
+      {
+        id: 'poi-1',
+        displayName: { text: 'Example Museum' },
+        formattedAddress: 'Museum Street',
+        rating: 4.8,
+        userRatingCount: 900,
+        primaryType: 'museum',
+        types: ['museum', 'tourist_attraction'],
+      },
+    ],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+  const attraction = await executeToolCall('search_attractions', { location: 'London', category: 'museum' }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+  });
+  assert.equal(attraction.status, 'success');
+  assert.equal(attraction.attractions[0].name, 'Example Museum');
+  assert.equal(attraction.ticketAvailabilityAvailable, false);
+
+  const place = await executeToolCall('get_places_routing', { query: 'museums in London', placeType: 'museum' }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+  });
+  assert.equal(place.status, 'success');
+  assert.equal(place.places[0].primaryType, 'museum');
+  assert.equal(place.routingAvailable, false);
+});
+
+test('Google Places provider errors fail closed', async () => {
+  const fetchFn = (async () => new Response(JSON.stringify({ error: { message: 'API not enabled' } }), {
+    status: 403,
+    headers: { 'Content-Type': 'application/json' },
+  })) as typeof fetch;
+
+  const result = await executeToolCall('search_hotels', {
+    location: 'Tokyo',
+    checkInDate: '2026-10-01',
+    checkOutDate: '2026-10-03',
+  }, {
+    googleMapsApiKey: 'bad-key',
+    fetchFn,
+  });
+
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.executed, false);
+  assert.equal(result.reason, 'PROVIDER_ERROR');
+  assert.equal('hotels' in result, false);
+});
+
 test('clarification remains a non-transactional human-in-loop action', async () => {
-  const result = await executeToolCall('ask_clarifying_question', { question: 'What is your travel budget?' }, { duffelClient: null });
+  const result = await executeToolCall('ask_clarifying_question', { question: 'What is your travel budget?' }, {
+    duffelClient: null,
+    googleMapsApiKey: null,
+  });
   assert.equal(result.status, 'success');
   assert.equal(result.executed, false);
   assert.equal(result.action, 'PAUSE_AND_ASK');
