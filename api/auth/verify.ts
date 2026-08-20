@@ -83,7 +83,7 @@ async function verifyGoogleCredential(credential: string): Promise<GoogleIdentit
       email: payload.email,
       name: payload.name || payload.email.split('@')[0],
       picture: payload.picture || '',
-      emailVerified: payload.email_verified !== false,
+      emailVerified: true,
     };
   }
 
