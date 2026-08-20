@@ -52,7 +52,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   assert.match(alert.message, /nothing was .*monitored|not enabled/i);
 });
 
-test('unconnected read-only travel providers return unavailable instead of mock data', async () => {
+test('unconnected read-only travel providers stop the agent instead of returning mock data or retrying', async () => {
   const flight = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'LHR',
@@ -60,6 +60,7 @@ test('unconnected read-only travel providers return unavailable instead of mock 
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(flight.status, 'unavailable');
   assert.equal(flight.executed, false);
+  assert.equal(flight.action, 'PAUSE_AND_ASK');
   assert.equal('flights' in flight, false, 'must not substitute mock flight results');
 
   const hotel = await executeToolCall('search_hotels', {
@@ -68,6 +69,8 @@ test('unconnected read-only travel providers return unavailable instead of mock 
     checkOutDate: '2026-09-03',
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
+  assert.equal(hotel.action, 'PAUSE_AND_ASK');
+  assert.match(hotel.message, /stopped instead of retrying in a loop/i);
   assert.equal('hotels' in hotel, false, 'must not substitute hard-coded hotels');
 
   const attraction = await executeToolCall('search_attractions', { location: 'London' }, {
@@ -75,6 +78,7 @@ test('unconnected read-only travel providers return unavailable instead of mock 
     googleMapsApiKey: null,
   });
   assert.equal(attraction.status, 'unavailable');
+  assert.equal(attraction.action, 'PAUSE_AND_ASK');
   assert.equal('attractions' in attraction, false, 'must not substitute hard-coded attractions');
 
   const route = await executeToolCall('get_places_routing', {
@@ -82,6 +86,7 @@ test('unconnected read-only travel providers return unavailable instead of mock 
     destination: 'London Bridge',
   }, { googleMapsApiKey: null });
   assert.equal(route.status, 'unavailable');
+  assert.equal(route.action, 'PAUSE_AND_ASK');
   assert.equal('route' in route, false, 'must not substitute hard-coded route results');
 });
 
@@ -230,7 +235,7 @@ test('walking routes carry the Google beta-path warning', async () => {
   assert.match(result.route.warning, /beta/i);
 });
 
-test('Google provider errors fail closed', async () => {
+test('Google provider errors fail closed and terminate the interactive agent step', async () => {
   const fetchFn = (async () => new Response(JSON.stringify({ error: { message: 'API not enabled' } }), {
     status: 403,
     headers: { 'Content-Type': 'application/json' },
@@ -247,6 +252,8 @@ test('Google provider errors fail closed', async () => {
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.executed, false);
   assert.equal(hotel.reason, 'PROVIDER_ERROR');
+  assert.equal(hotel.action, 'PAUSE_AND_ASK');
+  assert.match(hotel.providerMessage, /Google Places API \(New\) hotel search is unavailable/i);
   assert.equal('hotels' in hotel, false);
 
   const route = await executeToolCall('get_places_routing', {
@@ -259,6 +266,7 @@ test('Google provider errors fail closed', async () => {
   assert.equal(route.status, 'unavailable');
   assert.equal(route.executed, false);
   assert.equal(route.reason, 'PROVIDER_ERROR');
+  assert.equal(route.action, 'PAUSE_AND_ASK');
   assert.equal('route' in route, false);
 });
 
