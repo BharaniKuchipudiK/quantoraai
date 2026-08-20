@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
+import { applyCors, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchGatewayCredential, resolveCapabilityCredential } from './_lib/credential-broker.js';
+import { handleCodeCognitionRequest } from './_lib/code-cognition-handler.js';
 
 const MAX_CODE_CONTEXT_CHARS = 50_000;
 const REQUESTS_PER_MINUTE = 30;
@@ -24,6 +25,13 @@ export default async function handler(req: any, res: any) {
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return;
   const { sessionUser } = auth.value;
+
+  // Quantora Code deliberately reuses this already-deployed API runtime rather
+  // than creating another serverless function. Vercel rewrites
+  // /api/code/cognition here with mode=code-cognition; local server.ts mirrors it.
+  if (req.query?.mode === 'code-cognition') {
+    return handleCodeCognitionRequest({ req, res, userSub: sessionUser.sub });
+  }
 
   const limitKey = `autocomplete:user:${sessionUser.sub}`;
   if (isRateLimited(limitKey, REQUESTS_PER_MINUTE, 60_000)) {
