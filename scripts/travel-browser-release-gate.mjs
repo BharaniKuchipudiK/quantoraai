@@ -112,8 +112,11 @@ try {
   await assertVisible(studioButton, 'Studio navigation never became visible for the synthetic signed-in user.');
   await studioButton.click();
 
-  const travelAdvisor = page.getByText('Travel Advisor', { exact: true }).first();
-  await assertVisible(travelAdvisor, 'Travel Advisor entry is missing from the Studio sidebar.');
+  // The current product label is "Travel Guide AI". Keep the older label in
+  // the selector as a compatibility alias so copy-only naming changes do not
+  // weaken the actual journey gate.
+  const travelAdvisor = page.getByText(/^(Travel Guide AI|Travel Advisor)$/i).first();
+  await assertVisible(travelAdvisor, 'Travel specialist entry is missing from the Studio sidebar.');
   await travelAdvisor.click();
 
   const travelHero = page.getByText(/Where should Quantora take you\?/i).first();
@@ -121,10 +124,10 @@ try {
 
   const globalHeader = page.locator('.app-header').first();
   if (await globalHeader.isVisible().catch(() => false)) {
-    throw new Error('Global Studio/Journey/Quantum header is still visible inside Travel Advisor.');
+    throw new Error('Global Studio/Journey/Quantum header is still visible inside Travel.');
   }
   if (await page.getByText(/Dual Arena Mode|Selected Model:|Live API Engine Active/i).first().isVisible().catch(() => false)) {
-    throw new Error('Internal model/Arena plumbing is visible inside Travel Advisor.');
+    throw new Error('Internal model/Arena plumbing is visible inside Travel.');
   }
 
   const textarea = page.locator('textarea').first();
@@ -151,7 +154,7 @@ try {
 
   await assertVisible(
     page.getByText(/Singapore is locked in\. What dates are you considering\?/i).first(),
-    'Travel Advisor did not proactively lead to the next material question.',
+    'Travel did not proactively lead to the next material question.',
   );
 
   await screenshot('travel-release-gate-pass');
