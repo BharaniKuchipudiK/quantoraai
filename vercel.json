@@ -72,6 +72,10 @@
       "destination": "/api/autocomplete?mode=pr-intelligence"
     },
     {
+      "source": "/api/github/pr-fix",
+      "destination": "/api/autocomplete?mode=pr-fix"
+    },
+    {
       "source": "/api/outcomes",
       "destination": "/api/pipeline"
     },
