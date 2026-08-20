@@ -195,6 +195,35 @@ await page.route('**/api/**', async (route) => {
     });
   }
 
+  if (path === '/api/github/pr-fix') {
+    const payload = JSON.parse(request.postData() || '{}');
+    if (payload?.finding?.id !== 'synthetic-risk') {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic gate expected the high-confidence risk finding.' }) });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        proposal: {
+          path: 'src/drone/control.js',
+          before: 'let currentThrust = 0;\nexport function control(input) {\n  currentThrust = input;\n  return currentThrust;\n}',
+          after: 'let currentThrust = 0;\nexport function control(input) {\n  currentThrust = clamp(input, 0, 1);\n  return currentThrust;\n}',
+          changed: true,
+          summary: 'Bound stale thrust before the physics tick',
+          reason: 'The proposal changes only the state handoff identified by the review finding and leaves unrelated simulation behavior untouched.',
+          headSha: 'head77',
+          findingId: 'synthetic-risk',
+        },
+        capabilities: {
+          localRepairPreview: true,
+          branchWriteBack: false,
+          verificationExecuted: false,
+          reason: 'Synthetic local preview only.',
+        },
+      }),
+    });
+  }
+
   if (path === '/api/chat') {
     const payload = JSON.parse(request.postData() || '{}');
     if (payload.task === 'repair') {
@@ -248,7 +277,7 @@ try {
   await visible(workspace.getByText(/frontend · 3d/i).first(), 'PCL did not surface the 3D architecture signal.');
 
   // PR Intelligence must be a real Code capability: intent-aware review,
-  // severity-ranked findings, CI evidence and a readable changed-file diff.
+  // severity-ranked findings, CI evidence, a bounded repair preview, and diff.
   const prEntry = page.locator('[data-quantora-pr-review-entry="true"]').first();
   await visible(prEntry, 'PR Review entry did not appear in Quantora Code.');
   await prEntry.click();
@@ -264,6 +293,19 @@ try {
   await visible(prPanel.getByText('Simulation state can retain stale thrust', { exact: true }), 'PR risk finding was not surfaced.');
   await visible(prPanel.getByText('Expose a visual safety indicator', { exact: true }), 'PR opportunity finding was not surfaced.');
   await visible(prPanel.getByText('88%', { exact: true }), 'PR review score was not surfaced.');
+
+  const riskFinding = prPanel.locator('[data-pr-finding-id="synthetic-risk"]').first();
+  await visible(riskFinding, 'High-confidence PR risk finding was not addressable.');
+  const prepareFix = riskFinding.getByRole('button', { name: 'Prepare Fix', exact: true });
+  await visible(prepareFix, 'PR finding did not expose a bounded Prepare Fix action.');
+  await prepareFix.click();
+
+  const fixPreview = prPanel.locator('[data-quantora-pr-fix-preview="true"]').first();
+  await visible(fixPreview, 'Bounded PR repair preview did not open.', 10_000);
+  await visible(fixPreview.getByText('Bound stale thrust before the physics tick', { exact: true }), 'Repair summary was not surfaced.');
+  await visible(fixPreview.getByText('Local proposal — not written to GitHub · not verified', { exact: true }), 'Repair preview did not preserve the write/verification safety boundary.');
+  await visible(fixPreview.getByText('currentThrust = input;', { exact: false }).first(), 'Repair preview did not show the PR-head content.');
+  await visible(fixPreview.getByText('currentThrust = clamp(input, 0, 1);', { exact: false }).first(), 'Repair preview did not show the proposed content.');
 
   await prPanel.getByRole('button', { name: /Diff 2/i }).click();
   const diff = prPanel.locator('[data-quantora-pr-diff="true"]').first();
