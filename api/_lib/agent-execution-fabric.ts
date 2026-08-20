@@ -1,18 +1,20 @@
 import type { PclActionAssessment } from "./pcl-action-policy.js";
 import type { PclCognitiveAssessment, PclReversibility, PclRisk } from "./pcl-cognitive-kernel.js";
 
-export const PCL_AGENT_FABRIC_VERSION = "pcl-agent-fabric-2026-08-20.1";
+export const PCL_AGENT_FABRIC_VERSION = "pcl-agent-fabric-2026-08-20.2";
 
 export type AgentCapability =
   | "research"
   | "analysis"
+  | "advisor_intelligence"
+  | "learning_intelligence"
   | "artifact_generation"
   | "coding"
   | "travel_intelligence"
   | "tool_execution"
   | "verification";
 
-export type AgentRole = "researcher" | "analyst" | "builder" | "executor" | "verifier";
+export type AgentRole = "researcher" | "diagnostician" | "analyst" | "builder" | "executor" | "verifier";
 export type AgentRuntimeKind = "quantora-native" | "openai-agents" | "claude-agent" | "google-adk-a2a" | "custom";
 export type AgentPlanStrategy = "single" | "pipeline";
 export type AgentPlanGovernance = "ready" | "supervised" | "requires_approval" | "requires_choice" | "blocked";
@@ -166,7 +168,8 @@ export function buildPclAgentExecutionPlan(input: {
   }
 
   const needsResearch = RESEARCH_TERMS.test(combined);
-  const needsAnalysis = ANALYSIS_TERMS.test(combined) || needsResearch;
+  const needsLearningAdvisor = domain === "education";
+  const needsAnalysis = ANALYSIS_TERMS.test(combined) || needsResearch || needsLearningAdvisor;
   const needsArtifact = ARTIFACT_TERMS.test(combined);
   const needsCoding = CODING_TERMS.test(combined);
   const needsTravel = domain === "travel" || TRAVEL_TERMS.test(combined);
@@ -184,6 +187,18 @@ export function buildPclAgentExecutionPlan(input: {
       { risk: "low", reversibility: "easy" },
     ));
     previous = "research";
+  }
+
+  if (needsLearningAdvisor) {
+    tasks.push(task(
+      "diagnose",
+      "diagnostician",
+      `Use evidence-backed advisor and learning intelligence to identify the learner's current state, root prerequisite gaps, misconceptions or missing evidence, then propose the highest-value next intervention for: ${message}`,
+      ["advisor_intelligence", "learning_intelligence"],
+      previous ? [previous] : [],
+      { risk: "low", reversibility: "easy", requiresEvidence: true },
+    ));
+    previous = "diagnose";
   }
 
   if (needsTravel) {

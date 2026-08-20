@@ -29,6 +29,16 @@ test("Travel directive requires ratings and usable property links without invent
   assert.match(directive, /Omit any field.*instead of guessing/is);
 });
 
+test("Education directive behaves as an evidence-backed Study Advisor instead of a score bot", () => {
+  const directive = buildDomainDirective("education");
+  assert.match(directive, /DOMAIN FOCUS: STUDY ADVISOR/);
+  assert.match(directive, /deepest confirmed prerequisite\/root cause/i);
+  assert.match(directive, /8\/10 is evidence, not the advice/i);
+  assert.match(directive, /confidently wrong answer.*misconception/is);
+  assert.match(directive, /smallest useful diagnostic/i);
+  assert.match(directive, /durable mastery/i);
+});
+
 test("buildDomainDirective is empty for general chat", () => {
   assert.equal(buildDomainDirective(null), "");
 });
