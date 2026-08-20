@@ -145,8 +145,24 @@ html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [da
   box-shadow: none !important;
 }
 
-html[data-quantora-canvas-fullscreen="true"] body {
+html[data-quantora-canvas-fullscreen="true"] body,
+html[data-quantora-media-fullscreen="true"] body {
   overflow: hidden !important;
+}
+
+/* YouTube and future source-grounded media can stay inside the Study/Research
+ * session. Expanding the media player temporarily takes over the viewport while
+ * preserving the underlying chat state. */
+.app-shell--studio [data-quantora-media-canvas][data-quantora-media-fullscreen="true"] {
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  z-index: 10060 !important;
+  box-shadow: none !important;
 }
 
 /* Office refinement should communicate progress, not implementation detail. */
