@@ -20,6 +20,10 @@ function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/');
 }
 
+export function isBlockedPrRepairPath(path: string): boolean {
+  return BLOCKED_SECRET_PATH.test(String(path || ''));
+}
+
 async function fetchPublicHeadFile(prUrl: string, path: string, headSha: string): Promise<string> {
   const { owner, repo } = parseGitHubPullRequestUrl(prUrl);
   const response = await fetch(
@@ -46,7 +50,7 @@ async function fetchPublicHeadFile(prUrl: string, path: string, headSha: string)
   return content;
 }
 
-function parseFixResponse(raw: string, expectedPath: string, before: string) {
+export function parsePrFixResponse(raw: string, expectedPath: string, before: string) {
   if (!raw || raw.length > MAX_OUTPUT_CHARS) throw new Error('The repair proposal exceeded the bounded output budget.');
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -106,7 +110,7 @@ export async function handlePrFixRequest(req: any, res: any) {
   if (finding.title.length + finding.rationale.length + (finding.suggestion?.length || 0) > MAX_FINDING_CHARS) {
     return res.status(400).json({ error: 'The selected finding is too large for a bounded repair preview.' });
   }
-  if (BLOCKED_SECRET_PATH.test(finding.path)) {
+  if (isBlockedPrRepairPath(finding.path)) {
     return res.status(400).json({ error: 'Quantora will not send secret-bearing environment or private-key files to a repair model. Remove and rotate exposed credentials manually.' });
   }
 
@@ -137,7 +141,7 @@ Return ONLY JSON:
       },
     });
 
-    const proposal = parseFixResponse(response.text || '', finding.path, before);
+    const proposal = parsePrFixResponse(response.text || '', finding.path, before);
     return res.status(200).json({
       proposal: { ...proposal, headSha: snapshot.head.sha, findingId: finding.id },
       capabilities: {
