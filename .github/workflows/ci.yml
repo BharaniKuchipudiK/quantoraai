@@ -59,7 +59,7 @@ jobs:
     name: Browser release gates
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -105,6 +105,11 @@ jobs:
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/media-profile-browser-gate.mjs
+
+      - name: Execute Quantora Code browser journey
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/code-workspace-browser-gate.mjs
 
       - name: Upload browser evidence
         if: always()
