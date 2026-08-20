@@ -1,21 +1,20 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
-// Generated project responses commonly use fences such as:
-//   ```html filepath="index.html"
-// The filepath metadata belongs to the VFS contract and must never become part
-// of the rendered document. Keep fence attributes on the opening line only and
-// capture content from the following line.
-const FENCE_ATTRIBUTES = String.raw`(?:[ \t]+[^\r\n]*)?`;
-
 export function extractHtmlFromResponse(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
   const trimmed = rawText.trim();
-  const htmlFence = trimmed.match(new RegExp(String.raw`\`\`\`html${FENCE_ATTRIBUTES}[ \t]*\r?\n([\s\S]*?)(?:\`\`\`|$)`, 'i'));
+
+  // Generated multi-file projects commonly use fences such as
+  // ```html filepath="index.html". The filepath metadata is a VFS attribute,
+  // not document content, so capture only what starts on the following line.
+  const htmlFence = trimmed.match(/```html(?:[ \t]+[^\r\n]*)?[ \t]*\r?\n([\s\S]*?)(?:```|$)/i);
   if (htmlFence?.[1]) return htmlFence[1].trim();
-  const genericFence = trimmed.match(new RegExp(String.raw`\`\`\`${FENCE_ATTRIBUTES}[ \t]*\r?\n([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)(?:\`\`\`|$)`, 'i'));
+
+  const genericFence = trimmed.match(/```(?:[ \t]+[^\r\n]*)?[ \t]*\r?\n([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)(?:```|$)/i);
   if (genericFence?.[1]) return genericFence[1].trim();
+
   if (/<!DOCTYPE html>/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
-    return trimmed.replace(new RegExp(String.raw`\`\`\`(?:html|javascript|js|css)?${FENCE_ATTRIBUTES}[ \t]*\r?\n([\s\S]*?)(?:\`\`\`|$)`, 'gi'), '$1').trim();
+    return trimmed.replace(/```(?:html|javascript|js|css)?(?:[ \t]+[^\r\n]*)?[ \t]*\r?\n([\s\S]*?)(?:```|$)/gi, '$1').trim();
   }
   return '';
 }
@@ -28,7 +27,7 @@ export function hasPreviewableContent(rawText) {
 export function preparePreviewHtml(rawText, imageMap = new Map()) {
   let html = extractHtmlFromResponse(rawText);
   if (!html && (/<!DOCTYPE html>/i.test(rawText) || /<html[\s>]/i.test(rawText))) {
-    html = rawText.replace(new RegExp(String.raw`\`\`\`(?:html|javascript|js|css)?${FENCE_ATTRIBUTES}[ \t]*\r?\n([\s\S]*?)\`\`\``, 'gi'), '$1').trim();
+    html = rawText.replace(/```(?:html|javascript|js|css)?(?:[ \t]+[^\r\n]*)?[ \t]*\r?\n([\s\S]*?)```/gi, '$1').trim();
   }
   if (!html) return '';
   if (imageMap.size) {
