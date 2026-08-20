@@ -75,9 +75,6 @@ function findWorkspace() {
     }
   }
 
-  // Prefer the smallest non-fixed project container. This deliberately rejects
-  // the legacy full-screen Preview overlay, which used to masquerade as the
-  // workspace and caused the Canvas to take over the whole browser.
   const chosen = candidates
     .filter(({ width }) => width <= window.innerWidth * 0.78)
     .sort((a, b) => a.area - b.area)[0]
@@ -126,7 +123,7 @@ async function collectFiles(workspace) {
       if (editor) files[label] = { content: editor.value || '' };
     }
     preview.click();
-    await waitFrames(2);
+    await waitFrames(3);
   } finally {
     delete workspace.dataset.quantoraCollectingFiles;
   }
@@ -153,18 +150,10 @@ function ensureFilePicker(workspace) {
     picker.dataset.quantoraFilePicker = 'true';
     picker.setAttribute('aria-label', 'Files');
     Object.assign(picker.style, {
-      alignSelf: 'center',
-      height: '32px',
-      maxWidth: '260px',
-      marginLeft: '8px',
-      padding: '0 30px 0 10px',
-      borderRadius: '9px',
-      border: '1px solid rgba(148,163,184,.24)',
-      background: '#111827',
-      color: '#cbd5e1',
-      font: '650 12px/1 Inter,system-ui,sans-serif',
-      outline: 'none',
-      cursor: 'pointer',
+      alignSelf: 'center', height: '32px', maxWidth: '260px', marginLeft: '8px',
+      padding: '0 30px 0 10px', borderRadius: '9px',
+      border: '1px solid rgba(148,163,184,.24)', background: '#111827', color: '#cbd5e1',
+      font: '650 12px/1 Inter,system-ui,sans-serif', outline: 'none', cursor: 'pointer',
     });
     picker.addEventListener('change', () => {
       if (!picker.value) return;
@@ -205,6 +194,23 @@ function projectFingerprint(files) {
   return JSON.stringify(Object.entries(files || {}).map(([path, file]) => [path, file?.content || '']));
 }
 
+function ensureWorkspacePreparingCover(workspace) {
+  if (getComputedStyle(workspace).position === 'static') workspace.style.position = 'relative';
+  let cover = workspace.querySelector(':scope > [data-quantora-workspace-preparing="true"]');
+  if (!cover) {
+    cover = document.createElement('div');
+    cover.dataset.quantoraWorkspacePreparing = 'true';
+    Object.assign(cover.style, {
+      position: 'absolute', inset: '46px 0 0', zIndex: '60', background: '#ffffff',
+      display: 'grid', placeItems: 'center', color: '#475569',
+      font: '700 13px/1.4 Inter,system-ui,sans-serif',
+    });
+    cover.innerHTML = '<div data-quantora-preview-preparing="true" style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:999px;background:#f97316;box-shadow:0 0 0 5px rgba(249,115,22,.10)"></span>Preparing your preview…</div>';
+    workspace.append(cover);
+  }
+  return cover;
+}
+
 function ensureRuntimeHost(workspace) {
   const frame = largestIframe(workspace);
   const hostParent = frame?.parentElement;
@@ -217,15 +223,8 @@ function ensureRuntimeHost(workspace) {
     host.dataset.quantoraProjectRuntime = 'true';
     host.dataset.runtimeState = 'preparing';
     Object.assign(host.style, {
-      position: 'absolute',
-      inset: '0',
-      zIndex: '24',
-      background: '#ffffff',
-      overflow: 'hidden',
-      display: 'grid',
-      placeItems: 'center',
+      position: 'absolute', inset: '0', zIndex: '24', background: '#ffffff', overflow: 'hidden',
     });
-    host.innerHTML = '<div data-quantora-preview-preparing="true" style="font:700 13px/1.4 Inter,system-ui,sans-serif;color:#475569;display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:999px;background:#f97316;box-shadow:0 0 0 5px rgba(249,115,22,.10)"></span>Preparing your preview…</div>';
     hostParent.append(host);
   }
   return host;
@@ -238,24 +237,31 @@ async function ensureProjectRuntime(workspace) {
   const hasEntry = tabs.some(({ label }) => /(?:^|\/)src\/(?:main|index|App)\.(?:jsx?|tsx?)$/i.test(label));
   if (!hasPackage || !hasEntry) return;
 
-  // Cover the legacy iframe immediately so users never see a browser refusal,
-  // a third-party loader, or a spinning cube while Quantora is collecting and
-  // compiling the project.
-  const host = ensureRuntimeHost(workspace);
-  if (!host) return;
-
+  const cover = ensureWorkspacePreparingCover(workspace);
   workspace.dataset.quantoraRuntimeBusy = 'true';
   try {
+    // Collect first, then explicitly return to Preview. This avoids trying to
+    // mount a runtime while the right panel is still showing a source editor.
     const files = await collectFiles(workspace);
+    const host = ensureRuntimeHost(workspace);
+    if (!host) {
+      cover.innerHTML = '<div role="alert" style="max-width:520px;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not start the preview surface. The underlying browser error was kept hidden.</div>';
+      return;
+    }
+
     if (!isBrowserProjectVfs(files)) {
       host.dataset.runtimeState = 'failed';
-      host.innerHTML = '<div role="alert" style="max-width:520px;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not identify a runnable browser project. The failed runtime was kept hidden.</div>';
+      host.innerHTML = '<div role="alert" style="height:100%;display:grid;place-items:center;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><div><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not identify a runnable browser project. The failed runtime was kept hidden.</div></div>';
+      cover.remove();
       return;
     }
 
     const key = projectFingerprint(files);
     const existing = roots.get(host);
-    if (existing?.key === key) return;
+    if (existing?.key === key) {
+      cover.remove();
+      return;
+    }
     const root = existing?.root || createRoot(host);
     roots.set(host, { root, key });
     root.render(
@@ -267,6 +273,7 @@ async function ensureProjectRuntime(workspace) {
         }}
       />,
     );
+    cover.remove();
   } finally {
     delete workspace.dataset.quantoraRuntimeBusy;
   }
@@ -292,31 +299,15 @@ function dockStandalonePreview() {
   overlay.dataset.quantoraDockedPreview = 'true';
   const mobile = window.innerWidth < 900;
   Object.assign(overlay.style, {
-    position: 'fixed',
-    top: '12px',
-    right: '12px',
-    bottom: '12px',
-    left: mobile ? '12px' : 'auto',
-    width: mobile ? 'calc(100vw - 24px)' : 'min(58vw, 980px)',
-    height: 'auto',
-    padding: '0',
-    margin: '0',
-    background: 'transparent',
-    backdropFilter: 'none',
-    WebkitBackdropFilter: 'none',
-    display: 'flex',
-    alignItems: 'stretch',
-    justifyContent: 'stretch',
+    position: 'fixed', top: '12px', right: '12px', bottom: '12px', left: mobile ? '12px' : 'auto',
+    width: mobile ? 'calc(100vw - 24px)' : 'min(58vw, 980px)', height: 'auto', padding: '0', margin: '0',
+    background: 'transparent', backdropFilter: 'none', WebkitBackdropFilter: 'none',
+    display: 'flex', alignItems: 'stretch', justifyContent: 'stretch',
   });
   const panel = overlay.firstElementChild;
   if (panel instanceof HTMLElement) {
     Object.assign(panel.style, {
-      width: '100%',
-      maxWidth: 'none',
-      height: '100%',
-      maxHeight: 'none',
-      margin: '0',
-      borderRadius: '16px',
+      width: '100%', maxWidth: 'none', height: '100%', maxHeight: 'none', margin: '0', borderRadius: '16px',
     });
   }
 }
@@ -362,9 +353,6 @@ function onClickCapture(event) {
   const preview = previewButton(workspace);
   if (!preview) return;
 
-  // When a project workspace already exists, there must be only one Preview
-  // surface. Route the message-level Preview action to the right-side Canvas
-  // instead of letting legacy AiStudio create a second blocking overlay.
   event.preventDefault();
   event.stopPropagation();
   if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
