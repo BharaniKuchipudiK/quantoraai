@@ -19,6 +19,16 @@ test("buildDomainDirective makes Travel an engaged outcome partner", () => {
   assert.match(directive, /end with a short conversational bridge/i);
 });
 
+test("Travel directive requires ratings and usable property links without inventing hotel class", () => {
+  const directive = buildDomainDirective("travel");
+  assert.match(directive, /Google user rating/i);
+  assert.match(directive, /★ 4\.6\/5/);
+  assert.match(directive, /NOT an official hotel star classification/i);
+  assert.match(directive, /property name clickable/i);
+  assert.match(directive, /View property & photos/i);
+  assert.match(directive, /Omit any field.*instead of guessing/is);
+});
+
 test("buildDomainDirective is empty for general chat", () => {
   assert.equal(buildDomainDirective(null), "");
 });
