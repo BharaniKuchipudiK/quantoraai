@@ -107,11 +107,16 @@ await page.addInitScript(() => {
   localStorage.removeItem('quantora_profile_avatar_v1');
 });
 
-await page.route('https://esm.sh/**', (route) => route.fulfill({
-  status: 200,
-  contentType: 'text/javascript; charset=utf-8',
-  body: esmMock(route.request().url()),
-}));
+await page.route('https://esm.sh/**', async (route) => {
+  // Keep the project in a visible boot state long enough to prove that the user
+  // sees Quantora's controlled status rather than an iframe/browser error.
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  await route.fulfill({
+    status: 200,
+    contentType: 'text/javascript; charset=utf-8',
+    body: esmMock(route.request().url()),
+  });
+});
 
 await page.route('**/api/**', async (route) => {
   const request = route.request();
@@ -206,13 +211,10 @@ try {
   await page.getByRole('button', { name: 'Close profile picture chooser' }).click();
 
   const arena = page.locator('[data-quantora-native-arena="true"]').first();
-  const fork = page.locator('[data-quantora-fork-chat="true"]').first();
   await visible(arena, 'Native Dual Arena is not visible in Studio.');
-  await visible(fork, 'Fork Chat is not visible beside the native conversation controls.');
   await hidden(page.getByRole('button', { name: /^Reset Chat$/i }).first(), 'Reset Chat is visible again.');
   await hidden(page.locator('[data-quantora-conversation-actions]').first(), 'Legacy proxy conversation controls are still visible.');
   await assertNotClipped(arena, 'Dual Arena');
-  await assertNotClipped(fork, 'Fork Chat');
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing.');
@@ -224,6 +226,12 @@ try {
 
   const runtime = workspace.locator('[data-quantora-project-runtime="true"]').first();
   await visible(runtime, 'Quantora project runtime did not mount.', 15_000);
+  await visible(runtime.locator('[data-quantora-preview-preparing="true"]').first(), 'Preview did not show a controlled preparing state before runtime readiness.', 5000);
+  const bootText = await workspace.innerText().catch(() => '');
+  if (/refused to connect|rejected|Couldn't connect to server|TIME_OUT|Sandpack/i.test(bootText)) {
+    throw new Error(`Raw runtime/browser failure leaked during preview boot: ${bootText.slice(0, 300)}`);
+  }
+
   await page.waitForFunction(() => {
     const host = document.querySelector('[data-quantora-project-runtime="true"]');
     return host?.dataset.runtimeState === 'ready' && /Mission Control is alive/.test(host.dataset.runtimeBodyText || '');
@@ -241,14 +249,14 @@ try {
   }
 
   const workspaceBox = await workspace.boundingBox();
-  if (!workspaceBox || workspaceBox.x < 650 || workspaceBox.width < 500) {
+  if (!workspaceBox || workspaceBox.x < 650 || workspaceBox.width < 500 || workspaceBox.width > 1000) {
     throw new Error(`Preview workspace is not a stable right-side Canvas: ${JSON.stringify(workspaceBox)}`);
   }
 
   const workspaceText = await workspace.innerText().catch(() => '');
   if (/\{"name":"mission-control-recovery"/.test(workspaceText)) throw new Error('Preview is exposing package.json as the application result.');
   if (/filepath=["']index\.html["']/i.test(workspaceText)) throw new Error('Preview is leaking fenced filepath metadata into the rendered result.');
-  if (/Couldn't connect to server|TIME_OUT|Sandpack/i.test(workspaceText)) throw new Error('A third-party preview runtime error leaked into the user experience.');
+  if (/refused to connect|rejected|Couldn't connect to server|TIME_OUT|Sandpack/i.test(workspaceText)) throw new Error('A raw runtime/browser error leaked into the user experience.');
 
   await hidden(page.locator('.app-shell--studio button[title="Publish to Vercel"]').first(), 'Publish is still visible in the working Canvas.');
   await hidden(page.locator('.app-shell--studio button[title^="Copy a shareable preview link"]').first(), 'Share link is still visible in the working Canvas.');
@@ -256,6 +264,13 @@ try {
   const filePicker = workspace.locator('[data-quantora-file-picker="true"]').first();
   await visible(filePicker, 'Project files were not compacted into a single Files control.');
   await hidden(workspace.locator('button').filter({ hasText: /^src\/App\.jsx$/ }).first(), 'Generated source files are still permanent top tabs.');
+
+  const fork = page.locator('[data-quantora-message-fork="true"]').last();
+  await visible(fork, 'Fork Chat did not replace the message overflow action.');
+  await assertNotClipped(fork, 'Fork Chat');
+  await hidden(page.locator('button[title="More"]').first(), 'Three-dot overflow is still visible.');
+  await hidden(page.getByText('Report issue', { exact: true }).first(), 'Duplicate Report issue action is still exposed.');
+  await hidden(page.getByText('Read aloud', { exact: true }).first(), 'Read aloud overflow menu is still exposed.');
 
   await page.screenshot({ path: 'artifacts/e2e/studio-project-preview.png', fullPage: false });
 
