@@ -27,9 +27,21 @@ type TravelToolDependencies = {
   providerPolicy?: Partial<ProviderResiliencePolicy>;
 };
 
-const defaultDuffelClient = process.env.DUFFEL_API_KEY
-  ? new Duffel({ token: process.env.DUFFEL_API_KEY })
-  : null;
+// Travel searches are interactive user actions, not background jobs. One
+// provider attempt gets a bounded six-second budget. If the provider cannot
+// answer inside that budget, Quantora stops the agent loop and explains the
+// limitation instead of spending another 30-60 seconds retrying upstreams.
+const INTERACTIVE_TRAVEL_POLICY: Partial<ProviderResiliencePolicy> = {
+  timeoutMs: 6_000,
+  maxAttempts: 1,
+};
+
+const READ_ONLY_TRAVEL_TOOLS = new Set([
+  'search_flights',
+  'search_hotels',
+  'get_places_routing',
+  'search_attractions',
+]);
 
 function unavailable(message: string, reason: string) {
   return {
@@ -85,6 +97,29 @@ function resilientDuffel(client: Duffel | null, policy?: Partial<ProviderResilie
   return wrapped;
 }
 
+function stopAgentLoopOnProviderFailure(name: string, result: any) {
+  if (!READ_ONLY_TRAVEL_TOOLS.has(name) || result?.status !== 'unavailable') return result;
+
+  const providerMessage = String(result?.message || 'The connected travel provider is unavailable.');
+  const subject = name === 'search_hotels'
+    ? 'live hotel results'
+    : name === 'search_flights'
+      ? 'live flight results'
+      : name === 'search_attractions'
+        ? 'live attraction results'
+        : 'live map or routing results';
+
+  return {
+    ...result,
+    // api/chat already treats PAUSE_AND_ASK as a terminal agent step. Using the
+    // existing contract here prevents a failed provider call from being fed
+    // back into Gemini and starting another model/tool retry cycle.
+    action: 'PAUSE_AND_ASK',
+    providerMessage,
+    message: `I couldn't retrieve ${subject} from the connected provider, so I stopped instead of retrying in a loop. Would you like me to continue without those live results?`,
+  };
+}
+
 export async function executeToolCall(
   name: string,
   args: unknown,
@@ -110,10 +145,16 @@ export async function executeToolCall(
   const rawFetch = dependencies.fetchFn || fetch;
   const hasExplicitDuffel = Object.prototype.hasOwnProperty.call(dependencies, 'duffelClient');
   const rawDuffel = hasExplicitDuffel ? dependencies.duffelClient ?? null : defaultDuffelClient;
+  const providerPolicy = {
+    ...INTERACTIVE_TRAVEL_POLICY,
+    ...(dependencies.providerPolicy || {}),
+  };
 
-  return core.executeToolCall(name, validation.value, {
+  const result = await core.executeToolCall(name, validation.value, {
     ...dependencies,
-    fetchFn: resilientFetch(rawFetch, dependencies.providerPolicy),
-    duffelClient: resilientDuffel(rawDuffel, dependencies.providerPolicy),
+    fetchFn: resilientFetch(rawFetch, providerPolicy),
+    duffelClient: resilientDuffel(rawDuffel, providerPolicy),
   } as any);
+
+  return stopAgentLoopOnProviderFailure(name, result);
 }
