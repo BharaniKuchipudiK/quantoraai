@@ -24,6 +24,32 @@
 }
 
 /*
+ * The conversation action strip is real AiStudio React state. The specialist
+ * presentation layer used to hide the entire strip because Reset Chat lived in
+ * it, accidentally hiding Dual Arena too. Restore the native strip and hide only
+ * the obsolete summary/reset pieces. No proxy Arena button is required.
+ */
+.app-shell--studio [data-quantora-native-conversation-bar="true"] {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  min-height: 36px !important;
+  margin-bottom: 8px !important;
+  padding: 0 !important;
+  border-bottom: none !important;
+}
+
+.app-shell--studio [data-quantora-native-conversation-summary="true"],
+.app-shell--studio [data-quantora-reset-chat="true"],
+.app-shell--studio [data-quantora-conversation-actions] {
+  display: none !important;
+}
+
+.app-shell--studio [data-quantora-native-conversation-actions="true"] {
+  margin-left: auto !important;
+}
+
+/*
  * Prompt composer: grow naturally with the message, but do not let a long prompt
  * consume the whole conversation/Canvas. AiStudio already measures scrollHeight
  * on every keystroke; these caps turn that into a responsive composer rather
@@ -120,27 +146,16 @@ html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [da
 }
 
 /*
- * A Study/Travel/Finance/Research Canvas is a working surface, not a deployment
- * console. Publishing, share-link creation and responsive device emulation are
- * developer/app-builder actions, so keep them in neutral Quantora and remove
- * them from Agentic Workspaces. Office download actions are unaffected.
+ * Preview is a working surface, not a release console. Share/Publish become a
+ * deliberate Release workflow after verification; they do not belong in the
+ * everyday Canvas. Office download actions remain available.
  */
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Publish to Vercel"],
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title^="Copy a shareable preview link"],
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-canvas-device-switcher="true"] {
+.app-shell--studio button[title="Publish to Vercel"],
+.app-shell--studio button[title^="Copy a shareable preview link"] {
   display: none !important;
 }
 
-/*
- * Code/build Preview is also a working surface. Deploy and Share are deliberate
- * release actions, not things we should keep shouting at the user while they are
- * iterating. Hide them both in the split workspace and in the docked quick
- * preview; a future Release action can expose deployment when the build is ready.
- */
-.app-shell--studio [data-quantora-legacy-workspace="true"] button[title="Publish to Vercel"],
-.app-shell--studio [data-quantora-legacy-workspace="true"] button[title^="Copy a shareable preview link"],
-.app-shell--studio [data-quantora-docked-preview="true"] button[title="Publish to Vercel"],
-.app-shell--studio [data-quantora-docked-preview="true"] button[title^="Copy a shareable preview link"] {
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-canvas-device-switcher="true"] {
   display: none !important;
 }
 
