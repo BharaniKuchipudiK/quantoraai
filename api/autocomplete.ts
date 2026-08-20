@@ -3,6 +3,7 @@ import { applyCors, isRateLimited, isRateLimitedDurable } from './_lib/rate-limi
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchGatewayCredential, resolveCapabilityCredential } from './_lib/credential-broker.js';
 import { handleCodeCognitionRequest } from './_lib/code-cognition-handler.js';
+import { handlePrIntelligenceRequest } from './_lib/pr-intelligence-handler.js';
 
 const MAX_CODE_CONTEXT_CHARS = 50_000;
 const REQUESTS_PER_MINUTE = 30;
@@ -20,6 +21,14 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  // Quantora PR Intelligence shares this existing serverless runtime so the
+  // Code platform does not consume another Vercel function slot. The handler
+  // owns its own session/rate-limit boundary because it is a distinct product
+  // capability rather than autocomplete.
+  if (req.query?.mode === 'pr-intelligence') {
+    return handlePrIntelligenceRequest(req, res);
   }
 
   const auth = await requireActiveSession(req, res);
@@ -53,11 +62,7 @@ export default async function handler(req: any, res: any) {
     if (!apiKey) return res.status(401).json({ error: "No API key available for Autocomplete." });
 
     const client = new GoogleGenAI({ apiKey });
-    const prompt = `You are an elite autocomplete engine. The user is writing code. You must output ONLY the exact text that should be inserted between the prefix and suffix. No markdown formatting, no explanations, no backticks.
-PREFIX:
-${prefix}
-SUFFIX:
-${suffix}`;
+    const prompt = `You are an elite autocomplete engine. The user is writing code. You must output ONLY the exact text that should be inserted between the prefix and suffix. No markdown formatting, no explanations, no backticks.\nPREFIX:\n${prefix}\nSUFFIX:\n${suffix}`;
 
     const response = await client.models.generateContent({
       model: "gemini-1.5-flash",
