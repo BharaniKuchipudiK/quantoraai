@@ -12,12 +12,13 @@ const defaultDuffelClient = process.env.DUFFEL_API_KEY
   ? new Duffel({ token: process.env.DUFFEL_API_KEY })
   : null;
 
-// One server-side Google Maps Platform key can be used by Places API (New),
-// and later by Routes API if that API is enabled for the same GCP project.
+// One server-side Google Maps Platform key can serve Places API (New) and
+// Routes API when both APIs are enabled for the same GCP project.
 const defaultGoogleMapsApiKey =
   process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY || null;
 
 const GOOGLE_PLACES_TEXT_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+const GOOGLE_ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 const GOOGLE_PLACES_FIELD_MASK = [
   'places.id',
   'places.displayName',
@@ -31,6 +32,11 @@ const GOOGLE_PLACES_FIELD_MASK = [
   'places.types',
   'places.businessStatus',
   'places.priceLevel',
+].join(',');
+const GOOGLE_ROUTES_FIELD_MASK = [
+  'routes.distanceMeters',
+  'routes.duration',
+  'routes.polyline.encodedPolyline',
 ].join(',');
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = new Set([
@@ -89,14 +95,16 @@ export const travelFunctionDeclarations: any[] = [
   },
   {
     name: 'get_places_routing',
-    description: 'Discover real places, restaurants and points of interest through Google Places API (New). This tool currently provides place intelligence, not turn-by-turn routing; route duration/distance must not be invented.',
+    description: 'Use Google Maps Platform for travel geography. With query, discover real places/restaurants/POIs through Places API (New). With origin and destination, compute real route distance and duration through Routes API when enabled. Never invent routing data.',
     parameters: {
       type: 'OBJECT',
       properties: {
         query: { type: 'STRING', description: 'Place query, for example "vegetarian restaurants near Marina Bay" or "museums in Kyoto".' },
         placeType: { type: 'STRING', description: 'Optional place category such as restaurant, cafe, museum, park, or tourist_attraction.' },
+        origin: { type: 'STRING', description: 'Optional route origin as an address or recognizable place name.' },
+        destination: { type: 'STRING', description: 'Optional route destination as an address or recognizable place name.' },
+        travelMode: { type: 'STRING', description: 'Optional route mode: DRIVE, TRANSIT, WALK, BICYCLE, or TWO_WHEELER. Defaults to DRIVE.' },
       },
-      required: ['query'],
     },
   },
   {
@@ -157,6 +165,16 @@ function normalizeGooglePlace(place: any) {
   };
 }
 
+function normalizeTravelMode(value: unknown) {
+  const mode = String(value || 'DRIVE').trim().toUpperCase();
+  return ['DRIVE', 'TRANSIT', 'WALK', 'BICYCLE', 'TWO_WHEELER'].includes(mode) ? mode : 'DRIVE';
+}
+
+function durationToSeconds(duration: unknown) {
+  const match = String(duration || '').match(/^([0-9]+(?:\.[0-9]+)?)s$/);
+  return match ? Number(match[1]) : null;
+}
+
 async function searchGooglePlaces(
   apiKey: string | null | undefined,
   fetchFn: typeof fetch,
@@ -211,6 +229,77 @@ async function searchGooglePlaces(
   } catch (error: any) {
     console.error('[Google Places API Error] Request failed:', error?.message || error);
     return unavailable('Google Places API (New) request failed. No fabricated place results were substituted.', 'PROVIDER_ERROR');
+  }
+}
+
+async function computeGoogleRoute(
+  apiKey: string | null | undefined,
+  fetchFn: typeof fetch,
+  options: { origin: string; destination: string; travelMode?: string },
+) {
+  if (!apiKey) {
+    return unavailable('Google Routes is not connected. Set GOOGLE_MAPS_API_KEY in Vercel and enable Routes API.');
+  }
+
+  const origin = String(options.origin || '').trim();
+  const destination = String(options.destination || '').trim();
+  if (!origin || !destination) {
+    return unavailable('Routing requires both origin and destination.', 'INVALID_ARGUMENT');
+  }
+
+  const travelMode = normalizeTravelMode(options.travelMode);
+  const body: Record<string, unknown> = {
+    origin: { address: origin },
+    destination: { address: destination },
+    travelMode,
+  };
+  if (travelMode === 'DRIVE') body.routingPreference = 'TRAFFIC_AWARE';
+
+  try {
+    const response = await fetchFn(GOOGLE_ROUTES_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': GOOGLE_ROUTES_FIELD_MASK,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const providerBody = await response.text().catch(() => '');
+      console.error('[Google Routes API Error]', response.status, providerBody.slice(0, 1000));
+      return unavailable('Google Routes API rejected the request. Places can still work independently; enable Routes API for this Google Maps Platform project if you want distance and travel-time calculations.', 'PROVIDER_ERROR');
+    }
+
+    const payload: any = await response.json();
+    const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
+    if (!route) {
+      return unavailable('Google Routes API returned no route for the requested origin and destination.', 'NO_RESULTS');
+    }
+
+    const warning = ['WALK', 'BICYCLE', 'TWO_WHEELER'].includes(travelMode)
+      ? 'Google marks WALK, BICYCLE and TWO_WHEELER routes as beta; paths can be incomplete, so verify local conditions.'
+      : null;
+
+    return {
+      status: 'success',
+      executed: true,
+      source: 'Google Routes API',
+      route: {
+        origin,
+        destination,
+        travelMode,
+        distanceMeters: typeof route?.distanceMeters === 'number' ? route.distanceMeters : null,
+        duration: route?.duration || null,
+        durationSeconds: durationToSeconds(route?.duration),
+        encodedPolyline: route?.polyline?.encodedPolyline || null,
+        warning,
+      },
+    };
+  } catch (error: any) {
+    console.error('[Google Routes API Error] Request failed:', error?.message || error);
+    return unavailable('Google Routes API request failed. No fabricated route data were substituted.', 'PROVIDER_ERROR');
   }
 }
 
@@ -323,6 +412,16 @@ export async function executeToolCall(
     }
 
     case 'get_places_routing': {
+      const origin = String(args?.origin || '').trim();
+      const destination = String(args?.destination || '').trim();
+      if (origin || destination) {
+        return computeGoogleRoute(googleMapsApiKey, fetchFn, {
+          origin,
+          destination,
+          travelMode: args?.travelMode,
+        });
+      }
+
       const query = String(args?.query || '').trim();
       const placeType = String(args?.placeType || '').trim();
       const result: any = await searchGooglePlaces(googleMapsApiKey, fetchFn, {
@@ -335,8 +434,6 @@ export async function executeToolCall(
         executed: true,
         source: result.source,
         places: result.places,
-        routingAvailable: false,
-        routingNote: 'Places API (New) is connected for destination discovery. Route duration/distance requires Google Routes API and is not fabricated here.',
       };
     }
 
