@@ -302,6 +302,24 @@ function onInput(event) {
   rebuildTimer = window.setTimeout(schedule, 450);
 }
 
+function onClickCapture(event) {
+  const target = event.target instanceof Element ? event.target.closest('button') : null;
+  if (!target || target.getAttribute('title') !== 'Preview') return;
+  const workspace = findWorkspace();
+  if (!workspace || workspace.contains(target)) return;
+  const preview = previewButton(workspace);
+  if (!preview) return;
+
+  // When a project workspace already exists, there must be only one Preview
+  // surface. Route the message-level Preview action to the right-side Canvas
+  // instead of letting legacy AiStudio create a second blocking overlay.
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+  preview.click();
+  schedule();
+}
+
 export function installStudioProjectExperience() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
   if (window.__quantoraStudioProjectExperienceInstalled) return () => {};
@@ -310,11 +328,13 @@ export function installStudioProjectExperience() {
   observer = new MutationObserver(schedule);
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener('input', onInput, true);
+  document.addEventListener('click', onClickCapture, true);
   window.addEventListener('resize', schedule);
   return () => {
     observer?.disconnect();
     observer = null;
     document.removeEventListener('input', onInput, true);
+    document.removeEventListener('click', onClickCapture, true);
     window.removeEventListener('resize', schedule);
     window.clearTimeout(rebuildTimer);
     for (const [, value] of roots) {
