@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildConversationSnapshot, chooseNextConversationMove } from "./conversation-engine.js";
 import { assessPclCognition, formatPclCognitiveContract } from "./pcl-cognitive-kernel.js";
+import { derivePclConversationLead } from "./pcl-conversation-lead.js";
 
 test("safe reversible work stays autonomous instead of asking unnecessary questions", () => {
   const snapshot = buildConversationSnapshot({
@@ -16,6 +17,27 @@ test("safe reversible work stays autonomous instead of asking unnecessary questi
   assert.equal(cognition.autonomy, "autonomous");
   assert.equal(cognition.responsePolicy.questionBudget, 0);
   assert.equal(cognition.responsePolicy.leadWithOutcome, true);
+});
+
+test("Travel can lead naturally with one optional next question after delivering value", () => {
+  const snapshot = buildConversationSnapshot({
+    sessionContext: { goal: "Plan a Bali trip" },
+    studioDomain: "travel",
+    message: "What is the best area to stay in Bali?",
+  });
+  const decision = chooseNextConversationMove(snapshot);
+  const cognition = assessPclCognition({ snapshot, decision });
+  const lead = derivePclConversationLead({
+    snapshot,
+    decision,
+    humanGate: cognition.humanGate,
+    alignment: cognition.outcomeAlignment,
+  });
+
+  assert.equal(cognition.humanGate, "none");
+  assert.equal(cognition.responsePolicy.questionBudget, 1);
+  assert.equal(lead.conversationLead, "answer_and_advance");
+  assert.equal(lead.leadingQuestionMode, "optional");
 });
 
 test("medium-impact reversible work proceeds under supervision rather than blocking", () => {
@@ -51,10 +73,13 @@ test("high-risk or hard-to-reverse work requires explicit human approval", () =>
   });
   const decision = chooseNextConversationMove(snapshot);
   const cognition = assessPclCognition({ snapshot, decision });
+  const lead = derivePclConversationLead({ snapshot, decision, humanGate: cognition.humanGate, alignment: cognition.outcomeAlignment });
 
   assert.equal(cognition.humanGate, "approve");
   assert.equal(cognition.autonomy, "gated");
   assert.equal(cognition.responsePolicy.questionBudget, 1);
+  assert.equal(lead.leadingQuestionMode, "required");
+  assert.equal(lead.conversationLead, "seek_approval");
   assert.equal(cognition.responsePolicy.requireApprovalBeforeAction, true);
 });
 
@@ -75,11 +100,14 @@ test("one material ambiguity creates one human choice, not an intake questionnai
   });
   const decision = chooseNextConversationMove(snapshot);
   const cognition = assessPclCognition({ snapshot, decision });
+  const lead = derivePclConversationLead({ snapshot, decision, humanGate: cognition.humanGate, alignment: cognition.outcomeAlignment });
 
   assert.equal(decision.move, "clarify");
   assert.equal(cognition.humanGate, "choose");
   assert.deepEqual(cognition.missingCritical, ["Which regulatory market applies?"]);
   assert.equal(cognition.responsePolicy.questionBudget, 1);
+  assert.equal(lead.leadingQuestionMode, "required");
+  assert.equal(lead.conversationLead, "resolve_blocker");
 });
 
 test("explicit context conflict keeps the human as governor", () => {
@@ -116,6 +144,7 @@ test("verified artifacts contribute evidence and an achieved goal stops new work
   });
   const decision = chooseNextConversationMove(snapshot);
   const cognition = assessPclCognition({ snapshot, decision });
+  const lead = derivePclConversationLead({ snapshot, decision, humanGate: cognition.humanGate, alignment: cognition.outcomeAlignment });
 
   assert.equal(decision.move, "close");
   assert.equal(cognition.outcomeAlignment, "complete");
@@ -123,18 +152,24 @@ test("verified artifacts contribute evidence and an achieved goal stops new work
   assert.equal(cognition.completion, 1);
   assert.equal(cognition.evidenceCoverage, 1);
   assert.equal(cognition.responsePolicy.stopWhenOutcomeAchieved, true);
+  assert.equal(cognition.responsePolicy.questionBudget, 0);
+  assert.equal(lead.conversationLead, "close");
 });
 
-test("cognitive contract is provider-neutral and encodes human governance", () => {
+test("cognitive contract is provider-neutral and encodes human conversation leadership", () => {
   const snapshot = buildConversationSnapshot({
-    sessionContext: { goal: "Ship the analysis" },
-    message: "Generate the analysis now.",
+    sessionContext: { goal: "Plan a Bali trip" },
+    studioDomain: "travel",
+    message: "Recommend where I should stay.",
   });
   const decision = chooseNextConversationMove(snapshot);
   const contract = formatPclCognitiveContract(assessPclCognition({ snapshot, decision }));
 
   assert.match(contract, /PCL COGNITIVE GOVERNANCE/);
   assert.match(contract, /Safe, reversible work: keep moving/);
+  assert.match(contract, /OPTIONAL leading question/);
+  assert.match(contract, /Never re-ask a fact already present/);
+  assert.match(contract, /no intake questionnaire/i);
   assert.match(contract, /Never claim completion without available evidence/);
   assert.doesNotMatch(contract, /Gemini|Claude|OpenAI|Ollama|Cursor/i);
 });
