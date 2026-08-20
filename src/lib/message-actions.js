@@ -1,13 +1,10 @@
 /*
  * Contextual message actions (Roadmap: chat UX).
  *
- * A message's action bar should be DERIVED from its content/state, not a fixed row
- * dumped on every reply. This is the single source of truth for "which actions
- * does THIS message support?" so every bar renders the same, correct set:
- *  - always: copy, feedback (up/down), regenerate
- *  - only when useful: summarize (long replies), preview (code/deck/app)
- *  - secondary actions live in the "…" overflow, which is shown only when it
- *    actually has items.
+ * A message's action bar is derived from its content/state. Keep the primary
+ * actions concise and non-duplicative: thumbs-down is the feedback/report path,
+ * and the final conversation action is an explicit Fork Chat control rather
+ * than an overflow menu with overlapping commands.
  */
 
 /** Long enough that a summary adds value (not a one-liner). */
@@ -27,9 +24,6 @@ export function isSummarizable(text = '') {
  */
 export function resolveMessageActions({ text = '', hasPreview = false, isOfficeArtifact = false } = {}) {
   const clean = String(text || '').trim();
-  const overflow = [];
-  if (clean.length > 0) overflow.push('read-aloud');
-  overflow.push('report');
   return {
     copy: clean.length > 0,
     feedback: true,
@@ -38,6 +32,9 @@ export function resolveMessageActions({ text = '', hasPreview = false, isOfficeA
     // Verified Office artifacts already live in the right-side workspace. Their
     // presence is explicit message state; never infer this from assistant wording.
     preview: Boolean(hasPreview) && !isOfficeArtifact,
-    overflow,
+    // AiStudio still renders its final action from the legacy overflow slot. The
+    // Studio conversation bridge turns this single semantic item into the visible
+    // Fork Chat control and prevents the old menu from opening.
+    overflow: ['fork-chat'],
   };
 }
