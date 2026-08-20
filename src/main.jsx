@@ -10,6 +10,7 @@ import { installYoutubeMediaExperience } from './lib/youtube-media-experience.js
 import { installProfileMenuBridge } from './lib/profile-menu-bridge.js'
 import { installProfilePersonalization } from './lib/profile-personalization.js'
 import { installStudioRegressionRecovery } from './lib/studio-regression-recovery.jsx'
+import { installStudioStabilityBoundary } from './lib/studio-stability-boundary.js'
 import { installPromptClipboardImagePaste } from './lib/clipboard-image-paste.js'
 import './index.css'
 import './styles/density.css'
@@ -24,6 +25,7 @@ installYoutubeMediaExperience()
 installProfileMenuBridge()
 installProfilePersonalization()
 installStudioRegressionRecovery()
+installStudioStabilityBoundary()
 installPromptClipboardImagePaste()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
