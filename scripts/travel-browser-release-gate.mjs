@@ -126,6 +126,25 @@ async function assertVisible(locator, message) {
   }
 }
 
+async function firstVisible(locator, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  do {
+    const count = await locator.count();
+    for (let index = 0; index < count; index += 1) {
+      const candidate = locator.nth(index);
+      if (await candidate.isVisible().catch(() => false)) return candidate;
+    }
+    await page.waitForTimeout(50);
+  } while (Date.now() < deadline);
+  return null;
+}
+
+async function assertAnyVisible(locator, message) {
+  const visible = await firstVisible(locator);
+  if (!visible) throw new Error(message);
+  return visible;
+}
+
 async function assertHidden(locator, message) {
   if (await locator.isVisible().catch(() => false)) {
     throw new Error(message);
@@ -176,8 +195,11 @@ try {
   await travelAdvisor.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
 
-  const travelHero = page.getByText(/Where should Quantora take you\?/i).first();
-  await assertVisible(travelHero, 'Travel opened to a blank canvas instead of a specialist welcome.');
+  // React/session transitions can briefly leave a hidden stale specialist hero in
+  // the DOM while the visible landing is mounted. Assert against the visible
+  // match instead of assuming the first text match is the active surface.
+  const travelHeroMatches = page.getByText(/Where should Quantora take you\?/i);
+  const travelHero = await assertAnyVisible(travelHeroMatches, 'Travel opened to a blank canvas instead of a specialist welcome.');
 
   const duplicateTravelHeading = page.locator('h2').filter({ hasText: /^Travel Advisor$/i }).first();
   if (await duplicateTravelHeading.isVisible().catch(() => false)) {
@@ -217,7 +239,7 @@ try {
   await assertVisible(travelAdvisorAgain, 'Travel advisor disappeared after returning to neutral New Chat.');
   await travelAdvisorAgain.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
-  await assertVisible(page.getByText(/Where should Quantora take you\?/i).first(), 'Travel did not restore its own scoped welcome after re-entry.');
+  await assertAnyVisible(page.getByText(/Where should Quantora take you\?/i), 'Travel did not restore its own scoped welcome after re-entry.');
 
   const textarea = page.locator('textarea').first();
   await assertVisible(textarea, 'Travel input is not visible.');

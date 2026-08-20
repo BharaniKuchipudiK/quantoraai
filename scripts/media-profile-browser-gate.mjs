@@ -155,8 +155,14 @@ try {
   await visible(profile, 'Studio Profile entry is missing.');
   await profile.click();
 
+  const accountMenu = page.locator('#quantora-profile-menu').first();
+  await visible(accountMenu, 'Profile click did not open the account menu.');
+  const changePicture = accountMenu.locator('[data-quantora-profile-picture-entry]').first();
+  await visible(changePicture, 'Account menu is missing Change profile picture.');
+  await changePicture.click();
+
   const personalizer = page.locator('[data-quantora-profile-personalizer]').first();
-  await visible(personalizer, 'Profile click did not open the photo/avatar chooser.');
+  await visible(personalizer, 'Change profile picture did not open the photo/avatar chooser.');
   await visible(personalizer.locator('[data-quantora-profile-upload]').first(), 'Profile photo upload control is missing.');
   const thinker = personalizer.locator('[data-quantora-profile-avatar-choice="thinker"]').first();
   await visible(thinker, 'Preset profile avatars are missing.');

@@ -33,6 +33,7 @@
 .app-shell--studio .floating-input-pill textarea {
   min-height: 24px !important;
   max-height: min(24vh, 220px) !important;
+  box-sizing: border-box !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   scrollbar-width: thin;
