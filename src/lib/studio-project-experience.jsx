@@ -4,6 +4,7 @@ import BrowserProjectPreview from '../components/BrowserProjectPreview.jsx';
 import { isBrowserProjectVfs } from './browser-project-runtime.js';
 
 const roots = new Map();
+const projectStates = new WeakMap();
 let observer = null;
 let scheduled = false;
 let rebuildTimer = null;
@@ -230,8 +231,49 @@ function ensureRuntimeHost(workspace) {
   return host;
 }
 
+function mountRuntime(workspace, files, cover = null) {
+  const host = ensureRuntimeHost(workspace);
+  if (!host) return false;
+  const key = projectFingerprint(files);
+  const existing = roots.get(host);
+  if (existing?.key === key && ['compiling', 'starting', 'ready'].includes(host.dataset.runtimeState)) return true;
+
+  const root = existing?.root || createRoot(host);
+  roots.set(host, { root, key });
+  projectStates.set(workspace, { files, key, phase: 'starting' });
+  root.render(
+    <BrowserProjectPreview
+      vfs={files}
+      onRuntimeStateChange={(state) => {
+        host.dataset.runtimeState = state?.kind || 'unknown';
+        host.dataset.runtimeBodyText = String(state?.bodyText || '').slice(0, 500);
+        const current = projectStates.get(workspace);
+        if (current) projectStates.set(workspace, { ...current, phase: state?.kind || 'unknown' });
+        if (state?.kind === 'ready' || state?.kind === 'failed') cover?.remove();
+      }}
+    />,
+  );
+  return true;
+}
+
 async function ensureProjectRuntime(workspace) {
   if (!workspace || workspace.dataset.quantoraCollectingFiles === 'true' || workspace.dataset.quantoraRuntimeBusy === 'true') return;
+
+  const state = projectStates.get(workspace);
+  const frame = largestIframe(workspace);
+
+  // A collected project is the source of truth. While a user is viewing/editing
+  // a source file there is intentionally no iframe, so do nothing. When Preview
+  // is selected again, mount the runtime from the cached project without cycling
+  // through every file tab a second time.
+  if (state?.files) {
+    if (!frame) return;
+    const cover = ensureWorkspacePreparingCover(workspace);
+    if (mountRuntime(workspace, state.files, cover)) return;
+    cover.remove();
+    return;
+  }
+
   const tabs = fileButtons(workspace);
   const hasPackage = tabs.some(({ label }) => label === 'package.json');
   const hasEntry = tabs.some(({ label }) => /(?:^|\/)src\/(?:main|index|App)\.(?:jsx?|tsx?)$/i.test(label));
@@ -240,40 +282,17 @@ async function ensureProjectRuntime(workspace) {
   const cover = ensureWorkspacePreparingCover(workspace);
   workspace.dataset.quantoraRuntimeBusy = 'true';
   try {
-    // Collect first, then explicitly return to Preview. This avoids trying to
-    // mount a runtime while the right panel is still showing a source editor.
     const files = await collectFiles(workspace);
-    const host = ensureRuntimeHost(workspace);
-    if (!host) {
-      cover.innerHTML = '<div role="alert" style="max-width:520px;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not start the preview surface. The underlying browser error was kept hidden.</div>';
-      return;
-    }
-
     if (!isBrowserProjectVfs(files)) {
-      host.dataset.runtimeState = 'failed';
-      host.innerHTML = '<div role="alert" style="height:100%;display:grid;place-items:center;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><div><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not identify a runnable browser project. The failed runtime was kept hidden.</div></div>';
-      cover.remove();
+      projectStates.set(workspace, { files, phase: 'failed' });
+      cover.innerHTML = '<div role="alert" style="max-width:520px;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not identify a runnable browser project. The failed runtime was kept hidden.</div>';
       return;
     }
 
-    const key = projectFingerprint(files);
-    const existing = roots.get(host);
-    if (existing?.key === key) {
-      cover.remove();
-      return;
+    projectStates.set(workspace, { files, key: projectFingerprint(files), phase: 'collected' });
+    if (!mountRuntime(workspace, files, cover)) {
+      cover.innerHTML = '<div role="alert" style="max-width:520px;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not start the preview surface. The underlying browser error was kept hidden.</div>';
     }
-    const root = existing?.root || createRoot(host);
-    roots.set(host, { root, key });
-    root.render(
-      <BrowserProjectPreview
-        vfs={files}
-        onRuntimeStateChange={(state) => {
-          host.dataset.runtimeState = state?.kind || 'unknown';
-          host.dataset.runtimeBodyText = String(state?.bodyText || '').slice(0, 500);
-        }}
-      />,
-    );
-    cover.remove();
   } finally {
     delete workspace.dataset.quantoraRuntimeBusy;
   }
@@ -341,6 +360,13 @@ function schedule() {
 function onInput(event) {
   const workspace = findWorkspace();
   if (!workspace || !workspace.contains(event.target) || !(event.target instanceof HTMLTextAreaElement)) return;
+  const picker = workspace.querySelector('[data-quantora-file-picker="true"]');
+  const path = picker?.value || '';
+  const state = projectStates.get(workspace);
+  if (path && state?.files?.[path]) {
+    const files = { ...state.files, [path]: { content: event.target.value || '' } };
+    projectStates.set(workspace, { files, key: projectFingerprint(files), phase: 'dirty' });
+  }
   window.clearTimeout(rebuildTimer);
   rebuildTimer = window.setTimeout(schedule, 450);
 }
