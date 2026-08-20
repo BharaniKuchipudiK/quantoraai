@@ -286,6 +286,9 @@ function revealActualFileText() {
 }
 
 function markLegacyWorkspace() {
+  const existing = document.querySelector('[data-quantora-legacy-workspace="true"]');
+  if (existing?.isConnected) return existing;
+
   const frame = [...document.querySelectorAll('iframe')].find((candidate) => {
     const rect = candidate.getBoundingClientRect();
     if (rect.width < 300 || rect.height < 180) return false;
@@ -307,6 +310,110 @@ function markLegacyWorkspace() {
   const workspace = commonAncestor(tab, frame);
   if (workspace) workspace.dataset.quantoraLegacyWorkspace = 'true';
   return workspace;
+}
+
+function ensureCompactFileNavigation(workspace) {
+  if (!workspace) return;
+  const tabs = fileTabsFor(workspace);
+  if (tabs.length < 2) return;
+  const previewButton = [...workspace.querySelectorAll('button')]
+    .find((button) => /^Preview$/i.test(cleanTabLabel(textOf(button)))) || null;
+  const tabStrip = previewButton?.parentElement?.parentElement;
+  if (!tabStrip) return;
+
+  for (const { button } of tabs) {
+    const wrapper = button.parentElement;
+    if (!wrapper) continue;
+    wrapper.dataset.quantoraHiddenFileTab = 'true';
+    wrapper.style.display = 'none';
+  }
+
+  let picker = tabStrip.querySelector('[data-quantora-file-picker]');
+  if (!picker) {
+    picker = document.createElement('select');
+    picker.dataset.quantoraFilePicker = 'true';
+    picker.setAttribute('aria-label', 'Project files');
+    Object.assign(picker.style, {
+      alignSelf: 'center',
+      height: '32px',
+      maxWidth: '240px',
+      marginLeft: '8px',
+      padding: '0 30px 0 10px',
+      borderRadius: '9px',
+      border: '1px solid rgba(148,163,184,.24)',
+      background: '#111827',
+      color: '#cbd5e1',
+      font: '600 12px/1 Inter,system-ui,sans-serif',
+      outline: 'none',
+      cursor: 'pointer',
+    });
+    picker.addEventListener('change', () => {
+      const target = fileTabsFor(workspace).find(({ label }) => label === picker.value);
+      target?.button.click();
+      requestAnimationFrame(() => revealActualFileText());
+    });
+    tabStrip.append(picker);
+  }
+
+  const previous = picker.value;
+  const labels = tabs.map(({ label }) => label);
+  const currentOptions = [...picker.options].map((option) => option.value);
+  if (currentOptions.join('\n') !== labels.join('\n')) {
+    picker.replaceChildren(...labels.map((label) => {
+      const option = document.createElement('option');
+      option.value = label;
+      option.textContent = label;
+      return option;
+    }));
+  }
+  if (labels.includes(previous)) picker.value = previous;
+}
+
+function dockStandalonePreviewOverlay() {
+  const close = [...document.querySelectorAll('button[title="Close preview (Esc)"]')]
+    .find((button) => !button.closest('[data-quantora-legacy-workspace]')) || null;
+  if (!close) return;
+
+  let overlay = close.parentElement;
+  while (overlay && overlay !== document.body && overlay.style.position !== 'fixed') {
+    overlay = overlay.parentElement;
+  }
+  if (!overlay || overlay === document.body) return;
+  overlay.dataset.quantoraDockedPreview = 'true';
+
+  const mobile = window.innerWidth < 900;
+  Object.assign(overlay.style, {
+    top: '12px',
+    right: '12px',
+    bottom: '12px',
+    left: mobile ? '12px' : 'auto',
+    width: mobile ? 'calc(100vw - 24px)' : 'min(58vw, 980px)',
+    height: 'auto',
+    padding: '0',
+    background: 'transparent',
+    backdropFilter: 'none',
+    WebkitBackdropFilter: 'none',
+    display: 'flex',
+    alignItems: 'stretch',
+    justifyContent: 'stretch',
+    zIndex: '10010',
+    pointerEvents: 'none',
+  });
+
+  const panel = [...overlay.children].find((child) => child instanceof HTMLElement) || null;
+  if (panel) {
+    Object.assign(panel.style, {
+      width: '100%',
+      height: '100%',
+      maxWidth: 'none',
+      maxHeight: 'none',
+      margin: '0',
+      borderRadius: '16px',
+      overflow: 'hidden',
+      boxShadow: '0 24px 70px rgba(0,0,0,.42)',
+      pointerEvents: 'auto',
+    });
+  }
 }
 
 async function collectWorkspaceFiles(workspace) {
@@ -351,23 +458,40 @@ function normalizeSandpackFiles(files) {
   return result;
 }
 
+function ProjectRuntime({ runtime }) {
+  const { SandpackLayout, SandpackPreview, useSandpack } = runtime;
+  const { sandpack } = useSandpack();
+  return (
+    <SandpackLayout
+      data-quantora-project-runtime-status={sandpack.status || 'unknown'}
+      style={{ width: '100%', height: '100%', minHeight: 0, border: 'none', borderRadius: 0 }}
+    >
+      <SandpackPreview
+        showNavigator={false}
+        showRefreshButton
+        showOpenInCodeSandbox={false}
+        style={{ width: '100%', height: '100%', minHeight: '100%', flex: 1 }}
+      />
+    </SandpackLayout>
+  );
+}
+
 function ProjectPreview({ runtime, files }) {
   const pkg = useMemo(() => parsePackage(files), [files]);
   const template = useMemo(() => detectTemplate(files, pkg), [files, pkg]);
   const sandpackFiles = useMemo(() => normalizeSandpackFiles(files), [files]);
   const dependencies = useMemo(() => ({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) }), [pkg]);
-  const { SandpackProvider, SandpackPreview } = runtime;
+  const { SandpackProvider } = runtime;
   return (
     <div data-quantora-real-project-preview="true" style={{ width: '100%', height: '100%', minHeight: 0, background: '#fff' }}>
-      <SandpackProvider template={template} files={sandpackFiles} customSetup={{ dependencies }}>
-        <div style={{ width: '100%', height: '100%', minHeight: 0 }}>
-          <SandpackPreview
-            showNavigator={false}
-            showRefreshButton
-            showOpenInCodeSandbox={false}
-            style={{ width: '100%', height: '100%', minHeight: '100%' }}
-          />
-        </div>
+      <SandpackProvider
+        template={template}
+        files={sandpackFiles}
+        customSetup={{ dependencies }}
+        options={{ autorun: true, recompileMode: 'immediate' }}
+        style={{ width: '100%', height: '100%' }}
+      >
+        <ProjectRuntime runtime={runtime} />
       </SandpackProvider>
     </div>
   );
@@ -469,7 +593,9 @@ function runRecovery() {
   scheduled = false;
   ensureProfileFallback();
   ensureConversationActions();
-  markLegacyWorkspace();
+  const workspace = markLegacyWorkspace();
+  ensureCompactFileNavigation(workspace);
+  dockStandalonePreviewOverlay();
   revealActualFileText();
   void ensureProjectPreview();
 }
