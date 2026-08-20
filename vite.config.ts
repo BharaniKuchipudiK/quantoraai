@@ -4,12 +4,16 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
-        '@react-oauth/google': path.resolve(__dirname, 'src/lib/google-oauth-adapter.jsx'),
+        ...(isVercelPreview
+          ? { '@react-oauth/google': path.resolve(__dirname, 'src/lib/google-oauth-adapter.jsx') }
+          : {}),
       },
     },
     server: {
