@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - fix/studio-regression-recovery
 
 permissions:
   contents: read
@@ -105,6 +106,11 @@ jobs:
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/media-profile-browser-gate.mjs
+
+      - name: Execute Studio regression recovery journey
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/studio-regression-browser-gate.mjs
 
       - name: Upload browser evidence
         if: always()
