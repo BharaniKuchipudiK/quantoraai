@@ -113,6 +113,10 @@ async function startServer() {
     req.query = { ...(req.query || {}), mode: "code-cognition" };
     return autocomplete(req, res);
   });
+  route("all", "/api/github/pr-intelligence", (req, res) => {
+    req.query = { ...(req.query || {}), mode: "pr-intelligence" };
+    return autocomplete(req, res);
+  });
   route("all", "/api/enhance", enhance);
   route("all", "/api/generate-office", generateOffice);
   route("all", "/api/domains", domains);
