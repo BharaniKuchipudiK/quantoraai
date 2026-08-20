@@ -114,6 +114,43 @@ try {
   await visible(studioButton, 'Studio navigation did not become visible.');
   await studioButton.click();
 
+  // Regression fixture for the exact Agentic Workspace card failure reported in
+  // production: model plumbing must disappear and descriptions must never be
+  // line-clamped/cropped. The runtime policy should repair this even when cards
+  // are inserted dynamically after initial render.
+  await page.evaluate(() => {
+    const fixture = document.createElement('section');
+    fixture.dataset.quantoraWorkspaceCardFixture = 'true';
+    fixture.innerHTML = `
+      <h2>Agentic Workspaces</h2>
+      <button type="button" style="height:120px;overflow:hidden">
+        <h3>Travel Planner</h3>
+        <div>Kimi K2.5</div>
+        <p style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-height:30px">
+          Destination, timing, itinerary, flights, hotels, transport and curated places without cutting off the final words.
+        </p>
+      </button>`;
+    document.body.append(fixture);
+  });
+
+  const polishedCard = page.locator('[data-quantora-agentic-workspace-card="true"]').first();
+  await visible(polishedCard, 'Agentic Workspace cards were not picked up by the readability policy.');
+  await hidden(page.locator('[data-quantora-workspace-model-label="true"]').first(), 'Model name is still visible on an Agentic Workspace card.');
+  const descriptionState = await page.locator('[data-quantora-workspace-description="true"]').first().evaluate((node) => ({
+    display: node.style.display,
+    overflow: node.style.overflow,
+    maxHeight: node.style.maxHeight,
+    clamp: node.style.webkitLineClamp,
+    cardHeight: node.closest('[data-quantora-agentic-workspace-card]')?.style.height || '',
+  }));
+  if (descriptionState.display === '-webkit-box' || descriptionState.overflow === 'hidden' || descriptionState.maxHeight !== 'none' || descriptionState.clamp) {
+    throw new Error(`Workspace description is still clamped: ${JSON.stringify(descriptionState)}`);
+  }
+  if (descriptionState.cardHeight !== 'auto') {
+    throw new Error(`Workspace card still has a fixed height: ${JSON.stringify(descriptionState)}`);
+  }
+  await page.locator('[data-quantora-workspace-card-fixture="true"]').evaluate((node) => node.remove());
+
   const profile = page.locator('[data-quantora-sidebar-profile]').first();
   await visible(profile, 'Studio Profile entry is missing.');
   await profile.click();
@@ -172,9 +209,9 @@ try {
     throw new Error('Play opened a new browser tab.');
   }
 
-  console.log('Media/profile browser gate passed.');
+  console.log('Media/profile/workspace-card browser gate passed.');
 } catch (error) {
-  console.error('Media/profile browser gate FAILED:', error?.stack || error);
+  console.error('Media/profile/workspace-card browser gate FAILED:', error?.stack || error);
   process.exitCode = 1;
 } finally {
   await browser.close();
