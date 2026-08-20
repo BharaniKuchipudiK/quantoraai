@@ -84,6 +84,8 @@ test('compiled PCL brief preserves established context and forbids invented prec
   });
 
   assert.equal(plan.archetype, 'strategy');
+  assert.match(text, /Established goal: Secure alignment on the transformation path\./);
+  assert.match(text, /Established understanding: The user wants an executive storyline rather than a technical architecture dump\./);
   assert.match(text, /The program has three workstreams\./);
   assert.match(text, /March 2027/);
   assert.match(text, /Do not invent missing facts/i);
