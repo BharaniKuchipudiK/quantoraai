@@ -175,7 +175,7 @@ function cleanIndexHtml(source) {
   return html
     .replace(/<script\b[^>]*type=["']module["'][^>]*src=["'][^"']+["'][^>]*>\s*<\/script>/gi, '')
     .replace(/<script\b[^>]*src=["'][^"']+["'][^>]*type=["']module["'][^>]*>\s*<\/script>/gi, '')
-    .replace(/<link\b[^>]*href=["'][^"']+\.css["'][^>]*>/gi, '');
+    .replace(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi, '');
 }
 
 function insertBeforeClosingTag(html, tag, content) {
@@ -216,16 +216,20 @@ export function compileBrowserProject(vfs, ts) {
   const usesTailwind = Object.values(files).some((source) => /@tailwind\b|@import\s+["']tailwindcss["']/i.test(source))
     || Boolean(pkg.dependencies?.tailwindcss || pkg.devDependencies?.tailwindcss);
 
+  // Generated code runs with an opaque origin and no ambient Quantora storage.
+  // Network is deny-by-default: packages may load only from the explicit module
+  // hosts below. User/API network access will be an explicit future capability.
   const csp = [
     "default-src 'none'",
     "script-src 'unsafe-inline' data: https://esm.sh https://cdn.tailwindcss.com",
-    "style-src 'unsafe-inline' https:",
-    "img-src data: blob: https:",
-    "font-src data: https:",
-    "connect-src https://esm.sh https://cdn.tailwindcss.com https:",
-    "media-src data: blob: https:",
+    "style-src 'unsafe-inline'",
+    "img-src data: blob:",
+    "font-src data:",
+    "connect-src 'none'",
+    "media-src data: blob:",
     "worker-src blob:",
     "object-src 'none'",
+    "frame-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ');
