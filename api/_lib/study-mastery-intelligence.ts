@@ -5,7 +5,7 @@ import type {
   AdvisorIntervention,
 } from "./pcl-advisor-intelligence.js";
 
-export const STUDY_MASTERY_INTELLIGENCE_VERSION = "study-mastery-intelligence-2026-08-20.1";
+export const STUDY_MASTERY_INTELLIGENCE_VERSION = "study-mastery-intelligence-2026-08-20.2";
 
 export type StudyConcept = {
   id: string;
@@ -110,6 +110,10 @@ function weakByPolicy(evidence: StudyMasteryEvidence | undefined, policy: StudyM
   return false;
 }
 
+function conceptIdFromGap(gap: AdvisorGap): string {
+  return gap.id.split(":").at(-1) || "";
+}
+
 export function buildStudyAdvisorCandidate(
   input: StudyAdvisorInput,
   policy: StudyMasteryPolicy = DEFAULT_STUDY_MASTERY_POLICY,
@@ -200,7 +204,9 @@ export function buildStudyAdvisorCandidate(
   for (const conceptId of weakIds) {
     const concept = conceptMap.get(conceptId)!;
     const evidence = evidenceByConcept.get(conceptId)!;
-    const weakPrerequisites = uniqueIds(concept.prerequisiteIds).filter((id) => weakIds.has(id));
+    const prerequisiteIds = uniqueIds(concept.prerequisiteIds);
+    const weakPrerequisites = prerequisiteIds.filter((id) => weakIds.has(id));
+    const unknownPrerequisites = prerequisiteIds.filter((id) => !evidenceByConcept.has(id));
     const misconception = evidence.misconception === true && evidence.confidence >= policy.misconceptionConfidenceThreshold;
     const masteryDeficiency = Math.max(0, bounded(policy.masteryThreshold) - evidence.mastery) / Math.max(0.01, bounded(policy.masteryThreshold));
     const retentionDeficiency = evidence.retention == null
@@ -218,20 +224,38 @@ export function buildStudyAdvisorCandidate(
           : `Strengthen ${concept.label}`,
       severity: severityFor(deficiency, misconception),
       confidence: evidence.confidence,
-      dependencyIds: uniqueIds(concept.prerequisiteIds),
+      dependencyIds: prerequisiteIds,
       blocks: descendantsOf(conceptId, conceptMap, targetSet).map((id) => conceptMap.get(id)?.label || id),
       evidenceRefs: [`study-evidence:${conceptId}`],
-      rootCause: weakPrerequisites.length === 0,
+      // A concept is not a defensible root cause while an immediate prerequisite
+      // is either known weak OR still unknown. Evidence must close that frontier.
+      rootCause: weakPrerequisites.length === 0 && unknownPrerequisites.length === 0,
       addressable: true,
     });
   }
 
   const rootWeakGaps = gaps.filter((gap) => gap.rootCause && gap.kind !== "evidence_gap");
   const unknownGaps = gaps.filter((gap) => gap.kind === "evidence_gap");
-  const candidates = rootWeakGaps.length ? rootWeakGaps : unknownGaps;
-  const maxUnlock = Math.max(1, ...candidates.map((gap) => gap.blocks.length));
-  const interventions: AdvisorIntervention[] = candidates.map((gap) => {
-    const conceptId = gap.id.split(":").at(-1) || "";
+
+  // Diagnose only the evidence frontier that can change a current conclusion:
+  // unknown target mastery, or an unknown immediate prerequisite of a known-weak
+  // concept. Do not descend into every unknown ancestor before the nearer probe
+  // establishes that such descent is useful.
+  const priorityDiagnosticIds = new Set<string>();
+  for (const targetId of targetIds) {
+    if (!evidenceByConcept.has(targetId)) priorityDiagnosticIds.add(targetId);
+  }
+  for (const weakId of weakIds) {
+    for (const prerequisiteId of uniqueIds(conceptMap.get(weakId)?.prerequisiteIds)) {
+      if (!evidenceByConcept.has(prerequisiteId)) priorityDiagnosticIds.add(prerequisiteId);
+    }
+  }
+  const priorityUnknownGaps = unknownGaps.filter((gap) => priorityDiagnosticIds.has(conceptIdFromGap(gap)));
+  const candidates = [...rootWeakGaps, ...priorityUnknownGaps];
+  const effectiveCandidates = candidates.length ? candidates : unknownGaps;
+  const maxUnlock = Math.max(1, ...effectiveCandidates.map((gap) => gap.blocks.length));
+  const interventions: AdvisorIntervention[] = effectiveCandidates.map((gap) => {
+    const conceptId = conceptIdFromGap(gap);
     const concept = conceptMap.get(conceptId);
     const evidence = evidenceByConcept.get(conceptId);
     const isDiagnostic = gap.kind === "evidence_gap";
@@ -274,6 +298,7 @@ export function buildStudyAdvisorCandidate(
           ],
       reasonCodes: [
         isDiagnostic ? "mastery_evidence_missing" : "root_prerequisite_gap",
+        ...(isDiagnostic && priorityDiagnosticIds.has(conceptId) ? ["prerequisite_evidence_required"] : []),
         ...(isMisconception ? ["confident_misconception_priority"] : []),
         ...(gap.blocks.length ? ["dependency_leverage"] : []),
       ],
@@ -286,7 +311,7 @@ export function buildStudyAdvisorCandidate(
     return evidence ? !weakByPolicy(evidence, policy) : false;
   }).length;
   const currentStateSummary = relevantIds.size
-    ? `${known}/${relevantIds.size} relevant concepts have evidence; ${strong} currently meet the configured mastery/retention policy. ${gaps.filter((item) => item.rootCause).length} root gap(s) are currently identified.`
+    ? `${known}/${relevantIds.size} relevant concepts have evidence; ${strong} currently meet the configured mastery/retention policy. ${gaps.filter((item) => item.rootCause).length} confirmed root gap(s) are currently identified.`
     : "No curriculum concept graph is available for the requested target yet.";
 
   return {
