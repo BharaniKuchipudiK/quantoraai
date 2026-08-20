@@ -24,6 +24,75 @@
 }
 
 /*
+ * Prompt composer: grow naturally with the message, but do not let a long prompt
+ * consume the whole conversation/Canvas. AiStudio already measures scrollHeight
+ * on every keystroke; these caps turn that into a responsive composer rather
+ * than a 400px text box. Scrollbars remain quiet until the user actually needs
+ * them.
+ */
+.app-shell--studio .floating-input-pill textarea {
+  min-height: 24px !important;
+  max-height: min(24vh, 220px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: height 120ms ease, max-height 160ms ease;
+}
+
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio .floating-input-pill textarea {
+  max-height: min(20vh, 170px) !important;
+}
+
+.app-shell--studio .floating-input-pill textarea:hover,
+.app-shell--studio .floating-input-pill textarea:focus {
+  scrollbar-color: rgba(148, 163, 184, 0.52) transparent;
+}
+
+.app-shell--studio .floating-input-pill textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-shell--studio .floating-input-pill textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell--studio .floating-input-pill textarea::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.app-shell--studio .floating-input-pill textarea:hover::-webkit-scrollbar-thumb,
+.app-shell--studio .floating-input-pill textarea:focus::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.52);
+}
+
+/* Conversation and sidebar scrollbars should be discoverable without visually
+ * dominating a narrow split-pane workspace. */
+.app-shell--studio * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.38) transparent;
+}
+
+.app-shell--studio *::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.app-shell--studio *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell--studio *::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.34);
+  border-radius: 999px;
+}
+
+.app-shell--studio *::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.58);
+}
+
+/*
  * Agentic Workspaces are outcome-oriented experiences, not model consoles.
  * PCL owns model/runtime selection and failover behind the scenes. Keep model
  * experimentation available in neutral Quantora, but remove it completely once
