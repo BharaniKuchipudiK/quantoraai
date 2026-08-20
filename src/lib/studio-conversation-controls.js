@@ -136,32 +136,48 @@ function forkCurrentChat() {
   }
 }
 
-function ensureForkButton(actions, reset) {
-  let fork = actions.querySelector('[data-quantora-fork-chat="true"]');
-  if (fork) return fork;
-  fork = document.createElement('button');
-  fork.type = 'button';
-  fork.dataset.quantoraForkChat = 'true';
-  fork.title = 'Fork this chat and continue independently';
-  fork.textContent = '⑂ Fork Chat';
-  Object.assign(fork.style, {
-    background: 'rgba(15,23,42,.68)',
-    border: '1px solid rgba(148,163,184,.22)',
-    color: '#cbd5e1',
-    padding: '6px 12px',
-    borderRadius: '18px',
-    fontSize: '.78rem',
-    fontWeight: '700',
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    whiteSpace: 'nowrap',
-  });
-  fork.addEventListener('click', forkCurrentChat);
-  if (reset) actions.insertBefore(fork, reset);
-  else actions.append(fork);
-  return fork;
+function ensureMessageForkButtons() {
+  const shell = document.querySelector('.app-shell--studio');
+  if (!shell) return;
+
+  // Remove the earlier top-bar duplicate. Fork belongs with the response actions,
+  // exactly where the old overflow menu used to live.
+  shell.querySelectorAll('[data-quantora-fork-chat="true"]').forEach((button) => button.remove());
+
+  const buttons = [
+    ...shell.querySelectorAll('button[title="More"]'),
+    ...shell.querySelectorAll('button[data-quantora-message-fork="true"]'),
+  ];
+  for (const button of new Set(buttons)) {
+    button.dataset.quantoraMessageFork = 'true';
+    button.title = 'Fork Chat';
+    button.setAttribute('aria-label', 'Fork Chat');
+    button.replaceChildren(document.createTextNode('⑂ Fork Chat'));
+    Object.assign(button.style, {
+      width: 'auto',
+      minWidth: 'auto',
+      height: '30px',
+      padding: '0 10px',
+      borderRadius: '8px',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '5px',
+      whiteSpace: 'nowrap',
+      fontSize: '12px',
+      fontWeight: '700',
+      lineHeight: '1',
+    });
+    if (!button.dataset.quantoraForkBound) {
+      button.dataset.quantoraForkBound = 'true';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+        forkCurrentChat();
+      }, true);
+    }
+  }
 }
 
 function ensureNativeControls() {
@@ -182,7 +198,6 @@ function ensureNativeControls() {
   // The old recovery proxy is obsolete. The visible Arena below is the actual
   // React button wired directly to AiStudio's arenaMode state.
   document.querySelectorAll('[data-quantora-conversation-actions]').forEach((node) => node.remove());
-  ensureForkButton(actions, reset);
 }
 
 function showForkNotice() {
@@ -211,6 +226,7 @@ function showForkNotice() {
 function run() {
   scheduled = false;
   ensureNativeControls();
+  ensureMessageForkButtons();
   ensureProfileFallback();
 }
 
