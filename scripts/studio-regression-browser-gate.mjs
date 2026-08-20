@@ -137,9 +137,8 @@ try {
   await page.getByRole('button', { name: 'Close profile picture chooser' }).click();
 
   const arena = page.locator('[data-quantora-dual-arena]').first();
-  const fork = page.locator('[data-quantora-fork-chat]').first();
-  await visible(arena, 'Dual Arena was not restored in the new Studio shell.');
-  await visible(fork, 'Fork Chat was not added to the Studio shell.');
+  await visible(arena, 'Dual Arena is missing from the Studio shell.');
+  await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Fork Chat is still incorrectly placed in the top conversation bar.');
   await hidden(page.getByRole('button', { name: /^Reset Chat$/i }).first(), 'Reset Chat is visible again.');
 
   const prompt = page.locator('.app-shell--studio textarea').first();
@@ -165,17 +164,24 @@ try {
     throw new Error('File tabs still display the wrong shared source instead of the selected file.');
   }
 
+  const fork = page.locator('[data-quantora-message-fork="true"]').last();
+  await visible(fork, 'Fork Chat was not placed in the completed assistant response footer.');
+  await hidden(page.locator('button[title="More"]').first(), 'Legacy three-dot response overflow is still visible.');
+
   await arena.click();
-  await page.waitForTimeout(80);
-  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena proxy did not activate the underlying arena state.');
+  await page.waitForTimeout(120);
+  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena did not activate the underlying React arena state.');
+  await visible(page.getByRole('button', { name: /VS:/ }).first(), 'Dual Arena activation did not expose the second-model control.');
 
   const sessionsBeforeFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
   await fork.click();
   await page.waitForLoadState('domcontentloaded');
   const sessionsAfterFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
-  if (sessionsAfterFork.length <= sessionsBeforeFork.length) throw new Error('Fork Chat did not create an independent session.');
+  if (sessionsAfterFork.length <= sessionsBeforeFork.length) throw new Error('Footer Fork Chat did not create an independent session.');
   const forked = sessionsAfterFork[0];
-  if (!forked?.parentSessionId || !forked?.forkedAt) throw new Error('Forked chat is missing ancestry metadata.');
+  if (!forked?.parentSessionId || !forked?.forkedAt || !forked?.forkedFromMessageId) {
+    throw new Error('Forked chat is missing response ancestry metadata.');
+  }
 
   console.log('Studio regression recovery browser gate passed.');
 } catch (error) {
