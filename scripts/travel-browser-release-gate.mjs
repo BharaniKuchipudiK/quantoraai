@@ -76,14 +76,22 @@ await page.route('**/api/**', async (route) => {
       '',
       '<quantora-modal>{"question":"Where are you departing from?","options":[{"id":"sin","title":"Singapore (SIN)","description":"Direct ~2.5 hrs","value":"Singapore (SIN)"},{"id":"kul","title":"Kuala Lumpur (KUL)","description":"Direct ~3 hrs","value":"Kuala Lumpur (KUL)"}]}</quantora-modal>',
     ].join('\n');
-    const nextReply = 'Perfect. Singapore is locked in. What dates are you considering?';
+    const secondReply = 'Perfect. Singapore is locked in. What dates are you considering?';
+    const canvasReply = [
+      'Here is a simple visual workspace for the trip.',
+      '',
+      '```html',
+      '<html><body style="font-family:sans-serif;padding:32px"><h1>Bali trip visual</h1><p>Singapore → Bali</p></body></html>',
+      '```',
+    ].join('\n');
+    const reply = chatTurn === 1 ? firstReply : chatTurn === 2 ? secondReply : canvasReply;
     return route.fulfill({
       status: 200,
       headers: {
         'content-type': 'text/event-stream; charset=utf-8',
         'cache-control': 'no-cache',
       },
-      body: sseBody(chatTurn === 1 ? firstReply : nextReply),
+      body: sseBody(reply),
     });
   }
 
@@ -101,6 +109,12 @@ async function screenshot(name) {
 async function assertVisible(locator, message) {
   await locator.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   if (!(await locator.isVisible().catch(() => false))) {
+    throw new Error(message);
+  }
+}
+
+async function assertHidden(locator, message) {
+  if (await locator.isVisible().catch(() => false)) {
     throw new Error(message);
   }
 }
@@ -149,6 +163,19 @@ try {
     throw new Error('Travel Advisor is redundantly repeated in a top banner.');
   }
 
+  await assertHidden(
+    page.locator('button[title="Select AI Engine"]').first(),
+    'Model/engine selector is visible inside an Agentic Workspace.',
+  );
+  await assertHidden(
+    page.locator('button[title="Compare two AI models side-by-side in real time"]').first(),
+    'Dual-model Arena is visible inside an Agentic Workspace.',
+  );
+  await assertHidden(
+    page.locator('button[title="Tools Menu"]').first(),
+    'Generic Studio tools picker is visible inside an Agentic Workspace.',
+  );
+
   // Regression for the screenshot bug: global New Chat must clear the active
   // advisor rather than creating another Travel-scoped conversation.
   const newChat = page.getByRole('button', { name: 'New Chat', exact: true }).first();
@@ -169,6 +196,19 @@ try {
 
   const textarea = page.locator('textarea').first();
   await assertVisible(textarea, 'Travel input is not visible.');
+
+  // Composer should grow with text but stay bounded in a narrow Agentic Workspace.
+  await textarea.fill('One line');
+  const oneLineHeight = await textarea.evaluate((node) => node.getBoundingClientRect().height);
+  await textarea.fill(Array.from({ length: 14 }, (_, index) => `Line ${index + 1} of a deliberately longer travel prompt`).join('\n'));
+  const multiLineHeight = await textarea.evaluate((node) => node.getBoundingClientRect().height);
+  if (!(multiLineHeight > oneLineHeight)) {
+    throw new Error(`Prompt composer did not grow with content (${oneLineHeight}px → ${multiLineHeight}px).`);
+  }
+  if (multiLineHeight > 176) {
+    throw new Error(`Prompt composer exceeded Agentic Workspace height cap: ${multiLineHeight}px.`);
+  }
+  await textarea.fill('');
 
   await textarea.evaluate((node) => {
     const transfer = new DataTransfer();
@@ -206,6 +246,22 @@ try {
     page.getByText(/Singapore is locked in\. What dates are you considering\?/i).first(),
     'Travel did not proactively lead to the next material question.',
   );
+
+  // A generated visual may open the right-side Canvas, but Agentic Workspaces
+  // must not turn into developer deployment consoles.
+  await textarea.fill('Show me a simple visual for this trip');
+  await textarea.press('Enter');
+  await assertVisible(page.getByText('Live Preview', { exact: true }).first(), 'Generated visual did not open the split Canvas.');
+  await assertHidden(page.locator('button[title="Publish to Vercel"]').first(), 'Publish is visible by default in an Agentic Workspace Canvas.');
+  await assertHidden(page.locator('button[title^="Copy a shareable preview link"]').first(), 'Share link is visible by default in an Agentic Workspace Canvas.');
+  await assertHidden(page.locator('[data-quantora-canvas-device-switcher="true"]').first(), 'Device-emulation controls are visible in an Agentic Workspace Canvas.');
+
+  const expandCanvas = page.locator('[data-quantora-canvas-fullscreen-button="true"]').first();
+  await assertVisible(expandCanvas, 'Canvas expand/full-screen control is missing.');
+  await expandCanvas.click();
+  await page.waitForFunction(() => document.documentElement.dataset.quantoraCanvasFullscreen === 'true');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.documentElement.dataset.quantoraCanvasFullscreen !== 'true');
 
   await screenshot('travel-release-gate-pass');
   console.log(`Travel browser release gate passed in ${elapsed}ms for first turn.`);
