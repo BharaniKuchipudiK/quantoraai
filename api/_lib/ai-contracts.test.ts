@@ -5,6 +5,11 @@ import {
   parsePipelineIdeaSpec,
   validateTravelToolArgs,
 } from './ai-contracts.js';
+import {
+  fetchGatewayCredential,
+  normalizeServerCredentialId,
+  resolveCapabilityCredential,
+} from './credential-broker.js';
 
 test('pipeline idea contract accepts bounded structured JSON and strips unknown fields', () => {
   const result = parsePipelineIdeaSpec(JSON.stringify({
@@ -67,4 +72,63 @@ test('travel hotel contract enforces chronological stay dates', () => {
     checkOutDate: '2026-09-10',
   });
   assert.equal(result.status, 'invalid');
+});
+
+test('credential broker rejects unknown provider identifiers before backend access', async () => {
+  let calls = 0;
+  const fetchFn = (async () => {
+    calls += 1;
+    throw new Error('must not be called');
+  }) as typeof fetch;
+
+  assert.equal(normalizeServerCredentialId('totally-arbitrary-provider'), null);
+  const credential = await fetchGatewayCredential('totally-arbitrary-provider', {
+    fetchFn,
+    supabaseUrl: 'https://example.supabase.co',
+    serviceRoleKey: 'service-role-test-key',
+  });
+  assert.equal(credential, null);
+  assert.equal(calls, 0);
+});
+
+test('credential broker returns only the allow-listed provider credential, not service-role material', async () => {
+  let capturedUrl = '';
+  let capturedAuthorization = '';
+  const fetchFn = (async (input: any, init: any) => {
+    capturedUrl = String(input);
+    capturedAuthorization = String(init?.headers?.Authorization || '');
+    return new Response(JSON.stringify([{ api_key: 'provider-secret' }]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  const credential = await fetchGatewayCredential('GEMINI', {
+    fetchFn,
+    supabaseUrl: 'https://example.supabase.co',
+    serviceRoleKey: 'service-role-test-key',
+  });
+
+  assert.equal(credential, 'provider-secret');
+  assert.match(capturedUrl, /provider=eq\.GEMINI/);
+  assert.match(capturedUrl, /select=api_key/);
+  assert.equal(capturedAuthorization, 'Bearer service-role-test-key');
+  assert.notEqual(credential, 'service-role-test-key');
+});
+
+test('capability credential resolution can use environment without touching the gateway', async () => {
+  let calls = 0;
+  const fetchFn = (async () => {
+    calls += 1;
+    throw new Error('gateway should not be called');
+  }) as typeof fetch;
+
+  const credential = await resolveCapabilityCredential('model:gemini', {
+    fetchFn,
+    env: { GEMINI_API_KEY: 'env-gemini-key' },
+    supabaseUrl: 'https://example.supabase.co',
+    serviceRoleKey: 'service-role-test-key',
+  });
+  assert.equal(credential, 'env-gemini-key');
+  assert.equal(calls, 0);
 });

@@ -1,31 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
-import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
+import { fetchGatewayCredential, resolveCapabilityCredential } from './_lib/credential-broker.js';
 
 const MAX_CODE_CONTEXT_CHARS = 50_000;
 const REQUESTS_PER_MINUTE = 30;
 
+/**
+ * Backward-compatible gateway lookup used by existing server handlers.
+ * New code should request a capability through credential-broker directly.
+ */
 export async function fetchApiGatewayKey(providerName: string): Promise<string | null> {
-  try {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!supabaseUrl || !supabaseKey) return null;
-    
-    const res = await fetchWithTimeout(`${supabaseUrl}/rest/v1/api_gateway_keys?provider=eq.${providerName}&select=api_key`, {
-       headers: {
-         'apikey': supabaseKey,
-         'Authorization': `Bearer ${supabaseKey}`
-       }
-    }, 4_000);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data && data.length > 0) return data[0].api_key;
-    return null;
-  } catch(e) {
-    console.error("Failed to fetch API key from Supabase Gateway:", e);
-    return null;
-  }
+  return fetchGatewayCredential(providerName);
 }
 
 export default async function handler(req: any, res: any) {
@@ -54,10 +40,10 @@ export default async function handler(req: any, res: any) {
     if (prefix.length + suffix.length > MAX_CODE_CONTEXT_CHARS) {
       return res.status(413).json({ error: 'Autocomplete context is too large.' });
     }
-    
-    const apiKey = process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI');
+
+    const apiKey = await resolveCapabilityCredential('model:gemini');
     if (!apiKey) return res.status(401).json({ error: "No API key available for Autocomplete." });
-    
+
     const client = new GoogleGenAI({ apiKey });
     const prompt = `You are an elite autocomplete engine. The user is writing code. You must output ONLY the exact text that should be inserted between the prefix and suffix. No markdown formatting, no explanations, no backticks.
 PREFIX:
@@ -69,7 +55,7 @@ ${suffix}`;
       model: "gemini-1.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }]
     });
-    
+
     return res.status(200).json({ completion: response.text });
   } catch (error: any) {
     console.error("Autocomplete API Error:", error);
