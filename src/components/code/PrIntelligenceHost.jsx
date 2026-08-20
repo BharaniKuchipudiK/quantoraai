@@ -15,6 +15,7 @@ import {
   SearchCode,
   ShieldAlert,
   Sparkles,
+  Wrench,
   X,
 } from 'lucide-react';
 
@@ -88,6 +89,9 @@ export default function PrIntelligenceHost() {
   const [data, setData] = useState(null);
   const [selectedPath, setSelectedPath] = useState('');
   const [tab, setTab] = useState('review');
+  const [fixBusyId, setFixBusyId] = useState('');
+  const [fixProposal, setFixProposal] = useState(null);
+  const [fixError, setFixError] = useState('');
 
   useEffect(() => {
     if (!codeVisible) setOpen(false);
@@ -116,6 +120,8 @@ export default function PrIntelligenceHost() {
     }
     setBusy(true);
     setError('');
+    setFixError('');
+    setFixProposal(null);
     try {
       const response = await fetch('/api/github/pr-intelligence', {
         method: 'POST',
@@ -136,6 +142,29 @@ export default function PrIntelligenceHost() {
     }
   }, [prUrl]);
 
+  const prepareFix = useCallback(async (finding) => {
+    if (!data?.snapshot?.url || !finding?.path) return;
+    setFixBusyId(finding.id);
+    setFixError('');
+    try {
+      const response = await fetch('/api/github/pr-fix', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prUrl: data.snapshot.url, finding }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `Repair preview failed (${response.status})`);
+      setFixProposal(payload?.proposal || null);
+      if (!payload?.proposal) throw new Error('Quantora did not return a reviewable repair proposal.');
+      setTab('fix');
+    } catch (fixFailure) {
+      setFixError(fixFailure?.message || 'Unable to prepare a repair preview.');
+    } finally {
+      setFixBusyId('');
+    }
+  }, [data]);
+
   if (!codeVisible) return null;
 
   return (
@@ -146,21 +175,10 @@ export default function PrIntelligenceHost() {
         onClick={() => setOpen(true)}
         title="Review a GitHub pull request"
         style={{
-          position: 'fixed',
-          top: 66,
-          right: 344,
-          zIndex: 12012,
-          height: 32,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 7,
-          padding: '0 10px',
-          borderRadius: 8,
-          border: '1px solid rgba(249,115,22,.28)',
-          background: 'rgba(10,15,29,.94)',
-          color: '#fdba74',
-          boxShadow: '0 10px 30px rgba(0,0,0,.20)',
-          cursor: 'pointer',
+          position: 'fixed', top: 66, right: 344, zIndex: 12012, height: 32,
+          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 10px',
+          borderRadius: 8, border: '1px solid rgba(249,115,22,.28)', background: 'rgba(10,15,29,.94)',
+          color: '#fdba74', boxShadow: '0 10px 30px rgba(0,0,0,.20)', cursor: 'pointer',
           font: '750 11px/1 Inter, system-ui, sans-serif',
         }}
       >
@@ -178,7 +196,7 @@ export default function PrIntelligenceHost() {
                 <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 10, display: 'grid', placeItems: 'center', border: '1px solid rgba(249,115,22,.28)', background: 'rgba(249,115,22,.10)' }}><GitPullRequest size={18} color="#fb923c" /></div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 850, letterSpacing: '-.01em' }}>Quantora PR Intelligence</div>
-                  <div style={{ color: '#64748b', fontSize: 10.5, marginTop: 2 }}>Understand intent · inspect architecture · find flaws · nudge quality · verify evidence · show diff</div>
+                  <div style={{ color: '#64748b', fontSize: 10.5, marginTop: 2 }}>Understand intent · inspect architecture · find flaws · nudge quality · prepare repair · verify evidence</div>
                 </div>
               </div>
               <button type="button" onClick={() => setOpen(false)} aria-label="Close PR Intelligence" style={iconButton}><X size={18} /></button>
@@ -202,7 +220,8 @@ export default function PrIntelligenceHost() {
               </button>
             </div>
 
-            {error && <div role="alert" style={{ flexShrink: 0, padding: '8px 14px', color: '#fca5a5', background: 'rgba(239,68,68,.08)', borderBottom: '1px solid rgba(239,68,68,.16)', fontSize: 11.5 }}>{error}</div>}
+            {error && <div role="alert" style={errorBanner}>{error}</div>}
+            {fixError && <div role="alert" style={errorBanner}>{fixError}</div>}
 
             {!data ? (
               <EmptyReview busy={busy} />
@@ -235,22 +254,24 @@ export default function PrIntelligenceHost() {
                   <TabButton active={tab === 'review'} onClick={() => setTab('review')} icon={<Sparkles size={12} />} label={`Review${findings.length ? ` ${findings.length}` : ''}`} />
                   <TabButton active={tab === 'diff'} onClick={() => setTab('diff')} icon={<GitCompare size={12} />} label={`Diff ${data.snapshot.changedFiles}`} />
                   <TabButton active={tab === 'checks'} onClick={() => setTab('checks')} icon={<CheckCircle2 size={12} />} label={`Checks ${data.snapshot.checks?.length || 0}`} />
+                  {fixProposal && <TabButton active={tab === 'fix'} onClick={() => setTab('fix')} icon={<Wrench size={12} />} label="Fix Preview" />}
                 </div>
 
                 <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                  {tab === 'review' && <ReviewSurface data={data} findings={findings} onShowDiff={(path) => { if (path) setSelectedPath(path); setTab('diff'); }} />}
+                  {tab === 'review' && <ReviewSurface data={data} findings={findings} onShowDiff={(path) => { if (path) setSelectedPath(path); setTab('diff'); }} onPrepareFix={prepareFix} fixBusyId={fixBusyId} />}
                   {tab === 'diff' && <DiffSurface files={data.snapshot.files || []} selectedFile={selectedFile} selectedPath={selectedFile?.path || selectedPath} onSelect={setSelectedPath} />}
                   {tab === 'checks' && <ChecksSurface checks={data.snapshot.checks || []} verificationPlan={data.review.verificationPlan || []} />}
+                  {tab === 'fix' && fixProposal && <FixPreviewSurface proposal={fixProposal} />}
                 </div>
 
                 <footer style={{ minHeight: 52, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 12px 8px 14px', borderTop: '1px solid rgba(148,163,184,.14)', background: '#070b16' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, color: '#64748b', fontSize: 10 }}>
                     <LockKeyhole size={12} />
-                    <span>Branch fixes are intentionally locked until Quantora has user-scoped GitHub authorization. Review and diff are real; write-back is not faked.</span>
+                    <span>Local repair previews are supported. GitHub branch write-back stays locked until Quantora has user-scoped repository authorization.</span>
                   </div>
                   <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
                     <a href={data.snapshot.url} target="_blank" rel="noreferrer" style={secondaryButton}><ExternalLink size={12} /> Open PR</a>
-                    <button type="button" disabled title="Requires connected, user-scoped GitHub write permission" style={{ ...primaryButton, opacity: .42, cursor: 'not-allowed' }}><LockKeyhole size={13} /> Fix high-confidence findings</button>
+                    <button type="button" disabled title="Requires connected, user-scoped GitHub write permission" style={{ ...primaryButton, opacity: .42, cursor: 'not-allowed' }}><LockKeyhole size={13} /> Write fix to PR</button>
                   </div>
                 </footer>
               </>
@@ -277,7 +298,7 @@ function EmptyReview({ busy }) {
   );
 }
 
-function ReviewSurface({ data, findings, onShowDiff }) {
+function ReviewSurface({ data, findings, onShowDiff, onPrepareFix, fixBusyId }) {
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1.15fr) minmax(320px, .85fr)', overflow: 'hidden' }}>
       <div style={{ minHeight: 0, overflowY: 'auto', padding: 14, borderRight: '1px solid rgba(148,163,184,.14)' }}>
@@ -291,7 +312,7 @@ function ReviewSurface({ data, findings, onShowDiff }) {
         </div>
 
         <SectionTitle icon={<ShieldAlert size={13} />} title={`Engineering findings${findings.length ? ` · ${findings.length}` : ''}`} />
-        {findings.length ? findings.map(item => <FindingCard key={item.id} finding={item} onShowDiff={onShowDiff} />) : (
+        {findings.length ? findings.map(item => <FindingCard key={item.id} finding={item} onShowDiff={onShowDiff} onPrepareFix={onPrepareFix} fixBusy={fixBusyId === item.id} />) : (
           <div style={{ ...cardStyle, display: 'flex', gap: 8, alignItems: 'center', color: '#6ee7b7', fontSize: 11.5 }}><CheckCircle2 size={14} /> No deterministic or deep-review findings were raised.</div>
         )}
       </div>
@@ -321,11 +342,12 @@ function ReviewSurface({ data, findings, onShowDiff }) {
   );
 }
 
-function FindingCard({ finding, onShowDiff }) {
+function FindingCard({ finding, onShowDiff, onPrepareFix, fixBusy }) {
   const meta = severityMeta[finding.severity] || severityMeta.nudge;
   const Icon = meta.icon;
+  const canPrepareFix = Boolean(finding.path && (finding.severity === 'blocker' || finding.severity === 'risk') && (finding.confidence || 0) >= 0.72);
   return (
-    <div data-pr-finding-severity={finding.severity} style={{ border: `1px solid ${meta.border}`, borderRadius: 11, background: meta.bg, padding: 10, marginBottom: 7 }}>
+    <div data-pr-finding-id={finding.id} data-pr-finding-severity={finding.severity} style={{ border: `1px solid ${meta.border}`, borderRadius: 11, background: meta.bg, padding: 10, marginBottom: 7 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <Icon size={14} color={meta.color} style={{ flexShrink: 0, marginTop: 1 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -337,7 +359,10 @@ function FindingCard({ finding, onShowDiff }) {
           <div style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: 760, marginTop: 3 }}>{finding.title}</div>
           <div style={{ color: '#94a3b8', fontSize: 10.3, lineHeight: 1.5, marginTop: 4 }}>{finding.rationale}</div>
           {finding.suggestion && <div style={{ color: '#cbd5e1', fontSize: 10.2, lineHeight: 1.48, marginTop: 6 }}><span style={{ color: meta.color, fontWeight: 800 }}>Nudge:</span> {finding.suggestion}</div>}
-          {finding.path && <button type="button" onClick={() => onShowDiff(finding.path)} style={{ marginTop: 7, border: 0, padding: 0, background: 'transparent', color: '#93c5fd', fontSize: 9.8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}><FileCode2 size={11} /> {finding.path} <ChevronRight size={10} /></button>}
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 7 }}>
+            {finding.path && <button type="button" onClick={() => onShowDiff(finding.path)} style={textButton}><FileCode2 size={11} /> {finding.path} <ChevronRight size={10} /></button>}
+            {canPrepareFix && <button type="button" onClick={() => onPrepareFix(finding)} disabled={fixBusy} style={{ ...textButton, color: '#fdba74', opacity: fixBusy ? .65 : 1 }}>{fixBusy ? <Loader2 size={11} className="animate-spin" /> : <Wrench size={11} />} {fixBusy ? 'Preparing…' : 'Prepare Fix'}</button>}
+          </div>
         </div>
       </div>
     </div>
@@ -372,13 +397,48 @@ function DiffSurface({ files, selectedFile, selectedPath, onSelect }) {
             <div data-quantora-pr-diff="true" style={{ flex: 1, minHeight: 0, overflow: 'auto', font: '10.5px/1.5 JetBrains Mono, SFMono-Regular, Consolas, monospace' }}>
               {selectedFile.patch ? selectedFile.patch.split('\n').map((line, index) => {
                 const lineStyle = diffLineStyle(line);
-                return <div key={`${index}-${line.slice(0,20)}`} style={{ minWidth: '100%', width: 'max-content', padding: '0 10px', whiteSpace: 'pre', color: lineStyle.color, background: lineStyle.background }}><span style={{ display: 'inline-block', width: 38, color: '#334155', userSelect: 'none', textAlign: 'right', marginRight: 11 }}>{index + 1}</span>{line || ' '}</div>;
+                return <div key={`${index}-${line.slice(0, 20)}`} style={{ minWidth: '100%', width: 'max-content', padding: '0 10px', whiteSpace: 'pre', color: lineStyle.color, background: lineStyle.background }}><span style={{ display: 'inline-block', width: 38, color: '#334155', userSelect: 'none', textAlign: 'right', marginRight: 11 }}>{index + 1}</span>{line || ' '}</div>;
               }) : <div style={{ padding: 18, color: '#64748b', fontSize: 11 }}>GitHub did not provide a textual patch for this file. This can happen for binary files or very large diffs.</div>}
             </div>
           </>
         ) : <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: '#64748b', fontSize: 11 }}>No changed file selected.</div>}
       </section>
     </div>
+  );
+}
+
+function FixPreviewSurface({ proposal }) {
+  return (
+    <div data-quantora-pr-fix-preview="true" style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: '#070b16' }}>
+      <div style={{ flexShrink: 0, padding: '10px 13px', borderBottom: '1px solid rgba(148,163,184,.14)', background: 'rgba(249,115,22,.055)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Wrench size={14} color="#fb923c" />
+          <span style={{ color: '#fed7aa', fontSize: 11.5, fontWeight: 800 }}>{proposal.summary}</span>
+          <span style={{ marginLeft: 'auto', color: '#64748b', fontSize: 9.3 }}>head {String(proposal.headSha || '').slice(0, 9)}</span>
+        </div>
+        <div style={{ marginTop: 5, color: '#94a3b8', fontSize: 10.2, lineHeight: 1.45 }}>{proposal.reason}</div>
+        <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, color: '#facc15', fontSize: 9.8, fontWeight: 700 }}><AlertTriangle size={11} /> Local proposal — not written to GitHub · not verified</div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'rgba(148,163,184,.14)' }}>
+        <CodeComparisonPane label="BEFORE · PR HEAD" path={proposal.path} content={proposal.before} accent="#fca5a5" />
+        <CodeComparisonPane label="PROPOSED FIX" path={proposal.path} content={proposal.after} accent="#86efac" />
+      </div>
+    </div>
+  );
+}
+
+function CodeComparisonPane({ label, path, content, accent }) {
+  const lines = String(content || '').split('\n');
+  return (
+    <section style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#060914' }}>
+      <div style={{ height: 37, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, padding: '0 10px', borderBottom: '1px solid rgba(148,163,184,.12)' }}>
+        <span style={{ color: accent, fontSize: 9.2, fontWeight: 850, letterSpacing: '.06em' }}>{label}</span>
+        <span style={{ color: '#64748b', fontSize: 9.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
+      </div>
+      <pre style={{ flex: 1, minHeight: 0, margin: 0, overflow: 'auto', padding: '8px 0 14px', color: '#cbd5e1', background: '#060914', font: '10.4px/1.55 JetBrains Mono, SFMono-Regular, Consolas, monospace' }}>
+        {lines.map((line, index) => <div key={`${index}-${line.slice(0, 16)}`} style={{ minWidth: '100%', width: 'max-content', whiteSpace: 'pre', padding: '0 10px' }}><span style={{ display: 'inline-block', width: 36, marginRight: 10, textAlign: 'right', color: '#334155', userSelect: 'none' }}>{index + 1}</span>{line || ' '}</div>)}
+      </pre>
+    </section>
   );
 }
 
@@ -425,8 +485,10 @@ function Bullet({ text, accent = '#fdba74' }) {
   return <div style={{ display: 'flex', gap: 7, color: '#cbd5e1', fontSize: 10.6, lineHeight: 1.5, padding: '3px 0' }}><span style={{ color: accent, marginTop: 1 }}>•</span><span>{text}</span></div>;
 }
 
+const errorBanner = { flexShrink: 0, padding: '8px 14px', color: '#fca5a5', background: 'rgba(239,68,68,.08)', borderBottom: '1px solid rgba(239,68,68,.16)', fontSize: 11.5 };
 const cardStyle = { border: '1px solid rgba(148,163,184,.14)', borderRadius: 11, background: '#0a0f1d', padding: 11, marginBottom: 14 };
 const chipStyle = { border: '1px solid rgba(148,163,184,.15)', borderRadius: 999, color: '#94a3b8', background: '#070b16', padding: '3px 7px', fontSize: 8.8 };
 const iconButton = { width: 32, height: 32, border: 0, borderRadius: 8, background: 'transparent', color: '#94a3b8', display: 'inline-grid', placeItems: 'center', cursor: 'pointer' };
+const textButton = { border: 0, padding: 0, background: 'transparent', color: '#93c5fd', fontSize: 9.8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 };
 const primaryButton = { minHeight: 38, border: 0, borderRadius: 9, background: '#f97316', color: '#fff', padding: '0 13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', font: '800 10.8px/1 Inter, system-ui, sans-serif', textDecoration: 'none' };
 const secondaryButton = { minHeight: 34, border: '1px solid rgba(148,163,184,.18)', borderRadius: 9, background: '#0f172a', color: '#cbd5e1', padding: '0 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer', font: '700 10.2px/1 Inter, system-ui, sans-serif', textDecoration: 'none' };
