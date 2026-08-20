@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Loader, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { compileBrowserProject } from '../lib/browser-project-runtime.js';
 
 const START_TIMEOUT_MS = 15_000;
@@ -16,20 +16,20 @@ export default function BrowserProjectPreview({ vfs, onRuntimeStateChange }) {
   const iframeRef = useRef(null);
   const [runtimeVersion, setRuntimeVersion] = useState(0);
   const [documentHtml, setDocumentHtml] = useState('');
-  const [state, setState] = useState({ kind: 'compiling', message: 'Preparing project…' });
+  const [state, setState] = useState({ kind: 'compiling', message: 'Preparing your preview…' });
   const projectKey = useMemo(() => fingerprint(vfs), [vfs]);
 
   useEffect(() => {
     let cancelled = false;
     setDocumentHtml('');
-    setState({ kind: 'compiling', message: 'Preparing project…' });
+    setState({ kind: 'compiling', message: 'Preparing your preview…' });
 
     import('typescript')
       .then((ts) => {
         if (cancelled) return;
         const compiled = compileBrowserProject(vfs, ts);
         if (cancelled) return;
-        setState({ kind: 'starting', message: 'Starting preview…', entry: compiled.entry });
+        setState({ kind: 'starting', message: 'Preparing your preview…', entry: compiled.entry });
         setDocumentHtml(compiled.html);
       })
       .catch((error) => {
@@ -51,7 +51,7 @@ export default function BrowserProjectPreview({ vfs, onRuntimeStateChange }) {
       if (finished) return;
       setState({
         kind: 'failed',
-        message: 'The project did not finish starting. Quantora stopped waiting rather than showing an endless loader.',
+        message: 'The preview took too long to start. Quantora stopped the attempt instead of leaving you on an endless loading screen.',
       });
     }, START_TIMEOUT_MS);
 
@@ -101,12 +101,14 @@ export default function BrowserProjectPreview({ vfs, onRuntimeStateChange }) {
 
       {(state.kind === 'compiling' || state.kind === 'starting') && (
         <div
+          data-quantora-preview-preparing="true"
           role="status"
           aria-live="polite"
           style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#fff', color: '#475569' }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', font: '700 13px/1.4 Inter,system-ui,sans-serif' }}>
-            <Loader size={16} className="animate-spin" /> {state.message}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', font: '700 13px/1.4 Inter,system-ui,sans-serif' }}>
+            <span aria-hidden="true" style={{ width: '8px', height: '8px', borderRadius: '999px', background: '#f97316', boxShadow: '0 0 0 5px rgba(249,115,22,.10)' }} />
+            {state.message}
           </div>
         </div>
       )}
