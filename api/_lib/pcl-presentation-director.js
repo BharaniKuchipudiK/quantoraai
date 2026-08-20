@@ -11,7 +11,8 @@ const ARCHETYPES = Object.freeze([
 
 const EXECUTIVE_TERMS = /\b(board|ceo|cfo|cio|cto|c-suite|executive|steerco|steering committee|leadership|management committee|investment committee)\b/i;
 const STRATEGY_TERMS = /\b(strategy|strategic|transformation|target operating model|operating model|roadmap|north star|future state|vision|market entry|growth strategy)\b/i;
-const BUSINESS_CASE_TERMS = /\b(business case|investment|roi|return on investment|npv|irr|payback|cost benefit|funding|budget approval|capex|opex)\b/i;
+const EXPLICIT_BUSINESS_CASE_TERMS = /\b(business case|investment case|funding case|cost[- ]benefit case)\b/i;
+const BUSINESS_CASE_TERMS = /\b(investment|roi|return on investment|npv|irr|payback|cost benefit|funding|budget approval|capex|opex)\b/i;
 const QBR_TERMS = /\b(qbr|quarterly business review|quarterly review|business review|quarter performance|quarterly performance)\b/i;
 const STATUS_TERMS = /\b(project status|program status|programme status|weekly status|status update|rag|raid|milestone|dependency|escalation)\b/i;
 const PROPOSAL_TERMS = /\b(proposal|pitch|client proposal|sales deck|solution proposal|rfp|tender|bid)\b/i;
@@ -44,10 +45,11 @@ function sessionText(sessionContext = null) {
 function inferArchetype(text) {
   if (QBR_TERMS.test(text)) return 'qbr';
   if (STATUS_TERMS.test(text)) return 'project_status';
-  if (BUSINESS_CASE_TERMS.test(text)) return 'business_case';
+  if (EXPLICIT_BUSINESS_CASE_TERMS.test(text)) return 'business_case';
   if (RESEARCH_TERMS.test(text)) return 'academic_research';
   if (PROPOSAL_TERMS.test(text)) return 'proposal';
   if (STRATEGY_TERMS.test(text)) return 'strategy';
+  if (BUSINESS_CASE_TERMS.test(text)) return 'business_case';
   if (EXECUTIVE_TERMS.test(text)) return 'executive_briefing';
   return 'general';
 }
