@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - fix/code-preview-canvas-cleanup
 
 permissions:
   contents: read
