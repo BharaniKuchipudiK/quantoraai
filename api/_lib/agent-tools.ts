@@ -27,6 +27,10 @@ type TravelToolDependencies = {
   providerPolicy?: Partial<ProviderResiliencePolicy>;
 };
 
+const defaultDuffelClient = process.env.DUFFEL_API_KEY
+  ? new Duffel({ token: process.env.DUFFEL_API_KEY })
+  : null;
+
 // Travel searches are interactive user actions, not background jobs. One
 // provider attempt gets a bounded six-second budget. If the provider cannot
 // answer inside that budget, Quantora stops the agent loop and explains the
