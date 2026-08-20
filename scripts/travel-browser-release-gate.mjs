@@ -192,6 +192,10 @@ try {
   await assertVisible(newChat, 'Global New Chat is missing from Studio.');
   await newChat.click();
   await page.waitForFunction(() => (document.documentElement.dataset.quantoraDomain || '') === '');
+  // Domain state is authoritative and flips synchronously; the specialist hero
+  // presentation is removed on the next animation frame. Wait for that visual
+  // transition rather than treating a single-frame stale hero as sticky state.
+  await travelHero.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   if (await travelHero.isVisible().catch(() => false)) {
     throw new Error('New Chat still renders the Travel specialist welcome instead of neutral Quantora.');
   }
