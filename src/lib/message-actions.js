@@ -6,8 +6,8 @@
  * does THIS message support?" so every bar renders the same, correct set:
  *  - always: copy, feedback (up/down), regenerate
  *  - only when useful: summarize (long replies), preview (code/deck/app)
- *  - secondary actions live in the "…" overflow, which is shown only when it
- *    actually has items.
+ *  - Fork Chat is placed directly in the response footer by the Studio action
+ *    placement layer; duplicate report/read-aloud overflow is intentionally gone.
  */
 
 /** Long enough that a summary adds value (not a one-liner). */
@@ -27,9 +27,6 @@ export function isSummarizable(text = '') {
  */
 export function resolveMessageActions({ text = '', hasPreview = false, isOfficeArtifact = false } = {}) {
   const clean = String(text || '').trim();
-  const overflow = [];
-  if (clean.length > 0) overflow.push('read-aloud');
-  overflow.push('report');
   return {
     copy: clean.length > 0,
     feedback: true,
@@ -38,6 +35,8 @@ export function resolveMessageActions({ text = '', hasPreview = false, isOfficeA
     // Verified Office artifacts already live in the right-side workspace. Their
     // presence is explicit message state; never infer this from assistant wording.
     preview: Boolean(hasPreview) && !isOfficeArtifact,
-    overflow,
+    // Thumbs-down is the single negative-feedback/report path. Keeping overflow
+    // empty also removes the dead/duplicated three-dot menu.
+    overflow: [],
   };
 }
