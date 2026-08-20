@@ -174,18 +174,24 @@ try {
   await textarea.press('Enter');
 
   const validLink = page.getByRole('link', { name: 'Verified learning video', exact: true }).first();
-  await visible(validLink, 'Verified YouTube recommendation did not render.');
   await page.waitForFunction(() => {
     const link = [...document.querySelectorAll('.markdown-prose a')]
       .find((node) => node.textContent?.trim() === 'Verified learning video');
-    return link?.dataset.quantoraYoutubeValidation === 'valid';
+    const play = link?.nextElementSibling;
+    return link?.dataset.quantoraYoutubeValidation === 'valid'
+      && link.hidden === false
+      && play?.dataset.quantoraYoutubePlay === 'true'
+      && play.hidden === false
+      && play.disabled === false;
   });
+  await visible(validLink, 'Verified YouTube recommendation did not render after validation.');
 
   const deadLink = page.getByRole('link', { name: 'Unavailable learning video', exact: true }).first();
-  await hidden(deadLink, 'Unavailable YouTube recommendation was left visible.');
+  await deadLink.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+  if (await deadLink.count()) throw new Error('Unavailable YouTube recommendation was not removed from the answer.');
 
-  const play = page.locator('[data-quantora-youtube-play]').first();
-  await visible(play, 'Verified YouTube recommendation has no Play control.');
+  const play = page.locator('a[data-quantora-youtube-validation="valid"] + button[data-quantora-youtube-play="true"]').first();
+  await visible(play, 'Verified YouTube recommendation has no usable Play control.');
   if (await page.locator('[data-quantora-youtube-watch]').isVisible().catch(() => false)) {
     throw new Error('Legacy Watch control is still visible beside the new Play control.');
   }
