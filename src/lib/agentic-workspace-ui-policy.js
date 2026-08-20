@@ -141,6 +141,21 @@ function hideModelRecommendation(active) {
   }
 }
 
+function applyComposerPolicy(agentic) {
+  for (const textarea of document.querySelectorAll('.app-shell--studio .floating-input-pill textarea')) {
+    if (agentic) {
+      // AiStudio sets an inline height from scrollHeight on every input event.
+      // Keep that natural growth, but enforce a hard workspace ceiling so a
+      // long prompt cannot consume the conversation/Canvas split.
+      textarea.style.setProperty('max-height', '170px', 'important');
+      textarea.style.setProperty('overflow-y', 'auto', 'important');
+    } else {
+      textarea.style.removeProperty('max-height');
+      textarea.style.removeProperty('overflow-y');
+    }
+  }
+}
+
 function findStudioSidebar() {
   const collapse = document.querySelector('.app-shell--studio button[title="Collapse sidebar"]');
   return collapse?.parentElement?.parentElement || null;
@@ -397,6 +412,7 @@ function applyWorkspaceUiPolicy() {
   document.documentElement.dataset.quantoraAgenticWorkspace = agentic ? domain : '';
 
   hideModelRecommendation(agentic);
+  applyComposerPolicy(agentic);
   ensureSidebarRestoreControl();
   ensureYouTubeActions();
 
