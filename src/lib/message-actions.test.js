@@ -45,7 +45,7 @@ test('resolveMessageActions: Office handling does not depend on success-message 
   assert.equal(a.preview, true);
 });
 
-test('overflow always has items (so "…" is never a dead button), and read-aloud only with text', () => {
-  assert.deepEqual(resolveMessageActions({ text: 'hello' }).overflow, ['read-aloud', 'report']);
-  assert.deepEqual(resolveMessageActions({ text: '' }).overflow, ['report']);
+test('response overflow is empty because thumbs-down owns reporting and Fork Chat is a direct footer action', () => {
+  assert.deepEqual(resolveMessageActions({ text: 'hello' }).overflow, []);
+  assert.deepEqual(resolveMessageActions({ text: '' }).overflow, []);
 });
