@@ -132,6 +132,22 @@ try {
 
   const textarea = page.locator('textarea').first();
   await assertVisible(textarea, 'Travel input is not visible.');
+
+  // Clipboard images must use the same attachment pipeline as paperclip
+  // uploads while ordinary text paste remains untouched. Exercise the actual
+  // DOM path here so a unit-only implementation cannot silently regress.
+  await textarea.evaluate((node) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], '', { type: 'image/png' }));
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: transfer });
+    node.dispatchEvent(paste);
+  });
+  await assertVisible(
+    page.getByText(/clipboard-image-\d+-1\.png/i).first(),
+    'Pasting an image into the prompt did not create an image attachment.',
+  );
+
   await textarea.fill('Help me plan a 3-night Bali beach trip');
 
   const turnStart = Date.now();
