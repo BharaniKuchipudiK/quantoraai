@@ -160,7 +160,7 @@ export function buildPclAgentExecutionPlan(input: {
       tasks: [],
       finalTaskId: null,
       requiredCapabilities: [],
-      requiresHumanApproval: governance === "requires_approval",
+      requiresHumanApproval: false,
       reasonCodes: unique(reasonCodes),
     };
   }
