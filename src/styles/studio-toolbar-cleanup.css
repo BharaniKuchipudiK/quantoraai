@@ -23,6 +23,148 @@
   font-weight: 500;
 }
 
+/*
+ * Prompt composer: grow naturally with the message, but do not let a long prompt
+ * consume the whole conversation/Canvas. AiStudio already measures scrollHeight
+ * on every keystroke; these caps turn that into a responsive composer rather
+ * than a 400px text box. Scrollbars remain quiet until the user actually needs
+ * them.
+ */
+.app-shell--studio .floating-input-pill textarea {
+  min-height: 24px !important;
+  max-height: min(24vh, 220px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: height 120ms ease, max-height 160ms ease;
+}
+
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio .floating-input-pill textarea {
+  max-height: min(20vh, 170px) !important;
+}
+
+.app-shell--studio .floating-input-pill textarea:hover,
+.app-shell--studio .floating-input-pill textarea:focus {
+  scrollbar-color: rgba(148, 163, 184, 0.52) transparent;
+}
+
+.app-shell--studio .floating-input-pill textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-shell--studio .floating-input-pill textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell--studio .floating-input-pill textarea::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.app-shell--studio .floating-input-pill textarea:hover::-webkit-scrollbar-thumb,
+.app-shell--studio .floating-input-pill textarea:focus::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.52);
+}
+
+/* Conversation and sidebar scrollbars should be discoverable without visually
+ * dominating a narrow split-pane workspace. */
+.app-shell--studio * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.38) transparent;
+}
+
+.app-shell--studio *::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.app-shell--studio *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell--studio *::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.34);
+  border-radius: 999px;
+}
+
+.app-shell--studio *::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.58);
+}
+
+/*
+ * Agentic Workspaces are outcome-oriented experiences, not model consoles.
+ * PCL owns model/runtime selection and failover behind the scenes. Keep model
+ * experimentation available in neutral Quantora, but remove it completely once
+ * a Travel / Study / Finance / Research workspace is active.
+ */
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Select AI Engine"],
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Compare two AI models side-by-side in real time"] {
+  display: none !important;
+}
+
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio div:has(> button[title="Select AI Engine"]) {
+  display: none !important;
+}
+
+/*
+ * The generic Studio tool picker is for neutral/advanced Quantora. Travel,
+ * Study, Finance and Research already expose domain-specific capabilities and
+ * should not ask the user to switch into Search/Travel/Office tools manually.
+ */
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Tools Menu"],
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-studio-tools-menu="true"],
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-studio-tools-backdrop="true"] {
+  display: none !important;
+}
+
+/*
+ * A Study/Travel/Finance/Research Canvas is a working surface, not a deployment
+ * console. Publishing, share-link creation and responsive device emulation are
+ * developer/app-builder actions, so keep them in neutral Quantora and remove
+ * them from Agentic Workspaces. Office download actions are unaffected.
+ */
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Publish to Vercel"],
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title^="Copy a shareable preview link"],
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-canvas-device-switcher="true"] {
+  display: none !important;
+}
+
+/* Full-screen Canvas is available in every Studio mode. The policy runtime tags
+ * the actual LivePreviewCanvas root so this never affects unrelated panels. */
+.app-shell--studio [data-quantora-canvas-root="true"][data-quantora-canvas-fullscreen="true"] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  border: none !important;
+  z-index: 10050 !important;
+  box-shadow: none !important;
+}
+
+html[data-quantora-canvas-fullscreen="true"] body,
+html[data-quantora-media-fullscreen="true"] body {
+  overflow: hidden !important;
+}
+
+/* YouTube and future source-grounded media can stay inside the Study/Research
+ * session. Expanding the media player temporarily takes over the viewport while
+ * preserving the underlying chat state. */
+.app-shell--studio [data-quantora-media-canvas][data-quantora-media-fullscreen="true"] {
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  z-index: 10060 !important;
+  box-shadow: none !important;
+}
+
 /* Office refinement should communicate progress, not implementation detail. */
 .app-shell--studio [role="status"][aria-live="polite"] > div > div:last-child {
   display: none;
