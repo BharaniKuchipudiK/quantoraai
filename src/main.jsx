@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import FeedbackWidget from './components/FeedbackWidget.jsx'
 import CodeWorkspaceHost from './components/code/CodeWorkspaceHost.jsx'
+import PrIntelligenceHost from './components/code/PrIntelligenceHost.jsx'
 import { installSpecialistExperience } from './lib/specialist-experience.js'
 import { installAgenticWorkspaceUiPolicy } from './lib/agentic-workspace-ui-policy.js'
 import { installWorkspaceCardPolish } from './lib/workspace-card-polish.js'
@@ -30,5 +31,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
     <FeedbackWidget />
     <CodeWorkspaceHost />
+    <PrIntelligenceHost />
   </React.StrictMode>,
 )
