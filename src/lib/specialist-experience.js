@@ -369,7 +369,7 @@ function applyAdvisorHighlight(config) {
 }
 
 function findHeroPrompt() {
-  const texts = ['What would you like to build today?', ...Object.values(DOMAIN_CONFIG).map((item) => item.hero)];
+  const texts = ['What would you like to build today?', 'What would you like to work on?', ...Object.values(DOMAIN_CONFIG).map((item) => item.hero)];
   for (const text of texts) {
     const found = exactTextElements(text)[0];
     if (found) return found;
@@ -390,10 +390,93 @@ function minimalizeHero(hero) {
   });
 }
 
+function ensureFallbackLanding(config) {
+  const stream = findChatStream();
+  if (!stream) return;
+
+  let landing = stream.querySelector('[data-quantora-specialist-landing]');
+  const visibleMeaningfulChildren = [...stream.children].filter((child) => {
+    if (child === landing) return false;
+    const style = window.getComputedStyle(child);
+    return style.display !== 'none' && style.visibility !== 'hidden' && (child.textContent?.trim() || '').length > 0;
+  });
+
+  if (visibleMeaningfulChildren.length > 0) {
+    landing?.remove();
+    return;
+  }
+
+  if (!landing) {
+    landing = document.createElement('div');
+    landing.dataset.quantoraSpecialistLanding = config.domain;
+    const greeting = document.createElement('h1');
+    greeting.dataset.quantoraSpecialistLandingGreeting = 'true';
+    const question = document.createElement('h2');
+    question.dataset.quantoraSpecialistLandingQuestion = 'true';
+    const support = document.createElement('p');
+    support.dataset.quantoraSpecialistLandingSupport = 'true';
+    const capabilities = document.createElement('div');
+    capabilities.dataset.quantoraSpecialistLandingCapabilities = 'true';
+    landing.append(greeting, question, support, capabilities);
+    stream.prepend(landing);
+  }
+
+  landing.dataset.quantoraSpecialistLanding = config.domain;
+  const firstName = profileFirstName();
+  setText(landing.querySelector('[data-quantora-specialist-landing-greeting]'), firstName ? `Welcome back, ${firstName}` : 'Welcome back');
+  setText(landing.querySelector('[data-quantora-specialist-landing-question]'), config.hero);
+  setText(landing.querySelector('[data-quantora-specialist-landing-support]'), config.supporting);
+  setText(landing.querySelector('[data-quantora-specialist-landing-capabilities]'), config.capabilities);
+
+  Object.assign(landing.style, {
+    width: '100%',
+    maxWidth: '720px',
+    margin: 'auto',
+    padding: '18px 24px',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
+  });
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-greeting]').style, {
+    margin: '0 0 8px',
+    color: 'var(--text-primary, #fff)',
+    fontSize: 'clamp(1.75rem, 3vw, 2.45rem)',
+    lineHeight: '1.12',
+    letterSpacing: '-0.03em',
+    fontWeight: '800',
+  });
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-question]').style, {
+    margin: '0 0 10px',
+    color: 'var(--text-secondary, #94a3b8)',
+    fontSize: '1.18rem',
+    lineHeight: '1.35',
+    fontWeight: '600',
+  });
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-support]').style, {
+    margin: '0 auto 12px',
+    maxWidth: '620px',
+    color: 'var(--text-secondary, #94a3b8)',
+    fontSize: '0.95rem',
+    lineHeight: '1.55',
+  });
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-capabilities]').style, {
+    color: config.domain === 'travel' ? '#60a5fa' : '#fb923c',
+    fontSize: '0.76rem',
+    fontWeight: '700',
+  });
+}
+
 function applyAdvisorHero(config) {
   if (!config) return;
   const prompt = findHeroPrompt();
-  if (!prompt) return;
+  if (!prompt) {
+    ensureFallbackLanding(config);
+    return;
+  }
+
+  findChatStream()?.querySelector('[data-quantora-specialist-landing]')?.remove();
   setText(prompt, config.hero);
   prompt.style.marginBottom = '8px';
 
@@ -439,7 +522,8 @@ function applyAdvisorHero(config) {
 }
 
 function restoreNeutralHero() {
-  document.querySelectorAll('[data-quantora-specialist-support], [data-quantora-specialist-capabilities]').forEach((node) => node.remove());
+  document.querySelectorAll('[data-quantora-specialist-support], [data-quantora-specialist-capabilities], [data-quantora-specialist-landing]')
+    .forEach((node) => node.remove());
   const hero = document.querySelector('[data-quantora-specialist-hero]');
   if (!hero) return;
   delete hero.dataset.quantoraSpecialistHero;
