@@ -416,7 +416,7 @@ Schema:
         raw: reply,
         modelId: PIPELINE_MODEL_ID,
       });
-      if (!validated.ok) {
+      if ('code' in validated) {
         console.warn('[Pipeline Contract] Provider output rejected', {
           stage: targetStage,
           code: validated.code,
