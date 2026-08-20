@@ -68,6 +68,10 @@
       "destination": "/api/pipeline"
     },
     {
+      "source": "/api/github/pr-intelligence",
+      "destination": "/api/autocomplete?mode=pr-intelligence"
+    },
+    {
       "source": "/api/outcomes",
       "destination": "/api/pipeline"
     },
