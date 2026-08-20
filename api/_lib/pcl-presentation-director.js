@@ -201,7 +201,7 @@ export function buildPclPresentationDirectorPlan({
     complexityReasons: complexity.reasons,
     modelTier: tier,
     modelCandidates: candidateModels(tier, { allowAnthropic, freeFirst }),
-    communicationStandard: archetype === 'academic_research' ? 'academic' : (EXECUTIVE_TERMS.test(combined) || decisionOriented ? 'consulting' : 'professional'),
+    communicationStandard: archetype === 'academic_research' ? 'academic' : (EXECUTIVE_TERMS.test(combined) || decisionOriented ? 'consulting' : 'general'),
     storylineRules: storylineRules(archetype),
   };
 }
