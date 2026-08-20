@@ -208,6 +208,8 @@ export function buildPclPresentationDirectorPlan({
 
 export function compilePclPresentationBrief(input = {}) {
   const plan = buildPclPresentationDirectorPlan(input);
+  const goal = clean(input?.sessionContext?.goal, 1_200);
+  const understanding = clean(input?.sessionContext?.understanding, 1_200);
   const facts = Array.isArray(input?.sessionContext?.facts)
     ? input.sessionContext.facts.map((fact) => clean(fact, 600)).filter(Boolean).slice(-12)
     : [];
@@ -223,6 +225,8 @@ export function compilePclPresentationBrief(input = {}) {
       `Decision-oriented: ${plan.decisionOriented ? 'yes' : 'no'}`,
       `Complexity: ${plan.complexityScore}/10 (${plan.modelTier})`,
       plan.complexityReasons.length ? `Complexity drivers: ${plan.complexityReasons.join('; ')}` : 'Complexity drivers: routine presentation task',
+      goal ? `Established goal: ${goal}` : '',
+      understanding ? `Established understanding: ${understanding}` : '',
       'Storyline requirements:',
       ...plan.storylineRules.map((rule) => `- ${rule}`),
       facts.length ? 'Established user/context facts:' : '',
