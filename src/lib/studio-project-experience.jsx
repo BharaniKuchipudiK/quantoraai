@@ -47,23 +47,46 @@ function previewButton(workspace) {
     .find((button) => /^Preview$/i.test(cleanTabLabel(textOf(button)))) || null;
 }
 
+function containsFixedAncestor(node, stopAt) {
+  let current = node;
+  while (current && current !== stopAt && current !== document.body) {
+    if (getComputedStyle(current).position === 'fixed') return true;
+    current = current.parentElement;
+  }
+  return false;
+}
+
 function findWorkspace() {
   const shell = document.querySelector('.app-shell--studio');
   if (!shell) return null;
+  const candidates = [];
   const previews = [...shell.querySelectorAll('button')]
     .filter((button) => /^Preview$/i.test(cleanTabLabel(textOf(button))));
 
   for (const preview of previews) {
     let node = preview.parentElement;
     for (let depth = 0; node && depth < 9; depth += 1, node = node.parentElement) {
+      if (containsFixedAncestor(node, shell)) continue;
       const files = fileButtons(node);
-      if (files.length >= 2 && (node.querySelector('iframe') || node.querySelector('textarea'))) {
-        node.dataset.quantoraLegacyWorkspace = 'true';
-        return node;
-      }
+      if (files.length < 2 || !(node.querySelector('iframe') || node.querySelector('textarea'))) continue;
+      const rect = node.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      candidates.push({ node, area: rect.width * rect.height, width: rect.width });
     }
   }
-  return null;
+
+  // Prefer the smallest non-fixed project container. This deliberately rejects
+  // the legacy full-screen Preview overlay, which used to masquerade as the
+  // workspace and caused the Canvas to take over the whole browser.
+  const chosen = candidates
+    .filter(({ width }) => width <= window.innerWidth * 0.78)
+    .sort((a, b) => a.area - b.area)[0]
+    || candidates.sort((a, b) => a.area - b.area)[0]
+    || null;
+
+  if (!chosen) return null;
+  chosen.node.dataset.quantoraLegacyWorkspace = 'true';
+  return chosen.node;
 }
 
 function visibleEditor(workspace) {
@@ -103,7 +126,7 @@ async function collectFiles(workspace) {
       if (editor) files[label] = { content: editor.value || '' };
     }
     preview.click();
-    await waitFrames(3);
+    await waitFrames(2);
   } finally {
     delete workspace.dataset.quantoraCollectingFiles;
   }
@@ -182,6 +205,32 @@ function projectFingerprint(files) {
   return JSON.stringify(Object.entries(files || {}).map(([path, file]) => [path, file?.content || '']));
 }
 
+function ensureRuntimeHost(workspace) {
+  const frame = largestIframe(workspace);
+  const hostParent = frame?.parentElement;
+  if (!hostParent) return null;
+  if (getComputedStyle(hostParent).position === 'static') hostParent.style.position = 'relative';
+
+  let host = hostParent.querySelector(':scope > [data-quantora-project-runtime="true"]');
+  if (!host) {
+    host = document.createElement('div');
+    host.dataset.quantoraProjectRuntime = 'true';
+    host.dataset.runtimeState = 'preparing';
+    Object.assign(host.style, {
+      position: 'absolute',
+      inset: '0',
+      zIndex: '24',
+      background: '#ffffff',
+      overflow: 'hidden',
+      display: 'grid',
+      placeItems: 'center',
+    });
+    host.innerHTML = '<div data-quantora-preview-preparing="true" style="font:700 13px/1.4 Inter,system-ui,sans-serif;color:#475569;display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:999px;background:#f97316;box-shadow:0 0 0 5px rgba(249,115,22,.10)"></span>Preparing your preview…</div>';
+    hostParent.append(host);
+  }
+  return host;
+}
+
 async function ensureProjectRuntime(workspace) {
   if (!workspace || workspace.dataset.quantoraCollectingFiles === 'true' || workspace.dataset.quantoraRuntimeBusy === 'true') return;
   const tabs = fileButtons(workspace);
@@ -189,27 +238,19 @@ async function ensureProjectRuntime(workspace) {
   const hasEntry = tabs.some(({ label }) => /(?:^|\/)src\/(?:main|index|App)\.(?:jsx?|tsx?)$/i.test(label));
   if (!hasPackage || !hasEntry) return;
 
+  // Cover the legacy iframe immediately so users never see a browser refusal,
+  // a third-party loader, or a spinning cube while Quantora is collecting and
+  // compiling the project.
+  const host = ensureRuntimeHost(workspace);
+  if (!host) return;
+
   workspace.dataset.quantoraRuntimeBusy = 'true';
   try {
     const files = await collectFiles(workspace);
-    if (!isBrowserProjectVfs(files)) return;
-    const frame = largestIframe(workspace);
-    const hostParent = frame?.parentElement;
-    if (!hostParent) return;
-    if (getComputedStyle(hostParent).position === 'static') hostParent.style.position = 'relative';
-
-    let host = hostParent.querySelector(':scope > [data-quantora-project-runtime="true"]');
-    if (!host) {
-      host = document.createElement('div');
-      host.dataset.quantoraProjectRuntime = 'true';
-      Object.assign(host.style, {
-        position: 'absolute',
-        inset: '0',
-        zIndex: '24',
-        background: '#fff',
-        overflow: 'hidden',
-      });
-      hostParent.append(host);
+    if (!isBrowserProjectVfs(files)) {
+      host.dataset.runtimeState = 'failed';
+      host.innerHTML = '<div role="alert" style="max-width:520px;padding:28px;font:600 13px/1.55 Inter,system-ui,sans-serif;color:#475569"><strong style="display:block;color:#b91c1c;margin-bottom:6px">Preview needs attention</strong>Quantora could not identify a runnable browser project. The failed runtime was kept hidden.</div>';
+      return;
     }
 
     const key = projectFingerprint(files);
@@ -231,18 +272,27 @@ async function ensureProjectRuntime(workspace) {
   }
 }
 
+function nearestFixedAncestor(node) {
+  let current = node?.parentElement || null;
+  while (current && current !== document.body) {
+    if (getComputedStyle(current).position === 'fixed') return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
 function dockStandalonePreview() {
   const workspace = findWorkspace();
-  const close = [...document.querySelectorAll('.app-shell--studio button[title="Close preview (Esc)"]')]
-    .find((button) => !workspace?.contains(button)) || null;
+  const closeButtons = [...document.querySelectorAll('.app-shell--studio button[title="Close preview (Esc)"]')];
+  const close = closeButtons.find((button) => !workspace?.contains(button) && nearestFixedAncestor(button)) || null;
   if (!close) return;
-  let overlay = close.parentElement;
-  while (overlay && overlay !== document.body && getComputedStyle(overlay).position !== 'fixed') overlay = overlay.parentElement;
-  if (!overlay || overlay === document.body) return;
+  const overlay = nearestFixedAncestor(close);
+  if (!overlay) return;
 
   overlay.dataset.quantoraDockedPreview = 'true';
   const mobile = window.innerWidth < 900;
   Object.assign(overlay.style, {
+    position: 'fixed',
     top: '12px',
     right: '12px',
     bottom: '12px',
@@ -250,6 +300,7 @@ function dockStandalonePreview() {
     width: mobile ? 'calc(100vw - 24px)' : 'min(58vw, 980px)',
     height: 'auto',
     padding: '0',
+    margin: '0',
     background: 'transparent',
     backdropFilter: 'none',
     WebkitBackdropFilter: 'none',
@@ -264,6 +315,7 @@ function dockStandalonePreview() {
       maxWidth: 'none',
       height: '100%',
       maxHeight: 'none',
+      margin: '0',
       borderRadius: '16px',
     });
   }
