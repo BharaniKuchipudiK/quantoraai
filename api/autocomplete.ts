@@ -4,6 +4,7 @@ import { requireActiveSession } from "./_lib/authz.js";
 import { fetchGatewayCredential, resolveCapabilityCredential } from './_lib/credential-broker.js';
 import { handleCodeCognitionRequest } from './_lib/code-cognition-handler.js';
 import { handlePrIntelligenceRequest } from './_lib/pr-intelligence-handler.js';
+import { handlePrFixRequest } from './_lib/pr-fix-handler.js';
 
 const MAX_CODE_CONTEXT_CHARS = 50_000;
 const REQUESTS_PER_MINUTE = 30;
@@ -23,21 +24,20 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // Quantora PR Intelligence shares this existing serverless runtime so the
-  // Code platform does not consume another Vercel function slot. The handler
-  // owns its own session/rate-limit boundary because it is a distinct product
-  // capability rather than autocomplete.
+  // PR review/fix and Code cognition deliberately share the existing
+  // autocomplete serverless runtime. Each capability owns its own session and
+  // rate-limit boundary rather than increasing the Vercel function footprint.
   if (req.query?.mode === 'pr-intelligence') {
     return handlePrIntelligenceRequest(req, res);
+  }
+  if (req.query?.mode === 'pr-fix') {
+    return handlePrFixRequest(req, res);
   }
 
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return;
   const { sessionUser } = auth.value;
 
-  // Quantora Code deliberately reuses this already-deployed API runtime rather
-  // than creating another serverless function. Vercel rewrites
-  // /api/code/cognition here with mode=code-cognition; local server.ts mirrors it.
   if (req.query?.mode === 'code-cognition') {
     return handleCodeCognitionRequest({ req, res, userSub: sessionUser.sub });
   }
