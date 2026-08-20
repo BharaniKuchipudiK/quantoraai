@@ -4,7 +4,7 @@ A green build is not a release. A release is acceptable only when the user journ
 
 ## Definition of done
 
-Every customer-facing change must pass all applicable gates before merge to `main`.
+Every customer-facing change must pass all applicable gates before merge to `main`. If `main` advances after a PR's last successful run, the applicable gates must run again against the updated merge base before promotion.
 
 ### Gate 1 — Static quality
 - TypeScript/typecheck passes.
@@ -19,7 +19,7 @@ For every changed customer journey, a headless Chromium test must exercise the r
 For Travel, the mandatory journey currently verifies:
 1. restore a signed-in synthetic user;
 2. enter Studio;
-3. click Travel Advisor;
+3. open the Travel specialist (`Travel Guide AI`; legacy copy aliases may be accepted by the test);
 4. Travel welcome is visible even when the generic welcome preference is hidden;
 5. global Studio/Journey/Quantum and internal model plumbing do not leak into Travel;
 6. a user request completes inside the response SLA;
