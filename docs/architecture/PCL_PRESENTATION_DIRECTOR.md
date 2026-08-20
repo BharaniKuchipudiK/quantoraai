@@ -55,6 +55,17 @@ Model routing must be evidence-based. The candidate list in `pcl-presentation-di
 
 Claude is optional, not architecturally privileged. A free-first policy may use Gemini for low-cost generation, but PCL must not promise frontier consistency from a model that has not passed the same benchmark threshold as the premium director tier.
 
+### Cost-efficient multi-stage execution
+
+Do not spend frontier-model tokens on the entire deck when only part of the job requires frontier judgment.
+
+- **Director stage:** for high-stakes decks, use the strongest justified model on a compact task: determine the governing answer, storyline, management choices, decision logic and slide-level assertions.
+- **Builder stage:** lock that director plan into the PCL brief and let a cheaper structured-output model expand it into the complete Presentation V2 specification.
+- **Deterministic critic stage:** run structural, executive-communication and readability gates before paying for another model call.
+- **Repair stage:** repair only the failed candidate/slide while preserving accepted context and storyline. Escalate to a stronger model only when the cheaper builder cannot clear the gates.
+
+This separates expensive judgment from high-volume JSON generation. It should be benchmarked as a pipeline, not assumed to be equivalent to a single premium-model call.
+
 ## Benchmark before changing production routing
 
 Use the same representative prompt set for every candidate model and score the generated **artifact**, not merely the JSON response.
