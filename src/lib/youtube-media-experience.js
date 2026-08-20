@@ -174,20 +174,21 @@ function removeUnavailableRecommendation(anchor) {
 function stylePlayButton(button, state) {
   const checking = state === 'checking';
   button.disabled = checking;
-  button.textContent = checking ? 'Checking…' : '▶ Play';
+  button.hidden = checking;
+  button.textContent = '▶ Play';
   button.setAttribute('title', checking ? 'Checking video availability' : 'Play in Quantora');
   Object.assign(button.style, {
     marginLeft: '7px',
     padding: '3px 9px',
     borderRadius: '999px',
     border: '1px solid rgba(239,68,68,0.30)',
-    background: checking ? 'rgba(148,163,184,0.10)' : 'rgba(239,68,68,0.10)',
-    color: checking ? '#94a3b8' : '#ef4444',
-    cursor: checking ? 'progress' : 'pointer',
+    background: 'rgba(239,68,68,0.10)',
+    color: '#ef4444',
+    cursor: checking ? 'default' : 'pointer',
     fontSize: '0.72rem',
     fontWeight: '750',
     verticalAlign: 'middle',
-    opacity: checking ? '0.8' : '1',
+    opacity: checking ? '0' : '1',
   });
 }
 
@@ -202,8 +203,10 @@ async function enhanceAnchor(anchor) {
   anchor.removeAttribute('target');
   anchor.removeAttribute('rel');
   anchor.setAttribute('aria-disabled', 'true');
-  anchor.style.cursor = 'progress';
-  anchor.style.opacity = '0.72';
+
+  // Never expose a recommendation before we know the target is live. This avoids
+  // flashing a broken link or a disabled "Checking…" action into the answer.
+  anchor.hidden = true;
 
   const parent = anchor.parentElement || anchor;
   parent.querySelectorAll('[data-quantora-youtube-watch]').forEach((node) => node.remove());
@@ -231,6 +234,7 @@ async function enhanceAnchor(anchor) {
 
   anchor.dataset.quantoraYoutubeValidation = 'valid';
   anchor.removeAttribute('aria-disabled');
+  anchor.hidden = false;
   anchor.style.cursor = 'pointer';
   anchor.style.opacity = '1';
   anchor.setAttribute('title', 'Play in Quantora');
