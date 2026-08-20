@@ -1,6 +1,7 @@
 import { normalizeSessionContext, type ListeningSignal, type SessionContext } from "../session-context.js";
 import { normalizeProjectId } from "../project-state.js";
-import { normalizeStudioDomain, type StudioDomain } from "../studio-domains.js";
+import { type StudioDomain } from "../studio-domains.js";
+import { inferStudioDomain } from "../studio-domain-inference.js";
 import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
 
 export type CommunicationRequest = {
@@ -25,7 +26,11 @@ export type CommunicationRequest = {
 
 export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const studioMode = normalizeStudioMode(body?.studioMode);
-  const studioDomain = normalizeStudioDomain(body?.studioDomain);
+  const studioDomain = inferStudioDomain({
+    explicit: body?.studioDomain,
+    message: body?.message,
+    history: body?.history,
+  });
   const attachedImages = Array.isArray(body?.attachedImages)
     ? body.attachedImages.filter((value: unknown): value is string => typeof value === "string" && value.startsWith("data:image/")).slice(0, 4)
     : [];

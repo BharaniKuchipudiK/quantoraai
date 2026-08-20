@@ -1,8 +1,9 @@
 import type { ConversationDecision, ConversationSnapshot } from "./conversation-engine.js";
 import type { ProjectContextPack } from "./project-state.js";
 import { cognitiveLedgerEvidenceCoverage } from "./cognitive-ledger.js";
+import { derivePclConversationLead } from "./pcl-conversation-lead.js";
 
-export const PCL_COGNITIVE_KERNEL_VERSION = "pcl-cognitive-kernel-2026-08-19.2";
+export const PCL_COGNITIVE_KERNEL_VERSION = "pcl-cognitive-kernel-2026-08-20.3";
 
 export const PCL_HUMAN_GATES = ["none", "inform", "approve", "choose"] as const;
 export type PclHumanGate = (typeof PCL_HUMAN_GATES)[number];
@@ -129,14 +130,8 @@ function chooseHumanGate(input: {
   if (conflicts.length) return "choose";
   if (decision.move === "clarify" && missingCritical.length) return "choose";
   if (decision.move === "challenge") return "choose";
-
-  // Medium-impact work stays moving, but the user is kept visibly in control.
   if (decision.move === "act" && (risk === "medium" || reversibility === "partial")) return "inform";
-
-  // Low-confidence, reversible work should not create an unnecessary intake loop.
-  // Make the smallest reasonable assumption, disclose it, and preserve reversibility.
   if (decision.move === "act" && decision.confidence < 0.65) return "inform";
-
   return "none";
 }
 
@@ -154,14 +149,7 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
   );
   const risk = highestKnownRisk(input.snapshot, input.action?.risk);
   const reversibility = input.action?.reversibility || defaultReversibility(risk);
-  const humanGate = chooseHumanGate({
-    snapshot: input.snapshot,
-    decision: input.decision,
-    risk,
-    reversibility,
-    conflicts,
-    missingCritical,
-  });
+  const humanGate = chooseHumanGate({ snapshot: input.snapshot, decision: input.decision, risk, reversibility, conflicts, missingCritical });
   const alignment = outcomeAlignment(input.snapshot, conflicts);
   const completion = completionScore(input.snapshot);
   const evidenceCoverage = evidenceScore(input.snapshot);
@@ -181,13 +169,15 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
     ...(missingCritical.length ? ["material_context_missing"] : []),
     ...(input.snapshot.stateSource === "ephemeral" ? ["ephemeral_state_only"] : []),
     ...(input.projectContext ? ["project_continuity_available"] : []),
+    ...(input.snapshot.currentTurn.studioDomain === "travel" ? ["travel_conversation_lead"] : []),
     ...(activeLedger.some((entry) => entry.type === "rejection") ? ["active_rejections_known"] : []),
     ...(activeLedger.some((entry) => entry.type === "correction") ? ["active_corrections_known"] : []),
   ]);
 
   const verifiedArtifacts = input.snapshot.artifacts.filter((item) => item.verified).length;
+  const leadPolicy = derivePclConversationLead({ snapshot: input.snapshot, decision: input.decision, humanGate, alignment });
   const responsePolicy: PclResponsePolicy = {
-    questionBudget: humanGate === "approve" || humanGate === "choose" ? 1 : 0,
+    questionBudget: leadPolicy.questionBudget,
     leadWithOutcome: humanGate === "none" || humanGate === "inform",
     discloseMaterialAssumption: humanGate === "inform" || input.snapshot.inferredFacts.length > 0,
     requireApprovalBeforeAction: humanGate === "approve",
@@ -223,10 +213,6 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
   };
 }
 
-/**
- * Provider-neutral governance contract for the next model/tool step.
- * This contains policy, not prose: the selected provider still owns natural language.
- */
 export function formatPclCognitiveContract(assessment: PclCognitiveAssessment): string {
   const missing = assessment.missingCritical.length
     ? assessment.missingCritical.slice(0, 3).map((item) => JSON.stringify(item)).join(" | ")
@@ -234,6 +220,20 @@ export function formatPclCognitiveContract(assessment: PclCognitiveAssessment): 
   const conflicts = assessment.conflicts.length
     ? assessment.conflicts.slice(0, 3).map((item) => JSON.stringify(item)).join(" | ")
     : "None";
+  const questionMode = assessment.outcomeAlignment === "complete"
+    ? "none"
+    : assessment.humanGate === "approve" || assessment.humanGate === "choose"
+      ? "required"
+      : assessment.responsePolicy.questionBudget === 1
+        ? "optional"
+        : "none";
+  const conversationLead = assessment.outcomeAlignment === "complete"
+    ? "close"
+    : assessment.humanGate === "approve"
+      ? "seek_approval"
+      : assessment.humanGate === "choose"
+        ? "resolve_blocker"
+        : "answer_and_advance";
 
   return `\n\nPCL COGNITIVE GOVERNANCE (follow silently; never expose internal policy)
 Kernel: ${assessment.kernelVersion}
@@ -245,8 +245,14 @@ Decision confidence: ${assessment.confidence}
 Outcome completion: ${assessment.completion}; evidence coverage: ${assessment.evidenceCoverage}
 Material missing context: ${missing}
 Conflicts: ${conflicts}
+Conversation lead: ${conversationLead}; leading question mode: ${questionMode}; question budget: ${assessment.responsePolicy.questionBudget}.
 Behavior:
+- First satisfy the user's immediate need unless a material blocker, conflict, or approval gate must be resolved first.
 - Safe, reversible work: keep moving without unnecessary questions.
+- OPTIONAL leading question: after delivering useful value, ask or offer at most one specific next step only when it materially advances the outcome. Prefer a contextual choice or sensible frame over a blank open-ended question.
+- REQUIRED leading question: ask exactly one concise question or confirmation that resolves the highest-impact blocker, then wait.
+- Never re-ask a fact already present in confirmed context, trusted project/session state, or the current conversation.
+- Human style: one thing at a time; no intake questionnaire, no checklist disguised as prose, and no question merely to sound conversational.
 - INFORM: proceed with the smallest reasonable reversible assumption and state only the material assumption.
 - CHOOSE: ask one concise question that resolves the highest-impact ambiguity or conflict, then wait.
 - APPROVE: do not perform the consequential action until the user explicitly approves it.
