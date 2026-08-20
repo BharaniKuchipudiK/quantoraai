@@ -23,6 +23,27 @@
   font-weight: 500;
 }
 
+/*
+ * Agentic Workspaces are outcome-oriented experiences, not model consoles.
+ * PCL owns model/runtime selection and failover behind the scenes.  Keep model
+ * experimentation available in neutral Quantora, but remove it completely once
+ * a Travel / Study / Finance / Research workspace is active.
+ *
+ * `data-quantora-domain` is published from the authoritative per-session
+ * studioDomain state, so this follows the chat session rather than sticky UI
+ * state.  :has() hides the whole engine-control wrapper as well as the button,
+ * which prevents an already-open model popover from lingering after a workspace
+ * switch.
+ */
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Select AI Engine"],
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Compare two AI models side-by-side in real time"] {
+  display: none !important;
+}
+
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio div:has(> button[title="Select AI Engine"]) {
+  display: none !important;
+}
+
 /* Office refinement should communicate progress, not implementation detail. */
 .app-shell--studio [role="status"][aria-live="polite"] > div > div:last-child {
   display: none;
