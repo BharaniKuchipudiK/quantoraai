@@ -109,6 +109,10 @@ async function startServer() {
     return chat(req, res);
   });
   route("all", "/api/autocomplete", autocomplete);
+  route("all", "/api/code/cognition", (req, res) => {
+    req.query = { ...(req.query || {}), mode: "code-cognition" };
+    return autocomplete(req, res);
+  });
   route("all", "/api/enhance", enhance);
   route("all", "/api/generate-office", generateOffice);
   route("all", "/api/domains", domains);
@@ -120,7 +124,7 @@ async function startServer() {
   route("all", "/api/admin/metrics", adminMetrics);
   route("all", "/api/product-event", productEvent);
 
-  // Production rewrites these friendly routes to /api/pipeline. Mirror that
+  // Production rewrites these friendly routes to shared functions. Mirror that
   // behavior locally while keeping one implementation and one function budget.
   route("post", "/api/github/preview", (req, res) => {
     req.body = { ...(req.body || {}), targetStage: "repository-preview" };
