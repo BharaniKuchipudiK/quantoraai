@@ -88,6 +88,9 @@ test("PCL directive carries governance plus the living Outcome Contract", () => 
   assert.equal(metadata.proofOfDoneStatus, "not_ready");
   assert.ok(typeof metadata.proofOfDoneScore === "number");
   assert.ok(Array.isArray(metadata.proofOfDoneBlockers));
+  assert.equal(metadata.agentExecution.providerNeutral, true);
+  assert.ok(metadata.agentExecution.taskCount >= 1);
+  assert.ok(Array.isArray(metadata.agentExecution.requiredCapabilities));
   assert.ok(!("reasons" in metadata));
   assert.ok(!("conflicts" in metadata));
 });
