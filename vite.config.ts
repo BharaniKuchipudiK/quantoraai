@@ -9,6 +9,7 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        '@react-oauth/google': path.resolve(__dirname, 'src/lib/google-oauth-adapter.jsx'),
       },
     },
     server: {
