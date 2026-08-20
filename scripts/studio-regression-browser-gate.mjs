@@ -147,22 +147,52 @@ try {
   await prompt.fill("let's build a mission control interface, similar to the expose-style window manager on macOS");
   await prompt.press('Enter');
 
-  const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
-  await visible(preview, 'Multi-file Vite project did not switch to a real project preview.', 15_000);
+  const workspace = page.locator('[data-quantora-legacy-workspace="true"]').first();
+  await visible(workspace, 'Generated project did not open the right-side workspace.', 15_000);
 
-  const workspaceText = await page.locator('[data-quantora-legacy-workspace="true"]').first().innerText().catch(() => '');
+  const preview = workspace.locator('[data-quantora-real-project-preview="true"]').first();
+  await visible(preview, 'Multi-file Vite project did not switch to a real project preview.', 15_000);
+  const runtimeLayout = preview.locator('[data-quantora-project-runtime-status]').first();
+  await visible(runtimeLayout, 'Project preview runtime never reached a Sandpack layout.', 15_000);
+  await page.waitForFunction(() => {
+    const runtime = document.querySelector('[data-quantora-project-runtime-status]');
+    return runtime && runtime.getAttribute('data-quantora-project-runtime-status') === 'idle';
+  }, null, { timeout: 20_000 }).catch(() => {});
+
+  const workspaceText = await workspace.innerText().catch(() => '');
   if (/\{"name":"mission-control-recovery"/.test(workspaceText)) {
     throw new Error('Preview is still exposing package.json as the application result.');
   }
+  if (/filepath=["']index\.html["']/i.test(workspaceText)) {
+    throw new Error('Preview is leaking fenced filepath metadata into the rendered result.');
+  }
 
-  const fileTabs = page.locator('[data-quantora-legacy-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
-  await visible(fileTabs, 'Expected project file tab was not generated.');
-  await fileTabs.click();
-  const editor = page.locator('[data-quantora-legacy-workspace="true"] textarea').first();
+  await hidden(workspace.locator('button[title="Publish to Vercel"]').first(), 'Publish is still visible in the build workspace.');
+  await hidden(workspace.locator('button[title^="Copy a shareable preview link"]').first(), 'Share link is still visible in the build workspace.');
+
+  const filePicker = workspace.locator('[data-quantora-file-picker="true"]').first();
+  await visible(filePicker, 'Project files were not compacted into a single Files picker.');
+  await hidden(workspace.locator('button').filter({ hasText: /^src\/App\.jsx$/ }).first(), 'Every source file is still being exposed as a permanent top tab.');
+  await filePicker.selectOption('src/App.jsx');
+  const editor = workspace.locator('textarea').first();
   await visible(editor, 'Project source editor is missing.');
   const editorValue = await editor.inputValue();
   if (!editorValue.includes('Mission Control is alive')) {
-    throw new Error('File tabs still display the wrong shared source instead of the selected file.');
+    throw new Error('Files picker did not navigate to the selected source file.');
+  }
+
+  const messagePreview = page.locator('button[title="Preview"]').first();
+  if (await messagePreview.isVisible().catch(() => false)) {
+    await messagePreview.click();
+    const docked = page.locator('[data-quantora-docked-preview="true"]').first();
+    await visible(docked, 'Quick Preview still opens as a blocking full-screen overlay.');
+    const box = await docked.boundingBox();
+    if (!box || box.width >= 1100 || box.x < 500) {
+      throw new Error(`Quick Preview is not docked on the right (${JSON.stringify(box)}).`);
+    }
+    await hidden(docked.locator('button[title="Publish to Vercel"]').first(), 'Publish is visible in the docked quick preview.');
+    await hidden(docked.locator('button[title^="Copy a shareable preview link"]').first(), 'Share link is visible in the docked quick preview.');
+    await docked.locator('button[title="Close preview (Esc)"]').first().click();
   }
 
   await arena.click();
