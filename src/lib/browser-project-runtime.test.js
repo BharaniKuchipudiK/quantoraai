@@ -37,9 +37,11 @@ test('compiles a React/Vite project into an isolated browser document', () => {
   assert.match(result.html, /cdn\.tailwindcss\.com/);
   assert.doesNotMatch(result.html, /@tailwind\s+base/);
   assert.doesNotMatch(result.html, /src="\/src\/main\.jsx"/);
-  assert.match(result.html, /Mission Control is alive|%3Ch1%3EMission%20Control/);
+  assert.match(result.html, /Mission%20Control%20is%20alive/);
   assert.match(result.html, /__quantoraProjectPreview/);
   assert.match(result.html, /form-action 'none'/);
+  assert.match(result.html, /connect-src 'none'/);
+  assert.match(result.html, /img-src data: blob:/);
 });
 
 test('rejects a non-project instead of fabricating a preview', () => {
