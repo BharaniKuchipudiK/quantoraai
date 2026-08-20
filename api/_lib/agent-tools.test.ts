@@ -76,6 +76,13 @@ test('unconnected read-only travel providers return unavailable instead of mock 
   });
   assert.equal(attraction.status, 'unavailable');
   assert.equal('attractions' in attraction, false, 'must not substitute hard-coded attractions');
+
+  const route = await executeToolCall('get_places_routing', {
+    origin: 'London Heathrow Airport',
+    destination: 'London Bridge',
+  }, { googleMapsApiKey: null });
+  assert.equal(route.status, 'unavailable');
+  assert.equal('route' in route, false, 'must not substitute hard-coded route results');
 });
 
 test('Google Places hotel discovery returns provider-backed facts without fake inventory or room rates', async () => {
@@ -161,16 +168,75 @@ test('Google Places powers attraction and generic destination discovery', async 
   });
   assert.equal(place.status, 'success');
   assert.equal(place.places[0].primaryType, 'museum');
-  assert.equal(place.routingAvailable, false);
 });
 
-test('Google Places provider errors fail closed', async () => {
+test('Google Routes returns real route metrics and uses a narrow field mask', async () => {
+  let capturedRequest: any = null;
+  const fetchFn = (async (url: any, init: any) => {
+    capturedRequest = { url, init };
+    return new Response(JSON.stringify({
+      routes: [
+        {
+          distanceMeters: 28100,
+          duration: '1740s',
+          polyline: { encodedPolyline: 'encoded-route' },
+        },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  const result = await executeToolCall('get_places_routing', {
+    origin: 'London Heathrow Airport',
+    destination: 'London Bridge',
+    travelMode: 'TRANSIT',
+  }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.source, 'Google Routes API');
+  assert.equal(result.route.distanceMeters, 28100);
+  assert.equal(result.route.durationSeconds, 1740);
+  assert.equal(result.route.travelMode, 'TRANSIT');
+  assert.equal(capturedRequest.url, 'https://routes.googleapis.com/directions/v2:computeRoutes');
+  assert.equal(capturedRequest.init.headers['X-Goog-Api-Key'], 'test-google-key');
+  assert.equal(
+    capturedRequest.init.headers['X-Goog-FieldMask'],
+    'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline',
+  );
+  const body = JSON.parse(capturedRequest.init.body);
+  assert.deepEqual(body.origin, { address: 'London Heathrow Airport' });
+  assert.deepEqual(body.destination, { address: 'London Bridge' });
+  assert.equal(body.travelMode, 'TRANSIT');
+  assert.equal('routingPreference' in body, false);
+});
+
+test('walking routes carry the Google beta-path warning', async () => {
+  const fetchFn = (async () => new Response(JSON.stringify({
+    routes: [{ distanceMeters: 900, duration: '720s' }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+
+  const result = await executeToolCall('get_places_routing', {
+    origin: 'Marina Bay Sands',
+    destination: 'Merlion Park',
+    travelMode: 'WALK',
+  }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+  });
+
+  assert.equal(result.status, 'success');
+  assert.match(result.route.warning, /beta/i);
+});
+
+test('Google provider errors fail closed', async () => {
   const fetchFn = (async () => new Response(JSON.stringify({ error: { message: 'API not enabled' } }), {
     status: 403,
     headers: { 'Content-Type': 'application/json' },
   })) as typeof fetch;
 
-  const result = await executeToolCall('search_hotels', {
+  const hotel = await executeToolCall('search_hotels', {
     location: 'Tokyo',
     checkInDate: '2026-10-01',
     checkOutDate: '2026-10-03',
@@ -178,11 +244,22 @@ test('Google Places provider errors fail closed', async () => {
     googleMapsApiKey: 'bad-key',
     fetchFn,
   });
+  assert.equal(hotel.status, 'unavailable');
+  assert.equal(hotel.executed, false);
+  assert.equal(hotel.reason, 'PROVIDER_ERROR');
+  assert.equal('hotels' in hotel, false);
 
-  assert.equal(result.status, 'unavailable');
-  assert.equal(result.executed, false);
-  assert.equal(result.reason, 'PROVIDER_ERROR');
-  assert.equal('hotels' in result, false);
+  const route = await executeToolCall('get_places_routing', {
+    origin: 'Tokyo Station',
+    destination: 'Haneda Airport',
+  }, {
+    googleMapsApiKey: 'bad-key',
+    fetchFn,
+  });
+  assert.equal(route.status, 'unavailable');
+  assert.equal(route.executed, false);
+  assert.equal(route.reason, 'PROVIDER_ERROR');
+  assert.equal('route' in route, false);
 });
 
 test('clarification remains a non-transactional human-in-loop action', async () => {
