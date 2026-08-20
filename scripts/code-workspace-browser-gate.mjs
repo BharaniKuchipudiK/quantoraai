@@ -100,6 +100,101 @@ await page.route('**/api/**', async (route) => {
     });
   }
 
+  if (path === '/api/github/pr-intelligence') {
+    const payload = JSON.parse(request.postData() || '{}');
+    if (!/github\.com\/quantora\/synthetic\/pull\/77/.test(String(payload.prUrl || ''))) {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic gate expected PR #77.' }) });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        snapshot: {
+          repository: 'quantora/synthetic',
+          number: 77,
+          url: 'https://github.com/quantora/synthetic/pull/77',
+          title: 'Add verified drone controls',
+          body: 'Add safer rotor controls and browser verification.',
+          state: 'open',
+          draft: false,
+          author: 'synthetic-builder',
+          base: { ref: 'main', sha: 'base77' },
+          head: { ref: 'feat/drone-controls', sha: 'head77' },
+          commits: 2,
+          additions: 34,
+          deletions: 8,
+          changedFiles: 2,
+          files: [
+            {
+              path: 'src/drone/control.js',
+              status: 'modified',
+              additions: 18,
+              deletions: 6,
+              changes: 24,
+              patch: '@@ -10,7 +10,9 @@\n-const thrust = input;\n+const thrust = clamp(input, 0, 1);\n+const verified = true;\n return thrust;',
+            },
+            {
+              path: 'src/drone/control.test.js',
+              status: 'modified',
+              additions: 16,
+              deletions: 2,
+              changes: 18,
+              patch: '@@ -4,3 +4,7 @@\n+it("clamps unsafe thrust", () => {\n+  expect(control(2)).toBe(1);\n+});',
+            },
+          ],
+          checks: [
+            { name: 'Quantora CI', status: 'completed', conclusion: 'success', url: 'https://github.com/quantora/synthetic/actions' },
+            { name: 'Browser gate', status: 'completed', conclusion: 'success', url: null },
+          ],
+        },
+        review: {
+          summary: 'The PR adds bounded rotor-control behavior and tests, but the shared simulation state still needs lifecycle review.',
+          featureIntent: 'Prevent unsafe rotor thrust values while keeping the drone simulator responsive and verified.',
+          architectureAreas: ['Frontend / Experience', 'Tests / Verification'],
+          architectureImpact: ['Rotor input is now normalized before simulation state consumes it.'],
+          findings: [
+            {
+              id: 'synthetic-risk',
+              severity: 'risk',
+              title: 'Simulation state can retain stale thrust',
+              rationale: 'The changed control clamps new input, but the integration path should verify that previously cached thrust is replaced before the next physics tick.',
+              path: 'src/drone/control.js',
+              suggestion: 'Add an integration assertion around the state handoff before merge.',
+              confidence: 0.91,
+              source: 'agent',
+            },
+            {
+              id: 'synthetic-opportunity',
+              severity: 'opportunity',
+              title: 'Expose a visual safety indicator',
+              rationale: 'Clamped input could be surfaced in the preview so a learner understands why the requested thrust changed.',
+              path: null,
+              suggestion: 'Show a small bounded-input indicator in the Canvas.',
+              confidence: 0.78,
+              source: 'agent',
+            },
+          ],
+          improvements: ['Explain clamped rotor input in the live Preview for learner feedback.'],
+          verificationPlan: ['Run unit tests.', 'Exercise the rotor control in a real browser preview.', 'Verify the physics tick consumes the clamped value.'],
+          score: 88,
+          risk: 'medium',
+          readyForReview: true,
+          fixableFindingIds: ['synthetic-risk'],
+          deepReviewStatus: 'complete',
+        },
+        capabilities: {
+          readPullRequest: true,
+          inspectDiff: true,
+          inspectChecks: true,
+          deepReview: true,
+          branchWriteBack: false,
+          privateRepositoryAccess: false,
+          privateRepositoryAccessReason: 'Requires user-scoped GitHub authorization.',
+        },
+      }),
+    });
+  }
+
   if (path === '/api/chat') {
     const payload = JSON.parse(request.postData() || '{}');
     if (payload.task === 'repair') {
@@ -151,6 +246,33 @@ try {
   await workspace.getByRole('button', { name: 'Understand this project', exact: true }).click();
   await visible(workspace.getByText('Robotics / drone simulation', { exact: true }), 'PCL did not surface the synthetic drone project purpose.');
   await visible(workspace.getByText(/frontend · 3d/i).first(), 'PCL did not surface the 3D architecture signal.');
+
+  // PR Intelligence must be a real Code capability: intent-aware review,
+  // severity-ranked findings, CI evidence and a readable changed-file diff.
+  const prEntry = page.locator('[data-quantora-pr-review-entry="true"]').first();
+  await visible(prEntry, 'PR Review entry did not appear in Quantora Code.');
+  await prEntry.click();
+
+  const prPanel = page.locator('[data-quantora-pr-intelligence="true"]').first();
+  await visible(prPanel, 'PR Intelligence panel did not open.');
+  const prInput = prPanel.getByLabel('GitHub pull request URL');
+  await visible(prInput, 'PR URL input is missing.');
+  await prInput.fill('https://github.com/quantora/synthetic/pull/77');
+  await prPanel.getByRole('button', { name: 'Review PR', exact: true }).click();
+
+  await visible(prPanel.getByText('Prevent unsafe rotor thrust values while keeping the drone simulator responsive and verified.', { exact: true }), 'PR feature intent was not surfaced.', 10_000);
+  await visible(prPanel.getByText('Simulation state can retain stale thrust', { exact: true }), 'PR risk finding was not surfaced.');
+  await visible(prPanel.getByText('Expose a visual safety indicator', { exact: true }), 'PR opportunity finding was not surfaced.');
+  await visible(prPanel.getByText('88%', { exact: true }), 'PR review score was not surfaced.');
+
+  await prPanel.getByRole('button', { name: /Diff 2/i }).click();
+  const diff = prPanel.locator('[data-quantora-pr-diff="true"]').first();
+  await visible(diff, 'PR diff viewer did not open.');
+  await visible(diff.getByText('+const thrust = clamp(input, 0, 1);', { exact: true }), 'PR diff did not render the selected changed-file patch.');
+
+  await prPanel.getByRole('button', { name: 'Close PR Intelligence', exact: true }).click();
+  await prPanel.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+  if (await prPanel.isVisible().catch(() => false)) throw new Error('PR Intelligence panel did not close cleanly.');
 
   // Inject the same structured runtime event emitted by the preview harness. The
   // Code workspace must expose the diagnostic, let the bounded self-heal loop
