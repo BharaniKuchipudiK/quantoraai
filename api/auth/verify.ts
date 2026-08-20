@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
 import { createSessionToken, setSessionCookie, isSessionConfigured } from '../_lib/session.js';
@@ -10,6 +11,9 @@ import { getRequestGeo } from '../_lib/geo.js';
  */
 const CLIENT_ID = process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '';
 const client = CLIENT_ID ? new OAuth2Client(CLIENT_ID) : null;
+const PREVIEW_REDIRECT_URI = 'https://quantora-platform-git-travel-provider-gateway-v1-sartho.vercel.app/api/auth/verify';
+const OAUTH_STATE_COOKIE = 'quantora_oauth_state';
+const OAUTH_NONCE_COOKIE = 'quantora_oauth_nonce';
 
 type GoogleIdentity = {
   sub: string;
@@ -60,12 +64,55 @@ function redirectResult(res: any, ok: boolean, code = '') {
   return res.end();
 }
 
-async function verifyGoogleCredential(credential: string): Promise<GoogleIdentity> {
+function temporaryOAuthCookie(name: string, value: string): string {
+  // Google's form_post response is a cross-site POST back to this endpoint, so
+  // SameSite=None is required for the short-lived state/nonce cookies to arrive.
+  return `${name}=${encodeURIComponent(value)}; Path=/api/auth/verify; HttpOnly; Secure; SameSite=None; Max-Age=600`;
+}
+
+function startPreviewGoogleLogin(req: any, res: any) {
+  if (process.env.VERCEL_ENV !== 'preview') {
+    return res.status(404).json({ error: 'Preview sign-in route is not available here.' });
+  }
+
+  if (!client || !isSessionConfigured()) {
+    console.error('Auth misconfigured: GOOGLE_CLIENT_ID and/or SESSION_SECRET missing.');
+    return res.status(503).json({ error: 'Sign-in is not configured on this deployment.' });
+  }
+
+  if (isRateLimited(`login-start:${clientIp(req)}`, 20, 60_000)) {
+    return res.status(429).json({ error: 'Too many sign-in attempts. Please wait a minute.' });
+  }
+
+  const state = randomBytes(32).toString('base64url');
+  const nonce = randomBytes(32).toString('base64url');
+
+  const authorizationUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authorizationUrl.searchParams.set('client_id', CLIENT_ID);
+  authorizationUrl.searchParams.set('redirect_uri', PREVIEW_REDIRECT_URI);
+  authorizationUrl.searchParams.set('response_type', 'id_token');
+  authorizationUrl.searchParams.set('response_mode', 'form_post');
+  authorizationUrl.searchParams.set('scope', 'openid email profile');
+  authorizationUrl.searchParams.set('state', state);
+  authorizationUrl.searchParams.set('nonce', nonce);
+  authorizationUrl.searchParams.set('prompt', 'select_account');
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Set-Cookie', [
+    temporaryOAuthCookie(OAUTH_STATE_COOKIE, state),
+    temporaryOAuthCookie(OAUTH_NONCE_COOKIE, nonce),
+  ]);
+  res.statusCode = 302;
+  res.setHeader('Location', authorizationUrl.toString());
+  return res.end();
+}
+
+async function verifyGoogleCredential(credential: string, expectedNonce = ''): Promise<GoogleIdentity> {
   if (!client) throw new Error('Google OAuth client is not configured.');
 
-  // Sign in with Google returns a JWT ID token. The direct OAuth token client
-  // used by Preview returns an opaque access token. Support both, but pin both
-  // credential types to this exact OAuth client before creating a session.
+  // Sign in with Google and the popup-free Preview OIDC flow both return a JWT
+  // ID token. The access-token branch remains for compatibility with any older
+  // Preview tab that still completes the direct token-client flow.
   const looksLikeIdToken = credential.split('.').length === 3;
 
   if (looksLikeIdToken) {
@@ -77,6 +124,9 @@ async function verifyGoogleCredential(credential: string): Promise<GoogleIdentit
     const payload = ticket.getPayload();
     if (!payload?.sub || !payload.email) throw new Error('Invalid Google ID token payload.');
     if (payload.email_verified === false) throw new Error('Google email is not verified.');
+    if (expectedNonce && payload.nonce !== expectedNonce) {
+      throw new Error('Google ID token nonce mismatch.');
+    }
 
     return {
       sub: payload.sub,
@@ -115,14 +165,18 @@ async function verifyGoogleCredential(credential: string): Promise<GoogleIdentit
 }
 
 export default async function handler(req: any, res: any) {
-  applyCors(req, res, 'POST,OPTIONS');
+  applyCors(req, res, 'GET,POST,OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  if (req.method === 'GET') {
+    return startPreviewGoogleLogin(req, res);
+  }
+
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
+    return res.status(405).json({ error: 'Method Not Allowed. Use GET or POST.' });
   }
 
   const contentType = String(req?.headers?.['content-type'] || '').toLowerCase();
@@ -141,18 +195,26 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const credential = String(body.credential || '').trim();
+    const oidcFormPost = redirectSubmission && typeof body.id_token === 'string';
+    const credential = String(body.id_token || body.credential || '').trim();
     if (!credential) {
       if (redirectSubmission) return redirectResult(res, false, 'missing_credential');
       return res.status(400).json({ error: 'Missing credential token' });
     }
 
-    /*
-     * Google GIS redirect mode uses the double-submit-cookie CSRF pattern.
-     * Require the cookie/body values to match before trusting the posted ID
-     * token. JSON popup/token-client submissions do not contain this token.
-     */
-    if (redirectSubmission) {
+    let expectedNonce = '';
+
+    if (oidcFormPost) {
+      const bodyState = String(body.state || '');
+      const cookieState = cookieValue(req, OAUTH_STATE_COOKIE);
+      expectedNonce = cookieValue(req, OAUTH_NONCE_COOKIE);
+
+      if (!bodyState || !cookieState || bodyState !== cookieState || !expectedNonce) {
+        console.warn('Google OIDC sign-in rejected: state/nonce cookie mismatch.');
+        return redirectResult(res, false, 'csrf');
+      }
+    } else if (redirectSubmission) {
+      // Compatibility with the previous GIS redirect experiment.
       const bodyCsrf = String(body.g_csrf_token || '');
       const cookieCsrf = cookieValue(req, 'g_csrf_token');
       if (!bodyCsrf || !cookieCsrf || bodyCsrf !== cookieCsrf) {
@@ -161,7 +223,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const identity = await verifyGoogleCredential(credential);
+    const identity = await verifyGoogleCredential(credential, expectedNonce);
 
     const stored = await recordSignIn({
       sub: identity.sub,
