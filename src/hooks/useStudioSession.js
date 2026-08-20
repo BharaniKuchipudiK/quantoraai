@@ -1,6 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { mergeSessionListeningSignals } from '../lib/listening-layer.js';
 import {
+  STUDIO_DOMAIN_REQUEST_EVENT,
+  normalizeStudioDomain,
+  publishStudioDomainState,
+} from '../lib/studio-shell-events.js';
+import {
   loadRemoteProjectContext,
   loadRemoteProjects,
   saveRemoteProject,
@@ -100,7 +105,11 @@ function loadSessions(defaultGreeting) {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((session) => ({ ...session, projectId: session.projectId || DEFAULT_PROJECT_ID }));
+        return parsed.map((session) => ({
+          ...session,
+          projectId: session.projectId || DEFAULT_PROJECT_ID,
+          studioDomain: normalizeStudioDomain(session.studioDomain),
+        }));
       }
     }
   } catch (e) {
@@ -112,6 +121,8 @@ function loadSessions(defaultGreeting) {
     createdAt: Date.now(),
     projectId: DEFAULT_PROJECT_ID,
     messages: [defaultGreeting],
+    studioMode: 'ask',
+    studioDomain: null,
   }];
 }
 
@@ -123,7 +134,7 @@ function persistSessions(sessions) {
   }
 }
 
-function makeSession(projectId, defaultGreetingMsg) {
+function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
   return {
     id: 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
     title: 'New Chat',
@@ -131,7 +142,7 @@ function makeSession(projectId, defaultGreetingMsg) {
     projectId,
     messages: [defaultGreetingMsg],
     studioMode: 'ask',
-    studioDomain: null,
+    studioDomain: normalizeStudioDomain(studioDomain),
     boundRepo: null,
     conversationContext: {},
     memoryConsented: false,
@@ -188,7 +199,7 @@ export function useStudioSession({ user, selectedModel }) {
 
   const messages = activeSession.messages || [defaultGreetingMsg];
   const studioMode = activeSession.studioMode || 'ask';
-  const studioDomain = activeSession.studioDomain || null;
+  const studioDomain = normalizeStudioDomain(activeSession.studioDomain);
   const boundRepo = activeSession.boundRepo || null;
   const conversationContext = activeSession.conversationContext || {};
   const listeningSignals = activeSession.listeningSignals || [];
@@ -266,8 +277,6 @@ export function useStudioSession({ user, selectedModel }) {
     };
   }, [activeProject, projectArtifacts, projectSessions.length, remoteProjectContext]);
 
-  // Keep the existing compact session-context contract used by chat and Office,
-  // but source its facts from the richer Project Outcome Graph.
   const projectContext = useMemo(() => ({
     projectId: projectOutcome.projectId,
     projectName: projectOutcome.projectName,
@@ -276,9 +285,6 @@ export function useStudioSession({ user, selectedModel }) {
     facts: projectOutcome.facts,
   }), [projectOutcome]);
 
-  // Signed-in Projects are local-first, then reconciled with the durable store.
-  // If Supabase or the migration is unavailable, the current browser behavior
-  // remains untouched rather than blocking Studio.
   useEffect(() => {
     if (!accountKey) return undefined;
     let cancelled = false;
@@ -355,9 +361,6 @@ export function useStudioSession({ user, selectedModel }) {
     });
   }, [accountKey]);
 
-  // Link chats + generated artifacts to the durable Project, then refresh the
-  // context projection from trusted Outcome State. This does not persist chat
-  // transcripts; it stores only membership and already-approved state/resources.
   useEffect(() => {
     if (!accountKey || !activeProject?.id || (activeProject.version || 0) < 1) {
       setRemoteProjectContext(null);
@@ -427,7 +430,7 @@ export function useStudioSession({ user, selectedModel }) {
     updateActiveMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, choiceDockState } : m));
   }, [updateActiveMessages]);
   const setStudioMode = useCallback((mode) => updateActiveSession({ studioMode: mode }), [updateActiveSession]);
-  const setStudioDomain = useCallback((domain) => updateActiveSession({ studioDomain: domain }), [updateActiveSession]);
+  const setStudioDomain = useCallback((domain) => updateActiveSession({ studioDomain: normalizeStudioDomain(domain) }), [updateActiveSession]);
 
   const recordListeningSignal = useCallback((type, payload) => {
     setAllChatSessions((prev) => {
@@ -438,7 +441,7 @@ export function useStudioSession({ user, selectedModel }) {
   }, [activeSessionId]);
 
   const handleCreateNewChat = useCallback(() => {
-    const newSession = makeSession(activeProject.id, defaultGreetingMsg);
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
       persistSessions(updated);
@@ -446,6 +449,38 @@ export function useStudioSession({ user, selectedModel }) {
     });
     setActiveSessionId(newSession.id);
   }, [activeProject.id, defaultGreetingMsg]);
+
+  const handleCreateAdvisorChat = useCallback((domain) => {
+    const normalizedDomain = normalizeStudioDomain(domain);
+    if (!normalizedDomain) return null;
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, normalizedDomain);
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+    return newSession.id;
+  }, [activeProject.id, defaultGreetingMsg]);
+
+  useEffect(() => {
+    publishStudioDomainState(studioDomain);
+  }, [activeSessionId, studioDomain]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onDomainRequest = (event) => {
+      const domain = normalizeStudioDomain(event?.detail?.domain);
+      if (event?.detail?.createNew === true) {
+        if (domain) handleCreateAdvisorChat(domain);
+        else handleCreateNewChat();
+        return;
+      }
+      setStudioDomain(domain);
+    };
+    window.addEventListener(STUDIO_DOMAIN_REQUEST_EVENT, onDomainRequest);
+    return () => window.removeEventListener(STUDIO_DOMAIN_REQUEST_EVENT, onDomainRequest);
+  }, [handleCreateAdvisorChat, handleCreateNewChat, setStudioDomain]);
 
   const setActiveProjectId = useCallback((projectId) => {
     const project = projects.find((item) => item.id === projectId);
@@ -545,6 +580,7 @@ export function useStudioSession({ user, selectedModel }) {
     setStudioDomain,
     recordListeningSignal,
     handleCreateNewChat,
+    handleCreateAdvisorChat,
     handleDeleteChat,
     projects,
     activeProjectId: activeProject.id,

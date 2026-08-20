@@ -105,6 +105,10 @@ async function assertVisible(locator, message) {
   }
 }
 
+async function studioDomain() {
+  return page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
 
@@ -112,30 +116,60 @@ try {
   await assertVisible(studioButton, 'Studio navigation never became visible for the synthetic signed-in user.');
   await studioButton.click();
 
-  // The current product label is "Travel Guide AI". Keep the older label in
-  // the selector as a compatibility alias so copy-only naming changes do not
-  // weaken the actual journey gate.
+  await assertVisible(
+    page.locator('[data-quantora-sidebar-profile]').first(),
+    'Profile control is not anchored in the Studio sidebar above Feedback.',
+  );
+  await assertVisible(
+    page.locator('[data-quantora-sidebar-canvas]').first(),
+    'Canvas navigation is missing from the Studio sidebar.',
+  );
+
+  const globalHeader = page.locator('.app-header').first();
+  if (await globalHeader.isVisible().catch(() => false)) {
+    throw new Error('Global Studio/Journey/Quantum header is still consuming Studio vertical space.');
+  }
+  if (await page.getByRole('button', { name: 'Reset Chat', exact: true }).isVisible().catch(() => false)) {
+    throw new Error('Redundant Reset Chat control is still visible.');
+  }
+  if ((await studioDomain()) !== '') {
+    throw new Error('A fresh Studio session is not neutral before an advisor is selected.');
+  }
+
   const travelAdvisor = page.getByText(/^(Travel Guide AI|Travel Advisor)$/i).first();
   await assertVisible(travelAdvisor, 'Travel specialist entry is missing from the Studio sidebar.');
   await travelAdvisor.click();
+  await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
 
   const travelHero = page.getByText(/Where should Quantora take you\?/i).first();
   await assertVisible(travelHero, 'Travel opened to a blank canvas instead of a specialist welcome.');
 
-  const globalHeader = page.locator('.app-header').first();
-  if (await globalHeader.isVisible().catch(() => false)) {
-    throw new Error('Global Studio/Journey/Quantum header is still visible inside Travel.');
+  const duplicateTravelHeading = page.locator('h2').filter({ hasText: /^Travel Advisor$/i }).first();
+  if (await duplicateTravelHeading.isVisible().catch(() => false)) {
+    throw new Error('Travel Advisor is redundantly repeated in a top banner.');
   }
-  if (await page.getByText(/Dual Arena Mode|Selected Model:|Live API Engine Active/i).first().isVisible().catch(() => false)) {
-    throw new Error('Internal model/Arena plumbing is visible inside Travel.');
+
+  // Regression for the screenshot bug: global New Chat must clear the active
+  // advisor rather than creating another Travel-scoped conversation.
+  const newChat = page.getByRole('button', { name: 'New Chat', exact: true }).first();
+  await assertVisible(newChat, 'Global New Chat is missing from Studio.');
+  await newChat.click();
+  await page.waitForFunction(() => (document.documentElement.dataset.quantoraDomain || '') === '');
+  if (await travelHero.isVisible().catch(() => false)) {
+    throw new Error('New Chat still renders the Travel specialist welcome instead of neutral Quantora.');
   }
+
+  // Re-enter Travel and prove the normal journey remains intact after the shell
+  // cleanup and session-domain reset.
+  const travelAdvisorAgain = page.getByText(/^Travel Advisor$/i).first();
+  await assertVisible(travelAdvisorAgain, 'Travel advisor disappeared after returning to neutral New Chat.');
+  await travelAdvisorAgain.click();
+  await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
+  await assertVisible(page.getByText(/Where should Quantora take you\?/i).first(), 'Travel did not restore its own scoped welcome after re-entry.');
 
   const textarea = page.locator('textarea').first();
   await assertVisible(textarea, 'Travel input is not visible.');
 
-  // Clipboard images must use the same attachment pipeline as paperclip
-  // uploads while ordinary text paste remains untouched. Exercise the actual
-  // DOM path here so a unit-only implementation cannot silently regress.
   await textarea.evaluate((node) => {
     const transfer = new DataTransfer();
     transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], '', { type: 'image/png' }));

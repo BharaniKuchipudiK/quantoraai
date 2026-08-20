@@ -1,4 +1,10 @@
-const ACTIVE_DOMAIN_KEY = 'quantora_active_specialist_domain';
+import {
+  STUDIO_DOMAIN_STATE_EVENT,
+  normalizeStudioDomain,
+  requestStudioDomain,
+} from './studio-shell-events.js';
+
+const LEGACY_ACTIVE_DOMAIN_KEY = 'quantora_active_specialist_domain';
 
 const SPECIALISTS = Object.freeze({
   'Travel Guide AI': {
@@ -48,29 +54,16 @@ const DOMAIN_CONFIG = Object.values(SPECIALISTS).reduce((acc, value) => {
   return acc;
 }, {});
 
+let activeDomain = null;
+let applying = false;
+
 function currentDomain() {
-  try {
-    const value = localStorage.getItem(ACTIVE_DOMAIN_KEY);
-    return DOMAIN_CONFIG[value] ? value : null;
-  } catch {
-    return null;
-  }
+  return normalizeStudioDomain(activeDomain);
 }
 
 function setCurrentDomain(domain) {
-  try {
-    if (domain) {
-      localStorage.setItem(ACTIVE_DOMAIN_KEY, domain);
-      // A generic Studio preference must never suppress a specialist landing
-      // state. Specialists always own their own welcome experience.
-      localStorage.setItem('quantora_hide_welcome', 'false');
-    } else {
-      localStorage.removeItem(ACTIVE_DOMAIN_KEY);
-    }
-  } catch {
-    // Domain state is a UX enhancement; storage failure must not block Studio.
-  }
-  document.documentElement.dataset.quantoraDomain = domain || '';
+  activeDomain = normalizeStudioDomain(domain);
+  document.documentElement.dataset.quantoraDomain = activeDomain || '';
 }
 
 function exactTextElements(text) {
@@ -97,38 +90,21 @@ function restoreDisplay(element) {
   delete element.dataset.quantoraOriginalDisplay;
 }
 
+function studioShell() {
+  return document.querySelector('.app-shell--studio');
+}
+
+function appHeader() {
+  return document.querySelector('.app-shell--studio .app-header');
+}
+
 function hideGlobalStudioHeader() {
-  const appHeader = document.querySelector('.app-shell--studio .app-header');
-  if (appHeader) setDisplay(appHeader, 'none');
+  const header = appHeader();
+  if (header) setDisplay(header, 'none');
 }
 
 function restoreGlobalStudioHeader() {
   document.querySelectorAll('.app-header[data-quantora-original-display]').forEach(restoreDisplay);
-}
-
-function hideInternalModelControls() {
-  const selectedModel = [...document.querySelectorAll('span')]
-    .find((element) => (element.textContent?.trim() || '').startsWith('Selected Model:'));
-  if (selectedModel) setDisplay(selectedModel, 'none');
-
-  [...document.querySelectorAll('span')]
-    .filter((element) => element.textContent?.trim() === 'Live API Engine Active')
-    .forEach((element) => setDisplay(element, 'none'));
-
-  [...document.querySelectorAll('button')].forEach((button) => {
-    const text = button.textContent?.trim() || '';
-    const title = button.getAttribute('title') || '';
-    if (
-      text.includes('Dual Arena Mode')
-      || text.includes('Arena Mode Active')
-      || title === 'Select AI Engine'
-      || title.includes('Web Search Grounding')
-      || title.includes('Live Web Search Enabled')
-      || title === 'Push raw prompt to Dream Canvas'
-    ) {
-      setDisplay(button, 'none');
-    }
-  });
 }
 
 function profileFirstName() {
@@ -138,24 +114,294 @@ function profileFirstName() {
   return alt.split(/\s+/)[0] || '';
 }
 
-function findSpecialistChatStream() {
-  const resetButton = [...document.querySelectorAll('button')]
-    .find((button) => button.textContent?.trim() === 'Reset Chat');
-  const header = resetButton?.parentElement?.parentElement || null;
-  return header?.nextElementSibling || null;
+function profileIdentity() {
+  const image = document.querySelector('.app-header img[alt]');
+  const name = image?.getAttribute('alt')?.trim() || 'Profile';
+  return {
+    name: name && name.toLowerCase() !== 'user' ? name : 'Profile',
+    imageSrc: image?.getAttribute('src') || '',
+  };
+}
+
+function findResetButton() {
+  return [...document.querySelectorAll('button')]
+    .find((button) => button.textContent?.trim() === 'Reset Chat') || null;
+}
+
+function findChatTopBar() {
+  const reset = findResetButton();
+  return reset?.parentElement?.parentElement || null;
+}
+
+function findChatStream() {
+  return findChatTopBar()?.nextElementSibling || null;
+}
+
+function hideChatTopBar() {
+  const topBar = findChatTopBar();
+  if (!topBar) return;
+  setDisplay(topBar, 'none');
+  const mainColumn = topBar.parentElement;
+  if (mainColumn) mainColumn.style.paddingTop = '0';
+}
+
+function findHeaderNavigationButton(pattern) {
+  const header = appHeader();
+  if (!header) return null;
+  return [...header.querySelectorAll('button')]
+    .find((button) => pattern.test(button.textContent?.trim() || '')) || null;
+}
+
+function openCanvasWorkspace() {
+  const button = findHeaderNavigationButton(/Dream-to-Action Canvas|Journey/i);
+  if (button) button.click();
+}
+
+function originalProfileButton() {
+  const header = appHeader();
+  return header?.querySelector('button[aria-controls="quantora-profile-menu"], button[aria-haspopup="dialog"]') || null;
+}
+
+function positionProfileMenuNearSidebar() {
+  const menu = document.getElementById('quantora-profile-menu');
+  const proxy = document.querySelector('[data-quantora-sidebar-profile]');
+  if (!menu || !proxy) return;
+  const rect = proxy.getBoundingClientRect();
+  const menuWidth = Math.min(320, Math.max(260, window.innerWidth - rect.right - 24));
+  Object.assign(menu.style, {
+    position: 'fixed',
+    left: `${Math.min(window.innerWidth - menuWidth - 12, rect.right + 10)}px`,
+    right: 'auto',
+    top: 'auto',
+    bottom: `${Math.max(12, window.innerHeight - rect.bottom)}px`,
+    width: `${menuWidth}px`,
+    maxHeight: `${Math.max(220, Math.min(620, rect.bottom - 18))}px`,
+    zIndex: '10000',
+  });
+}
+
+function openProfileMenu() {
+  const original = originalProfileButton();
+  if (!original) return;
+  original.click();
+  requestAnimationFrame(positionProfileMenuNearSidebar);
+  setTimeout(positionProfileMenuNearSidebar, 40);
+}
+
+function createSidebarButton({ label, icon, dataAttribute, onClick }) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset[dataAttribute] = 'true';
+  Object.assign(button.style, {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '9px 10px',
+    borderRadius: '9px',
+    border: '1px solid transparent',
+    background: 'transparent',
+    color: 'var(--text-primary, #fff)',
+    fontSize: '0.86rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    textAlign: 'left',
+  });
+  const iconNode = document.createElement('span');
+  iconNode.textContent = icon;
+  iconNode.setAttribute('aria-hidden', 'true');
+  Object.assign(iconNode.style, { width: '18px', textAlign: 'center', opacity: '0.9' });
+  const labelNode = document.createElement('span');
+  labelNode.textContent = label;
+  labelNode.style.flex = '1';
+  button.append(iconNode, labelNode);
+  button.addEventListener('mouseenter', () => {
+    button.style.background = 'rgba(255,255,255,0.055)';
+    button.style.borderColor = 'rgba(255,255,255,0.08)';
+  });
+  button.addEventListener('mouseleave', () => {
+    button.style.background = 'transparent';
+    button.style.borderColor = 'transparent';
+  });
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function ensureCanvasEntry() {
+  if (document.querySelector('[data-quantora-sidebar-canvas]')) return;
+  const historyLabel = exactTextElements('Chat History')[0];
+  const parent = historyLabel?.parentElement;
+  if (!historyLabel || !parent) return;
+
+  const block = document.createElement('div');
+  block.dataset.quantoraSidebarCanvas = 'true';
+  block.style.marginBottom = '18px';
+
+  const heading = document.createElement('div');
+  heading.textContent = 'Workspace';
+  Object.assign(heading.style, {
+    fontSize: '0.72rem',
+    fontWeight: '700',
+    color: 'var(--text-secondary, #94a3b8)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: '7px',
+    paddingLeft: '4px',
+  });
+
+  const canvas = createSidebarButton({
+    label: 'Canvas',
+    icon: '◫',
+    dataAttribute: 'quantoraSidebarCanvasButton',
+    onClick: openCanvasWorkspace,
+  });
+  canvas.dataset.quantoraSidebarCanvas = 'true';
+  block.append(heading, canvas);
+  parent.insertBefore(block, historyLabel);
+}
+
+function ensureProfileEntry() {
+  const existing = document.querySelector('[data-quantora-sidebar-profile]');
+  const feedbackLabel = exactTextElements('Feedback & Suggestions')[0];
+  const feedbackButton = feedbackLabel?.parentElement;
+  const footer = feedbackButton?.parentElement;
+  if (!feedbackButton || !footer) return;
+
+  const identity = profileIdentity();
+  if (existing) {
+    const name = existing.querySelector('[data-quantora-profile-name]');
+    if (name) setText(name, identity.name);
+    return;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.quantoraSidebarProfile = 'true';
+  Object.assign(button.style, {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px 9px',
+    marginBottom: '6px',
+    borderRadius: '10px',
+    border: '1px solid transparent',
+    background: 'transparent',
+    color: 'var(--text-primary, #fff)',
+    cursor: 'pointer',
+    textAlign: 'left',
+  });
+
+  let avatar;
+  if (identity.imageSrc) {
+    avatar = document.createElement('img');
+    avatar.src = identity.imageSrc;
+    avatar.alt = '';
+    Object.assign(avatar.style, { width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' });
+  } else {
+    avatar = document.createElement('span');
+    avatar.textContent = identity.name.charAt(0).toUpperCase();
+    Object.assign(avatar.style, {
+      width: '28px',
+      height: '28px',
+      borderRadius: '50%',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#fff',
+      background: 'linear-gradient(135deg, #f97316, #8b5cf6)',
+      fontWeight: '800',
+      fontSize: '0.78rem',
+      flexShrink: '0',
+    });
+  }
+
+  const name = document.createElement('span');
+  name.dataset.quantoraProfileName = 'true';
+  name.textContent = identity.name;
+  Object.assign(name.style, { flex: '1', fontSize: '0.85rem', fontWeight: '650', overflow: 'hidden', textOverflow: 'ellipsis' });
+  const chevron = document.createElement('span');
+  chevron.textContent = '›';
+  chevron.style.opacity = '0.6';
+
+  button.append(avatar, name, chevron);
+  button.addEventListener('mouseenter', () => {
+    button.style.background = 'rgba(255,255,255,0.055)';
+    button.style.borderColor = 'rgba(255,255,255,0.08)';
+  });
+  button.addEventListener('mouseleave', () => {
+    button.style.background = 'transparent';
+    button.style.borderColor = 'transparent';
+  });
+  button.addEventListener('click', openProfileMenu);
+  footer.insertBefore(button, feedbackButton);
+}
+
+function ensureSidebarShell() {
+  exactTextElements('Specialized Agents').forEach((element) => setText(element, 'Advisors'));
+  [...exactTextElements('Travel Guide AI'), ...exactTextElements('Travel Advisor')]
+    .forEach((label) => setText(label, 'Travel Advisor'));
+  ensureCanvasEntry();
+  ensureProfileEntry();
+  positionProfileMenuNearSidebar();
+}
+
+function clearAdvisorHighlight() {
+  document.querySelectorAll('[data-quantora-active-specialist]').forEach((row) => {
+    delete row.dataset.quantoraActiveSpecialist;
+    row.style.background = 'transparent';
+    row.style.borderColor = 'transparent';
+    row.style.fontWeight = '500';
+  });
+}
+
+function applyAdvisorHighlight(config) {
+  clearAdvisorHighlight();
+  if (!config) return;
+  for (const label of exactTextElements(config.label)) {
+    const row = label.parentElement;
+    if (!row || row.closest('[data-quantora-sidebar-profile]')) continue;
+    row.dataset.quantoraActiveSpecialist = config.domain;
+    row.style.background = config.domain === 'travel' ? 'rgba(37, 99, 235, 0.10)' : 'rgba(249, 115, 22, 0.10)';
+    row.style.borderColor = config.domain === 'travel' ? 'rgba(37, 99, 235, 0.28)' : 'rgba(249, 115, 22, 0.28)';
+    row.style.fontWeight = '700';
+  }
+}
+
+function findHeroPrompt() {
+  const texts = ['What would you like to build today?', 'What would you like to work on?', ...Object.values(DOMAIN_CONFIG).map((item) => item.hero)];
+  for (const text of texts) {
+    const found = exactTextElements(text)[0];
+    if (found) return found;
+  }
+  return null;
+}
+
+function minimalizeHero(hero) {
+  if (!hero) return;
+  Object.assign(hero.style, {
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
+    paddingTop: '18px',
+    paddingBottom: '18px',
+    marginTop: '0',
+    maxWidth: '720px',
+  });
 }
 
 function ensureFallbackLanding(config) {
-  const stream = findSpecialistChatStream();
+  const stream = findChatStream();
   if (!stream) return;
 
   let landing = stream.querySelector('[data-quantora-specialist-landing]');
-  const meaningfulChildren = [...stream.children].filter((child) => {
+  const visibleMeaningfulChildren = [...stream.children].filter((child) => {
     if (child === landing) return false;
-    return (child.textContent?.trim() || '').length > 0;
+    const style = window.getComputedStyle(child);
+    return style.display !== 'none' && style.visibility !== 'hidden' && (child.textContent?.trim() || '').length > 0;
   });
 
-  if (meaningfulChildren.length > 0) {
+  if (visibleMeaningfulChildren.length > 0) {
     landing?.remove();
     return;
   }
@@ -163,80 +409,81 @@ function ensureFallbackLanding(config) {
   if (!landing) {
     landing = document.createElement('div');
     landing.dataset.quantoraSpecialistLanding = config.domain;
-    const title = document.createElement('h1');
-    title.dataset.quantoraSpecialistLandingTitle = 'true';
+    const greeting = document.createElement('h1');
+    greeting.dataset.quantoraSpecialistLandingGreeting = 'true';
+    const question = document.createElement('h2');
+    question.dataset.quantoraSpecialistLandingQuestion = 'true';
     const support = document.createElement('p');
     support.dataset.quantoraSpecialistLandingSupport = 'true';
     const capabilities = document.createElement('div');
     capabilities.dataset.quantoraSpecialistLandingCapabilities = 'true';
-    landing.append(title, support, capabilities);
+    landing.append(greeting, question, support, capabilities);
     stream.prepend(landing);
   }
 
+  landing.dataset.quantoraSpecialistLanding = config.domain;
   const firstName = profileFirstName();
-  const title = landing.querySelector('[data-quantora-specialist-landing-title]');
-  const support = landing.querySelector('[data-quantora-specialist-landing-support]');
-  const capabilities = landing.querySelector('[data-quantora-specialist-landing-capabilities]');
-
-  setText(title, firstName ? `Welcome back, ${firstName}. ${config.hero}` : `Welcome back. ${config.hero}`);
-  setText(support, config.supporting);
-  setText(capabilities, config.capabilities);
+  setText(landing.querySelector('[data-quantora-specialist-landing-greeting]'), firstName ? `Welcome back, ${firstName}` : 'Welcome back');
+  setText(landing.querySelector('[data-quantora-specialist-landing-question]'), config.hero);
+  setText(landing.querySelector('[data-quantora-specialist-landing-support]'), config.supporting);
+  setText(landing.querySelector('[data-quantora-specialist-landing-capabilities]'), config.capabilities);
 
   Object.assign(landing.style, {
     width: '100%',
-    maxWidth: '780px',
+    maxWidth: '720px',
     margin: 'auto',
-    padding: '24px 28px 18px',
+    padding: '18px 24px',
     textAlign: 'center',
     boxSizing: 'border-box',
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
   });
-  Object.assign(title.style, {
-    margin: '0 0 12px',
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-greeting]').style, {
+    margin: '0 0 8px',
     color: 'var(--text-primary, #fff)',
-    fontSize: 'clamp(1.9rem, 3.2vw, 2.8rem)',
+    fontSize: 'clamp(1.75rem, 3vw, 2.45rem)',
     lineHeight: '1.12',
-    letterSpacing: '-0.035em',
+    letterSpacing: '-0.03em',
     fontWeight: '800',
   });
-  Object.assign(support.style, {
-    margin: '0 auto 18px',
-    maxWidth: '650px',
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-question]').style, {
+    margin: '0 0 10px',
     color: 'var(--text-secondary, #94a3b8)',
-    fontSize: '1rem',
-    lineHeight: '1.65',
+    fontSize: '1.18rem',
+    lineHeight: '1.35',
+    fontWeight: '600',
   });
-  Object.assign(capabilities.style, {
-    margin: '0 auto',
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-support]').style, {
+    margin: '0 auto 12px',
+    maxWidth: '620px',
+    color: 'var(--text-secondary, #94a3b8)',
+    fontSize: '0.95rem',
+    lineHeight: '1.55',
+  });
+  Object.assign(landing.querySelector('[data-quantora-specialist-landing-capabilities]').style, {
     color: config.domain === 'travel' ? '#60a5fa' : '#fb923c',
-    fontSize: '0.8rem',
+    fontSize: '0.76rem',
     fontWeight: '700',
-    letterSpacing: '0.02em',
   });
 }
 
-function applyHero(config) {
-  const genericPrompt = exactTextElements('What would you like to build today?')[0];
-  const existingDomainPrompt = Object.values(DOMAIN_CONFIG)
-    .map((item) => item.hero)
-    .flatMap((hero) => exactTextElements(hero))[0];
-  const prompt = genericPrompt || existingDomainPrompt;
-
+function applyAdvisorHero(config) {
+  if (!config) return;
+  const prompt = findHeroPrompt();
   if (!prompt) {
     ensureFallbackLanding(config);
     return;
   }
 
-  findSpecialistChatStream()?.querySelector('[data-quantora-specialist-landing]')?.remove();
+  findChatStream()?.querySelector('[data-quantora-specialist-landing]')?.remove();
   setText(prompt, config.hero);
-  prompt.style.marginBottom = '10px';
+  prompt.style.marginBottom = '8px';
 
   const hero = prompt.parentElement;
   if (!hero) return;
   hero.dataset.quantoraSpecialistHero = config.domain;
-  hero.style.paddingTop = '28px';
-  hero.style.paddingBottom = '26px';
-  hero.style.marginTop = '8px';
-  hero.style.maxWidth = '760px';
+  minimalizeHero(hero);
 
   const greeting = [...hero.querySelectorAll('h1')][0];
   if (greeting) {
@@ -252,11 +499,11 @@ function applyHero(config) {
   }
   setText(support, config.supporting);
   Object.assign(support.style, {
-    margin: '0 auto 18px',
+    margin: '0 auto 12px',
     maxWidth: '620px',
-    fontSize: '0.98rem',
-    lineHeight: '1.6',
-    color: 'var(--text-secondary)',
+    fontSize: '0.96rem',
+    lineHeight: '1.55',
+    color: 'var(--text-secondary, #94a3b8)',
   });
 
   let capability = hero.querySelector('[data-quantora-specialist-capabilities]');
@@ -267,102 +514,41 @@ function applyHero(config) {
   }
   setText(capability, config.capabilities);
   Object.assign(capability.style, {
-    margin: '0 auto 4px',
-    fontSize: '0.78rem',
+    margin: '0 auto 2px',
+    fontSize: '0.76rem',
     fontWeight: '700',
-    letterSpacing: '0.02em',
-    color: config.domain === 'travel' ? '#2563eb' : '#f97316',
-  });
-
-  [...hero.children].forEach((child) => {
-    const text = child.textContent?.trim() || '';
-    if (child === prompt || child === support || child === capability || child === greeting) return;
-    if (text.includes('Do not show this next time')) setDisplay(child, 'none');
-    if (child.querySelectorAll('h3').length > 0) setDisplay(child, 'none');
+    color: config.domain === 'travel' ? '#60a5fa' : '#fb923c',
   });
 }
 
-function applyHeader(config) {
-  hideGlobalStudioHeader();
-  hideInternalModelControls();
+function restoreNeutralHero() {
+  document.querySelectorAll('[data-quantora-specialist-support], [data-quantora-specialist-capabilities], [data-quantora-specialist-landing]')
+    .forEach((node) => node.remove());
+  const hero = document.querySelector('[data-quantora-specialist-hero]');
+  if (!hero) return;
+  delete hero.dataset.quantoraSpecialistHero;
+  minimalizeHero(hero);
 
-  const resetButton = [...document.querySelectorAll('button')]
-    .find((button) => button.textContent?.trim() === 'Reset Chat');
-  const header = resetButton?.parentElement?.parentElement || null;
-  if (!header) return;
+  const firstName = profileFirstName();
+  const greeting = hero.querySelector('h1');
+  if (greeting) setText(greeting, firstName ? `Welcome back, ${firstName}` : 'Welcome back');
 
-  header.style.marginBottom = '8px';
-  header.style.paddingBottom = '8px';
-
-  const title = header.querySelector('h2');
-  if (title) {
-    setText(title, config.label);
-    title.style.opacity = '1';
-    title.style.fontSize = '1.05rem';
-  }
-
-  const mainColumn = header.parentElement;
-  if (mainColumn) mainColumn.style.paddingTop = '6px';
-}
-
-function applySidebar(config) {
-  exactTextElements('Specialized Agents').forEach((element) => setText(element, 'Advisors'));
-
-  const travelLabels = [...exactTextElements('Travel Guide AI'), ...exactTextElements('Travel Advisor')];
-  travelLabels.forEach((label) => setText(label, 'Travel Advisor'));
-
-  document.querySelectorAll('[data-quantora-active-specialist]').forEach((row) => {
-    if (row.dataset.quantoraActiveSpecialist === config.domain) return;
-    delete row.dataset.quantoraActiveSpecialist;
-    row.style.background = 'transparent';
-    row.style.borderColor = 'transparent';
-    row.style.fontWeight = '500';
-  });
-
-  for (const label of exactTextElements(config.label)) {
-    const row = label.parentElement;
-    if (!row) continue;
-    row.dataset.quantoraActiveSpecialist = config.domain;
-    row.style.background = config.domain === 'travel' ? 'rgba(37, 99, 235, 0.10)' : 'rgba(249, 115, 22, 0.10)';
-    row.style.borderColor = config.domain === 'travel' ? 'rgba(37, 99, 235, 0.28)' : 'rgba(249, 115, 22, 0.28)';
-    row.style.fontWeight = '700';
-  }
+  const prompt = [...hero.querySelectorAll('h2,p,div')]
+    .find((node) => Object.values(DOMAIN_CONFIG).some((item) => node.textContent?.trim() === item.hero));
+  if (prompt) setText(prompt, 'What would you like to work on?');
 }
 
 function applyInput(config) {
-  const textarea = document.querySelector('textarea[placeholder*="Ask Quantora"], textarea[placeholder*="Where would you like"], textarea[placeholder*="financial"], textarea[placeholder*="research"], textarea[placeholder*="learn"]');
-  if (textarea && textarea.getAttribute('placeholder') !== config.placeholder) {
-    textarea.setAttribute('placeholder', config.placeholder);
-  }
-}
-
-let applying = false;
-function applyExperience() {
-  if (applying) return;
-  applying = true;
-  try {
-    const domain = currentDomain();
-    const config = domain ? DOMAIN_CONFIG[domain] : null;
-    const studioShell = document.querySelector('.app-shell--studio');
-    document.documentElement.dataset.quantoraDomain = domain || '';
-
-    if (!config || !studioShell) {
-      restoreGlobalStudioHeader();
-      return;
-    }
-
-    applySidebar(config);
-    applyHeader(config);
-    applyHero(config);
-    applyInput(config);
-  } finally {
-    applying = false;
-  }
+  const textarea = document.querySelector('textarea');
+  if (!textarea) return;
+  const placeholder = config?.placeholder || 'Ask anything — plan a trip, research an idea, study, or build something...';
+  if (textarea.getAttribute('placeholder') !== placeholder) textarea.setAttribute('placeholder', placeholder);
 }
 
 function specialistFromClick(target) {
   let node = target instanceof Element ? target : null;
   for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+    if (node.matches?.('[data-quantora-sidebar-profile], [data-quantora-sidebar-canvas]')) return null;
     const text = node.textContent?.trim() || '';
     if (SPECIALISTS[text]) return SPECIALISTS[text];
   }
@@ -395,18 +581,49 @@ function installFetchDomainBridge() {
   };
 }
 
-function openCleanWorkspace() {
-  const newChatLabel = exactTextElements('New Chat')[0];
-  if (newChatLabel instanceof HTMLElement) newChatLabel.click();
+function applyExperience() {
+  if (applying) return;
+  applying = true;
+  try {
+    const shell = studioShell();
+    if (!shell) {
+      restoreGlobalStudioHeader();
+      return;
+    }
+
+    hideGlobalStudioHeader();
+    hideChatTopBar();
+    ensureSidebarShell();
+
+    const domain = currentDomain();
+    const config = domain ? DOMAIN_CONFIG[domain] : null;
+    applyAdvisorHighlight(config);
+    if (config) applyAdvisorHero(config);
+    else restoreNeutralHero();
+    applyInput(config);
+  } finally {
+    applying = false;
+  }
 }
 
 export function installSpecialistExperience() {
   if (typeof window === 'undefined' || window.__quantoraSpecialistExperienceInstalled) return;
   window.__quantoraSpecialistExperienceInstalled = true;
 
+  try {
+    // One-time migration: the old global specialist key caused New Chat to
+    // inherit Travel/Study forever. Session.studioDomain is now authoritative.
+    localStorage.removeItem(LEGACY_ACTIVE_DOMAIN_KEY);
+  } catch {
+    // Storage cleanup must never block Studio.
+  }
+
   installFetchDomainBridge();
-  const stored = currentDomain();
-  if (stored) setCurrentDomain(stored);
+
+  window.addEventListener(STUDIO_DOMAIN_STATE_EVENT, (event) => {
+    setCurrentDomain(event?.detail?.domain);
+    requestAnimationFrame(applyExperience);
+  });
 
   document.addEventListener('click', (event) => {
     const specialist = specialistFromClick(event.target);
@@ -416,10 +633,12 @@ export function installSpecialistExperience() {
     event.stopPropagation();
     if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
 
+    // Optimistic presentation update; useStudioSession immediately creates the
+    // real advisor-scoped session and then publishes the authoritative state.
     setCurrentDomain(specialist.domain);
-    openCleanWorkspace();
+    requestStudioDomain(specialist.domain, { createNew: true });
     requestAnimationFrame(applyExperience);
-    setTimeout(applyExperience, 80);
+    setTimeout(applyExperience, 60);
 
     if (window.innerWidth < 768) document.activeElement?.blur?.();
   }, true);
@@ -434,6 +653,7 @@ export function installSpecialistExperience() {
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', () => requestAnimationFrame(positionProfileMenuNearSidebar));
   requestAnimationFrame(applyExperience);
 }
 
