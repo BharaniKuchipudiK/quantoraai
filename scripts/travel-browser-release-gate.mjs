@@ -69,6 +69,17 @@ await page.route('**/api/**', async (route) => {
     });
   }
 
+  if (path === '/api/youtube-validate') {
+    const id = url.searchParams.get('id');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(id === 'synthetic123'
+        ? { valid: true, id, title: 'Synthetic learning video', authorName: 'Synthetic Teacher' }
+        : { valid: false, id: id || '', reason: 'unavailable' }),
+    });
+  }
+
   if (path === '/api/chat') {
     chatTurn += 1;
     const firstReply = [
@@ -279,10 +290,16 @@ try {
 
   const youtubeLink = page.getByRole('link', { name: 'Synthetic learning video', exact: true }).first();
   await assertVisible(youtubeLink, 'Verified YouTube recommendation is not rendered as a clickable source link.');
-  const watchVideo = page.locator('[data-quantora-youtube-watch]').first();
-  await assertVisible(watchVideo, 'YouTube recommendation does not expose an in-Quantora Watch action.');
-  await watchVideo.click();
-  await assertVisible(page.locator('[data-quantora-media-canvas="youtube"]').first(), 'Watch action did not open the video inside the current Quantora session.');
+  await page.waitForFunction(() => {
+    const link = [...document.querySelectorAll('.markdown-prose a')]
+      .find((node) => node.textContent?.trim() === 'Synthetic learning video');
+    return link?.dataset.quantoraYoutubeValidation === 'valid';
+  });
+  const playVideo = page.locator('[data-quantora-youtube-play]').first();
+  await assertVisible(playVideo, 'YouTube recommendation does not expose an in-Quantora Play action.');
+  await assertHidden(page.locator('[data-quantora-youtube-watch]').first(), 'Legacy Watch action is still visible beside the verified Play control.');
+  await playVideo.click();
+  await assertVisible(page.locator('[data-quantora-media-canvas="youtube"]').first(), 'Play action did not open the video inside the current Quantora session.');
   await page.keyboard.press('Escape');
   await assertHidden(page.locator('[data-quantora-media-canvas="youtube"]').first(), 'Esc did not close the in-workspace media player.');
 
