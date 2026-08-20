@@ -96,7 +96,7 @@ html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio .fl
 /*
  * Agentic Workspaces are outcome-oriented experiences, not model consoles.
  * PCL owns model/runtime selection and failover behind the scenes. Keep model
- * experimentation available in neutral Quantora, but remove it completely once
+ * experimentation available in neutral/advanced Studio, but remove it completely once
  * a Travel / Study / Finance / Research workspace is active.
  */
 html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Select AI Engine"],
@@ -128,6 +128,19 @@ html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [da
 html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Publish to Vercel"],
 html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title^="Copy a shareable preview link"],
 html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-canvas-device-switcher="true"] {
+  display: none !important;
+}
+
+/*
+ * Code/build Preview is also a working surface. Deploy and Share are deliberate
+ * release actions, not things we should keep shouting at the user while they are
+ * iterating. Hide them both in the split workspace and in the docked quick
+ * preview; a future Release action can expose deployment when the build is ready.
+ */
+.app-shell--studio [data-quantora-legacy-workspace="true"] button[title="Publish to Vercel"],
+.app-shell--studio [data-quantora-legacy-workspace="true"] button[title^="Copy a shareable preview link"],
+.app-shell--studio [data-quantora-docked-preview="true"] button[title="Publish to Vercel"],
+.app-shell--studio [data-quantora-docked-preview="true"] button[title^="Copy a shareable preview link"] {
   display: none !important;
 }
 
