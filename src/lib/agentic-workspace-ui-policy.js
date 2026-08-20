@@ -359,15 +359,15 @@ function openYouTubeMediaCanvas({ id, title, href }) {
 function ensureYouTubeActions() {
   const anchors = document.querySelectorAll('.app-shell--studio .markdown-prose a[href]');
   for (const anchor of anchors) {
-    if (anchor.dataset.quantoraYouTubeSource) continue;
+    if (anchor.dataset.quantoraYoutubeSource) continue;
     const href = anchor.href;
     const id = parseYouTubeVideoId(href);
     if (!id) continue;
-    anchor.dataset.quantoraYouTubeSource = 'true';
+    anchor.dataset.quantoraYoutubeSource = 'true';
 
     const watch = document.createElement('button');
     watch.type = 'button';
-    watch.dataset.quantoraYouTubeWatch = 'true';
+    watch.dataset.quantoraYoutubeWatch = 'true';
     watch.textContent = 'Watch ▶';
     watch.setAttribute('title', 'Play in Quantora');
     Object.assign(watch.style, {
