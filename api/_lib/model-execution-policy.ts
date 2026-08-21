@@ -5,7 +5,14 @@ export type ModelAttempt = {
 };
 
 const GEMINI_STABLE_FALLBACK = 'gemini-flash-latest';
+const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
+const NEMOTRON_ULTRA = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const MAX_MODEL_ATTEMPTS = 2;
+
+const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
+  [NEMOTRON_SUPER]: NEMOTRON_ULTRA,
+  [NEMOTRON_ULTRA]: NEMOTRON_SUPER,
+};
 
 function providerOf(modelId: string): 'gemini' | 'openrouter' {
   return modelId.startsWith('gemini') ? 'gemini' : 'openrouter';
@@ -16,14 +23,10 @@ function providerOf(modelId: string): 'gemini' | 'openrouter' {
  * can see: quota exhaustion on one request must not become a provider-wide
  * retry storm.
  *
- * Keep the first retry on the same execution provider because /api/chat can
- * safely swap OpenRouter models before streaming. This is especially important
- * for the default openrouter/free route: if it is temporarily unhealthy, use a
- * second approved free OpenRouter model instead of falling back to Gemini.
- *
+ * The two live-canary-qualified free Nemotron routes are paired explicitly so
+ * a stale/empty registry cannot send a normal Studio turn back to Gemini.
  * Travel tool turns stay on Gemini because the current tool schema is attached
- * to Gemini. Cross-provider fallback there would silently remove tool
- * capability, which is worse than a fast explicit failure.
+ * to Gemini; cross-provider fallback there would silently remove capability.
  */
 export function modelAttemptsForTurn(input: {
   primaryModelId: string;
@@ -35,7 +38,9 @@ export function modelAttemptsForTurn(input: {
   const primaryProvider = providerOf(primary);
   const attempts: ModelAttempt[] = [{ id: primary, provider: primaryProvider, reason: 'primary' }];
 
+  const qualifiedFallback = QUALIFIED_OPENROUTER_FALLBACKS[primary];
   const rawCandidates = [
+    ...(qualifiedFallback ? [qualifiedFallback] : []),
     ...(input.fallbackModelIds || []),
     ...(primary.startsWith('gemini') ? [GEMINI_STABLE_FALLBACK] : []),
   ]
