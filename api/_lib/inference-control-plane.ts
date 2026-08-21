@@ -45,7 +45,19 @@ export type InferencePlanInput = {
 const GEMINI_STABLE = 'gemini-flash-latest';
 const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
 const MAX_INFERENCE_ATTEMPTS = 2;
+const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
+const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
+
+/**
+ * A build route cannot consume the entire turn before an independent fallback
+ * gets a chance. The final attempt receives whatever remains.
+ */
+export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemaining: number) {
+  const remaining = Math.max(0, Math.floor(totalRemainingMs));
+  if (attemptsRemaining <= 1) return remaining;
+  return Math.max(0, Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - RESERVED_INDEPENDENT_FALLBACK_MS));
+}
 
 function safeLabel(value: string, fallback: string) {
   const cleaned = String(value || '').trim().replace(/[^a-zA-Z0-9._:/-]/g, '-').slice(0, 120);

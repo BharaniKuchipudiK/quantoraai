@@ -14,6 +14,7 @@ Status: feature freeze. This note governs the calculator and simple-website reco
 - The first exact-SHA Preview canary subsequently proved the new tracing contract: inference and VFS parsing succeeded, then `/api/preview-compile` returned 422 because Vercel file tracing had omitted the browser packages resolved dynamically by the runtime compiler. The compiler function now declares those runtime files explicitly.
 - The next canary passed the calculator end to end and isolated the website failure to iframe execution (`ReferenceError: src is not defined`) after a successful compile. Build prompts now carry the opaque-sandbox execution contract explicitly, and the gate surfaces iframe diagnostics immediately instead of waiting for a selector timeout.
 - The fail-fast gate then rejected a calculator at compile time because generated code requested the nonexistent `lucide-react` export `LuCircle`. The two golden contracts now deliberately use the minimum runtime surface—React, semantic text, and CSS—so they test Quantora's core outcome path without an unnecessary third-party symbol dependency.
+- The following run reached neither VFS nor Preview because the primary route streamed no complete build before consuming the old 90-second turn budget. Build responses are now held until a route completes, the primary attempt has a bounded budget, and 45 seconds is reserved for a genuinely independent fallback domain before the 120-second turn deadline.
 
 ## Five Whys
 

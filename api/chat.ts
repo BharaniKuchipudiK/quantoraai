@@ -18,6 +18,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
 import { shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
 import {
+  inferenceAttemptBudgetMs,
   planInferenceRoutes,
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
@@ -30,7 +31,7 @@ import {
   isGoldenCanaryRequest,
   traceBoundary,
 } from './_lib/transaction-trace.js';
-import { SseWriter, assertBudget, readWithIdleTimeout } from './_lib/sse-writer.js';
+import { SseWriter, assertBudget, readWithIdleTimeout, remainingBudgetMs } from './_lib/sse-writer.js';
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
@@ -46,7 +47,7 @@ import { selectModelsForTurn } from "../src/lib/communication/routing/select-mod
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
-const TOTAL_CHAT_BUDGET_MS = 90_000;
+const TOTAL_CHAT_BUDGET_MS = 120_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
@@ -190,6 +191,13 @@ async function nextAsyncIteratorWithIdleTimeout(iterator: AsyncIterator<any>, id
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function inferenceAttemptTimeout(route: InferenceRoute, budgetMs: number) {
+  const error: any = new Error(`${route.gateway} route "${route.id}" timed out after its ${budgetMs}ms attempt budget.`);
+  error.status = 504;
+  error.code = 'INFERENCE_ATTEMPT_TIMEOUT';
+  return error;
 }
 
 function logTelemetry(
@@ -614,6 +622,9 @@ export default async function handler(req: any, res: any) {
           continue;
         }
         const attemptStartedAt = Date.now();
+        const attemptBudgetMs = effectiveBuildMode
+          ? inferenceAttemptBudgetMs(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS), attempts.length - index)
+          : remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS);
         traceBoundary({
           correlationId,
           boundary: 'inference.provider',
@@ -644,12 +655,26 @@ export default async function handler(req: any, res: any) {
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
               assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
-              const next = await nextAsyncIteratorWithIdleTimeout(iterator, PROVIDER_STREAM_IDLE_MS, 'Gemini stream');
+              const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
+              if (attemptRemainingMs <= 0) {
+                await iterator.return?.(undefined);
+                throw inferenceAttemptTimeout(route, attemptBudgetMs);
+              }
+              let next;
+              try {
+                next = await nextAsyncIteratorWithIdleTimeout(iterator, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'Gemini stream');
+              } catch (error) {
+                if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
+                  await iterator.return?.(undefined);
+                  throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                throw error;
+              }
               if (next.done) break;
               const chunk = next.value;
               if (chunk?.text) {
                 attemptReply += chunk.text;
-                sse.text(chunk.text);
+                if (!effectiveBuildMode) sse.text(chunk.text);
               }
               const groundingChunks = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
               if (Array.isArray(groundingChunks)) {
@@ -680,7 +705,22 @@ export default async function handler(req: any, res: any) {
             let buffer = '';
             while (true) {
               assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
-              const { done, value } = await readWithIdleTimeout(reader, PROVIDER_STREAM_IDLE_MS, 'OpenRouter stream');
+              const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
+              if (attemptRemainingMs <= 0) {
+                await reader.cancel().catch(() => {});
+                throw inferenceAttemptTimeout(route, attemptBudgetMs);
+              }
+              let chunkResult;
+              try {
+                chunkResult = await readWithIdleTimeout(reader, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'OpenRouter stream');
+              } catch (error) {
+                if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
+                  await reader.cancel().catch(() => {});
+                  throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                throw error;
+              }
+              const { done, value } = chunkResult;
               if (done) break;
               buffer += decoder.decode(value, { stream: true });
               const lines = buffer.split('\n');
@@ -692,7 +732,7 @@ export default async function handler(req: any, res: any) {
                   const token = parsed.choices?.[0]?.delta?.content || '';
                   if (token) {
                     attemptReply += token;
-                    sse.text(token);
+                    if (!effectiveBuildMode) sse.text(token);
                   }
                 } catch { /* malformed upstream events do not satisfy the route contract */ }
               }
@@ -718,6 +758,7 @@ export default async function handler(req: any, res: any) {
             costClass: route.costClass,
             durationMs: Date.now() - attemptStartedAt,
           });
+          if (effectiveBuildMode) sse.text(attemptReply);
           break;
         } catch (error: any) {
           lastRouteError = error;
@@ -737,7 +778,7 @@ export default async function handler(req: any, res: any) {
             costClass: route.costClass,
             durationMs: Date.now() - attemptStartedAt,
             statusCode: status,
-            detailCode: status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : 'provider-failure',
+            detailCode: status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
           });
           if (sse.isStarted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
         }

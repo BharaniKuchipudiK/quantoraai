@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { planInferenceRoutes } from './inference-control-plane.js';
+import { inferenceAttemptBudgetMs, planInferenceRoutes } from './inference-control-plane.js';
+
+test('build attempt budget reserves time for an independent fallback', () => {
+  assert.equal(inferenceAttemptBudgetMs(120_000, 2), 65_000);
+  assert.equal(inferenceAttemptBudgetMs(90_000, 2), 45_000);
+  assert.equal(inferenceAttemptBudgetMs(55_000, 1), 55_000);
+});
 
 test('selected model remains primary while failover prefers an independent gateway and quota domain', async () => {
   const routes = await planInferenceRoutes({
