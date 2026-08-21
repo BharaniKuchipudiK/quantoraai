@@ -12,6 +12,7 @@ import {
   syncRemoteProjectResources,
   syncRemoteProjectSessions,
 } from '../lib/project-store.js';
+import { compactOfficeMessages } from '../lib/office-session-state.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -128,7 +129,11 @@ function loadSessions(defaultGreeting) {
 
 function persistSessions(sessions) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    const compact = (Array.isArray(sessions) ? sessions : []).map((session) => ({
+      ...session,
+      messages: compactOfficeMessages(session.messages || []),
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
   } catch (e) {
     console.error(e);
   }

@@ -22,6 +22,7 @@ import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { activeOfficeArtifact } from '../lib/office-briefing.js';
+import { downloadOfficeArtifact, resolveOfficeDownloadPayload } from '../lib/office-artifact-cache.js';
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
@@ -451,6 +452,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
+  const dismissedOfficeFingerprintRef = useRef(null);
+  const dismissedOfficeMessageIdRef = useRef(null);
+
+  const closeStudioWorkspace = useCallback(() => {
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
+    const fingerprint = (lastAi?.officeAttachment || activeOfficeArtifact(messages))?.verification?.previewFingerprint;
+    if (fingerprint) {
+      dismissedOfficeFingerprintRef.current = fingerprint;
+      dismissedOfficeMessageIdRef.current = lastAi?.id ?? null;
+    }
+    setIsWorkspaceMode(false);
+  }, [messages]);
 
   useEffect(() => {
     if (canAutoOpenCodeWorkspace(studioDomain)) return;
@@ -1196,12 +1209,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           </div>
                           <button
                             onClick={() => {
-                              const link = document.createElement('a');
-                              link.href = `data:${msg.officeAttachment.mimeType};base64,${msg.officeAttachment.data}`;
-                              link.download = msg.officeAttachment.fileName;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
+                              try {
+                                downloadOfficeArtifact(resolveOfficeDownloadPayload(msg.officeAttachment, messages));
+                              } catch (error) {
+                                console.error('Office download failed:', error);
+                              }
                             }}
                             style={{
                               background: '#2563eb',
@@ -1464,20 +1476,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   useEffect(() => {
     if (!isGenerating && messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
-      const officeArtifact = lastMsg.officeAttachment?.htmlPreview
+      const lastOffice = lastMsg.officeAttachment?.htmlPreview
         ? lastMsg.officeAttachment
-        : activeOfficeArtifact(messages);
-      if (officeArtifact?.htmlPreview && !(lastMsg.text && lastMsg.text.includes('<clear-workspace />'))) {
-        const fileName = officeArtifact.kind === 'excel'
-          ? 'workbook.html'
-          : officeArtifact.kind === 'word'
-            ? 'document.html'
-            : 'presentation.html';
-        setWorkspaceCode(officeArtifact.htmlPreview);
-        setVfs({ [fileName]: { content: officeArtifact.htmlPreview, language: 'html' } });
-        setWorkspaceActiveTab('preview');
-        setIsWorkspaceMode(true);
+        : null;
+      if (lastOffice?.htmlPreview && !(lastMsg.text && lastMsg.text.includes('<clear-workspace />'))) {
+        const fingerprint = lastOffice.verification?.previewFingerprint || null;
+        const dismissed = fingerprint
+          && fingerprint === dismissedOfficeFingerprintRef.current
+          && lastMsg.id === dismissedOfficeMessageIdRef.current;
+        if (!dismissed) {
+          const fileName = lastOffice.kind === 'excel'
+            ? 'workbook.html'
+            : lastOffice.kind === 'word'
+              ? 'document.html'
+              : 'presentation.html';
+          dismissedOfficeFingerprintRef.current = null;
+          dismissedOfficeMessageIdRef.current = null;
+          setWorkspaceCode(lastOffice.htmlPreview);
+          setVfs({ [fileName]: { content: lastOffice.htmlPreview, language: 'html' } });
+          setWorkspaceActiveTab('preview');
+          setIsWorkspaceMode(true);
+          if (lastMsg.sender === 'ai') setLastProcessedMessageId(lastMsg.id);
+          return;
+        }
         if (lastMsg.sender === 'ai') setLastProcessedMessageId(lastMsg.id);
+        return;
+      }
+      if (!lastMsg.officeAttachment && activeOfficeArtifact(messages) && (isWorkspaceMode || dismissedOfficeFingerprintRef.current)) {
+        if (lastMsg.sender === 'ai' && lastMsg.id !== lastProcessedMessageId) {
+          setLastProcessedMessageId(lastMsg.id);
+        }
         return;
       }
       if (lastMsg.sender === 'ai' && lastMsg.id !== lastProcessedMessageId) {
@@ -3054,7 +3082,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                  </button>
               )}
               <button 
-                onClick={() => setIsWorkspaceMode(false)}
+                onClick={closeStudioWorkspace}
                 style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
               >
                 <X size={16} />
@@ -3077,7 +3105,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       ref={previewCanvasRef}
                       code={workspaceCode}
                       isLight={isLight}
-                      onClose={() => setIsWorkspaceMode(false)}
+                      onClose={closeStudioWorkspace}
                       hideHeader
                       user={user}
                       onRequireAuth={onOpenAuth}

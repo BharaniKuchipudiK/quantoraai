@@ -105,6 +105,21 @@ export function getCachedOfficeArtifact(fingerprint) {
   return cache.get(fingerprint) || null;
 }
 
+export function resolveOfficeDownloadPayload(attachment, messages = []) {
+  const fp = attachment?.verification?.previewFingerprint;
+  const cached = getCachedOfficeArtifact(fp);
+  if (cached && validateOfficeArtifactEnvelope(cached).valid) return cached;
+  if (attachment && validateOfficeArtifactEnvelope(attachment).valid) return attachment;
+  const list = Array.isArray(messages) ? messages : [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const candidate = list[index]?.officeAttachment;
+    if (!candidate?.data) continue;
+    if (fp && candidate?.verification?.previewFingerprint !== fp) continue;
+    if (validateOfficeArtifactEnvelope(candidate).valid) return candidate;
+  }
+  return attachment;
+}
+
 export function clearOfficeArtifactCache() {
   cache.clear();
 }

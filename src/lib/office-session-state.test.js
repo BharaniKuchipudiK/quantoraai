@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { latestVerifiedOfficeArtifact } from './office-session-state.js';
+import { compactOfficeMessages, latestVerifiedOfficeArtifact } from './office-session-state.js';
 
 const artifact = {
   kind: 'powerpoint',
@@ -24,4 +24,29 @@ test('latestVerifiedOfficeArtifact returns the newest verified canonical artifac
 test('incomplete Office envelopes are not treated as active artifact state', () => {
   assert.equal(latestVerifiedOfficeArtifact([{ sender: 'ai', officeAttachment: { ...artifact, htmlPreview: '' } }]), null);
   assert.equal(latestVerifiedOfficeArtifact([{ sender: 'ai', officeAttachment: { ...artifact, spec: null } }]), null);
+});
+
+test('compactOfficeMessages keeps one binary and strips HTML fences from chat text', () => {
+  const messages = [
+    {
+      sender: 'ai',
+      text: '✅ generated\n\n```html\n<html>old</html>\n```',
+      codeSnippet: '<html>old</html>',
+      officeAttachment: { ...artifact, htmlPreview: '<html>old</html>', data: 'B'.repeat(1000), verification: { passed: true, previewFingerprint: 'oldold01' } },
+    },
+    {
+      sender: 'ai',
+      text: '✅ generated\n\n```html\n<html>deck</html>\n```',
+      codeSnippet: '<html>deck</html>',
+      officeAttachment: artifact,
+    },
+  ];
+  const compact = compactOfficeMessages(messages);
+  assert.equal(compact[0].officeAttachment.data, undefined);
+  assert.equal(compact[0].officeAttachment.htmlPreview, undefined);
+  assert.doesNotMatch(compact[1].text, /```html/);
+  assert.equal(compact[1].officeAttachment.data, artifact.data);
+  assert.equal(compact[1].officeAttachment.htmlPreview, artifact.htmlPreview);
+  assert.equal(compact[1].codeSnippet, undefined);
+  assert.equal(latestVerifiedOfficeArtifact(compact), compact[1].officeAttachment);
 });
