@@ -16,7 +16,20 @@ import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
-import { modelAttemptsForTurn, shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
+import { shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
+import {
+  planInferenceRoutes,
+  recordInferenceRouteFailure,
+  recordInferenceRouteSuccess,
+  type InferenceRoute,
+} from './_lib/inference-control-plane.js';
+import { providerCircuitStore } from './_lib/provider-circuit-store.js';
+import {
+  attachCorrelationId,
+  correlationIdForRequest,
+  isGoldenCanaryRequest,
+  traceBoundary,
+} from './_lib/transaction-trace.js';
 import { SseWriter, assertBudget, readWithIdleTimeout } from './_lib/sse-writer.js';
 import {
   buildConversationSnapshot,
@@ -269,8 +282,18 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const correlationId = correlationIdForRequest(req);
+  attachCorrelationId(res, correlationId);
+  const goldenCanary = isGoldenCanaryRequest(req);
+  const transaction = typeof req.body?.goldenTransaction === 'string'
+    ? req.body.goldenTransaction.slice(0, 80)
+    : null;
+  traceBoundary({ correlationId, boundary: 'api.chat', state: 'started', transaction, route: '/api/chat' });
+
   const sessionUser = getSessionUser(req);
-  const limitKey = sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
+  const limitKey = goldenCanary
+    ? 'chat:golden-canary'
+    : sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
   if (isRateLimited(limitKey, RATE_LIMIT_PER_MINUTE, 60_000)) {
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
@@ -377,7 +400,7 @@ export default async function handler(req: any, res: any) {
     const auth = sessionUser ? await requireActiveSession(req, res) : null;
     if (auth && !auth.ok) return;
     const activeSessionUser = auth?.ok ? auth.value.sessionUser : sessionUser;
-    const mayUseServerKeys = Boolean(activeSessionUser);
+    const mayUseServerKeys = Boolean(activeSessionUser) || goldenCanary;
     const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY || await fetchApiGatewayKey('OPENROUTER') : undefined);
     const effectiveGeminiKey = userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
 
@@ -392,7 +415,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser) {
+    if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser && !goldenCanary) {
       return res.status(401).json({ error: "Please sign in to use Quantora's built-in AI, or add your own API key.", requiresAuth: true });
     }
 
@@ -515,12 +538,270 @@ export default async function handler(req: any, res: any) {
     };
 
     const travelToolsEnabled = shouldEnableTravelTools(normalizedStudioDomain);
-    const attempts = modelAttemptsForTurn({
+    const attempts = await planInferenceRoutes({
       primaryModelId: modelRouting?.primaryModelId || modelId,
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
-      travelToolsEnabled,
+      models: registryModels,
+      requiredCapabilities: travelToolsEnabled
+        ? ['text', 'travel-tools']
+        : visionImages.length ? ['text', 'vision'] : effectiveBuildMode ? ['text', 'code'] : ['text'],
+      geminiAvailable: Boolean(effectiveGeminiKey),
+      openRouterAvailable: Boolean(effectiveOpenRouterKey),
+      geminiCredentialScope: userKey ? 'user' : 'server',
+      openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+      circuitStore: providerCircuitStore,
     });
     if (!attempts.length) return res.status(400).json({ error: 'No executable model was selected.' });
+    traceBoundary({
+      correlationId,
+      boundary: 'inference.plan',
+      state: 'selected',
+      transaction,
+      modelId: attempts[0].id,
+      gateway: attempts[0].gateway,
+      upstreamProvider: attempts[0].upstreamProvider,
+      failureDomain: attempts[0].failureDomain,
+      quotaDomain: attempts[0].quotaDomain,
+      costClass: attempts[0].costClass,
+      health: attempts[0].health,
+      circuit: attempts[0].circuit,
+    });
+
+    // Provider-neutral text/build execution. The route is not committed until
+    // the upstream produces a usable first token, so a dead endpoint, exhausted
+    // quota domain, or empty stream can fail over before Quantora starts SSE.
+    if (!travelToolsEnabled) {
+      const formattedHistory = [
+        { role: "system", content: finalSystemPrompt },
+        ...(boundedHistory || []).map((item: any) => ({
+          role: item.role === "model" || item.role === "assistant" || item.sender === "ai" ? "assistant" : "user",
+          content: item.text || item.content || "",
+        })),
+      ];
+      formattedHistory.push({
+        role: "user",
+        content: visionImages.length
+          ? [
+              ...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })),
+              { type: "text", text: message },
+            ]
+          : message,
+      });
+      const geminiContents = buildGeminiContents(boundedHistory, message, visionImages);
+      const sources: Array<{ uri: string; title: string }> = [];
+      const seenSources = new Set<string>();
+      let fullReply = '';
+      let usedRoute: InferenceRoute | null = null;
+      let lastRouteError: any = null;
+      const failedQuotaDomains = new Set<string>();
+
+      for (let index = 0; index < attempts.length; index += 1) {
+        const route = attempts[index];
+        if (failedQuotaDomains.has(route.quotaDomain)) {
+          traceBoundary({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'skipped',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            upstreamProvider: route.upstreamProvider,
+            failureDomain: route.failureDomain,
+            quotaDomain: route.quotaDomain,
+            costClass: route.costClass,
+            detailCode: 'quota-domain-failed-this-turn',
+          });
+          continue;
+        }
+        const attemptStartedAt = Date.now();
+        traceBoundary({
+          correlationId,
+          boundary: 'inference.provider',
+          state: 'attempting',
+          transaction,
+          modelId: route.id,
+          gateway: route.gateway,
+          upstreamProvider: route.upstreamProvider,
+          failureDomain: route.failureDomain,
+          quotaDomain: route.quotaDomain,
+          costClass: route.costClass,
+          health: route.health,
+          circuit: route.circuit,
+        });
+
+        try {
+          let attemptReply = '';
+          if (route.provider === 'gemini') {
+            const stream = await openGeminiStream({
+              apiKey: effectiveGeminiKey as string,
+              model: route.id,
+              contents: geminiContents,
+              systemInstruction: finalSystemPrompt,
+              temperature: dynamicTemperature,
+              grounding,
+              travelToolsEnabled: false,
+            });
+            const iterator = stream[Symbol.asyncIterator]();
+            while (true) {
+              assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+              const next = await nextAsyncIteratorWithIdleTimeout(iterator, PROVIDER_STREAM_IDLE_MS, 'Gemini stream');
+              if (next.done) break;
+              const chunk = next.value;
+              if (chunk?.text) {
+                attemptReply += chunk.text;
+                sse.text(chunk.text);
+              }
+              const groundingChunks = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
+              if (Array.isArray(groundingChunks)) {
+                for (const groundingChunk of groundingChunks) {
+                  const uri = groundingChunk?.web?.uri;
+                  if (uri && !seenSources.has(uri)) {
+                    seenSources.add(uri);
+                    sources.push({ uri, title: groundingChunk?.web?.title || uri });
+                  }
+                }
+              }
+            }
+          } else {
+            const resolved = resolveOpenRouterModelId(route.id);
+            if (resolved.error) throw new Error(resolved.error);
+            const response = await openOpenRouterResponse({
+              key: effectiveOpenRouterKey as string,
+              modelId: resolved.slug as string,
+              modelName: route.id,
+              messages: formattedHistory,
+              temperature: dynamicTemperature,
+              grounding,
+              jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'),
+            });
+            if (!response.body) throw Object.assign(new Error('OpenRouter API returned no body.'), { status: 502 });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            while (true) {
+              assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+              const { done, value } = await readWithIdleTimeout(reader, PROVIDER_STREAM_IDLE_MS, 'OpenRouter stream');
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+              for (const line of lines) {
+                if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+                try {
+                  const parsed = JSON.parse(line.slice(6));
+                  const token = parsed.choices?.[0]?.delta?.content || '';
+                  if (token) {
+                    attemptReply += token;
+                    sse.text(token);
+                  }
+                } catch { /* malformed upstream events do not satisfy the route contract */ }
+              }
+            }
+          }
+
+          if (!attemptReply.trim()) {
+            throw Object.assign(new Error(`${route.gateway} returned an empty response.`), { status: 502 });
+          }
+          fullReply = attemptReply;
+          usedRoute = route;
+          await recordInferenceRouteSuccess(providerCircuitStore, route);
+          traceBoundary({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'succeeded',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            upstreamProvider: route.upstreamProvider,
+            failureDomain: route.failureDomain,
+            quotaDomain: route.quotaDomain,
+            costClass: route.costClass,
+            durationMs: Date.now() - attemptStartedAt,
+          });
+          break;
+        } catch (error: any) {
+          lastRouteError = error;
+          const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
+          if (status === 429) failedQuotaDomains.add(route.quotaDomain);
+          await recordInferenceRouteFailure(providerCircuitStore, route, status);
+          traceBoundary({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'failed',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            upstreamProvider: route.upstreamProvider,
+            failureDomain: route.failureDomain,
+            quotaDomain: route.quotaDomain,
+            costClass: route.costClass,
+            durationMs: Date.now() - attemptStartedAt,
+            statusCode: status,
+            detailCode: status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : 'provider-failure',
+          });
+          if (sse.isStarted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+        }
+      }
+
+      if (!usedRoute) throw lastRouteError || new Error('No inference route completed the turn.');
+      if (grounding && sources.length) {
+        let sourceBlock = '\n\n---\n**Sources**\n';
+        sources.slice(0, 5).forEach((source, index) => { sourceBlock += `${index + 1}. [${source.title}](${source.uri})\n`; });
+        fullReply += sourceBlock;
+        sse.text(sourceBlock);
+      }
+
+      const latencyMs = Date.now() - startTime;
+      logTelemetry(
+        usedRoute.id,
+        latencyMs,
+        fullReply.length,
+        usedRoute.gateway === 'gemini' ? 'Gemini' : 'OpenRouter',
+        activeSessionUser?.sub ?? null,
+        usedRoute.gateway === 'gemini' ? !userKey && mayUseServerKeys : !openRouterKey && mayUseServerKeys,
+        telemetryContext,
+        req,
+      );
+      recordModelQualityEvent({
+        requestId,
+        modelId: usedRoute.id,
+        taskCategory,
+        outcome: 'success',
+        latencyMs,
+        fallbackFrom: usedRoute.reason === 'fallback' ? modelId : fallbackFrom,
+      });
+      sse.done({
+        provider: `${usedRoute.gateway === 'gemini' ? 'Google Gemini' : 'OpenRouter'} (${usedRoute.id})`,
+        latencyMs,
+        modelId: usedRoute.id,
+        requestId,
+        correlationId,
+        liveConnected: true,
+        grounded: grounding && sources.length > 0,
+        fallbackUsed: usedRoute.reason === 'fallback',
+        inferenceRoute: {
+          gateway: usedRoute.gateway,
+          upstreamProvider: usedRoute.upstreamProvider,
+          failureDomain: usedRoute.failureDomain,
+          quotaDomain: usedRoute.quotaDomain,
+          costClass: usedRoute.costClass,
+          health: usedRoute.health,
+          circuit: usedRoute.circuit,
+        },
+        conversation: conversationMetadata(fullReply),
+      });
+      traceBoundary({
+        correlationId,
+        boundary: 'api.chat',
+        state: 'succeeded',
+        transaction,
+        route: '/api/chat',
+        modelId: usedRoute.id,
+        gateway: usedRoute.gateway,
+        durationMs: latencyMs,
+      });
+      return;
+    }
 
     if (attempts[0].provider === 'gemini') {
       if (!effectiveGeminiKey) {
@@ -669,6 +950,7 @@ export default async function handler(req: any, res: any) {
         latencyMs,
         modelId: usedModel,
         requestId,
+        correlationId,
         liveConnected: true,
         grounded: grounding && sources.length > 0,
         fallbackUsed: modelFallbackUsed,
@@ -765,6 +1047,7 @@ export default async function handler(req: any, res: any) {
       latencyMs,
       modelId: usedOpenRouterModel,
       requestId,
+      correlationId,
       liveConnected: true,
       fallbackUsed: modelFallbackUsed,
       conversation: conversationMetadata(fullReply),
@@ -772,6 +1055,16 @@ export default async function handler(req: any, res: any) {
     return;
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
+    traceBoundary({
+      correlationId,
+      boundary: 'api.chat',
+      state: 'failed',
+      transaction,
+      route: '/api/chat',
+      durationMs: Date.now() - startTime,
+      statusCode: Number(err?.status || 500),
+      detailCode: Number(err?.status) === 429 ? 'quota-exhausted' : 'chat-failure',
+    });
     if (req.body?.task !== "repair" && req.body?.task !== "feedback" && typeof req.body?.modelId === "string") {
       recordModelQualityEvent({
         requestId,
@@ -795,6 +1088,7 @@ export default async function handler(req: any, res: any) {
         retryable: retryableProviderFailure,
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,
+        correlationId,
       });
       return;
     }
@@ -803,6 +1097,7 @@ export default async function handler(req: any, res: any) {
       error: publicError,
       modelName: req.body?.modelName || req.body?.modelId,
       requestId,
+      correlationId,
     });
   }
 }

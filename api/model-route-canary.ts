@@ -1,9 +1,14 @@
-const CANARY_TOKEN = 'm5J14JD7725ajbFJs5N91e6IPn-y9tOU';
+import { clientIp, isRateLimited } from './_lib/rate-limit.js';
+import { isGoldenCanaryRequest } from './_lib/transaction-trace.js';
+
 const CANARY_MODEL = 'deepseek/deepseek-chat';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false });
-  if (req.query?.token !== CANARY_TOKEN) return res.status(404).json({ ok: false });
+  if (!isGoldenCanaryRequest(req)) return res.status(404).json({ ok: false });
+  if (isRateLimited(`model-route-canary:${clientIp(req)}`, 6, 60_000)) {
+    return res.status(429).json({ ok: false, reason: 'rate_limited' });
+  }
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return res.status(503).json({ ok: false, reason: 'missing_key' });

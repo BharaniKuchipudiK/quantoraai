@@ -14,6 +14,12 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
+import {
+  correlationHeaders,
+  createCorrelationId,
+  normalizeClientCorrelationId,
+  recordClientBoundary,
+} from '../lib/transaction-trace.js';
 
 const CHAT_TURN_DEADLINE_MS = 90_000;
 
@@ -144,6 +150,10 @@ export function useChatStream({
     if (isGenerating) return;
 
     const visibleUserText = text.trim();
+    const turnCorrelationId = createCorrelationId('studio');
+    const goldenTransaction = (() => {
+      try { return sessionStorage.getItem('quantora_golden_transaction') || null; } catch { return null; }
+    })();
     rememberActivePclSession(activeSessionId);
     const memoryIntent = detectPclMemoryConsentIntent(visibleUserText);
     if (memoryIntent === 'grant') {
@@ -316,6 +326,8 @@ export function useChatStream({
       projectId: sessionContext?.projectId || null,
       studioDomain,
       ...pclEnvelope,
+      correlationId: turnCorrelationId,
+      ...(goldenTransaction ? { goldenTransaction } : {}),
     });
 
     if (effectiveArenaMode) {
@@ -355,7 +367,7 @@ export function useChatStream({
           const res = await fetch('/api/chat', {
             signal: controller.signal,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify(requestBodyFor(model)),
           });
           if (!res.ok) {
@@ -426,6 +438,8 @@ export function useChatStream({
       provider: targetModel.name,
       liveConnected: true,
       executionStatus: null,
+      correlationId: turnCorrelationId,
+      ...(goldenTransaction ? { goldenTransaction } : {}),
       ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
     }]);
 
@@ -444,12 +458,13 @@ export function useChatStream({
       const res = await fetch('/api/chat', {
         signal: controller.signal,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...requestBodyFor(targetModel),
           message: messageForModel,
         })
       });
+      const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -515,6 +530,8 @@ export function useChatStream({
               latencyMs: parsed.latencyMs || 0,
               executionStatus: null,
               ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
+              correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
+              ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
             } : m));
           }
         }
@@ -544,6 +561,10 @@ export function useChatStream({
       }
 
       const normalized = normalizeAssistantResponse(currentText);
+      void recordClientBoundary(responseCorrelationId, 'browser.response-parser', 'parsed', {
+        transaction: goldenTransaction,
+        detailCode: normalized.displayText ? 'assistant-response-valid' : 'assistant-response-empty',
+      });
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
         ...m,
         text: normalized.displayText,
@@ -551,6 +572,7 @@ export function useChatStream({
         ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
         ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
         ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
+        correlationId: responseCorrelationId,
       } : m));
       await persistPclContinuity({
         sessionId: pclEnvelope.sessionId,

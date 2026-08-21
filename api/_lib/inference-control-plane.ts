@@ -1,0 +1,197 @@
+import type { AtomicProviderCircuitStore, ProviderCircuitState } from './provider-resilience.js';
+
+export type InferenceGateway = 'gemini' | 'openrouter';
+export type InferenceCapability = 'text' | 'code' | 'vision' | 'travel-tools';
+export type InferenceCostClass = 'free' | 'low' | 'standard' | 'unknown';
+
+export type InferenceRoute = {
+  id: string;
+  provider: InferenceGateway;
+  gateway: InferenceGateway;
+  upstreamProvider: string;
+  reason: 'primary' | 'fallback';
+  capabilities: InferenceCapability[];
+  health: 'available' | 'unknown' | 'offline';
+  quotaDomain: string;
+  failureDomain: string;
+  costClass: InferenceCostClass;
+  circuitKey: string;
+  domainCircuitKey: string;
+  circuit: 'closed' | 'open';
+};
+
+export type InferenceModelLike = {
+  id?: string;
+  provider?: string;
+  available?: boolean;
+  lifecycle?: string;
+  health?: string;
+  pricingKind?: string;
+};
+
+export type InferencePlanInput = {
+  primaryModelId: string;
+  fallbackModelIds?: string[];
+  models?: InferenceModelLike[];
+  requiredCapabilities?: InferenceCapability[];
+  geminiAvailable: boolean;
+  openRouterAvailable: boolean;
+  geminiCredentialScope?: 'server' | 'user';
+  openRouterCredentialScope?: 'server' | 'user';
+  circuitStore?: Pick<AtomicProviderCircuitStore, 'get'>;
+  now?: number;
+};
+
+const GEMINI_STABLE = 'gemini-flash-latest';
+const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
+const MAX_INFERENCE_ATTEMPTS = 2;
+const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
+
+function safeLabel(value: string, fallback: string) {
+  const cleaned = String(value || '').trim().replace(/[^a-zA-Z0-9._:/-]/g, '-').slice(0, 120);
+  return cleaned || fallback;
+}
+
+function gatewayFor(modelId: string): InferenceGateway {
+  return modelId.startsWith('gemini') ? 'gemini' : 'openrouter';
+}
+
+function upstreamProviderFor(modelId: string, registry?: InferenceModelLike) {
+  if (gatewayFor(modelId) === 'gemini') return 'google';
+  const fromId = modelId.includes('/') ? modelId.split('/')[0] : '';
+  return safeLabel(fromId || registry?.provider || 'unknown', 'unknown').toLowerCase();
+}
+
+function capabilitiesFor(modelId: string): InferenceCapability[] {
+  if (gatewayFor(modelId) === 'gemini') return ['text', 'code', 'vision', 'travel-tools'];
+  return ['text', 'code'];
+}
+
+function costClassFor(modelId: string, registry?: InferenceModelLike): InferenceCostClass {
+  const pricing = String(registry?.pricingKind || '').toLowerCase();
+  if (modelId.endsWith(':free') || pricing === 'free' || pricing === 'free-tier') return 'free';
+  if (modelId === OPENROUTER_LOW_COST) return 'low';
+  if (pricing === 'paid') return 'standard';
+  return 'unknown';
+}
+
+function healthFor(registry?: InferenceModelLike): InferenceRoute['health'] {
+  if (!registry) return 'unknown';
+  if (registry.available === false || ['retired', 'offline', 'unavailable'].includes(String(registry.lifecycle || registry.health || '').toLowerCase())) {
+    return 'offline';
+  }
+  return 'available';
+}
+
+function isOpen(state: ProviderCircuitState | null, now: number) {
+  return Boolean(state?.openedUntil && state.openedUntil > now);
+}
+
+async function describeRoute(
+  modelId: string,
+  reason: InferenceRoute['reason'],
+  input: InferencePlanInput,
+  registry: Map<string, InferenceModelLike>,
+): Promise<InferenceRoute | null> {
+  const gateway = gatewayFor(modelId);
+  if (gateway === 'gemini' && !input.geminiAvailable) return null;
+  if (gateway === 'openrouter' && !input.openRouterAvailable) return null;
+
+  const model = registry.get(modelId);
+  const capabilities = capabilitiesFor(modelId);
+  const required = input.requiredCapabilities || ['text'];
+  if (required.some((capability) => !capabilities.includes(capability))) return null;
+
+  const credentialScope = gateway === 'gemini'
+    ? input.geminiCredentialScope || 'server'
+    : input.openRouterCredentialScope || 'server';
+  const quotaDomain = `${gateway}:${credentialScope}`;
+  const failureDomain = `${gateway}:${credentialScope}`;
+  const upstreamProvider = upstreamProviderFor(modelId, model);
+  const circuitKey = `inference:route:${gateway}:${upstreamProvider}:${safeLabel(modelId, 'model')}`;
+  const domainCircuitKey = `inference:domain:${failureDomain}`;
+  const now = input.now ?? Date.now();
+  const [routeCircuit, domainCircuit] = input.circuitStore
+    ? await Promise.all([input.circuitStore.get(circuitKey), input.circuitStore.get(domainCircuitKey)])
+    : [null, null];
+
+  return {
+    id: modelId,
+    provider: gateway,
+    gateway,
+    upstreamProvider,
+    reason,
+    capabilities,
+    health: healthFor(model),
+    quotaDomain,
+    failureDomain,
+    costClass: costClassFor(modelId, model),
+    circuitKey,
+    domainCircuitKey,
+    circuit: isOpen(routeCircuit, now) || isOpen(domainCircuit, now) ? 'open' : 'closed',
+  };
+}
+
+/**
+ * Produces a bounded, capability-qualified route plan. The selected model stays
+ * first when it is executable; fallbacks prefer a genuinely different gateway
+ * and credential/quota domain before another model inside the same account.
+ */
+export async function planInferenceRoutes(input: InferencePlanInput): Promise<InferenceRoute[]> {
+  const primary = String(input.primaryModelId || '').trim();
+  if (!primary) return [];
+  const registry = new Map((input.models || []).filter((model) => model?.id).map((model) => [String(model.id), model]));
+  const ids = [primary, ...(input.fallbackModelIds || []), GEMINI_STABLE, OPENROUTER_LOW_COST]
+    .map((id) => String(id || '').trim())
+    .filter((id, index, all) => Boolean(id) && all.indexOf(id) === index);
+
+  const described = (await Promise.all(ids.map((id, index) => describeRoute(id, index === 0 ? 'primary' : 'fallback', input, registry))))
+    .filter((route): route is InferenceRoute => Boolean(route))
+    .filter((route) => route.health !== 'offline' && route.circuit !== 'open');
+  if (!described.length) return [];
+
+  const selected = described.find((route) => route.id === primary) || described[0];
+  const rest = described.filter((route) => route.id !== selected.id).sort((left, right) => {
+    const leftIndependent = left.failureDomain !== selected.failureDomain ? 1 : 0;
+    const rightIndependent = right.failureDomain !== selected.failureDomain ? 1 : 0;
+    if (leftIndependent !== rightIndependent) return rightIndependent - leftIndependent;
+    const leftKnown = left.health === 'available' ? 1 : 0;
+    const rightKnown = right.health === 'available' ? 1 : 0;
+    if (leftKnown !== rightKnown) return rightKnown - leftKnown;
+    return COST_RANK[left.costClass] - COST_RANK[right.costClass];
+  });
+
+  return [selected, ...rest].slice(0, MAX_INFERENCE_ATTEMPTS).map((route, index) => ({
+    ...route,
+    reason: index === 0 && route.id === primary ? 'primary' : 'fallback',
+  }));
+}
+
+const CIRCUIT_FAILURE_THRESHOLD = 2;
+const ROUTE_RESET_MS = 5 * 60_000;
+const DOMAIN_RESET_MS = 60_000;
+
+export async function recordInferenceRouteFailure(
+  store: AtomicProviderCircuitStore,
+  route: InferenceRoute,
+  status: number,
+  now = Date.now(),
+) {
+  const key = status === 429 ? route.domainCircuitKey : route.circuitKey;
+  return store.recordFailure(key, {
+    now,
+    failureThreshold: CIRCUIT_FAILURE_THRESHOLD,
+    resetMs: status === 429 ? DOMAIN_RESET_MS : ROUTE_RESET_MS,
+  });
+}
+
+export async function recordInferenceRouteSuccess(
+  store: AtomicProviderCircuitStore,
+  route: InferenceRoute,
+  now = Date.now(),
+) {
+  await Promise.all([
+    store.recordSuccess(route.circuitKey, now),
+    store.recordSuccess(route.domainCircuitKey, now),
+  ]);
+}

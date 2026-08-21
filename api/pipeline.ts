@@ -14,6 +14,13 @@ import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
+import {
+  attachCorrelationId,
+  correlationIdForRequest,
+  isGoldenCanaryRequest,
+  normalizeBoundaryEvent,
+  traceBoundary,
+} from './_lib/transaction-trace.js';
 
 const RATE_LIMIT_PER_MINUTE = 15;
 const FEEDBACK_RATE_LIMIT_PER_MINUTE = 5;
@@ -87,6 +94,25 @@ export default async function handler(req: any, res: any) {
     }
 
     return chat(req, res);
+  }
+
+  if (req.query?.route === 'trace') {
+    applyCors(req, res, 'POST,OPTIONS');
+    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    const correlationId = correlationIdForRequest(req);
+    attachCorrelationId(res, correlationId);
+    const traceUser = getSessionUser(req);
+    if (!traceUser && !isGoldenCanaryRequest(req)) {
+      return res.status(401).json({ error: 'Active session required.' });
+    }
+    if (isRateLimited(`trace:${traceUser?.sub || clientIp(req)}`, 180, 60_000)) {
+      return res.status(429).json({ error: 'Too many trace events.' });
+    }
+    const event = normalizeBoundaryEvent({ ...(req.body || {}), correlationId });
+    if (!event) return res.status(400).json({ error: 'Invalid boundary event.' });
+    traceBoundary(event);
+    return res.status(202).json({ recorded: true, correlationId });
   }
 
   applyCors(req, res);

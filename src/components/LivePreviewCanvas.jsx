@@ -57,6 +57,8 @@ export default function LivePreviewCanvas({
   onPublishComplete,
   onShareComplete,
   modelId,
+  correlationId = null,
+  goldenTransaction = null,
 }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -561,7 +563,7 @@ export default function LivePreviewCanvas({
   );
   const projectRuntimeActive = Boolean(projectRuntimeVfs);
   const previewFrame = projectRuntimeActive ? (
-    <ProjectRuntimePreview vfs={projectRuntimeVfs} />
+    <ProjectRuntimePreview vfs={projectRuntimeVfs} correlationId={correlationId} goldenTransaction={goldenTransaction} />
   ) : ((currentCode && embedSrc) || wcUrl ? (
     <iframe
       ref={iframeRef}

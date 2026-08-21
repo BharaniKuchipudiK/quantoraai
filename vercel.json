@@ -76,6 +76,10 @@
       "destination": "/api/pipeline?route=chat"
     },
     {
+      "source": "/api/trace",
+      "destination": "/api/pipeline?route=trace"
+    },
+    {
       "source": "/((?!api/.*|preview/.*).*)",
       "destination": "/index.html"
     }
