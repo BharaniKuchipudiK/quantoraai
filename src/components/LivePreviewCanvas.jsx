@@ -18,6 +18,7 @@ import { readActivePclSessionId } from '../lib/pcl-session-runtime.js';
 import OfficePreview from './OfficePreview.jsx';
 import ProjectRuntimePreview from './ProjectRuntimePreview.jsx';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from '../lib/project-runtime-preview.js';
+import { recordClientBoundary } from '../lib/transaction-trace.js';
 
 // Office kind → download-button label / extension.
 const OFFICE_LABEL = {
@@ -57,6 +58,8 @@ export default function LivePreviewCanvas({
   onPublishComplete,
   onShareComplete,
   modelId,
+  correlationId = null,
+  goldenTransaction = null,
 }) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -560,8 +563,21 @@ export default function LivePreviewCanvas({
     [currentCode, vfs],
   );
   const projectRuntimeActive = Boolean(projectRuntimeVfs);
+  const goldenRuntimeContractError = goldenTransaction && Object.keys(vfs || {}).length > 0 && !projectRuntimeActive
+    ? 'Generated files did not satisfy the React/VFS project runtime contract.'
+    : null;
+
+  useEffect(() => {
+    if (!goldenRuntimeContractError) return;
+    void recordClientBoundary(correlationId, 'browser.preview-response', 'failed', {
+      transaction: goldenTransaction,
+      detailCode: 'project-runtime-contract-missing',
+      fileCount: Object.keys(vfs || {}).length,
+    });
+  }, [correlationId, goldenRuntimeContractError, goldenTransaction, vfs]);
+
   const previewFrame = projectRuntimeActive ? (
-    <ProjectRuntimePreview vfs={projectRuntimeVfs} />
+    <ProjectRuntimePreview vfs={projectRuntimeVfs} correlationId={correlationId} goldenTransaction={goldenTransaction} />
   ) : ((currentCode && embedSrc) || wcUrl ? (
     <iframe
       ref={iframeRef}
@@ -697,12 +713,17 @@ export default function LivePreviewCanvas({
   const officeLabel = OFFICE_LABEL[resolvedOfficeKind] || 'FILE';
 
   return (
-    <div data-quantora-canvas-root="true" data-quantora-canvas-fullscreen={isFullscreen ? 'true' : 'false'} style={{
+    <div
+      data-quantora-canvas-root="true"
+      data-quantora-canvas-fullscreen={isFullscreen ? 'true' : 'false'}
+      data-quantora-preview-contract-error={goldenRuntimeContractError || undefined}
+      style={{
       display: 'flex', flexDirection: 'column', height: '100%', width: '100%',
       position: 'relative',
       background: isLight ? '#f8fafc' : '#0f172a',
       borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)'
-    }}>
+      }}
+    >
       {showHeader && (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

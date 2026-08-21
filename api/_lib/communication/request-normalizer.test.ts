@@ -11,6 +11,16 @@ test("projectId is a first-class communication field", () => {
   assert.equal(request.projectId, "project-quantora");
 });
 
+test("omitted Studio mode remains distinguishable from an explicit Ask override", () => {
+  const inferredBuild = normalizeCommunicationRequest({ message: "Build a React app", buildMode: true });
+  const explicitAsk = normalizeCommunicationRequest({ message: "Explain React", studioMode: "ask", buildMode: true });
+
+  assert.equal(inferredBuild.studioMode, "ask");
+  assert.equal(inferredBuild.studioModeExplicit, false);
+  assert.equal(inferredBuild.buildMode, true);
+  assert.equal(explicitAsk.studioModeExplicit, true);
+});
+
 test("existing project context supplies projectId without polluting SessionContext", () => {
   const request = normalizeCommunicationRequest({
     message: "Continue",

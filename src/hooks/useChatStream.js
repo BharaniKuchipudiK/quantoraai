@@ -14,8 +14,15 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
+import {
+  correlationHeaders,
+  createCorrelationId,
+  normalizeClientCorrelationId,
+  recordClientBoundary,
+} from '../lib/transaction-trace.js';
 
 const CHAT_TURN_DEADLINE_MS = 90_000;
+const BUILD_TURN_DEADLINE_MS = 135_000;
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];
@@ -144,6 +151,10 @@ export function useChatStream({
     if (isGenerating) return;
 
     const visibleUserText = text.trim();
+    const turnCorrelationId = createCorrelationId('studio');
+    const goldenTransaction = (() => {
+      try { return sessionStorage.getItem('quantora_golden_transaction') || null; } catch { return null; }
+    })();
     rememberActivePclSession(activeSessionId);
     const memoryIntent = detectPclMemoryConsentIntent(visibleUserText);
     if (memoryIntent === 'grant') {
@@ -301,6 +312,7 @@ export function useChatStream({
     let effectiveArenaMode = arenaMode;
     const isCodingRequest = /\b(build|code|implement|develop)\b/i.test(text)
       && /\b(react|app|application|website|component|javascript|typescript|html|css)\b/i.test(text);
+    const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     if (briefingKind || isCodingRequest) effectiveArenaMode = false;
 
     const requestBodyFor = (model) => ({
@@ -315,7 +327,11 @@ export function useChatStream({
       sessionContext,
       projectId: sessionContext?.projectId || null,
       studioDomain,
+      buildMode: isCodingRequest,
+      taskCategory: isCodingRequest ? 'coding' : 'general',
       ...pclEnvelope,
+      correlationId: turnCorrelationId,
+      ...(goldenTransaction ? { goldenTransaction } : {}),
     });
 
     if (effectiveArenaMode) {
@@ -355,7 +371,7 @@ export function useChatStream({
           const res = await fetch('/api/chat', {
             signal: controller.signal,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify(requestBodyFor(model)),
           });
           if (!res.ok) {
@@ -426,6 +442,8 @@ export function useChatStream({
       provider: targetModel.name,
       liveConnected: true,
       executionStatus: null,
+      correlationId: turnCorrelationId,
+      ...(goldenTransaction ? { goldenTransaction } : {}),
       ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
     }]);
 
@@ -438,18 +456,19 @@ export function useChatStream({
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    const timeoutId = setTimeout(() => controller.abort('timeout'), CHAT_TURN_DEADLINE_MS);
+    const timeoutId = setTimeout(() => controller.abort('timeout'), turnDeadlineMs);
 
     try {
       const res = await fetch('/api/chat', {
         signal: controller.signal,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...requestBodyFor(targetModel),
           message: messageForModel,
         })
       });
+      const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -515,6 +534,8 @@ export function useChatStream({
               latencyMs: parsed.latencyMs || 0,
               executionStatus: null,
               ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
+              correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
+              ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
             } : m));
           }
         }
@@ -544,6 +565,10 @@ export function useChatStream({
       }
 
       const normalized = normalizeAssistantResponse(currentText);
+      void recordClientBoundary(responseCorrelationId, 'browser.response-parser', 'parsed', {
+        transaction: goldenTransaction,
+        detailCode: normalized.displayText ? 'assistant-response-valid' : 'assistant-response-empty',
+      });
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
         ...m,
         text: normalized.displayText,
@@ -551,6 +576,7 @@ export function useChatStream({
         ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
         ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
         ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
+        correlationId: responseCorrelationId,
       } : m));
       await persistPclContinuity({
         sessionId: pclEnvelope.sessionId,
@@ -567,7 +593,7 @@ export function useChatStream({
         text: stopped
           ? '⚠️ **Generation Stopped**'
           : timedOut
-            ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(CHAT_TURN_DEADLINE_MS / 1000)} seconds instead of leaving it running indefinitely.`
+            ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
             : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
         isError: true,
         executionStatus: null,

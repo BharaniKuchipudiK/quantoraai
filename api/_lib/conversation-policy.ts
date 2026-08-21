@@ -30,6 +30,7 @@ When you generate code, you are not writing a single chat message. You are editi
   .body { background: white; }
   \`\`\`
 - You can generate multiple files in one response. The system will automatically bundle them. Never output a raw string of code without a markdown block and a filepath.
+- GENERATED VFS RUNTIME CONTRACT: for React/VFS project output, every referenced identifier must be declared or imported and new artifacts must provide a coherent complete file set with package.json, src/main.jsx, src/App.jsx, and local CSS. Import React and react-dom through bare package specifiers resolved by Quantora's compiler; never load a framework from a CDN or return a standalone index.html shell unless the user explicitly requests standalone HTML. Prefer platform primitives, semantic text, and CSS over optional package imports; if a package import is necessary, use only names that the package actually exports. Do not read localStorage, sessionStorage, parent, or top, and do not reference image/asset variables or external asset URLs. Use text, CSS, inline SVG, or data URLs so the artifact runs inside Quantora's opaque-origin security sandbox.
 
 AST DIFF PATCHING (FOR EDITS):
 If the user asks you to modify an EXISTING file, DO NOT rewrite the entire file from scratch. Instead, output a diff patch block using search/replace syntax. 

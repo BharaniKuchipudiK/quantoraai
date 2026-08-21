@@ -60,6 +60,9 @@ function normalizeVfs(vfs = {}) {
     const filePath = normalizePath(rawPath);
     if (!filePath) continue;
     const content = fileContent(value);
+    if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(content)) {
+      throw new Error(`Preview project cannot use localStorage or sessionStorage inside the opaque-origin sandbox (${filePath}).`);
+    }
     totalBytes += Buffer.byteLength(content, 'utf8');
     if (totalBytes > MAX_SOURCE_BYTES) throw new Error('Preview project is too large to compile safely.');
     files.set(filePath, content);
@@ -100,12 +103,13 @@ function escapeInlineStyle(source = '') {
   return String(source).replace(/<\/style/gi, '<\\/style');
 }
 
-function buildPreviewHtml(js, css = '') {
-  const harness = `window.addEventListener('error',function(e){try{parent.postMessage({__quantoraProjectPreview:true,kind:'error',message:e.message||'Preview runtime error'},'*')}catch(_){}});window.addEventListener('unhandledrejection',function(e){try{var r=e.reason;parent.postMessage({__quantoraProjectPreview:true,kind:'error',message:(r&&r.message)||String(r||'Unhandled promise rejection')},'*')}catch(_){}});window.addEventListener('load',function(){try{parent.postMessage({__quantoraProjectPreview:true,kind:'ready'},'*')}catch(_){}});`;
+function buildPreviewHtml(js, css = '', correlationId = null) {
+  const correlation = JSON.stringify(typeof correlationId === 'string' ? correlationId : null);
+  const harness = `var __quantoraCorrelationId=${correlation},__quantoraTerminal=false;function __quantoraReport(kind,message){if(__quantoraTerminal)return;__quantoraTerminal=true;try{parent.postMessage({__quantoraProjectPreview:true,kind:kind,message:message||null,correlationId:__quantoraCorrelationId},'*')}catch(_){}}window.addEventListener('error',function(e){__quantoraReport('error',e.message||'Preview runtime error')});window.addEventListener('unhandledrejection',function(e){var r=e.reason;__quantoraReport('error',(r&&r.message)||String(r||'Unhandled promise rejection'))});window.addEventListener('load',function(){var deadline=Date.now()+5000;(function check(){if(__quantoraTerminal)return;var root=document.getElementById('root');if(root&&root.hasChildNodes()){__quantoraReport('ready');return}if(Date.now()>=deadline){__quantoraReport('error','Preview loaded but the generated application rendered no content.');return}setTimeout(check,50)})()});`;
   return `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob: https:; font-src data:; connect-src https:; media-src data: blob: https:;"><style>html,body,#root{min-height:100%;margin:0}*{box-sizing:border-box}${escapeInlineStyle(css)}</style></head><body><div id="root"></div><script>${harness}</script><script>${escapeInlineScript(js)}</script></body></html>`;
 }
 
-export async function compilePreviewVfs(vfs = {}) {
+export async function compilePreviewVfs(vfs = {}, options = {}) {
   const files = normalizeVfs(vfs);
   const entry = findEntry(files);
   if (!entry) throw new Error('Preview project has no JavaScript/TypeScript entry file.');
@@ -167,9 +171,10 @@ export async function compilePreviewVfs(vfs = {}) {
   if (!javascript) throw new Error('Preview compiler produced no runnable JavaScript.');
 
   return {
-    html: buildPreviewHtml(javascript, css),
+    html: buildPreviewHtml(javascript, css, options.correlationId),
     javascriptBytes: Buffer.byteLength(javascript, 'utf8'),
     cssBytes: Buffer.byteLength(css, 'utf8'),
     entry,
+    correlationId: typeof options.correlationId === 'string' ? options.correlationId : null,
   };
 }

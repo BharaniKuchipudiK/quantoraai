@@ -42,4 +42,17 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /ProjectRuntimePreview/);
   assert.match(preview, /isProjectRuntimeVfs/);
   assert.match(preview, /createInlineReactRuntimeVfs/);
+  assert.match(preview, /data-quantora-preview-contract-error/);
+  assert.match(preview, /project-runtime-contract-missing/);
+});
+
+test('build timeout and deployed canary credentials honor the release contract', () => {
+  const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const canary = fs.readFileSync(new URL('../../scripts/deployed-golden-transactions.mjs', import.meta.url), 'utf8');
+  assert.match(stream, /BUILD_TURN_DEADLINE_MS = 135_000/);
+  assert.match(stream, /controller\.abort\('timeout'\), turnDeadlineMs/);
+  assert.match(stream, /buildMode: isCodingRequest/);
+  assert.match(fs.readFileSync(new URL('../../api/chat.ts', import.meta.url), 'utf8'), /error\?\.code !== 'BUILD_ARTIFACT_CONTRACT'/);
+  assert.doesNotMatch(canary, /extraHTTPHeaders/);
+  assert.match(canary, /new URL\(request\.url\(\)\)\.origin !== BASE_ORIGIN/);
 });

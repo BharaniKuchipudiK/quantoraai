@@ -21,6 +21,7 @@ import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
+import { recordClientBoundary } from '../lib/transaction-trace.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -449,6 +450,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
+  const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
@@ -803,6 +806,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
+    // Manual previews are not the output of the latest inference transaction.
+    // Clear its trace metadata so they cannot be mistaken for golden evidence.
+    setWorkspaceCorrelationId(null);
+    setWorkspaceGoldenTransaction(null);
     let vfsPayload = {};
     try {
       const maybeJson = JSON.parse(codeString);
@@ -1480,6 +1487,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         
         if (Object.keys(parsedVfs).length > 0) {
            setVfs(parsedVfs);
+           setWorkspaceCorrelationId(lastMsg.correlationId || null);
+           setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+           void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+             transaction: lastMsg.goldenTransaction || null,
+             fileCount: Object.keys(parsedVfs).length,
+             detailCode: 'runnable-files-present',
+           });
            setWorkspaceCode(parsedVfs['presentation.html']?.content || parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
@@ -1488,6 +1502,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            if (code) {
               setWorkspaceCode(code);
               setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : 'App.jsx']: { content: code, language: detectSlideDeck(messages) ? 'html' : 'jsx' } });
+              setWorkspaceCorrelationId(lastMsg.correlationId || null);
+              setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+              void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+                transaction: lastMsg.goldenTransaction || null,
+                fileCount: 1,
+                detailCode: 'single-runnable-file',
+              });
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {
@@ -2900,6 +2921,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 isPresentationIntent={detectSlideDeck(messages)}
                 officeKind={detectOfficeIntent({ messages })}
                 modelId={selectedModel?.id}
+                correlationId={workspaceCorrelationId}
+                goldenTransaction={workspaceGoldenTransaction}
               />
           </div>
           </div>
@@ -3020,6 +3043,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       isPresentationIntent={detectSlideDeck(messages)}
                       officeKind={detectOfficeIntent({ messages })}
                       modelId={selectedModel?.id}
+                      correlationId={workspaceCorrelationId}
+                      goldenTransaction={workspaceGoldenTransaction}
                     />
                     )}
                     {isGenerating && workspaceCode && messages.some((message) => message?.officeAttachment?.verification?.passed === true) && detectOfficeIntent({ messages }) && (

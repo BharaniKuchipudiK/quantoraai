@@ -14,6 +14,7 @@ export type StreamFailure = {
   retryable?: boolean;
   provider?: string;
   requestId?: string;
+  correlationId?: string;
 };
 
 /**
@@ -74,6 +75,7 @@ export class SseWriter {
         retryable: failure.retryable === true,
         provider: failure.provider || null,
         requestId: failure.requestId || null,
+        correlationId: failure.correlationId || null,
       },
     });
     this.done();

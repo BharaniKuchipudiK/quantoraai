@@ -2,7 +2,11 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/generate-office.ts": { "maxDuration": 300 }
+    "api/generate-office.ts": { "maxDuration": 300 },
+    "api/pipeline.ts": { "maxDuration": 180 },
+    "api/preview-compile.js": {
+      "includeFiles": "node_modules/{react,react-dom,scheduler,lucide-react}/**"
+    }
   },
   "crons": [
     {
@@ -74,6 +78,10 @@
     {
       "source": "/api/chat",
       "destination": "/api/pipeline?route=chat"
+    },
+    {
+      "source": "/api/trace",
+      "destination": "/api/pipeline?route=trace"
     },
     {
       "source": "/((?!api/.*|preview/.*).*)",

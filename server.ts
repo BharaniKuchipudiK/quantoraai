@@ -119,6 +119,10 @@ async function startServer() {
   route("all", "/api/admin/models", adminModels);
   route("all", "/api/admin/metrics", adminMetrics);
   route("all", "/api/product-event", productEvent);
+  route("post", "/api/trace", (req, res) => {
+    req.query = { ...(req.query || {}), route: "trace" };
+    return pipeline(req, res);
+  });
 
   // Production rewrites these friendly routes to /api/pipeline. Mirror that
   // behavior locally while keeping one implementation and one function budget.
