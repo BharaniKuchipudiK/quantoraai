@@ -36,8 +36,10 @@ function hasCalculatorInteraction(content: string) {
   const value = regexEscape(state[1]);
   const setter = regexEscape(state[2]);
   const displayReadsState = new RegExp(`data-testid\\s*=\\s*["']calculator-display["'][^>]*>[\\s\\S]*?\\{\\s*${value}\\s*\\}`).test(content);
-  const clickUpdatesState = new RegExp(`onClick\\s*=\\s*\\{[^}]*${setter}\\s*\\(\\s*["']1["']\\s*\\)`).test(content);
-  return displayReadsState && clickUpdatesState;
+  const setterCanReachOne = new RegExp(`${setter}\\s*\\(\\s*["']?1["']?\\s*\\)`).test(content);
+  const buttonHasClickHandler = /<button\b[^>]*data-testid\s*=\s*["']calculator-one["'][^>]*onClick\s*=/i.test(content)
+    || /<button\b[^>]*onClick\s*=[^>]*data-testid\s*=\s*["']calculator-one["']/i.test(content);
+  return displayReadsState && setterCanReachOne && buttonHasClickHandler;
 }
 
 /**

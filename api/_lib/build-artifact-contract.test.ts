@@ -73,3 +73,14 @@ test('rejects a calculator button that cannot update its display', () => {
   const result = validateBuildArtifactResponse(calculator.replace("onClick={() => setValue('1')}", ''), 'calculator');
   assert.deepEqual(result, { ok: false, detailCode: 'calculator-interaction-missing' });
 });
+
+test('accepts numeric state and a named calculator click handler', () => {
+  const namedHandler = calculator
+    .replace("useState('0')", 'useState(0)')
+    .replace("return <>", "const chooseOne = () => setValue(1); return <>")
+    .replace("onClick={() => setValue('1')}", 'onClick={chooseOne}');
+  assert.deepEqual(validateBuildArtifactResponse(namedHandler, 'calculator'), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
+  });
+});
