@@ -15,6 +15,10 @@ function fencedFiles(text: string) {
   return files;
 }
 
+function cleanPath(path: string) {
+  return String(path || '').replace(/^\/+/, '');
+}
+
 function hasReactRootMount(content: string) {
   const source = String(content || '');
   const findsRoot = /document\s*\.\s*(?:getElementById\s*\(\s*["']root["']|querySelector\s*\(\s*["']#root["'])/.test(source);
@@ -22,6 +26,22 @@ function hasReactRootMount(content: string) {
   const rendersComponent = /\.\s*render\s*\(\s*<\s*[A-Z][A-Za-z0-9_$]*/.test(source)
     || /\bReactDOM\s*\.\s*render\s*\(\s*<\s*[A-Z][A-Za-z0-9_$]*/.test(source);
   return findsRoot && createsRoot && rendersComponent;
+}
+
+function isReactLike(files: Array<{ path: string; content: string }>) {
+  return files.some((file) => /\.(?:jsx|tsx)$/i.test(cleanPath(file.path)))
+    || files.some((file) => /(?:from\s+["']react["']|from\s+["']react-dom(?:\/client)?["']|\bcreateRoot\s*\(|\buseState\s*\()/i.test(file.content));
+}
+
+function runtimeVfsShape(files: Array<{ path: string; content: string }>) {
+  const paths = new Set(files.map((file) => cleanPath(file.path)));
+  const entry = files.find((file) => ['src/main.jsx', 'src/main.tsx', 'src/main.js', 'src/main.ts'].includes(cleanPath(file.path)));
+  const hasApp = ['src/App.jsx', 'src/App.tsx', 'src/App.js', 'src/App.ts'].some((path) => paths.has(path));
+  return {
+    paths,
+    entry,
+    valid: paths.has('package.json') && Boolean(entry) && hasApp,
+  };
 }
 
 function regexEscape(value: string) {
@@ -43,29 +63,48 @@ function hasCalculatorInteraction(content: string) {
 }
 
 /**
- * Validate only deterministic runtime invariants. This is intentionally not a
- * subjective quality scorer: a model may choose any design as long as the
- * artifact can execute in Quantora's opaque-origin preview sandbox.
+ * Validate deterministic runtime invariants before a provider route is committed.
+ * Golden transactions add observable interaction assertions, but real user builds
+ * must satisfy the same executable runtime shape instead of receiving a weaker path.
  */
 export function validateBuildArtifactResponse(text: unknown, transaction: string | null = null): BuildArtifactContractResult {
   const source = typeof text === 'string' ? text : '';
   const files = fencedFiles(source);
   if (!files.length) return { ok: false, detailCode: 'code-fences-missing' };
+  if (files.some((file) => !cleanPath(file.path))) return { ok: false, detailCode: 'build-filepath-missing' };
 
   const code = files.map((file) => file.content).join('\n');
   if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(code)) {
     return { ok: false, detailCode: 'opaque-storage-access' };
   }
 
+  const reactLike = isReactLike(files);
+  const runtime = runtimeVfsShape(files);
+  if (reactLike) {
+    if (!runtime.valid) {
+      return {
+        ok: false,
+        detailCode: transaction === 'calculator' || transaction === 'simple-website'
+          ? 'golden-vfs-shape-missing'
+          : 'runtime-vfs-shape-missing',
+      };
+    }
+    if (!hasReactRootMount(runtime.entry?.content || '')) {
+      return {
+        ok: false,
+        detailCode: transaction === 'calculator' || transaction === 'simple-website'
+          ? 'golden-root-mount-missing'
+          : 'runtime-root-mount-missing',
+      };
+    }
+  } else if (![...runtime.paths].some((path) => /(?:^|\/)index\.html$/i.test(path) || /\.html$/i.test(path))) {
+    return { ok: false, detailCode: 'html-entry-missing' };
+  }
+
   if (transaction === 'calculator' || transaction === 'simple-website') {
-    const paths = new Set(files.map((file) => file.path.replace(/^\/+/, '')));
-    const entry = files.find((file) => ['src/main.jsx', 'src/main.tsx', 'src/main.js', 'src/main.ts'].includes(file.path.replace(/^\/+/, '')));
-    const hasRequiredVfs = paths.has('package.json')
-      && Boolean(entry)
-      && ['src/App.jsx', 'src/App.tsx', 'src/App.js', 'src/App.ts'].some((path) => paths.has(path))
-      && [...paths].some((path) => path.startsWith('src/') && path.endsWith('.css'));
+    const hasRequiredVfs = runtime.valid
+      && [...runtime.paths].some((path) => path.startsWith('src/') && path.endsWith('.css'));
     if (!hasRequiredVfs) return { ok: false, detailCode: 'golden-vfs-shape-missing' };
-    if (!hasReactRootMount(entry?.content || '')) return { ok: false, detailCode: 'golden-root-mount-missing' };
   }
 
   if (transaction === 'calculator' && (!code.includes('calculator-display') || !code.includes('calculator-one'))) {
