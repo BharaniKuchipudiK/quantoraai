@@ -7,11 +7,11 @@ if (!key) {
 }
 
 const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-const model = 'openrouter/free';
+const model = 'nvidia/nemotron-3-super-120b-a12b:free';
 
 async function generate(label, prompt) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 35_000);
+  const timer = setTimeout(() => controller.abort(), 45_000);
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -25,11 +25,11 @@ async function generate(label, prompt) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'Generate runnable web code. Follow the request exactly.' },
+          { role: 'system', content: 'Generate runnable web code. Follow the request exactly. Return only the requested code, without commentary.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.2,
-        max_tokens: 1800,
+        max_tokens: 2200,
       }),
     });
     const data = await response.json().catch(() => ({}));
