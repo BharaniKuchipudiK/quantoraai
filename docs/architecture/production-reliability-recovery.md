@@ -15,6 +15,7 @@ Status: feature freeze. This note governs the calculator and simple-website reco
 - The next canary passed the calculator end to end and isolated the website failure to iframe execution (`ReferenceError: src is not defined`) after a successful compile. Build prompts now carry the opaque-sandbox execution contract explicitly, and the gate surfaces iframe diagnostics immediately instead of waiting for a selector timeout.
 - The fail-fast gate then rejected a calculator at compile time because generated code requested the nonexistent `lucide-react` export `LuCircle`. The two golden contracts now deliberately use the minimum runtime surface—React, semantic text, and CSS—so they test Quantora's core outcome path without an unnecessary third-party symbol dependency.
 - The following run reached neither VFS nor Preview because the primary route streamed no complete build before consuming the old 90-second turn budget. Build responses are now held until a route completes, the primary attempt has a bounded budget, and 45 seconds is reserved for a genuinely independent fallback domain before the 120-second turn deadline.
+- The bounded-attempt run completed inference but generated a standalone HTML shell that loaded React from a CDN. That artifact took the legacy HTML preview path and rendered blank under production security headers, so it did not satisfy the React/VFS contract. React build prompts now require the compiler-owned VFS shape and bare package imports explicitly; the standalone HTML feature remains available only when requested.
 
 ## Five Whys
 

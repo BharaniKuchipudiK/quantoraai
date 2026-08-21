@@ -42,4 +42,6 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /ProjectRuntimePreview/);
   assert.match(preview, /isProjectRuntimeVfs/);
   assert.match(preview, /createInlineReactRuntimeVfs/);
+  assert.match(preview, /data-quantora-preview-contract-error/);
+  assert.match(preview, /project-runtime-contract-missing/);
 });

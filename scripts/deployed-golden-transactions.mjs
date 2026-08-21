@@ -75,14 +75,18 @@ async function setGoldenTransaction(name) {
 
 async function correlationForPreview(previous = null) {
   const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
-  await visible(preview, 'The generated artifact never reached the deployed project preview.');
-  await page.waitForFunction((oldValue) => {
-    const value = document.querySelector('[data-quantora-real-project-preview="true"]')?.getAttribute('data-quantora-correlation-id');
-    return Boolean(value && value !== oldValue);
-  }, previous, { timeout: TURN_TIMEOUT_MS });
-  const correlationId = await preview.getAttribute('data-quantora-correlation-id');
-  if (!correlationId) throw new Error('The preview rendered without an end-to-end correlation ID.');
-  return correlationId;
+  const deadline = Date.now() + TURN_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const contractError = await page.locator('[data-quantora-preview-contract-error]').first()
+      .getAttribute('data-quantora-preview-contract-error').catch(() => null);
+    if (contractError) throw new Error(contractError);
+    if (await preview.isVisible().catch(() => false)) {
+      const correlationId = await preview.getAttribute('data-quantora-correlation-id');
+      if (correlationId && correlationId !== previous) return correlationId;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error('The generated artifact never reached the deployed project preview.');
 }
 
 async function recordInteraction(correlationId, transaction) {
@@ -115,7 +119,7 @@ try {
 
   const calculatorStartedAt = Date.now();
   await setGoldenTransaction('calculator');
-  await prompt.fill('Create a simple working React calculator. Return complete runnable project files in fenced code blocks with filepath attributes. It must render an output with data-testid="calculator-display" initially showing 0 and a button with data-testid="calculator-one" that changes the display to 1 when clicked. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package.');
+  await prompt.fill('Create a simple working React calculator. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render an output with data-testid="calculator-display" initially showing 0 and a button with data-testid="calculator-one" that changes the display to 1 when clicked. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package.');
   await prompt.press('Enter');
   const calculatorCorrelationId = await correlationForPreview();
   const calculatorFrame = await frameWith('[data-testid="calculator-display"]');
@@ -142,7 +146,7 @@ try {
 
   const websiteStartedAt = Date.now();
   await setGoldenTransaction('simple-website');
-  await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return complete runnable project files in fenced code blocks with filepath attributes. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
+  await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
   const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   const websiteFrame = await frameWith('h1');
