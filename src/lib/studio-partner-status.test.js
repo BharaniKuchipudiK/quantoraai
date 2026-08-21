@@ -14,6 +14,17 @@ test('while generating, names the work and the wait instead of a silent spinner'
   assert.match(status.next, /0:08/);
 });
 
+test('an Office preview does not invite Vercel publish', () => {
+  const status = resolveStudioPartnerStatus({
+    hasPreview: true,
+    officeKind: 'powerpoint',
+    lastAiText: 'Deck is ready',
+    hasUserTurn: true,
+  });
+  assert.match(status.now, /Office file/i);
+  assert.doesNotMatch(status.next, /publish/i);
+});
+
 test('after a working preview, names the next business beat', () => {
   const status = resolveStudioPartnerStatus({
     hasPreview: true,

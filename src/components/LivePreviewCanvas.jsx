@@ -56,6 +56,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   suggestedProjectName = 'quantora-app',
   isPresentationIntent = false,
   officeKind = null,
+  allowPublish,
   onPublishComplete,
   onShareComplete,
   modelId,
@@ -458,6 +459,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
 
   const handlePublishClick = () => {
     if (isDeploying) return;
+    if (officeKind || isPresentationIntent) return;
     if (!user) {
       onRequireAuth?.();
       return;
@@ -796,6 +798,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     || (isPresentationIntent || /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName ? OFFICE_KIND.POWERPOINT : null);
   const isOfficeDoc = Boolean(resolvedOfficeKind);
   const officeLabel = OFFICE_LABEL[resolvedOfficeKind] || 'FILE';
+  const showPublish = !isOfficeDoc && allowPublish !== false;
 
   return (
     <div
@@ -836,7 +839,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
             </button>
           )}
           {!isOfficeDoc && shareButton}
-          {!isOfficeDoc && publishButton}
+          {showPublish && publishButton}
           <button onClick={onClose} title="Close preview (Esc)" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <X size={18} />
           </button>
@@ -875,7 +878,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
             </button>
           )}
           {!isOfficeDoc && shareButton}
-          {!isOfficeDoc && publishButton}
+          {showPublish && publishButton}
         </div>
       )}
 

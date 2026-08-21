@@ -22,3 +22,14 @@ test('commerce chips still appear when the model omitted quantora-continues', ()
   assert.ok(chips.items.some((item) => /payment/i.test(item.label)));
   assert.ok(chips.items.some((item) => /Domestic or international/i.test(item.label)));
 });
+
+test('an Office deck gets presentation chips, not Vercel publish', () => {
+  const gaps = detectOutcomeGaps(
+    'pre-kick off HAM SAM presentation',
+    'The PowerPoint is in Preview.',
+    { officeKind: 'powerpoint' },
+  );
+  const labels = gaps.map((gap) => gap.label);
+  assert.ok(labels.includes('Tighten the storyline'));
+  assert.equal(labels.some((label) => /publish|vercel/i.test(label)), false);
+});

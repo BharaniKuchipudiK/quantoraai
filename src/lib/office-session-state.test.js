@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactOfficeMessages, latestVerifiedOfficeArtifact } from './office-session-state.js';
+import { compactOfficeMessages, latestVerifiedOfficeArtifact, officePclMemory, sessionOutcomeKind } from './office-session-state.js';
 
 const artifact = {
   kind: 'powerpoint',
@@ -49,4 +49,11 @@ test('compactOfficeMessages keeps one binary and strips HTML fences from chat te
   assert.equal(compact[1].officeAttachment.htmlPreview, artifact.htmlPreview);
   assert.equal(compact[1].codeSnippet, undefined);
   assert.equal(latestVerifiedOfficeArtifact(compact), compact[1].officeAttachment);
+});
+
+test('officePclMemory marks the session as an Office file, not a website', () => {
+  const memory = officePclMemory('powerpoint', { title: 'HAM / SAM kickoff' });
+  assert.match(memory.goal, /HAM \/ SAM/);
+  assert.match(memory.understanding, /not a website/i);
+  assert.equal(sessionOutcomeKind(memory, []), 'powerpoint');
 });

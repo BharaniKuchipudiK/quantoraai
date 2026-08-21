@@ -28,3 +28,14 @@ test('infers a goal from the first build request when memory is empty', () => {
 test('empty studio has no mission card', () => {
   assert.equal(deriveStudioMission({ messages: [] }), null);
 });
+
+test('an Office mission does not tell the user to publish a website', () => {
+  const mission = deriveStudioMission({
+    conversationContext: { goal: 'HAM SAM kickoff deck', facts: ['Outcome kind: powerpoint'] },
+    messages: [{ sender: 'user', text: 'pre-kick off presentation' }],
+    hasPreview: true,
+    officeKind: 'powerpoint',
+  });
+  assert.doesNotMatch(mission.next, /publish/i);
+  assert.match(mission.understanding || mission.goal, /Office|presentation|HAM/i);
+});

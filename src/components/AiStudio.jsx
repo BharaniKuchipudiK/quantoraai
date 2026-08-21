@@ -10,9 +10,11 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
-import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
+import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
+import { learnFromChipSelection } from '../lib/communication-intelligence.js';
+import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
@@ -1260,8 +1262,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         const iconBtn = { background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' };
                         const latestAiId = [...messages].reverse().find((item) => item.sender === 'ai' && item.text)?.id;
                         const priorUser = [...messages].slice(0, messages.findIndex((item) => item.id === msg.id) + 1).reverse().find((item) => item.sender === 'user')?.text || '';
+                        const officeKindForChips = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind;
                         const continueSet = msg.id === latestAiId && dismissedContinueId !== msg.id
-                          ? injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text))
+                          ? filterContinuesForOffice(
+                            injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text, { officeKind: officeKindForChips })),
+                            officeKindForChips,
+                          )
                           : null;
                         return (
                         <>
@@ -1339,7 +1345,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           <StudioInlineSuggestions
                             suggestions={{ kind: 'continues', continueSet }}
                             isLight={isLight}
-                            onSelectContinue={(item) => handleSendMessage(item.value)}
+                            onSelectContinue={(item) => {
+                              updateActiveSession({
+                                conversationContext: learnFromChipSelection(conversationContext, {
+                                  label: item.label,
+                                  value: item.value,
+                                  domain: studioDomain,
+                                }),
+                              });
+                              handleSendMessage(item.value);
+                            }}
                             onDismiss={() => setDismissedContinueId(msg.id)}
                           />
                         )}
@@ -1613,8 +1628,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text
-    ? (injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text))?.items?.[0]?.label || '')
+    ? (filterContinuesForOffice(
+      injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text, {
+        officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+      })),
+      detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+    )?.items?.[0]?.label || '')
     : '';
+  const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -1624,12 +1645,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     continueLabel: partnerContinueLabel,
     lastAiText: lastAiMessage?.text || '',
     hasUserTurn,
+    officeKind: officeKindNow,
   });
   const studioMission = deriveStudioMission({
     conversationContext,
     messages,
     hasPreview: Boolean((isWorkspaceMode && workspaceCode) || activeOfficeArtifact(messages)),
     continueLabel: partnerContinueLabel,
+    officeKind: officeKindNow,
   });
 
   return (
@@ -3005,6 +3028,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onRequireAuth={onOpenAuth}
                 isPresentationIntent={detectSlideDeck(messages)}
                 officeKind={detectOfficeIntent({ messages })}
+                allowPublish={canOfferVercelPublish({
+                  messages,
+                  vfs: canvasVfs,
+                  conversationContext,
+                  officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+                })}
                 modelId={selectedModel?.id}
                 correlationId={workspaceCorrelationId}
                 goldenTransaction={workspaceGoldenTransaction}
@@ -3092,9 +3121,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {workspaceCode && workspaceActiveTab === 'preview' && (
+              {canOfferVercelPublish({
+                messages,
+                vfs,
+                conversationContext,
+                officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+              }) && workspaceCode && workspaceActiveTab === 'preview' && (
                  <button
                    type="button"
+                   data-quantora-publish="true"
                    onClick={() => previewCanvasRef.current?.openPublish?.()}
                    style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                    <Rocket size={12} /> Publish to Vercel
@@ -3139,6 +3174,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}
                       officeKind={detectOfficeIntent({ messages })}
+                      allowPublish={canOfferVercelPublish({
+                        messages,
+                        vfs,
+                        conversationContext,
+                        officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+                      })}
                       modelId={selectedModel?.id}
                       correlationId={workspaceCorrelationId}
                       goldenTransaction={workspaceGoldenTransaction}

@@ -17,8 +17,13 @@ export function learnFromChipSelection(context, { label, value, domain = null } 
     : `${ACTION_PREFIX} chose "${label.trim()}"`;
   const goalHint = domain === 'travel' && /itinerary|day-by-day|plan/i.test(label)
     ? { understanding: 'User wants a concrete day-by-day travel plan.' }
-    : {};
-  return mergeSessionContext(context, { facts: [fact], ...goalHint });
+    : /publish this site|vercel/i.test(`${label} ${value || ''}`)
+      ? { facts: ['User confirmed: publish the website to Vercel.'] }
+      : {};
+  return mergeSessionContext(context, {
+    facts: [fact, ...(goalHint.facts || [])],
+    ...(goalHint.understanding ? { understanding: goalHint.understanding } : {}),
+  });
 }
 
 /** Record when the user dismisses suggestions — avoid repeating the same nudge style. */

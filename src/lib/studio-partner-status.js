@@ -12,6 +12,7 @@ export function resolveStudioPartnerStatus({
   continueLabel = '',
   lastAiText = '',
   hasUserTurn = false,
+  officeKind = null,
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
 
@@ -32,6 +33,15 @@ export function resolveStudioPartnerStatus({
   }
 
   if (hasPreview) {
+    if (officeKind) {
+      const file = officeKind === 'excel' ? 'workbook' : officeKind === 'word' ? 'document' : 'presentation';
+      return {
+        now: `The ${file} is in Preview — this is an Office file, not a website.`,
+        next: continueLabel
+          ? `Next: ${continueLabel}. Or tell me which part to change.`
+          : 'Next: download the file, or tell me which slide or section to change.',
+      };
+    }
     return {
       now: 'You have a working preview of what we just built.',
       next: continueLabel

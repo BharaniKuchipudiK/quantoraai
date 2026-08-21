@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { detectOfficeIntent } from '../lib/office-intent.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
+import { officePclMemory } from '../lib/office-session-state.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
@@ -239,8 +240,21 @@ export function useChatStream({
     const briefingPrompt = briefingKind
       ? officeBriefingContext({ text, officeKind: explicitOfficeKind, messages, sessionContext })
       : null;
+    if (briefingPrompt && typeof updateActiveSession === 'function') {
+      updateActiveSession({
+        conversationContext: mergeSessionContext(conversationContext, officePclMemory(briefingKind)),
+      });
+    }
     const shouldGenerate = await shouldGenerateOfficeNow({ text, officeKind: explicitOfficeKind, messages });
     if (!shouldGenerate && shouldRevealOfficeNow({ text, messages }) && currentOfficeArtifact) {
+      if (typeof updateActiveSession === 'function') {
+        updateActiveSession({
+          conversationContext: mergeSessionContext(
+            conversationContext,
+            officePclMemory(currentOfficeArtifact.kind || currentOfficeArtifact.format, currentOfficeArtifact.spec),
+          ),
+        });
+      }
       updateActiveMessages(prev => [...prev, {
         id: Date.now() + 1,
         sender: 'ai',
@@ -307,6 +321,11 @@ export function useChatStream({
         if (!cacheOfficeArtifact(data)) {
           throw new Error('The generated Office artifact failed client envelope verification.');
         }
+        if (typeof updateActiveSession === 'function') {
+          updateActiveSession({
+            conversationContext: mergeSessionContext(conversationContext, officePclMemory(officeKind, data.spec)),
+          });
+        }
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
@@ -338,6 +357,7 @@ export function useChatStream({
       conversationContext,
       messages: [...messages, { sender: 'user', text: visibleUserText }],
       hasPreview: Boolean(isWorkspaceMode && (canvasCode || (vfs && Object.keys(vfs).length))),
+      officeKind: briefingKind || activeOfficeArtifactKind(messages),
     });
     const turnContext = mergeSessionContext(
       conversationContext,
