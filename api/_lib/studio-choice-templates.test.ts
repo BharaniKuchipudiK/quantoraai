@@ -35,6 +35,7 @@ test("direct build mode does not load website intake choice templates", () => {
   assert.match(prompt, /BUILD MODE/);
   assert.doesNotMatch(prompt, /BUILD CHOICE TEMPLATES/);
   assert.doesNotMatch(prompt, /Online shop with checkout/);
+  assert.match(prompt, /BUILD FOLLOW-UP/);
 });
 
 test("conversation prompt includes build choice templates in guided mode", () => {

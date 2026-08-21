@@ -13,7 +13,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '') {
   const ai = String(aiResponse);
   const gaps = [];
 
-  const wantsUrls = /\b(url|urls|link|links|website|web site|click|visit|book(?:ing)?)\b/i.test(userPrompt);
+  const wantsUrls = /\b(url|urls|link|links|clickable)\b/i.test(userPrompt);
   const hasUrls = /https?:\/\//i.test(ai);
 
   if (wantsUrls && !hasUrls) {
@@ -71,6 +71,36 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '') {
       'Give me a short numbered action plan — what should I do next, in order?',
       75,
     ));
+  }
+
+  const chatWithoutCode = ai.replace(/```[\s\S]*?```/g, ' ');
+  const wantsShop = /\b(saree|sari|boutique|ready.?made|dress(?:es)?|shop|storefront|e-?commerce|online shop|catalog|sell)\b/i.test(userPrompt)
+    || /\b(cart|checkout|products\.json|book appointment)\b/i.test(ai);
+  if (wantsShop) {
+    if (!/\b(stripe|razorpay|payment gateway|pay online|checkout session)\b/i.test(chatWithoutCode)) {
+      gaps.push(beat(
+        'gap-payments',
+        'Add a payment gateway',
+        'Add a real payment gateway so customers can check out — ask me Stripe vs Razorpay if it matters, then wire checkout.',
+        96,
+      ));
+    }
+    if (!/\b(domestic|international|shipping|deliver(?:y|ies)|ship to|pickup)\b/i.test(chatWithoutCode)) {
+      gaps.push(beat(
+        'gap-shipping',
+        'Domestic or international?',
+        'Do you ship only domestically, internationally as well, or in-store pickup only? Update the boutique site for that.',
+        95,
+      ));
+    }
+    if (!/\b(publish|vercel|go live|live url)\b/i.test(chatWithoutCode)) {
+      gaps.push(beat(
+        'gap-publish',
+        'Publish this site',
+        'Publish this website to Vercel and give me the live URL.',
+        90,
+      ));
+    }
   }
 
   return gaps.sort((a, b) => b.priority - a.priority);

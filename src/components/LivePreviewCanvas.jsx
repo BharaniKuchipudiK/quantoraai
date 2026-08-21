@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2, Cloud, Clock } from 'lucide-react';
 import {
   createPreviewEmbedObjectUrl,
@@ -39,7 +39,7 @@ const OFFICE_LABEL = {
 
 const MAX_HEAL_ATTEMPTS = 3;
 
-export default function LivePreviewCanvas({
+const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
   vfs = {},
   isLight,
@@ -60,7 +60,7 @@ export default function LivePreviewCanvas({
   modelId,
   correlationId = null,
   goldenTransaction = null,
-}) {
+}, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
   const [status, setStatus] = useState('running'); // running | healing | clean | degraded | failed
@@ -457,6 +457,10 @@ export default function LivePreviewCanvas({
     setShowPublishDialog(true);
   };
 
+  useImperativeHandle(ref, () => ({
+    openPublish: handlePublishClick,
+  }), [handlePublishClick]);
+
   const handlePublish = async () => {
     if (isDeploying) return;
     setShowPublishDialog(false);
@@ -716,7 +720,7 @@ export default function LivePreviewCanvas({
       border: 'none', cursor: isDeploying ? 'not-allowed' : 'pointer', color: '#ffffff',
       display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '16px', fontSize: '0.75rem', fontWeight: 'bold'
     }}>
-      <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying…' : 'Publish'}
+      <Rocket className={isDeploying ? 'animate-bounce' : ''} size={14} /> {isDeploying ? 'Deploying…' : 'Publish to Vercel'}
     </button>
   );
 
@@ -951,4 +955,6 @@ export default function LivePreviewCanvas({
       )}
     </div>
   );
-}
+});
+
+export default LivePreviewCanvas;

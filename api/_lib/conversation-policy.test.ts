@@ -85,6 +85,7 @@ test("build mode tells the model to ship working tools immediately", () => {
   assert.match(prompt, /OVERRIDES the React VFS runtime contract/);
   assert.doesNotMatch(prompt, /FIRST-TURN RULE/);
   assert.doesNotMatch(prompt, /You are an API, not a chatbot/);
+  assert.match(prompt, /domestic vs international shipping/);
 });
 
 test("Office JSON rules are only injected for Office requests", () => {

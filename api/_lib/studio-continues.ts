@@ -46,7 +46,7 @@ Rules:
 - Feel like a thoughtful peer nudging the thread forward — not a survey, not "Let me know if you need anything else."
 - Mode-aware: Travel → deepen dates/budget/day-plan; Build → refine a section, add a feature, or preview; Ask → compare, go deeper, or take the next action.
 - Labels: conversational, under 6 words; values: full natural user messages.
-- Max 3 items. Skip when output is pure code/HTML, PLAN JSON only, or you used quantora-choices.`;
+- Max 3 items. Skip only when the reply is a code/HTML block with no conversational explanation. If BUILD chat text exists, still emit chips (payments, shipping, publish for shops).`;
 
 const DOMAIN_CONTINUE_HINTS: Record<string, string> = {
   travel: `Travel anticipation beats (pick what is still missing): Pin down dates · Set a budget · Who is traveling · Day-by-day itinerary · Build trip page (Build mode).`,
