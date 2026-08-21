@@ -8,10 +8,14 @@ function beat(id, label, value, priority = 0) {
 }
 
 /** Detect gaps between user intent and assistant reply. Returns proactive fix chips. */
-export function detectOutcomeGaps(userPrompt = '', aiResponse = '') {
+export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind = null } = {}) {
   const user = String(userPrompt).toLowerCase();
   const ai = String(aiResponse);
   const gaps = [];
+
+  if (officeKind) {
+    return officeFollowUpGaps(officeKind);
+  }
 
   const wantsUrls = /\b(url|urls|link|links|clickable)\b/i.test(userPrompt);
   const hasUrls = /https?:\/\//i.test(ai);
@@ -97,13 +101,42 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '') {
       gaps.push(beat(
         'gap-publish',
         'Publish this site',
-        'Publish this website to Vercel and give me the live URL.',
+        'The site looks ready. Publish this website to Vercel and give me the live URL.',
         90,
       ));
     }
   }
 
   return gaps.sort((a, b) => b.priority - a.priority);
+}
+
+function officeFollowUpGaps(officeKind) {
+  if (officeKind === 'excel') {
+    return [
+      beat('office-formulas', 'Check the formulas', 'Walk the workbook formulas and controls against the briefing. Do not turn this into a website.', 70),
+      beat('office-download', 'Download the workbook', 'Show the Excel file in Preview so I can download the .xlsx.', 60),
+    ];
+  }
+  if (officeKind === 'word') {
+    return [
+      beat('office-tighten', 'Tighten the narrative', 'Tighten the document for the named audience. Keep it a Word file, not a website.', 70),
+      beat('office-download', 'Download the document', 'Show the Word file in Preview so I can download the .docx.', 60),
+    ];
+  }
+  return [
+    beat('office-story', 'Tighten the storyline', 'Tighten the deck storyline for the named audience and decision. Keep this a PowerPoint, not a website.', 70),
+    beat('office-notes', 'Add speaker notes', 'Add concise speaker notes on the key slides so I can present this.', 65),
+    beat('office-download', 'Download the PPTX', 'Show the presentation in Preview so I can download the .pptx.', 60),
+  ];
+}
+
+export function filterContinuesForOffice(continueSet, officeKind = null) {
+  if (!officeKind || !continueSet?.items?.length) return continueSet;
+  const items = continueSet.items.filter((item) => (
+    !/vercel|publish this site|go live|payment gateway|shipping/i.test(`${item.label} ${item.value}`)
+  ));
+  if (!items.length) return null;
+  return { ...continueSet, items: items.slice(0, 3) };
 }
 
 /** Merge gap-fix chips ahead of model/domain continues (deduped, max 3). */

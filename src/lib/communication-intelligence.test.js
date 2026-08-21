@@ -14,6 +14,11 @@ test('learnFromChipSelection records choice as session fact', () => {
   assert.match(next.facts[0], /Day-by-day plan/);
 });
 
+test('choosing Publish this site is remembered as a website publish confirmation', () => {
+  const next = learnFromChipSelection({}, { label: 'Publish this site', value: 'Publish this website to Vercel' });
+  assert.ok(next.facts.some((fact) => /publish the website to vercel/i.test(fact)));
+});
+
 test('learnFromDismissedSuggestions records preference', () => {
   const next = learnFromDismissedSuggestions({}, 'suggestions');
   assert.match(next.facts[0], /dismissed suggestions/i);

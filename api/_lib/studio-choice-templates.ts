@@ -61,6 +61,7 @@ export function buildChoiceTemplateDirective(options: {
   studioDomain?: StudioDomain | null;
   guided?: boolean;
   buildMode?: boolean;
+  officeOutcome?: boolean;
 }): string {
   const parts: string[] = [];
 
@@ -68,11 +69,14 @@ export function buildChoiceTemplateDirective(options: {
     parts.push(TRAVEL_CHOICE_HINTS);
   }
 
-  if (options.guided) {
+  if (options.officeOutcome) {
+    parts.push(`OFFICE FOLLOW-UP (after a PowerPoint, Word, or Excel file exists)
+This is a document, not a website. Offer tappable next beats about the file: tighten the storyline, add speaker notes, check evidence, or download. Never offer Publish to Vercel, custom domains, cart, or shipping.`);
+  } else if (options.guided) {
     parts.push(BUILD_CHOICE_HINTS);
   } else if (options.buildMode) {
     parts.push(`BUILD FOLLOW-UP (after a website or shop already shipped HTML)
-If the site sells products or services, still offer tappable next beats — do not go silent after the preview. Prefer: Add a payment gateway · Domestic vs international shipping · Publish this site to Vercel.`);
+If the site sells products or services, still offer tappable next beats — do not go silent after the preview. Prefer: Add a payment gateway · Domestic vs international shipping · Publish this site to Vercel. Show Publish to Vercel as a chip first; do not treat Office files as sites.`);
   }
 
   if (!parts.length) return "";

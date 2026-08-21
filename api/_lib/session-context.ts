@@ -59,6 +59,9 @@ export function formatSessionContextForPrompt(ctx: SessionContext | undefined): 
     lines.push("- Established facts:");
     for (const fact of normalized.facts) lines.push(`  • ${JSON.stringify(fact)}`);
   }
+  if (/outcome kind:\s*(powerpoint|excel|word)/i.test([normalized.goal, normalized.understanding, ...(normalized.facts || [])].join(" "))) {
+    lines.push("- Artifact rule: this is an Office file, not a website. Never offer Vercel publish, custom domains, or shop/shipping next beats. Drive audience, slides or sections, evidence, and download.");
+  }
   return `\n\n${lines.join("\n")}`;
 }
 

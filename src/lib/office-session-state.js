@@ -74,3 +74,35 @@ export function compactOfficeMessages(messages = []) {
     };
   });
 }
+
+const OFFICE_KIND_FACT = /outcome kind:\s*(powerpoint|excel|word)\b/i;
+
+export function sessionOutcomeKind(conversationContext = {}, messages = []) {
+  const artifact = latestVerifiedOfficeArtifact(messages);
+  if (artifact?.kind || artifact?.format) return artifact.kind || artifact.format;
+  const blob = [
+    conversationContext?.goal,
+    conversationContext?.understanding,
+    ...(Array.isArray(conversationContext?.facts) ? conversationContext.facts : []),
+  ].join('\n');
+  const match = blob.match(OFFICE_KIND_FACT);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export function officePclMemory(kind, spec = null) {
+  const names = {
+    powerpoint: 'PowerPoint presentation',
+    excel: 'Excel workbook',
+    word: 'Word document',
+  };
+  const label = names[kind] || 'Office file';
+  const title = spec?.title ? String(spec.title).replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+  return {
+    goal: title ? `${label} — ${title}` : `Deliver a ${label} for this meeting`,
+    understanding: `The outcome is a ${label} in Preview. Download the file. This is not a website and must not be published to Vercel.`,
+    facts: [
+      `Outcome kind: ${kind}`,
+      'Do not offer Vercel publish or website shipping/payments chips.',
+    ],
+  };
+}

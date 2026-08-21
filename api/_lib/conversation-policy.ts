@@ -118,6 +118,7 @@ const SESSION_MEMORY_DIRECTIVE = `SESSION MEMORY UPDATE
 When you have materially new continuity worth remembering across turns, append ONE HTML comment as the very last line of your reply (after all user-visible text). Users never see this line:
 <!-- quantora-ctx:{"goal":"short goal phrase","understanding":"one sentence on where things stand","facts":["short fact","another fact"]} -->
 Rules: update only what changed; max 12 facts; each fact under 25 words; never invent facts the user did not state or clearly imply; omit the comment entirely if nothing meaningful changed.
+If the outcome is a PowerPoint, Word, or Excel file, set understanding accordingly and include a fact "Outcome kind: powerpoint|word|excel". Never describe it as a website.
 CRITICAL: When the user answers a question you asked (dates, budget, preferences, name, etc.), you MUST record their answer in facts on this turn and move forward — never ask for the same detail again unless they contradict themselves.`;
 
 function cognitiveDirective(level: CognitiveLevel): string {
@@ -330,13 +331,17 @@ export function buildConversationSystemPrompt(options: {
 
   const domain = buildDomainDirective(options.studioDomain ?? null);
 
+  const officeOutcome = /outcome kind:\s*(powerpoint|excel|word)/i.test(
+    [options.sessionContext?.goal, options.sessionContext?.understanding, ...(options.sessionContext?.facts || [])].join(" "),
+  );
   const shouldOfferChoices = Boolean(
-    options.guided || options.buildMode || options.studioDomain,
+    options.guided || options.buildMode || options.studioDomain || officeOutcome,
   );
   const choiceTemplates = buildChoiceTemplateDirective({
     studioDomain: options.studioDomain ?? null,
     guided: options.guided,
     buildMode: options.buildMode,
+    officeOutcome,
   });
   const choices = shouldOfferChoices
     ? `\n\n${CHOICES_DIRECTIVE}${choiceTemplates}`
