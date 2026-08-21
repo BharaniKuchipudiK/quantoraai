@@ -1753,7 +1753,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           <button
             type="button"
             data-quantora-sidebar-profile="true"
-            onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-profile-menu'))}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              window.dispatchEvent(new CustomEvent('quantora:open-profile-menu', {
+                detail: { anchorRect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } },
+              }));
+            }}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid transparent', color: textColor, fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}
           >
             {profileAvatarSrc && !profileAvatarFailed ? (

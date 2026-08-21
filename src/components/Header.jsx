@@ -21,13 +21,30 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
   const profileRef = useRef(null);
   const profileMenuRef = useRef(null);
   const [profileMenuPosition, setProfileMenuPosition] = useState(null);
+  const [externalProfileAnchor, setExternalProfileAnchor] = useState(null);
 
   const positionProfileMenu = useCallback(() => {
-    const anchor = profileRef.current;
-    if (!anchor || typeof window === 'undefined') return;
-    const rect = anchor.getBoundingClientRect();
-    const headerBottom = anchor.closest('.app-header')?.getBoundingClientRect().bottom ?? rect.bottom;
+    if (typeof window === 'undefined') return;
+    const headerAnchor = profileRef.current;
+    const rect = externalProfileAnchor || headerAnchor?.getBoundingClientRect?.();
+    if (!rect) return;
     const width = Math.min(PROFILE_MENU_WIDTH, window.innerWidth - (PROFILE_MENU_GUTTER * 2));
+
+    if (externalProfileAnchor) {
+      const roomOnRight = window.innerWidth - rect.right - PROFILE_MENU_GUTTER;
+      const left = roomOnRight >= width
+        ? rect.right + 10
+        : Math.max(PROFILE_MENU_GUTTER, rect.left - width - 10);
+      const desiredHeight = Math.min(560, window.innerHeight - (PROFILE_MENU_GUTTER * 2));
+      const top = Math.max(
+        PROFILE_MENU_GUTTER,
+        Math.min(rect.bottom - desiredHeight, window.innerHeight - desiredHeight - PROFILE_MENU_GUTTER),
+      );
+      setProfileMenuPosition({ top, left, width, maxHeight: desiredHeight });
+      return;
+    }
+
+    const headerBottom = headerAnchor?.closest('.app-header')?.getBoundingClientRect().bottom ?? rect.bottom;
     const left = Math.min(
       Math.max(PROFILE_MENU_GUTTER, rect.right - width),
       window.innerWidth - width - PROFILE_MENU_GUTTER,
@@ -39,10 +56,14 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       width,
       maxHeight: Math.max(180, window.innerHeight - top - PROFILE_MENU_GUTTER),
     });
-  }, []);
+  }, [externalProfileAnchor]);
 
   useEffect(() => {
-    const openProfile = () => {
+    const openProfile = (event) => {
+      const rect = event?.detail?.anchorRect;
+      setExternalProfileAnchor(rect && Number.isFinite(rect.left)
+        ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }
+        : null);
       setShowModelDropdown(false);
       setShowProfileMenu(true);
     };
@@ -53,6 +74,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
   useLayoutEffect(() => {
     if (!showProfileMenu) {
       setProfileMenuPosition(null);
+      setExternalProfileAnchor(null);
       return undefined;
     }
     positionProfileMenu();
