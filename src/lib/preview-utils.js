@@ -245,6 +245,10 @@ export function prepareCodeForPreview(code, vfs = {}) {
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:24px;font-family:system-ui,sans-serif;background:#fff;color:#991b1b"><strong>React preview routing error.</strong><p>This generated app must run in the Quantora project runtime.</p></body></html>`;
   }
 
+  if (/<<<<|====|>>>>/.test(str) || (/\{[^}]+\}/.test(str) && !/<[a-z]/i.test(str))) {
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:24px;font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0"><strong>Preview needs a complete HTML page.</strong><p>This update was a style patch or fragment, not a runnable document.</p></body></html>`;
+  }
+
   // Fallback is for genuinely self-contained markup/snippets only.
   return `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body>${str}</body></html>`;
 }

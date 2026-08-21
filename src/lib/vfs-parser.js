@@ -66,28 +66,23 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
       }
     }
 
-    foundRunnableFile = true;
-
     // Normalize language
     let normalizedLanguage = language;
     if (['js', 'jsx', 'javascript', 'react'].includes(language)) normalizedLanguage = 'jsx';
     if (['ts', 'tsx', 'typescript'].includes(language)) normalizedLanguage = 'tsx';
 
-    // Update VFS
-    if (code.includes('<<<<') && code.includes('====')) {
-       // It's a diff patch! Apply it to the existing content if it exists
-       const existingContent = vfs[filepath] ? vfs[filepath].content : '';
-       vfs[filepath] = {
-          content: applyDiffPatch(existingContent, code),
-          language: normalizedLanguage
-       };
-    } else {
-       // It's a full rewrite
-       vfs[filepath] = {
-         content: code,
-         language: normalizedLanguage
-       };
+    const isPatch = code.includes('<<<<') && code.includes('====');
+    const existingContent = vfs[filepath] ? vfs[filepath].content : '';
+    if (isPatch && !existingContent) {
+      // A dangling search/replace with no base file is not a preview artifact.
+      continue;
     }
+
+    foundRunnableFile = true;
+    vfs[filepath] = {
+      content: isPatch ? applyDiffPatch(existingContent, code) : code,
+      language: normalizedLanguage,
+    };
   }
   
   // Plain prose must never carry an older VFS forward. The caller can now use

@@ -124,7 +124,6 @@ export function useChatStream({
   isWorkspaceMode,
   messages,
   setLastPrompt,
-  webSearchEnabled,
   sessionContext
 }) {
   const abortControllerRef = useRef(null);
@@ -323,7 +322,7 @@ export function useChatStream({
       userKey: geminiApiKey,
       openRouterKey: openRouterApiKey,
       cognitiveLevel,
-      webSearch: webSearchEnabled,
+      webSearch: false,
       sessionContext,
       projectId: sessionContext?.projectId || null,
       studioDomain,

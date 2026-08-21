@@ -3,7 +3,7 @@ import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -424,7 +424,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const [attachments, setAttachments] = useState([]);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showInBarModelDropdown, setShowInBarModelDropdown] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [hideWelcomeScreen, setHideWelcomeScreen] = useState(() => {
@@ -791,50 +790,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     isWorkspaceMode,
     messages,
     setLastPrompt,
-    webSearchEnabled,
     sessionContext: projectContext
   });
 
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
-    const browserLang = /^(html|css|javascript|js|jsx|tsx)$/i.test(String(lang || ''));
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
-    if (!browserLang && !canOpenStudioPreviewPane(lastAi?.text || '') && !canOpenStudioPreviewPane(codeString)) return;
+    const assembled = assembleStudioPreview(lastAi?.text || '', vfs);
+    const htmlFromMessage = assembled.code && /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code) ? assembled.code : '';
+    const htmlFromFence = /<!DOCTYPE html>|<html[\s>]/i.test(String(codeString || '')) ? String(codeString) : '';
+    const html = htmlFromMessage || htmlFromFence;
+    if (!html) return;
+
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
-
-    const assembled = assembleStudioPreview(lastAi?.text || '');
     if (Object.keys(assembled.vfs).length > 0) {
       setVfs(assembled.vfs);
-      setWorkspaceCode(assembled.code);
-      setWorkspaceActiveTab('preview');
-      setIsWorkspaceMode(true);
-      return;
-    }
-
-    let vfsPayload = {};
-    try {
-      const maybeJson = JSON.parse(codeString);
-      if (maybeJson.files || maybeJson['package.json'] || maybeJson['App.jsx']) {
-        vfsPayload = maybeJson.files || maybeJson;
-      }
-    } catch (e) {
-      // Not JSON
-    }
-
-    if (Object.keys(vfsPayload).length > 0) {
-      setVfs(vfsPayload);
-      setWorkspaceCode(pickPreviewEntry(vfsPayload));
     } else {
-      const filename = (lang === 'html') ? 'index.html' : (lang === 'css' ? 'styles.css' : (lang === 'javascript' || lang === 'js') ? 'script.js' : 'App.jsx');
-      const nextVfs = { [filename]: { content: codeString, language: lang } };
-      setVfs(nextVfs);
-      setWorkspaceCode(pickPreviewEntry(nextVfs) || codeString);
+      setVfs({ 'index.html': { content: html, language: 'html' } });
     }
+    setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
     setIsWorkspaceMode(true);
-  }, [studioDomain, messages]);
+  }, [studioDomain, messages, vfs]);
 
   const markdownComponents = React.useMemo(() => ({
     a({node, children, href, ...props}) {
@@ -1483,7 +1462,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        if (lastMsg.isError || !canOpenStudioPreviewPane(lastMsg.text)) {
+        if (lastMsg.isError) {
           const keepWorkspace = shouldKeepWorkspaceForPrompt({
             prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
             hasWorkspace: isWorkspaceMode || canvasOpen,
@@ -1496,10 +1475,24 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        // Frontend deck parser remains available for neutral Studio and explicit Office artifacts.
-        const assembled = assembleStudioPreview(lastMsg.text);
+        const assembled = assembleStudioPreview(lastMsg.text, vfs);
         const parsedVfs = assembled.vfs;
-        
+        const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
+          || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '');
+
+        if (!previewable) {
+          const keepWorkspace = shouldKeepWorkspaceForPrompt({
+            prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
+            hasWorkspace: isWorkspaceMode || canvasOpen,
+            officeKind: detectOfficeIntent({ messages }),
+          });
+          if (!keepWorkspace) {
+            setIsWorkspaceMode(false);
+            setCanvasOpen(false);
+          }
+          return;
+        }
+
         if (Object.keys(parsedVfs).length > 0) {
            setVfs(parsedVfs);
            setWorkspaceCorrelationId(lastMsg.correlationId || null);
@@ -1542,7 +1535,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
       }
     }
-  }, [isGenerating, messages, lastProcessedMessageId, studioDomain]);
+  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen]);
 
   const generatingStatus = [...messages].reverse().find((message) => message.sender === 'ai')?.executionStatus?.label;
 
@@ -2741,40 +2734,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
 
-              {/* Web Grounding Chip */}
-              <button
-                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                title={webSearchEnabled ? "Live Web Search Enabled" : "Enable Web Search Grounding"}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  background: webSearchEnabled ? 'rgba(2, 132, 199, 0.15)' : (isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)'),
-                  border: webSearchEnabled ? '1px solid rgba(2, 132, 199, 0.3)' : '1px solid transparent',
-                  color: webSearchEnabled ? '#0ea5e9' : subtextColor,
-                  padding: '6px 12px',
-                  borderRadius: '16px',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  fontWeight: '500',
-                  transition: 'all 0.2s ease',
-                  marginLeft: '8px'
-                }}
-                onMouseEnter={e => {
-                  if (!webSearchEnabled) {
-                    e.currentTarget.style.background = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!webSearchEnabled) {
-                    e.currentTarget.style.background = isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)';
-                  }
-                }}
-              >
-                <Globe size={16} /> 
-                {webSearchEnabled ? 'Grounded' : 'Web Grounding'}
-              </button>
             </div>
 
             {/* Right Control: Send & Push Buttons */}
@@ -3027,9 +2986,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                     {!workspaceCode ? (
                       <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
-                        <Layout size={26} color="#f97316" />
-                        <div style={{ fontWeight: 800, color: textColor }}>Preview workspace ready</div>
-                        <div style={{ fontSize: '0.82rem' }}>Your build will appear here as soon as a healthy model responds.</div>
+                        <Clock size={26} color="#f97316" />
+                        <div style={{ fontWeight: 800, color: textColor }}>Preview is getting ready — hang tight</div>
+                        <div style={{ fontSize: '0.82rem' }}>Your app will appear here as soon as it is ready to run.</div>
                       </div>
                     ) : (
                     <LivePreviewCanvas 

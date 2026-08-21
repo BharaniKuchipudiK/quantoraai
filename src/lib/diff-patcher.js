@@ -12,7 +12,12 @@
  * @returns {string} The patched source text.
  */
 export function applyDiffPatch(sourceText, diffText) {
-  if (!sourceText) return diffText; // If no source, just return the raw diff content as fallback
+  if (!sourceText) {
+    // Never treat a raw <<<< / ==== patch as a complete file. Callers must
+    // supply the previous artifact as the search base.
+    if (/<<<</.test(String(diffText || '')) && /====/.test(String(diffText || ''))) return '';
+    return diffText;
+  }
 
   // Regex to match search/replace blocks
   // <<<<\n(search)\n====\n(replace)\n>>>>

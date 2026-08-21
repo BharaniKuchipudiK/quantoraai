@@ -62,3 +62,28 @@ test('real code updates still merge against the existing VFS', () => {
   assert.equal(parsed['package.json'].content, '{"name":"project"}');
   assert.match(parsed['src/App.jsx'].content, /Updated/);
 });
+
+test('a CSS search/replace patch updates the previous stylesheet instead of becoming the preview', () => {
+  const previous = {
+    'index.html': { content: '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head><body><button>7</button></body></html>', language: 'html' },
+    'styles.css': { content: '.keypad{display:grid}', language: 'css' },
+  };
+  const patch = [
+    '```css filepath="styles.css"',
+    '<<<<',
+    '.keypad{display:grid}',
+    '====',
+    '.keypad{display:grid;grid-template-columns:repeat(10,1fr)}',
+    '>>>>',
+    '```',
+  ].join('\n');
+  const parsed = parseVFSFromMarkdown(patch, previous);
+  assert.match(parsed['index.html'].content, /<!DOCTYPE html>/);
+  assert.match(parsed['styles.css'].content, /repeat\(10,1fr\)/);
+  assert.doesNotMatch(parsed['styles.css'].content, /<<<</);
+});
+
+test('a dangling patch with no previous file is not a preview artifact', () => {
+  const parsed = parseVFSFromMarkdown('```css filepath="styles.css"\n<<<<\n.a{color:red}\n====\n.a{color:blue}\n>>>>\n```');
+  assert.deepEqual(parsed, {});
+});

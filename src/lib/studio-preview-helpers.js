@@ -18,10 +18,10 @@ function extractUnfencedHtml(rawText) {
  * One pipeline for every generated artifact: fenced VFS, single HTML file,
  * or unfenced HTML document. Callers must not pick the first markdown fence.
  */
-export function assembleStudioPreview(rawText) {
+export function assembleStudioPreview(rawText, currentVfs = {}) {
   if (!rawText || typeof rawText !== 'string') return { vfs: {}, code: '' };
 
-  const vfs = parseVFSFromMarkdown(rawText, {});
+  const vfs = parseVFSFromMarkdown(rawText, currentVfs);
   if (Object.keys(vfs).length > 0) {
     return { vfs, code: pickPreviewEntry(vfs) };
   }
@@ -65,9 +65,9 @@ function vfsHasBrowserPreview(vfs = {}) {
  * Live Preview only opens for artifacts the sandbox can actually run.
  * Native sources (Swift, Kotlin, etc.) stay in chat until a browser replica exists.
  */
-export function canOpenStudioPreviewPane(rawText) {
+export function canOpenStudioPreviewPane(rawText, currentVfs = {}) {
   if (!rawText || typeof rawText !== 'string') return false;
-  const assembled = assembleStudioPreview(rawText);
+  const assembled = assembleStudioPreview(rawText, currentVfs);
   if (isHtmlDocument(assembled.code) || isInlineReactRuntimeCode(assembled.code || rawText)) return true;
   return vfsHasBrowserPreview(assembled.vfs);
 }

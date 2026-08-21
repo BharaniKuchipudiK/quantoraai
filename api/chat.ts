@@ -394,7 +394,9 @@ export default async function handler(req: any, res: any) {
       : explicitBuild || toolBuild
         ? true
         : Boolean(buildMode);
-    const grounding = Boolean(req.body?.webSearch) && !effectiveBuildMode && !honorGuided && task !== "repair";
+    // Studio users should not toggle web search. Live search is off until a
+    // product surface needs it (advisors are frozen; BUILD does not use it).
+    const grounding = false;
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') dynamicTemperature = 0.3;
