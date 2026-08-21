@@ -15,11 +15,14 @@ test('Travel never auto-opens or exposes the generic developer Canvas', () => {
   assert.equal(canUseMediaCanvas('travel'), false);
 });
 
-test('Study keeps deliberate media and explicit preview capability without surprise code workspace', () => {
+test('Study keeps deliberate verified media while generic developer Canvas stays unavailable', () => {
   const study = studioDomainPolicy('education');
   assert.equal(study.autoOpenCodeWorkspace, false);
-  assert.equal(study.explicitCodePreview, true);
+  assert.equal(study.explicitCodePreview, false);
+  assert.equal(study.showGenericCanvasNavigation, false);
   assert.equal(study.mediaCanvas, true);
+  assert.equal(canAutoOpenCodeWorkspace('education'), false);
+  assert.equal(canExplicitlyPreviewCode('education'), false);
   assert.equal(canUseMediaCanvas('education'), true);
 });
 
