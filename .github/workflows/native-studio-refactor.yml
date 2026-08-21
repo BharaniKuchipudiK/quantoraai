@@ -6,6 +6,7 @@ on:
       - dev/travel-stability-hotfix
     paths:
       - scripts/refactor-studio-native.mjs
+      - .github/workflows/native-studio-refactor.yml
 
 permissions:
   contents: write
