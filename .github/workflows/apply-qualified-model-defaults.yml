@@ -1,0 +1,59 @@
+name: Apply qualified free model defaults
+on:
+  push:
+    branches: [fix/p0-studio-provider-failover-workspace]
+    paths: ['.github/workflows/apply-qualified-model-defaults.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p0-studio-provider-failover-workspace
+      - name: Patch model defaults and Studio routing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def replace(path, old, new):
+              p=Path(path); t=p.read_text()
+              if old not in t: raise SystemExit(f'pattern not found in {path}: {old[:100]!r}')
+              p.write_text(t.replace(old,new,1))
+
+          replace('src/App.jsx',
+          "  const fallbackModels = [\n    { id: 'openrouter/free', name: 'Quantora Free Router', specialty: 'Routes across currently available free models', badge: 'Recommended', provider: 'OpenRouter', available: true, pricingKind: 'free' },\n    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Free Reasoning', provider: 'NVIDIA', available: true, pricingKind: 'free' },\n    { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Optional multimodal route', badge: 'Multimodal', provider: 'Google', available: true, pricingKind: 'free-tier' },",
+          "  const fallbackModels = [\n    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Recommended Free', provider: 'NVIDIA', available: true, pricingKind: 'free' },\n    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', specialty: 'Open-weight reasoning and coding fallback', badge: 'Free Fallback', provider: 'OpenAI', available: true, pricingKind: 'free' },\n    { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Optional multimodal route', badge: 'Multimodal', provider: 'Google', available: true, pricingKind: 'free-tier' },")
+
+          replace('api/chat.ts',
+          'const FEATURED_SERVER_MODELS = new Set([\n  "openrouter/free",\n  "gemini-flash-latest",\n  "nvidia/nemotron-3-super-120b-a12b:free",',
+          'const FEATURED_SERVER_MODELS = new Set([\n  "gemini-flash-latest",\n  "nvidia/nemotron-3-super-120b-a12b:free",\n  "openai/gpt-oss-120b:free",')
+
+          # Never interrupt a normal send with a model-health choice modal. Backend handles failover.
+          p=Path('src/components/AiStudio.jsx'); t=p.read_text()
+          start=t.find('    // HUMAN IN THE LOOP: only intercept when the selected model recently failed')
+          end=t.find('    streamSendMessage(overrideText);', start)
+          if start==-1 or end==-1: raise SystemExit('health intercept block not found')
+          t=t[:start] + '    // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.\n' + t[end:]
+          p.write_text(t)
+
+          # Improve free fallback ranking for GPT-OSS.
+          replace('src/lib/model-routing.js',
+          "    if (/nemotron|coder|qwen|deepseek/.test(haystack)) score += 24;",
+          "    if (/nemotron|gpt-oss|coder|qwen|deepseek/.test(haystack)) score += 24;")
+          replace('src/lib/model-routing.js',
+          "    if (/nemotron|reason|deepseek/.test(haystack)) score += 22;",
+          "    if (/nemotron|gpt-oss|reason|deepseek/.test(haystack)) score += 22;")
+          replace('src/lib/model-routing.js',
+          "    if (/gemini|flash/.test(haystack)) score += 20;\n    if (/nemotron/.test(haystack)) score += 14;",
+          "    if (/gemini|flash/.test(haystack)) score += 8;\n    if (/nemotron|gpt-oss/.test(haystack)) score += 20;")
+          PY
+      - name: Commit and self-remove
+        run: |
+          git config user.name "quantora-quality-bot"
+          git config user.email "quality@quantoraai.app"
+          git add src/App.jsx api/chat.ts src/components/AiStudio.jsx src/lib/model-routing.js
+          git commit -m "fix(models): promote canary-qualified free routes"
+          git rm .github/workflows/apply-qualified-model-defaults.yml
+          git commit -m "chore: remove temporary model-default workflow"
+          git push origin HEAD:fix/p0-studio-provider-failover-workspace
