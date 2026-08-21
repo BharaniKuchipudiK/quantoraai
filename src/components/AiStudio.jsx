@@ -1628,7 +1628,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const studioMission = deriveStudioMission({
     conversationContext,
     messages,
-    hasPreview: Boolean(isWorkspaceMode && workspaceCode),
+    hasPreview: Boolean((isWorkspaceMode && workspaceCode) || activeOfficeArtifact(messages)),
     continueLabel: partnerContinueLabel,
   });
 
@@ -1900,7 +1900,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Top Header Bar */}
-        {(hasUserTurn || !sidebarOpen) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -1952,8 +1951,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
-          {hasUserTurn && (
-          <>
           {/* Dual Model Arena Toggle Button */}
           <button
             data-quantora-dual-arena="true"
@@ -2045,12 +2042,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               )}
             </div>
           )}
-          </>
-          )}
 
         </div>
       </div>
-        )}
 
       {/* Messages Stream / Initial Hero State */}
       <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '8px', position: 'relative' }}>
