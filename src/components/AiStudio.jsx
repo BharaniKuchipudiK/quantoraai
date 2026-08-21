@@ -11,6 +11,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
+import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
@@ -1557,6 +1558,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen]);
 
   const generatingStatus = [...messages].reverse().find((message) => message.sender === 'ai')?.executionStatus?.label;
+  const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai');
+  const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
+  const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text
+    ? (injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text))?.items?.[0]?.label || '')
+    : '';
+  const partnerStatus = resolveStudioPartnerStatus({
+    isGenerating,
+    generatingLabel: generatingStatus,
+    elapsedSec: thinkingTime,
+    lastAiIsError: Boolean(lastAiMessage?.isError),
+    hasPreview: Boolean(isWorkspaceMode && workspaceCode),
+    continueLabel: partnerContinueLabel,
+    lastAiText: lastAiMessage?.text || '',
+  });
 
   return (
     <div style={{
@@ -2147,8 +2162,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
-                <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, fontFamily: generatingStatus ? 'inherit' : 'monospace' }}>
-                  {generatingStatus || `0:${thinkingTime.toString().padStart(2, '0')}s`}
+                <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, lineHeight: 1.45 }}>
+                  <div>{partnerStatus?.now || generatingStatus || 'Working on a result you can actually use…'}</div>
+                  <div style={{ fontSize: '0.82rem', color: subtextColor, fontWeight: 500, marginTop: '4px' }}>
+                    {partnerStatus?.next || `0:${thinkingTime.toString().padStart(2, '0')}s`}
+                  </div>
                 </div>
               </div>
             )}
@@ -2185,6 +2203,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+        {partnerStatus && !isGenerating && (
+          <div
+            data-quantora-partner-status="true"
+            role="status"
+            aria-live="polite"
+            style={{
+              margin: '0 8px 10px',
+              padding: '10px 14px',
+              borderRadius: '14px',
+              background: isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.08)',
+              border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249, 115, 22, 0.25)',
+            }}
+          >
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor, lineHeight: 1.4 }}>{partnerStatus.now}</div>
+            <div style={{ fontSize: '0.78rem', color: subtextColor, marginTop: '4px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
+          </div>
+        )}
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
