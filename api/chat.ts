@@ -996,7 +996,7 @@ export default async function handler(req: any, res: any) {
               || index >= candidateAttempts.length - 1
               || !shouldFallbackBeforeStreaming(error, {
                 currentGateway: 'gemini',
-                nextGateway: candidateAttempts[index + 1]?.provider,
+                nextGateway: candidateAttempts[index + 1] ? 'gemini' : undefined,
               })
             ) throw error;
           }
@@ -1142,7 +1142,7 @@ export default async function handler(req: any, res: any) {
           index >= openRouterAttempts.length - 1
           || !shouldFallbackBeforeStreaming(error, {
             currentGateway: 'openrouter',
-            nextGateway: openRouterAttempts[index + 1]?.provider,
+            nextGateway: openRouterAttempts[index + 1] ? 'openrouter' : undefined,
           })
         ) throw error;
       }
