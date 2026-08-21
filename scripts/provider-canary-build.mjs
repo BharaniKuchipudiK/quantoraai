@@ -7,9 +7,10 @@ if (!key) {
 }
 
 const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-const model = 'nvidia/nemotron-3-super-120b-a12b:free';
+const PRIMARY = 'nvidia/nemotron-3-super-120b-a12b:free';
+const FALLBACK = 'openai/gpt-oss-120b:free';
 
-async function generate(label, prompt) {
+async function generate(label, model, prompt) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45_000);
   try {
@@ -48,6 +49,7 @@ function cleanSnippet(text) {
 
 const calculator = await generate(
   'calculator',
+  PRIMARY,
   'Create a complete self-contained HTML calculator with a visible display; buttons 0-9, +, -, multiply, divide, equals and clear; and working JavaScript interactions. Return HTML only.'
 );
 const calculatorOk = /<button\b/i.test(calculator.text)
@@ -61,6 +63,7 @@ console.log(`REAL_PROVIDER_CANARY_OK calculator model=${calculator.providerModel
 
 const website = await generate(
   'website',
+  FALLBACK,
   'Create a complete self-contained HTML landing page for a modern AI startup with a polished hero, three feature cards, and a clear call-to-action button. Return HTML only.'
 );
 const websiteOk = /<(?:html|main|section)\b/i.test(website.text)
@@ -71,4 +74,4 @@ if (!websiteOk) {
   throw new Error('website: generated output failed design assertions');
 }
 console.log(`REAL_PROVIDER_CANARY_OK website model=${website.providerModel} bytes=${website.text.length}`);
-console.log('REAL_PROVIDER_CANARY_PASS calculator+website');
+console.log('REAL_PROVIDER_CANARY_PASS primary+fallback');
