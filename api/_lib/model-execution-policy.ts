@@ -8,15 +8,17 @@ const GEMINI_STABLE_FALLBACK = 'gemini-flash-latest';
 const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
 const NEMOTRON_ULTRA = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const LAGUNA_S = 'poolside/laguna-s-2.1:free';
+const DEEPSEEK_CHAT = 'deepseek/deepseek-chat';
 const MAX_MODEL_ATTEMPTS = 2;
 
 const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
-  // Super returned a provider 404 in production on 21 Aug 2026. Route an
-  // already-open/stale client to an independent Poolside endpoint instead of
-  // retrying another NVIDIA route.
-  [NEMOTRON_SUPER]: LAGUNA_S,
-  [LAGUNA_S]: NEMOTRON_ULTRA,
-  [NEMOTRON_ULTRA]: LAGUNA_S,
+  // Free endpoints are useful as the first route, but OpenRouter's free tier is
+  // account-rate-limited and individual endpoints can disappear. A failed free
+  // build therefore gets one low-cost paid emergency attempt instead of another
+  // free request that is subject to the same exhausted quota.
+  [NEMOTRON_SUPER]: DEEPSEEK_CHAT,
+  [LAGUNA_S]: DEEPSEEK_CHAT,
+  [NEMOTRON_ULTRA]: DEEPSEEK_CHAT,
 };
 
 function providerOf(modelId: string): 'gemini' | 'openrouter' {
@@ -26,12 +28,9 @@ function providerOf(modelId: string): 'gemini' | 'openrouter' {
 /**
  * One turn gets at most two model attempts. Never enumerate every model a key
  * can see: quota exhaustion on one request must not become a provider-wide
- * retry storm.
- *
- * Qualified free routes are paired across independent upstream providers so a
- * single model/provider outage cannot kill a normal Studio turn. Travel tool
- * turns stay on Gemini because the current tool schema is attached to Gemini;
- * cross-provider fallback there would silently remove capability.
+ * retry storm. Normal Studio turns may use a low-cost emergency OpenRouter
+ * fallback; Travel tool turns stay on Gemini because the current tool schema is
+ * attached to Gemini and cross-provider fallback would silently remove tools.
  */
 export function modelAttemptsForTurn(input: {
   primaryModelId: string;
@@ -72,8 +71,6 @@ export function shouldFallbackBeforeStreaming(error: unknown) {
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);
   if ([401, 403].includes(status)) return false;
-  // Provider/model endpoints can disappear while the upstream catalogue still
-  // lists the model. Treat 404/410 as route-health failures, not user errors.
   if ([404, 408, 410, 425, 429, 500, 502, 503, 504].includes(status)) return true;
   return /not found|no endpoints?|timeout|temporar|quota|rate.?limit|high demand|unavailable|network|fetch failed/i.test(message);
 }
