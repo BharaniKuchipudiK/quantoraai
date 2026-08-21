@@ -62,6 +62,8 @@ async function frameWith(selector, timeout = TURN_TIMEOUT_MS) {
     for (const frame of page.frames()) {
       if (await frame.locator(selector).first().isVisible().catch(() => false)) return frame;
     }
+    const previewError = await page.locator('[data-quantora-real-project-preview="true"]').first().getAttribute('data-quantora-preview-error').catch(() => null);
+    if (previewError) throw new Error(`The deployed iframe failed before ${selector} rendered: ${previewError}`);
     await page.waitForTimeout(250);
   }
   return null;
@@ -140,7 +142,7 @@ try {
 
   const websiteStartedAt = Date.now();
   await setGoldenTransaction('simple-website');
-  await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return complete runnable project files in fenced code blocks with filepath attributes. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, CSS, and lucide-react.');
+  await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return complete runnable project files in fenced code blocks with filepath attributes. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, CSS, and lucide-react. Keep all content as text, CSS, or lucide icons: do not use images, asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
   const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   const websiteFrame = await frameWith('h1');

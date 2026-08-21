@@ -85,6 +85,7 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
     <div
       data-quantora-real-project-preview="true"
       data-quantora-correlation-id={normalizeClientCorrelationId(correlationId) || undefined}
+      data-quantora-preview-error={error || undefined}
       style={{ width: '100%', height: '100%', minHeight: 0, background: '#ffffff', position: 'relative' }}
     >
       {loading && (

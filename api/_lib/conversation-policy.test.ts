@@ -12,6 +12,8 @@ test("uses the Senior Partner conversation loop by default", () => {
   assert.match(prompt, /do not dump code/);
   assert.match(prompt, /SESSION MEMORY UPDATE/);
   assert.match(prompt, /BALANCED MODE/);
+  assert.match(prompt, /GENERATED VFS RUNTIME CONTRACT/);
+  assert.match(prompt, /opaque-origin security sandbox/);
 });
 
 test("injects listening signals into the system prompt", () => {

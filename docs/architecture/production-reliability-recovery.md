@@ -12,6 +12,7 @@ Status: feature freeze. This note governs the calculator and simple-website reco
 - A request UUID existed only inside `/api/chat` and reached the browser only in the final SSE event. It was not sent by the browser, retained on the artifact, propagated to `/api/preview-compile`, or included in iframe readiness.
 - Provider resilience and distributed circuit-store code existed, but `/api/chat` did not use it. Chat used a static two-attempt map and then filtered execution to the original gateway. The “paid emergency fallback” remained inside the same OpenRouter credential/quota/failure domain.
 - The first exact-SHA Preview canary subsequently proved the new tracing contract: inference and VFS parsing succeeded, then `/api/preview-compile` returned 422 because Vercel file tracing had omitted the browser packages resolved dynamically by the runtime compiler. The compiler function now declares those runtime files explicitly.
+- The next canary passed the calculator end to end and isolated the website failure to iframe execution (`ReferenceError: src is not defined`) after a successful compile. Build prompts now carry the opaque-sandbox execution contract explicitly, and the gate surfaces iframe diagnostics immediately instead of waiting for a selector timeout.
 
 ## Five Whys
 
