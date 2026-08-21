@@ -7,9 +7,12 @@ import { applyDiffPatch } from './diff-patcher.js';
  * Example: { 'App.jsx': { content: '...', language: 'jsx' } }
  */
 export function parseVFSFromMarkdown(text, currentVfs = {}) {
-  // Deep clone currentVfs to prevent mutating React state directly.
+  // Existing files are used only as the base for an actual code update/diff.
+  // A plain-language reply must return an empty parse result; otherwise callers
+  // cannot distinguish "this response contains project files" from "an older
+  // project happens to exist", which used to resurrect Code Preview in Travel.
   let vfs = JSON.parse(JSON.stringify(currentVfs));
-  if (!text) return vfs;
+  if (!text) return {};
 
   // Regex to match markdown code blocks. Spaces/tabs are allowed between the
   // language and optional attributes, but never consume the newline that begins
@@ -18,6 +21,7 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
   // Group 2: attributes (optional, e.g. filepath="App.jsx")
   // Group 3: code content
   const codeBlockRegex = /```(\w+)?[ \t]*(.*?)\r?\n([\s\S]*?)```/g;
+  let foundRunnableFile = false;
   
   let match;
   while ((match = codeBlockRegex.exec(text)) !== null) {
@@ -55,6 +59,8 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
       }
     }
 
+    foundRunnableFile = true;
+
     // Normalize language
     let normalizedLanguage = language;
     if (['js', 'jsx', 'javascript', 'react'].includes(language)) normalizedLanguage = 'jsx';
@@ -77,7 +83,8 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
     }
   }
   
-  // Backward compatibility: If no valid code blocks were found using standard markdown,
-  // maybe the AI just spit out raw HTML/React. The caller handles that path.
-  return vfs;
+  // Plain prose must never carry an older VFS forward. The caller can now use
+  // Object.keys(result).length as a truthful signal that THIS response contains
+  // a runnable artifact.
+  return foundRunnableFile ? vfs : {};
 }

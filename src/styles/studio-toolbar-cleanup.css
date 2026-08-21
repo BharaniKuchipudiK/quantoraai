@@ -99,8 +99,7 @@ html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio .fl
  * experimentation available in neutral Quantora, but remove it completely once
  * a Travel / Study / Finance / Research workspace is active.
  */
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Select AI Engine"],
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Compare two AI models side-by-side in real time"] {
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Select AI Engine"] {
   display: none !important;
 }
 

@@ -463,6 +463,35 @@ export function useStudioSession({ user, selectedModel }) {
     return newSession.id;
   }, [activeProject.id, defaultGreetingMsg]);
 
+  const forkChatFromMessage = useCallback((messageId) => {
+    let forkedSessionId = null;
+    setAllChatSessions((prev) => {
+      const source = prev.find((session) => session.id === activeSessionId);
+      if (!source) return prev;
+      const index = (source.messages || []).findIndex((message) => String(message.id) === String(messageId));
+      if (index < 0) return prev;
+
+      const now = Date.now();
+      const fork = {
+        ...source,
+        id: `session-${now}-${Math.random().toString(36).slice(2, 7)}`,
+        title: `${String(source.title || 'Forked Chat').replace(/\s*\(fork\)$/i, '')} (fork)`.slice(0, 80),
+        createdAt: now,
+        updatedAt: now,
+        messages: (source.messages || []).slice(0, index + 1).map((message) => ({ ...message })),
+        parentSessionId: source.id,
+        forkedFromMessageId: messageId,
+        forkedAt: now,
+      };
+      forkedSessionId = fork.id;
+      const updated = [fork, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    if (forkedSessionId) setActiveSessionId(forkedSessionId);
+    return forkedSessionId;
+  }, [activeSessionId]);
+
   useEffect(() => {
     publishStudioDomainState(studioDomain);
   }, [activeSessionId, studioDomain]);
@@ -581,6 +610,7 @@ export function useStudioSession({ user, selectedModel }) {
     recordListeningSignal,
     handleCreateNewChat,
     handleCreateAdvisorChat,
+    forkChatFromMessage,
     handleDeleteChat,
     projects,
     activeProjectId: activeProject.id,

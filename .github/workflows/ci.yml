@@ -45,21 +45,15 @@ jobs:
         run: npm run build
 
       - name: Audit high-severity dependencies
-        # Fails on any high/critical advisory EXCEPT a documented allowlist of
-        # unfixable, unreachable transitives. Currently: image-size (and its
-        # dependent pptxgenjs) — a DoS in ICNS/JXL/HEIF image PARSERS. We only
-        # generate text-based .pptx server-side and never parse untrusted images,
-        # so it is not reachable; every published image-size version is flagged,
-        # so there is no version to upgrade to. See docs/CI-ENFORCEMENT.md.
         run: |
           npm audit --json > audit.json || true
           node -e "const a=require('./audit.json');const allow=new Set(['image-size','pptxgenjs']);const bad=Object.entries(a.vulnerabilities||{}).filter(([k,v])=>['high','critical'].includes(v.severity)&&!allow.has(k));if(bad.length){console.error('Disallowed high/critical advisories:',bad.map(([k])=>k).join(', '));process.exit(1);}console.log('Audit OK (allowlisted unreachable transitives:',[...allow].join(', '),')');"
 
-  travel-browser-gate:
+  browser-gates:
     name: Browser release gates
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -95,18 +89,50 @@ jobs:
           cat /tmp/quantora-preview.log
           exit 1
 
+      - name: Execute cross-workspace visual contract
+        id: workspace_contract
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/workspace-contract-browser-gate.mjs
+
+      - name: Execute platform experience budget
+        id: platform_experience
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+          QUANTORA_PLATFORM_SHELL_SLA_MS: 4000
+          QUANTORA_PLATFORM_SWITCH_SLA_MS: 1200
+          QUANTORA_PLATFORM_INPUT_SLA_MS: 350
+          QUANTORA_PLATFORM_MAX_LONG_TASK_MS: 500
+          QUANTORA_PLATFORM_TOTAL_LONG_TASK_MS: 1600
+        run: node scripts/platform-experience-browser-gate.mjs
+
       - name: Execute Travel browser journey
+        id: travel_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
           QUANTORA_E2E_TURN_SLA_MS: 8000
         run: node scripts/travel-browser-release-gate.mjs
 
+      - name: Execute Study media browser journey
+        id: study_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/study-media-browser-gate.mjs
+
       - name: Execute media and profile browser journey
+        id: media_profile_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/media-profile-browser-gate.mjs
 
-      - name: Execute Studio regression recovery journey
+      - name: Execute Studio regression journey
+        id: studio_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/studio-regression-browser-gate.mjs
@@ -119,3 +145,27 @@ jobs:
           path: artifacts/e2e
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Enforce browser release gates
+        if: always()
+        env:
+          WORKSPACE_OUTCOME: ${{ steps.workspace_contract.outcome }}
+          PLATFORM_OUTCOME: ${{ steps.platform_experience.outcome }}
+          TRAVEL_OUTCOME: ${{ steps.travel_gate.outcome }}
+          STUDY_OUTCOME: ${{ steps.study_gate.outcome }}
+          MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
+          STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
+        run: |
+          failed=0
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME; do
+            outcome="${!gate}"
+            if [ "$outcome" != "success" ]; then
+              echo "::error::$gate finished with outcome: $outcome"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "One or more browser release gates failed. Release remains blocked."
+            exit 1
+          fi
+          echo "All browser release gates passed."

@@ -137,9 +137,8 @@ try {
   await page.getByRole('button', { name: 'Close profile picture chooser' }).click();
 
   const arena = page.locator('[data-quantora-dual-arena]').first();
-  const fork = page.locator('[data-quantora-fork-chat]').first();
-  await visible(arena, 'Dual Arena was not restored in the new Studio shell.');
-  await visible(fork, 'Fork Chat was not added to the Studio shell.');
+  await visible(arena, 'Dual Arena is missing from the Studio shell.');
+  await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Fork Chat is still incorrectly placed in the top conversation bar.');
   await hidden(page.getByRole('button', { name: /^Reset Chat$/i }).first(), 'Reset Chat is visible again.');
 
   const prompt = page.locator('.app-shell--studio textarea').first();
@@ -150,32 +149,39 @@ try {
   const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
   await visible(preview, 'Multi-file Vite project did not switch to a real project preview.', 15_000);
 
-  const workspaceText = await page.locator('[data-quantora-legacy-workspace="true"]').first().innerText().catch(() => '');
+  const workspaceText = await page.locator('[data-quantora-code-workspace="true"]').first().innerText().catch(() => '');
   if (/\{"name":"mission-control-recovery"/.test(workspaceText)) {
     throw new Error('Preview is still exposing package.json as the application result.');
   }
 
-  const fileTabs = page.locator('[data-quantora-legacy-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
+  const fileTabs = page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
   await visible(fileTabs, 'Expected project file tab was not generated.');
   await fileTabs.click();
-  const editor = page.locator('[data-quantora-legacy-workspace="true"] textarea').first();
+  const editor = page.locator('[data-quantora-code-workspace="true"] textarea').first();
   await visible(editor, 'Project source editor is missing.');
   const editorValue = await editor.inputValue();
   if (!editorValue.includes('Mission Control is alive')) {
     throw new Error('File tabs still display the wrong shared source instead of the selected file.');
   }
 
+  const fork = page.locator('[data-quantora-message-fork="true"]').last();
+  await visible(fork, 'Fork Chat was not placed in the completed assistant response footer.');
+  await hidden(page.locator('button[title="More"]').first(), 'Legacy three-dot response overflow is still visible.');
+
   await arena.click();
-  await page.waitForTimeout(80);
-  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena proxy did not activate the underlying arena state.');
+  await page.waitForTimeout(120);
+  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena did not activate the underlying React arena state.');
+  await visible(page.getByRole('button', { name: /VS:/ }).first(), 'Dual Arena activation did not expose the second-model control.');
 
   const sessionsBeforeFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
   await fork.click();
   await page.waitForLoadState('domcontentloaded');
   const sessionsAfterFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
-  if (sessionsAfterFork.length <= sessionsBeforeFork.length) throw new Error('Fork Chat did not create an independent session.');
+  if (sessionsAfterFork.length <= sessionsBeforeFork.length) throw new Error('Footer Fork Chat did not create an independent session.');
   const forked = sessionsAfterFork[0];
-  if (!forked?.parentSessionId || !forked?.forkedAt) throw new Error('Forked chat is missing ancestry metadata.');
+  if (!forked?.parentSessionId || !forked?.forkedAt || !forked?.forkedFromMessageId) {
+    throw new Error('Forked chat is missing response ancestry metadata.');
+  }
 
   console.log('Studio regression recovery browser gate passed.');
 } catch (error) {

@@ -1,9 +1,8 @@
 import { useModelExperienceMemory } from './useModelExperienceMemory.js';
 import { useRef } from 'react';
-import { detectOfficeIntent, OFFICE_KIND } from '../lib/office-intent.js';
+import { detectOfficeIntent } from '../lib/office-intent.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
-import { chooseBestDeckModel } from '../lib/model-routing.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 import { captureUserAnswerAsContext } from '../lib/session-context.js';
 import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
@@ -15,6 +14,8 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
+
+const CHAT_TURN_DEADLINE_MS = 90_000;
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];
@@ -74,18 +75,25 @@ async function persistPclContinuity({
       record = await saveAgainst(record);
     } catch (error) {
       if (!error?.conflict) throw error;
-      // One optimistic retry after re-reading the authoritative version. Never
-      // overwrite another tab's more recent Outcome State.
       record = await saveAgainst(await loadOutcomeState(sessionId));
     }
     if (Number.isInteger(record?.version)) updatePclSessionOutcomeVersion(sessionId, record.version);
     return record;
   } catch (error) {
-    // Durable PCL continuity is best-effort at the UI boundary. A transient
-    // persistence outage must never discard the assistant response the user saw.
     console.warn('Outcome State continuity sync failed:', error?.message || error);
     return null;
   }
+}
+
+function responseErrorMessage(status, payload, modelName) {
+  if (status === 401 && payload?.requiresAuth) return payload.error || 'Please sign in to continue.';
+  if (status === 429) return payload?.error || 'Too many requests. Please try again shortly.';
+  return payload?.error || `The AI gateway could not complete the request with ${modelName || 'the selected model'}.`;
+}
+
+function activeStudioDomain(chatSessions, activeSessionId) {
+  const session = (chatSessions || []).find((candidate) => candidate?.id === activeSessionId);
+  return session?.studioDomain || null;
 }
 
 export function useChatStream({
@@ -112,22 +120,22 @@ export function useChatStream({
   sessionContext
 }) {
   const abortControllerRef = useRef(null);
-  const { logModelFailure, getLearnedBehaviors } = useModelExperienceMemory();
-  
+  const { getLearnedBehaviors } = useModelExperienceMemory();
+
   const cancelStream = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      setIsGenerating(false);
-      updateActiveMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.sender === 'ai' && !last.text) {
-          return [...prev.slice(0, -1), { ...last, text: '⚠️ **Generation Stopped**: The request was cancelled by the user.', isError: true }];
-        } else if (last && last.sender === 'ai') {
-           return [...prev.slice(0, -1), { ...last, text: last.text + '\n\n*(Stopped by user)*' }];
-        }
-        return prev;
-      });
-    }
+    if (!abortControllerRef.current) return;
+    abortControllerRef.current.abort('user');
+    setIsGenerating(false);
+    updateActiveMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.sender === 'ai' && !last.text) {
+        return [...prev.slice(0, -1), { ...last, text: '⚠️ **Generation Stopped**', isError: true, executionStatus: null }];
+      }
+      if (last && last.sender === 'ai') {
+        return [...prev.slice(0, -1), { ...last, text: `${last.text}\n\n*(Stopped by user)*`, executionStatus: null }];
+      }
+      return prev;
+    });
   };
 
   const handleSendMessage = async (textToSend, targetModelOverride = null) => {
@@ -142,35 +150,31 @@ export function useChatStream({
       setPclSessionMemoryConsent(activeSessionId, true);
     } else if (memoryIntent === 'revoke') {
       setPclSessionMemoryConsent(activeSessionId, false);
-      void forgetOutcomeState(activeSessionId).catch(() => {
-        // Local consent is revoked immediately even if durable deletion is temporarily unavailable.
-      });
+      void forgetOutcomeState(activeSessionId).catch(() => {});
     }
     const pclEnvelope = readPclConversationEnvelope({ sessionId: activeSessionId, sessionContext });
     const confirmedUserFact = pclEnvelope.memoryConsented && !memoryIntent
       ? captureUserAnswerAsContext(visibleUserText, messages)
       : null;
 
-    // Inject Context Chips
     const contextChips = attachments.filter(a => a.type === 'context');
     if (contextChips.length > 0) {
-      let contextString = "";
+      let contextString = '';
       for (const chip of contextChips) {
         if (chip.contextType === 'canvas') {
           contextString += `\n\n[CONTEXT: CURRENT CANVAS CODE]\n\`\`\`\n${canvasCode}\n\`\`\``;
         } else if (chip.contextType === 'history') {
-           const prevSession = chatSessions.find(s => s.id !== activeSessionId);
-           if (prevSession) {
-             const stringifiedHistory = prevSession.messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
-             contextString += `\n\n[CONTEXT: PREVIOUS SESSION (${prevSession.title})]\n${stringifiedHistory.substring(0, 5000)}...`;
-           }
+          const prevSession = chatSessions.find(s => s.id !== activeSessionId);
+          if (prevSession) {
+            const stringifiedHistory = prevSession.messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join('\n');
+            contextString += `\n\n[CONTEXT: PREVIOUS SESSION (${prevSession.title})]\n${stringifiedHistory.substring(0, 5000)}...`;
+          }
         }
       }
-      text = text + contextString;
+      text += contextString;
     }
 
     setLastPrompt(text.trim());
-
     const userMsg = {
       id: Date.now(),
       sender: 'user',
@@ -190,32 +194,30 @@ export function useChatStream({
         body: JSON.stringify({ prompt: text.trim() })
       });
       const modData = await modRes.json();
-      
       if (modData.flagged) {
         updateActiveMessages(prev => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
-          text: `🚨 **Policy Violation Detected**\n\n${modData.reason}\n\n*Flagged Pattern: \`${modData.matchedPattern}\`*`,
+          text: `🚨 **Policy Violation Detected**\n\n${modData.reason}`,
           isError: true
         }]);
         setIsGenerating(false);
         return;
       }
     } catch (e) {
-      console.error("Moderation API failed, failing open...", e);
+      console.error('Moderation API failed, failing open...', e);
     }
 
-
-    let targetModel = targetModelOverride || selectedModel || { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
+    const targetModel = targetModelOverride
+      || selectedModel
+      || (availableModels || []).find((model) => model?.available !== false)
+      || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
-    // --- OFFICE LIFECYCLE ROUTER ---
-    // Creation is briefing -> one explicit Continue action -> generation.
-    // Once a verified artifact exists, natural-language follow-ups are interpreted
-    // semantically as REFINE vs DISCUSS; they are never forced back into briefing.
     const currentOfficeArtifact = activeOfficeArtifact(messages);
     const explicitOfficeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
     const inheritedOfficeKind = activeOfficeBriefingKind(messages) || activeOfficeArtifactKind(messages);
@@ -253,25 +255,24 @@ export function useChatStream({
             userKey: geminiApiKey,
             openRouterKey: openRouterApiKey,
             sessionContext,
-            imageAttachments: attachments.filter((attachment) => attachment.type === 'image' && attachment.dataUrl).map((attachment) => ({ name: attachment.name, dataUrl: attachment.dataUrl }))
+            imageAttachments: attachments
+              .filter((attachment) => attachment.type === 'image' && attachment.dataUrl)
+              .map((attachment) => ({ name: attachment.name, dataUrl: attachment.dataUrl }))
           })
         });
 
-        // Defensive parse: on a timeout/crash Vercel returns a raw HTML error
-        // page, not JSON. Never let JSON.parse of that surface as
-        // "Unexpected token 'A'". Give a clean, human message instead.
         const raw = await res.text();
         let data;
         try {
           data = JSON.parse(raw);
         } catch {
           throw new Error(res.status === 504
-            ? 'The document generator timed out. Please try again — a shorter prompt helps.'
+            ? 'The document generator timed out. Please try again.'
             : 'The server hit an error generating the document. Please try again.');
         }
         if (!res.ok) throw new Error(data.error || 'Compilation failed');
         if (!cacheOfficeArtifact(data)) {
-          throw new Error('The generated Office artifact failed client envelope verification. No unverified file was accepted.');
+          throw new Error('The generated Office artifact failed client envelope verification.');
         }
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -296,446 +297,287 @@ export function useChatStream({
       }
       return;
     }
-    // ---------------------------------------
 
-    // Phase 4 & 5: Intent Router & Agentic Swarm
     let effectiveArenaMode = arenaMode;
-    let intent = 'subjective'; // Default
-    try {
-      const intentRes = await fetch('/api/classify-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: text,
-          history: cleanMessages.slice(-10).map((message) => ({ sender: message.sender, text: message.text })),
-          activeOfficeArtifact: currentOfficeArtifact ? {
-            kind: currentOfficeArtifact.kind || currentOfficeArtifact.format || null,
-            fileName: currentOfficeArtifact.fileName || '',
-            title: currentOfficeArtifact.spec?.title || currentOfficeArtifact.spec?.filename || '',
-            previewFingerprint: currentOfficeArtifact.verification?.previewFingerprint || '',
-          } : null,
-          requestedOfficeKind: explicitOfficeKind || null,
-        })
-      });
-      if (intentRes.ok) {
-        const intentData = await intentRes.json();
-        intent = intentData.intent;
-      }
-    } catch (e) {
-      console.error("Gatekeeper intent routing failed", e);
-    }
+    const isCodingRequest = /\b(build|code|implement|develop)\b/i.test(text)
+      && /\b(react|app|application|website|component|javascript|typescript|html|css)\b/i.test(text);
+    if (briefingKind || isCodingRequest) effectiveArenaMode = false;
 
-    const isCodingRequest = text.toLowerCase().includes('build') && (text.toLowerCase().includes('react') || text.toLowerCase().includes('app') || text.toLowerCase().includes('code'));
-    
-    if (briefingKind && effectiveArenaMode) {
-      // Briefing/artifact continuity is one stateful conversation, not an arena comparison.
-      effectiveArenaMode = false;
-    }
+    const requestBodyFor = (model) => ({
+      message: text,
+      modelId: model.id,
+      modelName: model.name,
+      history: cleanMessages,
+      userKey: geminiApiKey,
+      openRouterKey: openRouterApiKey,
+      cognitiveLevel,
+      webSearch: webSearchEnabled,
+      sessionContext,
+      projectId: sessionContext?.projectId || null,
+      studioDomain,
+      ...pclEnvelope,
+    });
 
-    if (effectiveArenaMode && (intent === 'deterministic' || isCodingRequest)) {
-        // A build request doesn't benefit from side-by-side Arena comparison —
-        // switch to the single-model workspace flow. (No artificial delay or
-        // "agentic swarm" theater; just do it.)
-        effectiveArenaMode = false;
+    if (effectiveArenaMode) {
+      const modelA = targetModel;
+      const modelB = secondModel || (availableModels || []).find((model) => model?.id !== modelA?.id && model?.available !== false);
+      if (!modelB) {
         updateActiveMessages(prev => [...prev, {
           id: Date.now() + 1,
           sender: 'ai',
-          text: 'Switching out of Arena Mode for this build so I can open the workspace and generate it.'
+          text: 'Dual Arena needs a second available model. Please choose another model and try again.',
+          isError: true,
         }]);
-    }
-
-    // 1. Dual Model Arena Execution Mode
-    if (effectiveArenaMode) {
-      const modelA = targetModel;
-      const modelB = secondModel || { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' };
+        setIsGenerating(false);
+        return;
+      }
 
       const dualMsgId = Date.now() + 1;
-      const dualMsg = {
-        id: dualMsgId, sender: 'ai', type: 'arena_battle', isDual: true, prompt: text,
+      updateActiveMessages(prev => [...prev, {
+        id: dualMsgId,
+        sender: 'ai',
+        type: 'arena_battle',
+        isDual: true,
+        prompt: text,
         modelA: { modelName: modelA.name, text: '', provider: modelA.name, latencyMs: 0 },
-        modelB: { modelName: modelB.name, text: '', provider: modelB.name, latencyMs: 0 }
-      };
-      updateActiveMessages(prev => [...prev, dualMsg]);
+        modelB: { modelName: modelB.name, text: '', provider: modelB.name, latencyMs: 0 },
+      }]);
 
-      const streamSingleModel = async (mod, isModelA) => {
+      const controllers = [];
+      const streamSingleModel = async (model, isModelA) => {
+        const controller = new AbortController();
+        controllers.push(controller);
+        abortControllerRef.current = {
+          abort: (reason) => controllers.forEach((item) => item.abort(reason)),
+        };
+        const timeoutId = setTimeout(() => controller.abort('timeout'), CHAT_TURN_DEADLINE_MS);
         try {
-          // Each Arena stream owns its controller. A timeout from one model must
-          // never abort the other model's request. The shared ref remains the
-          // latest controller so the existing Stop action keeps its behavior.
-          const controller = new AbortController();
-          abortControllerRef.current = controller;
-      const timeoutId = setTimeout(() => controller.abort('timeout'), 60000);
-      const res = await fetch('/api/chat', {
-        signal: controller.signal,
+          const res = await fetch('/api/chat', {
+            signal: controller.signal,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: text,
-              modelId: mod.id,
-              modelName: mod.name,
-              history: cleanMessages,
-              userKey: geminiApiKey,
-              openRouterKey: openRouterApiKey,
-              sessionContext,
-              ...pclEnvelope,
-            })
+            body: JSON.stringify(requestBodyFor(model)),
           });
-          
-          if (!res.ok) throw new Error('API Error');
-          
-          clearTimeout(timeoutId);
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let currentText = "";
-        let finalProvider = mod.name;
-        let finalLatency = 0;
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(responseErrorMessage(res.status, data, model.name));
+          }
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let currentText = '';
+          let provider = model.name;
+          let latencyMs = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
               const dataStr = line.slice(6);
-              if (dataStr === '[DONE]') break;
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.text) {
-                  currentText += parsed.text;
-                  const displayText = sanitizeAssistantStream(currentText);
-                  updateActiveMessages(prev => prev.map(m => {
-                    if (m.id === dualMsgId) {
-                      const updatedModelInfo = { modelName: mod.name, text: displayText, provider: finalProvider, latencyMs: finalLatency };
-                      return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
-                    }
-                    return m;
-                  }));
-                }
-                if (parsed.provider) {
-                  finalProvider = parsed.provider;
-                  finalLatency = parsed.latencyMs || 0;
-                  updateActiveMessages(prev => prev.map(m => {
-                    if (m.id === dualMsgId) {
-                      const updatedModelInfo = { modelName: mod.name, text: sanitizeAssistantStream(currentText), provider: finalProvider, latencyMs: finalLatency };
-                      return { ...m, modelA: isModelA ? updatedModelInfo : m.modelA, modelB: !isModelA ? updatedModelInfo : m.modelB };
-                    }
-                    return m;
-                  }));
-                }
-              } catch (e) {}
+              if (dataStr === '[DONE]') continue;
+              let parsed;
+              try { parsed = JSON.parse(dataStr); } catch { continue; }
+              if (parsed.error?.message) throw new Error(parsed.error.message);
+              if (parsed.text) currentText += parsed.text;
+              if (parsed.provider) {
+                provider = parsed.provider;
+                latencyMs = parsed.latencyMs || 0;
+              }
+              updateActiveMessages(prev => prev.map(m => {
+                if (m.id !== dualMsgId) return m;
+                const modelInfo = {
+                  modelName: model.name,
+                  text: sanitizeAssistantStream(currentText),
+                  provider,
+                  latencyMs,
+                };
+                return { ...m, modelA: isModelA ? modelInfo : m.modelA, modelB: isModelA ? m.modelB : modelInfo };
+              }));
             }
           }
+        } catch (error) {
+          updateActiveMessages(prev => prev.map(m => {
+            if (m.id !== dualMsgId) return m;
+            const key = isModelA ? 'modelA' : 'modelB';
+            return { ...m, [key]: { ...m[key], text: `Connection error: ${error.message}` } };
+          }));
+        } finally {
+          clearTimeout(timeoutId);
         }
-        
-      } catch (e) {
-        updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? { ...m, [isModelA ? 'modelA' : 'modelB']: { ...m[isModelA ? 'modelA' : 'modelB'], text: `Connection error: ${e.message}` } } : m));
-      }
-    };
+      };
 
-    try {
       await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
-    } catch (err) {
-    if (err.name === 'AbortError' || err === 'timeout') {
-      updateActiveMessages(prev => prev.map(m => m.id === dualMsgId ? {
-        ...m,
-        text: err === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
-      } : m));
+      setIsGenerating(false);
       return;
     }
-      console.error('Arena Execution Error:', err);
-    } finally {
-      setIsGenerating(false);
-    }
-    return;
-  }
 
-  // 2. Standard Single Model Execution Mode
-  const aiMsgId = Date.now() + 1;
-  const initialAiMsg = {
-    id: aiMsgId,
-    sender: 'ai',
-    modelUsed: targetModel.name,
-    text: '',
-    componentType: 'formatted_text',
-    latencyMs: 0,
-    provider: targetModel.name,
-    liveConnected: true,
-    ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
-  };
-  updateActiveMessages(prev => [...prev, initialAiMsg]);
+    const aiMsgId = Date.now() + 1;
+    updateActiveMessages(prev => [...prev, {
+      id: aiMsgId,
+      sender: 'ai',
+      modelUsed: targetModel.name,
+      text: '',
+      componentType: 'formatted_text',
+      latencyMs: 0,
+      provider: targetModel.name,
+      liveConnected: true,
+      executionStatus: null,
+      ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
+    }]);
 
-  const executeSingleModel = async (modelToUse, attempt = 1, promptOverride = null) => {
     const learned = getLearnedBehaviors();
-    const isOfficeBriefingOverride = typeof promptOverride === 'string' && promptOverride.startsWith('OFFICE BRIEFING CONTEXT');
     const activeOfficeContext = currentOfficeArtifact && !briefingPrompt
       ? buildActiveOfficeDiscussionContext(currentOfficeArtifact)
       : '';
-    let finalPromptOverride = promptOverride || '';
-    if (learned) {
-      finalPromptOverride = finalPromptOverride ? (finalPromptOverride + '\n\n' + learned) : learned;
-    }
-    if (activeOfficeContext) {
-      finalPromptOverride = finalPromptOverride ? `${finalPromptOverride}\n\n${activeOfficeContext}` : activeOfficeContext;
-    }
-    const messageForModel = isOfficeBriefingOverride
-      ? finalPromptOverride
-      : finalPromptOverride
-        ? text + '\n\n' + finalPromptOverride
-        : text;
+    const extraContext = [briefingPrompt, learned, activeOfficeContext].filter(Boolean).join('\n\n');
+    const messageForModel = extraContext ? `${text}\n\n${extraContext}` : text;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort('timeout'), CHAT_TURN_DEADLINE_MS);
+
     try {
-      abortControllerRef.current = new AbortController();
-      const timeoutId = setTimeout(() => { if(abortControllerRef.current) abortControllerRef.current.abort('timeout'); }, 60000);
       const res = await fetch('/api/chat', {
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...requestBodyFor(targetModel),
           message: messageForModel,
-          modelId: modelToUse.id,
-          modelName: modelToUse.name,
-          history: cleanMessages,
-          openRouterKey: openRouterApiKey,
-          cognitiveLevel: cognitiveLevel,
-          webSearch: webSearchEnabled,
-          sessionContext,
-          ...pclEnvelope,
         })
       });
 
-      if (res.ok) {
-        clearTimeout(timeoutId);
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let currentText = "";
-        let buffer = "";
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6);
-              if (dataStr === '[DONE]') break;
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.text) {
-                  currentText += parsed.text;
-                  const displayText = sanitizeAssistantStream(currentText);
-                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                    ...m,
-                    text: displayText,
-                    modelUsed: modelToUse.name // Ensure the active message reflects the fallback model
-                  } : m));
-                }
-                if (parsed.provider) {
-                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                    ...m,
-                    provider: parsed.provider,
-                    latencyMs: parsed.latencyMs || 0,
-                    ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
-                  } : m));
-                }
-              } catch (e) {}
-            }
-          }
-        }
-
-        const normalized = normalizeAssistantResponse(currentText);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const message = responseErrorMessage(res.status, errData, targetModel.name);
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: normalized.displayText,
-          ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
-          ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
-          ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
+          text: res.status === 401 && errData.requiresAuth
+            ? `🔒 **Please sign in to continue.**\n\n${message}`
+            : `⚠️ **Request failed:** ${message}`,
+          isAuthPrompt: res.status === 401 && errData.requiresAuth,
+          isError: true,
+          executionStatus: null,
         } : m));
-        await persistPclContinuity({
-          sessionId: pclEnvelope.sessionId,
-          memoryConsented: pclEnvelope.memoryConsented,
-          assistantContext: normalized.contextUpdate,
-          confirmedUserFact,
-          sourceTurn: String(userMsg.id),
-        });
-        setIsGenerating(false);
-      } else {
-        clearTimeout(timeoutId);
-        const errData = await res.json().catch(() => ({}));
-        
-        if (res.status === 401 && errData.requiresAuth) {
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: `🔒 **Please sign in to continue.**\n\n${errData.error || "Sign in to use Quantora's built-in AI."}`,
-            isAuthPrompt: true
-          } : m));
-          setIsGenerating(false);
-        } else if (res.status === 429) {
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: `⏳ **Slow down a moment.** ${errData.error || 'Too many requests.'}`
-          } : m));
-          setIsGenerating(false);
-        } else {
-          // PROACTIVE FAILOVER ON SERVER ERROR (503 / 500)
-          if (attempt === 1) {
-             logModelFailure(modelToUse.id, 'server_error');
-             console.log("Model experience: intercepted server error. Auto-failing over...");
-             const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-               ...m,
-               isFailover: true,
-               text: '' // reset text just in case
-             } : m));
-             return executeSingleModel(fallbackModel, 2, promptOverride);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let currentText = '';
+      let buffer = '';
+      let receivedDone = false;
+      let streamedError = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6);
+          if (dataStr === '[DONE]') {
+            receivedDone = true;
+            continue;
           }
-          
-          const errText = errData.error || `The backend server encountered an error with ${modelToUse.name}.`;
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: `⚠️ **Server Error**: ${errText}\n\nQuantora is unable to process this request at the moment.`
-          } : m));
-          setIsGenerating(false);
+          let parsed;
+          try { parsed = JSON.parse(dataStr); } catch { continue; }
+
+          if (parsed.error?.message) {
+            streamedError = parsed.error;
+            continue;
+          }
+          if (parsed.status) {
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              executionStatus: parsed.status,
+            } : m));
+          }
+          if (parsed.text) {
+            currentText += parsed.text;
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: sanitizeAssistantStream(currentText),
+              modelUsed: targetModel.name,
+            } : m));
+          }
+          if (parsed.provider) {
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              provider: parsed.provider,
+              latencyMs: parsed.latencyMs || 0,
+              executionStatus: null,
+              ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
+            } : m));
+          }
         }
       }
-    } catch (error) {
-      if (error.name === 'AbortError' || error === 'timeout') {
-          // PROACTIVE FAILOVER ON TIMEOUT
-          if (attempt === 1 && error === 'timeout') {
-             logModelFailure(modelToUse.id, 'timeout');
-             console.log("Model experience: intercepted timeout. Auto-failing over...");
-             const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-               ...m,
-               isFailover: true,
-               text: ''
-             } : m));
-             return executeSingleModel(fallbackModel, 2, promptOverride);
-          }
-          
-          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            text: error === 'timeout' ? '⚠️ **Request Timed Out**: The model took too long to respond (>60s). Please try again or switch models.' : '⚠️ **Generation Stopped**'
-          } : m));
-          setIsGenerating(false);
-          return;
+
+      if (streamedError) {
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: currentText
+            ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ ${streamedError.message}`
+            : `⚠️ **Request failed:** ${streamedError.message}`,
+          isError: true,
+          executionStatus: null,
+        } : m));
+        return;
       }
-      
-      console.error('Chat error:', error);
-      
-      if (attempt === 1) {
-         logModelFailure(modelToUse.id, 'connection_error');
-         console.log("Model experience: intercepted connection error. Auto-failing over...");
-         const fallbackModel = { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' };
-         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-           ...m,
-           isFailover: true,
-           text: ''
-         } : m));
-         return executeSingleModel(fallbackModel, 2, promptOverride);
+      if (!receivedDone) {
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: currentText
+            ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ The response stream ended unexpectedly.`
+            : '⚠️ **Connection Error:** The response stream ended unexpectedly.',
+          isError: true,
+          executionStatus: null,
+        } : m));
+        return;
       }
-      
+
+      const normalized = normalizeAssistantResponse(currentText);
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
         ...m,
-        text: `⚠️ **Connection Error**: Unable to reach Quantora's AI gateway for ${modelToUse.name}. Please check your connection.`
+        text: normalized.displayText,
+        executionStatus: null,
+        ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
+        ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
+        ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
       } : m));
+      await persistPclContinuity({
+        sessionId: pclEnvelope.sessionId,
+        memoryConsented: pclEnvelope.memoryConsented,
+        assistantContext: normalized.contextUpdate,
+        confirmedUserFact,
+        sourceTurn: String(userMsg.id),
+      });
+    } catch (error) {
+      const timedOut = controller.signal.aborted && controller.signal.reason === 'timeout';
+      const stopped = controller.signal.aborted && controller.signal.reason === 'user';
+      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+        ...m,
+        text: stopped
+          ? '⚠️ **Generation Stopped**'
+          : timedOut
+            ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(CHAT_TURN_DEADLINE_MS / 1000)} seconds instead of leaving it running indefinitely.`
+            : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
+        isError: true,
+        executionStatus: null,
+      } : m));
+    } finally {
+      clearTimeout(timeoutId);
+      abortControllerRef.current = null;
       setIsGenerating(false);
     }
   };
-  
-  // Phase 5: Swarm Mode
-  const isOffice = Boolean(briefingKind);
-  if (!effectiveArenaMode && intent === 'subjective' && !isOffice) {
-     // Trigger Architect -> Coder Swarm
-     
-     
-     // Bound the synthetic Architect worker. If it hangs, Quantora falls
-     // through to the normal single-model path instead of leaving generation
-     // indefinitely stuck.
-     const architectController = new AbortController();
-     const architectTimeout = setTimeout(() => architectController.abort('timeout'), 45000);
-     try {
-       // Fire Architect call to our generic chat endpoint using Flash. This is a
-       // synthetic worker turn, so it deliberately receives no Session Outcome
-       // identity and cannot author durable PCL memory.
-       const architectRes = await fetch('/api/chat', {
-         method: 'POST',
-         signal: architectController.signal,
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-           message: `You are the Architect Agent. Write a highly detailed technical implementation plan for this request. Do NOT write the final code. Just the step-by-step logic and file architecture. Request: ${text}`,
-           modelId: 'google/gemini-1.5-flash',
-           modelName: 'Gemini 1.5 Flash',
-           history: []
-         })
-       });
-       
-       if (architectRes.ok) {
-         // We have to wait for the stream to finish or we can just parse the stream
-         let architectPlan = '';
-         const reader = architectRes.body.getReader();
-         const decoder = new TextDecoder();
-         while (true) {
-           const { done, value } = await reader.read();
-           if (done) break;
-           const chunk = decoder.decode(value);
-           const lines = chunk.split('\n');
-           for (const line of lines) {
-             if (line.startsWith('data: ')) {
-               try {
-                 const parsed = JSON.parse(line.slice(6));
-                 if (parsed.text) architectPlan += parsed.text;
-               } catch (e) {}
-             }
-           }
-         }
-         
-         
-         
-         
-         // Clear text and run Coder
-         let coderPrompt = `Architect's Approved Implementation Plan:\n\n${architectPlan}\n\n---\n\nPlease execute this plan and write the final code for the original request.`;
-         
-         if (isWorkspaceMode && vfs && Object.keys(vfs).length > 0) {
-           coderPrompt += `\n\nIMPORTANT: We are editing an existing app. DO NOT rewrite entire files! Use exact Search/Replace diff blocks.
-           
-FORMAT:
-\`\`\`jsx filepath="filename.ext"
-<<<<
-exact lines of original code to replace (must match perfectly)
-====
-new lines of code
->>>>
-\`\`\`
 
-You can output multiple search/replace blocks if needed.
-\nCURRENT VIRTUAL FILE SYSTEM:\n`;
-           for (const [filename, file] of Object.entries(vfs)) {
-             coderPrompt += `\n--- ${filename} ---\n\`\`\`${file.language || ''}\n${file.content}\n\`\`\`\n`;
-           }
-         }
-         
-         executeSingleModel(targetModel, 1, coderPrompt);
-         return;
-       }
-     } catch (e) {
-       console.error("Swarm architect failed", e);
-     } finally {
-       clearTimeout(architectTimeout);
-     }
-  }
-
-  // Default fallback. An unresolved first-turn Office brief gets briefingPrompt;
-  // questions about an active artifact instead receive the exact canonical spec
-  // via buildActiveOfficeDiscussionContext above.
-  executeSingleModel(targetModel, 1, briefingPrompt || null);
-};
-return { handleSendMessage, cancelStream };
+  return { handleSendMessage, cancelStream };
 }
