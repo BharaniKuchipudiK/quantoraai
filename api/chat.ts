@@ -47,6 +47,11 @@ import { selectModelsForTurn } from "../src/lib/communication/routing/select-mod
 import { shouldHonorGuidedBuild, isSpecifiedRunnableTool } from "../src/lib/build-intent.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
+const PREVIEW_HTML_RECOVERY = `
+
+PREVIEW RECOVERY
+The previous attempt emitted native iOS/Android source (Swift, Kotlin, or similar). Quantora Live Preview cannot run those files. Output EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that looks like the requested platform. Do not emit .swift, .kt, or Xcode/Android project files.`;
+
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
@@ -256,9 +261,11 @@ async function openOpenRouterResponse(input: {
   temperature: number;
   grounding: boolean;
   jsonMode: boolean;
+  timeoutMs?: number;
 }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeoutMs = Math.max(15_000, Math.min(Number(input.timeoutMs) || 20_000, 55_000));
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -387,7 +394,9 @@ export default async function handler(req: any, res: any) {
       : explicitBuild || toolBuild
         ? true
         : Boolean(buildMode);
-    const grounding = Boolean(req.body?.webSearch) && !effectiveBuildMode && !honorGuided && task !== "repair";
+    // Studio users should not toggle web search. Live search is off until a
+    // product surface needs it (advisors are frozen; BUILD does not use it).
+    const grounding = false;
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') dynamicTemperature = 0.3;
@@ -639,6 +648,7 @@ export default async function handler(req: any, res: any) {
       let usedRoute: InferenceRoute | null = null;
       let lastRouteError: any = null;
       const failedQuotaDomains = new Set<string>();
+      let recoverHtmlPreview = false;
 
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
@@ -682,6 +692,8 @@ export default async function handler(req: any, res: any) {
         try {
           let attemptReply = '';
           const buildBeat = { t: 0 };
+          const attemptSystemPrompt = recoverHtmlPreview ? `${finalSystemPrompt}${PREVIEW_HTML_RECOVERY}` : finalSystemPrompt;
+          formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat);
           if (route.provider === 'gemini') {
             const openRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
@@ -694,7 +706,7 @@ export default async function handler(req: any, res: any) {
                 apiKey: effectiveGeminiKey as string,
                 model: route.id,
                 contents: geminiContents,
-                systemInstruction: finalSystemPrompt,
+                systemInstruction: attemptSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding,
                 travelToolsEnabled: false,
@@ -753,6 +765,7 @@ export default async function handler(req: any, res: any) {
               temperature: dynamicTemperature,
               grounding,
               jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'),
+              timeoutMs: attemptBudgetMs,
             });
             if (!response.body) throw Object.assign(new Error('OpenRouter API returned no body.'), { status: 502 });
             const reader = response.body.getReader();
@@ -825,8 +838,9 @@ export default async function handler(req: any, res: any) {
           break;
         } catch (error: any) {
           lastRouteError = error;
+          if (error?.detailCode === 'browser-preview-missing') recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
-          if (status === 429) failedQuotaDomains.add(route.quotaDomain);
+          if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
           // A response-contract miss is specific to this prompt/output. It may
           // use this turn's independent fallback, but must not poison the
           // shared operational health circuit for unrelated users.
@@ -850,7 +864,15 @@ export default async function handler(req: any, res: any) {
               ? error.detailCode
               : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
           });
-          if (sse.isCommitted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+          const nextRoute = attempts[index + 1];
+          if (
+            sse.isCommitted
+            || index >= attempts.length - 1
+            || !shouldFallbackBeforeStreaming(error, {
+              currentGateway: route.gateway,
+              nextGateway: nextRoute?.gateway,
+            })
+          ) throw error;
         }
       }
 
@@ -980,7 +1002,14 @@ export default async function handler(req: any, res: any) {
             break;
           } catch (error) {
             lastOpenError = error;
-            if (sse.isCommitted || index >= candidateAttempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+            if (
+              sse.isCommitted
+              || index >= candidateAttempts.length - 1
+              || !shouldFallbackBeforeStreaming(error, {
+                currentGateway: 'gemini',
+                nextGateway: candidateAttempts[index + 1] ? 'gemini' : undefined,
+              })
+            ) throw error;
           }
         }
         if (!stream) throw lastOpenError || new Error('Gemini did not return a stream.');
@@ -1120,7 +1149,13 @@ export default async function handler(req: any, res: any) {
         break;
       } catch (error) {
         lastError = error;
-        if (index >= openRouterAttempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+        if (
+          index >= openRouterAttempts.length - 1
+          || !shouldFallbackBeforeStreaming(error, {
+            currentGateway: 'openrouter',
+            nextGateway: openRouterAttempts[index + 1] ? 'openrouter' : undefined,
+          })
+        ) throw error;
       }
     }
     if (!response || !usedOpenRouterModel) throw lastError || new Error('OpenRouter did not return a response.');
@@ -1189,7 +1224,9 @@ export default async function handler(req: any, res: any) {
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
     const publicError = err?.code === 'BUILD_ARTIFACT_CONTRACT'
-      ? 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.'
+      ? (err?.detailCode === 'browser-preview-missing'
+        ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
+        : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";

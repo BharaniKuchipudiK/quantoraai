@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2, Cloud } from 'lucide-react';
+import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2, Cloud, Clock } from 'lucide-react';
 import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
@@ -90,6 +90,7 @@ export default function LivePreviewCanvas({
   const [connectResult, setConnectResult] = useState(null);
   const [embedReady, setEmbedReady] = useState(false);
   const [embedSrc, setEmbedSrc] = useState('');
+  const [readyElapsedSec, setReadyElapsedSec] = useState(0);
   const embedModeRef = useRef('blob');
 
   const iframeRef = useRef(null);
@@ -116,9 +117,17 @@ export default function LivePreviewCanvas({
   useEffect(() => {
     setEmbedReady(false);
     embedReadyRef.current = false;
-    // Prefer same-origin path (X-Frame-Options: SAMEORIGIN on /preview/*). Blob fallback if path fails.
-    embedModeRef.current = 'path';
-    setEmbedSrc(getPreviewEmbedPathUrl());
+    // Blob-first: the Studio document sends COEP require-corp. Framing
+    // /preview/embed.html without CORP makes Chrome report
+    // "quantoraai.app refused to connect". The blob shell is opaque-origin
+    // and receives HTML over postMessage.
+    embedModeRef.current = 'blob';
+    const blobUrl = createPreviewEmbedObjectUrl();
+    setEmbedSrc((previous) => {
+      revokePreviewEmbedObjectUrl(previous);
+      return blobUrl;
+    });
+    return () => revokePreviewEmbedObjectUrl(blobUrl);
   }, [attempt]);
 
   useEffect(() => {
@@ -577,6 +586,46 @@ export default function LivePreviewCanvas({
   const goldenRuntimeContractError = goldenTransaction && Object.keys(vfs || {}).length > 0 && !projectRuntimeActive
     ? 'Generated files did not satisfy the React/VFS project runtime contract.'
     : null;
+  const previewShellReady = projectRuntimeActive || Boolean(wcUrl) || embedReady;
+
+  useEffect(() => {
+    if (headless || previewShellReady) {
+      setReadyElapsedSec(0);
+      return undefined;
+    }
+    const startedAt = Date.now();
+    setReadyElapsedSec(0);
+    const timer = setInterval(() => {
+      setReadyElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+    }, 250);
+    return () => clearInterval(timer);
+  }, [headless, previewShellReady, attempt, currentCode]);
+
+  const previewWarmingOverlay = !headless && !previewShellReady ? (
+    <div
+      role="status"
+      aria-live="polite"
+      data-quantora-preview-warming="true"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 6,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        background: isLight ? '#f8fafc' : '#0f172a',
+        color: isLight ? '#334155' : '#cbd5e1',
+      }}
+    >
+      <Clock size={28} color="#f97316" />
+      <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview is getting ready — hang tight</div>
+      <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+        {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
+      </div>
+    </div>
+  ) : null;
 
   useEffect(() => {
     if (!goldenRuntimeContractError) return;
@@ -590,23 +639,30 @@ export default function LivePreviewCanvas({
   const previewFrame = projectRuntimeActive ? (
     <ProjectRuntimePreview vfs={projectRuntimeVfs} correlationId={correlationId} goldenTransaction={goldenTransaction} />
   ) : ((currentCode && embedSrc) || wcUrl ? (
-    <iframe
-      ref={iframeRef}
-      key={`${attempt}-${embedModeRef.current}`}
-      title="Live Preview"
-      src={wcUrl || embedSrc}
-      onError={handleEmbedFrameError}
-      sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
-      style={{
-        width: '100%',
-        height: '100%',
-        minHeight: headless ? '480px' : viewportStyles[viewport].height,
-        border: 'none',
-        background: '#ffffff',
-      }}
-    />
+    <div style={{ width: '100%', height: '100%', minHeight: headless ? '480px' : viewportStyles[viewport].height, position: 'relative' }}>
+      {previewWarmingOverlay}
+      <iframe
+        ref={iframeRef}
+        key={`${attempt}-${embedSrc}-${String(currentCode).length}`}
+        title="Live Preview"
+        src={wcUrl || embedSrc}
+        onError={handleEmbedFrameError}
+        sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
+        style={{
+          width: '100%',
+          height: '100%',
+          minHeight: headless ? '480px' : viewportStyles[viewport].height,
+          border: 'none',
+          background: previewShellReady ? '#ffffff' : (isLight ? '#f8fafc' : '#0f172a'),
+          visibility: previewShellReady ? 'visible' : 'hidden',
+          pointerEvents: previewShellReady ? 'auto' : 'none',
+        }}
+      />
+    </div>
   ) : (
-    <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b' }}>Building…</div>
+    <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b', position: 'relative', minHeight: '240px' }}>
+      {previewWarmingOverlay || 'Preview is getting ready — hang tight'}
+    </div>
   ));
 
   if (headless) {

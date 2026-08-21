@@ -72,6 +72,13 @@ test('preserves self-contained Office/V2 slide CSS through preview preparation a
   assert.match(harnessed, /<section class="slide">/);
 });
 
+test('does not dump CSS patches into the iframe body', () => {
+  const dump = '<<<<\n.key{color:red}\n====\n.key{color:blue}\n>>>>';
+  const prepared = prepareCodeForPreview(dump, {});
+  assert.match(prepared, /Preview needs a complete HTML page/);
+  assert.doesNotMatch(prepared, /<<<</);
+});
+
 test('React source is never converted by deleting imports in the iframe fallback', () => {
   const react = "import React from 'react'; import { Plus } from 'lucide-react'; export default function App(){return <Plus/>}";
   const prepared = prepareCodeForPreview(react, {});

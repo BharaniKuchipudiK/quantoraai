@@ -100,3 +100,16 @@ test('accepts numeric state and a named calculator click handler', () => {
     detailCode: 'build-artifact-valid',
   });
 });
+
+test('Swift-only iOS source is not a Preview artifact', () => {
+  const swift = `
+\`\`\`swift filepath="ContentView.swift"
+import SwiftUI
+struct ContentView: View { var body: some View { Text("0") } }
+\`\`\`
+`;
+  assert.deepEqual(validateBuildArtifactResponse(swift, null), {
+    ok: false,
+    detailCode: 'browser-preview-missing',
+  });
+});

@@ -63,11 +63,11 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
     .map((model) => model.id);
 
   return {
-    primaryModelId: primary?.id || 'nvidia/nemotron-3-super-120b-a12b:free',
+    primaryModelId: primary?.id || 'gemini-flash-latest',
     fallbackModelIds: fallbacks,
     reason: input.studioMode === 'build' || input.guidedBuild || input.refineMode ? 'build' : 'speed',
-    provider: (primary?.id || 'nvidia/nemotron-3-super-120b-a12b:free').startsWith('gemini') ? 'gemini' : 'openrouter',
-    hasVisionSupport: (primary?.id || 'nvidia/nemotron-3-super-120b-a12b:free').startsWith('gemini'),
+    provider: (primary?.id || 'gemini-flash-latest').startsWith('gemini') ? 'gemini' : 'openrouter',
+    hasVisionSupport: (primary?.id || 'gemini-flash-latest').startsWith('gemini'),
     selectionSource: primary ? 'ranked_free' : 'fallback_default',
   };
 }

@@ -4,13 +4,15 @@ export type BuildArtifactContractResult = {
 };
 
 function fencedFiles(text: string) {
-  const files: Array<{ path: string; content: string }> = [];
-  const pattern = /```(?:\w+)?[ \t]*(.*?)\r?\n([\s\S]*?)```/g;
+  const files: Array<{ path: string; language: string; content: string }> = [];
+  const pattern = /```(\w+)?[ \t]*(.*?)\r?\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    const attributes = match[1] || '';
-    const pathMatch = attributes.match(/(?:filepath|filename)=["']([^"']+)["']/i);
-    files.push({ path: pathMatch?.[1] || '', content: match[2] || '' });
+    const language = String(match[1] || '').toLowerCase();
+    const attributes = match[2] || '';
+    const pathMatch = attributes.match(/(?:filepath|filename)\s*=\s*["']([^"']+)["']/i)
+      || attributes.match(/(?:filepath|filename)\s*=\s*([^\s"']+)/i);
+    files.push({ path: pathMatch?.[1] || '', language, content: match[3] || '' });
   }
   return files;
 }
@@ -51,6 +53,21 @@ function isHtmlDocument(source: string) {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
 }
 
+const BROWSER_LANG = /^(html|css|javascript|js|jsx|tsx|react)$/i;
+const BROWSER_PATH = /\.(html|css|js|jsx|tsx|mjs|cjs)$/i;
+const NATIVE_PATH = /\.(swift|kt|kts|java|m|mm|cs)$/i;
+
+export function hasBrowserPreviewArtifact(text: unknown): boolean {
+  const source = typeof text === 'string' ? text : '';
+  if (isHtmlDocument(source)) return true;
+  const files = fencedFiles(source);
+  return files.some((file) => (
+    BROWSER_LANG.test(file.language)
+    || BROWSER_PATH.test(file.path)
+    || isHtmlDocument(file.content)
+  ));
+}
+
 export function validateBuildArtifactResponse(text: unknown, transaction: string | null = null): BuildArtifactContractResult {
   const source = typeof text === 'string' ? text : '';
   const files = fencedFiles(source);
@@ -59,6 +76,13 @@ export function validateBuildArtifactResponse(text: unknown, transaction: string
   const code = files.length ? files.map((file) => file.content).join('\n') : source;
   if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(code)) {
     return { ok: false, detailCode: 'opaque-storage-access' };
+  }
+
+  if (!transaction && files.some((file) => NATIVE_PATH.test(file.path) || file.language === 'swift' || file.language === 'kotlin') && !hasBrowserPreviewArtifact(source)) {
+    return { ok: false, detailCode: 'browser-preview-missing' };
+  }
+  if (!transaction && files.length && !hasBrowserPreviewArtifact(source) && !isHtmlDocument(source)) {
+    return { ok: false, detailCode: 'browser-preview-missing' };
   }
 
   if (transaction === 'calculator' || transaction === 'simple-website') {

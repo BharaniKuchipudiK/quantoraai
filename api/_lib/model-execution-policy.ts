@@ -12,14 +12,18 @@ const DEEPSEEK_CHAT = 'deepseek/deepseek-chat';
 const MAX_MODEL_ATTEMPTS = 2;
 
 const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
-  // Free endpoints are useful as the first route, but OpenRouter's free tier is
-  // account-rate-limited and individual endpoints can disappear. A failed free
-  // build therefore gets one low-cost paid emergency attempt instead of another
-  // free request that is subject to the same exhausted quota.
+  // Free OpenRouter endpoints share one account quota. The independent Gemini
+  // gateway is ranked first; DeepSeek stays as same-account backup only when
+  // Gemini is not configured.
   [NEMOTRON_SUPER]: DEEPSEEK_CHAT,
   [LAGUNA_S]: DEEPSEEK_CHAT,
   [NEMOTRON_ULTRA]: DEEPSEEK_CHAT,
   'qwen/qwen-2.5-coder-32b-instruct': DEEPSEEK_CHAT,
+};
+
+export type FallbackContext = {
+  currentGateway?: 'gemini' | 'openrouter';
+  nextGateway?: 'gemini' | 'openrouter';
 };
 
 function providerOf(modelId: string): 'gemini' | 'openrouter' {
@@ -45,16 +49,16 @@ export function modelAttemptsForTurn(input: {
 
   const qualifiedFallback = QUALIFIED_OPENROUTER_FALLBACKS[primary];
   const rawCandidates = [
+    GEMINI_STABLE_FALLBACK,
     ...(qualifiedFallback ? [qualifiedFallback] : []),
     ...(input.fallbackModelIds || []),
-    ...(primary.startsWith('gemini') ? [GEMINI_STABLE_FALLBACK] : []),
   ]
     .map((candidate) => String(candidate || '').trim())
     .filter(Boolean);
 
   const candidates = [
-    ...rawCandidates.filter((candidate) => providerOf(candidate) === primaryProvider),
     ...rawCandidates.filter((candidate) => providerOf(candidate) !== primaryProvider),
+    ...rawCandidates.filter((candidate) => providerOf(candidate) === primaryProvider),
   ];
 
   for (const candidate of candidates) {
@@ -68,10 +72,13 @@ export function modelAttemptsForTurn(input: {
   return attempts;
 }
 
-export function shouldFallbackBeforeStreaming(error: unknown) {
+export function shouldFallbackBeforeStreaming(error: unknown, context?: FallbackContext) {
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);
-  if ([401, 403].includes(status)) return false;
+  const crossGateway = Boolean(context?.nextGateway && context.nextGateway !== context.currentGateway);
+  // Auth and billing failures are fatal for this credential/quota domain, but
+  // they must not strand the turn when a different gateway is still planned.
+  if ([401, 402, 403].includes(status)) return crossGateway;
   if ([404, 408, 410, 425, 429, 500, 502, 503, 504].includes(status)) return true;
-  return /not found|no endpoints?|timeout|temporar|quota|rate.?limit|high demand|unavailable|network|fetch failed/i.test(message);
+  return /not found|no endpoints?|timeout|temporar|quota|rate.?limit|high demand|unavailable|network|fetch failed|payment required|credits?/i.test(message);
 }

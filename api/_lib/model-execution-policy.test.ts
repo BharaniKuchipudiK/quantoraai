@@ -12,7 +12,7 @@ test('a turn never gets more than two model attempts', () => {
   assert.equal(attempts[1].reason, 'fallback');
 });
 
-test('free Studio routes use the paid emergency route instead of another exhausted free request', () => {
+test('free Studio routes fail over to Gemini before another OpenRouter model', () => {
   for (const primaryModelId of [
     'nvidia/nemotron-3-super-120b-a12b:free',
     'poolside/laguna-s-2.1:free',
@@ -21,13 +21,13 @@ test('free Studio routes use the paid emergency route instead of another exhaust
   ]) {
     const attempts = modelAttemptsForTurn({
       primaryModelId,
-      fallbackModelIds: ['gemini-flash-latest', 'openai/gpt-oss-20b:free'],
+      fallbackModelIds: ['deepseek/deepseek-chat', 'openai/gpt-oss-20b:free'],
     });
     assert.deepEqual(attempts.map((attempt) => attempt.id), [
       primaryModelId,
-      'deepseek/deepseek-chat',
+      'gemini-flash-latest',
     ]);
-    assert.ok(attempts.every((attempt) => attempt.provider === 'openrouter'));
+    assert.equal(attempts[1].provider, 'gemini');
   }
 });
 
@@ -45,4 +45,13 @@ test('retryable provider failures include endpoint loss and quota exhaustion bef
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('quota exceeded'), { status: 429 })), true);
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('provider endpoint not found'), { status: 404 })), true);
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('bad key'), { status: 401 })), false);
+  assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('credits'), { status: 402 })), false);
+  assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('bad key'), { status: 401 }), {
+    currentGateway: 'openrouter',
+    nextGateway: 'gemini',
+  }), true);
+  assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('credits'), { status: 402 }), {
+    currentGateway: 'openrouter',
+    nextGateway: 'gemini',
+  }), true);
 });

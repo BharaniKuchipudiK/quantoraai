@@ -162,7 +162,8 @@ ARTIFACT (routed to Live Preview — not read in chat):
 - Polished, complete, real content — no TODOs or lorem ipsum.
 - For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd" }]\`. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
 - Optional session-memory HTML comment after the code block only.
-- TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.`;
+- TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.
+- NATIVE APPS (iOS / Android / Windows): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica as \`\`\`html (or index.html + styles.css + script.js). Do not use .swift, .kt, or Xcode/Android project files as the preview artifact.`;
 
 /*
  * Guided build directive. For a fresh "make me a website/app" request, Quantora
