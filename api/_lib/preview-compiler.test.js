@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { compilePreviewVfs } from './preview-compiler.js';
 
@@ -25,6 +26,14 @@ test('self-hosted preview compiler bundles React, package imports and local CSS 
   assert.match(result.html, /display:grid/);
   assert.doesNotMatch(result.html, /codesandbox/i);
   assert.doesNotMatch(result.html, /cdn\.jsdelivr|unpkg\.com|esm\.sh/i);
+});
+
+test('Vercel traces the browser packages resolved dynamically by the deployed compiler', () => {
+  const config = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
+  const includeFiles = config.functions?.['api/preview-compile.js']?.includeFiles || '';
+  for (const dependency of ['react', 'react-dom', 'scheduler', 'lucide-react']) {
+    assert.match(includeFiles, new RegExp(`(?:^|[,{}])${dependency.replace('-', '\\-')}(?:[,}/]|$)`));
+  }
 });
 
 test('preview compiler fails closed for unsupported server-side dependencies', async () => {
