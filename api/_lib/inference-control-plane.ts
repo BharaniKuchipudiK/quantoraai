@@ -47,10 +47,25 @@ export type InferencePlanInput = {
 
 const GEMINI_STABLE = 'gemini-flash-latest';
 const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
+const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
 const MAX_INFERENCE_ATTEMPTS = 2;
 const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
 const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
+
+const MODEL_ID_ALIASES: Record<string, string> = {
+  'nvidia/nemotron-3-super:free': NEMOTRON_SUPER,
+  'nvidia/nemotron-3-super': NEMOTRON_SUPER,
+  'nemotron-3-super': NEMOTRON_SUPER,
+  'qwen-2.5-coder-32b': 'qwen/qwen-2.5-coder-32b-instruct',
+  'qwen-2.5-coder-32b-instruct': 'qwen/qwen-2.5-coder-32b-instruct',
+};
+
+export function canonicalizeModelId(modelId: string): string {
+  const trimmed = String(modelId || '').trim();
+  if (!trimmed) return '';
+  return MODEL_ID_ALIASES[trimmed] || MODEL_ID_ALIASES[trimmed.toLowerCase()] || trimmed;
+}
 
 /**
  * A build route cannot consume the entire turn before an independent fallback
@@ -159,20 +174,29 @@ async function describeRoute(
  * and credential/quota domain before another model inside the same account.
  */
 export async function planInferenceRoutes(input: InferencePlanInput): Promise<InferenceRoute[]> {
-  const primary = String(input.primaryModelId || '').trim();
+  const primary = canonicalizeModelId(input.primaryModelId);
   if (!primary) return [];
   const registry = new Map((input.models || []).filter((model) => model?.id).map((model) => [String(model.id), model]));
-  const ids = [primary, ...(input.fallbackModelIds || []), GEMINI_STABLE, OPENROUTER_LOW_COST]
+  const ids = [primary, ...((input.fallbackModelIds || []).map(canonicalizeModelId)), GEMINI_STABLE, OPENROUTER_LOW_COST]
     .map((id) => String(id || '').trim())
     .filter((id, index, all) => Boolean(id) && all.indexOf(id) === index);
 
   const described = (await Promise.all(ids.map((id, index) => describeRoute(id, index === 0 ? 'primary' : 'fallback', input, registry))))
     .filter((route): route is InferenceRoute => Boolean(route))
-    .filter((route) => route.health !== 'offline' && route.circuit !== 'open');
+    .filter((route) => route.health !== 'offline');
   if (!described.length) return [];
 
-  const selected = described.find((route) => route.id === primary) || described[0];
-  const rest = described.filter((route) => route.id !== selected.id).sort((left, right) => {
+  const live = described.filter((route) => route.circuit !== 'open');
+  // An open circuit must not leave Studio with zero routes. Use a last-resort
+  // executable path (prefer a different gateway) so two OpenRouter 429s cannot
+  // strand a signed-in user with "No executable model was selected."
+  const pool = live.length ? live : described;
+
+  const selected = pool.find((route) => route.id === primary && route.circuit !== 'open')
+    || pool.find((route) => route.circuit !== 'open')
+    || pool.find((route) => route.gateway === 'gemini')
+    || pool[0];
+  const rest = pool.filter((route) => route.id !== selected.id).sort((left, right) => {
     const leftIndependent = left.failureDomain !== selected.failureDomain ? 1 : 0;
     const rightIndependent = right.failureDomain !== selected.failureDomain ? 1 : 0;
     if (leftIndependent !== rightIndependent) return rightIndependent - leftIndependent;
@@ -186,6 +210,43 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     ...route,
     reason: index === 0 && route.id === primary ? 'primary' : 'fallback',
   }));
+}
+
+export type InferenceReadiness = {
+  ready: boolean;
+  geminiConfigured: boolean;
+  openRouterConfigured: boolean;
+  routeCount: number;
+  usedLastResort: boolean;
+};
+
+/**
+ * Cheap, no-upstream check: can Studio plan at least one executable route for a
+ * normal code turn? This is the invariant the fake "Live API Engine Active"
+ * badge used to claim without evidence.
+ */
+export async function summarizeInferenceReadiness(input: {
+  geminiAvailable: boolean;
+  openRouterAvailable: boolean;
+  circuitStore?: InferencePlanInput['circuitStore'];
+  now?: number;
+}): Promise<InferenceReadiness> {
+  const routes = await planInferenceRoutes({
+    primaryModelId: NEMOTRON_SUPER,
+    geminiAvailable: input.geminiAvailable,
+    openRouterAvailable: input.openRouterAvailable,
+    requiredCapabilities: ['text', 'code'],
+    circuitStore: input.circuitStore,
+    now: input.now,
+  });
+  const live = routes.filter((route) => route.circuit !== 'open');
+  return {
+    ready: routes.length > 0,
+    geminiConfigured: input.geminiAvailable,
+    openRouterConfigured: input.openRouterAvailable,
+    routeCount: routes.length,
+    usedLastResort: routes.length > 0 && live.length === 0,
+  };
 }
 
 const CIRCUIT_FAILURE_THRESHOLD = 2;

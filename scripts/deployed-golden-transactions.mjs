@@ -14,6 +14,18 @@ if (!/^https:\/\//.test(BASE_URL)) throw new Error('QUANTORA_E2E_BASE_URL must b
 if (CANARY_TOKEN.length < 24) throw new Error('QUANTORA_GOLDEN_CANARY_TOKEN is missing or too short.');
 if (VERCEL_BYPASS_TOKEN.length < 24) throw new Error('VERCEL_AUTOMATION_BYPASS_SECRET is missing or too short.');
 
+const bypassHeaders = {
+  'X-Quantora-Golden-Canary': CANARY_TOKEN,
+  'x-vercel-protection-bypass': VERCEL_BYPASS_TOKEN,
+  'x-vercel-set-bypass-cookie': 'samesitenone',
+};
+
+const healthResponse = await fetch(`${BASE_URL}/api/inference-health`, { headers: bypassHeaders });
+const health = await healthResponse.json().catch(() => ({}));
+if (!healthResponse.ok || health.ready !== true) {
+  throw new Error(`Deployed inference is not executable (${healthResponse.status}): ${JSON.stringify(health)}`);
+}
+
 mkdirSync(ARTIFACT_DIR, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
@@ -25,9 +37,7 @@ await context.route('**/*', (route) => {
   return route.continue({
     headers: {
       ...request.headers(),
-      'X-Quantora-Golden-Canary': CANARY_TOKEN,
-      'x-vercel-protection-bypass': VERCEL_BYPASS_TOKEN,
-      'x-vercel-set-bypass-cookie': 'samesitenone',
+      ...bypassHeaders,
     },
   });
 });

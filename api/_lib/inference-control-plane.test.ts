@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inferenceAttemptBudgetMs, planInferenceRoutes } from './inference-control-plane.js';
+import { canonicalizeModelId, inferenceAttemptBudgetMs, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
 
 test('build attempt budget reserves time for an independent fallback', () => {
   assert.equal(inferenceAttemptBudgetMs(120_000, 2), 65_000);
@@ -87,4 +87,57 @@ test('BYOK quota circuits are partitioned without exposing the credential', asyn
   assert.notEqual(first.quotaDomain, second.quotaDomain);
   assert.notEqual(first.domainCircuitKey, second.domainCircuitKey);
   assert.match(first.quotaDomain, /^openrouter:user:key-a1b2c3$/);
+});
+
+test('stale Nemotron catalog ids canonicalize onto the live free route', async () => {
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'nvidia/nemotron-3-super:free',
+    geminiAvailable: true,
+    openRouterAvailable: true,
+  });
+  assert.equal(canonicalizeModelId('nvidia/nemotron-3-super:free'), 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(routes[0].id, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(routes[1].gateway, 'gemini');
+});
+
+test('open OpenRouter domain circuits still keep a last-resort executable route', async () => {
+  const now = Date.now();
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'qwen/qwen-2.5-coder-32b-instruct',
+    geminiAvailable: false,
+    openRouterAvailable: true,
+    now,
+    circuitStore: {
+      async get() {
+        return { failures: 8, openedUntil: now + 60_000, lastFailureAt: now, lastSuccessAt: null };
+      },
+    },
+  });
+  assert.ok(routes.length >= 1);
+  assert.equal(routes[0].gateway, 'openrouter');
+});
+
+test('Studio stays executable whenever any inference gateway has credentials', async () => {
+  const now = Date.now();
+  const openStore = {
+    async get() {
+      return { failures: 8, openedUntil: now + 60_000, lastFailureAt: now, lastSuccessAt: null };
+    },
+  };
+  const cases = [
+    { geminiAvailable: true, openRouterAvailable: true },
+    { geminiAvailable: true, openRouterAvailable: false },
+    { geminiAvailable: false, openRouterAvailable: true },
+    { geminiAvailable: false, openRouterAvailable: true, circuitStore: openStore, now },
+    { geminiAvailable: true, openRouterAvailable: true, circuitStore: openStore, now },
+  ];
+  for (const input of cases) {
+    const summary = await summarizeInferenceReadiness(input);
+    assert.equal(summary.ready, true, JSON.stringify(input));
+    assert.ok(summary.routeCount >= 1);
+  }
+
+  const empty = await summarizeInferenceReadiness({ geminiAvailable: false, openRouterAvailable: false });
+  assert.equal(empty.ready, false);
+  assert.equal(empty.routeCount, 0);
 });

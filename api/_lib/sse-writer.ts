@@ -27,11 +27,17 @@ export type StreamFailure = {
 export class SseWriter {
   private started = false;
   private finished = false;
+  private committed = false;
 
   constructor(private readonly res: SseResponse) {}
 
   get isStarted() {
     return this.started || this.res.headersSent === true;
+  }
+
+  /** True only after user-visible token text. Status heartbeats must not block provider fallback. */
+  get isCommitted() {
+    return this.committed;
   }
 
   get isFinished() {
@@ -58,6 +64,7 @@ export class SseWriter {
 
   text(text: string) {
     if (!text || this.isFinished) return;
+    this.committed = true;
     this.event({ text });
   }
 

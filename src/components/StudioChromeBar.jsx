@@ -34,15 +34,10 @@ export function writeStudioChromeCollapsed(collapsed) {
 export default function StudioChromeBar({
   isLight,
   textColor,
-  subtextColor,
   sidebarOpen,
   onOpenSidebar,
   sessionTitle,
   showSessionMeta,
-  isGenerating,
-  activeGeneratingModel,
-  autoSelectEnabled,
-  selectedModel,
   hasMemory,
   memoryLabel,
   arenaMode,
@@ -64,12 +59,6 @@ export default function StudioChromeBar({
   };
 
   const closeOverflow = () => setOverflowOpen(false);
-
-  const modelLabel = isGenerating
-    ? (activeGeneratingModel?.name || 'Preparing…')
-    : autoSelectEnabled
-      ? 'Auto-select'
-      : (selectedModel?.name || 'Gemini Flash');
 
   return (
     <div className={`studio-chrome${collapsed ? ' is-collapsed' : ''}${isLight ? ' is-light' : ' is-dark'}`}>
@@ -94,13 +83,8 @@ export default function StudioChromeBar({
                 <h2 className="studio-chrome__title" style={{ color: textColor }}>
                   {showSessionMeta ? (sessionTitle || 'New Workspace') : 'New Workspace'}
                 </h2>
-                {showSessionMeta && (
+                {showSessionMeta && (hasMemory || arenaMode) && (
                   <div className="studio-chrome__submeta">
-                    <span style={{ color: subtextColor }}>
-                      {isGenerating ? 'Active model' : autoSelectEnabled ? 'Routing' : 'Selected model'}:{' '}
-                      <strong style={{ color: '#f97316' }}>{modelLabel}</strong>
-                    </span>
-                    <span className="studio-chrome__ready-pill">Ready</span>
                     {hasMemory && (
                       <span className="studio-chrome__memory-pill" title={memoryLabel}>{memoryLabel}</span>
                     )}

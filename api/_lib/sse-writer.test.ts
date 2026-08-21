@@ -47,6 +47,16 @@ test('SSE failure after text sends one structured error and closes once', () => 
   assert.equal((body.match(/\[DONE\]/g) || []).length, 1);
 });
 
+test('status heartbeats do not mark the stream as committed', () => {
+  const fixture = fakeResponse();
+  const stream = new SseWriter(fixture.response);
+  stream.status({ phase: 'build', state: 'generating' });
+  assert.equal(stream.isStarted, true);
+  assert.equal(stream.isCommitted, false);
+  stream.text('hello');
+  assert.equal(stream.isCommitted, true);
+});
+
 test('done is idempotent', () => {
   const fixture = fakeResponse();
   const stream = new SseWriter(fixture.response);

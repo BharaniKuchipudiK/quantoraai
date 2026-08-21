@@ -19,6 +19,7 @@ const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
   [NEMOTRON_SUPER]: DEEPSEEK_CHAT,
   [LAGUNA_S]: DEEPSEEK_CHAT,
   [NEMOTRON_ULTRA]: DEEPSEEK_CHAT,
+  'qwen/qwen-2.5-coder-32b-instruct': DEEPSEEK_CHAT,
 };
 
 function providerOf(modelId: string): 'gemini' | 'openrouter' {
