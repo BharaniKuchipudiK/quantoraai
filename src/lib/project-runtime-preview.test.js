@@ -37,6 +37,24 @@ test('bare imports become Sandpack dependencies instead of being stripped', () =
   assert.equal(deps['lucide-react'], '^0.546.0');
 });
 
+test('relative CSS imports are materialized instead of blanking the preview', () => {
+  const styledCalculator = `import './App.css';\n${calculator}`;
+  const vfs = createInlineReactRuntimeVfs(styledCalculator, {
+    'App.css': { content: '.calculator{display:grid}' },
+  });
+  assert.ok(vfs['src/App.css']);
+  assert.equal(vfs['src/App.css'].content, '.calculator{display:grid}');
+  const config = projectRuntimeConfig(vfs);
+  assert.equal(config.files['/src/App.css'].code, '.calculator{display:grid}');
+});
+
+test('missing relative CSS gets a safe empty virtual file instead of a compile failure', () => {
+  const styledCalculator = `import './Missing.css';\n${calculator}`;
+  const vfs = createInlineReactRuntimeVfs(styledCalculator, {});
+  assert.ok(vfs['src/Missing.css']);
+  assert.equal(vfs['src/Missing.css'].content, '');
+});
+
 test('plain self-contained HTML stays on the lightweight iframe path', () => {
   assert.equal(isInlineReactRuntimeCode('<!doctype html><html><body>ok</body></html>'), false);
   assert.equal(createInlineReactRuntimeVfs('<!doctype html><html><body>ok</body></html>', {}), null);
