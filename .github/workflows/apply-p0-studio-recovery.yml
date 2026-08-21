@@ -1,0 +1,91 @@
+name: Apply P0 Studio recovery batch
+on:
+  push:
+    branches: [fix/p0-studio-provider-failover-workspace]
+    paths: ['.github/workflows/apply-p0-studio-recovery.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p0-studio-provider-failover-workspace
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch runtime and Studio contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'Pattern not found in {path}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) Default to Quantora's provider-agnostic free router, not Gemini.
+          replace('src/App.jsx',
+          "  const fallbackModels = [\n    { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Fast Responses & Real-time Chat', badge: 'Ultra Fast', provider: 'Google', available: true, pricingKind: 'free-tier' },\n    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Free Reasoning', provider: 'NVIDIA', available: true, pricingKind: 'free' },",
+          "  const fallbackModels = [\n    { id: 'openrouter/free', name: 'Quantora Free Router', specialty: 'Routes across currently available free models', badge: 'Recommended', provider: 'OpenRouter', available: true, pricingKind: 'free' },\n    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Free Reasoning', provider: 'NVIDIA', available: true, pricingKind: 'free' },\n    { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Optional multimodal route', badge: 'Multimodal', provider: 'Google', available: true, pricingKind: 'free-tier' },")
+
+          # 2) Approve the provider-agnostic free route for server-owned access.
+          replace('api/chat.ts',
+          'const FEATURED_SERVER_MODELS = new Set([\n  "gemini-flash-latest",',
+          'const FEATURED_SERVER_MODELS = new Set([\n  "openrouter/free",\n  "gemini-flash-latest",')
+
+          # Use routing decision as the actual execution primary.
+          replace('api/chat.ts',
+          '      primaryModelId: modelId,\n      fallbackModelIds: modelRouting?.fallbackModelIds || [],',
+          '      primaryModelId: modelRouting?.primaryModelId || modelId,\n      fallbackModelIds: modelRouting?.fallbackModelIds || [],')
+
+          # Never leak raw upstream quota/provider payloads to the product.
+          replace('api/chat.ts',
+          '    if (sse.isStarted) {\n      sse.fail({\n        message: err?.message || "Failed to communicate with AI model.",',
+          '    const retryableProviderFailure = shouldFallbackBeforeStreaming(err);\n    const publicError = retryableProviderFailure\n      ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."\n      : "Quantora could not complete this request.";\n\n    if (sse.isStarted) {\n      sse.fail({\n        message: publicError,')
+          replace('api/chat.ts',
+          '        retryable: shouldFallbackBeforeStreaming(err),',
+          '        retryable: retryableProviderFailure,')
+          replace('api/chat.ts',
+          '    return res.status(500).json({\n      error: err?.message || "Failed to communicate with AI model.",',
+          '    return res.status(retryableProviderFailure ? 503 : 500).json({\n      error: publicError,')
+
+          # 3) Client must also never display raw provider internals from SSE.
+          replace('src/hooks/useChatStream.js',
+          "          text: currentText\n            ? `${sanitizeAssistantStream(currentText)}\\n\\n⚠️ ${streamedError.message}`\n            : `⚠️ **Request failed:** ${streamedError.message}`,",
+          "          text: currentText\n            ? `${sanitizeAssistantStream(currentText)}\\n\\n⚠️ Quantora could not complete the provider handoff for this turn.`\n            : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',")
+
+          # 4) Build intent opens the workspace BEFORE provider response. Provider failure must not erase the Studio surface.
+          replace('src/components/AiStudio.jsx',
+          "  const handleSendMessage = (overrideText = null) => {\n    const textToSend = overrideText || inputText;\n    if (!textToSend.trim() && !attachments.length) return;\n\n    if ((isWorkspaceMode || canvasOpen) && !shouldKeepWorkspaceForPrompt({",
+          "  const handleSendMessage = (overrideText = null) => {\n    const textToSend = overrideText || inputText;\n    if (!textToSend.trim() && !attachments.length) return;\n\n    const buildIntent = canAutoOpenCodeWorkspace(studioDomain) && /\\b(build|create|design|make|develop|implement|code)\\b/i.test(textToSend) && /\\b(app|application|website|site|page|calculator|component|dashboard|ui|frontend|react|html|css|javascript|typescript)\\b/i.test(textToSend);\n    if (buildIntent) {\n      setWorkspaceActiveTab('preview');\n      setIsWorkspaceMode(true);\n    } else if ((isWorkspaceMode || canvasOpen) && !shouldKeepWorkspaceForPrompt({")
+
+          # Explicit empty-state makes it obvious the persistent preview surface exists while generation/failover runs.
+          replace('src/components/AiStudio.jsx',
+          "             {workspaceActiveTab === 'preview' ? (\n                  <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>\n                    <LivePreviewCanvas ",
+          "             {workspaceActiveTab === 'preview' ? (\n                  <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>\n                    {!workspaceCode ? (\n                      <div data-quantora-preview-waiting=\"true\" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>\n                        <Layout size={26} color=\"#f97316\" />\n                        <div style={{ fontWeight: 800, color: textColor }}>Preview workspace ready</div>\n                        <div style={{ fontSize: '0.82rem' }}>Your build will appear here as soon as a healthy model responds.</div>\n                      </div>\n                    ) : (\n                    <LivePreviewCanvas ")
+          replace('src/components/AiStudio.jsx',
+          "                      modelId={selectedModel?.id}\n                    />\n                    {isGenerating && workspaceCode",
+          "                      modelId={selectedModel?.id}\n                    />\n                    )}\n                    {isGenerating && workspaceCode")
+
+          # 5) Release gate: workspace must open immediately for a build request, before mocked response completes.
+          p = Path('scripts/studio-regression-browser-gate.mjs')
+          text = p.read_text()
+          marker = "  await prompt.fill('Build me a simple calculator');\n"
+          if marker not in text:
+              raise SystemExit('Studio calculator prompt marker not found')
+          text = text.replace(marker, marker + "  await page.route('**/api/chat', async (route) => { await new Promise((resolve) => setTimeout(resolve, 350)); return apiHandler(route); }, { times: 1 });\n", 1) if 'const apiHandler' in text else text
+          p.write_text(text)
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "quantora-quality-bot"
+          git config user.email "quality@quantoraai.app"
+          git add src/App.jsx api/chat.ts src/hooks/useChatStream.js src/components/AiStudio.jsx scripts/studio-regression-browser-gate.mjs
+          git commit -m "fix(p0): restore resilient Studio build flow"
+          git rm .github/workflows/apply-p0-studio-recovery.yml
+          git commit -m "chore: remove temporary recovery workflow"
+          git push origin HEAD:fix/p0-studio-provider-failover-workspace
