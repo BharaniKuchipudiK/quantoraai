@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { compilePreviewVfs } from './preview-compiler.js';
 
+// P0 release guard: this test exercises the exact self-hosted compiler used by Studio.
 const calculatorVfs = {
   'package.json': { content: JSON.stringify({ dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0', 'lucide-react': '^0.546.0' } }) },
   'src/main.jsx': {
