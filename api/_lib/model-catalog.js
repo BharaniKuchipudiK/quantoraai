@@ -8,7 +8,7 @@ export const CURATED_MODELS = [
     provider: 'Google',
     description: 'Fast multimodal reasoning for complex logic and general tasks.',
     contextWindow: '1M',
-    tag: 'RECOMMENDED',
+    tag: 'MULTIMODAL',
     icon: 'sparkles',
   },
   {
@@ -49,17 +49,27 @@ export const CURATED_MODELS = [
   },
 ];
 
-
 export const DIRECT_MODELS = [
+  {
+    id: 'nvidia/nemotron-3-super-120b-a12b:free',
+    name: 'Nemotron 3 Super 120B',
+    provider: 'NVIDIA',
+    description: 'Primary free Quantora route for coding, planning and general reasoning. Live canary qualified.',
+    contextWindow: '262k',
+    available: true,
+    pricingKind: 'free',
+    tag: 'RECOMMENDED',
+    icon: 'cpu',
+  },
   {
     id: 'gemini-flash-latest',
     name: 'Gemini Flash',
     provider: 'Google',
-    description: 'Fast multimodal responses. Routed through Google directly.',
+    description: 'Optional Google multimodal route. Not the default Quantora backbone.',
     contextWindow: '1M',
     available: true,
     pricingKind: 'free-tier',
-    tag: 'RECOMMENDED',
+    tag: 'MULTIMODAL',
     icon: 'sparkles',
   },
 ];

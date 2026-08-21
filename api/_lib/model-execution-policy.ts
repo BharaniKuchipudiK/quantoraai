@@ -5,7 +5,14 @@ export type ModelAttempt = {
 };
 
 const GEMINI_STABLE_FALLBACK = 'gemini-flash-latest';
+const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
+const NEMOTRON_ULTRA = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const MAX_MODEL_ATTEMPTS = 2;
+
+const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
+  [NEMOTRON_SUPER]: NEMOTRON_ULTRA,
+  [NEMOTRON_ULTRA]: NEMOTRON_SUPER,
+};
 
 function providerOf(modelId: string): 'gemini' | 'openrouter' {
   return modelId.startsWith('gemini') ? 'gemini' : 'openrouter';
@@ -16,9 +23,10 @@ function providerOf(modelId: string): 'gemini' | 'openrouter' {
  * can see: quota exhaustion on one request must not become a provider-wide
  * retry storm.
  *
+ * The two live-canary-qualified free Nemotron routes are paired explicitly so
+ * a stale/empty registry cannot send a normal Studio turn back to Gemini.
  * Travel tool turns stay on Gemini because the current tool schema is attached
- * to Gemini. Cross-provider fallback there would silently remove tool
- * capability, which is worse than a fast explicit failure.
+ * to Gemini; cross-provider fallback there would silently remove capability.
  */
 export function modelAttemptsForTurn(input: {
   primaryModelId: string;
@@ -27,16 +35,25 @@ export function modelAttemptsForTurn(input: {
 }): ModelAttempt[] {
   const primary = String(input.primaryModelId || '').trim();
   if (!primary) return [];
-  const attempts: ModelAttempt[] = [{ id: primary, provider: providerOf(primary), reason: 'primary' }];
+  const primaryProvider = providerOf(primary);
+  const attempts: ModelAttempt[] = [{ id: primary, provider: primaryProvider, reason: 'primary' }];
 
-  const candidates = [
+  const qualifiedFallback = QUALIFIED_OPENROUTER_FALLBACKS[primary];
+  const rawCandidates = [
+    ...(qualifiedFallback ? [qualifiedFallback] : []),
     ...(input.fallbackModelIds || []),
     ...(primary.startsWith('gemini') ? [GEMINI_STABLE_FALLBACK] : []),
+  ]
+    .map((candidate) => String(candidate || '').trim())
+    .filter(Boolean);
+
+  const candidates = [
+    ...rawCandidates.filter((candidate) => providerOf(candidate) === primaryProvider),
+    ...rawCandidates.filter((candidate) => providerOf(candidate) !== primaryProvider),
   ];
 
-  for (const candidateRaw of candidates) {
-    const candidate = String(candidateRaw || '').trim();
-    if (!candidate || attempts.some((attempt) => attempt.id === candidate)) continue;
+  for (const candidate of candidates) {
+    if (attempts.some((attempt) => attempt.id === candidate)) continue;
     const provider = providerOf(candidate);
     if (input.travelToolsEnabled && provider !== 'gemini') continue;
     attempts.push({ id: candidate, provider, reason: 'fallback' });

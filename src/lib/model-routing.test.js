@@ -35,7 +35,7 @@ test('deck routing skips unavailable models and tolerates empty input', () => {
   assert.equal(chooseBestDeckModel(only).id, 'gemini-flash-latest'); // best available, even if weak
 });
 
-test('general and fast requests prefer the free Gemini tier', () => {
-  assert.equal(rankFreeModels(models, 'Hello, can you help me?')[0].id, 'gemini-flash-latest');
-  assert.equal(rankFreeModels(models, 'Give me a quick short answer')[0].id, 'gemini-flash-latest');
+test('general requests prefer a qualified non-Gemini free route while Gemini stays optional', () => {
+  assert.equal(rankFreeModels(models, 'Hello, can you help me?')[0].id, 'nvidia/nemotron-3-super:free');
+  assert.ok(rankFreeModels(models, 'Give me a quick short answer').some((model) => model.id === 'gemini-flash-latest'));
 });
