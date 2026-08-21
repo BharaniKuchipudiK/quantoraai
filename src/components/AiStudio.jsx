@@ -3,7 +3,7 @@ import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -14,6 +14,8 @@ import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
+import VerifiedMediaLink from './VerifiedMediaLink.jsx';
+import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
@@ -228,13 +230,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setActiveProjectId,
     handleCreateProject,
     projectContext,
-    projectArtifacts
+    projectArtifacts,
+    studioDomain,
+    setStudioDomain,
+    handleCreateAdvisorChat,
+    forkChatFromMessage
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Derive current session and messages
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
+  const domainPolicy = studioDomainPolicy(studioDomain);
+  const isAdvisorWorkspace = Boolean(domainPolicy.domain);
 
   /*
    * Tell the ambient background to step back once there is work on screen.
@@ -441,6 +449,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
+
+  useEffect(() => {
+    if (canAutoOpenCodeWorkspace(studioDomain)) return;
+    setIsWorkspaceMode(false);
+    setCanvasOpen(false);
+  }, [studioDomain]);
   const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
   const [feedbackStates, setFeedbackStates] = useState({});
@@ -498,6 +512,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const openCanvasWithCode = (rawText) => {
+    if (!canExplicitlyPreviewCode(studioDomain) && !detectOfficeIntent({ messages })) return;
     // Presentations: rebuild a guaranteed-renderable deck from whatever the
     // model produced (HTML, or a leaked slide-data array) instead of trusting
     // the model to emit a perfect self-contained slide viewer.
@@ -780,6 +795,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
+    if (!canExplicitlyPreviewCode(studioDomain)) return;
     let vfsPayload = {};
     try {
       const maybeJson = JSON.parse(codeString);
@@ -800,11 +816,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
     setWorkspaceActiveTab('preview');
     setIsWorkspaceMode(true);
-  }, []);
+  }, [studioDomain]);
 
   const markdownComponents = React.useMemo(() => ({
-    a({node, children, ...props}) {
-      return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+    a({node, children, href, ...props}) {
+      return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
     },
     code({node, inline, className, children, ...props}) {
       const match = /language-(w+)/.exec(className || '');
@@ -813,7 +829,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       
       return !inline && match ? (
         <div style={{ position: 'relative', margin: '10px 0', group: 'code-block' }}>
-          {isRunnable && (
+          {isRunnable && canExplicitlyPreviewCode(studioDomain) && (
             <button
               onClick={() => handlePreviewCodeBlock(rawCode, match[1])}
               title="Preview in Workspace"
@@ -837,7 +853,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
       )
     }
-  }), [handlePreviewCodeBlock]);
+  }), [handlePreviewCodeBlock, studioDomain]);
 
   // Pick a genuinely DIFFERENT, currently-healthy model to fall back to when the
   // selected one just failed. Returns null when there's no better option — in
@@ -866,7 +882,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     // HUMAN IN THE LOOP: only intercept when the selected model recently failed
     // AND a genuinely different healthy model exists to offer.
-    if (selectedModel && !arenaMode) {
+    if (selectedModel && !arenaMode && !isAdvisorWorkspace) {
       const health = checkModelHealth(selectedModel.id);
       if (!health.isHealthy) {
         const fallbackModel = pickHealthyFallback(selectedModel);
@@ -974,8 +990,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             <ReactMarkdown 
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                a({node, children, ...props}) {
-                              return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                                a({node, children, href, ...props}) {
+                              return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
                             },
                             code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
@@ -1048,8 +1064,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             <ReactMarkdown 
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                a({node, children, ...props}) {
-                              return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                                a({node, children, href, ...props}) {
+                              return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
                             },
                             code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
@@ -1133,8 +1149,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
                           components={{
-                            a({node, children, ...props}) {
-                              return <a style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                            a({node, children, href, ...props}) {
+                              return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
                             },
                             code({node, inline, className, children, ...props}) {
                               const match = /language-(\w+)/.exec(className || '')
@@ -1236,7 +1252,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         return (
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {/* Preview (code / presentation / app) — only when previewable */}
-                          {actions.preview && runnableCode && (
+                          {actions.preview && runnableCode && canExplicitlyPreviewCode(studioDomain) && (
                             <button
                               onClick={() => { setCanvasCode(runnableCode); setCanvasOpen(true); }}
                               style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
@@ -1271,6 +1287,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             onClick={() => { navigator.clipboard.writeText(cleanText); setCopiedMessageId(msg.id); setTimeout(() => setCopiedMessageId(null), 2000); }}
                             title="Copy" style={{ ...iconBtn, color: copiedMessageId === msg.id ? '#10b981' : subtextColor }}
                           >{copiedMessageId === msg.id ? <Check size={14} /> : <Copy size={14} />}</button>
+
+                          <button
+                            type="button"
+                            data-quantora-message-fork="true"
+                            onClick={() => forkChatFromMessage(msg.id)}
+                            title="Fork Chat"
+                            style={{ ...iconBtn, color: subtextColor, gap: '5px', fontSize: '0.72rem', fontWeight: 700 }}
+                          ><GitBranch size={14} /><span>Fork Chat</span></button>
 
                           {/* Overflow — real menu (was a dead button); shown only when it has items */}
                           {actions.overflow.length > 0 && (
@@ -1385,7 +1409,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   {msg.componentType === 'quantum' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading Quantum Simulator...</div>}><LiveQuantumSimulator /></Suspense>}
 
                   {/* Source Code Toggle Button — developer-only, never shown for Office artifacts */}
-                  {msg.codeSnippet && !msg.officeAttachment && (
+                  {msg.codeSnippet && !msg.officeAttachment && canExplicitlyPreviewCode(studioDomain) && (
                     <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <button
                         onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
@@ -1404,7 +1428,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   )}
 
                   {/* Optional Source Code Panel */}
-                  {showCodeMap[msg.id] && msg.codeSnippet && !msg.officeAttachment && (
+                  {showCodeMap[msg.id] && msg.codeSnippet && !msg.officeAttachment && canExplicitlyPreviewCode(studioDomain) && (
                     <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                       <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
                         {msg.codeSnippet}
@@ -1415,7 +1439,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage]);
 
   
   useEffect(() => {
@@ -1444,7 +1468,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            return;
         }
 
-        // RESTORED: Frontend deck parser re-enabled. Office artifacts render natively in the LivePreviewCanvas.
+        // Generic Code/Preview is a neutral Studio capability. Advisor workspaces
+        // may open only explicit verified artifacts (for example an Office file);
+        // ordinary chat/code text must never steal half the screen.
+        if (!canAutoOpenCodeWorkspace(studioDomain) && !lastMsg.officeAttachment) {
+          setIsWorkspaceMode(false);
+          setCanvasOpen(false);
+          return;
+        }
+
+        // Frontend deck parser remains available for neutral Studio and explicit Office artifacts.
         const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
         
         if (Object.keys(parsedVfs).length > 0) {
@@ -1474,7 +1507,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
       }
     }
-  }, [isGenerating, messages, lastProcessedMessageId]);
+  }, [isGenerating, messages, lastProcessedMessageId, studioDomain]);
 
   return (
     <div style={{
@@ -1589,15 +1622,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', marginBottom: '24px' }}>
           {[
-            { title: 'Travel Guide AI', icon: <Globe size={15} color="#3b82f6" />, prompt: 'Act as a world-class travel planner. I want to plan a trip.' },
-            { title: 'Finance Advisor', icon: <PieChart size={15} color="#10b981" />, prompt: 'Act as a strict, data-driven financial analyst. Help me evaluate my portfolio.' },
-            { title: 'Study Tutor', icon: <Lightbulb size={15} color="#f59e0b" />, prompt: 'Act as an encouraging academic tutor using the Socratic method. Teach me something new.' },
-            { title: 'Research Analyst', icon: <Layers size={15} color="#8b5cf6" />, prompt: 'Act as a deep-dive research assistant. Let\'s explore a complex topic.' }
+            { domain: 'travel', title: 'Travel Advisor', icon: <Globe size={15} color="#3b82f6" /> },
+            { domain: 'finance', title: 'Finance Advisor', icon: <PieChart size={15} color="#10b981" /> },
+            { domain: 'education', title: 'Study Tutor', icon: <Lightbulb size={15} color="#f59e0b" /> },
+            { domain: 'research', title: 'Research Analyst', icon: <Layers size={15} color="#8b5cf6" /> }
           ].map((card, idx) => (
             <div
               key={idx}
+              data-quantora-advisor={card.domain}
+              data-quantora-active-specialist={studioDomain === card.domain ? card.domain : undefined}
               onClick={() => {
-                handleSendMessage(card.prompt);
+                handleCreateAdvisorChat(card.domain);
                 if (window.innerWidth < 768) setSidebarOpen(false);
               }}
               style={{
@@ -1609,8 +1644,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 cursor: 'pointer',
                 fontSize: '0.85rem',
                 fontWeight: '500',
-                color: textColor,
-                border: '1px solid transparent',
+                color: studioDomain === card.domain ? '#f97316' : textColor,
+                background: studioDomain === card.domain ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
+                border: studioDomain === card.domain ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
                 transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
@@ -1780,9 +1816,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
               <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
-                {activeSession && messages.length > 1 ? activeSession.title : 'New Workspace'}
+                {isAdvisorWorkspace ? domainPolicy.title : (activeSession && messages.length > 1 ? activeSession.title : 'New Workspace')}
               </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
+              <div style={{ display: isAdvisorWorkspace ? 'none' : 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
                 <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
                   Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? formatModelName(selectedModel.name) : 'Gemini 3 Flash'}</strong>
                 </span>
@@ -1896,12 +1932,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
 
-          <button
-            onClick={() => updateActiveMessages([])}
-            style={{ background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)', color: subtextColor, padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <RefreshCw size={13} /> Reset Chat
-          </button>
         </div>
       </div>
 
@@ -1941,9 +1971,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               Hello, {user?.name ? user.name.split(' ')[0] : 'Bharani'}
             </h1>
             <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 40px 0', color: subtextColor }}>
-              What would you like to build today?
+              {isAdvisorWorkspace ? domainPolicy.hero : 'What would you like to build today?'}
             </p>
 
+            {isAdvisorWorkspace && (
+              <div data-quantora-workspace-capabilities={studioDomain} style={{ margin: '0 auto 24px auto', maxWidth: '660px' }}>
+                <p style={{ margin: '0 0 18px 0', color: subtextColor, fontSize: '0.95rem', lineHeight: 1.6 }}>{domainPolicy.supporting}</p>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '9px', flexWrap: 'wrap' }}>
+                  {domainPolicy.capabilities.map((capability) => (
+                    <span key={capability} style={{ padding: '7px 12px', borderRadius: '999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.22)', background: isLight ? '#ffffff' : 'rgba(15,23,42,0.48)', color: textColor, fontSize: '0.8rem', fontWeight: 700 }}>{capability}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isAdvisorWorkspace && (
+              <>
             {/* AI Models Highlight Cards */}
             <div style={{
               display: 'flex',
@@ -2009,8 +2052,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   );
               })}
             </div>
+
+              </>
+            )}
             
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ marginTop: '16px', display: isAdvisorWorkspace ? 'none' : 'flex', justifyContent: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: subtextColor, fontSize: '0.85rem' }}>
                 <input 
                   type="checkbox" 
@@ -2152,7 +2198,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           )}
           {/* Intelligent Router Suggestion Pill */}
-          {suggestedModel && !showMentionMenu && (
+          {suggestedModel && !showMentionMenu && !isAdvisorWorkspace && (
             <div style={{
               position: 'absolute',
               top: '-35px',
@@ -2263,7 +2309,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   e.target.style.height = 'auto';
                 }
               }}
-              placeholder="Ask Quantora to code an app, analyze data, or generate ideas..."
+              placeholder={domainPolicy.placeholder}
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -2341,7 +2387,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     padding: '6px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    display: 'flex',
+                    display: isAdvisorWorkspace ? 'none' : 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     transition: 'all 0.2s ease'
@@ -2557,7 +2603,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   onClick={() => setShowInBarModelDropdown(!showInBarModelDropdown)}
                   title="Select AI Engine"
                   style={{
-                    display: 'flex',
+                    display: isAdvisorWorkspace ? 'none' : 'flex',
                     alignItems: 'center',
                     gap: '6px',
                     background: showInBarModelDropdown ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
@@ -2733,6 +2779,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 disabled={!inputText.trim()}
                 title="Push raw prompt to Dream Canvas"
                 style={{
+                  display: domainPolicy.showGenericCanvasNavigation ? 'flex' : 'none',
                   background: inputText.trim() ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
                   border: inputText.trim() ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid transparent',
                   color: inputText.trim() ? '#8b5cf6' : (isLight ? '#94a3b8' : 'rgba(255, 255, 255, 0.45)'),
@@ -2811,7 +2858,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       </div>
 
       {/* Live Preview Canvas Overlay Modal */}
-      {canvasOpen && (
+      {canvasOpen && (canExplicitlyPreviewCode(studioDomain) || Boolean(detectOfficeIntent({ messages }))) && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -2858,7 +2905,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       )}
 
       {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
-      {isWorkspaceMode && (
+      {isWorkspaceMode && (canAutoOpenCodeWorkspace(studioDomain) || Boolean(detectOfficeIntent({ messages }))) && (
         <div style={{
           flex: 1,
           background: isLight ? '#ffffff' : '#0d1127',
