@@ -66,3 +66,25 @@ test('routes without usable credentials are not planned', async () => {
   });
   assert.deepEqual(routes.map((route) => route.id), ['deepseek/deepseek-chat']);
 });
+
+test('BYOK quota circuits are partitioned without exposing the credential', async () => {
+  const [first] = await planInferenceRoutes({
+    primaryModelId: 'deepseek/deepseek-chat',
+    geminiAvailable: false,
+    openRouterAvailable: true,
+    openRouterCredentialScope: 'user',
+    openRouterCredentialPartition: 'key-a1b2c3',
+    requestPartition: 'turn-one',
+  });
+  const [second] = await planInferenceRoutes({
+    primaryModelId: 'deepseek/deepseek-chat',
+    geminiAvailable: false,
+    openRouterAvailable: true,
+    openRouterCredentialScope: 'user',
+    openRouterCredentialPartition: 'key-d4e5f6',
+    requestPartition: 'turn-two',
+  });
+  assert.notEqual(first.quotaDomain, second.quotaDomain);
+  assert.notEqual(first.domainCircuitKey, second.domainCircuitKey);
+  assert.match(first.quotaDomain, /^openrouter:user:key-a1b2c3$/);
+});

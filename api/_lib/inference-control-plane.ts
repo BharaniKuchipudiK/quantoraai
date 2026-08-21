@@ -38,6 +38,9 @@ export type InferencePlanInput = {
   openRouterAvailable: boolean;
   geminiCredentialScope?: 'server' | 'user';
   openRouterCredentialScope?: 'server' | 'user';
+  geminiCredentialPartition?: string;
+  openRouterCredentialPartition?: string;
+  requestPartition?: string;
   circuitStore?: Pick<AtomicProviderCircuitStore, 'get'>;
   now?: number;
 };
@@ -117,8 +120,14 @@ async function describeRoute(
   const credentialScope = gateway === 'gemini'
     ? input.geminiCredentialScope || 'server'
     : input.openRouterCredentialScope || 'server';
-  const quotaDomain = `${gateway}:${credentialScope}`;
-  const failureDomain = `${gateway}:${credentialScope}`;
+  const credentialPartition = gateway === 'gemini'
+    ? input.geminiCredentialPartition
+    : input.openRouterCredentialPartition;
+  const partition = credentialScope === 'user'
+    ? safeLabel(credentialPartition || input.requestPartition || 'request-local', 'request-local')
+    : null;
+  const quotaDomain = `${gateway}:${credentialScope}${partition ? `:${partition}` : ''}`;
+  const failureDomain = quotaDomain;
   const upstreamProvider = upstreamProviderFor(modelId, model);
   const circuitKey = `inference:route:${gateway}:${upstreamProvider}:${safeLabel(modelId, 'model')}`;
   const domainCircuitKey = `inference:domain:${failureDomain}`;

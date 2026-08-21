@@ -22,6 +22,7 @@ import {
 } from '../lib/transaction-trace.js';
 
 const CHAT_TURN_DEADLINE_MS = 90_000;
+const BUILD_TURN_DEADLINE_MS = 135_000;
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];
@@ -311,6 +312,7 @@ export function useChatStream({
     let effectiveArenaMode = arenaMode;
     const isCodingRequest = /\b(build|code|implement|develop)\b/i.test(text)
       && /\b(react|app|application|website|component|javascript|typescript|html|css)\b/i.test(text);
+    const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     if (briefingKind || isCodingRequest) effectiveArenaMode = false;
 
     const requestBodyFor = (model) => ({
@@ -452,7 +454,7 @@ export function useChatStream({
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    const timeoutId = setTimeout(() => controller.abort('timeout'), CHAT_TURN_DEADLINE_MS);
+    const timeoutId = setTimeout(() => controller.abort('timeout'), turnDeadlineMs);
 
     try {
       const res = await fetch('/api/chat', {
@@ -589,7 +591,7 @@ export function useChatStream({
         text: stopped
           ? '⚠️ **Generation Stopped**'
           : timedOut
-            ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(CHAT_TURN_DEADLINE_MS / 1000)} seconds instead of leaving it running indefinitely.`
+            ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
             : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
         isError: true,
         executionStatus: null,

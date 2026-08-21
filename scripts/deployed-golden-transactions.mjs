@@ -8,6 +8,7 @@ const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
 const VERCEL_BYPASS_TOKEN = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '');
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
 const TURN_TIMEOUT_MS = Number(process.env.QUANTORA_GOLDEN_TURN_TIMEOUT_MS || 150_000);
+const BASE_ORIGIN = new URL(BASE_URL).origin;
 
 if (!/^https:\/\//.test(BASE_URL)) throw new Error('QUANTORA_E2E_BASE_URL must be an HTTPS deployment URL.');
 if (CANARY_TOKEN.length < 24) throw new Error('QUANTORA_GOLDEN_CANARY_TOKEN is missing or too short.');
@@ -17,11 +18,18 @@ mkdirSync(ARTIFACT_DIR, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
   viewport: { width: 1600, height: 1000 },
-  extraHTTPHeaders: {
-    'X-Quantora-Golden-Canary': CANARY_TOKEN,
-    'x-vercel-protection-bypass': VERCEL_BYPASS_TOKEN,
-    'x-vercel-set-bypass-cookie': 'samesitenone',
-  },
+});
+await context.route('**/*', (route) => {
+  const request = route.request();
+  if (new URL(request.url()).origin !== BASE_ORIGIN) return route.continue();
+  return route.continue({
+    headers: {
+      ...request.headers(),
+      'X-Quantora-Golden-Canary': CANARY_TOKEN,
+      'x-vercel-protection-bypass': VERCEL_BYPASS_TOKEN,
+      'x-vercel-set-bypass-cookie': 'samesitenone',
+    },
+  });
 });
 const page = await context.newPage();
 const consoleErrors = [];

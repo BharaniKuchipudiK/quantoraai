@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./_lib/store.js";
@@ -158,6 +158,7 @@ async function openGeminiStream(input: {
   temperature: number;
   grounding: boolean;
   travelToolsEnabled: boolean;
+  signal?: AbortSignal;
 }) {
   const client = new GoogleGenAI({ apiKey: input.apiKey });
   const enabledTools: any[] = [];
@@ -172,6 +173,7 @@ async function openGeminiStream(input: {
     config: {
       systemInstruction: input.systemInstruction,
       temperature: input.temperature,
+      ...(input.signal ? { abortSignal: input.signal } : {}),
       ...(enabledTools.length ? { tools: enabledTools } : {}),
       ...(input.systemInstruction?.includes("JSON DECK SPEC") ? { responseMimeType: "application/json" } : {})
     },
@@ -198,6 +200,11 @@ function inferenceAttemptTimeout(route: InferenceRoute, budgetMs: number) {
   error.status = 504;
   error.code = 'INFERENCE_ATTEMPT_TIMEOUT';
   return error;
+}
+
+function credentialCircuitPartition(secret: unknown) {
+  const value = typeof secret === 'string' ? secret.trim() : '';
+  return value ? `key-${createHash('sha256').update(value).digest('hex').slice(0, 16)}` : undefined;
 }
 
 function logTelemetry(
@@ -557,6 +564,9 @@ export default async function handler(req: any, res: any) {
       openRouterAvailable: Boolean(effectiveOpenRouterKey),
       geminiCredentialScope: userKey ? 'user' : 'server',
       openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+      geminiCredentialPartition: credentialCircuitPartition(userKey),
+      openRouterCredentialPartition: credentialCircuitPartition(openRouterKey),
+      requestPartition: correlationId,
       circuitStore: providerCircuitStore,
     });
     if (!attempts.length) return res.status(400).json({ error: 'No executable model was selected.' });
@@ -643,15 +653,28 @@ export default async function handler(req: any, res: any) {
         try {
           let attemptReply = '';
           if (route.provider === 'gemini') {
-            const stream = await openGeminiStream({
-              apiKey: effectiveGeminiKey as string,
-              model: route.id,
-              contents: geminiContents,
-              systemInstruction: finalSystemPrompt,
-              temperature: dynamicTemperature,
-              grounding,
-              travelToolsEnabled: false,
-            });
+            const openRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
+            if (openRemainingMs <= 0) throw inferenceAttemptTimeout(route, attemptBudgetMs);
+            const openController = new AbortController();
+            const openTimer = setTimeout(() => openController.abort(), openRemainingMs);
+            let stream;
+            try {
+              stream = await openGeminiStream({
+                apiKey: effectiveGeminiKey as string,
+                model: route.id,
+                contents: geminiContents,
+                systemInstruction: finalSystemPrompt,
+                temperature: dynamicTemperature,
+                grounding,
+                travelToolsEnabled: false,
+                signal: openController.signal,
+              });
+            } catch (error) {
+              if (openController.signal.aborted) throw inferenceAttemptTimeout(route, attemptBudgetMs);
+              throw error;
+            } finally {
+              clearTimeout(openTimer);
+            }
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
               assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
