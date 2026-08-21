@@ -24,6 +24,26 @@ test('default free router retries another OpenRouter free model instead of Gemin
   assert.ok(attempts.every((attempt) => attempt.provider === 'openrouter'));
 });
 
+test('live-qualified Nemotron routes fail over to each other before any stale registry candidate', () => {
+  const superAttempts = modelAttemptsForTurn({
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['gemini-flash-latest', 'openai/gpt-oss-120b:free'],
+  });
+  assert.deepEqual(superAttempts.map((attempt) => attempt.id), [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+  ]);
+
+  const ultraAttempts = modelAttemptsForTurn({
+    primaryModelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    fallbackModelIds: ['gemini-flash-latest'],
+  });
+  assert.deepEqual(ultraAttempts.map((attempt) => attempt.id), [
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+  ]);
+});
+
 test('Travel never falls back to a model that would lose travel tools', () => {
   const attempts = modelAttemptsForTurn({
     primaryModelId: 'gemini-3-flash-preview',
