@@ -10,6 +10,11 @@ const GENERATOR_TRIGGER_WORDS = /\b(powerpoint|pptx?|slide deck|slides?|presenta
 
 export const OFFICE_CONTINUE_VALUE = 'Build the requested artifact now using this approved briefing context';
 
+const OFFICE_BUILD_NOW = /\b(generate|build|create|make|compile|produce)\b/i;
+const OFFICE_FILE_HINT = /\b(ppt|pptx|powerpoint|deck|slides?|presentation|docx|word|xlsx|excel|file|artifact|document)\b/i;
+const OFFICE_REVEAL = /\b(download|link|preview|show|open|workspace|where is|save|export)\b/i;
+const OFFICE_CHANGE = /\b(change|fix|update|edit|revise|rebuild|regenerate|add|rewrite)\b/i;
+
 function recentOfficeBriefing(messages = []) {
   const list = Array.isArray(messages) ? messages : [];
   let latestArtifactIndex = -1;
@@ -90,6 +95,19 @@ async function interpretOfficeTurn({ text, messages, officeKind, activeArtifact,
   }
 }
 
+export function isOfficeBuildNowRequest(text = '') {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  return OFFICE_BUILD_NOW.test(value) && (OFFICE_FILE_HINT.test(value) || /\bnow\b/i.test(value));
+}
+
+export function shouldRevealOfficeNow({ text = '', messages = [] } = {}) {
+  const value = String(text || '').trim();
+  if (!value || !activeOfficeArtifact(messages)) return false;
+  if (OFFICE_CHANGE.test(value) && !OFFICE_REVEAL.test(value)) return false;
+  return OFFICE_REVEAL.test(value) || isOfficeBuildNowRequest(value);
+}
+
 export async function shouldGenerateOfficeNow({ text = '', officeKind = null, messages = [] } = {}) {
   const value = String(text || '').trim();
   const prior = recentOfficeBriefing(messages);
@@ -97,8 +115,10 @@ export async function shouldGenerateOfficeNow({ text = '', officeKind = null, me
   const activeKind = artifact?.kind || artifact?.format || officeKind || prior?.officeBriefingKind || null;
   if (!activeKind) return false;
 
-  // Continue is a deterministic UI action, not natural-language intent parsing.
-  if (prior && value === OFFICE_CONTINUE_VALUE) return true;
+  if (shouldRevealOfficeNow({ text: value, messages })) return false;
+
+  // Continue, or a plain "generate the PPT now", after briefing — no classifier required.
+  if (prior && (value === OFFICE_CONTINUE_VALUE || isOfficeBuildNowRequest(value))) return true;
 
   // Natural-language create/refine/discuss semantics belong to the model-based
   // turn interpreter. Frontend code must not grow another English keyword list.

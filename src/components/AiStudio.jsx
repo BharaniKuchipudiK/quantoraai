@@ -21,6 +21,7 @@ import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
+import { activeOfficeArtifact } from '../lib/office-briefing.js';
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
@@ -1463,6 +1464,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   useEffect(() => {
     if (!isGenerating && messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
+      const officeArtifact = lastMsg.officeAttachment?.htmlPreview
+        ? lastMsg.officeAttachment
+        : activeOfficeArtifact(messages);
+      if (officeArtifact?.htmlPreview && !(lastMsg.text && lastMsg.text.includes('<clear-workspace />'))) {
+        const fileName = officeArtifact.kind === 'excel'
+          ? 'workbook.html'
+          : officeArtifact.kind === 'word'
+            ? 'document.html'
+            : 'presentation.html';
+        setWorkspaceCode(officeArtifact.htmlPreview);
+        setVfs({ [fileName]: { content: officeArtifact.htmlPreview, language: 'html' } });
+        setWorkspaceActiveTab('preview');
+        setIsWorkspaceMode(true);
+        if (lastMsg.sender === 'ai') setLastProcessedMessageId(lastMsg.id);
+        return;
+      }
       if (lastMsg.sender === 'ai' && lastMsg.id !== lastProcessedMessageId) {
         setLastProcessedMessageId(lastMsg.id);
         
@@ -1568,7 +1585,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     generatingLabel: generatingStatus,
     elapsedSec: thinkingTime,
     lastAiIsError: Boolean(lastAiMessage?.isError),
-    hasPreview: Boolean(isWorkspaceMode && workspaceCode),
+    hasPreview: Boolean((isWorkspaceMode && workspaceCode) || activeOfficeArtifact(messages)),
     continueLabel: partnerContinueLabel,
     lastAiText: lastAiMessage?.text || '',
   });
