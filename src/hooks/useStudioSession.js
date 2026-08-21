@@ -14,6 +14,7 @@ import {
 } from '../lib/project-store.js';
 import { compactOfficeMessages } from '../lib/office-session-state.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
+import { deriveProjectResume } from '../lib/studio-mission.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -291,6 +292,11 @@ export function useStudioSession({ user, selectedModel }) {
     understanding: projectOutcome.understanding,
     facts: projectOutcome.facts,
   }), [projectOutcome]);
+
+  const projectResume = useMemo(
+    () => deriveProjectResume(projectSessions),
+    [projectSessions],
+  );
 
   useEffect(() => {
     if (!accountKey) return undefined;
@@ -599,6 +605,24 @@ export function useStudioSession({ user, selectedModel }) {
     persistProjectRemote(nextProject, activeProject.version || 0);
   }, [activeProject, persistProjectRemote]);
 
+  useEffect(() => {
+    const goal = String(projectResume?.goal || conversationContext?.goal || '').trim();
+    if (!goal || String(activeProject.goal || '').trim()) return;
+    const description = String(activeProject.description || '').trim()
+      ? activeProject.description
+      : String(projectResume?.understanding || '').trim();
+    updateActiveProject({
+      goal: goal.slice(0, PROJECT_LIMITS.goal),
+      ...(description ? { description: description.slice(0, PROJECT_LIMITS.description) } : {}),
+    });
+  }, [
+    activeProject.description,
+    activeProject.goal,
+    conversationContext?.goal,
+    projectResume,
+    updateActiveProject,
+  ]);
+
   const handleDeleteChat = useCallback((e, sessionId) => {
     e.stopPropagation();
     setAllChatSessions((prev) => {
@@ -647,5 +671,6 @@ export function useStudioSession({ user, selectedModel }) {
     projectContext,
     projectOutcome,
     projectArtifacts,
+    projectResume,
   };
 }
