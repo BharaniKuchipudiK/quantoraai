@@ -1737,41 +1737,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           })}
         </div>
 
-        {/* Native Studio navigation controls. These replace the former DOM-injected Canvas/Profile rows. */}
-        <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {domainPolicy.showGenericCanvasNavigation && (
-            <button
-              type="button"
-              data-quantora-sidebar-canvas="true"
-              onClick={() => setActiveTab?.('canvas')}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid transparent', color: textColor, fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}
-            >
-              <Workflow size={15} color="#0284c7" />
-              <span>Canvas</span>
-            </button>
-          )}
-          <button
-            type="button"
-            data-quantora-sidebar-profile="true"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              window.dispatchEvent(new CustomEvent('quantora:open-profile-menu', {
-                detail: { anchorRect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } },
-              }));
-            }}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid transparent', color: textColor, fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}
-          >
-            {profileAvatarSrc && !profileAvatarFailed ? (
-              <img src={profileAvatarSrc} alt="" onError={() => setProfileAvatarFailed(true)} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-            ) : (
-              <span data-quantora-avatar-fallback="true" style={{ width: '28px', height: '28px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#f97316,#8b5cf6)', color: '#fff', fontWeight: 800, fontSize: '0.78rem', flexShrink: 0 }}>
-                {(user?.name || 'U').charAt(0).toUpperCase()}
-              </span>
-            )}
-            <span data-quantora-profile-name="true">Profile</span>
-          </button>
-        </div>
-
         {/* Product feedback — explicit signed-in Studio entry point. */}
         <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
           <button

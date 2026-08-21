@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, Loader, AlertTriangle, Maximize2, Minimize2, Copy, Check, Link2, Cloud } from 'lucide-react';
 import {
   createPreviewEmbedObjectUrl,
@@ -17,7 +17,7 @@ import { OFFICE_KIND } from '../lib/office-intent.js';
 import { readActivePclSessionId } from '../lib/pcl-session-runtime.js';
 import OfficePreview from './OfficePreview.jsx';
 import ProjectRuntimePreview from './ProjectRuntimePreview.jsx';
-import { isProjectRuntimeVfs } from '../lib/project-runtime-preview.js';
+import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from '../lib/project-runtime-preview.js';
 
 // Office kind → download-button label / extension.
 const OFFICE_LABEL = {
@@ -555,9 +555,13 @@ export default function LivePreviewCanvas({
     failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
-  const projectRuntimeActive = isProjectRuntimeVfs(vfs);
+  const projectRuntimeVfs = useMemo(
+    () => (isProjectRuntimeVfs(vfs) ? vfs : createInlineReactRuntimeVfs(currentCode, vfs)),
+    [currentCode, vfs],
+  );
+  const projectRuntimeActive = Boolean(projectRuntimeVfs);
   const previewFrame = projectRuntimeActive ? (
-    <ProjectRuntimePreview vfs={vfs} />
+    <ProjectRuntimePreview vfs={projectRuntimeVfs} />
   ) : ((currentCode && embedSrc) || wcUrl ? (
     <iframe
       ref={iframeRef}
