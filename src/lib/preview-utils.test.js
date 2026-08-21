@@ -34,6 +34,15 @@ test('preserves self-contained Office/V2 slide CSS through preview preparation a
   assert.match(harnessed, /<section class="slide">/);
 });
 
+test('React source is never converted by deleting imports in the iframe fallback', () => {
+  const react = "import React from 'react'; import { Plus } from 'lucide-react'; export default function App(){return <Plus/>}";
+  const prepared = prepareCodeForPreview(react, {});
+  assert.match(prepared, /React preview routing error/);
+  assert.match(prepared, /Quantora project runtime/);
+  assert.doesNotMatch(prepared, /unpkg\.com\/react/);
+  assert.doesNotMatch(prepared, /text\/babel/);
+});
+
 test('treats Tailwind script load failures as critical', () => {
   assert.equal(
     isCriticalResourceError('Failed to load SCRIPT: https://cdn.tailwindcss.com'),
