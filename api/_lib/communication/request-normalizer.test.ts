@@ -21,6 +21,24 @@ test("omitted Studio mode remains distinguishable from an explicit Ask override"
   assert.equal(explicitAsk.studioModeExplicit, true);
 });
 
+test("real calculator phrasing is inferred as a build even when the client misses it", () => {
+  const request = normalizeCommunicationRequest({
+    message: "Design a calculator that performs the basic functions with an iOS theme",
+    buildMode: false,
+  });
+
+  assert.equal(request.buildMode, true);
+  assert.equal(request.taskCategory, "coding");
+});
+
+test("ordinary design discussion is not forced into build mode", () => {
+  const request = normalizeCommunicationRequest({
+    message: "Explain Apple's design principles",
+  });
+
+  assert.equal(request.buildMode, false);
+});
+
 test("existing project context supplies projectId without polluting SessionContext", () => {
   const request = normalizeCommunicationRequest({
     message: "Continue",
