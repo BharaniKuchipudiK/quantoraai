@@ -45,21 +45,15 @@ jobs:
         run: npm run build
 
       - name: Audit high-severity dependencies
-        # Fails on any high/critical advisory EXCEPT a documented allowlist of
-        # unfixable, unreachable transitives. Currently: image-size (and its
-        # dependent pptxgenjs) — a DoS in ICNS/JXL/HEIF image PARSERS. We only
-        # generate text-based .pptx server-side and never parse untrusted images,
-        # so it is not reachable; every published image-size version is flagged,
-        # so there is no version to upgrade to. See docs/CI-ENFORCEMENT.md.
         run: |
           npm audit --json > audit.json || true
           node -e "const a=require('./audit.json');const allow=new Set(['image-size','pptxgenjs']);const bad=Object.entries(a.vulnerabilities||{}).filter(([k,v])=>['high','critical'].includes(v.severity)&&!allow.has(k));if(bad.length){console.error('Disallowed high/critical advisories:',bad.map(([k])=>k).join(', '));process.exit(1);}console.log('Audit OK (allowlisted unreachable transitives:',[...allow].join(', '),')');"
 
-  travel-browser-gate:
+  browser-gates:
     name: Browser release gates
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -95,6 +89,11 @@ jobs:
           cat /tmp/quantora-preview.log
           exit 1
 
+      - name: Execute cross-workspace visual contract
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/workspace-contract-browser-gate.mjs
+
       - name: Execute Travel browser journey
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
@@ -111,7 +110,7 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/media-profile-browser-gate.mjs
 
-      - name: Execute Studio regression recovery journey
+      - name: Execute Studio regression journey
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/studio-regression-browser-gate.mjs
