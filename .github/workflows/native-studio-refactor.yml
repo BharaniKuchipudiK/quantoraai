@@ -1,0 +1,41 @@
+name: Native Studio Refactor
+
+on:
+  push:
+    branches:
+      - dev/travel-stability-hotfix
+    paths:
+      - scripts/refactor-studio-native.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev/travel-stability-hotfix
+          fetch-depth: 0
+
+      - name: Apply deterministic source refactor
+        run: node scripts/refactor-studio-native.mjs
+
+      - name: Validate patch whitespace
+        run: git diff --check
+
+      - name: Commit native React ownership
+        run: |
+          if git diff --quiet; then
+            echo "No refactor diff to commit."
+            exit 0
+          fi
+          git config user.name "quantora-quality-bot"
+          git config user.email "quality@quantoraai.app"
+          git add src/components/AiStudio.jsx
+          git commit -m "refactor(studio): move advisor UX into native React"
+          git push origin HEAD:dev/travel-stability-hotfix
