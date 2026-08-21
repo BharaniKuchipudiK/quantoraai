@@ -96,6 +96,18 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/workspace-contract-browser-gate.mjs
 
+      - name: Execute platform experience budget
+        id: platform_experience
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+          QUANTORA_PLATFORM_SHELL_SLA_MS: 4000
+          QUANTORA_PLATFORM_SWITCH_SLA_MS: 1200
+          QUANTORA_PLATFORM_INPUT_SLA_MS: 350
+          QUANTORA_PLATFORM_MAX_LONG_TASK_MS: 500
+          QUANTORA_PLATFORM_TOTAL_LONG_TASK_MS: 1600
+        run: node scripts/platform-experience-browser-gate.mjs
+
       - name: Execute Travel browser journey
         id: travel_gate
         continue-on-error: true
@@ -138,13 +150,14 @@ jobs:
         if: always()
         env:
           WORKSPACE_OUTCOME: ${{ steps.workspace_contract.outcome }}
+          PLATFORM_OUTCOME: ${{ steps.platform_experience.outcome }}
           TRAVEL_OUTCOME: ${{ steps.travel_gate.outcome }}
           STUDY_OUTCOME: ${{ steps.study_gate.outcome }}
           MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
           STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME; do
             outcome="${!gate}"
             if [ "$outcome" != "success" ]; then
               echo "::error::$gate finished with outcome: $outcome"
