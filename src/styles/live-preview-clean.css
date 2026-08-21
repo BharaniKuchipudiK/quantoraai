@@ -1,0 +1,8 @@
+/* Live Preview is an artifact surface, not a deployment toolbar.
+   Keep the frame focused on the generated result. Publishing/sharing and
+   responsive inspection belong outside this surface. */
+[data-quantora-canvas-root="true"] [data-quantora-canvas-device-switcher="true"],
+[data-quantora-canvas-root="true"] button[title="Copy a shareable preview link (no custom name needed)"],
+[data-quantora-canvas-root="true"] button[title="Publish to Vercel"] {
+  display: none !important;
+}
