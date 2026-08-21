@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import process from 'node:process';
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
@@ -122,6 +123,17 @@ async function hidden(locator, message, timeout = 5000) {
   if (await locator.isVisible().catch(() => false)) throw new Error(message);
 }
 
+async function visibleInAnyFrame(selector, timeout = 15000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (await frame.locator(selector).first().isVisible().catch(() => false)) return true;
+    }
+    await page.waitForTimeout(250);
+  }
+  return false;
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
@@ -162,6 +174,11 @@ try {
   const calculatorPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
   await visible(calculatorPreview, 'Standalone calculator JSX did not enter the real React project preview.', 15_000);
   await hidden(page.getByText(/Couldn't auto-fix after/i).first(), 'Calculator preview entered the broken auto-repair state.');
+  if (!(await visibleInAnyFrame('[data-testid="calculator-display"]', 20_000))) {
+    throw new Error('Calculator project runtime mounted, but the generated calculator itself never rendered.');
+  }
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 
   const newChat = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChat, 'New Chat control is missing after calculator preview.');
