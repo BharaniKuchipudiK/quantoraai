@@ -33,8 +33,46 @@ test('accepts an executable golden website contract', () => {
   });
 });
 
+test('accepts the same executable React VFS for a normal user build', () => {
+  assert.deepEqual(validateBuildArtifactResponse(website, null), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
+  });
+});
+
+test('rejects the real-user React shape that cannot enter the project runtime', () => {
+  const malformed = `
+\`\`\`html filepath="index.html"
+<div id="root"></div>
+\`\`\`
+\`\`\`css filepath="styles.css"
+body { margin: 0 }
+\`\`\`
+\`\`\`jsx filepath="App.jsx"
+import { useState } from 'react';
+export default function App(){const [value,setValue]=useState(0);return <button onClick={() => setValue(1)}>{value}</button>}
+\`\`\``;
+  assert.deepEqual(validateBuildArtifactResponse(malformed, null), {
+    ok: false,
+    detailCode: 'runtime-vfs-shape-missing',
+  });
+});
+
+test('accepts a self-contained static HTML build', () => {
+  const staticHtml = `\`\`\`html filepath="index.html"\n<!doctype html><html><body><button>1</button></body></html>\n\`\`\``;
+  assert.deepEqual(validateBuildArtifactResponse(staticHtml, null), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
+  });
+});
+
 test('rejects opaque-origin storage before committing a model route', () => {
   const result = validateBuildArtifactResponse(website.replace('export default', 'localStorage.getItem("theme"); export default'), 'simple-website');
+  assert.deepEqual(result, { ok: false, detailCode: 'opaque-storage-access' });
+});
+
+test('rejects opaque-origin storage for normal user builds too', () => {
+  const result = validateBuildArtifactResponse(website.replace('export default', 'localStorage.getItem("theme"); export default'), null);
   assert.deepEqual(result, { ok: false, detailCode: 'opaque-storage-access' });
 });
 
@@ -49,6 +87,14 @@ test('rejects a golden VFS whose entry imports the app but never mounts it', () 
     'simple-website',
   );
   assert.deepEqual(result, { ok: false, detailCode: 'golden-root-mount-missing' });
+});
+
+test('rejects an unmounted normal-user React VFS before preview', () => {
+  const result = validateBuildArtifactResponse(
+    website.replace("createRoot(document.getElementById('root')).render(<App />);", ''),
+    null,
+  );
+  assert.deepEqual(result, { ok: false, detailCode: 'runtime-root-mount-missing' });
 });
 
 test('accepts a golden VFS that mounts through a named root variable', () => {
