@@ -1,5 +1,5 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "node scripts/provider-canary-build.mjs && vite build",
   "outputDirectory": "dist",
   "functions": {
     "api/generate-office.ts": { "maxDuration": 300 }
