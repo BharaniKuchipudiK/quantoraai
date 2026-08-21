@@ -354,6 +354,9 @@ export default async function handler(req: any, res: any) {
      * local Express server keeps its friendly /api/github/preview route.
      */
     if (targetStage === 'repository-preview') {
+      if (!sessionUser) {
+        return res.status(401).json({ error: 'Sign in to preview a GitHub repository.' });
+      }
       try {
         const preview = await buildRepositoryPreview(repoUrl, task);
         return res.status(200).json(preview);

@@ -73,6 +73,29 @@ test("an explicit implementation request is allowed to proceed", () => {
   assert.match(prompt, /without asking for permission again/);
 });
 
+test("build mode tells the model to ship working tools immediately", () => {
+  const prompt = buildConversationSystemPrompt({
+    buildMode: true,
+    guided: false,
+    lastMessage: "Help me create a calculator that can handle all the basic functions with the iOS theme.",
+  });
+  assert.match(prompt, /BUILD MODE/);
+  assert.match(prompt, /TOOLS AND WIDGETS/);
+  assert.match(prompt, /calculator/);
+  assert.match(prompt, /OVERRIDES the React VFS runtime contract/);
+  assert.doesNotMatch(prompt, /FIRST-TURN RULE/);
+  assert.doesNotMatch(prompt, /You are an API, not a chatbot/);
+});
+
+test("Office JSON rules are only injected for Office requests", () => {
+  const office = buildConversationSystemPrompt({
+    buildMode: true,
+    lastMessage: "Create a slide deck about Q3 results",
+  });
+  assert.match(office, /MS OFFICE DOCUMENT GENERATION/);
+  assert.match(office, /raw JSON only/);
+});
+
 test("guided build requires intake before HTML on first turn", () => {
   const prompt = buildConversationSystemPrompt({ guided: true });
   assert.match(prompt, /GUIDED BUILD MODE/);

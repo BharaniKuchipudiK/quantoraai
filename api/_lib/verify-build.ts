@@ -43,6 +43,14 @@ function has(re: RegExp, s: string): boolean {
   return re.test(s);
 }
 
+function hasRealStyling(src: string): boolean {
+  if (has(/<style[\s>][\s\S]{12,}<\/style>/i, src)) return true;
+  if (has(/\bstyle\s*=\s*["'][^"']{8,}/i, src)) return true;
+  if (has(/<link\b[^>]*rel\s*=\s*["']stylesheet["']/i, src)) return true;
+  if (has(/cdn\.tailwindcss\.com/i, src) && has(/class\s*=/i, src)) return true;
+  return false;
+}
+
 /*
  * Deterministic, no-network checks. Cheap, stable, and impossible to fake — the
  * spine of the verdict. Feature checks activate only when the brief asks for
@@ -58,7 +66,7 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
 
   const checks: BuildCheck[] = [
     { id: "doctype", label: "Valid HTML document", ok: has(/<!doctype html/i, src) && has(/<html[\s>]/i, src), weight: 2, critical: true },
-    { id: "styled", label: "Has real styling (not default browser HTML)", ok: has(/<style[\s>]/i, src) || has(/\bstyle\s*=/i, src) || has(/class\s*=/i, src), weight: 3, critical: true },
+    { id: "styled", label: "Has real styling (not default browser HTML)", ok: hasRealStyling(src), weight: 3, critical: true },
     { id: "title", label: "Has a page title", ok: has(/<title>[^<]{2,}<\/title>/i, src), weight: 1 },
     { id: "responsive", label: "Responsive viewport meta", ok: has(/<meta[^>]+name=["']viewport["']/i, src), weight: 2 },
     { id: "lang", label: "Language attribute set", ok: has(/<html[^>]+lang\s*=/i, src), weight: 1 },

@@ -43,6 +43,7 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
+import { shouldHonorGuidedBuild, isSpecifiedRunnableTool } from "../src/lib/build-intent.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
 const MAX_MESSAGE_LENGTH = 200_000;
@@ -364,13 +365,23 @@ export default async function handler(req: any, res: any) {
     const explicitBuild = communicationRequest.studioModeExplicit && mode === "build";
     const explicitAsk = communicationRequest.studioModeExplicit && mode === "ask";
     const planMode = mode === "plan";
-    const effectiveBuildMode = explicitAsk ? false : explicitBuild ? true : Boolean(buildMode);
-    const grounding = Boolean(req.body?.webSearch) && !effectiveBuildMode && !guidedBuild && task !== "repair";
+    const honorGuided = shouldHonorGuidedBuild({
+      guidedBuild: Boolean(guidedBuild),
+      message,
+      studioMode: mode,
+    }) && !explicitBuild && !planMode;
+    const toolBuild = isSpecifiedRunnableTool(message);
+    const effectiveBuildMode = explicitAsk && !toolBuild
+      ? false
+      : explicitBuild || toolBuild
+        ? true
+        : Boolean(buildMode);
+    const grounding = Boolean(req.body?.webSearch) && !effectiveBuildMode && !honorGuided && task !== "repair";
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') dynamicTemperature = 0.3;
     else if (cognitiveLevel === 'Deep Think') dynamicTemperature = 0.2;
-    if (effectiveBuildMode && !guidedBuild) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
+    if (effectiveBuildMode && !honorGuided) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
     if (planMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
 
     const telemetryContext = {
@@ -485,7 +496,7 @@ export default async function handler(req: any, res: any) {
       explicitModelId: typeof modelId === "string" ? modelId : null,
       hasImages: visionImages.length > 0,
       studioMode: mode,
-      guidedBuild: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      guidedBuild: honorGuided,
       refineMode: isRefine,
     });
     const conversationSnapshot = buildConversationSnapshot({
@@ -497,7 +508,7 @@ export default async function handler(req: any, res: any) {
       taskCategory,
       studioMode: mode,
       studioDomain: normalizedStudioDomain,
-      guidedBuild: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      guidedBuild: honorGuided,
       refineMode: isRefine,
       choiceSelected: choiceSelected === true,
     });
@@ -515,7 +526,7 @@ export default async function handler(req: any, res: any) {
       cognitiveLevel,
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
-      guided: Boolean(guidedBuild) && !explicitBuild && !planMode,
+      guided: honorGuided,
       refineMode: isRefine,
       featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
       planMode,
@@ -769,7 +780,10 @@ export default async function handler(req: any, res: any) {
             throw Object.assign(new Error(`${route.gateway} returned an empty response.`), { status: 502 });
           }
           if (effectiveBuildMode) {
-            const artifactContract = validateBuildArtifactResponse(attemptReply, transaction);
+            const artifactContract = validateBuildArtifactResponse(
+              attemptReply,
+              goldenCanary ? transaction : null,
+            );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
           fullReply = attemptReply;

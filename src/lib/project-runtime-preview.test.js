@@ -39,6 +39,13 @@ test('bare imports become Sandpack dependencies instead of being stripped', () =
   assert.equal(deps['lucide-react'], '^0.546.0');
 });
 
+test('root styles.css is preserved when hydrating an inline React runtime', () => {
+  const vfs = createInlineReactRuntimeVfs(calculator, {
+    'styles.css': { content: '.shell{display:grid}' },
+  });
+  assert.match(vfs['src/index.css'].content, /\.shell\{display:grid\}/);
+});
+
 test('relative CSS imports are materialized instead of blanking the preview', () => {
   const styledCalculator = `import './App.css';\n${calculator}`;
   const vfs = createInlineReactRuntimeVfs(styledCalculator, {

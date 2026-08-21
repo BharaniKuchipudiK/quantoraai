@@ -47,12 +47,16 @@ function hasCalculatorInteraction(content: string) {
  * subjective quality scorer: a model may choose any design as long as the
  * artifact can execute in Quantora's opaque-origin preview sandbox.
  */
+function isHtmlDocument(source: string) {
+  return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
+}
+
 export function validateBuildArtifactResponse(text: unknown, transaction: string | null = null): BuildArtifactContractResult {
   const source = typeof text === 'string' ? text : '';
   const files = fencedFiles(source);
-  if (!files.length) return { ok: false, detailCode: 'code-fences-missing' };
+  if (!files.length && !isHtmlDocument(source)) return { ok: false, detailCode: 'code-fences-missing' };
 
-  const code = files.map((file) => file.content).join('\n');
+  const code = files.length ? files.map((file) => file.content).join('\n') : source;
   if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(code)) {
     return { ok: false, detailCode: 'opaque-storage-access' };
   }

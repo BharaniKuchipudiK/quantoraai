@@ -31,6 +31,7 @@ When you generate code, you are not writing a single chat message. You are editi
   \`\`\`
 - You can generate multiple files in one response. The system will automatically bundle them. Never output a raw string of code without a markdown block and a filepath.
 - GENERATED VFS RUNTIME CONTRACT: for React/VFS project output, every referenced identifier must be declared or imported and new artifacts must provide a coherent complete file set with package.json, src/main.jsx, src/App.jsx, and local CSS. Import React and react-dom through bare package specifiers resolved by Quantora's compiler; never load a framework from a CDN or return a standalone index.html shell unless the user explicitly requests standalone HTML. Prefer platform primitives, semantic text, and CSS over optional package imports; if a package import is necessary, use only names that the package actually exports. Do not read localStorage, sessionStorage, parent, or top, and do not reference image/asset variables or external asset URLs. Use text, CSS, inline SVG, or data URLs so the artifact runs inside Quantora's opaque-origin security sandbox.
+- If BUILD MODE is also in this prompt, follow BUILD MODE artifact rules instead of the React package.json contract. A calculator, timer, or other HTML widget is a self-contained HTML document (or index.html + styles.css + script.js), not a Vite React project.
 
 AST DIFF PATCHING (FOR EDITS):
 If the user asks you to modify an EXISTING file, DO NOT rewrite the entire file from scratch. Instead, output a diff patch block using search/replace syntax. 
@@ -151,14 +152,17 @@ CHAT (visible to the user — required):
 - Invite feedback naturally: "Happy to adjust" or "Tell me if you had another feature in mind."
 
 ARTIFACT (routed to Live Preview — not read in chat):
+- This section OVERRIDES the React VFS runtime contract above unless the user explicitly asked for React.
 - After your explanation, output EXACTLY ONE complete, self-contained HTML document inside a single \`\`\`html code block.
 - Put ALL visual styling in a comprehensive <style> block in <head> (layout, typography, colors, spacing, responsive @media rules). Do NOT rely on Tailwind CDN or other CSS-in-JS frameworks loaded from external scripts.
 - Inline all JavaScript. It must run as a single .html file: no build step, no bundler, no server, and no bare module imports.
+- If you split files anyway, use ONLY \`index.html\`, \`styles.css\`, and \`script.js\` with filepath attributes, and <link>/<script> them from the HTML. Never emit package.json or src/main.jsx for a simple HTML tool.
 - External <script> tags only for payment SDKs (e.g. Stripe) or icon libraries when strictly needed.
 - Google Fonts via <link> are fine.
 - Polished, complete, real content — no TODOs or lorem ipsum.
 - For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd" }]\`. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
-- Optional session-memory HTML comment after the code block only.`;
+- Optional session-memory HTML comment after the code block only.
+- TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.`;
 
 /*
  * Guided build directive. For a fresh "make me a website/app" request, Quantora
@@ -307,10 +311,10 @@ export function buildConversationSystemPrompt(options: {
     build = `\n\n${REFINE_ARTIFACT_DIRECTIVE}`;
   }
 
-  // Inject Office Generation constraints if building, guiding, or user explicitly requested it
+  // Office JSON rules belong on Office requests — never on a calculator or website build.
   const isOfficeRequest = (options.lastMessage && /presentation|slide|deck|pptx|word|docx|excel|xlsx/i.test(options.lastMessage)) ||
                           (options.history && options.history.some((m: any) => m.role === 'user' && m.parts?.some((p: any) => /presentation|slide|deck|pptx|word|docx|excel|xlsx/i.test(p.text))));
-  if (options.buildMode || options.guided || isOfficeRequest) {
+  if (isOfficeRequest) {
     build += `\n\n${OFFICE_GENERATION_DIRECTIVE}`;
   }
 

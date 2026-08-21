@@ -137,6 +137,8 @@ export function createInlineReactRuntimeVfs(code = '', existingVfs = {}) {
     fileContent(existingVfs?.['index.css']),
     fileContent(existingVfs?.['src/App.css']),
     fileContent(existingVfs?.['App.css']),
+    fileContent(existingVfs?.['styles.css']),
+    fileContent(existingVfs?.['src/styles.css']),
   ].filter(Boolean).join('\n');
   files['src/index.css'] = {
     content: css || 'html,body,#root{min-height:100%;margin:0}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff;color:#0f172a}*{box-sizing:border-box}',

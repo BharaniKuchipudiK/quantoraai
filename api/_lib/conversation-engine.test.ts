@@ -42,6 +42,16 @@ test("explicit implementation selects ACT without another discovery round", () =
   assert.equal(decision.reasonCode, "explicit_action_request");
 });
 
+test("a specified tool is not trapped in guided intake even if the client flags it", () => {
+  const snapshot = buildConversationSnapshot({
+    sessionContext: { goal: "Build a calculator" },
+    message: "Make me a simple calculator app",
+    studioMode: "ask",
+    guidedBuild: true,
+  });
+  assert.equal(chooseNextConversationMove(snapshot).move, "act");
+});
+
 test("a fresh guided build asks one material intake question before acting", () => {
   const snapshot = buildConversationSnapshot({
     sessionContext: { goal: "Build a coffee shop website" },

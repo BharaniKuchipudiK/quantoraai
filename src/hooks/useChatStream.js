@@ -14,6 +14,7 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
+import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -310,8 +311,7 @@ export function useChatStream({
     }
 
     let effectiveArenaMode = arenaMode;
-    const isCodingRequest = /\b(build|code|implement|develop)\b/i.test(text)
-      && /\b(react|app|application|website|component|javascript|typescript|html|css)\b/i.test(text);
+    const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text);
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     if (briefingKind || isCodingRequest) effectiveArenaMode = false;
 

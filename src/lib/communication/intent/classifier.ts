@@ -1,6 +1,7 @@
 import type { StudioDomain } from '../../../../api/_lib/studio-domains.js';
 import type { StudioMode } from '../../../../api/_lib/studio-modes.js';
 import { classifyTask } from '../../model-routing.js';
+import { shouldHonorGuidedBuild } from '../../build-intent.js';
 import type {
   CommunicationAutonomy,
   CommunicationDomain,
@@ -63,7 +64,11 @@ export function classifyCommunicationIntent(input: ClassifyIntentInput): Communi
     mode,
     stakes,
     autonomy,
-    needsClarification: input.guidedBuild === true && input.choiceSelected !== true,
+    needsClarification: shouldHonorGuidedBuild({
+      guidedBuild: input.guidedBuild === true,
+      message: input.message,
+      studioMode: input.studioMode,
+    }) && input.choiceSelected !== true,
     userGoal: input.message.trim() ? input.message.trim().slice(0, 500) : null,
   };
 }

@@ -8,6 +8,10 @@ test('general questions collapse an unrelated workspace', () => {
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'How is the weather in Singapore?' }), false);
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Explain quantum computing simply' }), false);
 });
+test('follow-up visual edits keep an open workspace without naming the app', () => {
+  assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Make it look more like iOS' }), true);
+  assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Change the theme to dark mode' }), true);
+});
 test('explicit build and refinement requests keep workspace open', () => {
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Change the button color in this app' }), true);
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Fix this code' }), true);
