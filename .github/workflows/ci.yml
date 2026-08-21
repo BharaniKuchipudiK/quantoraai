@@ -90,27 +90,37 @@ jobs:
           exit 1
 
       - name: Execute cross-workspace visual contract
+        id: workspace_contract
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/workspace-contract-browser-gate.mjs
 
       - name: Execute Travel browser journey
+        id: travel_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
           QUANTORA_E2E_TURN_SLA_MS: 8000
         run: node scripts/travel-browser-release-gate.mjs
 
       - name: Execute Study media browser journey
+        id: study_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/study-media-browser-gate.mjs
 
       - name: Execute media and profile browser journey
+        id: media_profile_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/media-profile-browser-gate.mjs
 
       - name: Execute Studio regression journey
+        id: studio_gate
+        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/studio-regression-browser-gate.mjs
@@ -123,3 +133,26 @@ jobs:
           path: artifacts/e2e
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Enforce browser release gates
+        if: always()
+        env:
+          WORKSPACE_OUTCOME: ${{ steps.workspace_contract.outcome }}
+          TRAVEL_OUTCOME: ${{ steps.travel_gate.outcome }}
+          STUDY_OUTCOME: ${{ steps.study_gate.outcome }}
+          MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
+          STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
+        run: |
+          failed=0
+          for gate in WORKSPACE_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME; do
+            outcome="${!gate}"
+            if [ "$outcome" != "success" ]; then
+              echo "::error::$gate finished with outcome: $outcome"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "One or more browser release gates failed. Release remains blocked."
+            exit 1
+          fi
+          echo "All browser release gates passed."
