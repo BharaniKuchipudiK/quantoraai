@@ -141,62 +141,35 @@ export function injectPreviewHarness(html) {
   return bundle + safe;
 }
 
+function looksLikeReactSource(source = '') {
+  const text = String(source || '');
+  return /(?:from\s+['\"]react['\"]|import\s+React\b|useState\s*\(|useEffect\s*\(|export\s+default\s+(?:function|class)|ReactDOM\.createRoot\s*\(|createRoot\s*\(|<[A-Z][A-Za-z0-9_.:-]*(?:\s|\/?>))/m.test(text);
+}
+
 export function prepareCodeForPreview(code, vfs = {}) {
   if (!code) return '';
   const str = String(code).trim();
-  
+
   let injectedCSS = '';
   if (vfs['index.css']?.content) injectedCSS += vfs['index.css'].content + '\n';
   if (vfs['App.css']?.content) injectedCSS += vfs['App.css'].content + '\n';
-  
-  // If it's already an HTML document, inject CSS into <head>
+
+  // If it's already an HTML document, inject CSS into <head>.
   if (/^<!DOCTYPE html>/i.test(str) || /^<html/i.test(str) || /<head>/i.test(str)) {
     if (injectedCSS) {
        return str.replace(/(<\/head>)/i, `<style id="vfs-styles">\n${injectedCSS}\n</style>\n$1`);
     }
     return str;
   }
-  
-  // Detect if it's a raw React/JSX component
-  if (str.includes('import React') || str.includes('export default function') || str.includes('useState(')) {
-    // Strip import/export statements that break browser execution
-    let cleanCode = str
-      .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
-      .replace(/export\s+default\s+/g, '');
-    
-    // Extract component name
-    const match = cleanCode.match(/function\s+([A-Za-z0-9_]+)/);
-    const componentName = match ? match[1] : 'App';
-    
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { margin: 0; padding: 0; font-family: system-ui, sans-serif; background: #ffffff; color: #0f172a; }
-    ${injectedCSS}
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="text/babel" data-type="module">
-    const { useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext } = React;
-    ${cleanCode}
-    
-    // Auto-mount the detected component
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<${componentName} />);
-  </script>
-</body>
-</html>`;
+
+  // React/JSX has exactly one supported execution path: the isolated Vite/Sandpack
+  // project runtime. Never delete imports and try to execute the remainder in an
+  // iframe. If routing regresses, fail visibly instead of producing a blank canvas.
+  if (looksLikeReactSource(str)) {
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:24px;font-family:system-ui,sans-serif;background:#fff;color:#991b1b"><strong>React preview routing error.</strong><p>This generated app must run in the Quantora project runtime.</p></body></html>`;
   }
-  
-  // Fallback: If it's just a snippet, wrap it in a body
+
+  // Fallback is for genuinely self-contained markup/snippets only.
   return `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body>${str}</body></html>`;
 }
 
