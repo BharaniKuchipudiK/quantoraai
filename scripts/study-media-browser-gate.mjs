@@ -20,6 +20,8 @@ function sseBody(text) {
 }
 
 await page.addInitScript(() => {
+  // Regression contract: a user's neutral-Studio welcome preference must never
+  // suppress a specialist workspace's own welcome/capability surface.
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_active_specialist_domain');
 });
