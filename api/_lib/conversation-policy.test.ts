@@ -13,6 +13,7 @@ test("uses the Senior Partner conversation loop by default", () => {
   assert.match(prompt, /SESSION MEMORY UPDATE/);
   assert.match(prompt, /BALANCED MODE/);
   assert.match(prompt, /GENERATED VFS RUNTIME CONTRACT/);
+  assert.match(prompt, /Prefer platform primitives/);
   assert.match(prompt, /opaque-origin security sandbox/);
 });
 
