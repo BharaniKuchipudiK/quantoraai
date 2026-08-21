@@ -794,7 +794,12 @@ export default async function handler(req: any, res: any) {
           lastRouteError = error;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if (status === 429) failedQuotaDomains.add(route.quotaDomain);
-          await recordInferenceRouteFailure(providerCircuitStore, route, status);
+          // A response-contract miss is specific to this prompt/output. It may
+          // use this turn's independent fallback, but must not poison the
+          // shared operational health circuit for unrelated users.
+          if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
+            await recordInferenceRouteFailure(providerCircuitStore, route, status);
+          }
           traceBoundary({
             correlationId,
             boundary: 'inference.provider',
