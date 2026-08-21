@@ -20,7 +20,7 @@ import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode 
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
-import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
+import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
@@ -885,7 +885,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
 
-    const buildIntent = canAutoOpenCodeWorkspace(studioDomain) && /\b(build|create|design|make|develop|implement|code)\b/i.test(textToSend) && /\b(app|application|website|site|page|calculator|component|dashboard|ui|frontend|react|html|css|javascript|typescript)\b/i.test(textToSend);
+    const buildIntent = canAutoOpenCodeWorkspace(studioDomain)
+      && (detectBuildIntent(textToSend) || isSpecifiedRunnableTool(textToSend));
     if (buildIntent) {
       setWorkspaceActiveTab('preview');
       setIsWorkspaceMode(true);

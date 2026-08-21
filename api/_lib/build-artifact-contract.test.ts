@@ -74,6 +74,14 @@ test('rejects a calculator button that cannot update its display', () => {
   assert.deepEqual(result, { ok: false, detailCode: 'calculator-interaction-missing' });
 });
 
+test('a normal user calculator in one HTML file is not held to the golden VFS canary', () => {
+  const html = '```html\n<!DOCTYPE html><html><body><script>function add(){}</script></body></html>\n```';
+  assert.deepEqual(validateBuildArtifactResponse(html, null), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
+  });
+});
+
 test('accepts numeric state and a named calculator click handler', () => {
   const namedHandler = calculator
     .replace("useState('0')", 'useState(0)')

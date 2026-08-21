@@ -3,6 +3,7 @@ import type { ListeningSignal, SessionContext } from "./session-context.js";
 import { mergeCognitiveLedgers, type CognitiveLedgerEntry } from "./cognitive-ledger.js";
 import type { ProjectContextPack } from "./project-state.js";
 import { evaluateSafetyText } from "./safety-policy.js";
+import { shouldHonorGuidedBuild } from "../../src/lib/build-intent.js";
 import { formatPclNavigatorDirective, publicPclNavigatorMetadata } from "./pcl-navigator-adapter.js";
 import { evaluateProofOfDone } from "./outcome-contract.js";
 
@@ -324,7 +325,11 @@ export function chooseNextConversationMove(snapshot: ConversationSnapshot): Conv
   if (asksVerification) addFactor(candidates, "verify", "verification_requested", 0.9);
   if (snapshot.artifacts.length && unfinishedDefinition) addFactor(candidates, "verify", "artifact_needs_completion_check", 0.25);
   if (materialQuestion && !explicitProceed) addFactor(candidates, "clarify", "material_open_question", 0.8);
-  if (snapshot.currentTurn.guidedBuild && !explicitProceed) {
+  if (snapshot.currentTurn.guidedBuild && !explicitProceed && shouldHonorGuidedBuild({
+    guidedBuild: true,
+    message: snapshot.currentTurn.message,
+    studioMode: snapshot.currentTurn.studioMode,
+  })) {
     addFactor(candidates, "clarify", "guided_intake", 0.9);
     addFactor(candidates, "act", "guided_intake_not_complete", -0.5);
   }

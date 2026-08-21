@@ -107,6 +107,15 @@ test("Outcome Memory refuses anonymous access", async () => {
   assert.equal(state.status, 401);
 });
 
+test("repository preview refuses anonymous access", async () => {
+  const { state, res } = responseHarness();
+  await pipeline({
+    method: "POST", headers: {}, socket: {},
+    body: { targetStage: "repository-preview", repoUrl: "https://github.com/example/repo", task: "summarize" },
+  }, res);
+  assert.equal(state.status, 401);
+});
+
 for (const [name, handler] of Object.entries({ autocomplete, deploy, domains, enhance })) {
   test(`${name} refuses an anonymous cost-bearing request`, async () => {
     const { state, res } = responseHarness();

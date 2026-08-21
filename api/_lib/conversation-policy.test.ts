@@ -73,6 +73,14 @@ test("an explicit implementation request is allowed to proceed", () => {
   assert.match(prompt, /without asking for permission again/);
 });
 
+test("build mode tells the model to ship working tools immediately", () => {
+  const prompt = buildConversationSystemPrompt({ buildMode: true, guided: false });
+  assert.match(prompt, /BUILD MODE/);
+  assert.match(prompt, /TOOLS AND WIDGETS/);
+  assert.match(prompt, /calculator/);
+  assert.doesNotMatch(prompt, /FIRST-TURN RULE/);
+});
+
 test("guided build requires intake before HTML on first turn", () => {
   const prompt = buildConversationSystemPrompt({ guided: true });
   assert.match(prompt, /GUIDED BUILD MODE/);
