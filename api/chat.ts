@@ -256,9 +256,11 @@ async function openOpenRouterResponse(input: {
   temperature: number;
   grounding: boolean;
   jsonMode: boolean;
+  timeoutMs?: number;
 }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeoutMs = Math.max(15_000, Math.min(Number(input.timeoutMs) || 20_000, 55_000));
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -753,6 +755,7 @@ export default async function handler(req: any, res: any) {
               temperature: dynamicTemperature,
               grounding,
               jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'),
+              timeoutMs: attemptBudgetMs,
             });
             if (!response.body) throw Object.assign(new Error('OpenRouter API returned no body.'), { status: 502 });
             const reader = response.body.getReader();
@@ -826,7 +829,7 @@ export default async function handler(req: any, res: any) {
         } catch (error: any) {
           lastRouteError = error;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
-          if (status === 429) failedQuotaDomains.add(route.quotaDomain);
+          if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
           // A response-contract miss is specific to this prompt/output. It may
           // use this turn's independent fallback, but must not poison the
           // shared operational health circuit for unrelated users.
@@ -850,7 +853,15 @@ export default async function handler(req: any, res: any) {
               ? error.detailCode
               : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
           });
-          if (sse.isCommitted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+          const nextRoute = attempts[index + 1];
+          if (
+            sse.isCommitted
+            || index >= attempts.length - 1
+            || !shouldFallbackBeforeStreaming(error, {
+              currentGateway: route.gateway,
+              nextGateway: nextRoute?.gateway,
+            })
+          ) throw error;
         }
       }
 
@@ -980,7 +991,14 @@ export default async function handler(req: any, res: any) {
             break;
           } catch (error) {
             lastOpenError = error;
-            if (sse.isCommitted || index >= candidateAttempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+            if (
+              sse.isCommitted
+              || index >= candidateAttempts.length - 1
+              || !shouldFallbackBeforeStreaming(error, {
+                currentGateway: 'gemini',
+                nextGateway: candidateAttempts[index + 1]?.provider,
+              })
+            ) throw error;
           }
         }
         if (!stream) throw lastOpenError || new Error('Gemini did not return a stream.');
@@ -1120,7 +1138,13 @@ export default async function handler(req: any, res: any) {
         break;
       } catch (error) {
         lastError = error;
-        if (index >= openRouterAttempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+        if (
+          index >= openRouterAttempts.length - 1
+          || !shouldFallbackBeforeStreaming(error, {
+            currentGateway: 'openrouter',
+            nextGateway: openRouterAttempts[index + 1]?.provider,
+          })
+        ) throw error;
       }
     }
     if (!response || !usedOpenRouterModel) throw lastError || new Error('OpenRouter did not return a response.');
