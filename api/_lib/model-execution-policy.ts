@@ -7,11 +7,16 @@ export type ModelAttempt = {
 const GEMINI_STABLE_FALLBACK = 'gemini-flash-latest';
 const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
 const NEMOTRON_ULTRA = 'nvidia/nemotron-3-ultra-550b-a55b:free';
+const LAGUNA_S = 'poolside/laguna-s-2.1:free';
 const MAX_MODEL_ATTEMPTS = 2;
 
 const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
-  [NEMOTRON_SUPER]: NEMOTRON_ULTRA,
-  [NEMOTRON_ULTRA]: NEMOTRON_SUPER,
+  // Super returned a provider 404 in production on 21 Aug 2026. Route an
+  // already-open/stale client to an independent Poolside endpoint instead of
+  // retrying another NVIDIA route.
+  [NEMOTRON_SUPER]: LAGUNA_S,
+  [LAGUNA_S]: NEMOTRON_ULTRA,
+  [NEMOTRON_ULTRA]: LAGUNA_S,
 };
 
 function providerOf(modelId: string): 'gemini' | 'openrouter' {
@@ -23,10 +28,10 @@ function providerOf(modelId: string): 'gemini' | 'openrouter' {
  * can see: quota exhaustion on one request must not become a provider-wide
  * retry storm.
  *
- * The two live-canary-qualified free Nemotron routes are paired explicitly so
- * a stale/empty registry cannot send a normal Studio turn back to Gemini.
- * Travel tool turns stay on Gemini because the current tool schema is attached
- * to Gemini; cross-provider fallback there would silently remove capability.
+ * Qualified free routes are paired across independent upstream providers so a
+ * single model/provider outage cannot kill a normal Studio turn. Travel tool
+ * turns stay on Gemini because the current tool schema is attached to Gemini;
+ * cross-provider fallback there would silently remove capability.
  */
 export function modelAttemptsForTurn(input: {
   primaryModelId: string;
@@ -67,6 +72,8 @@ export function shouldFallbackBeforeStreaming(error: unknown) {
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);
   if ([401, 403].includes(status)) return false;
-  if ([408, 425, 429, 500, 502, 503, 504].includes(status)) return true;
-  return /timeout|temporar|quota|rate.?limit|high demand|unavailable|network|fetch failed/i.test(message);
+  // Provider/model endpoints can disappear while the upstream catalogue still
+  // lists the model. Treat 404/410 as route-health failures, not user errors.
+  if ([404, 408, 410, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  return /not found|no endpoints?|timeout|temporar|quota|rate.?limit|high demand|unavailable|network|fetch failed/i.test(message);
 }
