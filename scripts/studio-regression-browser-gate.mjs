@@ -7,6 +7,12 @@ const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
 const page = await context.newPage();
+const runtimeErrors = [];
+
+page.on('pageerror', (error) => runtimeErrors.push(`pageerror: ${error.message}`));
+page.on('console', (message) => {
+  if (['error', 'warning'].includes(message.type())) runtimeErrors.push(`console:${message.type()}: ${message.text()}`);
+});
 
 function sseBody(text) {
   return [
@@ -21,7 +27,7 @@ const calculatorReply = [
   'Done — here is a working calculator.',
   '',
   '```jsx',
-  "import React, { useState } from 'react';\nimport { Delete, Divide, Minus, Plus, X, Equal } from 'lucide-react';\nexport default function Calculator(){ const [value,setValue]=useState('0'); return <main style={{padding:24}}><output data-testid='calculator-display'>{value}</output><button onClick={()=>setValue('1')}>1</button><Delete /></main>}",
+  "import React, { useState } from 'react';\nimport { Delete, Divide, Minus, Plus, X, Equal } from 'lucide-react';\nimport './App.css';\nexport default function Calculator(){ const [value,setValue]=useState('0'); return <main style={{padding:24}}><output data-testid='calculator-display'>{value}</output><button data-testid='calculator-one' onClick={()=>setValue('1')}>1</button><Delete /></main>}",
   '```',
 ].join('\n');
 
@@ -123,15 +129,26 @@ async function hidden(locator, message, timeout = 5000) {
   if (await locator.isVisible().catch(() => false)) throw new Error(message);
 }
 
-async function visibleInAnyFrame(selector, timeout = 15000) {
+async function visibleFrame(selector, timeout = 20000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     for (const frame of page.frames()) {
-      if (await frame.locator(selector).first().isVisible().catch(() => false)) return true;
+      if (await frame.locator(selector).first().isVisible().catch(() => false)) return frame;
     }
     await page.waitForTimeout(250);
   }
-  return false;
+  return null;
+}
+
+async function frameDiagnostics() {
+  const result = [];
+  for (const frame of page.frames()) {
+    result.push({
+      url: frame.url(),
+      body: String(await frame.locator('body').innerText().catch(() => '')).slice(0, 2500),
+    });
+  }
+  return result;
 }
 
 try {
@@ -147,6 +164,7 @@ try {
     throw new Error('Duplicate Canvas entry leaked into the Studio sidebar.');
   }
 
+  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas entry is missing.');
   const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
   await visible(profile, 'Header Profile entry is missing.');
   await profile.click();
@@ -167,16 +185,25 @@ try {
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing.');
 
-  // Exact P0 regression: a simple standalone React calculator with a real package
-  // import must render through the project runtime instead of the old stripped-import iframe.
+  // Exact P0 regression: standalone React with a real package import AND a local
+  // stylesheet must compile in the isolated project runtime and be interactive.
   await prompt.fill('Build me a simple calculator');
   await prompt.press('Enter');
   const calculatorPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
   await visible(calculatorPreview, 'Standalone calculator JSX did not enter the real React project preview.', 15_000);
   await hidden(page.getByText(/Couldn't auto-fix after/i).first(), 'Calculator preview entered the broken auto-repair state.');
-  if (!(await visibleInAnyFrame('[data-testid="calculator-display"]', 20_000))) {
+  const calculatorFrame = await visibleFrame('[data-testid="calculator-display"]', 25_000);
+  if (!calculatorFrame) {
+    mkdirSync('artifacts/e2e', { recursive: true });
+    await page.screenshot({ path: 'artifacts/e2e/studio-calculator-failure.png', fullPage: true }).catch(() => {});
+    console.error('Calculator frame diagnostics:', JSON.stringify(await frameDiagnostics(), null, 2));
+    console.error('Calculator browser diagnostics:', JSON.stringify(runtimeErrors, null, 2));
     throw new Error('Calculator project runtime mounted, but the generated calculator itself never rendered.');
   }
+  const display = calculatorFrame.locator('[data-testid="calculator-display"]').first();
+  if ((await display.innerText()).trim() !== '0') throw new Error('Calculator rendered with the wrong initial value.');
+  await calculatorFrame.locator('[data-testid="calculator-one"]').first().click();
+  await calculatorFrame.waitForFunction(() => document.querySelector('[data-testid="calculator-display"]')?.textContent?.trim() === '1');
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 
