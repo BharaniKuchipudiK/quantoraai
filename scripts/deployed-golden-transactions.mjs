@@ -81,6 +81,10 @@ async function setGoldenTransaction(name) {
   await page.evaluate((transaction) => sessionStorage.setItem('quantora_golden_transaction', transaction), name);
 }
 
+async function clearGoldenTransaction() {
+  await page.evaluate(() => sessionStorage.removeItem('quantora_golden_transaction'));
+}
+
 async function correlationForPreview(previous = null) {
   const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
   const deadline = Date.now() + TURN_TIMEOUT_MS;
@@ -128,6 +132,41 @@ try {
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing after the canary identity was restored.', 20_000);
+
+  // First prove the actual production wording that failed for the user. This
+  // deliberately does NOT set quantora_golden_transaction, so it exercises
+  // ordinary build-intent inference and the normal-user artifact contract.
+  const realUserStartedAt = Date.now();
+  markActiveTransaction('real-user-calculator');
+  await clearGoldenTransaction();
+  await prompt.fill('Design a calculator that performs all the basic functions with an iOS theme.');
+  await prompt.press('Enter');
+  const realUserFrame = await frameWith('button');
+  if (!realUserFrame) throw new Error('The real-user calculator prompt never rendered an interactive preview.');
+  const oneButton = realUserFrame.getByRole('button', { name: '1', exact: true }).first();
+  await visible(oneButton, 'The real-user calculator rendered without an interactive 1 button.', 15_000);
+  const realUserBody = await realUserFrame.locator('body').innerText().catch(() => '');
+  if (/filepath\s*=|const\s+inputDisplay|function\s+handleButton/.test(realUserBody)) {
+    throw new Error('The real-user calculator preview rendered source code as page text.');
+  }
+  await oneButton.click();
+  const realPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
+  const realUserCorrelationId = await realPreview.isVisible().catch(() => false)
+    ? await realPreview.getAttribute('data-quantora-correlation-id')
+    : null;
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-real-user-calculator.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'real-user-calculator',
+    correlationId: realUserCorrelationId,
+    rendered: true,
+    interacted: true,
+    durationMs: Date.now() - realUserStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  const naturalNewChat = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(naturalNewChat, 'New Chat control is missing after the real-user calculator transaction.', 15_000);
+  await naturalNewChat.click();
 
   const calculatorStartedAt = Date.now();
   markActiveTransaction('calculator');
