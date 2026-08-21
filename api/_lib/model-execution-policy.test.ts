@@ -24,23 +24,23 @@ test('default free router retries another OpenRouter free model instead of Gemin
   assert.ok(attempts.every((attempt) => attempt.provider === 'openrouter'));
 });
 
-test('live-qualified Nemotron routes fail over to each other before any stale registry candidate', () => {
+test('failed Super route crosses provider boundary to Laguna before stale candidates', () => {
   const superAttempts = modelAttemptsForTurn({
     primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
     fallbackModelIds: ['gemini-flash-latest', 'openai/gpt-oss-120b:free'],
   });
   assert.deepEqual(superAttempts.map((attempt) => attempt.id), [
     'nvidia/nemotron-3-super-120b-a12b:free',
-    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'poolside/laguna-s-2.1:free',
   ]);
 
-  const ultraAttempts = modelAttemptsForTurn({
-    primaryModelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  const lagunaAttempts = modelAttemptsForTurn({
+    primaryModelId: 'poolside/laguna-s-2.1:free',
     fallbackModelIds: ['gemini-flash-latest'],
   });
-  assert.deepEqual(ultraAttempts.map((attempt) => attempt.id), [
+  assert.deepEqual(lagunaAttempts.map((attempt) => attempt.id), [
+    'poolside/laguna-s-2.1:free',
     'nvidia/nemotron-3-ultra-550b-a55b:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
   ]);
 });
 
@@ -54,7 +54,8 @@ test('Travel never falls back to a model that would lose travel tools', () => {
   assert.ok(attempts.length <= 2);
 });
 
-test('retryable provider failures may fall back only before streaming', () => {
+test('retryable provider failures include dead model endpoints before streaming', () => {
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('high demand'), { status: 503 })), true);
+  assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('provider endpoint not found'), { status: 404 })), true);
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('bad key'), { status: 401 })), false);
 });
