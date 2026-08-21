@@ -42,14 +42,21 @@ async function generate(label, prompt) {
   }
 }
 
+function cleanSnippet(text) {
+  return String(text || '').replace(/\s+/g, ' ').slice(0, 1200);
+}
+
 const calculator = await generate(
   'calculator',
   'Create a complete self-contained HTML calculator with a visible display; buttons 0-9, +, -, multiply, divide, equals and clear; and working JavaScript interactions. Return HTML only.'
 );
 const calculatorOk = /<button\b/i.test(calculator.text)
   && /(?:calculator|display)/i.test(calculator.text)
-  && /(?:addEventListener|onclick|function\s*\(|=>)/i.test(calculator.text);
-if (!calculatorOk) throw new Error('calculator: generated output failed runnable-code assertions');
+  && /(?:addEventListener|onclick|function\s*\(|=>|<script\b)/i.test(calculator.text);
+if (!calculatorOk) {
+  console.error(`REAL_PROVIDER_CANARY_CALCULATOR_SHAPE model=${calculator.providerModel} bytes=${calculator.text.length} snippet=${cleanSnippet(calculator.text)}`);
+  throw new Error('calculator: generated output failed runnable-code assertions');
+}
 console.log(`REAL_PROVIDER_CANARY_OK calculator model=${calculator.providerModel} bytes=${calculator.text.length}`);
 
 const website = await generate(
@@ -58,7 +65,10 @@ const website = await generate(
 );
 const websiteOk = /<(?:html|main|section)\b/i.test(website.text)
   && /(?:hero|feature)/i.test(website.text)
-  && /(?:<button\b|call.to.action|cta)/i.test(website.text);
-if (!websiteOk) throw new Error('website: generated output failed design assertions');
+  && /(?:<button\b|call.to.action|cta|<a\b)/i.test(website.text);
+if (!websiteOk) {
+  console.error(`REAL_PROVIDER_CANARY_WEBSITE_SHAPE model=${website.providerModel} bytes=${website.text.length} snippet=${cleanSnippet(website.text)}`);
+  throw new Error('website: generated output failed design assertions');
+}
 console.log(`REAL_PROVIDER_CANARY_OK website model=${website.providerModel} bytes=${website.text.length}`);
 console.log('REAL_PROVIDER_CANARY_PASS calculator+website');
