@@ -22,7 +22,13 @@ type SelectModelsInput = {
 
 export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   const models = Array.isArray(input.models) ? input.models : [];
-  const explicit = input.explicitModelId ? models.find((model) => model.id === input.explicitModelId) : null;
+  const explicitId = typeof input.explicitModelId === 'string' ? input.explicitModelId.trim() : '';
+  const explicit = explicitId
+    ? (models.find((model) => model.id === explicitId) || { id: explicitId, available: true })
+    : null;
+
+  // The API approval gate is authoritative. Do not silently replace a user's
+  // explicit model merely because the optional registry cache is empty/stale.
   if (explicit) {
     const fallbackModelIds = rankFreeModels(models, input.message, input.arenaPrefs)
       .filter((model) => model.id !== explicit.id && model.available !== false)
@@ -57,11 +63,11 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
     .map((model) => model.id);
 
   return {
-    primaryModelId: primary?.id || 'openrouter/free',
+    primaryModelId: primary?.id || 'nvidia/nemotron-3-super-120b-a12b:free',
     fallbackModelIds: fallbacks,
     reason: input.studioMode === 'build' || input.guidedBuild || input.refineMode ? 'build' : 'speed',
-    provider: (primary?.id || 'openrouter/free').startsWith('gemini') ? 'gemini' : 'openrouter',
-    hasVisionSupport: (primary?.id || 'openrouter/free').startsWith('gemini'),
+    provider: (primary?.id || 'nvidia/nemotron-3-super-120b-a12b:free').startsWith('gemini') ? 'gemini' : 'openrouter',
+    hasVisionSupport: (primary?.id || 'nvidia/nemotron-3-super-120b-a12b:free').startsWith('gemini'),
     selectionSource: primary ? 'ranked_free' : 'fallback_default',
   };
 }
