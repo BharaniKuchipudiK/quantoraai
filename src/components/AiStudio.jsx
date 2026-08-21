@@ -12,6 +12,8 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
+import { deriveStudioMission } from '../lib/studio-mission.js';
+import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
@@ -227,7 +229,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     studioDomain,
     setStudioDomain,
     handleCreateAdvisorChat,
-    forkChatFromMessage
+    forkChatFromMessage,
+    conversationContext,
+    updateActiveSession,
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -795,7 +799,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     isWorkspaceMode,
     messages,
     setLastPrompt,
-    sessionContext: projectContext
+    sessionContext: projectContext,
+    conversationContext,
+    updateActiveSession,
   });
 
 
@@ -1557,8 +1563,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen]);
 
-  const generatingStatus = [...messages].reverse().find((message) => message.sender === 'ai')?.executionStatus?.label;
-  const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai');
+  const hasUserTurn = messages.some((message) => message.sender === 'user');
+  const generatingStatus = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting')?.executionStatus?.label;
+  const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text
     ? (injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text))?.items?.[0]?.label || '')
@@ -1571,14 +1578,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     hasPreview: Boolean(isWorkspaceMode && workspaceCode),
     continueLabel: partnerContinueLabel,
     lastAiText: lastAiMessage?.text || '',
+    hasUserTurn,
+  });
+  const studioMission = deriveStudioMission({
+    conversationContext,
+    messages,
+    hasPreview: Boolean(isWorkspaceMode && workspaceCode),
+    continueLabel: partnerContinueLabel,
   });
 
   return (
     <div style={{
       display: 'flex',
-      gap: '20px',
+      gap: '12px',
       maxWidth: isWorkspaceMode ? '100%' : '1400px',
-      padding: isWorkspaceMode ? '20px' : '0',
+      padding: isWorkspaceMode ? '12px' : '0',
       margin: '0 auto',
       flex: 1,
       minHeight: 0,
@@ -1836,20 +1850,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         flexDirection: 'column',
         maxWidth: isWorkspaceMode ? '42%' : '100%',
         margin: '0 auto',
-        padding: isWorkspaceMode ? '0 10px 0 0' : '20px 40px',
+        padding: isWorkspaceMode ? '0 8px 0 0' : '8px 20px 0',
         minHeight: 0,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
         {/* Top Header Bar */}
+        {(hasUserTurn || !sidebarOpen) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap',
-          gap: '12px',
-          marginBottom: '20px',
-          paddingBottom: '16px',
-          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)'
+          gap: '8px',
+          marginBottom: hasUserTurn ? '10px' : '0',
+          paddingBottom: hasUserTurn ? '10px' : '0',
+          borderBottom: hasUserTurn
+            ? (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)')
+            : 'none'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {!sidebarOpen && (
@@ -1875,17 +1892,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
 
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Sparkles size={20} color="#f97316" />
+            {hasUserTurn && (
+              <>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={16} color="#f97316" />
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
-              <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
-                {isAdvisorWorkspace ? domainPolicy.title : (activeSession && messages.length > 1 ? activeSession.title : 'New Workspace')}
+              <h2 style={{ fontSize: '1.05rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {isAdvisorWorkspace ? domainPolicy.title : (activeSession ? activeSession.title : 'New Workspace')}
               </h2>
             </div>
+              </>
+            )}
           </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
+          {hasUserTurn && (
+          <>
           {/* Dual Model Arena Toggle Button */}
           <button
             data-quantora-dual-arena="true"
@@ -1977,46 +2000,49 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               )}
             </div>
           )}
+          </>
+          )}
 
         </div>
       </div>
+        )}
 
       {/* Messages Stream / Initial Hero State */}
-      <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px', position: 'relative' }}>
+      <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '8px', position: 'relative' }}>
         {messages.length <= 1 && (isAdvisorWorkspace || !hideWelcomeScreen) ? (
           /* Clean Hero Empty State */
           <div style={{ 
             textAlign: 'center', 
-            padding: '48px 32px 32px 32px', 
-            maxWidth: '720px', 
-            margin: '40px auto 0 auto', 
+            padding: '28px 24px 20px', 
+            maxWidth: '640px', 
+            margin: '0 auto', 
             width: '100%',
-            background: isLight ? 'linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.85))' : 'rgba(255, 255, 255, 0.06)',
-            backdropFilter: 'blur(40px) saturate(200%)',
-            WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-            border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.15)',
-            borderRadius: '32px',
+            background: isLight ? 'linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.85))' : 'rgba(255, 255, 255, 0.05)',
+            backdropFilter: 'blur(24px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+            border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '20px',
             boxShadow: isLight ? '0 32px 64px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255,255,255,0.6) inset' : '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)'
           }}>
             <div style={{
-              width: '56px',
-              height: '56px',
-              borderRadius: '16px',
+              width: '40px',
+              height: '40px',
+              borderRadius: '12px',
               background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%)',
               border: '1px solid rgba(249, 115, 22, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: '0 auto 20px auto',
+              margin: '0 auto 14px auto',
               boxShadow: '0 8px 24px rgba(249, 115, 22, 0.15)'
             }}>
-              <Sparkles size={28} color="#f97316" />
+              <Sparkles size={20} color="#f97316" />
             </div>
 
-            <h1 style={{ fontSize: '2.6rem', fontWeight: '800', margin: '0 0 8px 0', color: textColor, letterSpacing: '-0.03em' }}>
+            <h1 style={{ fontSize: '1.85rem', fontWeight: '700', margin: '0 0 6px 0', color: textColor, letterSpacing: '-0.03em' }}>
               Hello, {user?.name ? user.name.split(' ')[0] : 'Bharani'}
             </h1>
-            <p style={{ fontSize: '1.2rem', fontWeight: '400', margin: '0 0 40px 0', color: subtextColor }}>
+            <p style={{ fontSize: '1rem', fontWeight: '400', margin: '0 0 20px 0', color: subtextColor }}>
               {isAdvisorWorkspace ? domainPolicy.hero : 'What would you like to build today?'}
             </p>
 
@@ -2038,8 +2064,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               display: 'flex',
               flexWrap: 'wrap',
               justifyContent: 'center',
-              gap: '16px',
-              paddingBottom: '20px',
+              gap: '10px',
+              paddingBottom: '8px',
               width: '100%'
             }}>
               
@@ -2060,8 +2086,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       WebkitBackdropFilter: 'blur(20px)',
                       border: isLight ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
                       boxShadow: isLight ? '0 8px 32px rgba(31, 38, 135, 0.07)' : '0 8px 32px rgba(0, 0, 0, 0.3)',
-                      borderRadius: '16px',
-                      padding: '16px',
+                      borderRadius: '12px',
+                      padding: '12px',
                       position: 'relative',
                       overflow: 'hidden',
                       cursor: 'pointer',
@@ -2102,8 +2128,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </>
             )}
             
-            <div style={{ marginTop: '16px', display: isAdvisorWorkspace ? 'none' : 'flex', justifyContent: 'center' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: subtextColor, fontSize: '0.85rem' }}>
+            <div style={{ marginTop: '10px', display: isAdvisorWorkspace ? 'none' : 'flex', justifyContent: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: subtextColor, fontSize: '0.78rem' }}>
                 <input 
                   type="checkbox" 
                   checked={hideWelcomeScreen}
@@ -2203,21 +2229,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+        <StudioMissionCard
+          mission={studioMission && partnerStatus && !isGenerating ? { ...studioMission, next: '' } : studioMission}
+          isLight={isLight}
+          textColor={textColor}
+          subtextColor={subtextColor}
+        />
         {partnerStatus && !isGenerating && (
           <div
             data-quantora-partner-status="true"
             role="status"
             aria-live="polite"
             style={{
-              margin: '0 8px 10px',
-              padding: '10px 14px',
-              borderRadius: '14px',
-              background: isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.08)',
-              border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249, 115, 22, 0.25)',
+              margin: '0 8px 8px',
+              padding: '8px 12px',
+              borderRadius: '10px',
+              background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)',
+              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
             }}
           >
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor, lineHeight: 1.4 }}>{partnerStatus.now}</div>
-            <div style={{ fontSize: '0.78rem', color: subtextColor, marginTop: '4px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
+            <div style={{ fontSize: '0.78rem', fontWeight: 650, color: textColor, lineHeight: 1.4 }}>{partnerStatus.now}</div>
+            <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
           </div>
         )}
         {/* Prompt Card Container */}

@@ -11,6 +11,7 @@ export function resolveStudioPartnerStatus({
   hasPreview = false,
   continueLabel = '',
   lastAiText = '',
+  hasUserTurn = false,
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
 
@@ -39,7 +40,7 @@ export function resolveStudioPartnerStatus({
     };
   }
 
-  if (lastAiText) {
+  if (lastAiText && hasUserTurn) {
     return {
       now: 'Answered in chat. There is no runnable preview yet.',
       next: continueLabel || 'Ask me to build a working page if that is the outcome you want.',

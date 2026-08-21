@@ -11,6 +11,24 @@ test("projectId is a first-class communication field", () => {
   assert.equal(request.projectId, "project-quantora");
 });
 
+test("real calculator phrasing is inferred as a build even when the client misses it", () => {
+  const request = normalizeCommunicationRequest({
+    message: "Design a calculator that performs the basic functions with an iOS theme",
+    buildMode: false,
+  });
+
+  assert.equal(request.buildMode, true);
+  assert.equal(request.taskCategory, "coding");
+});
+
+test("ordinary design discussion is not forced into build mode", () => {
+  const request = normalizeCommunicationRequest({
+    message: "Explain Apple's design principles",
+  });
+
+  assert.equal(request.buildMode, false);
+});
+
 test("omitted Studio mode remains distinguishable from an explicit Ask override", () => {
   const inferredBuild = normalizeCommunicationRequest({ message: "Build a React app", buildMode: true });
   const explicitAsk = normalizeCommunicationRequest({ message: "Explain React", studioMode: "ask", buildMode: true });
