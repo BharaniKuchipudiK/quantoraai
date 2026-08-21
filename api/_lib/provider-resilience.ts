@@ -20,6 +20,19 @@ export interface ProviderCircuitStore {
   delete(key: string): Promise<void>;
 }
 
+/**
+ * Optional atomic operations for a distributed circuit store. A serverless
+ * deployment cannot safely implement failure increments as get()+set(): two
+ * concurrent functions can both read the same counter and lose one failure.
+ */
+export interface AtomicProviderCircuitStore extends ProviderCircuitStore {
+  recordFailure(
+    key: string,
+    input: { now: number; failureThreshold: number; resetMs: number },
+  ): Promise<ProviderCircuitState>;
+  recordSuccess(key: string, now: number): Promise<ProviderCircuitState>;
+}
+
 export type ProviderOperationContext = {
   attempt: number;
   signal: AbortSignal;
@@ -81,7 +94,7 @@ export function providerResiliencePolicy(
   };
 }
 
-class InMemoryProviderCircuitStore implements ProviderCircuitStore {
+class InMemoryProviderCircuitStore implements AtomicProviderCircuitStore {
   private readonly states = new Map<string, ProviderCircuitState>();
 
   async get(key: string): Promise<ProviderCircuitState | null> {
@@ -94,6 +107,33 @@ class InMemoryProviderCircuitStore implements ProviderCircuitStore {
 
   async delete(key: string): Promise<void> {
     this.states.delete(key);
+  }
+
+  async recordFailure(
+    key: string,
+    input: { now: number; failureThreshold: number; resetMs: number },
+  ): Promise<ProviderCircuitState> {
+    const previous = this.states.get(key);
+    const failures = (previous?.failures ?? 0) + 1;
+    const state: ProviderCircuitState = {
+      failures,
+      openedUntil: failures >= input.failureThreshold ? input.now + input.resetMs : null,
+      lastFailureAt: input.now,
+      lastSuccessAt: previous?.lastSuccessAt ?? null,
+    };
+    this.states.set(key, state);
+    return state;
+  }
+
+  async recordSuccess(key: string, now: number): Promise<ProviderCircuitState> {
+    const state: ProviderCircuitState = {
+      failures: 0,
+      openedUntil: null,
+      lastFailureAt: null,
+      lastSuccessAt: now,
+    };
+    this.states.set(key, state);
+    return state;
   }
 
   clear(): void {
@@ -130,12 +170,26 @@ function circuitKey(provider: string, operation: string): string {
   return `${safeLabel(provider, 'provider')}:${safeLabel(operation, 'operation')}`;
 }
 
+function isAtomicStore(store: ProviderCircuitStore): store is AtomicProviderCircuitStore {
+  const candidate = store as Partial<AtomicProviderCircuitStore>;
+  return typeof candidate.recordFailure === 'function' && typeof candidate.recordSuccess === 'function';
+}
+
 async function updateFailure(
   store: ProviderCircuitStore,
   key: string,
   policy: ProviderResiliencePolicy,
   now: number,
 ): Promise<void> {
+  if (isAtomicStore(store)) {
+    await store.recordFailure(key, {
+      now,
+      failureThreshold: policy.circuitFailureThreshold,
+      resetMs: policy.circuitResetMs,
+    });
+    return;
+  }
+
   const previous = await store.get(key);
   const failures = (previous?.failures ?? 0) + 1;
   await store.set(key, {
@@ -147,6 +201,10 @@ async function updateFailure(
 }
 
 async function updateSuccess(store: ProviderCircuitStore, key: string, now: number): Promise<void> {
+  if (isAtomicStore(store)) {
+    await store.recordSuccess(key, now);
+    return;
+  }
   await store.set(key, {
     failures: 0,
     openedUntil: null,
