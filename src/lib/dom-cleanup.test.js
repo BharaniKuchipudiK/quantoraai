@@ -21,10 +21,16 @@ test('Studio boot no longer installs post-render DOM repair layers', () => {
   }
 });
 
-test('native Studio owns the recovered controls and workspace boundaries', () => {
+test('shared shell owns Profile and Canvas/Journey while Studio owns workspace controls', () => {
   const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
-  assert.match(studio, /data-quantora-sidebar-profile/);
-  assert.match(studio, /data-quantora-sidebar-canvas/);
+  const header = fs.readFileSync(new URL('../components/Header.jsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(studio, /data-quantora-sidebar-profile/);
+  assert.doesNotMatch(studio, /data-quantora-sidebar-canvas/);
+  assert.match(header, /aria-controls="quantora-profile-menu"/);
+  assert.match(header, /setActiveTab\('canvas'\)/);
+  assert.match(header, /compact \? 'Journey' : 'Dream-to-Action Canvas'/);
+
   assert.match(studio, /data-quantora-dual-arena/);
   assert.match(studio, /data-quantora-message-fork/);
   assert.match(studio, /data-quantora-code-workspace/);
@@ -35,4 +41,5 @@ test('multi-file project preview is a React-owned runtime', () => {
   const preview = fs.readFileSync(new URL('../components/LivePreviewCanvas.jsx', import.meta.url), 'utf8');
   assert.match(preview, /ProjectRuntimePreview/);
   assert.match(preview, /isProjectRuntimeVfs/);
+  assert.match(preview, /createInlineReactRuntimeVfs/);
 });
