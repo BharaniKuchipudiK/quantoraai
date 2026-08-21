@@ -17,6 +17,7 @@ test('free Studio routes use the paid emergency route instead of another exhaust
     'nvidia/nemotron-3-super-120b-a12b:free',
     'poolside/laguna-s-2.1:free',
     'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'qwen/qwen-2.5-coder-32b-instruct',
   ]) {
     const attempts = modelAttemptsForTurn({
       primaryModelId,

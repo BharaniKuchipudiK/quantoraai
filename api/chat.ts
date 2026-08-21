@@ -18,6 +18,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
 import { shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
 import {
+  canonicalizeModelId,
   inferenceAttemptBudgetMs,
   planInferenceRoutes,
   recordInferenceRouteFailure,
@@ -56,6 +57,7 @@ const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "qui
 const FEATURED_SERVER_MODELS = new Set([
   "gemini-flash-latest",
   "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-super:free",
   "openai/gpt-oss-120b:free",
   "deepseek/deepseek-chat",
   "qwen/qwen-2.5-coder-32b-instruct",
@@ -96,17 +98,18 @@ const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
 
 async function isApprovedServerModel(modelId: string): Promise<boolean> {
   if (!modelId || typeof modelId !== "string") return false;
-  if (modelId.startsWith("gemini")) return true;
-  if (FEATURED_SERVER_MODELS.has(modelId)) return true;
+  const canonical = canonicalizeModelId(modelId);
+  if (canonical.startsWith("gemini") || modelId.startsWith("gemini")) return true;
+  if (FEATURED_SERVER_MODELS.has(canonical) || FEATURED_SERVER_MODELS.has(modelId)) return true;
   const rows = await readModelRegistryCached();
-  return rows.some((row: any) => row?.id === modelId && row?.approved === true && row?.lifecycle === "available");
+  return rows.some((row: any) => (row?.id === canonical || row?.id === modelId) && row?.approved === true && row?.lifecycle === "available");
 }
 
 function resolveOpenRouterModelId(modelId: string): { slug?: string; error?: string } {
   if (!modelId || typeof modelId !== "string" || !modelId.trim()) {
     return { error: "No model was selected. Please pick a model and try again." };
   }
-  const trimmed = modelId.trim();
+  const trimmed = canonicalizeModelId(modelId.trim());
   if (trimmed.includes("/")) return { slug: trimmed };
   const alias = OPENROUTER_MODEL_ALIASES[trimmed.toLowerCase()];
   if (alias) return { slug: alias };
@@ -574,7 +577,7 @@ export default async function handler(req: any, res: any) {
 
     const travelToolsEnabled = shouldEnableTravelTools(normalizedStudioDomain);
     const attempts = await planInferenceRoutes({
-      primaryModelId: modelRouting?.primaryModelId || modelId,
+      primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       models: registryModels,
       requiredCapabilities: travelToolsEnabled
@@ -589,7 +592,11 @@ export default async function handler(req: any, res: any) {
       requestPartition: correlationId,
       circuitStore: providerCircuitStore,
     });
-    if (!attempts.length) return res.status(400).json({ error: 'No executable model was selected.' });
+    if (!attempts.length) {
+      return res.status(503).json({
+        error: 'Quantora could not reach a healthy AI route for this turn. Please retry in a moment.',
+      });
+    }
     traceBoundary({
       correlationId,
       boundary: 'inference.plan',
