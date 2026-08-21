@@ -12,8 +12,16 @@ export const OFFICE_CONTINUE_VALUE = 'Build the requested artifact now using thi
 
 const OFFICE_BUILD_NOW = /\b(generate|build|create|make|compile|produce)\b/i;
 const OFFICE_FILE_HINT = /\b(ppt|pptx|powerpoint|deck|slides?|presentation|docx|word|xlsx|excel|file|artifact|document)\b/i;
-const OFFICE_REVEAL = /\b(download|link|preview|show|open|workspace|where is|save|export)\b/i;
 const OFFICE_CHANGE = /\b(change|fix|update|edit|revise|rebuild|regenerate|add|rewrite)\b/i;
+
+function isOfficeRevealPhrase(value = '') {
+  const text = String(value || '');
+  return /\bdownload(?:able)?(?:\s+link)?\b/i.test(text)
+    || /\bexport\b/i.test(text)
+    || /\bsave (?:the )?(?:file|pptx|ppt|deck|document)\b/i.test(text)
+    || /\b(show|open)\b.{0,40}\b(preview|workspace|download|pptx|ppt|deck|file)\b/i.test(text)
+    || /\b(preview|workspace)\b.{0,24}\b(please|now|again)\b/i.test(text);
+}
 
 function recentOfficeBriefing(messages = []) {
   const list = Array.isArray(messages) ? messages : [];
@@ -104,8 +112,9 @@ export function isOfficeBuildNowRequest(text = '') {
 export function shouldRevealOfficeNow({ text = '', messages = [] } = {}) {
   const value = String(text || '').trim();
   if (!value || !activeOfficeArtifact(messages)) return false;
-  if (OFFICE_CHANGE.test(value) && !OFFICE_REVEAL.test(value)) return false;
-  return OFFICE_REVEAL.test(value) || isOfficeBuildNowRequest(value);
+  if (OFFICE_CHANGE.test(value) && !isOfficeRevealPhrase(value)) return false;
+  if (isOfficeBuildNowRequest(value) && !isOfficeRevealPhrase(value)) return false;
+  return isOfficeRevealPhrase(value);
 }
 
 export async function shouldGenerateOfficeNow({ text = '', officeKind = null, messages = [] } = {}) {
@@ -119,6 +128,10 @@ export async function shouldGenerateOfficeNow({ text = '', officeKind = null, me
 
   // Continue, or a plain "generate the PPT now", after briefing — no classifier required.
   if (prior && (value === OFFICE_CONTINUE_VALUE || isOfficeBuildNowRequest(value))) return true;
+
+  // After a file exists, the same generate phrasing rebuilds it. Reveal-only
+  // phrases already returned above.
+  if (artifact && isOfficeBuildNowRequest(value)) return true;
 
   // Natural-language create/refine/discuss semantics belong to the model-based
   // turn interpreter. Frontend code must not grow another English keyword list.

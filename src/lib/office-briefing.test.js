@@ -64,7 +64,7 @@ test('Generate the PPT now after briefing goes to Office generation without the 
   }), true);
 });
 
-test('download and show requests reopen an existing Office file instead of chatting', async () => {
+test('download and show-preview requests reopen an existing Office file instead of chatting', async () => {
   const messages = [{
     sender: 'ai',
     officeAttachment: {
@@ -77,7 +77,10 @@ test('download and show requests reopen an existing Office file instead of chatt
   }];
   assert.equal(shouldRevealOfficeNow({ text: 'can you create a downloadable link', messages }), true);
   assert.equal(await shouldGenerateOfficeNow({ text: 'can you create a downloadable link', messages }), false);
-  assert.equal(shouldRevealOfficeNow({ text: 'Generate the PPT now', messages }), true);
+  assert.equal(shouldRevealOfficeNow({ text: 'show the preview', messages }), true);
+  assert.equal(shouldRevealOfficeNow({ text: 'show me the sources', messages }), false);
+  assert.equal(shouldRevealOfficeNow({ text: 'Generate the PPT now', messages }), false);
+  assert.equal(await shouldGenerateOfficeNow({ text: 'Generate the PPT now', messages }), true);
 });
 
 test('verified artifact closes briefing and semantic refinement routes directly to generation', async () => {

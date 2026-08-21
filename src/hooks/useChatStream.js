@@ -242,7 +242,15 @@ export function useChatStream({
         id: Date.now() + 1,
         sender: 'ai',
         text: `The ${currentOfficeArtifact.kind || 'Office'} file is in Preview. Use **Download** on the card below, or the file button in the preview header.`,
-        officeAttachment: currentOfficeArtifact,
+        officeAttachment: {
+          kind: currentOfficeArtifact.kind || currentOfficeArtifact.format,
+          fileName: currentOfficeArtifact.fileName,
+          mimeType: currentOfficeArtifact.mimeType,
+          spec: currentOfficeArtifact.spec,
+          htmlPreview: currentOfficeArtifact.htmlPreview,
+          verification: currentOfficeArtifact.verification,
+          generation: currentOfficeArtifact.generation,
+        },
         officeBriefing: false,
       }]);
       setIsGenerating(false);
@@ -299,10 +307,7 @@ export function useChatStream({
 
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: operation === 'refine'
-            ? `✅ **Successfully updated the ${officeKind} document.**\n\n\`\`\`html\n${data.htmlPreview}\n\`\`\``
-            : `✅ **Successfully generated ${officeKind} document from the approved briefing.**\n\n\`\`\`html\n${data.htmlPreview}\n\`\`\``,
-          codeSnippet: data.htmlPreview,
+          text: `The ${officeKind} file is in Preview. Use **Download** on the card below.`,
           isGenerating: false,
           officeAttachment: data,
           officeBriefing: false

@@ -8,6 +8,7 @@ import {
   getCachedOfficeArtifact,
   getVerifiedOfficePreviewState,
   manifestMatchesPreview,
+  resolveOfficeDownloadPayload,
   stripOfficeManifest,
   validateOfficeArtifactEnvelope,
 } from './office-artifact-cache.js';
@@ -69,4 +70,19 @@ test('rejects a mismatched or unverified artifact', () => {
   const result = validateOfficeArtifactEnvelope(bad, 'powerpoint', 'cafebabe');
   assert.equal(result.valid, false);
   assert.ok(result.issues.length >= 3);
+});
+
+test('download payload can come from cache when the chat card has no binary', () => {
+  clearOfficeArtifactCache();
+  const { fingerprint } = htmlWithManifest();
+  const artifact = {
+    kind: 'powerpoint',
+    fileName: 'deck.pptx',
+    mimeType: MIME,
+    data: 'A'.repeat(200),
+    verification: { passed: true, previewFingerprint: fingerprint },
+  };
+  assert.equal(cacheOfficeArtifact(artifact), true);
+  const card = { kind: 'powerpoint', fileName: 'deck.pptx', mimeType: MIME, verification: artifact.verification };
+  assert.equal(resolveOfficeDownloadPayload(card, []).data, artifact.data);
 });
