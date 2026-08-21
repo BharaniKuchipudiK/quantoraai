@@ -65,7 +65,7 @@ export function buildChoiceTemplateDirective(options: {
     parts.push(TRAVEL_CHOICE_HINTS);
   }
 
-  if (options.guided || options.buildMode) {
+  if (options.guided) {
     parts.push(BUILD_CHOICE_HINTS);
   }
 

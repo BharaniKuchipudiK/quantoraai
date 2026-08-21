@@ -7,6 +7,7 @@ import {
   isIgnorableRuntimeError,
   PREVIEW_EMBED_SHELL_HTML,
   PREVIEW_TAILWIND_PROBE_ID,
+  pickPreviewEntry,
   prepareCodeForPreview,
   usesTailwindCdn,
 } from './preview-utils.js';
@@ -23,6 +24,43 @@ test('injects harness into head', () => {
   assert.match(out, /kind:'loaded'/);
   assert.match(out, new RegExp(`id="${PREVIEW_TAILWIND_PROBE_ID}"`));
   assert.match(out, new RegExp(`getElementById\\('${PREVIEW_TAILWIND_PROBE_ID}'\\)`));
+});
+
+test('inlines styles.css and script.js so split-file calculators render in an opaque iframe', () => {
+  const html = `<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">
+</head><body>
+<div class="display">0</div>
+<button class="key">7</button>
+<script src="script.js"></script>
+</body></html>`;
+  const prepared = prepareCodeForPreview(html, {
+    'styles.css': { content: '.key{display:grid;border-radius:40px;background:#1c1c1e;color:#fff}' },
+    'script.js': { content: 'console.log("ready")' },
+  });
+  assert.match(prepared, /id="vfs-styles"/);
+  assert.match(prepared, /\.key\{display:grid/);
+  assert.match(prepared, /console\.log\("ready"\)/);
+  assert.doesNotMatch(prepared, /href="styles\.css"/);
+  assert.doesNotMatch(prepared, /src="script\.js"/);
+  assert.match(prepared, /fonts\.googleapis\.com/);
+});
+
+test('appends unlinked script.js so calculator logic still runs', () => {
+  const html = '<!DOCTYPE html><html><head></head><body><button>7</button></body></html>';
+  const prepared = prepareCodeForPreview(html, {
+    'script.js': { content: 'window.__calcReady = true;' },
+  });
+  assert.match(prepared, /window\.__calcReady = true;/);
+});
+
+test('preview entry prefers index.html over sibling CSS/JS files', () => {
+  assert.match(pickPreviewEntry({
+    'styles.css': { content: 'body{color:red}' },
+    'script.js': { content: 'void 0' },
+    'index.html': { content: '<!DOCTYPE html><html><body>ok</body></html>' },
+  }), /<!DOCTYPE html>/);
 });
 
 test('preserves self-contained Office/V2 slide CSS through preview preparation and harness injection', () => {

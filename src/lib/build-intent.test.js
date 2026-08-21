@@ -15,6 +15,8 @@ test('a calculator is a build, not a question', () => {
 
 test('a named tool skips coffee-shop intake', () => {
   assert.equal(isSpecifiedRunnableTool('Build a calculator app'), true);
+  assert.equal(isSpecifiedRunnableTool('Help me create a calculator that can handle all the basic functions with the iOS theme.'), true);
+  assert.equal(detectBuildIntent('Help me create a calculator that can handle all the basic functions with the iOS theme.'), true);
   assert.equal(needsGuidedWebsiteIntake('Build a calculator app'), false);
   assert.equal(shouldStartGuidedBuild({ text: 'Make me a simple calculator app' }), false);
   assert.equal(shouldHonorGuidedBuild({

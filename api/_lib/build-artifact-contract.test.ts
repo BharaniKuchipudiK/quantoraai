@@ -74,6 +74,14 @@ test('rejects a calculator button that cannot update its display', () => {
   assert.deepEqual(result, { ok: false, detailCode: 'calculator-interaction-missing' });
 });
 
+test('a normal user tool in one unfenced HTML document is a valid artifact', () => {
+  const html = '<!DOCTYPE html><html><head><style>body{margin:0}</style></head><body><button>Go</button></body></html>';
+  assert.deepEqual(validateBuildArtifactResponse(html, null), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
+  });
+});
+
 test('a normal user calculator in one HTML file is not held to the golden VFS canary', () => {
   const html = '```html\n<!DOCTYPE html><html><body><script>function add(){}</script></body></html>\n```';
   assert.deepEqual(validateBuildArtifactResponse(html, null), {

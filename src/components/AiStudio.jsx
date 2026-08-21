@@ -1,5 +1,5 @@
-import { parseVFSFromMarkdown } from '../lib/vfs-parser.js';
-import { extractHtmlFromResponse } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview } from '../lib/studio-preview-helpers.js';
+import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
@@ -202,18 +202,6 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
     </button>
   );
 }
-
-const extractRunnableCode = (text) => {
-  if (!text) return null;
-  const match = text.match(/```(?:jsx|tsx|html|css|javascript|react|js)?\n([\s\S]*?)```/i);
-  if (match) {
-    const code = match[1].trim();
-    if (code.includes('import React') || code.includes('export default') || code.includes('<html>') || code.includes('<div')) {
-      return code;
-    }
-  }
-  return null;
-};
 
 const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim() : '';
 
@@ -457,6 +445,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
+  const [canvasVfs, setCanvasVfs] = useState({});
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
@@ -530,20 +519,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (detectSlideDeck(messages)) {
       const deckHtml = normalizeDeck(rawText, { title: deriveDeckTitle(messages) });
       if (deckHtml) {
+        setCanvasVfs({});
         setCanvasCode(deckHtml);
         setCanvasOpen(true);
         return;
       }
     }
 
-    let cleanCode = extractHtmlFromResponse(rawText);
-
-    if (!cleanCode) {
-      cleanCode = rawText.includes('<!DOCTYPE html>') || rawText.includes('<html')
-        ? rawText.replace(/```(?:html|javascript|js|css)?\n([\s\S]*?)```/gi, '$1')
-        : `<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${rawText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`;
+    const assembled = assembleStudioPreview(rawText);
+    if (assembled.code) {
+      setCanvasVfs(assembled.vfs);
+      setCanvasCode(assembled.code);
+      setCanvasOpen(true);
+      return;
     }
-    setCanvasCode(cleanCode);
+
+    setCanvasVfs({});
+    setCanvasCode(`<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${String(rawText || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`);
     setCanvasOpen(true);
   };
 
@@ -807,10 +799,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
-    // Manual previews are not the output of the latest inference transaction.
-    // Clear its trace metadata so they cannot be mistaken for golden evidence.
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
+
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
+    const assembled = assembleStudioPreview(lastAi?.text || '');
+    if (Object.keys(assembled.vfs).length > 0) {
+      setVfs(assembled.vfs);
+      setWorkspaceCode(assembled.code);
+      setWorkspaceActiveTab('preview');
+      setIsWorkspaceMode(true);
+      return;
+    }
+
     let vfsPayload = {};
     try {
       const maybeJson = JSON.parse(codeString);
@@ -820,25 +821,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     } catch (e) {
       // Not JSON
     }
-    
+
     if (Object.keys(vfsPayload).length > 0) {
       setVfs(vfsPayload);
-      setWorkspaceCode(vfsPayload['App.jsx']?.content || vfsPayload[Object.keys(vfsPayload)[0]]?.content || '');
+      setWorkspaceCode(pickPreviewEntry(vfsPayload));
     } else {
-      setWorkspaceCode(codeString);
-      const filename = (lang === 'html') ? 'index.html' : (lang === 'css' ? 'index.css' : 'App.jsx');
-      setVfs({ [filename]: { content: codeString, language: lang } });
+      const filename = (lang === 'html') ? 'index.html' : (lang === 'css' ? 'styles.css' : (lang === 'javascript' || lang === 'js') ? 'script.js' : 'App.jsx');
+      const nextVfs = { [filename]: { content: codeString, language: lang } };
+      setVfs(nextVfs);
+      setWorkspaceCode(pickPreviewEntry(nextVfs) || codeString);
     }
     setWorkspaceActiveTab('preview');
     setIsWorkspaceMode(true);
-  }, [studioDomain]);
+  }, [studioDomain, messages]);
 
   const markdownComponents = React.useMemo(() => ({
     a({node, children, href, ...props}) {
       return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
     },
     code({node, inline, className, children, ...props}) {
-      const match = /language-(w+)/.exec(className || '');
+      const match = /language-(\w+)/.exec(className || '');
       const rawCode = String(children).replace(/\n$/, '');
       const isRunnable = match && ['javascript', 'jsx', 'tsx', 'html', 'css', 'json'].includes(match[1]);
       
@@ -926,7 +928,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
-      const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text) || extractHtmlFromResponse(msg.text)) : null;
+      const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text)) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       const isFailover = isActiveGenerating && msg.isFailover;
       
@@ -1261,7 +1263,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           {/* Preview (code / presentation / app) — only when previewable */}
                           {actions.preview && runnableCode && canExplicitlyPreviewCode(studioDomain) && (
                             <button
-                              onClick={() => { setCanvasCode(runnableCode); setCanvasOpen(true); }}
+                              onClick={() => openCanvasWithCode(msg.text)}
                               style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
                               onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
                               onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
@@ -1485,7 +1487,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         // Frontend deck parser remains available for neutral Studio and explicit Office artifacts.
-        const parsedVfs = parseVFSFromMarkdown(lastMsg.text, vfs);
+        const assembled = assembleStudioPreview(lastMsg.text);
+        const parsedVfs = assembled.vfs;
         
         if (Object.keys(parsedVfs).length > 0) {
            setVfs(parsedVfs);
@@ -1496,14 +1499,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
              fileCount: Object.keys(parsedVfs).length,
              detailCode: 'runnable-files-present',
            });
-           setWorkspaceCode(parsedVfs['presentation.html']?.content || parsedVfs['App.jsx']?.content || parsedVfs[Object.keys(parsedVfs)[0]]?.content || '');
+           setWorkspaceCode(assembled.code || pickPreviewEntry(parsedVfs));
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
         } else {
-           const code = extractRunnableCode(lastMsg.text);
+           const code = assembled.code || extractRunnableCode(lastMsg.text);
            if (code) {
               setWorkspaceCode(code);
-              setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : 'App.jsx']: { content: code, language: detectSlideDeck(messages) ? 'html' : 'jsx' } });
+              const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
+              setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } });
               setWorkspaceCorrelationId(lastMsg.correlationId || null);
               setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
               void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
@@ -2918,6 +2922,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           }}>
               <LivePreviewCanvas
                 code={canvasCode}
+                vfs={canvasVfs}
                 isLight={isLight}
                 onClose={() => setCanvasOpen(false)}
                 isPresentationIntent={detectSlideDeck(messages)}

@@ -1,4 +1,9 @@
 import { applyDiffPatch } from './diff-patcher.js';
+
+function looksLikeReactSource(source = '') {
+  return /(?:from\s+['"]react['"]|import\s+React\b|useState\s*\(|useEffect\s*\(|export\s+default\s+(?:function|class)|ReactDOM\.createRoot\s*\(|createRoot\s*\(|<[A-Z][A-Za-z0-9_.:-]*(?:\s|\/?>))/m.test(String(source || ''));
+}
+
 /**
  * Parses markdown text to extract code blocks into a Virtual File System (VFS).
  *
@@ -41,8 +46,9 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
       };
     }
 
-    // Try to extract filepath="filename" or filename="filename"
-    const filepathMatch = attributes.match(/(?:filepath|filename)="([^"]+)"/) || attributes.match(/(?:filepath|filename)='([^']+)'/);
+    const filepathMatch = attributes.match(/(?:filepath|filename)\s*=\s*["']([^"']+)["']/)
+      || attributes.match(/(?:filepath|filename)\s*=\s*([^\s"']+)/)
+      || attributes.match(/^([\w./-]+\.\w+)$/);
     let filepath = filepathMatch ? filepathMatch[1] : null;
 
     // Fallbacks if no explicit filepath is given
@@ -51,10 +57,11 @@ export function parseVFSFromMarkdown(text, currentVfs = {}) {
         filepath = 'styles.css';
       } else if (language === 'html') {
         filepath = 'index.html';
-      } else if (['js', 'jsx', 'javascript', 'ts', 'tsx', 'typescript', 'react'].includes(language)) {
+      } else if (['jsx', 'tsx', 'typescript', 'react'].includes(language) || looksLikeReactSource(code)) {
         filepath = 'App.jsx';
+      } else if (['js', 'javascript', 'ts'].includes(language)) {
+        filepath = 'script.js';
       } else {
-        // Unknown language without a filepath, skip or assign generic
         continue;
       }
     }

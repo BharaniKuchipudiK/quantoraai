@@ -17,9 +17,9 @@ test("a well-formed styled document passes the critical checks", () => {
   assert.equal(checkById(checks, "img-alt")?.ok, true);
 });
 
-test("an unstyled bare document fails the critical 'styled' check", () => {
-  const bare = `<!doctype html><html><body><h1>Hi</h1><a href="#">Link</a></body></html>`;
-  const checks = heuristicChecks(bare);
+test("an unstyled document with class names still fails the critical 'styled' check", () => {
+  const classOnly = `<!doctype html><html><body><div class="display">0</div><button class="key">7</button></body></html>`;
+  const checks = heuristicChecks(classOnly);
   assert.equal(checkById(checks, "styled")?.ok, false);
   assert.equal(checkById(checks, "styled")?.critical, true);
 });

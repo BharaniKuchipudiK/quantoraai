@@ -26,6 +26,17 @@ test("conversation prompt includes travel and choice templates together", () => 
   assert.match(prompt, /DOMAIN FOCUS: TRAVEL/);
 });
 
+test("direct build mode does not load website intake choice templates", () => {
+  const prompt = buildConversationSystemPrompt({
+    buildMode: true,
+    guided: false,
+    lastMessage: "Create a timer with lap times",
+  });
+  assert.match(prompt, /BUILD MODE/);
+  assert.doesNotMatch(prompt, /BUILD CHOICE TEMPLATES/);
+  assert.doesNotMatch(prompt, /Online shop with checkout/);
+});
+
 test("conversation prompt includes build choice templates in guided mode", () => {
   const prompt = buildConversationSystemPrompt({ guided: true });
   assert.match(prompt, /BUILD CHOICE TEMPLATES/);

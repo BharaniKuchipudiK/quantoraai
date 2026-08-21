@@ -232,8 +232,8 @@ export default function LivePreviewCanvas({
       const data = await requestRepair(currentCodeRef.current, instruction);
       const original = currentCodeRef.current || '';
       const fixed = data?.code || '';
-      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=/i.test(original) || /class\s*=/i.test(original);
-      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=/i.test(fixed) || /class\s*=/i.test(fixed);
+      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(original);
+      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(fixed);
       if (fixed && !data.unchanged && fixed.trim() !== original.trim() && (!hadStyle || keepsStyle) && fixed.length >= original.length * 0.55) {
         verifiedCodeRef.current = null; // re-verify the improved build
         setQualityReport(null);
@@ -249,8 +249,8 @@ export default function LivePreviewCanvas({
     if (status !== 'clean') return;
     if (!currentCode || verifiedCodeRef.current === currentCode) return;
     verifiedCodeRef.current = currentCode;
-    runQualityCheck(currentCode);
-  }, [status, currentCode, headless, verifyOnly, runQualityCheck]);
+    runQualityCheck(prepareCodeForPreview(currentCode, vfs));
+  }, [status, currentCode, vfs, headless, verifyOnly, runQualityCheck]);
 
   const handleRuntimeError = useCallback(async (message) => {
     if (healingRef.current || errorSeenRef.current) return;
@@ -301,8 +301,8 @@ export default function LivePreviewCanvas({
       }
       const original = currentCodeRef.current || '';
       const fixed = data.code || '';
-      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=/i.test(original) || /class\s*=/i.test(original);
-      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=/i.test(fixed) || /class\s*=/i.test(fixed);
+      const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(original);
+      const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(fixed);
       const shrankTooMuch = fixed.length < original.length * 0.55;
       if ((hadStyle && !keepsStyle) || shrankTooMuch) {
         setLastError(null);

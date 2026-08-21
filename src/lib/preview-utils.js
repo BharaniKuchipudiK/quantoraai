@@ -146,20 +146,96 @@ function looksLikeReactSource(source = '') {
   return /(?:from\s+['\"]react['\"]|import\s+React\b|useState\s*\(|useEffect\s*\(|export\s+default\s+(?:function|class)|ReactDOM\.createRoot\s*\(|createRoot\s*\(|<[A-Z][A-Za-z0-9_.:-]*(?:\s|\/?>))/m.test(text);
 }
 
+function vfsText(vfs, key) {
+  const entry = vfs?.[key];
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry.content === 'string') return entry.content;
+  return '';
+}
+
+function collectVfsCss(vfs = {}) {
+  const preferred = ['styles.css', 'index.css', 'App.css', 'src/index.css', 'src/App.css', 'src/styles.css'];
+  const seen = new Set();
+  const chunks = [];
+  for (const key of preferred) {
+    const text = vfsText(vfs, key);
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    chunks.push(text);
+  }
+  for (const key of Object.keys(vfs || {})) {
+    if (seen.has(key) || !/\.css$/i.test(key)) continue;
+    const text = vfsText(vfs, key);
+    if (text) chunks.push(text);
+  }
+  return chunks.join('\n');
+}
+
+function resolveVfsFile(vfs, href) {
+  const clean = String(href || '').trim().replace(/[?#].*$/, '').replace(/^\.\//, '').replace(/^\//, '');
+  if (!clean) return '';
+  return vfsText(vfs, clean)
+    || vfsText(vfs, href)
+    || vfsText(vfs, clean.split('/').pop());
+}
+
+/** Opaque-origin preview has no HTTP server. Local CSS/JS must be inlined. */
+export function inlineVfsAssets(html, vfs = {}) {
+  let out = String(html || '');
+  const css = collectVfsCss(vfs);
+  if (css) {
+    const styleTag = `<style id="vfs-styles">\n${css}\n</style>`;
+    if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, `${styleTag}\n</head>`);
+    else if (/<html[^>]*>/i.test(out)) out = out.replace(/<html[^>]*>/i, (m) => `${m}<head>${styleTag}</head>`);
+    else out = `${styleTag}${out}`;
+  }
+
+  out = out.replace(/<link\b[^>]*>/gi, (tag) => {
+    if (!/\brel\s*=\s*["']stylesheet["']/i.test(tag)) return tag;
+    const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1] || '';
+    if (/^(https?:)?\/\//i.test(href) || href.startsWith('data:')) return tag;
+    return '';
+  });
+
+  out = out.replace(/<script\b([^>]*?)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>\s*<\/script>/gi, (full, pre, src, post) => {
+    if (/^(https?:)?\/\//i.test(src) || src.startsWith('data:')) return full;
+    const code = resolveVfsFile(vfs, src);
+    if (!code) return full;
+    return `<script${pre}${post}>\n${code}\n</script>`;
+  });
+
+  for (const key of ['script.js', 'index.js', 'app.js', 'main.js']) {
+    const code = vfsText(vfs, key);
+    if (!code || looksLikeReactSource(code)) continue;
+    const marker = code.trim().slice(0, 48);
+    if (marker && out.includes(marker)) continue;
+    const tag = `<script>\n${code}\n</script>`;
+    if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, `${tag}\n</body>`);
+    else out += tag;
+  }
+
+  return out;
+}
+
+export function pickPreviewEntry(vfs = {}) {
+  const preferred = ['index.html', 'presentation.html', 'src/main.jsx', 'App.jsx', 'src/App.jsx'];
+  for (const key of preferred) {
+    const text = vfsText(vfs, key);
+    if (text) return text;
+  }
+  const htmlKey = Object.keys(vfs || {}).find((key) => /\.html$/i.test(key));
+  if (htmlKey) return vfsText(vfs, htmlKey);
+  const first = Object.keys(vfs || {})[0];
+  return first ? vfsText(vfs, first) : '';
+}
+
 export function prepareCodeForPreview(code, vfs = {}) {
   if (!code) return '';
   const str = String(code).trim();
 
-  let injectedCSS = '';
-  if (vfs['index.css']?.content) injectedCSS += vfs['index.css'].content + '\n';
-  if (vfs['App.css']?.content) injectedCSS += vfs['App.css'].content + '\n';
-
-  // If it's already an HTML document, inject CSS into <head>.
+  // If it's already an HTML document, inline local CSS/JS from the VFS.
   if (/^<!DOCTYPE html>/i.test(str) || /^<html/i.test(str) || /<head>/i.test(str)) {
-    if (injectedCSS) {
-       return str.replace(/(<\/head>)/i, `<style id="vfs-styles">\n${injectedCSS}\n</style>\n$1`);
-    }
-    return str;
+    return inlineVfsAssets(str, vfs);
   }
 
   // React/JSX has exactly one supported execution path: the isolated Vite/Sandpack

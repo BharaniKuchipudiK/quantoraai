@@ -23,6 +23,36 @@ test('plain-language replies never revive an older code workspace', () => {
   assert.deepEqual(parsed, {});
 });
 
+test('vanilla javascript without a filepath becomes script.js, not App.jsx', () => {
+  const text = [
+    '```html',
+    '<!DOCTYPE html><html><body><button>7</button></body></html>',
+    '```',
+    '```javascript',
+    'document.querySelector("button").onclick = () => {};',
+    '```',
+    '```css',
+    '.key{display:grid}',
+    '```',
+  ].join('\n');
+  const parsed = parseVFSFromMarkdown(text);
+  assert.ok(parsed['index.html']);
+  assert.ok(parsed['styles.css']);
+  assert.ok(parsed['script.js']);
+  assert.equal(parsed['App.jsx'], undefined);
+});
+
+test('React source without a filepath still lands in App.jsx', () => {
+  const parsed = parseVFSFromMarkdown('```jsx\nexport default function App(){ return <main>Hi</main>; }\n```');
+  assert.ok(parsed['App.jsx']);
+});
+
+test('unquoted filepath attributes still populate the VFS', () => {
+  const parsed = parseVFSFromMarkdown('```html filepath=index.html\n<!DOCTYPE html><html><body>ok</body></html>\n```');
+  assert.ok(parsed['index.html']);
+  assert.match(parsed['index.html'].content, /<!DOCTYPE html>/);
+});
+
 test('real code updates still merge against the existing VFS', () => {
   const parsed = parseVFSFromMarkdown('```jsx filepath="src/App.jsx"\nexport default function App(){ return <main>Updated</main>; }\n```', {
     'package.json': { content: '{"name":"project"}', language: 'json' },

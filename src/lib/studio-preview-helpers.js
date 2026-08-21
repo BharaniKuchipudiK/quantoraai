@@ -1,33 +1,72 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
-export function extractHtmlFromResponse(rawText) {
-  if (!rawText || typeof rawText !== 'string') return '';
-  const trimmed = rawText.trim();
-  const htmlFence = trimmed.match(/```html\s*\n?([\s\S]*?)(?:```|$)/i);
-  if (htmlFence?.[1]) return htmlFence[1].trim();
-  const genericFence = trimmed.match(/```\s*\n?([\s\S]*?<(?:!DOCTYPE|html)[\s\S]*?)(?:```|$)/i);
-  if (genericFence?.[1]) return genericFence[1].trim();
-  if (/<!DOCTYPE html>/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) {
-    return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)(?:```|$)/gi, '$1').trim();
+import { parseVFSFromMarkdown } from './vfs-parser.js';
+import { pickPreviewEntry, prepareCodeForPreview } from './preview-utils.js';
+import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
+
+function isHtmlDocument(source = '') {
+  return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
+}
+
+function extractUnfencedHtml(rawText) {
+  const trimmed = String(rawText || '').trim();
+  if (!isHtmlDocument(trimmed)) return '';
+  return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)(?:```|$)/gi, '$1').trim();
+}
+
+/**
+ * One pipeline for every generated artifact: fenced VFS, single HTML file,
+ * or unfenced HTML document. Callers must not pick the first markdown fence.
+ */
+export function assembleStudioPreview(rawText) {
+  if (!rawText || typeof rawText !== 'string') return { vfs: {}, code: '' };
+
+  const vfs = parseVFSFromMarkdown(rawText, {});
+  if (Object.keys(vfs).length > 0) {
+    return { vfs, code: pickPreviewEntry(vfs) };
   }
-  return '';
+
+  const html = extractUnfencedHtml(rawText);
+  if (html) {
+    return {
+      vfs: { 'index.html': { content: html, language: 'html' } },
+      code: html,
+    };
+  }
+
+  return { vfs: {}, code: '' };
+}
+
+export function extractHtmlFromResponse(rawText) {
+  const { vfs, code } = assembleStudioPreview(rawText);
+  const htmlFile = vfs['index.html']?.content
+    || Object.entries(vfs).find(([name]) => /\.html$/i.test(name))?.[1]?.content;
+  if (htmlFile) return String(htmlFile).trim();
+  return isHtmlDocument(code) ? String(code).trim() : '';
+}
+
+export function extractRunnableCode(rawText) {
+  const { code } = assembleStudioPreview(rawText);
+  if (code) return code;
+  if (isInlineReactRuntimeCode(rawText)) return String(rawText).trim();
+  return null;
 }
 
 export function hasPreviewableContent(rawText) {
   if (!rawText || typeof rawText !== 'string') return false;
-  return Boolean(extractHtmlFromResponse(rawText) || rawText.includes('```') || /(?:import\s+React|export\s+default|<div[\s>]|<body[\s>])/i.test(rawText));
+  const assembled = assembleStudioPreview(rawText);
+  if (assembled.code || Object.keys(assembled.vfs).length > 0) return true;
+  return isInlineReactRuntimeCode(rawText);
 }
 
 export function preparePreviewHtml(rawText, imageMap = new Map()) {
-  let html = extractHtmlFromResponse(rawText);
-  if (!html && (/<!DOCTYPE html>/i.test(rawText) || /<html[\s>]/i.test(rawText))) {
-    html = rawText.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)```/gi, '$1').trim();
-  }
-  if (!html) return '';
+  const assembled = assembleStudioPreview(rawText);
+  let html = extractHtmlFromResponse(rawText) || assembled.code;
+  if (!html || !isHtmlDocument(html)) return '';
   if (imageMap.size) {
     for (const [token, dataUrl] of imageMap) html = html.split(token).join(dataUrl);
   }
-  return html;
+  return prepareCodeForPreview(html, assembled.vfs);
 }
 
 export function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {
