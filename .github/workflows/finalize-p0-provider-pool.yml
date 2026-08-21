@@ -1,3 +1,4 @@
+# Trigger the final P0 patch after live provider qualification.
 name: Finalize P0 provider pool
 on:
   push:
@@ -121,7 +122,6 @@ jobs:
 '''
           p.write_text(text[:start] + replacement + text[end:])
 
-          # Strengthen Studio gate: a build request must expose its workspace before the provider reply arrives.
           p = Path('scripts/studio-regression-browser-gate.mjs')
           text = p.read_text()
           old = """  if (path === '/api/chat') {\n    const body = request.postDataJSON?.() || {};\n    const reply = /calculator/i.test(String(body.message || '')) ? calculatorReply : projectReply;\n    return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, body: sseBody(reply) });\n  }"""
