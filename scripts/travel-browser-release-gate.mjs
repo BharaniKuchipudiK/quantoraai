@@ -132,8 +132,10 @@ try {
   await visible(studio, 'Studio navigation never became visible.');
   await studio.click();
 
-  const neutralCanvas = page.locator('[data-quantora-sidebar-canvas]').first();
-  await visible(neutralCanvas, 'Neutral Studio lost its Canvas navigation unexpectedly.');
+  await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into neutral Studio.');
+  await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into neutral Studio.');
+  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from neutral Studio.');
+  await visible(page.locator('button[aria-controls="quantora-profile-menu"]').first(), 'Global Profile control is missing from neutral Studio.');
 
   const travelAdvisor = page.getByText(/^(Travel Guide AI|Travel Advisor)$/i).first();
   await visible(travelAdvisor, 'Travel specialist entry is missing.');
@@ -145,7 +147,11 @@ try {
 
   await hidden(
     page.locator('[data-quantora-sidebar-canvas]').first(),
-    'Canvas navigation is still visible inside Travel.',
+    'Duplicate Canvas navigation is visible inside Travel.',
+  );
+  await hidden(
+    page.locator('[data-quantora-sidebar-profile]').first(),
+    'Duplicate Profile navigation is visible inside Travel.',
   );
   await hidden(
     page.locator('[data-quantora-fork-chat]').first(),
@@ -207,7 +213,7 @@ try {
   );
   await hidden(
     page.locator('[data-quantora-sidebar-canvas]').first(),
-    'Canvas navigation reappeared during the Travel conversation.',
+    'Duplicate Canvas navigation reappeared during the Travel conversation.',
   );
 
   const visiblePreviewTabs = await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).count();
@@ -216,7 +222,7 @@ try {
   }
 
   await screenshot('travel-release-gate-pass');
-  console.log(`Travel browser release gate passed in ${elapsed}ms for first turn; Canvas remained closed.`);
+  console.log(`Travel browser release gate passed in ${elapsed}ms for first turn; generic code Canvas remained closed.`);
 } catch (error) {
   await screenshot('travel-release-gate-failure').catch(() => {});
   console.error('Travel browser release gate FAILED:', error?.stack || error);
