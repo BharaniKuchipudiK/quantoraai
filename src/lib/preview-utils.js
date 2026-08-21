@@ -253,6 +253,14 @@ export function prepareCodeForPreview(code, vfs = {}) {
   return `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body>${str}</body></html>`;
 }
 
+export function assembledPreviewHasUsableCss(html = '') {
+  const src = String(html || '');
+  if (/<style[\s>][\s\S]{12,}<\/style>/i.test(src)) return true;
+  if (/\bstyle\s*=\s*["'][^"']{8,}/i.test(src)) return true;
+  if (/cdn\.tailwindcss\.com/i.test(src) && /\bclass\s*=/i.test(src)) return true;
+  return false;
+}
+
 export function usesTailwindCdn(html) {
   return /cdn\.tailwindcss\.com/i.test(String(html || ''));
 }

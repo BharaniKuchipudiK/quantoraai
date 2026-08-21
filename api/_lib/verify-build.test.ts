@@ -9,7 +9,7 @@ function checkById(checks: ReturnType<typeof heuristicChecks>, id: string) {
 const GOOD = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hira's Cafe</title><style>body{font-family:Inter}</style></head><body><header><nav><a href="/menu">Menu</a></nav></header><main><h1>Welcome</h1><img src="https://images.unsplash.com/x" alt="Latte"><button>Order</button></main><footer>© Hira's Cafe</footer></body></html>`;
 
 test("a well-formed styled document passes the critical checks", () => {
-  const checks = heuristicChecks(GOOD);
+  const checks = heuristicChecks(GOOD, "a cafe website");
   assert.equal(checkById(checks, "doctype")?.ok, true);
   assert.equal(checkById(checks, "styled")?.ok, true);
   assert.equal(checkById(checks, "responsive")?.ok, true);
@@ -41,6 +41,19 @@ test("a shop brief WITH a cart passes the cart feature check", () => {
   const shop = GOOD.replace("<button>Order</button>", '<button class="add-to-cart">Add to cart</button>');
   const checks = heuristicChecks(shop, "sell products online with a checkout");
   assert.equal(checkById(checks, "feat-cart")?.ok, true);
+});
+
+test("a local stylesheet link without inlined CSS fails the critical styled check", () => {
+  const linked = `<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><button class="key">7</button></body></html>`;
+  const checks = heuristicChecks(linked);
+  assert.equal(checkById(checks, "styled")?.ok, false);
+});
+
+test("a calculator is not scored as a missing website header and footer", () => {
+  const calc = `<!doctype html><html><head><title>Calc</title><style>.key{display:grid}</style></head><body><button class="key">7</button></body></html>`;
+  const checks = heuristicChecks(calc, "build a scientific calculator");
+  assert.equal(checkById(checks, "styled")?.ok, true);
+  assert.equal(checkById(checks, "structure"), undefined);
 });
 
 test("a plain landing page is not penalised for lacking a cart", () => {

@@ -490,6 +490,7 @@ export default async function handler(req: any, res: any) {
       try {
         const report = await verifyBuild({
           code,
+          vfs: req.body?.vfs && typeof req.body.vfs === "object" ? req.body.vfs : {},
           brief: typeof brief === "string" ? brief : "",
           openRouterKey: effectiveOpenRouterKey,
           geminiKey: effectiveGeminiKey,

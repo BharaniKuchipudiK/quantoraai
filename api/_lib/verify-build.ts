@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { stripDataUris } from "./model-payload.js";
+import { assembledPreviewHasUsableCss, prepareCodeForPreview } from "../../src/lib/preview-utils.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -44,11 +45,7 @@ function has(re: RegExp, s: string): boolean {
 }
 
 function hasRealStyling(src: string): boolean {
-  if (has(/<style[\s>][\s\S]{12,}<\/style>/i, src)) return true;
-  if (has(/\bstyle\s*=\s*["'][^"']{8,}/i, src)) return true;
-  if (has(/<link\b[^>]*rel\s*=\s*["']stylesheet["']/i, src)) return true;
-  if (has(/cdn\.tailwindcss\.com/i, src) && has(/class\s*=/i, src)) return true;
-  return false;
+  return assembledPreviewHasUsableCss(src);
 }
 
 /*
@@ -70,7 +67,6 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
     { id: "title", label: "Has a page title", ok: has(/<title>[^<]{2,}<\/title>/i, src), weight: 1 },
     { id: "responsive", label: "Responsive viewport meta", ok: has(/<meta[^>]+name=["']viewport["']/i, src), weight: 2 },
     { id: "lang", label: "Language attribute set", ok: has(/<html[^>]+lang\s*=/i, src), weight: 1 },
-    { id: "structure", label: "Has header/nav and footer structure", ok: has(/<nav[\s>]|<header[\s>]/i, src) && has(/<footer[\s>]/i, src), weight: 2 },
     { id: "interactive", label: "Real links / buttons (not dead #)", ok: has(/<button[\s>]/i, src) || count(/<a\b[^>]*href\s*=\s*["'](?!#["'])[^"']+["']/i, src) > 0, weight: 1 },
     { id: "img-alt", label: "Images have alt text", ok: imgsMissingAlt === 0, weight: 1, detail: imgsMissingAlt ? `${imgsMissingAlt} image(s) missing alt text` : undefined },
     { id: "img-src", label: "No broken/empty images", ok: imgsEmptySrc === 0, weight: 2, detail: imgsEmptySrc ? `${imgsEmptySrc} image(s) with empty/missing src` : undefined },
@@ -78,6 +74,15 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
     { id: "no-lorem", label: "No lorem ipsum filler", ok: !has(/lorem ipsum/i, lower), weight: 1 },
     { id: "no-todo", label: "No TODO/placeholder stubs", ok: !has(/\btodo\b|placeholder text|your text here/i, lower), weight: 1 },
   ];
+
+  if (/\b(website|landing page|shop|boutique|storefront|e-?commerce|cafe|caf[eé]|restaurant|salon|clinic|business)\b/.test(b)) {
+    checks.push({
+      id: "structure",
+      label: "Has header/nav and footer structure",
+      ok: has(/<nav[\s>]|<header[\s>]/i, src) && has(/<footer[\s>]/i, src),
+      weight: 2,
+    });
+  }
 
   // Feature checks — only when the brief asks for the capability.
   if (/\b(shop|store|cart|checkout|buy|sell|product|boutique|ecommerce|e-commerce)\b/.test(b)) {
@@ -164,17 +169,19 @@ function parseCritique(raw: string): { score?: number; issues: string[]; summary
 
 export async function verifyBuild(opts: {
   code: string;
+  vfs?: Record<string, unknown>;
   brief?: string;
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
 }): Promise<BuildReport> {
-  const { code, brief = "", openRouterKey, geminiKey, model } = opts;
+  const { code, vfs = {}, brief = "", openRouterKey, geminiKey, model } = opts;
   if (!code || typeof code !== "string" || !code.trim()) {
     throw new Error("No code provided to verify.");
   }
 
-  const checks = heuristicChecks(code, brief);
+  const assembled = prepareCodeForPreview(code, vfs);
+  const checks = heuristicChecks(assembled, brief);
   const heuristicScore = scoreFromChecks(checks);
   const heuristicIssues = checks.filter((c) => !c.ok).map((c) => c.detail || `Missing: ${c.label}`);
 
@@ -190,7 +197,7 @@ export async function verifyBuild(opts: {
       // The critic judges layout/design/brief, not image bytes. Strip embedded
       // base64 data-URIs from its copy so they don't burn tokens or crowd real
       // markup out of the 60k window. Heuristics above still see the real code.
-      const critiqueCode = stripDataUris(code);
+      const critiqueCode = stripDataUris(assembled);
       const raw = openRouterKey
         ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, critiqueCode, brief)
         : await critiqueWithGemini(geminiKey as string, critiqueCode, brief);

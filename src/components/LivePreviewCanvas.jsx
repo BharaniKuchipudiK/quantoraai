@@ -5,6 +5,7 @@ import {
   getPreviewEmbedPathUrl,
   injectPreviewHarness,
   prepareCodeForPreview,
+  assembledPreviewHasUsableCss,
   isIgnorableRuntimeError,
   isCriticalResourceError,
   revokePreviewEmbedObjectUrl,
@@ -60,6 +61,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   modelId,
   correlationId = null,
   goldenTransaction = null,
+  verifyBrief = '',
 }, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -191,7 +193,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         task: 'repair',
-        code: brokenCode,
+        code: prepareCodeForPreview(brokenCode, vfsRef.current),
         error: message,
         framework: 'html',
         modelId,
@@ -207,6 +209,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   // Score the finished artifact against quality bars, once per distinct build.
   const runQualityCheck = useCallback(async (codeToCheck) => {
     if (!codeToCheck || !codeToCheck.trim()) return;
+    const assembled = prepareCodeForPreview(codeToCheck, vfsRef.current);
     setVerifyingQuality(true);
     try {
       const openRouterApiKey = getClientSecret('openrouter');
@@ -216,7 +219,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           task: 'verify-build',
-          code: codeToCheck,
+          code: assembled,
+          vfs: vfsRef.current,
+          brief: verifyBrief,
           modelId,
           ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
           ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
@@ -226,10 +231,22 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       if (res.ok && typeof data.score === 'number') {
         setQualityReport(data);
         onVerificationStatusChange?.({ kind: 'quality', score: data.score, passed: data.passed });
+        const styledFailed = Array.isArray(data.checks) && data.checks.some((check) => check.id === 'styled' && check.ok === false);
+        if (styledFailed || !assembledPreviewHasUsableCss(assembled) || stylingFailedRef.current) {
+          stylingFailedRef.current = true;
+          setStatus('degraded');
+          setLastError(data.summary || 'Preview loaded but styling may be incomplete');
+          return;
+        }
+        if (!errorSeenRef.current) setStatus('clean');
+        return;
       }
-    } catch { /* verification is best-effort — never block the preview */ }
+      if (!errorSeenRef.current && assembledPreviewHasUsableCss(assembled)) setStatus('clean');
+    } catch {
+      if (!errorSeenRef.current && assembledPreviewHasUsableCss(assembled)) setStatus('clean');
+    }
     finally { setVerifyingQuality(false); }
-  }, [onVerificationStatusChange]);
+  }, [onVerificationStatusChange, verifyBrief, modelId]);
 
   // One-click improve: feed the verifier's concrete issues back into the
   // self-heal loop, keeping the design (guarded like the runtime repair path).
@@ -252,15 +269,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     } catch { /* leave the current build in place on failure */ }
     finally { setImproving(false); }
   }, [qualityReport, improving, requestRepair]);
-
-  // Run the quality check the first time a fresh build settles into "clean".
-  useEffect(() => {
-    if (headless || verifyOnly) return;
-    if (status !== 'clean') return;
-    if (!currentCode || verifiedCodeRef.current === currentCode) return;
-    verifiedCodeRef.current = currentCode;
-    runQualityCheck(prepareCodeForPreview(currentCode, vfs));
-  }, [status, currentCode, vfs, headless, verifyOnly, runQualityCheck]);
 
   const handleRuntimeError = useCallback(async (message) => {
     if (healingRef.current || errorSeenRef.current) return;
@@ -362,21 +370,27 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           return;
         }
         const prepared = prepareCodeForPreview(currentCodeRef.current, vfsRef.current);
-        const hasCss = /<style[\s>][\s\S]{12,}<\/style>/i.test(prepared)
-          || /cdn\.tailwindcss\.com/i.test(prepared)
-          || /\bstyle\s*=\s*["'][^"']{8,}/i.test(prepared);
-        if (!hasCss) {
+        if (!assembledPreviewHasUsableCss(prepared)) {
           stylingFailedRef.current = true;
           setStatus('degraded');
           setLastError('Preview loaded without usable CSS.');
           return;
         }
-        if (!errorSeenRef.current) setStatus('clean');
+        if (!errorSeenRef.current && (headless || verifyOnly)) {
+          setStatus('clean');
+          return;
+        }
+        if (!errorSeenRef.current && !headless && !verifyOnly) {
+          if (verifiedCodeRef.current !== currentCodeRef.current) {
+            verifiedCodeRef.current = currentCodeRef.current;
+            void runQualityCheck(prepared);
+          }
+        }
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRuntimeError, onClose]);
+  }, [handleRuntimeError, onClose, runQualityCheck, headless, verifyOnly]);
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
@@ -837,6 +851,18 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
           background: isLight ? '#ffffff' : '#1e293b',
         }}>
+          {statusUI && (
+            <span data-quantora-preview-status={status} style={{ marginRight: 'auto', fontSize: '0.72rem', fontWeight: 700, color: statusUI.color, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {statusUI.icon}
+              {verifyingQuality ? 'Checking the preview you see…' : statusUI.label}
+              {qualityReport && Number.isFinite(qualityReport.score) ? ` · ${qualityReport.score}/100` : ''}
+            </span>
+          )}
+          {qualityReport?.issues?.length > 0 && status !== 'healing' && (
+            <button type="button" onClick={handleImprove} disabled={improving} title="Fix the issues found in this preview" style={{ background: 'transparent', border: '1px solid rgba(249,115,22,0.35)', color: '#f97316', padding: '4px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700, cursor: improving ? 'wait' : 'pointer' }}>
+              {improving ? 'Improving…' : 'Improve'}
+            </button>
+          )}
           {viewportSwitcher}
           {isOfficeDoc && (
             <button onClick={handleOfficeDownload} disabled={exportingOffice} title={`Download as .${officeLabel.toLowerCase()}`} style={{ background: 'transparent', border: 'none', cursor: exportingOffice ? 'wait' : 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', opacity: exportingOffice ? 0.6 : 1 }}>
