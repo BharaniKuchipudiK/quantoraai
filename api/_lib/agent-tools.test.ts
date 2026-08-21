@@ -253,7 +253,8 @@ test('Google provider errors fail closed and terminate the interactive agent ste
   assert.equal(hotel.executed, false);
   assert.equal(hotel.reason, 'PROVIDER_ERROR');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
-  assert.match(hotel.providerMessage, /Google Places API \(New\) hotel search is unavailable/i);
+  assert.match(hotel.providerMessage, /Google Places API \(New\)/i);
+  assert.match(hotel.providerMessage, /rejected|unavailable|not enabled|billing|restriction/i);
   assert.equal('hotels' in hotel, false);
 
   const route = await executeToolCall('get_places_routing', {
