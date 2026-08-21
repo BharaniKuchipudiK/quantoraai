@@ -12,6 +12,18 @@ test('a turn never gets more than two model attempts', () => {
   assert.equal(attempts[1].reason, 'fallback');
 });
 
+test('default free router retries another OpenRouter free model instead of Gemini', () => {
+  const attempts = modelAttemptsForTurn({
+    primaryModelId: 'openrouter/free',
+    fallbackModelIds: ['gemini-flash-latest', 'nvidia/nemotron-3-super-120b-a12b:free'],
+  });
+  assert.deepEqual(attempts.map((attempt) => attempt.id), [
+    'openrouter/free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+  ]);
+  assert.ok(attempts.every((attempt) => attempt.provider === 'openrouter'));
+});
+
 test('Travel never falls back to a model that would lose travel tools', () => {
   const attempts = modelAttemptsForTurn({
     primaryModelId: 'gemini-3-flash-preview',
