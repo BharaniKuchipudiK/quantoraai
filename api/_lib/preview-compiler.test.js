@@ -26,6 +26,7 @@ test('self-hosted preview compiler bundles React, package imports and local CSS 
   assert.match(result.html, /display:grid/);
   assert.doesNotMatch(result.html, /codesandbox/i);
   assert.doesNotMatch(result.html, /cdn\.jsdelivr|unpkg\.com|esm\.sh/i);
+  assert.match(result.html, /rendered no content/);
 });
 
 test('Vercel traces the browser packages resolved dynamically by the deployed compiler', () => {
@@ -47,5 +48,12 @@ test('preview compiler fails clearly for missing local modules', async () => {
   await assert.rejects(
     () => compilePreviewVfs({ 'src/main.jsx': { content: "import App from './Missing.jsx'; console.log(App)" } }),
     /Missing local preview module: \.\/Missing\.jsx/,
+  );
+});
+
+test('preview compiler rejects storage APIs unavailable to an opaque-origin iframe', async () => {
+  await assert.rejects(
+    () => compilePreviewVfs({ 'src/main.jsx': { content: "localStorage.getItem('theme')" } }),
+    /cannot use localStorage or sessionStorage/i,
   );
 });

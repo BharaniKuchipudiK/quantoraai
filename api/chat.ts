@@ -43,6 +43,7 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
+import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
@@ -767,6 +768,10 @@ export default async function handler(req: any, res: any) {
           if (!attemptReply.trim()) {
             throw Object.assign(new Error(`${route.gateway} returned an empty response.`), { status: 502 });
           }
+          if (effectiveBuildMode) {
+            const artifactContract = validateBuildArtifactResponse(attemptReply, transaction);
+            if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
+          }
           fullReply = attemptReply;
           usedRoute = route;
           await recordInferenceRouteSuccess(providerCircuitStore, route);
@@ -803,7 +808,9 @@ export default async function handler(req: any, res: any) {
             costClass: route.costClass,
             durationMs: Date.now() - attemptStartedAt,
             statusCode: status,
-            detailCode: status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
+            detailCode: error?.code === 'BUILD_ARTIFACT_CONTRACT'
+              ? error.detailCode
+              : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
           });
           if (sse.isStarted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
         }
