@@ -1,0 +1,47 @@
+name: Apply specialist welcome correction
+
+on:
+  push:
+    branches:
+      - dev/travel-stability-hotfix
+    paths:
+      - .github/workflows/patch-specialist-welcome.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev/travel-stability-hotfix
+          fetch-depth: 0
+      - name: Apply platform-level welcome fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          ai = Path('src/components/AiStudio.jsx')
+          text = ai.read_text()
+          old = "{messages.length <= 1 && !hideWelcomeScreen ? ("
+          new = "{messages.length <= 1 && (isAdvisorWorkspace || !hideWelcomeScreen) ? ("
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one welcome condition, found {text.count(old)}')
+          ai.write_text(text.replace(old, new, 1))
+          PY
+
+          # Undo the earlier greeting-data workaround. The render boundary is the
+          # correct ownership layer; session data should stay domain-neutral.
+          git show 8368438204c105d05abdf4f8bd125f14345bc91b^:src/hooks/useStudioSession.js > src/hooks/useStudioSession.js
+
+          rm .github/workflows/patch-specialist-welcome.yml
+
+          git config user.name "quantora-quality-bot"
+          git config user.email "quality@quantoraai.app"
+          git add -- src/components/AiStudio.jsx src/hooks/useStudioSession.js .github/workflows/patch-specialist-welcome.yml
+          git commit -m "fix(studio): scope welcome preference to neutral Studio"
+          git push origin HEAD:dev/travel-stability-hotfix
