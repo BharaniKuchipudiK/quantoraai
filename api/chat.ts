@@ -38,6 +38,7 @@ const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 const FEATURED_SERVER_MODELS = new Set([
+  "openrouter/free",
   "gemini-flash-latest",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "deepseek/deepseek-chat",
@@ -515,7 +516,7 @@ export default async function handler(req: any, res: any) {
 
     const travelToolsEnabled = shouldEnableTravelTools(normalizedStudioDomain);
     const attempts = modelAttemptsForTurn({
-      primaryModelId: modelId,
+      primaryModelId: modelRouting?.primaryModelId || modelId,
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       travelToolsEnabled,
     });
@@ -782,19 +783,24 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
+    const publicError = retryableProviderFailure
+      ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
+      : "Quantora could not complete this request.";
+
     if (sse.isStarted) {
       sse.fail({
-        message: err?.message || "Failed to communicate with AI model.",
+        message: publicError,
         code: err?.code || 'CHAT_STREAM_FAILURE',
-        retryable: shouldFallbackBeforeStreaming(err),
+        retryable: retryableProviderFailure,
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,
       });
       return;
     }
 
-    return res.status(500).json({
-      error: err?.message || "Failed to communicate with AI model.",
+    return res.status(retryableProviderFailure ? 503 : 500).json({
+      error: publicError,
       modelName: req.body?.modelName || req.body?.modelId,
       requestId,
     });

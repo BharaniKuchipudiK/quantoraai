@@ -524,8 +524,8 @@ export function useChatStream({
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
           text: currentText
-            ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ ${streamedError.message}`
-            : `⚠️ **Request failed:** ${streamedError.message}`,
+            ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
+            : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
           isError: true,
           executionStatus: null,
         } : m));

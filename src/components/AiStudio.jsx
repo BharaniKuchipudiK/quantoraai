@@ -878,7 +878,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
 
-    if ((isWorkspaceMode || canvasOpen) && !shouldKeepWorkspaceForPrompt({
+    const buildIntent = canAutoOpenCodeWorkspace(studioDomain) && /\b(build|create|design|make|develop|implement|code)\b/i.test(textToSend) && /\b(app|application|website|site|page|calculator|component|dashboard|ui|frontend|react|html|css|javascript|typescript)\b/i.test(textToSend);
+    if (buildIntent) {
+      setWorkspaceActiveTab('preview');
+      setIsWorkspaceMode(true);
+    } else if ((isWorkspaceMode || canvasOpen) && !shouldKeepWorkspaceForPrompt({
       prompt: textToSend,
       hasWorkspace: true,
       officeKind: detectOfficeIntent({ messages }),
@@ -3012,6 +3016,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden' }}>
              {workspaceActiveTab === 'preview' ? (
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                    {!workspaceCode ? (
+                      <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
+                        <Layout size={26} color="#f97316" />
+                        <div style={{ fontWeight: 800, color: textColor }}>Preview workspace ready</div>
+                        <div style={{ fontSize: '0.82rem' }}>Your build will appear here as soon as a healthy model responds.</div>
+                      </div>
+                    ) : (
                     <LivePreviewCanvas 
                       code={workspaceCode} 
                       isLight={isLight} 
@@ -3023,6 +3034,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       officeKind={detectOfficeIntent({ messages })}
                       modelId={selectedModel?.id}
                     />
+                    )}
                     {isGenerating && workspaceCode && messages.some((message) => message?.officeAttachment?.verification?.passed === true) && detectOfficeIntent({ messages }) && (
                       <div
                         role="status"
