@@ -8,7 +8,7 @@ if (!key) {
 
 const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
 const PRIMARY = 'nvidia/nemotron-3-super-120b-a12b:free';
-const FALLBACK = 'cohere/north-mini-code:free';
+const FALLBACK = 'openai/gpt-oss-20b:free';
 
 async function generate(label, model, prompt) {
   const controller = new AbortController();
