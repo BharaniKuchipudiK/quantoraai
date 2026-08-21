@@ -6,6 +6,7 @@ type ModelLike = {
   name?: string;
   available?: boolean;
   pricingKind?: string;
+  quality?: { sampleSize?: number; score?: number } | null;
 };
 
 type SelectModelsInput = {
@@ -23,9 +24,12 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   const models = Array.isArray(input.models) ? input.models : [];
   const explicit = input.explicitModelId ? models.find((model) => model.id === input.explicitModelId) : null;
   if (explicit) {
+    const fallbackModelIds = rankFreeModels(models, input.message, input.arenaPrefs)
+      .filter((model) => model.id !== explicit.id && model.available !== false)
+      .map((model) => model.id);
     return {
       primaryModelId: explicit.id,
-      fallbackModelIds: [],
+      fallbackModelIds,
       reason: input.hasImages ? 'vision' : input.studioMode === 'build' || input.guidedBuild || input.refineMode ? 'build' : 'quality',
       provider: explicit.id.startsWith('gemini') ? 'gemini' : 'openrouter',
       hasVisionSupport: explicit.id.startsWith('gemini'),
@@ -37,7 +41,9 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
     const gemini = models.find((model) => typeof model.id === 'string' && model.id.startsWith('gemini') && model.available !== false);
     return {
       primaryModelId: gemini?.id || 'gemini-flash-latest',
-      fallbackModelIds: [],
+      fallbackModelIds: rankFreeModels(models, input.message, input.arenaPrefs)
+        .filter((model) => !model.id.startsWith('gemini') && model.available !== false)
+        .map((model) => model.id),
       reason: 'vision',
       provider: 'gemini',
       hasVisionSupport: true,
@@ -48,15 +54,14 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   const primary = chooseBestFreeModel(models, input.message, input.arenaPrefs).model;
   const fallbacks = rankFreeModels(models, input.message, input.arenaPrefs)
     .filter((model) => model.id !== primary?.id)
-    .slice(0, 3)
     .map((model) => model.id);
 
   return {
-    primaryModelId: primary?.id || 'gemini-flash-latest',
+    primaryModelId: primary?.id || 'openrouter/free',
     fallbackModelIds: fallbacks,
     reason: input.studioMode === 'build' || input.guidedBuild || input.refineMode ? 'build' : 'speed',
-    provider: (primary?.id || 'gemini-flash-latest').startsWith('gemini') ? 'gemini' : 'openrouter',
-    hasVisionSupport: (primary?.id || 'gemini-flash-latest').startsWith('gemini'),
+    provider: (primary?.id || 'openrouter/free').startsWith('gemini') ? 'gemini' : 'openrouter',
+    hasVisionSupport: (primary?.id || 'openrouter/free').startsWith('gemini'),
     selectionSource: primary ? 'ranked_free' : 'fallback_default',
   };
 }
