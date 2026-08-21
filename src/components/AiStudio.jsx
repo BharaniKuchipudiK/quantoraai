@@ -1534,6 +1534,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [isGenerating, messages, lastProcessedMessageId, studioDomain]);
 
+  const generatingStatus = [...messages].reverse().find((message) => message.sender === 'ai')?.executionStatus?.label;
+
   return (
     <div style={{
       display: 'flex',
@@ -2143,8 +2145,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
-                <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, fontFamily: 'monospace' }}>
-                  0:{thinkingTime.toString().padStart(2, '0')}s
+                <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, fontFamily: generatingStatus ? 'inherit' : 'monospace' }}>
+                  {generatingStatus || `0:${thinkingTime.toString().padStart(2, '0')}s`}
                 </div>
               </div>
             )}

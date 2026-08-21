@@ -64,6 +64,14 @@ const FEATURED_SERVER_MODELS = new Set([
   "openai/gpt-4o-mini",
 ]);
 
+function emitBuildProgress(sse: SseWriter, enabled: boolean, beat: { t: number }) {
+  if (!enabled) return;
+  const now = Date.now();
+  if (beat.t && now - beat.t < 1600) return;
+  beat.t = now;
+  sse.status({ phase: 'build', state: 'generating', label: 'Building your preview…' });
+}
+
 function normaliseTaskCategory(value: unknown): string {
   return typeof value === "string" && TASK_CATEGORIES.has(value) ? value : "general";
 }
@@ -666,6 +674,8 @@ export default async function handler(req: any, res: any) {
 
         try {
           let attemptReply = '';
+          const buildBeat = { t: 0 };
+          emitBuildProgress(sse, effectiveBuildMode, buildBeat);
           if (route.provider === 'gemini') {
             const openRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
             if (openRemainingMs <= 0) throw inferenceAttemptTimeout(route, attemptBudgetMs);
@@ -711,6 +721,7 @@ export default async function handler(req: any, res: any) {
               const chunk = next.value;
               if (chunk?.text) {
                 attemptReply += chunk.text;
+                emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                 if (!effectiveBuildMode) sse.text(chunk.text);
               }
               const groundingChunks = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -769,6 +780,7 @@ export default async function handler(req: any, res: any) {
                   const token = parsed.choices?.[0]?.delta?.content || '';
                   if (token) {
                     attemptReply += token;
+                    emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                     if (!effectiveBuildMode) sse.text(token);
                   }
                 } catch { /* malformed upstream events do not satisfy the route contract */ }
@@ -831,7 +843,7 @@ export default async function handler(req: any, res: any) {
               ? error.detailCode
               : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
           });
-          if (sse.isStarted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+          if (sse.isCommitted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
         }
       }
 
@@ -926,7 +938,7 @@ export default async function handler(req: any, res: any) {
 
         let stream: any = null;
         let lastOpenError: any = null;
-        const candidateAttempts = loopCount === 1 && !sse.isStarted
+        const candidateAttempts = loopCount === 1 && !sse.isCommitted
           ? attempts.filter((attempt) => attempt.provider === 'gemini')
           : [{ id: currentModel, provider: 'gemini', reason: 'primary' as const }];
 
@@ -961,7 +973,7 @@ export default async function handler(req: any, res: any) {
             break;
           } catch (error) {
             lastOpenError = error;
-            if (sse.isStarted || index >= candidateAttempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
+            if (sse.isCommitted || index >= candidateAttempts.length - 1 || !shouldFallbackBeforeStreaming(error)) throw error;
           }
         }
         if (!stream) throw lastOpenError || new Error('Gemini did not return a stream.');
@@ -1169,7 +1181,9 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
-    const publicError = retryableProviderFailure
+    const publicError = err?.code === 'BUILD_ARTIFACT_CONTRACT'
+      ? 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.'
+      : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";
 

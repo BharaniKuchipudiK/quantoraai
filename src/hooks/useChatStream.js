@@ -542,9 +542,12 @@ export function useChatStream({
       }
 
       if (streamedError) {
+        const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
-          text: currentText
+          text: artifactFailed
+            ? `⚠️ **Preview could not run:** ${streamedError.message}`
+            : currentText
             ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
             : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
           isError: true,

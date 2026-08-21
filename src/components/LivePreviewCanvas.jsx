@@ -94,6 +94,9 @@ export default function LivePreviewCanvas({
 
   const iframeRef = useRef(null);
   const currentCodeRef = useRef(currentCode);
+  const vfsRef = useRef(vfs);
+  useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
+  useEffect(() => { vfsRef.current = vfs; }, [vfs]);
   const attemptRef = useRef(0);
   const healingRef = useRef(false);
   const errorSeenRef = useRef(false);
@@ -101,8 +104,6 @@ export default function LivePreviewCanvas({
   const embedReadyRef = useRef(false);
 
   useEffect(() => { embedReadyRef.current = embedReady; }, [embedReady]);
-
-  useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
   useEffect(() => { attemptRef.current = attempt; }, [attempt]);
 
   const onVerificationStatusChangeRef = useRef(onVerificationStatusChange);
@@ -349,6 +350,16 @@ export default function LivePreviewCanvas({
           stylingFailedRef.current = true;
           setStatus('degraded');
           setLastError('Tailwind CSS did not apply — styling may look broken.');
+          return;
+        }
+        const prepared = prepareCodeForPreview(currentCodeRef.current, vfsRef.current);
+        const hasCss = /<style[\s>][\s\S]{12,}<\/style>/i.test(prepared)
+          || /cdn\.tailwindcss\.com/i.test(prepared)
+          || /\bstyle\s*=\s*["'][^"']{8,}/i.test(prepared);
+        if (!hasCss) {
+          stylingFailedRef.current = true;
+          setStatus('degraded');
+          setLastError('Preview loaded without usable CSS.');
           return;
         }
         if (!errorSeenRef.current) setStatus('clean');
