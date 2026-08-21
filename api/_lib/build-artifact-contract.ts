@@ -15,6 +15,15 @@ function fencedFiles(text: string) {
   return files;
 }
 
+function hasReactRootMount(content: string) {
+  const source = String(content || '');
+  const findsRoot = /document\s*\.\s*(?:getElementById\s*\(\s*["']root["']|querySelector\s*\(\s*["']#root["'])/.test(source);
+  const createsRoot = /\bcreateRoot\s*\(/.test(source) || /\bReactDOM\s*\.\s*render\s*\(/.test(source);
+  const rendersComponent = /\.\s*render\s*\(\s*<\s*[A-Z][A-Za-z0-9_$]*/.test(source)
+    || /\bReactDOM\s*\.\s*render\s*\(\s*<\s*[A-Z][A-Za-z0-9_$]*/.test(source);
+  return findsRoot && createsRoot && rendersComponent;
+}
+
 /**
  * Validate only deterministic runtime invariants. This is intentionally not a
  * subjective quality scorer: a model may choose any design as long as the
@@ -32,11 +41,13 @@ export function validateBuildArtifactResponse(text: unknown, transaction: string
 
   if (transaction === 'calculator' || transaction === 'simple-website') {
     const paths = new Set(files.map((file) => file.path.replace(/^\/+/, '')));
+    const entry = files.find((file) => ['src/main.jsx', 'src/main.tsx', 'src/main.js', 'src/main.ts'].includes(file.path.replace(/^\/+/, '')));
     const hasRequiredVfs = paths.has('package.json')
-      && ['src/main.jsx', 'src/main.tsx', 'src/main.js', 'src/main.ts'].some((path) => paths.has(path))
+      && Boolean(entry)
       && ['src/App.jsx', 'src/App.tsx', 'src/App.js', 'src/App.ts'].some((path) => paths.has(path))
       && [...paths].some((path) => path.startsWith('src/') && path.endsWith('.css'));
     if (!hasRequiredVfs) return { ok: false, detailCode: 'golden-vfs-shape-missing' };
+    if (!hasReactRootMount(entry?.content || '')) return { ok: false, detailCode: 'golden-root-mount-missing' };
   }
 
   if (transaction === 'calculator' && (!code.includes('calculator-display') || !code.includes('calculator-one'))) {

@@ -65,10 +65,11 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
       const eventCorrelationId = normalizeClientCorrelationId(event.data.correlationId);
       if (normalizeClientCorrelationId(correlationId) && eventCorrelationId !== correlationId) return;
       if (event.data.kind === 'error') {
-        setError(String(event.data.message || 'Preview runtime error.'));
+        const runtimeMessage = String(event.data.message || 'Preview runtime error.');
+        setError(runtimeMessage);
         void recordClientBoundary(correlationId, 'browser.iframe', 'failed', {
           transaction: goldenTransaction,
-          detailCode: 'runtime-error',
+          detailCode: runtimeMessage.includes('rendered no content') ? 'runtime-empty-root' : 'runtime-exception',
         });
       } else if (event.data.kind === 'ready' && !renderedRef.current) {
         renderedRef.current = true;

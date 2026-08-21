@@ -116,6 +116,10 @@ const evidence = {
   transactions: [],
 };
 
+function markActiveTransaction(name, correlationId = null) {
+  evidence.activeTransaction = { name, correlationId };
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
@@ -126,10 +130,12 @@ try {
   await visible(prompt, 'Studio prompt input is missing after the canary identity was restored.', 20_000);
 
   const calculatorStartedAt = Date.now();
+  markActiveTransaction('calculator');
   await setGoldenTransaction('calculator');
   await prompt.fill('Create a simple working React calculator. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render an output with data-testid="calculator-display" initially showing 0 and a button with data-testid="calculator-one" that changes the display to 1 when clicked. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package.');
   await prompt.press('Enter');
   const calculatorCorrelationId = await correlationForPreview();
+  markActiveTransaction('calculator', calculatorCorrelationId);
   const calculatorFrame = await frameWith('[data-testid="calculator-display"]');
   if (!calculatorFrame) throw new Error('Calculator artifact compiled, but its rendered DOM never appeared.');
   const calculatorDisplay = calculatorFrame.locator('[data-testid="calculator-display"]').first();
@@ -147,16 +153,19 @@ try {
     interacted: true,
     durationMs: Date.now() - calculatorStartedAt,
   });
+  delete evidence.activeTransaction;
 
   const newChat = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChat, 'New Chat control is missing after the calculator transaction.', 15_000);
   await newChat.click();
 
   const websiteStartedAt = Date.now();
+  markActiveTransaction('simple-website');
   await setGoldenTransaction('simple-website');
   await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
   const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
+  markActiveTransaction('simple-website', websiteCorrelationId);
   const websiteFrame = await frameWith('h1');
   if (!websiteFrame) throw new Error('Website artifact compiled, but its rendered DOM never appeared.');
   const websiteHeading = await websiteFrame.locator('h1').first().innerText().catch(() => '');
@@ -173,6 +182,7 @@ try {
     interacted: true,
     durationMs: Date.now() - websiteStartedAt,
   });
+  delete evidence.activeTransaction;
 
   evidence.completedAt = new Date().toISOString();
   evidence.consoleErrors = consoleErrors.slice(0, 20);
