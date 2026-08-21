@@ -1,4 +1,5 @@
 const CANARY_TOKEN = 'm5J14JD7725ajbFJs5N91e6IPn-y9tOU';
+const CANARY_MODEL = 'deepseek/deepseek-chat';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false });
@@ -20,10 +21,10 @@ export default async function handler(req: any, res: any) {
         'X-Title': 'Quantora AI route canary',
       },
       body: JSON.stringify({
-        model: 'poolside/laguna-s-2.1:free',
+        model: CANARY_MODEL,
         stream: false,
         temperature: 0,
-        max_tokens: 80,
+        max_tokens: 100,
         messages: [{ role: 'user', content: 'Return one valid HTML button whose visible label is Calculator. No markdown.' }],
       }),
     });
@@ -33,9 +34,10 @@ export default async function handler(req: any, res: any) {
     return res.status(response.ok && useful ? 200 : 503).json({
       ok: response.ok && useful,
       providerStatus: response.status,
-      model: 'poolside/laguna-s-2.1:free',
+      model: CANARY_MODEL,
       useful,
       sampleLength: text.length,
+      upstreamCode: body?.error?.code || null,
     });
   } catch (error: any) {
     return res.status(503).json({ ok: false, error: error?.name || 'provider_failure' });
