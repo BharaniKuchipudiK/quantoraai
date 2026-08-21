@@ -8,7 +8,7 @@ export const CURATED_MODELS = [
     provider: 'Google',
     description: 'Fast multimodal reasoning for complex logic and general tasks.',
     contextWindow: '1M',
-    tag: 'RECOMMENDED',
+    tag: 'MULTIMODAL',
     icon: 'sparkles',
   },
   {
@@ -49,17 +49,27 @@ export const CURATED_MODELS = [
   },
 ];
 
-
 export const DIRECT_MODELS = [
+  {
+    id: 'openrouter/free',
+    name: 'Quantora Free Router',
+    provider: 'OpenRouter',
+    description: 'Routes each request across currently available free models instead of depending on one provider.',
+    contextWindow: 'Varies',
+    available: true,
+    pricingKind: 'free',
+    tag: 'RECOMMENDED',
+    icon: 'route',
+  },
   {
     id: 'gemini-flash-latest',
     name: 'Gemini Flash',
     provider: 'Google',
-    description: 'Fast multimodal responses. Routed through Google directly.',
+    description: 'Optional Google multimodal route. Used when selected or when a capability specifically requires it.',
     contextWindow: '1M',
     available: true,
     pricingKind: 'free-tier',
-    tag: 'RECOMMENDED',
+    tag: 'MULTIMODAL',
     icon: 'sparkles',
   },
 ];
