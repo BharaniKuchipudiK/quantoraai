@@ -62,17 +62,6 @@ export const DIRECT_MODELS = [
     icon: 'cpu',
   },
   {
-    id: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-    name: 'Nemotron 3 Ultra',
-    provider: 'NVIDIA',
-    description: 'High-capability free fallback for reasoning, coding and agentic build orchestration. Live canary qualified.',
-    contextWindow: 'Varies',
-    available: true,
-    pricingKind: 'free',
-    tag: 'FREE FALLBACK',
-    icon: 'brain',
-  },
-  {
     id: 'gemini-flash-latest',
     name: 'Gemini Flash',
     provider: 'Google',
