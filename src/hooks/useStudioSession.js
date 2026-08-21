@@ -5,7 +5,6 @@ import {
   normalizeStudioDomain,
   publishStudioDomainState,
 } from '../lib/studio-shell-events.js';
-import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import {
   loadRemoteProjectContext,
   loadRemoteProjects,
@@ -136,24 +135,14 @@ function persistSessions(sessions) {
 }
 
 function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
-  const normalizedDomain = normalizeStudioDomain(studioDomain);
-  const policy = studioDomainPolicy(normalizedDomain);
-  const firstMessage = normalizedDomain
-    ? {
-        ...defaultGreetingMsg,
-        text: policy.hero,
-        type: 'advisor-greeting',
-      }
-    : defaultGreetingMsg;
-
   return {
     id: 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
     title: 'New Chat',
     createdAt: Date.now(),
     projectId,
-    messages: [firstMessage],
+    messages: [defaultGreetingMsg],
     studioMode: 'ask',
-    studioDomain: normalizedDomain,
+    studioDomain: normalizeStudioDomain(studioDomain),
     boundRepo: null,
     conversationContext: {},
     memoryConsented: false,

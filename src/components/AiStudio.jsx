@@ -1981,7 +1981,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Messages Stream / Initial Hero State */}
       <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: messages.length <= 1 ? 'center' : 'flex-start', overflowY: 'auto', marginBottom: '24px', position: 'relative' }}>
-        {messages.length <= 1 && !hideWelcomeScreen ? (
+        {messages.length <= 1 && (isAdvisorWorkspace || !hideWelcomeScreen) ? (
           /* Clean Hero Empty State */
           <div style={{ 
             textAlign: 'center', 
