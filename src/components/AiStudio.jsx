@@ -20,6 +20,7 @@ import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode 
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
+import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 

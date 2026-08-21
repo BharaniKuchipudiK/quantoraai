@@ -15,6 +15,12 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
+import {
+  correlationHeaders,
+  createCorrelationId,
+  normalizeClientCorrelationId,
+  recordClientBoundary,
+} from '../lib/transaction-trace.js';
 
 const CHAT_TURN_DEADLINE_MS = 90_000;
 const BUILD_TURN_DEADLINE_MS = 135_000;
