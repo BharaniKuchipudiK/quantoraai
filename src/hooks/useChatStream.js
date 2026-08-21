@@ -327,6 +327,8 @@ export function useChatStream({
       sessionContext,
       projectId: sessionContext?.projectId || null,
       studioDomain,
+      buildMode: isCodingRequest,
+      taskCategory: isCodingRequest ? 'coding' : 'general',
       ...pclEnvelope,
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),

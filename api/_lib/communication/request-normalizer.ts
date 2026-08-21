@@ -9,6 +9,7 @@ export type CommunicationRequest = {
   sessionId: string | null;
   projectId: string | null;
   studioMode: StudioMode;
+  studioModeExplicit: boolean;
   studioDomain: StudioDomain | null;
   taskCategory: string;
   attachedImages: string[];
@@ -26,6 +27,7 @@ export type CommunicationRequest = {
 
 export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const studioMode = normalizeStudioMode(body?.studioMode);
+  const studioModeExplicit = body?.studioMode === "ask" || body?.studioMode === "build" || body?.studioMode === "plan";
   const studioDomain = inferStudioDomain({
     explicit: body?.studioDomain,
     message: body?.message,
@@ -43,6 +45,7 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     sessionId: typeof body?.sessionId === "string" && body.sessionId.trim() ? body.sessionId : null,
     projectId: normalizeProjectId(body?.projectId ?? nestedProjectId),
     studioMode,
+    studioModeExplicit,
     studioDomain,
     taskCategory: typeof body?.taskCategory === "string" && body.taskCategory.trim() ? body.taskCategory : "general",
     attachedImages,

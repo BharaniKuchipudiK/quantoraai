@@ -23,9 +23,11 @@ test('boundary events allow operational metadata but reject prompt-like detail',
     boundary: 'artifact.vfs',
     state: 'parsed',
     fileCount: 4,
+    budgetMs: 65_000,
     detailCode: 'contract-valid',
   });
   assert.equal(event?.fileCount, 4);
+  assert.equal(event?.budgetMs, 65_000);
   assert.equal(normalizeBoundaryEvent({
     correlationId: 'browser-12345678',
     boundary: 'artifact.vfs',

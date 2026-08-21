@@ -360,8 +360,8 @@ export default async function handler(req: any, res: any) {
       return res.status(202).json({ recorded: true });
     }
 
-    const explicitBuild = mode === "build";
-    const explicitAsk = mode === "ask";
+    const explicitBuild = communicationRequest.studioModeExplicit && mode === "build";
+    const explicitAsk = communicationRequest.studioModeExplicit && mode === "ask";
     const planMode = mode === "plan";
     const effectiveBuildMode = explicitAsk ? false : explicitBuild ? true : Boolean(buildMode);
     const grounding = Boolean(req.body?.webSearch) && !effectiveBuildMode && !guidedBuild && task !== "repair";
@@ -648,6 +648,8 @@ export default async function handler(req: any, res: any) {
           costClass: route.costClass,
           health: route.health,
           circuit: route.circuit,
+          budgetMs: attemptBudgetMs,
+          detailCode: effectiveBuildMode ? 'build' : 'conversation',
         });
 
         try {

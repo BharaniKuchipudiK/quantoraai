@@ -19,6 +19,7 @@ export type TransactionBoundaryEvent = {
   health?: string | null;
   circuit?: string | null;
   durationMs?: number | null;
+  budgetMs?: number | null;
   statusCode?: number | null;
   fileCount?: number | null;
   detailCode?: string | null;
@@ -75,6 +76,7 @@ export function normalizeBoundaryEvent(input: Partial<TransactionBoundaryEvent>)
     health: label(input.health),
     circuit: label(input.circuit),
     durationMs: boundedNumber(input.durationMs, 600_000),
+    budgetMs: boundedNumber(input.budgetMs, 600_000),
     statusCode: boundedNumber(input.statusCode, 999),
     fileCount: boundedNumber(input.fileCount, 10_000),
     detailCode: label(input.detailCode),
