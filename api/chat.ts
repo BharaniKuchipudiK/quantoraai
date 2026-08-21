@@ -47,6 +47,11 @@ import { selectModelsForTurn } from "../src/lib/communication/routing/select-mod
 import { shouldHonorGuidedBuild, isSpecifiedRunnableTool } from "../src/lib/build-intent.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
+const PREVIEW_HTML_RECOVERY = `
+
+PREVIEW RECOVERY
+The previous attempt emitted native iOS/Android source (Swift, Kotlin, or similar). Quantora Live Preview cannot run those files. Output EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that looks like the requested platform. Do not emit .swift, .kt, or Xcode/Android project files.`;
+
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
@@ -641,6 +646,7 @@ export default async function handler(req: any, res: any) {
       let usedRoute: InferenceRoute | null = null;
       let lastRouteError: any = null;
       const failedQuotaDomains = new Set<string>();
+      let recoverHtmlPreview = false;
 
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
@@ -684,6 +690,8 @@ export default async function handler(req: any, res: any) {
         try {
           let attemptReply = '';
           const buildBeat = { t: 0 };
+          const attemptSystemPrompt = recoverHtmlPreview ? `${finalSystemPrompt}${PREVIEW_HTML_RECOVERY}` : finalSystemPrompt;
+          formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat);
           if (route.provider === 'gemini') {
             const openRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
@@ -696,7 +704,7 @@ export default async function handler(req: any, res: any) {
                 apiKey: effectiveGeminiKey as string,
                 model: route.id,
                 contents: geminiContents,
-                systemInstruction: finalSystemPrompt,
+                systemInstruction: attemptSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding,
                 travelToolsEnabled: false,
@@ -828,6 +836,7 @@ export default async function handler(req: any, res: any) {
           break;
         } catch (error: any) {
           lastRouteError = error;
+          if (error?.detailCode === 'browser-preview-missing') recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
           // A response-contract miss is specific to this prompt/output. It may
@@ -1213,7 +1222,9 @@ export default async function handler(req: any, res: any) {
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
     const publicError = err?.code === 'BUILD_ARTIFACT_CONTRACT'
-      ? 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.'
+      ? (err?.detailCode === 'browser-preview-missing'
+        ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
+        : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";
