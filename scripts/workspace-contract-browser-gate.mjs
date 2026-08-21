@@ -72,7 +72,11 @@ try {
   await visible(studio, 'Studio navigation is missing.');
   await studio.click();
 
-  await visible(page.locator('[data-quantora-sidebar-canvas]').first(), 'Neutral Studio must retain its developer Canvas entry.');
+  await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
+  await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
+  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from Studio.');
+  const headerProfile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
+  await visible(headerProfile, 'Global Profile control is missing from Studio.');
 
   for (const workspace of workspaces) {
     const advisor = page.getByText(new RegExp(`^${workspace.label}$`, 'i')).first();
@@ -86,7 +90,8 @@ try {
       await visible(capabilitySurface.getByText(capability, { exact: true }), `${workspace.label} is missing ${capability}.`);
     }
 
-    await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), `${workspace.label} leaked generic Canvas navigation.`);
+    await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), `${workspace.label} leaked duplicate Canvas navigation.`);
+    await hidden(page.locator('[data-quantora-sidebar-profile]').first(), `${workspace.label} leaked duplicate Profile navigation.`);
     await hidden(page.locator('[data-quantora-code-workspace="true"]').first(), `${workspace.label} opened generic Code Preview without an explicit artifact.`);
     await hidden(page.getByText('Live Preview', { exact: true }).first(), `${workspace.label} exposed an empty Live Preview.`);
 
@@ -117,16 +122,14 @@ try {
     await screenshot(`workspace-${workspace.domain}-contract`);
   }
 
-  const profile = page.locator('[data-quantora-sidebar-profile="true"]').first();
-  await visible(profile, 'Native sidebar Profile control is missing.');
-  const profileRect = await profile.boundingBox();
-  await profile.click();
+  const profileRect = await headerProfile.boundingBox();
+  await headerProfile.click();
   const menu = page.locator('#quantora-profile-menu').first();
-  await visible(menu, 'Sidebar Profile did not open the account menu.');
+  await visible(menu, 'Header Profile did not open the account menu.');
   const menuRect = await menu.boundingBox();
   if (!profileRect || !menuRect) throw new Error('Could not measure Profile/menu geometry.');
-  if (menuRect.left < profileRect.right - 4 || menuRect.left > profileRect.right + 40) {
-    throw new Error(`Profile menu is not anchored beside the sidebar control: profile=${JSON.stringify(profileRect)} menu=${JSON.stringify(menuRect)}`);
+  if (menuRect.top < profileRect.bottom - 2 || Math.abs((menuRect.x + menuRect.width) - (profileRect.x + profileRect.width)) > 24) {
+    throw new Error(`Profile menu is not anchored below the header control: profile=${JSON.stringify(profileRect)} menu=${JSON.stringify(menuRect)}`);
   }
 
   const changePicture = menu.locator('[data-quantora-profile-picture-entry="true"]').first();

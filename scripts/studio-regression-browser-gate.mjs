@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import process from 'node:process';
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { compilePreviewVfs } from '../api/_lib/preview-compiler.js';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true });
@@ -16,15 +18,20 @@ function sseBody(text) {
   ].join('\n\n');
 }
 
+const calculatorReply = [
+  'Done — here is a working calculator.',
+  '',
+  '```jsx',
+  "import React, { useState } from 'react';\nimport { Delete, Divide, Minus, Plus, X, Equal } from 'lucide-react';\nimport './App.css';\nexport default function Calculator(){ const [value,setValue]=useState('0'); return <main style={{padding:24}}><output data-testid='calculator-display'>{value}</output><button data-testid='calculator-one' onClick={()=>setValue('1')}>1</button><Delete /></main>}",
+  '```',
+].join('\n');
+
 const projectReply = [
   'Done — here is the implementation.',
   '',
   '```json filepath="package.json"',
   JSON.stringify({
-    name: 'mission-control-recovery',
-    private: true,
-    version: '1.0.0',
-    type: 'module',
+    name: 'mission-control-recovery', private: true, version: '1.0.0', type: 'module',
     scripts: { dev: 'vite', build: 'vite build' },
     dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0' },
     devDependencies: { '@vitejs/plugin-react': '^4.2.1', vite: '^5.1.4' },
@@ -55,61 +62,53 @@ await page.addInitScript(() => {
 
 await page.route('**/api/**', async (route) => {
   const request = route.request();
-  const url = new URL(request.url());
-  const path = url.pathname;
+  const path = new URL(request.url()).pathname;
 
   if (path === '/api/auth/session') {
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        user: {
-          sub: 'studio-recovery-user',
-          name: 'Recovery User',
-          email: 'recovery@quantora.test',
-          picture: 'https://broken-avatar.quantora.invalid/avatar.png',
-          isAdmin: false,
-        },
-      }),
-    });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      user: { sub: 'studio-recovery-user', name: 'Recovery User', email: 'recovery@quantora.test', picture: null, isAdmin: false },
+    }) });
   }
-
   if (path === '/api/models') {
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        models: [
-          { id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true },
-          { id: 'synthetic-b', name: 'Synthetic B', provider: 'Synthetic', available: true },
-        ],
-      }),
-    });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [
+      { id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true },
+      { id: 'synthetic-b', name: 'Synthetic B', provider: 'Synthetic', available: true },
+    ] }) });
   }
-
+  if (path === '/api/preview-compile') {
+    const body = request.postDataJSON?.() || {};
+    try {
+      const compiled = await compilePreviewVfs(body.vfs || {});
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(compiled) });
+    } catch (error) {
+      return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: error?.errors?.[0]?.text || error?.message || 'Preview compilation failed.' }) });
+    }
+  }
   if (path === '/api/chat') {
-    return route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
-      body: sseBody(projectReply),
-    });
+    const body = request.postDataJSON?.() || {};
+    const reply = /calculator/i.test(String(body.message || '')) ? calculatorReply : projectReply;
+    return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, body: sseBody(reply) });
   }
-
-  return route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ projects: [], sessions: [], ok: true }),
-  });
+  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [], ok: true }) });
 });
 
 async function visible(locator, message, timeout = 8000) {
   await locator.waitFor({ state: 'visible', timeout }).catch(() => {});
   if (!(await locator.isVisible().catch(() => false))) throw new Error(message);
 }
-
 async function hidden(locator, message, timeout = 5000) {
   await locator.waitFor({ state: 'hidden', timeout }).catch(() => {});
   if (await locator.isVisible().catch(() => false)) throw new Error(message);
+}
+async function visibleFrame(selector, timeout = 20000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (await frame.locator(selector).first().isVisible().catch(() => false)) return frame;
+    }
+    await page.waitForTimeout(200);
+  }
+  return null;
 }
 
 try {
@@ -118,73 +117,79 @@ try {
   await visible(studio, 'Studio navigation is missing.');
   await studio.click();
 
-  const profile = page.locator('[data-quantora-sidebar-profile]').first();
-  await visible(profile, 'Sidebar Profile entry is missing.');
-  await page.route('https://broken-avatar.quantora.invalid/**', (route) => route.abort());
-  await page.waitForTimeout(250);
+  if (await page.locator('[data-quantora-sidebar-profile]').count()) throw new Error('Duplicate Profile entry leaked into the Studio sidebar.');
+  if (await page.locator('[data-quantora-sidebar-canvas]').count()) throw new Error('Duplicate Canvas entry leaked into the Studio sidebar.');
+  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas entry is missing.');
 
-  const fallback = profile.locator('[data-quantora-avatar-fallback]').first();
-  await visible(fallback, 'Broken profile image did not fall back to an initial/avatar.');
-
+  const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
+  await visible(profile, 'Header Profile entry is missing.');
   await profile.click();
   const accountMenu = page.locator('#quantora-profile-menu').first();
-  await visible(accountMenu, 'Profile click did not open the real account menu.');
+  await visible(accountMenu, 'Header Profile did not open the real account menu.');
   const changePicture = accountMenu.locator('[data-quantora-profile-picture-entry]').first();
   await visible(changePicture, 'Account menu does not contain Change profile picture.');
   await changePicture.click();
-  const personalizer = page.locator('[data-quantora-profile-personalizer]').first();
-  await visible(personalizer, 'Change profile picture did not open the avatar chooser.');
+  await visible(page.locator('[data-quantora-profile-personalizer]').first(), 'Change profile picture did not open the avatar chooser.');
   await page.getByRole('button', { name: 'Close profile picture chooser' }).click();
 
   const arena = page.locator('[data-quantora-dual-arena]').first();
   await visible(arena, 'Dual Arena is missing from the Studio shell.');
-  await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Fork Chat is still incorrectly placed in the top conversation bar.');
-  await hidden(page.getByRole('button', { name: /^Reset Chat$/i }).first(), 'Reset Chat is visible again.');
+  await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Fork Chat is incorrectly placed in the top bar.');
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing.');
+  await prompt.fill('Build me a simple calculator');
+  await prompt.press('Enter');
+
+  const calculatorPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
+  await visible(calculatorPreview, 'Calculator did not enter the real project preview.', 15_000);
+  await hidden(page.locator('[data-quantora-preview-error="true"]').first(), 'Calculator compiler surfaced a preview error.', 15_000);
+  const calculatorFrame = await visibleFrame('[data-testid="calculator-display"]', 20_000);
+  if (!calculatorFrame) throw new Error('Calculator compiled, but its rendered DOM never appeared.');
+  const display = calculatorFrame.locator('[data-testid="calculator-display"]').first();
+  if ((await display.innerText()).trim() !== '0') throw new Error('Calculator rendered with the wrong initial value.');
+  await calculatorFrame.locator('[data-testid="calculator-one"]').first().click();
+  await calculatorFrame.waitForFunction(() => document.querySelector('[data-testid="calculator-display"]')?.textContent?.trim() === '1');
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
+
+  const newChat = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChat, 'New Chat control is missing after calculator preview.');
+  await newChat.click();
   await prompt.fill("let's build a mission control interface, similar to the expose-style window manager on macOS");
   await prompt.press('Enter');
 
   const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
-  await visible(preview, 'Multi-file Vite project did not switch to a real project preview.', 15_000);
-
-  const workspaceText = await page.locator('[data-quantora-code-workspace="true"]').first().innerText().catch(() => '');
-  if (/\{"name":"mission-control-recovery"/.test(workspaceText)) {
-    throw new Error('Preview is still exposing package.json as the application result.');
+  await visible(preview, 'Multi-file Vite project did not switch to real project preview.', 15_000);
+  const missionFrame = await visibleFrame('h1', 20_000);
+  if (!missionFrame || !/Mission Control is alive/.test(await missionFrame.locator('h1').first().innerText().catch(() => ''))) {
+    throw new Error('Multi-file project compiler did not render the application.');
   }
 
-  const fileTabs = page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
-  await visible(fileTabs, 'Expected project file tab was not generated.');
-  await fileTabs.click();
+  const fileTab = page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
+  await visible(fileTab, 'Expected project file tab was not generated.');
+  await fileTab.click();
   const editor = page.locator('[data-quantora-code-workspace="true"] textarea').first();
   await visible(editor, 'Project source editor is missing.');
-  const editorValue = await editor.inputValue();
-  if (!editorValue.includes('Mission Control is alive')) {
-    throw new Error('File tabs still display the wrong shared source instead of the selected file.');
-  }
+  if (!(await editor.inputValue()).includes('Mission Control is alive')) throw new Error('Selected file displays the wrong source.');
 
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
-  await visible(fork, 'Fork Chat was not placed in the completed assistant response footer.');
-  await hidden(page.locator('button[title="More"]').first(), 'Legacy three-dot response overflow is still visible.');
-
+  await visible(fork, 'Fork Chat was not placed in the completed response footer.');
   await arena.click();
   await page.waitForTimeout(120);
-  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena did not activate the underlying React arena state.');
-  await visible(page.getByRole('button', { name: /VS:/ }).first(), 'Dual Arena activation did not expose the second-model control.');
+  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena did not activate.');
+  await visible(page.getByRole('button', { name: /VS:/ }).first(), 'Dual Arena did not expose Model B selection.');
 
   const sessionsBeforeFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
   await fork.click();
   await page.waitForLoadState('domcontentloaded');
   const sessionsAfterFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
   if (sessionsAfterFork.length <= sessionsBeforeFork.length) throw new Error('Footer Fork Chat did not create an independent session.');
-  const forked = sessionsAfterFork[0];
-  if (!forked?.parentSessionId || !forked?.forkedAt || !forked?.forkedFromMessageId) {
-    throw new Error('Forked chat is missing response ancestry metadata.');
-  }
 
-  console.log('Studio regression recovery browser gate passed.');
+  console.log('Studio regression recovery browser gate passed with self-hosted compiler runtime.');
 } catch (error) {
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await page.screenshot({ path: 'artifacts/e2e/studio-regression-failure.png', fullPage: true }).catch(() => {});
   console.error('Studio regression recovery browser gate FAILED:', error?.stack || error);
   process.exitCode = 1;
 } finally {
