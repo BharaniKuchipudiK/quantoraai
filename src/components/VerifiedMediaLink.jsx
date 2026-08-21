@@ -33,6 +33,16 @@ export default function VerifiedMediaLink({ href, children, style, ...props }) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    document.documentElement.dataset.quantoraMediaFullscreen = open && fullscreen ? 'true' : '';
+    return () => {
+      if (document.documentElement.dataset.quantoraMediaFullscreen === 'true') {
+        document.documentElement.dataset.quantoraMediaFullscreen = '';
+      }
+    };
+  }, [open, fullscreen]);
+
   if (!videoId) {
     return <a href={href} target="_blank" rel="noopener noreferrer" style={style} {...props}>{children}</a>;
   }
@@ -50,7 +60,14 @@ export default function VerifiedMediaLink({ href, children, style, ...props }) {
   return (
     <>
       <span data-quantora-verified-media="youtube" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
-        <a href={href} onClick={openInside} title="Play in Quantora" style={style} {...props}>{children}</a>
+        <a
+          href={href}
+          data-quantora-youtube-validation="valid"
+          onClick={openInside}
+          title="Play in Quantora"
+          style={style}
+          {...props}
+        >{children}</a>
         <button
           type="button"
           data-quantora-youtube-play="true"
@@ -78,7 +95,7 @@ export default function VerifiedMediaLink({ href, children, style, ...props }) {
         >
           <div style={{ height: '48px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', padding: '0 10px 0 16px', background: '#111827', borderBottom: '1px solid rgba(148,163,184,0.20)' }}>
             <div style={{ flex: 1, minWidth: 0, color: '#e2e8f0', fontSize: '0.84rem', fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-            <a href={href} target="_blank" rel="noopener noreferrer" title="Open on YouTube" style={{ color: '#93c5fd', fontSize: '0.74rem', fontWeight: 650, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>YouTube <ExternalLink size={12} /></a>
+            <a href={href} target="_blank" rel="noopener noreferrer" title="Open on YouTube" style={{ color: '#93c5fd', fontSize: '0.74rem', fontWeight: 650, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>Open on YouTube ↗ <ExternalLink size={12} aria-hidden="true" /></a>
             <button type="button" onClick={() => setFullscreen((value) => !value)} title={fullscreen ? 'Exit full screen' : 'Expand video'} style={{ border: 'none', background: 'transparent', color: '#cbd5e1', cursor: 'pointer', padding: '6px', borderRadius: '8px', display: 'flex' }}>{fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
             <button type="button" onClick={() => { setOpen(false); setFullscreen(false); }} title="Close video" style={{ border: 'none', background: 'transparent', color: '#cbd5e1', cursor: 'pointer', padding: '6px', borderRadius: '8px', display: 'flex' }}><X size={18} /></button>
           </div>
