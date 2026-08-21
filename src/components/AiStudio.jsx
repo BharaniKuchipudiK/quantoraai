@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, canOpenStudioPreviewPane } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -21,7 +21,6 @@ import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../
 import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
-import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 
 // A short human title for a generated deck, taken from the first user prompt.
@@ -799,10 +798,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
+    const browserLang = /^(html|css|javascript|js|jsx|tsx)$/i.test(String(lang || ''));
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
+    if (!browserLang && !canOpenStudioPreviewPane(lastAi?.text || '') && !canOpenStudioPreviewPane(codeString)) return;
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
 
-    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
     const assembled = assembleStudioPreview(lastAi?.text || '');
     if (Object.keys(assembled.vfs).length > 0) {
       setVfs(assembled.vfs);
@@ -888,16 +889,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
 
-    const buildIntent = canAutoOpenCodeWorkspace(studioDomain)
-      && (detectBuildIntent(textToSend) || isSpecifiedRunnableTool(textToSend));
-    if (buildIntent) {
-      setWorkspaceActiveTab('preview');
-      setIsWorkspaceMode(true);
-    } else if ((isWorkspaceMode || canvasOpen) && !shouldKeepWorkspaceForPrompt({
+    const keepExisting = (isWorkspaceMode || canvasOpen) && shouldKeepWorkspaceForPrompt({
       prompt: textToSend,
       hasWorkspace: true,
       officeKind: detectOfficeIntent({ messages }),
-    })) {
+    });
+    if ((isWorkspaceMode || canvasOpen) && !keepExisting) {
       setIsWorkspaceMode(false);
       setCanvasOpen(false);
     }
@@ -1483,6 +1480,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         if (!canAutoOpenCodeWorkspace(studioDomain) && !lastMsg.officeAttachment) {
           setIsWorkspaceMode(false);
           setCanvasOpen(false);
+          return;
+        }
+
+        if (lastMsg.isError || !canOpenStudioPreviewPane(lastMsg.text)) {
+          const keepWorkspace = shouldKeepWorkspaceForPrompt({
+            prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
+            hasWorkspace: isWorkspaceMode || canvasOpen,
+            officeKind: detectOfficeIntent({ messages }),
+          });
+          if (!keepWorkspace) {
+            setIsWorkspaceMode(false);
+            setCanvasOpen(false);
+          }
           return;
         }
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assembleStudioPreview,
+  canOpenStudioPreviewPane,
   extractHtmlFromResponse,
   extractRunnableCode,
   hasPreviewableContent,
@@ -52,4 +53,16 @@ test('unfenced HTML documents are still previewable', () => {
   const html = '<!DOCTYPE html><html><head><style>body{color:red}</style></head><body>Hi</body></html>';
   assert.equal(hasPreviewableContent(html), true);
   assert.match(extractHtmlFromResponse(html), /color:red/);
+});
+
+test('Swift-only iOS source does not open Live Preview', () => {
+  const text = `Here is the app.
+
+\`\`\`swift filepath="ScientificCalculator.swift"
+import SwiftUI
+struct ScientificCalculator: View { var body: some View { Text("0") } }
+\`\`\`
+`;
+  assert.equal(canOpenStudioPreviewPane(text), false);
+  assert.equal(hasPreviewableContent(text), false);
 });
