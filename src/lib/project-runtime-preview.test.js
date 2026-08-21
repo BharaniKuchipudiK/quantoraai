@@ -25,6 +25,8 @@ test('standalone React calculator is recognized as a real runtime project', () =
   assert.ok(vfs);
   assert.equal(isProjectRuntimeVfs(vfs), true);
   const pkg = JSON.parse(vfs['package.json'].content);
+  assert.equal(pkg.dependencies.react, '^18.2.0');
+  assert.equal(pkg.dependencies['react-dom'], '^18.2.0');
   assert.equal(pkg.dependencies['lucide-react'], '^0.546.0');
   assert.match(vfs['src/App.jsx'].content, /Delete/);
   assert.match(vfs['src/main.jsx'].content, /createRoot/);
@@ -32,8 +34,8 @@ test('standalone React calculator is recognized as a real runtime project', () =
 
 test('bare imports become Sandpack dependencies instead of being stripped', () => {
   const deps = extractRuntimeDependencies(calculator);
-  assert.equal(deps.react, '^19.0.1');
-  assert.equal(deps['react-dom'], '^19.0.1');
+  assert.equal(deps.react, '^18.2.0');
+  assert.equal(deps['react-dom'], '^18.2.0');
   assert.equal(deps['lucide-react'], '^0.546.0');
 });
 
@@ -64,5 +66,7 @@ test('generated inline VFS produces a Vite React runtime config', () => {
   const config = projectRuntimeConfig(createInlineReactRuntimeVfs(calculator, {}));
   assert.equal(config.template, 'vite-react');
   assert.ok(config.files['/src/App.jsx']);
+  assert.equal(config.dependencies.react, '^18.2.0');
+  assert.equal(config.dependencies['react-dom'], '^18.2.0');
   assert.equal(config.dependencies['lucide-react'], '^0.546.0');
 });
