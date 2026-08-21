@@ -149,15 +149,15 @@ try {
   const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
   await visible(preview, 'Multi-file Vite project did not switch to a real project preview.', 15_000);
 
-  const workspaceText = await page.locator('[data-quantora-legacy-workspace="true"]').first().innerText().catch(() => '');
+  const workspaceText = await page.locator('[data-quantora-code-workspace="true"]').first().innerText().catch(() => '');
   if (/\{"name":"mission-control-recovery"/.test(workspaceText)) {
     throw new Error('Preview is still exposing package.json as the application result.');
   }
 
-  const fileTabs = page.locator('[data-quantora-legacy-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
+  const fileTabs = page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
   await visible(fileTabs, 'Expected project file tab was not generated.');
   await fileTabs.click();
-  const editor = page.locator('[data-quantora-legacy-workspace="true"] textarea').first();
+  const editor = page.locator('[data-quantora-code-workspace="true"] textarea').first();
   await visible(editor, 'Project source editor is missing.');
   const editorValue = await editor.inputValue();
   if (!editorValue.includes('Mission Control is alive')) {

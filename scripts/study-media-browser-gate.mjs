@@ -115,10 +115,11 @@ try {
   await study.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'education');
 
-  await visible(
+  await hidden(
     page.locator('[data-quantora-sidebar-canvas]').first(),
-    'Study lost Canvas navigation after the Travel Canvas restriction.',
+    'Generic developer Canvas navigation leaked into Study.',
   );
+  await visible(page.locator('[data-quantora-workspace-capabilities="education"]').first(), 'Study capability surface is missing.');
 
   const textarea = page.locator('.app-shell--studio textarea').first();
   await visible(textarea, 'Study prompt input is missing.');

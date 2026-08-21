@@ -198,7 +198,7 @@ try {
   await page.waitForTimeout(350);
 
   await hidden(
-    page.locator('[data-quantora-legacy-workspace="true"]').first(),
+    page.locator('[data-quantora-code-workspace="true"]').first(),
     'Travel auto-opened the generic Code/Preview workspace.',
   );
   await hidden(
@@ -210,8 +210,8 @@ try {
     'Canvas navigation reappeared during the Travel conversation.',
   );
 
-  const visiblePreviewTabs = await page.locator('[data-quantora-legacy-workspace="true"] button').filter({ hasText: /^Preview$/ }).count();
-  if (visiblePreviewTabs > 0 && await page.locator('[data-quantora-legacy-workspace="true"]').first().isVisible().catch(() => false)) {
+  const visiblePreviewTabs = await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).count();
+  if (visiblePreviewTabs > 0 && await page.locator('[data-quantora-code-workspace="true"]').first().isVisible().catch(() => false)) {
     throw new Error('A Preview/code panel remained visible in Travel.');
   }
 

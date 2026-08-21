@@ -16,6 +16,8 @@ import { exportOffice } from '../lib/office-export.js';
 import { OFFICE_KIND } from '../lib/office-intent.js';
 import { readActivePclSessionId } from '../lib/pcl-session-runtime.js';
 import OfficePreview from './OfficePreview.jsx';
+import ProjectRuntimePreview from './ProjectRuntimePreview.jsx';
+import { isProjectRuntimeVfs } from '../lib/project-runtime-preview.js';
 
 // Office kind → download-button label / extension.
 const OFFICE_LABEL = {
@@ -553,7 +555,10 @@ export default function LivePreviewCanvas({
     failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
-  const previewFrame = (currentCode && embedSrc) || wcUrl ? (
+  const projectRuntimeActive = isProjectRuntimeVfs(vfs);
+  const previewFrame = projectRuntimeActive ? (
+    <ProjectRuntimePreview vfs={vfs} />
+  ) : ((currentCode && embedSrc) || wcUrl ? (
     <iframe
       ref={iframeRef}
       key={`${attempt}-${embedModeRef.current}`}
@@ -571,7 +576,7 @@ export default function LivePreviewCanvas({
     />
   ) : (
     <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b' }}>Building…</div>
-  );
+  ));
 
   if (headless) {
     return (
@@ -582,7 +587,7 @@ export default function LivePreviewCanvas({
   }
 
   const viewportSwitcher = (
-    <div style={{ display: 'flex', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '2px' }}>
+    <div data-quantora-canvas-device-switcher="true" style={{ display: 'flex', background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '2px' }}>
       {[['mobile', <Smartphone size={16} key="m" />], ['tablet', <Tablet size={16} key="t" />], ['desktop', <Monitor size={16} key="d" />]].map(([v, icon]) => (
         <button key={v} onClick={() => setViewport(v)} style={{
           padding: '6px', borderRadius: '6px', cursor: 'pointer', border: 'none',
@@ -688,7 +693,7 @@ export default function LivePreviewCanvas({
   const officeLabel = OFFICE_LABEL[resolvedOfficeKind] || 'FILE';
 
   return (
-    <div style={{
+    <div data-quantora-canvas-root="true" data-quantora-canvas-fullscreen={isFullscreen ? 'true' : 'false'} style={{
       display: 'flex', flexDirection: 'column', height: '100%', width: '100%',
       position: 'relative',
       background: isLight ? '#f8fafc' : '#0f172a',

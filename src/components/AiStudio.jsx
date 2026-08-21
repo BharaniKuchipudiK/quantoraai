@@ -14,6 +14,7 @@ import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
+import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -238,6 +239,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { avatarSrc: profileAvatarSrc } = useProfileAvatar(user);
+  const [profileAvatarFailed, setProfileAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setProfileAvatarFailed(false);
+  }, [profileAvatarSrc]);
 
   // Derive current session and messages
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
@@ -1730,6 +1737,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           })}
         </div>
 
+        {/* Native Studio navigation controls. These replace the former DOM-injected Canvas/Profile rows. */}
+        <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {domainPolicy.showGenericCanvasNavigation && (
+            <button
+              type="button"
+              data-quantora-sidebar-canvas="true"
+              onClick={() => setActiveTab?.('canvas')}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid transparent', color: textColor, fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <Workflow size={15} color="#0284c7" />
+              <span>Canvas</span>
+            </button>
+          )}
+          <button
+            type="button"
+            data-quantora-sidebar-profile="true"
+            onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-profile-menu'))}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid transparent', color: textColor, fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}
+          >
+            {profileAvatarSrc && !profileAvatarFailed ? (
+              <img src={profileAvatarSrc} alt="" onError={() => setProfileAvatarFailed(true)} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+            ) : (
+              <span data-quantora-avatar-fallback="true" style={{ width: '28px', height: '28px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#f97316,#8b5cf6)', color: '#fff', fontWeight: 800, fontSize: '0.78rem', flexShrink: 0 }}>
+                {(user?.name || 'U').charAt(0).toUpperCase()}
+              </span>
+            )}
+            <span data-quantora-profile-name="true">Profile</span>
+          </button>
+        </div>
+
         {/* Product feedback — explicit signed-in Studio entry point. */}
         <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
           <button
@@ -1844,6 +1881,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
           {/* Dual Model Arena Toggle Button */}
           <button
+            data-quantora-dual-arena="true"
+            aria-pressed={arenaMode}
             onClick={() => setArenaMode(!arenaMode)}
             title="Compare two AI models side-by-side in real time"
             style={{
@@ -1862,7 +1901,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               transition: 'all 0.2s ease'
             }}
           >
-            <Layers size={14} /> {arenaMode ? '⚔️ Arena Mode Active' : '⚔️ Dual Arena Mode'}
+            <Layers size={14} /> {arenaMode ? '⚔️ Arena Active' : '⚔️ Dual Arena'}
           </button>
 
           {/* Model B Selector Dropdown in Arena Mode */}
@@ -2321,8 +2360,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 fontFamily: 'inherit',
                 lineHeight: '1.5',
                 minHeight: '24px',
-                maxHeight: '400px',
-                overflow: 'auto'
+                maxHeight: isAdvisorWorkspace ? '170px' : '220px',
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                boxSizing: 'border-box'
               }}
             />
           </div>
@@ -2906,7 +2947,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
       {isWorkspaceMode && (canAutoOpenCodeWorkspace(studioDomain) || Boolean(detectOfficeIntent({ messages }))) && (
-        <div style={{
+        <div data-quantora-code-workspace="true" style={{
           flex: 1,
           background: isLight ? '#ffffff' : '#0d1127',
           border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -3093,7 +3134,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     whiteSpace: 'pre-wrap',
                     zIndex: 1
                  }}>
-                    {workspaceCode}
+                    {(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
                     {ghostText && <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>{ghostText}</span>}
                     {!workspaceCode && <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>{'// Quantora FX Interactive Canvas\n// Start typing or tell Quantora to build something...'}</span>}
                  </pre>

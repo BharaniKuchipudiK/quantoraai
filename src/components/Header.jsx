@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
+import ProfilePictureEditor from './ProfilePictureEditor.jsx';
+import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity, CreditCard } from 'lucide-react';
 
 const PROFILE_MENU_WIDTH = 320;
@@ -12,6 +14,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
   const [confirmModalType, setConfirmModalType] = useState(null);
   const [confirmInputValue, setConfirmInputValue] = useState('');
   const [dataActionBusy, setDataActionBusy] = useState(false);
+  const [showProfilePictureEditor, setShowProfilePictureEditor] = useState(false);
+  const { avatarSrc, setCustomAvatar, resetAvatar } = useProfileAvatar(user);
 
   const modelRef = useRef(null);
   const profileRef = useRef(null);
@@ -35,6 +39,15 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       width,
       maxHeight: Math.max(180, window.innerHeight - top - PROFILE_MENU_GUTTER),
     });
+  }, []);
+
+  useEffect(() => {
+    const openProfile = () => {
+      setShowModelDropdown(false);
+      setShowProfileMenu(true);
+    };
+    window.addEventListener('quantora:open-profile-menu', openProfile);
+    return () => window.removeEventListener('quantora:open-profile-menu', openProfile);
   }, []);
 
   useLayoutEffect(() => {
@@ -299,7 +312,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   cursor: 'pointer'
                 }}
               >
-                {user?.avatar ? (
+                {avatarSrc ? (
                   <img
                     src={user.avatar}
                     alt={user.name || 'User'}
@@ -308,7 +321,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   />
                 ) : null}
                 <div style={{
-                  display: user?.avatar ? 'none' : 'flex',
+                  display: avatarSrc ? 'none' : 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   width: '28px',
@@ -357,7 +370,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                 }}>
                   {/* Profile Info Header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '14px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '12px' }}>
-                    {user?.avatar ? (
+                    {avatarSrc ? (
                       <img
                         src={user.avatar}
                         alt={user.name || 'User'}
@@ -366,7 +379,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       />
                     ) : null}
                     <div style={{
-                      display: user?.avatar ? 'none' : 'flex',
+                      display: avatarSrc ? 'none' : 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       width: '42px',
@@ -387,6 +400,15 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       </span>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    data-quantora-profile-picture-entry="true"
+                    onClick={() => { setShowProfilePictureEditor(true); setShowProfileMenu(false); }}
+                    style={{ width: '100%', margin: '0 0 12px 0', padding: '9px 10px', borderRadius: '9px', border: '1px solid rgba(249,115,22,0.42)', background: 'rgba(249,115,22,0.10)', color: '#f97316', fontSize: '0.8rem', fontWeight: 750, cursor: 'pointer' }}
+                  >
+                    Change profile picture
+                  </button>
 
                   {/* Theme Mode Preference Selector */}
                   <div style={{ marginBottom: '14px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '12px' }}>
@@ -682,6 +704,16 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
         </div>
       </div>
     </header>
+
+      <ProfilePictureEditor
+        open={showProfilePictureEditor}
+        onClose={() => setShowProfilePictureEditor(false)}
+        user={user}
+        avatarSrc={avatarSrc}
+        onSelectAvatar={setCustomAvatar}
+        onResetAvatar={resetAvatar}
+        isLight={isLight}
+      />
 
       {/* Double Confirmation Security Modal */}
       {confirmModalType && (
