@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalizeModelId, inferenceAttemptBudgetMs, planInferenceRoutes } from './inference-control-plane.js';
+import { canonicalizeModelId, inferenceAttemptBudgetMs, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
 
 test('build attempt budget reserves time for an independent fallback', () => {
   assert.equal(inferenceAttemptBudgetMs(120_000, 2), 65_000);
@@ -115,4 +115,29 @@ test('open OpenRouter domain circuits still keep a last-resort executable route'
   });
   assert.ok(routes.length >= 1);
   assert.equal(routes[0].gateway, 'openrouter');
+});
+
+test('Studio stays executable whenever any inference gateway has credentials', async () => {
+  const now = Date.now();
+  const openStore = {
+    async get() {
+      return { failures: 8, openedUntil: now + 60_000, lastFailureAt: now, lastSuccessAt: null };
+    },
+  };
+  const cases = [
+    { geminiAvailable: true, openRouterAvailable: true },
+    { geminiAvailable: true, openRouterAvailable: false },
+    { geminiAvailable: false, openRouterAvailable: true },
+    { geminiAvailable: false, openRouterAvailable: true, circuitStore: openStore, now },
+    { geminiAvailable: true, openRouterAvailable: true, circuitStore: openStore, now },
+  ];
+  for (const input of cases) {
+    const summary = await summarizeInferenceReadiness(input);
+    assert.equal(summary.ready, true, JSON.stringify(input));
+    assert.ok(summary.routeCount >= 1);
+  }
+
+  const empty = await summarizeInferenceReadiness({ geminiAvailable: false, openRouterAvailable: false });
+  assert.equal(empty.ready, false);
+  assert.equal(empty.routeCount, 0);
 });

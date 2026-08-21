@@ -35,6 +35,8 @@ test('shared shell owns Profile and Canvas/Journey while Studio owns workspace c
   assert.match(studio, /data-quantora-message-fork/);
   assert.match(studio, /data-quantora-code-workspace/);
   assert.match(studio, /canAutoOpenCodeWorkspace\(studioDomain\)/);
+  assert.doesNotMatch(studio, /Live API Engine Active/);
+  assert.doesNotMatch(studio, /Selected Model:/);
 });
 
 test('multi-file project preview is a React-owned runtime', () => {
@@ -55,4 +57,5 @@ test('build timeout and deployed canary credentials honor the release contract',
   assert.match(fs.readFileSync(new URL('../../api/chat.ts', import.meta.url), 'utf8'), /error\?\.code !== 'BUILD_ARTIFACT_CONTRACT'/);
   assert.doesNotMatch(canary, /extraHTTPHeaders/);
   assert.match(canary, /new URL\(request\.url\(\)\)\.origin !== BASE_ORIGIN/);
+  assert.match(canary, /\/api\/inference-health/);
 });

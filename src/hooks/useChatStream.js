@@ -440,7 +440,7 @@ export function useChatStream({
       componentType: 'formatted_text',
       latencyMs: 0,
       provider: targetModel.name,
-      liveConnected: true,
+      liveConnected: false,
       executionStatus: null,
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),

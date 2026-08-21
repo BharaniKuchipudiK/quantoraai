@@ -212,6 +212,43 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
   }));
 }
 
+export type InferenceReadiness = {
+  ready: boolean;
+  geminiConfigured: boolean;
+  openRouterConfigured: boolean;
+  routeCount: number;
+  usedLastResort: boolean;
+};
+
+/**
+ * Cheap, no-upstream check: can Studio plan at least one executable route for a
+ * normal code turn? This is the invariant the fake "Live API Engine Active"
+ * badge used to claim without evidence.
+ */
+export async function summarizeInferenceReadiness(input: {
+  geminiAvailable: boolean;
+  openRouterAvailable: boolean;
+  circuitStore?: InferencePlanInput['circuitStore'];
+  now?: number;
+}): Promise<InferenceReadiness> {
+  const routes = await planInferenceRoutes({
+    primaryModelId: NEMOTRON_SUPER,
+    geminiAvailable: input.geminiAvailable,
+    openRouterAvailable: input.openRouterAvailable,
+    requiredCapabilities: ['text', 'code'],
+    circuitStore: input.circuitStore,
+    now: input.now,
+  });
+  const live = routes.filter((route) => route.circuit !== 'open');
+  return {
+    ready: routes.length > 0,
+    geminiConfigured: input.geminiAvailable,
+    openRouterConfigured: input.openRouterAvailable,
+    routeCount: routes.length,
+    usedLastResort: routes.length > 0 && live.length === 0,
+  };
+}
+
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const ROUTE_RESET_MS = 5 * 60_000;
 const DOMAIN_RESET_MS = 60_000;

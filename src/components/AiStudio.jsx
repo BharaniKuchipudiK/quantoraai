@@ -1845,26 +1845,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <h2 style={{ fontSize: '1.2rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
                 {isAdvisorWorkspace ? domainPolicy.title : (activeSession && messages.length > 1 ? activeSession.title : 'New Workspace')}
               </h2>
-              <div style={{ display: isAdvisorWorkspace ? 'none' : 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap', opacity: messages.length <= 1 ? 0 : 1, transition: 'opacity 0.3s ease' }}>
-                <span style={{ fontSize: '0.78rem', color: subtextColor, whiteSpace: 'nowrap' }}>
-                  Selected Model: <strong style={{ color: '#f97316' }}>{selectedModel ? formatModelName(selectedModel.name) : 'Gemini 3 Flash'}</strong>
-                </span>
-                <span style={{
-                  fontSize: '0.7rem',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  background: 'rgba(16, 185, 129, 0.12)',
-                  color: '#10b981',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  fontWeight: '600',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
-                  Live API Engine Active
-                </span>
-              </div>
             </div>
           </div>
 
