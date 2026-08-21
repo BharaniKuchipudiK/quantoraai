@@ -2937,6 +2937,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 modelId={selectedModel?.id}
                 correlationId={workspaceCorrelationId}
                 goldenTransaction={workspaceGoldenTransaction}
+                verifyBrief={[...messages].reverse().find((message) => message.sender === 'user')?.text || ''}
               />
           </div>
           </div>
@@ -3070,6 +3071,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       modelId={selectedModel?.id}
                       correlationId={workspaceCorrelationId}
                       goldenTransaction={workspaceGoldenTransaction}
+                      verifyBrief={[...messages].reverse().find((message) => message.sender === 'user')?.text || ''}
                     />
                     )}
                     {isGenerating && workspaceCode && messages.some((message) => message?.officeAttachment?.verification?.passed === true) && detectOfficeIntent({ messages }) && (

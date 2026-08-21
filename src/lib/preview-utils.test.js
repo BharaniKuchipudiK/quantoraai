@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assembledPreviewHasUsableCss,
   buildPreviewSandbox,
   injectPreviewHarness,
   isCriticalResourceError,
@@ -45,6 +46,8 @@ test('inlines styles.css and script.js so split-file calculators render in an op
   assert.doesNotMatch(prepared, /href="styles\.css"/);
   assert.doesNotMatch(prepared, /src="script\.js"/);
   assert.match(prepared, /fonts\.googleapis\.com/);
+  assert.equal(assembledPreviewHasUsableCss(html), false);
+  assert.equal(assembledPreviewHasUsableCss(prepared), true);
 });
 
 test('appends unlinked script.js so calculator logic still runs', () => {
