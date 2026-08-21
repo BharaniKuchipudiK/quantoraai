@@ -18,6 +18,14 @@ export default function App(){return <><h1>Sunrise Bakery</h1><button data-testi
 body { margin: 0 }
 \`\`\``;
 
+const calculator = website
+  .replace('Sunrise Bakery', 'Calculator')
+  .replace(
+    '<button data-testid="website-cta">View today\'s menu</button>',
+    '<output data-testid="calculator-display">{value}</output><button data-testid="calculator-one" onClick={() => setValue(\'1\')}>1</button>',
+  )
+  .replace('export default function App(){return', "import { useState } from 'react'; export default function App(){const [value,setValue]=useState('0');return");
+
 test('accepts an executable golden website contract', () => {
   assert.deepEqual(validateBuildArtifactResponse(website, 'simple-website'), {
     ok: true,
@@ -52,4 +60,16 @@ test('accepts a golden VFS that mounts through a named root variable', () => {
     'simple-website',
   );
   assert.deepEqual(result, { ok: true, detailCode: 'build-artifact-valid' });
+});
+
+test('accepts a state-backed calculator interaction contract', () => {
+  assert.deepEqual(validateBuildArtifactResponse(calculator, 'calculator'), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
+  });
+});
+
+test('rejects a calculator button that cannot update its display', () => {
+  const result = validateBuildArtifactResponse(calculator.replace("onClick={() => setValue('1')}", ''), 'calculator');
+  assert.deepEqual(result, { ok: false, detailCode: 'calculator-interaction-missing' });
 });

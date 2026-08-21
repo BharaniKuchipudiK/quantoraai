@@ -24,6 +24,22 @@ function hasReactRootMount(content: string) {
   return findsRoot && createsRoot && rendersComponent;
 }
 
+function regexEscape(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasCalculatorInteraction(content: string) {
+  const state = String(content || '').match(
+    /\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*(?:React\s*\.\s*)?useState\s*\(\s*['"]?0['"]?\s*\)/,
+  );
+  if (!state) return false;
+  const value = regexEscape(state[1]);
+  const setter = regexEscape(state[2]);
+  const displayReadsState = new RegExp(`data-testid\\s*=\\s*["']calculator-display["'][^>]*>[\\s\\S]*?\\{\\s*${value}\\s*\\}`).test(content);
+  const clickUpdatesState = new RegExp(`onClick\\s*=\\s*\\{[^}]*${setter}\\s*\\(\\s*["']1["']\\s*\\)`).test(content);
+  return displayReadsState && clickUpdatesState;
+}
+
 /**
  * Validate only deterministic runtime invariants. This is intentionally not a
  * subjective quality scorer: a model may choose any design as long as the
@@ -52,6 +68,9 @@ export function validateBuildArtifactResponse(text: unknown, transaction: string
 
   if (transaction === 'calculator' && (!code.includes('calculator-display') || !code.includes('calculator-one'))) {
     return { ok: false, detailCode: 'calculator-contract-missing' };
+  }
+  if (transaction === 'calculator' && !hasCalculatorInteraction(code)) {
+    return { ok: false, detailCode: 'calculator-interaction-missing' };
   }
   if (transaction === 'simple-website' && (!code.includes('Sunrise Bakery') || !code.includes('website-cta'))) {
     return { ok: false, detailCode: 'website-contract-missing' };
