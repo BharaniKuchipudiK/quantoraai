@@ -21,7 +21,13 @@ export function requestStudioDomain(domain, options = {}) {
 
 export function publishStudioDomainState(domain) {
   if (typeof window === 'undefined') return;
+  const normalized = normalizeStudioDomain(domain);
+  // Domain is React/session state. Expose that state directly for scoped CSS and
+  // browser contracts instead of asking a MutationObserver to infer it later.
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.quantoraDomain = normalized || '';
+  }
   window.dispatchEvent(new CustomEvent(STUDIO_DOMAIN_STATE_EVENT, {
-    detail: { domain: normalizeStudioDomain(domain) },
+    detail: { domain: normalized },
   }));
 }
