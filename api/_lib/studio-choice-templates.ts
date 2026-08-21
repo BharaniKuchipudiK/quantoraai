@@ -43,6 +43,9 @@ choices: Business brochure | Online shop | Portfolio / personal | Landing page f
 Payments — title "How should checkout work?"
 choices: Demo cart only (no real payments) | Stripe Checkout when connected | No payments needed
 
+Shipping — title "Where do you ship?"
+choices: India / domestic only | Domestic and international | Pickup in store only | I'll explain in chat
+
 Style — title "What vibe should it have?"
 choices: Clean & minimal | Bold & colorful | Professional / corporate | Cozy & warm
 
@@ -67,6 +70,9 @@ export function buildChoiceTemplateDirective(options: {
 
   if (options.guided) {
     parts.push(BUILD_CHOICE_HINTS);
+  } else if (options.buildMode) {
+    parts.push(`BUILD FOLLOW-UP (after a website or shop already shipped HTML)
+If the site sells products or services, still offer tappable next beats — do not go silent after the preview. Prefer: Add a payment gateway · Domestic vs international shipping · Publish this site to Vercel.`);
   }
 
   if (!parts.length) return "";

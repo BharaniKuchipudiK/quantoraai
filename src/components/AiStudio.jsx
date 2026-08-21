@@ -3,12 +3,14 @@ import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
+import StudioInlineSuggestions from './StudioInlineSuggestions';
+import { detectOutcomeGaps, injectGapContinues } from '../lib/outcome-gap-detection.js';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
@@ -539,8 +541,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
 
   const fileInputRef = useRef(null);
+  const previewCanvasRef = useRef(null);
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
+  const [dismissedContinueId, setDismissedContinueId] = useState(null);
 
   // Auto-resize textarea when inputText changes programmatically (e.g., Magic Wand)
   useEffect(() => {
@@ -1234,7 +1238,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         // fixed row dumped on every reply. Right-aligned.
                         const actions = resolveMessageActions({ text: cleanText, hasPreview: !!runnableCode, isOfficeArtifact: Boolean(msg.officeAttachment) });
                         const iconBtn = { background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' };
+                        const latestAiId = [...messages].reverse().find((item) => item.sender === 'ai' && item.text)?.id;
+                        const priorUser = [...messages].slice(0, messages.findIndex((item) => item.id === msg.id) + 1).reverse().find((item) => item.sender === 'user')?.text || '';
+                        const continueSet = msg.id === latestAiId && dismissedContinueId !== msg.id
+                          ? injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text))
+                          : null;
                         return (
+                        <>
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {/* Preview (code / presentation / app) — only when previewable */}
                           {actions.preview && runnableCode && canExplicitlyPreviewCode(studioDomain) && (
@@ -1305,6 +1315,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </div>
                           )}
                         </div>
+                        {continueSet?.items?.length > 0 && (
+                          <StudioInlineSuggestions
+                            suggestions={{ kind: 'continues', continueSet }}
+                            isLight={isLight}
+                            onSelectContinue={(item) => handleSendMessage(item.value)}
+                            onDismiss={() => setDismissedContinueId(msg.id)}
+                          />
+                        )}
+                        </>
                         );
                       })()}
                     </div>
@@ -1424,7 +1443,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId]);
 
   
   useEffect(() => {
@@ -2876,6 +2895,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 vfs={canvasVfs}
                 isLight={isLight}
                 onClose={() => setCanvasOpen(false)}
+                user={user}
+                onRequireAuth={onOpenAuth}
                 isPresentationIntent={detectSlideDeck(messages)}
                 officeKind={detectOfficeIntent({ messages })}
                 modelId={selectedModel?.id}
@@ -2964,6 +2985,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {workspaceCode && workspaceActiveTab === 'preview' && (
+                 <button
+                   type="button"
+                   onClick={() => previewCanvasRef.current?.openPublish?.()}
+                   style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                   <Rocket size={12} /> Publish to Vercel
+                 </button>
+              )}
               {workspaceActiveTab === 'code' && (
                  <button 
                    onClick={() => setWorkspaceActiveTab('preview')}
@@ -2991,11 +3020,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         <div style={{ fontSize: '0.82rem' }}>Your app will appear here as soon as it is ready to run.</div>
                       </div>
                     ) : (
-                    <LivePreviewCanvas 
-                      code={workspaceCode} 
-                      isLight={isLight} 
+                    <LivePreviewCanvas
+                      ref={previewCanvasRef}
+                      code={workspaceCode}
+                      isLight={isLight}
                       onClose={() => setIsWorkspaceMode(false)}
-                      showHeader={false}
+                      hideHeader
+                      user={user}
+                      onRequireAuth={onOpenAuth}
                       vfs={vfs}
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}

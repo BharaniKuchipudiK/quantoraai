@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { detectOutcomeGaps, injectGapContinues } from './outcome-gap-detection.js';
+
+test('a boutique website reply without payments or shipping gets those follow-up chips', () => {
+  const gaps = detectOutcomeGaps(
+    'develop a website for a boutique that sells sarees and ready made dresses',
+    'I built Varnika Heritage with a catalog and cart.\n\n```html\n<!DOCTYPE html><html><body>shop</body></html>\n```',
+  );
+  const labels = gaps.map((gap) => gap.label);
+  assert.ok(labels.includes('Add a payment gateway'));
+  assert.ok(labels.includes('Domestic or international?'));
+  assert.ok(labels.includes('Publish this site'));
+});
+
+test('commerce chips still appear when the model omitted quantora-continues', () => {
+  const gaps = detectOutcomeGaps(
+    'website for my saree boutique',
+    'Here is the shop.',
+  );
+  const chips = injectGapContinues(null, gaps);
+  assert.ok(chips.items.some((item) => /payment/i.test(item.label)));
+  assert.ok(chips.items.some((item) => /Domestic or international/i.test(item.label)));
+});
