@@ -114,8 +114,10 @@ try {
   await visible(studioButton, 'Studio navigation did not become visible.');
   await studioButton.click();
 
-  const profile = page.locator('[data-quantora-sidebar-profile]').first();
-  await visible(profile, 'Studio Profile entry is missing.');
+  await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
+  await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
+  const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
+  await visible(profile, 'Global Profile control is missing.');
   await profile.click();
 
   const accountMenu = page.locator('#quantora-profile-menu').first();
