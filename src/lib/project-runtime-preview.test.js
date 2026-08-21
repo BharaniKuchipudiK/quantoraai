@@ -8,6 +8,7 @@ import {
   projectRuntimeConfig,
 } from './project-runtime-preview.js';
 
+// P0 regression fixture mirrors the calculator shape that broke the live Studio preview.
 const calculator = `
 import React, { useState } from 'react';
 import { Delete, Divide, Minus, Plus, X, Equal } from 'lucide-react';
