@@ -219,8 +219,8 @@ export default function App() {
   // in sync with api/models.js so the app behaves identically whether or not
   // the registry endpoint responds.
   const fallbackModels = [
-    { id: 'openrouter/free', name: 'Quantora Free Router', specialty: 'Routes across currently available free models', badge: 'Recommended', provider: 'OpenRouter', available: true, pricingKind: 'free' },
-    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Free Reasoning', provider: 'NVIDIA', available: true, pricingKind: 'free' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'Recommended Free', provider: 'NVIDIA', available: true, pricingKind: 'free' },
+    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', specialty: 'Open-weight reasoning and coding fallback', badge: 'Free Fallback', provider: 'OpenAI', available: true, pricingKind: 'free' },
     { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Optional multimodal route', badge: 'Multimodal', provider: 'Google', available: true, pricingKind: 'free-tier' },
     { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'DeepSeek', available: true, pricingKind: 'paid' },
     { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'Qwen', available: true, pricingKind: 'paid' },

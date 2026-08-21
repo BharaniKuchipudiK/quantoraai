@@ -891,20 +891,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasOpen(false);
     }
 
-    // HUMAN IN THE LOOP: only intercept when the selected model recently failed
-    // AND a genuinely different healthy model exists to offer.
-    if (selectedModel && !arenaMode && !isAdvisorWorkspace) {
-      const health = checkModelHealth(selectedModel.id);
-      if (!health.isHealthy) {
-        const fallbackModel = pickHealthyFallback(selectedModel);
-        if (fallbackModel) {
-          setPclIntercept({ text: textToSend, targetModel: selectedModel, fallbackModel, errorType: health.errorType, timeAgo: health.lastFailureMsAgo });
-          return; // Intercept!
-        }
-        // No better model available — proceeding silently beats a no-op prompt.
-      }
-    }
-
+    // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
     streamSendMessage(overrideText);
   };
 

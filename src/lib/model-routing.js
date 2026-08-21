@@ -33,10 +33,10 @@ function modelScore(model, task, arenaPrefs) {
   }
 
   if (task === 'coding') {
-    if (/nemotron|coder|qwen|deepseek/.test(haystack)) score += 24;
+    if (/nemotron|gpt-oss|coder|qwen|deepseek/.test(haystack)) score += 24;
     if (/gemini|flash/.test(haystack)) score += 10;
   } else if (task === 'research') {
-    if (/nemotron|reason|deepseek/.test(haystack)) score += 22;
+    if (/nemotron|gpt-oss|reason|deepseek/.test(haystack)) score += 22;
     if (/gemini/.test(haystack)) score += 12;
   } else if (task === 'vision') {
     if (/gemini|vision|multimodal/.test(haystack)) score += 28;
@@ -46,8 +46,8 @@ function modelScore(model, task, arenaPrefs) {
   } else if (task === 'quick') {
     if (/flash|gemini|mini|fast/.test(haystack)) score += 26;
   } else {
-    if (/gemini|flash/.test(haystack)) score += 20;
-    if (/nemotron/.test(haystack)) score += 14;
+    if (/gemini|flash/.test(haystack)) score += 8;
+    if (/nemotron|gpt-oss/.test(haystack)) score += 20;
   }
 
   return score;

@@ -38,9 +38,9 @@ const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 const FEATURED_SERVER_MODELS = new Set([
-  "openrouter/free",
   "gemini-flash-latest",
   "nvidia/nemotron-3-super-120b-a12b:free",
+  "openai/gpt-oss-120b:free",
   "deepseek/deepseek-chat",
   "qwen/qwen-2.5-coder-32b-instruct",
   "meta-llama/llama-3.3-70b-instruct",
