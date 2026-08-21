@@ -1,7 +1,7 @@
 import { useModelExperienceMemory } from './useModelExperienceMemory.js';
 import { useRef } from 'react';
 import { detectOfficeIntent } from '../lib/office-intent.js';
-import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow } from '../lib/office-briefing.js';
+import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
@@ -240,6 +240,17 @@ export function useChatStream({
       ? officeBriefingContext({ text, officeKind: explicitOfficeKind, messages, sessionContext })
       : null;
     const shouldGenerate = await shouldGenerateOfficeNow({ text, officeKind: explicitOfficeKind, messages });
+    if (!shouldGenerate && shouldRevealOfficeNow({ text, messages }) && currentOfficeArtifact) {
+      updateActiveMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        sender: 'ai',
+        text: `The ${currentOfficeArtifact.kind || 'Office'} file is in Preview. Use **Download** on the card below, or the file button in the preview header.`,
+        officeAttachment: currentOfficeArtifact,
+        officeBriefing: false,
+      }]);
+      setIsGenerating(false);
+      return;
+    }
     const officeKind = shouldGenerate ? briefingKind : null;
 
     if (officeKind) {

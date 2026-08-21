@@ -7,6 +7,7 @@ import {
   officeBriefingContext,
   shouldGenerateOfficeNow,
   OFFICE_CONTINUE_VALUE,
+  shouldRevealOfficeNow,
 } from './office-briefing.js';
 
 async function withFetchResult(payload, fn) {
@@ -50,6 +51,33 @@ test('Continue UI value deterministically hands the approved briefing to Office 
     officeKind: null,
     messages,
   }), true);
+});
+
+test('Generate the PPT now after briefing goes to Office generation without the classifier', async () => {
+  const messages = [
+    { sender: 'ai', text: 'If this looks right, choose Continue below.', officeBriefing: true, officeBriefingKind: 'powerpoint' },
+  ];
+  assert.equal(await shouldGenerateOfficeNow({
+    text: 'Generate the PPT now',
+    officeKind: 'powerpoint',
+    messages,
+  }), true);
+});
+
+test('download and show requests reopen an existing Office file instead of chatting', async () => {
+  const messages = [{
+    sender: 'ai',
+    officeAttachment: {
+      kind: 'powerpoint',
+      fileName: 'deck.pptx',
+      spec: { version: 2, title: 'Deck', slides: [] },
+      htmlPreview: '<html>deck</html>',
+      verification: { passed: true, previewFingerprint: 'abc12345' },
+    },
+  }];
+  assert.equal(shouldRevealOfficeNow({ text: 'can you create a downloadable link', messages }), true);
+  assert.equal(await shouldGenerateOfficeNow({ text: 'can you create a downloadable link', messages }), false);
+  assert.equal(shouldRevealOfficeNow({ text: 'Generate the PPT now', messages }), true);
 });
 
 test('verified artifact closes briefing and semantic refinement routes directly to generation', async () => {
