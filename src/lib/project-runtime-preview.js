@@ -6,8 +6,8 @@ function fileContent(value) {
 }
 
 const RUNTIME_DEPENDENCY_VERSIONS = Object.freeze({
-  react: '^19.0.1',
-  'react-dom': '^19.0.1',
+  react: '^18.2.0',
+  'react-dom': '^18.2.0',
   'lucide-react': '^0.546.0',
   'framer-motion': '^12.23.12',
   recharts: '^3.1.2',
