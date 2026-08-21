@@ -8,6 +8,7 @@
  */
 import { Duffel } from '@duffel/api';
 import { validateTravelToolArgs } from './ai-contracts.js';
+import { providerCircuitStore } from './provider-circuit-store.js';
 import {
   providerFetch,
   runProviderOperation,
@@ -77,6 +78,7 @@ function resilientFetch(rawFetch: typeof fetch, policy?: Partial<ProviderResilie
       init,
       fetchFn: rawFetch,
       policy,
+      circuitStore: providerCircuitStore,
     });
   }) as typeof fetch;
 }
@@ -94,6 +96,7 @@ function resilientDuffel(client: Duffel | null, policy?: Partial<ProviderResilie
         provider: 'flight-search',
         operation: 'offer-request',
         policy,
+        circuitStore: providerCircuitStore,
         execute: async () => offerRequests.create(...args),
       }),
     },
@@ -115,9 +118,9 @@ function stopAgentLoopOnProviderFailure(name: string, result: any) {
 
   return {
     ...result,
-    // api/chat already treats PAUSE_AND_ASK as a terminal agent step. Using the
-    // existing contract here prevents a failed provider call from being fed
-    // back into Gemini and starting another model/tool retry cycle.
+    // Provider failure is a terminal interaction state, not another model turn.
+    // This is the same contract as a legitimate clarifying question and prevents
+    // a broken provider from creating an LLM/tool retry storm.
     action: 'PAUSE_AND_ASK',
     providerMessage,
     message: `I couldn't retrieve ${subject} from the connected provider, so I stopped instead of retrying in a loop. Would you like me to continue without those live results?`,
