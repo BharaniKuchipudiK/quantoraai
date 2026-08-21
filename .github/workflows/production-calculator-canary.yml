@@ -1,0 +1,38 @@
+name: Production Calculator Canary
+
+on:
+  push:
+    branches:
+      - canary/production-calculator-preview
+
+permissions:
+  contents: read
+
+jobs:
+  calculator-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install app dependencies
+        run: npm ci
+      - name: Install Playwright
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Generate calculator in live Quantora Studio and verify Preview
+        env:
+          QUANTORA_E2E_BASE_URL: https://quantoraai.app
+        run: node scripts/studio-regression-browser-gate.mjs
+      - name: Upload calculator preview evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-calculator-preview
+          path: artifacts/e2e
+          if-no-files-found: ignore
+          retention-days: 3
