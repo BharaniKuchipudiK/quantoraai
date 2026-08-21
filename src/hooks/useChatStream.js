@@ -4,7 +4,8 @@ import { detectOfficeIntent } from '../lib/office-intent.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
-import { captureUserAnswerAsContext } from '../lib/session-context.js';
+import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
+import { deriveStudioMission } from '../lib/studio-mission.js';
 import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
 import { applyPclContinuityToOutcomeState } from '../lib/pcl-outcome-sync.js';
 import {
@@ -124,7 +125,9 @@ export function useChatStream({
   isWorkspaceMode,
   messages,
   setLastPrompt,
-  sessionContext
+  sessionContext,
+  conversationContext,
+  updateActiveSession,
 }) {
   const abortControllerRef = useRef(null);
   const { getLearnedBehaviors } = useModelExperienceMemory();
@@ -330,6 +333,24 @@ export function useChatStream({
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     if (briefingKind || isCodingRequest) effectiveArenaMode = false;
 
+    const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
+    const mission = deriveStudioMission({
+      conversationContext,
+      messages: [...messages, { sender: 'user', text: visibleUserText }],
+      hasPreview: Boolean(isWorkspaceMode && (canvasCode || (vfs && Object.keys(vfs).length))),
+    });
+    const turnContext = mergeSessionContext(
+      conversationContext,
+      mergeSessionContext(sessionContext, {
+        ...(mission?.goal ? { goal: mission.goal } : {}),
+        ...(mission?.understanding ? { understanding: mission.understanding } : {}),
+        ...(answerFact ? { facts: [answerFact] } : {}),
+      }),
+    );
+    if (typeof updateActiveSession === 'function') {
+      updateActiveSession({ conversationContext: turnContext });
+    }
+
     const requestBodyFor = (model) => ({
       message: text,
       modelId: model.id,
@@ -339,8 +360,8 @@ export function useChatStream({
       openRouterKey: openRouterApiKey,
       cognitiveLevel,
       webSearch: false,
-      sessionContext,
-      projectId: sessionContext?.projectId || null,
+      sessionContext: turnContext,
+      projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain,
       buildMode: isCodingRequest,
       taskCategory: isCodingRequest ? 'coding' : 'general',
@@ -596,6 +617,11 @@ export function useChatStream({
         ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
         correlationId: responseCorrelationId,
       } : m));
+      if (normalized.contextUpdate && typeof updateActiveSession === 'function') {
+        updateActiveSession({
+          conversationContext: mergeSessionContext(turnContext, normalized.contextUpdate),
+        });
+      }
       await persistPclContinuity({
         sessionId: pclEnvelope.sessionId,
         memoryConsented: pclEnvelope.memoryConsented,

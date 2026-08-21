@@ -36,3 +36,18 @@ test('errors stay honest and offer a retry, not fake success', () => {
 test('empty studio has no partner strip', () => {
   assert.equal(resolveStudioPartnerStatus({}), null);
 });
+
+test('greeting copy does not lecture about missing preview', () => {
+  assert.equal(resolveStudioPartnerStatus({
+    lastAiText: 'Hello Creator! What would you like to create or ask today?',
+    hasUserTurn: false,
+  }), null);
+});
+
+test('after a real chat reply with no preview, the strip explains the gap', () => {
+  const status = resolveStudioPartnerStatus({
+    lastAiText: 'Bali in March is usually dry in the south.',
+    hasUserTurn: true,
+  });
+  assert.match(status.now, /no runnable preview/i);
+});
