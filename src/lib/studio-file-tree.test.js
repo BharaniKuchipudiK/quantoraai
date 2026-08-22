@@ -16,5 +16,6 @@ test('lists project files in order and skips empty slots', () => {
 test('preview is labelled Preview, not a fake file name', () => {
   assert.equal(studioFileLabel('preview'), 'Preview');
   assert.equal(studioFileLabel('terminal'), 'Terminal');
+  assert.equal(studioFileLabel('git'), 'Git');
   assert.equal(studioFileLabel('src/App.jsx'), 'src/App.jsx');
 });

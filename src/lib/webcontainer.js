@@ -1,4 +1,8 @@
 import { WebContainer } from '@webcontainer/api';
+import { studioGitArgv } from './studio-git.js';
+
+/** Last coding-desk session whose .git we keep. Changing chats drops that repo. */
+let gitWorkspaceKey = '';
 
 /** @type {WebContainer}  */
 let webcontainerInstance = null;
@@ -47,17 +51,13 @@ export async function syncVFSToWebContainer(vfs) {
   return instance;
 }
 
-export async function runCommandInWorkspace(vfs, commandLine) {
-  const line = String(commandLine || '').trim();
-  if (!line) return { ok: true, output: '' };
-
-  const instance = await syncVFSToWebContainer(vfs);
-  const process = await instance.spawn('jsh', ['-c', line]);
+async function spawnCollected(instance, command, args, timeoutMs = 20_000) {
+  const process = await instance.spawn(command, args);
   let output = '';
   const reader = process.output.getReader();
   const timeout = setTimeout(() => {
     try { process.kill(); } catch { /* already exited */ }
-  }, 20_000);
+  }, timeoutMs);
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -72,7 +72,54 @@ export async function runCommandInWorkspace(vfs, commandLine) {
   const text = String(output || '').trim();
   return {
     ok: exit === 0,
-    output: text || `(exit ${exit})`,
+    output: text || (exit === 0 ? '' : `(exit ${exit})`),
+  };
+}
+
+export async function runCommandInWorkspace(vfs, commandLine) {
+  const line = String(commandLine || '').trim();
+  if (!line) return { ok: true, output: '' };
+
+  const instance = await syncVFSToWebContainer(vfs);
+  const result = await spawnCollected(instance, 'jsh', ['-c', line]);
+  return {
+    ok: result.ok,
+    output: result.output || `(exit ${result.ok ? 0 : 1})`,
+  };
+}
+
+export async function runGitInWorkspace(vfs, { action, message, workspaceKey } = {}) {
+  const argvList = studioGitArgv(action, message);
+  const instance = await syncVFSToWebContainer(vfs);
+  const nextKey = String(workspaceKey || 'default');
+  if (gitWorkspaceKey && gitWorkspaceKey !== nextKey) {
+    await spawnCollected(instance, 'rm', ['-rf', '.git']);
+  }
+  gitWorkspaceKey = nextKey;
+
+  const chunks = [];
+  let ok = true;
+  for (const argv of argvList) {
+    const [command, ...args] = argv;
+    let result;
+    try {
+      result = await spawnCollected(instance, command, args);
+    } catch (error) {
+      return {
+        ok: false,
+        output: error?.message || 'Git is not available in this shell. No fake status was shown.',
+      };
+    }
+    if (result.output) chunks.push(result.output);
+    if (!result.ok) {
+      ok = false;
+      if (!result.output) chunks.push(`(exit failed)`);
+      break;
+    }
+  }
+  return {
+    ok,
+    output: chunks.join('\n\n').trim(),
   };
 }
 
