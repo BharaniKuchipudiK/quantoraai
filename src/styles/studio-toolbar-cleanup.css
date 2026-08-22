@@ -108,13 +108,10 @@ html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio div
 }
 
 /*
- * The generic Studio tool picker is for neutral/advanced Quantora. Travel,
- * Study, Finance and Research already expose domain-specific capabilities and
- * should not ask the user to switch into Search/Travel/Office tools manually.
+ * Hide the old Studio "Tools Menu" label on advisor desks. Do not hide
+ * [data-quantora-studio-tools-menu] — that is the Travel/Study plus catalog.
  */
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Tools Menu"],
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-studio-tools-menu="true"],
-html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio [data-quantora-studio-tools-backdrop="true"] {
+html[data-quantora-domain]:not([data-quantora-domain=""]) .app-shell--studio button[title="Tools Menu"] {
   display: none !important;
 }
 

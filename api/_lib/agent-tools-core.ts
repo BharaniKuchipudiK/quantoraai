@@ -387,10 +387,11 @@ export async function executeToolCall(
 
     case 'search_hotels': {
       const location = String(args?.location || '').trim();
+      const focus = String(args?.query || args?.focus || '').trim();
       const result: any = await searchGooglePlaces(googleMapsApiKey, fetchFn, {
-        textQuery: `hotels in ${location}`,
-        includedType: 'hotel',
-        strictTypeFiltering: true,
+        textQuery: focus ? `${focus} hotels in ${location}` : `hotels in ${location}`,
+        includedType: 'lodging',
+        strictTypeFiltering: false,
         pageSize: 10,
       });
       if (result.status !== 'success') return result;

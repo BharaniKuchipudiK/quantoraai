@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   CreditCard,
@@ -46,8 +47,29 @@ export default function StudioToolsMenu({
   isLight,
   studioDomain = null,
   topic = '',
+  anchorRef = null,
 }) {
-  if (!isOpen) return null;
+  const [pos, setPos] = useState({ left: 16, bottom: 88 });
+
+  useLayoutEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return undefined;
+    const place = () => {
+      const node = anchorRef?.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      const width = 320;
+      const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+      setPos({
+        left,
+        bottom: Math.max(12, window.innerHeight - rect.top + 10),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [isOpen, anchorRef]);
+
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const groups = studioToolsMenuGroups(studioDomain, topic);
   const storyType = studioDomain === 'travel' || studioDomain === 'education';
@@ -125,34 +147,37 @@ export default function StudioToolsMenu({
     );
   };
 
-  return (
+  return createPortal(
     <>
       <div
         data-quantora-studio-tools-backdrop="true"
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 40000 }}
       />
       <div
         data-quantora-studio-tools-menu="true"
         data-quantora-plus-domain={studioDomain || 'studio'}
         style={{
-          position: 'absolute',
-          bottom: 'calc(100% + 12px)',
-          left: 0,
+          position: 'fixed',
+          left: pos.left,
+          bottom: pos.bottom,
           width: '320px',
+          maxHeight: 'min(70vh, 520px)',
+          overflowY: 'auto',
           background: bg,
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
           border,
           borderRadius: '20px',
           boxShadow: shadow,
-          zIndex: 1000,
+          zIndex: 40001,
           padding: '16px 8px',
-          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
-          animation: 'slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
         {groups.map((group) => (
@@ -174,13 +199,7 @@ export default function StudioToolsMenu({
           </div>
         ))}
       </div>
-
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(10px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
-    </>
+    </>,
+    document.body,
   );
 }

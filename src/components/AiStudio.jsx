@@ -576,6 +576,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const previewCanvasRef = useRef(null);
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
+  const plusMenuAnchorRef = useRef(null);
   const [dismissedContinueId, setDismissedContinueId] = useState(null);
 
   // Auto-resize textarea when inputText changes programmatically (e.g., Magic Wand)
@@ -2673,8 +2674,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <div style={{ position: 'relative' }}>
                 <button
                   type="button"
+                  ref={plusMenuAnchorRef}
                   data-quantora-plus-trigger="true"
-                  onClick={() => setShowToolsMenu((open) => !open)}
+                  aria-expanded={showToolsMenu}
+                  aria-haspopup="menu"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setShowToolsMenu((open) => !open);
+                  }}
                   title={studioDomain === 'travel' ? 'This trip' : studioDomain === 'education' ? 'This topic' : 'Tools'}
                   style={{
                     background: showToolsMenu ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
@@ -2705,6 +2713,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </button>
                 <StudioToolsMenu
                   isOpen={showToolsMenu}
+                  anchorRef={plusMenuAnchorRef}
                   onClose={() => setShowToolsMenu(false)}
                   isLight={isLight}
                   studioDomain={studioDomain}

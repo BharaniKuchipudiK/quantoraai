@@ -70,8 +70,21 @@ test('unconnected read-only travel providers stop the agent instead of returning
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
-  assert.match(hotel.message, /stopped instead of retrying in a loop/i);
+  assert.match(hotel.message, /city or area|will not invent/i);
   assert.equal('hotels' in hotel, false, 'must not substitute hard-coded hotels');
+
+  const vibeOnly = await executeToolCall('search_hotels', {
+    location: "Beach resorts with kids' clubs",
+  }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn: (async () => {
+      throw new Error('Places must not be called until a city is named');
+    }) as typeof fetch,
+  });
+  assert.equal(vibeOnly.action, 'PAUSE_AND_ASK');
+  assert.equal(vibeOnly.executed, false);
+  assert.match(vibeOnly.message, /city or area/i);
+  assert.equal('hotels' in vibeOnly, false);
 
   const attraction = await executeToolCall('search_attractions', { location: 'London' }, {
     duffelClient: null,
@@ -139,8 +152,8 @@ test('Google Places hotel discovery returns provider-backed facts without fake i
 
   assert.equal(capturedRequest.url, 'https://places.googleapis.com/v1/places:searchText');
   const requestBody = JSON.parse(capturedRequest.init.body);
-  assert.equal(requestBody.includedType, 'hotel');
-  assert.equal(requestBody.strictTypeFiltering, true);
+  assert.equal(requestBody.includedType, 'lodging');
+  assert.equal(requestBody.strictTypeFiltering, undefined);
   assert.match(requestBody.textQuery, /hotels in London/i);
   assert.equal(capturedRequest.init.headers['X-Goog-Api-Key'], 'test-google-key');
   assert.match(capturedRequest.init.headers['X-Goog-FieldMask'], /places\.rating/);
