@@ -134,6 +134,8 @@ test('Google Places hotel discovery returns provider-backed facts without fake i
   assert.equal('nightlyRate' in result.hotels[0], false);
   assert.equal('available' in result.hotels[0], false);
   assert.equal(result.searchContext.inventoryAndRatesAvailable, false);
+  assert.match(result.mandatoryShortlist, /★ 4\.6\/5 \(1234\)/);
+  assert.match(result.mandatoryShortlist, /https:\/\/example\.test/);
 
   assert.equal(capturedRequest.url, 'https://places.googleapis.com/v1/places:searchText');
   const requestBody = JSON.parse(capturedRequest.init.body);
@@ -142,6 +144,35 @@ test('Google Places hotel discovery returns provider-backed facts without fake i
   assert.match(requestBody.textQuery, /hotels in London/i);
   assert.equal(capturedRequest.init.headers['X-Goog-Api-Key'], 'test-google-key');
   assert.match(capturedRequest.init.headers['X-Goog-FieldMask'], /places\.rating/);
+});
+
+test('a hotel ratings request that hits routing is executed as Places hotel search', async () => {
+  let capturedUrl = '';
+  const fetchFn = (async (url: any) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({
+      places: [{
+        id: 'hotel-tokyo',
+        displayName: { text: 'Live Tokyo Hotel' },
+        rating: 4.4,
+        userRatingCount: 88,
+        websiteUri: 'https://live.example',
+        googleMapsUri: 'https://maps.google.test/live',
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  const result = await executeToolCall('get_places_routing', {
+    query: 'hotels in Asakusa Tokyo',
+  }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.hotels[0].name, 'Live Tokyo Hotel');
+  assert.match(capturedUrl, /places\.googleapis\.com/);
+  assert.doesNotMatch(capturedUrl, /routes\.googleapis\.com/);
 });
 
 test('Google Places powers attraction and generic destination discovery', async () => {

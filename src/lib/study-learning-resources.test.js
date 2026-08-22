@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   studyFlashcardAsk,
+  studyIcebreakerAsk,
   studyLessonAsk,
   studyNotesAsk,
   studyQuizAsk,
@@ -19,7 +20,8 @@ test('resource links are official search pages, not invented videos', () => {
 });
 
 test('lesson, quiz, flashcards, and notes asks stay tutor-like and fail-closed on fake videos', () => {
-  assert.match(studyLessonAsk("Newton's laws"), /I will wait/i);
+  assert.match(studyIcebreakerAsk("Newton's laws"), /I’m with you|I'm with you/);
+  assert.match(studyIcebreakerAsk("Newton's laws"), /Do not plan trips/i);
   assert.match(studyLessonAsk("Newton's laws"), /Do not invent a specific YouTube/i);
   assert.match(studyQuizAsk("Newton's laws"), /Wait for my answers/i);
   assert.match(studyFlashcardAsk("Newton's laws"), /flashcards/i);

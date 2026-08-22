@@ -18,13 +18,16 @@ import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import AdvisorPromptPills from './AdvisorPromptPills';
 import { newThreadLabel } from '../lib/advisor-thread.js';
-import StudioToolsMenu from './StudioToolsMenu';
+import { resolveStudioPlusAction, STUDIO_PLUS_ACTION } from '../lib/studio-tools-menu.js';
 import StudioDecisionModal from './StudioDecisionModal';
+import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
+import TravelPlaceLink from './TravelPlaceLink.jsx';
+import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { activeOfficeArtifact } from '../lib/office-briefing.js';
@@ -463,6 +466,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [thinkingTime, setThinkingTime] = useState(0);
   const dismissedOfficeFingerprintRef = useRef(null);
   const dismissedOfficeMessageIdRef = useRef(null);
+  const openedTravelPreviewForRef = useRef(null);
 
   const closeStudioWorkspace = useCallback(() => {
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
@@ -845,8 +849,38 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(true);
   }, [studioDomain, messages, vfs]);
 
+  const handleTravelPlacePlay = useCallback((place) => {
+    const html = travelPlacePreviewHtml({
+      name: place?.name,
+      website: place?.href || place?.website,
+      googleMapsUrl: place?.googleMapsUrl,
+      userRating: place?.userRating,
+      userRatingCount: place?.userRatingCount,
+      address: place?.address,
+    });
+    if (!html) return;
+    setWorkspaceCorrelationId(null);
+    setWorkspaceGoldenTransaction(null);
+    setVfs({ 'index.html': { content: html, language: 'html' } });
+    setWorkspaceCode(html);
+    setWorkspaceActiveTab('preview');
+    setIsWorkspaceMode(true);
+  }, []);
+
   const markdownComponents = React.useMemo(() => ({
     a({node, children, href, ...props}) {
+      if (studioDomain === 'travel' && /^https?:\/\//i.test(String(href || ''))) {
+        return (
+          <TravelPlaceLink
+            href={href}
+            onPlay={handleTravelPlacePlay}
+            style={{ color: '#38bdf8', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+            {...props}
+          >
+            {children}
+          </TravelPlaceLink>
+        );
+      }
       return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
     },
     code({node, inline, className, children, ...props}) {
@@ -880,7 +914,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
       )
     }
-  }), [handlePreviewCodeBlock, studioDomain]);
+  }), [handlePreviewCodeBlock, handleTravelPlacePlay, studioDomain]);
+
+  useEffect(() => {
+    if (studioDomain !== 'travel' || isGenerating) return;
+    const last = [...messages].reverse().find((message) => (
+      message?.sender === 'ai' && Array.isArray(message.travelPlaces) && message.travelPlaces.length
+    ));
+    if (!last || openedTravelPreviewForRef.current === last.id) return;
+    const place = last.travelPlaces[0];
+    const href = place.website || place.googleMapsUrl;
+    if (!href) return;
+    openedTravelPreviewForRef.current = last.id;
+    handleTravelPlacePlay({ ...place, href });
+  }, [messages, studioDomain, isGenerating, handleTravelPlacePlay]);
 
   // Pick a genuinely DIFFERENT, currently-healthy model to fall back to when the
   // selected one just failed. Returns null when there's no better option — in
@@ -955,6 +1002,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             console.error("Failed to parse modal data", e);
           }
         }
+      }
+      if (modalData && !shouldShowAssistantDecisionCard({
+        choiceUsed: msg.choiceUsed,
+        messageId: msg.id,
+        messages,
+      })) {
+        modalData = null;
       }
       
       return (
@@ -1163,21 +1217,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
-                          components={{
-                            a({node, children, href, ...props}) {
-                              return <VerifiedMediaLink href={href} style={{ color: '#3b82f6', textDecoration: 'underline', textUnderlineOffset: '2px' }} {...props}>{children}</VerifiedMediaLink>
-                            },
-                            code({node, inline, className, children, ...props}) {
-                              const match = /language-(\w+)/.exec(className || '')
-                              return !inline && match ? (
-                                <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
-                                  {String(children).replace(/\n$/, '')}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
-                              )
-                            }
-                          }}
+                          components={markdownComponents}
                         >
                           {cleanText}
                         </ReactMarkdown>
@@ -1252,7 +1292,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           modalData={modalData}
                           isLight={isLight}
                           onSubmit={(choiceText) => {
+                            updateActiveMessages((prev) => prev.map((item) => (
+                              item.id === msg.id ? { ...item, choiceUsed: true } : item
+                            )));
                             handleSendMessage(choiceText);
+                          }}
+                          onSkip={() => {
+                            updateActiveMessages((prev) => prev.map((item) => (
+                              item.id === msg.id ? { ...item, choiceUsed: true } : item
+                            )));
                           }}
                         />
                       )}
@@ -1827,31 +1875,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <div style={{ flexShrink: 0 }}>{card.icon}</div>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
             </div>
-            {(card.domain === 'travel' || card.domain === 'education') ? (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleCreateAdvisorChat(card.domain);
-                  if (window.innerWidth < 768) setSidebarOpen(false);
-                }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  margin: '2px 0 6px 22px',
-                  padding: '4px 8px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: subtextColor,
-                  fontSize: '0.75rem',
-                  fontWeight: 650,
-                  cursor: 'pointer',
-                }}
-              >
-                {newThreadLabel(card.domain)}
-              </button>
-            ) : null}
             </div>
             );
           })}
@@ -2361,6 +2384,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
           </div>
         )}
+          <AdvisorPromptPills
+            domain={studioDomain}
+            topic={conversationContext?.goal || ''}
+            onSend={(text) => handleSendMessage(text)}
+            isLight={isLight}
+            textColor={textColor}
+          />
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
@@ -2373,13 +2403,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           flexDirection: 'column',
           gap: '4px'
         }}>
-          <AdvisorPromptPills
-            domain={studioDomain}
-            topic={conversationContext?.goal || ''}
-            onSend={(text) => handleSendMessage(text)}
-            isLight={isLight}
-            textColor={textColor}
-          />
           {/* Attachment Files Badge Bar (Moved inside pill) */}
           {attachments.length > 0 && (
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
@@ -2594,8 +2617,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               {/* Plus Button for Tools Menu */}
               <div style={{ position: 'relative' }}>
                 <button
-                  onClick={() => setShowToolsMenu(true)}
-                  title="Tools Menu"
+                  type="button"
+                  data-quantora-plus-trigger="true"
+                  onClick={() => setShowToolsMenu((open) => !open)}
+                  title={studioDomain === 'travel' ? 'This trip' : studioDomain === 'education' ? 'This topic' : 'Tools'}
                   style={{
                     background: showToolsMenu ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
                     border: 'none',
@@ -2603,7 +2628,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     padding: '6px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    display: isAdvisorWorkspace ? 'none' : 'flex',
+                    display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     transition: 'all 0.2s ease'
@@ -2627,38 +2652,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   isOpen={showToolsMenu}
                   onClose={() => setShowToolsMenu(false)}
                   isLight={isLight}
+                  studioDomain={studioDomain}
+                  topic={conversationContext?.goal || ''}
                   onSelectTool={(tool) => {
-                    let defaultPrompt = '';
-                    switch (tool) {
-                      case 'Search':
-                        defaultPrompt = 'Search the web for ';
-                        break;
-                      case 'Deep Research':
-                        defaultPrompt = 'Conduct a deep research report on ';
-                        break;
-                      case 'Podcast':
-                        defaultPrompt = 'Create a podcast script about ';
-                        break;
-                      case 'Travel':
-                        defaultPrompt = 'Plan a travel itinerary to ';
-                        break;
-                      case 'PowerPoint':
-                        defaultPrompt = 'Prepare a PowerPoint presentation about ';
-                        break;
-                      case 'Excel':
-                        defaultPrompt = 'Create an Excel spreadsheet that tracks ';
-                        break;
-                      case 'Word':
-                        defaultPrompt = 'Draft a formal Word document discussing ';
-                        break;
-                      case 'PDF':
-                        defaultPrompt = 'Generate a PDF summary of ';
-                        break;
-                    }
-                    setInputText(defaultPrompt);
+                    const action = resolveStudioPlusAction(tool, studioDomain, conversationContext?.goal || '');
                     setShowToolsMenu(false);
-                    if (textareaRef.current) {
-                      textareaRef.current.focus();
+                    if (action.kind === STUDIO_PLUS_ACTION.FRESH_THREAD && action.domain) {
+                      handleCreateAdvisorChat(action.domain);
+                      return;
+                    }
+                    if (action.kind === STUDIO_PLUS_ACTION.OPEN_DOMAIN && action.domain) {
+                      openAdvisorWorkspace(action.domain);
+                      return;
+                    }
+                    if (action.kind === STUDIO_PLUS_ACTION.PROMPT && action.text) {
+                      if (String(tool).startsWith('study-') || String(tool).startsWith('travel-')) {
+                        handleSendMessage(action.text);
+                        return;
+                      }
+                      setInputText(action.text);
+                      if (textareaRef.current) {
+                        textareaRef.current.focus();
+                      }
                     }
                   }}
                 />

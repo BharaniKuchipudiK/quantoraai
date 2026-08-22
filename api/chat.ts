@@ -15,6 +15,7 @@ import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
+import { formatTravelPlaceShortlist } from '../src/lib/travel-place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
 import { shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
 import {
@@ -946,6 +947,8 @@ export default async function handler(req: any, res: any) {
       const travelPersona = travelToolsEnabled ? `\n\nTRAVEL TOOL SAFETY DIRECTIVE:
 - Use connected travel tools only for the current travel-domain request.
 - Live flight search may be available through Duffel. If any provider reports unavailable or errors, say so plainly and do not substitute invented results.
+- Hotels, stays, property ratings, websites, Google Maps links, and photos MUST use search_hotels (Google Places). Never call get_places_routing for hotels. Dates are optional for discovery.
+- After search_hotels succeeds, paste mandatoryShortlist verbatim so every property has ★ Google user rating (when supplied), a website or Maps link, and is clickable. Do not invent extra hotels or ratings.
 - Google Places may provide hotel/place identity and ratings, not date-specific room inventory or nightly rates.
 - Transactional booking, ticketing, and background price-alert creation are disabled in this production build. Never claim a booking, ticket, PNR, confirmation code, purchase, alert, or background monitor exists unless a connected provider has actually confirmed it.
 - Ask one material clarifying question instead of guessing missing dates, budget, group, or preferences.
@@ -961,6 +964,7 @@ export default async function handler(req: any, res: any) {
       let modelFallbackUsed = false;
       let loopCount = 0;
       let continueAgent = true;
+      let travelPlaces: any[] = [];
 
       while (continueAgent && loopCount < MAX_AGENT_STEPS) {
         assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
@@ -1052,6 +1056,13 @@ export default async function handler(req: any, res: any) {
           }
           sse.status({ phase: 'tool', state: 'running', tool: signedFunctionTurn.call.name });
           const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args);
+          if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) {
+            travelPlaces = toolResult.hotels;
+          } else if (Array.isArray(toolResult?.attractions) && toolResult.attractions.length) {
+            travelPlaces = toolResult.attractions;
+          } else if (Array.isArray(toolResult?.places) && toolResult.places.length) {
+            travelPlaces = toolResult.places;
+          }
 
           if (toolResult?.action === 'PAUSE_AND_ASK') {
             sse.status({
@@ -1077,6 +1088,17 @@ export default async function handler(req: any, res: any) {
         throw new Error(`Agent execution exceeded the ${MAX_AGENT_STEPS}-step safety limit.`);
       }
 
+      if (travelPlaces.length) {
+        const shortlist = formatTravelPlaceShortlist(travelPlaces);
+        const hasRating = /★\s*\d/.test(fullReply);
+        const hasLink = /https?:\/\//i.test(fullReply);
+        if (shortlist && (!hasRating || !hasLink)) {
+          const hotelBlock = `\n\n${shortlist}\n`;
+          fullReply += hotelBlock;
+          sse.text(hotelBlock);
+        }
+      }
+
       if (grounding && sources.length) {
         let block = `\n\n---\n**Sources**\n`;
         sources.slice(0, 5).forEach((source, index) => { block += `${index + 1}. [${source.title}](${source.uri})\n`; });
@@ -1097,6 +1119,7 @@ export default async function handler(req: any, res: any) {
         grounded: grounding && sources.length > 0,
         fallbackUsed: modelFallbackUsed,
         conversation: conversationMetadata(fullReply),
+        ...(travelPlaces.length ? { travelPlaces: travelPlaces.slice(0, 8) } : {}),
       });
       return;
     }

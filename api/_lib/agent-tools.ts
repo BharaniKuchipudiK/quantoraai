@@ -15,6 +15,10 @@ import {
   type ProviderResiliencePolicy,
 } from './provider-resilience.js';
 import * as core from './agent-tools-core.js';
+import {
+  formatTravelPlaceShortlist,
+  resolveTravelToolInvocation,
+} from '../../src/lib/travel-place-shortlist.js';
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = core.TRANSACTIONAL_TRAVEL_TOOL_NAMES;
 export const travelFunctionDeclarations = core.travelFunctionDeclarations;
@@ -132,15 +136,19 @@ export async function executeToolCall(
   args: unknown,
   dependencies: TravelToolDependencies = {},
 ): Promise<any> {
+  const invocation = resolveTravelToolInvocation(name, args && typeof args === 'object' ? args : {});
+  const toolName = invocation.name;
+  const toolArgs = invocation.args;
+
   // Preserve the existing strongest backstop: transactions stay disabled even
   // if a stale client sends malformed arguments for a transactional tool.
-  if (isTransactionalTravelTool(name)) {
-    return core.executeToolCall(name, args, dependencies as any);
+  if (isTransactionalTravelTool(toolName)) {
+    return core.executeToolCall(toolName, toolArgs, dependencies as any);
   }
 
-  const validation = validateTravelToolArgs(name, args);
+  const validation = validateTravelToolArgs(toolName, toolArgs);
   if (validation.status === 'unknown') {
-    return core.executeToolCall(name, args, dependencies as any);
+    return core.executeToolCall(toolName, toolArgs, dependencies as any);
   }
   if (validation.status === 'invalid') {
     return unavailable(
@@ -157,11 +165,16 @@ export async function executeToolCall(
     ...(dependencies.providerPolicy || {}),
   };
 
-  const result = await core.executeToolCall(name, validation.value, {
+  const result = await core.executeToolCall(toolName, validation.value, {
     ...dependencies,
     fetchFn: resilientFetch(rawFetch, providerPolicy),
     duffelClient: resilientDuffel(rawDuffel, providerPolicy),
   } as any);
 
-  return stopAgentLoopOnProviderFailure(name, result);
+  if (result?.status === 'success' && Array.isArray(result.hotels) && result.hotels.length) {
+    result.mandatoryShortlist = formatTravelPlaceShortlist(result.hotels);
+    result.instruction = 'Paste mandatoryShortlist verbatim. Do not omit ratings or links. Do not invent extra hotels.';
+  }
+
+  return stopAgentLoopOnProviderFailure(toolName, result);
 }

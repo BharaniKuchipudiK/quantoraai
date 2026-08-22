@@ -37,12 +37,12 @@ const FlightSearchArgsSchema = z.object({
 
 const HotelSearchArgsSchema = z.object({
   location: boundedText(160),
-  checkInDate: isoDate,
-  checkOutDate: isoDate,
+  checkInDate: isoDate.optional(),
+  checkOutDate: isoDate.optional(),
   guests: z.coerce.number().int().min(1).max(20).optional().default(1),
   minStarRating: z.coerce.number().int().min(1).max(5).optional(),
 }).superRefine((value, ctx) => {
-  if (value.checkOutDate <= value.checkInDate) {
+  if (value.checkInDate && value.checkOutDate && value.checkOutDate <= value.checkInDate) {
     ctx.addIssue({ code: 'custom', path: ['checkOutDate'], message: 'Check-out must be after check-in' });
   }
 });

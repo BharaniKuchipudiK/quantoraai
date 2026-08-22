@@ -547,6 +547,7 @@ export function useChatStream({
       let buffer = '';
       let receivedDone = false;
       let streamedError = null;
+      let travelPlaces = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -584,6 +585,9 @@ export function useChatStream({
             } : m));
           }
           if (parsed.provider) {
+            if (Array.isArray(parsed.travelPlaces) && parsed.travelPlaces.length) {
+              travelPlaces = parsed.travelPlaces;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               provider: parsed.provider,
@@ -592,6 +596,7 @@ export function useChatStream({
               ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
               correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
               ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
+              ...(travelPlaces ? { travelPlaces } : {}),
             } : m));
           }
         }
@@ -636,6 +641,7 @@ export function useChatStream({
         ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
         ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
         correlationId: responseCorrelationId,
+        ...(travelPlaces ? { travelPlaces } : {}),
       } : m));
       if (normalized.contextUpdate && typeof updateActiveSession === 'function') {
         updateActiveSession({

@@ -75,6 +75,8 @@ export function inferStudioDomain(input: {
   history?: unknown;
 }): StudioDomain | null {
   const explicit = normalizeStudioDomain(input.explicit);
+  // Session desk wins: a Study thread about "force" must not become Travel
+  // because the word "trip" appeared, and a trip must not become a tutor.
   if (explicit) return explicit;
 
   const current = typeof input.message === "string" ? input.message : "";

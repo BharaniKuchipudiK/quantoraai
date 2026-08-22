@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, X, ArrowRight, Check } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, ArrowRight } from 'lucide-react';
 
 export default function StudioDecisionModal({
   modalData,
@@ -10,7 +10,6 @@ export default function StudioDecisionModal({
   const [selectedId, setSelectedId] = useState(null);
   const [otherText, setOtherText] = useState('');
   const [isExpanded, setIsExpanded] = useState(true);
-  const [submittedAnswer, setSubmittedAnswer] = useState('');
 
   if (!modalData) return null;
 
@@ -80,42 +79,14 @@ export default function StudioDecisionModal({
     );
   }
 
-  if (submittedAnswer) {
-    return (
-      <div style={{
-        width: '100%',
-        maxWidth: '700px',
-        margin: '12px 0',
-        padding: '12px 14px',
-        background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.035)',
-        border: `1px solid ${borderColor}`,
-        borderRadius: '10px',
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>
-        <div style={{ color: subtextColor, fontSize: '0.76rem', fontWeight: '700', marginBottom: '5px' }}>
-          {question}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: textColor, fontSize: '0.9rem', fontWeight: '600' }}>
-          <Check size={15} color="#10b981" />
-          <span>{submittedAnswer}</span>
-        </div>
-      </div>
-    );
-  }
-  
-  const handleOptionClick = (id) => {
-    setSelectedId(id);
-    if (id !== 'other') {
-      setOtherText('');
-    }
-  };
-
   const submitAnswer = (answer) => {
     const value = String(answer || '').trim();
     if (!value) return;
-    setSubmittedAnswer(value);
-    setIsExpanded(false);
     onSubmit(value);
+  };
+
+  const handleOptionClick = (option) => {
+    submitAnswer(option.value || option.title);
   };
 
   const handleSubmit = () => {
@@ -176,7 +147,7 @@ export default function StudioDecisionModal({
             return (
               <div
                 key={option.id}
-                onClick={() => handleOptionClick(option.id)}
+                onClick={() => handleOptionClick(option)}
                 onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = hoverBg; }}
                 onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                 style={{

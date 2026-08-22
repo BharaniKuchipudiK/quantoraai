@@ -80,22 +80,22 @@ export const travelFunctionDeclarations: any[] = [
   },
   {
     name: 'search_hotels',
-    description: 'Discover real hotels through Google Places API (New). Returns provider-backed hotel identity, address, user rating, website and Google Maps link when available. Google Places does not provide date-specific room inventory or bookable room rates, so never claim hotel availability or nightly pricing from this tool.',
+    description: 'REQUIRED for hotels, stays, property ratings, websites, Google Maps links, or photos. Uses Google Places API (New). Returns name, address, Google user rating, website and Maps URI. Do not use get_places_routing for hotels. Google Places does not provide date-specific room inventory or bookable rates.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        location: { type: 'STRING', description: 'City or neighborhood.' },
-        checkInDate: { type: 'STRING', description: 'Requested check-in date in YYYY-MM-DD format. Context only; Google Places does not use it for room inventory.' },
-        checkOutDate: { type: 'STRING', description: 'Requested check-out date in YYYY-MM-DD format. Context only; Google Places does not use it for room inventory.' },
-        guests: { type: 'INTEGER', description: 'Number of guests. Context only; Google Places does not price rooms by guest count.' },
-        minStarRating: { type: 'INTEGER', description: 'Optional hotel preference from 1 to 5. Do not confuse this with Google user ratings; Places does not provide a guaranteed official hotel star classification.' },
+        location: { type: 'STRING', description: 'City, neighborhood, or named hotel.' },
+        checkInDate: { type: 'STRING', description: 'Optional check-in YYYY-MM-DD. Context only; Places does not use it for inventory.' },
+        checkOutDate: { type: 'STRING', description: 'Optional check-out YYYY-MM-DD. Context only; Places does not use it for inventory.' },
+        guests: { type: 'INTEGER', description: 'Number of guests. Context only.' },
+        minStarRating: { type: 'INTEGER', description: 'Optional preference 1-5. Not the same as Google user ratings.' },
       },
-      required: ['location', 'checkInDate', 'checkOutDate'],
+      required: ['location'],
     },
   },
   {
     name: 'get_places_routing',
-    description: 'Use Google Maps Platform for travel geography. With query, discover real places/restaurants/POIs through Places API (New). With origin and destination, compute real route distance and duration through Routes API when enabled. Never invent routing data.',
+    description: 'Geography only: restaurants/POIs via Places, or driving/transit time via Routes. NEVER use this for hotels, stays, property ratings, websites, or Maps links — call search_hotels instead.',
     parameters: {
       type: 'OBJECT',
       properties: {

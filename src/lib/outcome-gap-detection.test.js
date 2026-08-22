@@ -23,6 +23,17 @@ test('commerce chips still appear when the model omitted quantora-continues', ()
   assert.ok(chips.items.some((item) => /Domestic or international/i.test(item.label)));
 });
 
+test('Travel missing ratings and links asks for live Places stays, not invented URLs', () => {
+  const gaps = detectOutcomeGaps(
+    'Can you give me the ratings and links to the properties',
+    'Here are three hotels in Asakusa.',
+    { studioDomain: 'travel' },
+  );
+  const labels = gaps.map((gap) => gap.label);
+  assert.ok(labels.includes('Look up live stays'));
+  assert.equal(labels.includes('Add direct links'), false);
+});
+
 test('Study does not get boutique website continue chips', () => {
   const gaps = detectOutcomeGaps(
     'help me learn the Newton laws',

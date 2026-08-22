@@ -65,10 +65,19 @@ test("invalid project identity is rejected instead of trusted", () => {
   assert.equal(request.projectId, null);
 });
 
-test("explicit Travel workspace selection remains authoritative", () => {
+test("explicit Study workspace stays Study even if the user mentions a trip", () => {
+  const request = normalizeCommunicationRequest({
+    studioDomain: "education",
+    message: "After this chapter I might take a trip. First teach me kinematics.",
+  });
+
+  assert.equal(request.studioDomain, "education");
+});
+
+test("explicit Travel workspace stays Travel even if the user asks to study", () => {
   const request = normalizeCommunicationRequest({
     studioDomain: "travel",
-    message: "Tell me more",
+    message: "Also quiz me on Newton later. For now find hotels in Tokyo.",
   });
 
   assert.equal(request.studioDomain, "travel");
