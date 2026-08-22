@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { stripDataUris } from "./model-payload.js";
-import { assembledPreviewHasUsableCss, prepareCodeForPreview } from "../../src/lib/preview-utils.js";
+import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -64,6 +64,7 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
   const checks: BuildCheck[] = [
     { id: "doctype", label: "Valid HTML document", ok: has(/<!doctype html/i, src) && has(/<html[\s>]/i, src), weight: 2, critical: true },
     { id: "styled", label: "Has real styling (not default browser HTML)", ok: hasRealStyling(src), weight: 3, critical: true },
+    { id: "runnable-preview", label: "Preview is the real page", ok: !isHonestPreviewFailurePage(src), weight: 3, critical: true },
     { id: "title", label: "Has a page title", ok: has(/<title>[^<]{2,}<\/title>/i, src), weight: 1 },
     { id: "responsive", label: "Responsive viewport meta", ok: has(/<meta[^>]+name=["']viewport["']/i, src), weight: 2 },
     { id: "lang", label: "Language attribute set", ok: has(/<html[^>]+lang\s*=/i, src), weight: 1 },

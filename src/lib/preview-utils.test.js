@@ -11,6 +11,7 @@ import {
   pickPreviewEntry,
   prepareCodeForPreview,
   usesTailwindCdn,
+  decidePreviewTrustStatus,
 } from './preview-utils.js';
 
 test('detects Tailwind CDN usage', () => {
@@ -124,4 +125,20 @@ test('preview sandbox grants allow-same-origin only to the WebContainer runtime'
   const sandbox = buildPreviewSandbox({ trustedRuntimeUrl: 'https://abc.webcontainer.io' });
   assert.match(sandbox, /allow-same-origin/, 'WebContainer needs same-origin for its own cross-origin host');
   assert.match(sandbox, /allow-scripts/);
+});
+
+test('a React routing error page is never trusted as a clean preview', () => {
+  const prepared = prepareCodeForPreview("import React from 'react'; export default function App(){return <main/>}", {});
+  assert.equal(assembledPreviewHasUsableCss(prepared), false);
+  assert.equal(decidePreviewTrustStatus({ assembledHtml: prepared }), 'failed');
+});
+
+test('a CSS patch is never trusted as a clean preview', () => {
+  const prepared = prepareCodeForPreview('<<<<\n.key{color:red}\n====\n.key{color:blue}\n>>>>', {});
+  assert.equal(decidePreviewTrustStatus({ assembledHtml: prepared }), 'failed');
+});
+
+test('unstyled assembled HTML is degraded, not clean', () => {
+  const html = '<!DOCTYPE html><html><body><button>7</button></body></html>';
+  assert.equal(decidePreviewTrustStatus({ assembledHtml: html }), 'degraded');
 });
