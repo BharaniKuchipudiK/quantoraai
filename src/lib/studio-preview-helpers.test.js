@@ -85,3 +85,25 @@ test('a CSS patch on an existing workspace still counts as a previewable follow-
   assert.match(next.code, /<!DOCTYPE html>/);
   assert.match(next.vfs['styles.css'].content, /repeat\(5,1fr\)/);
 });
+
+test('chat plus an HTML page does not preview the chat', () => {
+  const text = `Got it! You want a weather application for iOS.
+
+I will use OpenWeatherMap.
+
+\`\`\`html filepath="index.html"
+<!DOCTYPE html><html><body><h1>Weather</h1></body></html>
+\`\`\`
+`;
+  const assembled = assembleStudioPreview(text);
+  assert.doesNotMatch(assembled.code, /Got it/);
+  assert.doesNotMatch(assembled.code, /filepath=/);
+  assert.match(assembled.code, /<h1>Weather<\/h1>/);
+});
+
+test('unfenced HTML after chat is sliced from the document start', () => {
+  const text = 'Got it! Here is a replica.\n\n<!DOCTYPE html><html><body>Hi</body></html>';
+  const assembled = assembleStudioPreview(text);
+  assert.equal(assembled.code.startsWith('<!DOCTYPE html>'), true);
+  assert.doesNotMatch(assembled.code, /Got it/);
+});

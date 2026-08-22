@@ -87,3 +87,24 @@ test('a dangling patch with no previous file is not a preview artifact', () => {
   const parsed = parseVFSFromMarkdown('```css filepath="styles.css"\n<<<<\n.a{color:red}\n====\n.a{color:blue}\n>>>>\n```');
   assert.deepEqual(parsed, {});
 });
+
+test('chat talk before an HTML fence is not stored as index.html', () => {
+  const parsed = parseVFSFromMarkdown(`Got it! Weather app for iOS.
+
+\`\`\`html filepath="index.html"
+<!DOCTYPE html><html><body><h1>Weather</h1></body></html>
+\`\`\`
+`);
+  assert.doesNotMatch(parsed['index.html'].content, /Got it/);
+  assert.match(parsed['index.html'].content, /<h1>Weather<\/h1>/);
+});
+
+test('an unclosed HTML fence still becomes a file, not the chat', () => {
+  const parsed = parseVFSFromMarkdown(`Here is the page.
+
+\`\`\`html filepath="index.html"
+<!DOCTYPE html><html><body>Hi</body></html>
+`);
+  assert.match(parsed['index.html'].content, /<body>Hi<\/body>/);
+  assert.doesNotMatch(parsed['index.html'].content, /Here is the page/);
+});
