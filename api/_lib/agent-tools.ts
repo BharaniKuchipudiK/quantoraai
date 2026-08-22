@@ -224,16 +224,6 @@ export async function executeToolCall(
     };
   }
 
-  if (toolName === 'search_attractions' && result?.status === 'success' && Array.isArray(result.attractions) && result.attractions.length === 0) {
-    return {
-      ...result,
-      status: 'unavailable',
-      action: 'PAUSE_AND_ASK',
-      reason: 'NO_RESULTS',
-      message: hotelEmptyResultsAsk(validation.value?.location, { kind: 'attractions' }),
-    };
-  }
-
   return stopAgentLoopOnProviderFailure(
     toolName,
     result,
