@@ -87,3 +87,17 @@ export function resolveStudioPartnerStatus({
 
   return null;
 }
+
+export function studioPreviewRunLabel(status) {
+  const value = typeof status === 'string'
+    ? status
+    : (status && typeof status === 'object' && status.kind === 'quality'
+      ? (status.passed ? 'clean' : 'degraded')
+      : '');
+  if (value === 'running') return 'Preview is starting…';
+  if (value === 'healing') return 'Preview is fixing a crash…';
+  if (value === 'clean') return 'Preview is running';
+  if (value === 'degraded') return 'Preview is running — styling may be incomplete';
+  if (value === 'failed') return 'Preview failed — the page did not run';
+  return '';
+}

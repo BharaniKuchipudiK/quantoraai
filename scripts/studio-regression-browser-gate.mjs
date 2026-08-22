@@ -166,8 +166,26 @@ try {
   if ((await display.innerText()).trim() !== '0') throw new Error('Calculator rendered with the wrong initial value.');
   await calculatorFrame.locator('[data-testid="calculator-one"]').first().click();
   await calculatorFrame.waitForFunction(() => document.querySelector('[data-testid="calculator-display"]')?.textContent?.trim() === '1');
+  await visible(page.locator('[data-quantora-desk-review="true"]').first(), 'Coding desk did not show a Review of files that actually changed.');
+  const runStatus = page.locator('[data-quantora-preview-run-status="true"]').first();
+  await visible(runStatus, 'Coding desk did not say whether Preview is starting, running, or failed.');
+  const runText = (await runStatus.innerText()).trim();
+  if (!/Preview is (starting|running|fixing)/i.test(runText) && !/Preview failed/i.test(runText)) {
+    throw new Error(`Preview run status was not honest: ${runText || '(empty)'}`);
+  }
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
+
+  await page.waitForTimeout(700);
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 20_000 });
+  await enterSignedInStudio(page);
+  const restoredDesk = page.locator('[data-quantora-code-workspace="true"]').first();
+  if (!(await restoredDesk.isVisible().catch(() => false))) {
+    await page.locator('[data-quantora-coding-desk-nav="true"]').click();
+  }
+  await visible(restoredDesk, 'Coding desk did not come back after reload.', 15_000);
+  const restoredCalc = await visibleFrame('[data-testid="calculator-display"]', 20_000);
+  if (!restoredCalc) throw new Error('The running calculator did not survive reload. Preview is the product.');
 
   const newChat = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChat, 'New Chat control is missing after calculator preview.');

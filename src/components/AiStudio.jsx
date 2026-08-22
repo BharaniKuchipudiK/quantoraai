@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -11,7 +11,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
-import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel } from '../lib/studio-partner-status.js';
 import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
@@ -20,6 +20,8 @@ import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
+import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
+import { diffVfsReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -294,14 +296,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const handleCodeChange = (e) => {
     const val = e.target.value;
     const pos = e.target.selectionStart;
-    setWorkspaceCode(val);
-    
-    // Update VFS if we are editing a specific file
-    if (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && workspaceActiveTab !== 'git' && vfs[workspaceActiveTab]) {
+    const editingProjectFile = workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && workspaceActiveTab !== 'git' && vfs[workspaceActiveTab];
+    if (editingProjectFile) {
       setVfs(prev => ({
         ...prev,
         [workspaceActiveTab]: { ...prev[workspaceActiveTab], content: val }
       }));
+    } else {
+      setWorkspaceCode(val);
     }
     setCursorPos(pos);
     setGhostText('');
@@ -470,6 +472,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [codingDeskOpen, setCodingDeskOpen] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  const [deskReview, setDeskReview] = useState([]);
+  const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
@@ -517,6 +521,56 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(false);
     setCanvasOpen(false);
   }, [studioDomain]);
+
+  const deskSessionIdRef = useRef(null);
+  useEffect(() => {
+    if (deskSessionIdRef.current === activeSessionId) return;
+    deskSessionIdRef.current = activeSessionId;
+    if (!canAutoOpenCodeWorkspace(studioDomain)) {
+      setVfs({});
+      setWorkspaceCode('');
+      setCodingDeskOpen(false);
+      setIsWorkspaceMode(false);
+      setDeskReview([]);
+      setPreviewRunStatus('');
+      return;
+    }
+    const session = chatSessions.find((item) => item.id === activeSessionId);
+    const restored = restoreStudioDeskSnapshot(session);
+    if (!restored) {
+      setVfs({});
+      setWorkspaceCode('');
+      setCodingDeskOpen(false);
+      setIsWorkspaceMode(false);
+      setLastProcessedMessageId(null);
+      setDeskReview([]);
+      setPreviewRunStatus('');
+      return;
+    }
+    setVfs(restored.vfs);
+    setWorkspaceCode(restored.workspaceCode);
+    setWorkspaceActiveTab('preview');
+    setIsWorkspaceMode(true);
+    setCodingDeskOpen(restored.codingDeskOpen);
+    setLastProcessedMessageId(restored.lastProcessedMessageId);
+    setDeskReview(restored.review || []);
+  }, [activeSessionId, studioDomain, chatSessions]);
+
+  useEffect(() => {
+    if (!canAutoOpenCodeWorkspace(studioDomain)) return;
+    const built = buildStudioDeskSnapshot({
+      vfs,
+      workspaceCode,
+      codingDeskOpen,
+      lastProcessedMessageId,
+      review: deskReview,
+    });
+    if (!built.ok) return;
+    const timer = setTimeout(() => {
+      updateActiveSession({ desk: built.snapshot });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [vfs, workspaceCode, codingDeskOpen, lastProcessedMessageId, deskReview, studioDomain, updateActiveSession, activeSessionId]);
   const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
   const [feedbackStates, setFeedbackStates] = useState({});
@@ -593,7 +647,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(assembled.vfs);
       setCanvasCode(assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        if (Object.keys(assembled.vfs).length > 0) setVfs(assembled.vfs);
+        if (Object.keys(assembled.vfs).length > 0) {
+          setDeskReview(diffVfsReview(vfs, assembled.vfs));
+          setVfs(assembled.vfs);
+        }
         setWorkspaceCode(assembled.code);
         setWorkspaceActiveTab('preview');
         setCodingDeskOpen(true);
@@ -892,9 +949,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
     if (Object.keys(assembled.vfs).length > 0) {
+      setDeskReview(diffVfsReview(vfs, assembled.vfs));
       setVfs(assembled.vfs);
     } else {
-      setVfs({ 'index.html': { content: html, language: 'html' } });
+      const next = { 'index.html': { content: html, language: 'html' } };
+      setDeskReview(diffVfsReview(vfs, next));
+      setVfs(next);
     }
     setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
@@ -1743,6 +1803,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
+           setDeskReview(diffVfsReview(vfs, parsedVfs));
            setVfs(parsedVfs);
            setWorkspaceCorrelationId(lastMsg.correlationId || null);
            setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
@@ -1757,10 +1818,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            if (assembled.reopenDesk) setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
-           if (code) {
+              if (code) {
               setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
-              setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } });
+              const nextVfs = { [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
+              setDeskReview(diffVfsReview(vfs, nextVfs));
+              setVfs(nextVfs);
               setWorkspaceCorrelationId(lastMsg.correlationId || null);
               setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
               void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
@@ -1826,6 +1889,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     studioDomain,
   });
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
+  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const isIdeLayout = isCodingDesk;
 
   return (
@@ -3350,14 +3415,24 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             height: '48px',
             flexShrink: 0
           }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor }}>Coding desk</div>
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <span>Coding desk</span>
+              {previewRunLabel ? (
+                <span
+                  data-quantora-preview-run-status="true"
+                  style={{ fontSize: '0.68rem', fontWeight: 600, color: subtextColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {previewRunLabel}
+                </span>
+              ) : null}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {canOfferVercelPublish({
                 messages,
                 vfs,
                 conversationContext,
                 officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
-              }) && workspaceCode && workspaceActiveTab === 'preview' && (
+              }) && previewRunCode && workspaceActiveTab === 'preview' && (
                  <button
                    type="button"
                    data-quantora-publish="true"
@@ -3391,11 +3466,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               isLight={isLight}
               textColor={textColor}
               subtextColor={subtextColor}
+              review={deskReview}
             />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
              {workspaceActiveTab === 'preview' ? (
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                    {!workspaceCode ? (
+                    {!previewRunCode ? (
                       isGenerating ? (
                       <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
                         <Clock size={26} color="#f97316" />
@@ -3412,13 +3488,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     ) : (
                     <LivePreviewCanvas
                       ref={previewCanvasRef}
-                      code={workspaceCode}
+                      code={previewRunCode}
                       isLight={isLight}
                       onClose={closeStudioWorkspace}
                       hideHeader
                       user={user}
                       onRequireAuth={onOpenAuth}
                       vfs={vfs}
+                      onVerificationStatusChange={setPreviewRunStatus}
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}
                       officeKind={detectOfficeIntent({ messages })}

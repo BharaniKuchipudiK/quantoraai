@@ -8,6 +8,7 @@ import {
   extractRunnableCode,
   hasPreviewableContent,
   preparePreviewHtml,
+  runningPreviewCode,
 } from './studio-preview-helpers.js';
 
 const splitApp = `Here is the app.
@@ -143,4 +144,12 @@ test('plain chat does not revive or reopen a project', () => {
   assert.equal(follow.didUpdate, false);
   assert.equal(follow.reopenDesk, false);
   assert.deepEqual(follow.vfs, {});
+});
+
+test('Preview runs the project entry, not the file open in the editor', () => {
+  const vfs = {
+    'index.html': { content: '<!DOCTYPE html><html><body><h1>Live</h1></body></html>', language: 'html' },
+    'src/App.jsx': { content: 'export default function App(){ return <main>Editor</main> }', language: 'jsx' },
+  };
+  assert.match(runningPreviewCode(vfs, 'export default function App(){ return <main>Editor</main> }'), /<h1>Live<\/h1>/);
 });

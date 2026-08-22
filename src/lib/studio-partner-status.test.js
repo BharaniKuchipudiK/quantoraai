@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveStudioPartnerStatus } from './studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel } from './studio-partner-status.js';
 
 test('while generating, names the work and the wait instead of a silent spinner', () => {
   const status = resolveStudioPartnerStatus({
@@ -101,4 +101,13 @@ test('Study never asks for a website preview', () => {
   });
   assert.doesNotMatch(status.next, /working page/i);
   assert.match(status.now, /tutor/i);
+});
+
+test('Preview run label is honest about start, run, and fail', () => {
+  assert.equal(studioPreviewRunLabel('running'), 'Preview is starting…');
+  assert.equal(studioPreviewRunLabel('clean'), 'Preview is running');
+  assert.match(studioPreviewRunLabel('failed'), /did not run/i);
+  assert.equal(studioPreviewRunLabel(null), '');
+  assert.equal(studioPreviewRunLabel({ kind: 'quality', passed: true }), 'Preview is running');
+  assert.match(studioPreviewRunLabel({ kind: 'quality', passed: false }), /incomplete/i);
 });
