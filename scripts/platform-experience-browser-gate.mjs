@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import process from 'node:process';
 import { chromium } from 'playwright';
+import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
@@ -134,17 +135,13 @@ function summarizeLongTasks(longTasks) {
 }
 
 try {
-  const shellStart = Date.now();
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation never became ready.');
-  await studio.click();
-  const composer = page.locator('.app-shell--studio textarea').first();
-  await visible(composer, 'Platform composer never became ready.');
-  const shellElapsed = Date.now() - shellStart;
+  const { enteredAt, readyAt } = await enterSignedInStudio(page);
+  const shellElapsed = readyAt - enteredAt;
   if (shellElapsed > SHELL_SLA_MS) {
     throw new Error(`Platform shell exceeded readiness SLA: ${shellElapsed}ms > ${SHELL_SLA_MS}ms.`);
   }
+  const composer = page.locator('.app-shell--studio textarea').first();
   await assertViewportIntegrity('Neutral Studio');
 
   // Startup responsiveness is governed by the shell-readiness SLA above. Reset
