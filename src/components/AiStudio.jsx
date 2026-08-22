@@ -18,6 +18,8 @@ import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudyTutorBoard from './StudyTutorBoard';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import TravelTripBoard from './TravelTripBoard';
+import { deriveTravelTripBrief } from '../lib/travel-trip-brief.js';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
@@ -1661,6 +1663,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const studyBrief = studioDomain === 'education'
     ? deriveStudyTutorBrief({ conversationContext, messages })
     : null;
+  const travelBrief = studioDomain === 'travel'
+    ? deriveTravelTripBrief({ conversationContext, messages })
+    : null;
 
   return (
     <div style={{
@@ -2128,7 +2133,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               />
             )}
 
-            {isAdvisorWorkspace && studioDomain !== 'education' && (
+            {isAdvisorWorkspace && studioDomain === 'travel' && travelBrief && (
+              <TravelTripBoard
+                brief={travelBrief}
+                isLight={isLight}
+                textColor={textColor}
+                subtextColor={subtextColor}
+                signedIn={Boolean(user)}
+                onAsk={(text) => {
+                  setInputText(text);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                onRequireAuth={onOpenAuth}
+              />
+            )}
+
+            {isAdvisorWorkspace && studioDomain !== 'education' && studioDomain !== 'travel' && (
               <div data-quantora-workspace-capabilities={studioDomain} style={{ margin: '0 auto 24px auto', maxWidth: '660px' }}>
                 <p style={{ margin: '0 0 18px 0', color: subtextColor, fontSize: '0.95rem', lineHeight: 1.6 }}>{domainPolicy.supporting}</p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '9px', flexWrap: 'wrap' }}>
@@ -2311,7 +2331,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
-        {studyBrief && messages.length > 1 ? (
+        {travelBrief && messages.length > 1 ? (
+          <TravelTripBoard
+            brief={travelBrief}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+            signedIn={Boolean(user)}
+            onAsk={(text) => {
+              setInputText(text);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+            onRequireAuth={onOpenAuth}
+          />
+        ) : studyBrief && messages.length > 1 ? (
           <StudyTutorBoard
             brief={studyBrief}
             isLight={isLight}
@@ -2323,12 +2356,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             }}
           />
         ) : null}
+        {!travelBrief && !studyBrief ? (
         <StudioMissionCard
           mission={studioMission && partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) ? { ...studioMission, next: '' } : studioMission}
           isLight={isLight}
           textColor={textColor}
           subtextColor={subtextColor}
         />
+        ) : null}
         {partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) && (
           <div
             data-quantora-partner-status="true"
