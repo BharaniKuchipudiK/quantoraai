@@ -156,6 +156,20 @@ test("verified artifacts contribute evidence and an achieved goal stops new work
   assert.equal(lead.conversationLead, "close");
 });
 
+test("study turns get an optional leading question like Travel, not a questionnaire", () => {
+  const snapshot = buildConversationSnapshot({
+    sessionContext: { goal: "Understand projectile motion" },
+    studioDomain: "education",
+    message: "Explain projectile motion.",
+  });
+  const decision = chooseNextConversationMove(snapshot);
+  const cognition = assessPclCognition({ snapshot, decision });
+  const lead = derivePclConversationLead({ snapshot, decision, humanGate: cognition.humanGate, alignment: cognition.outcomeAlignment });
+  assert.equal(lead.leadingQuestionMode, "optional");
+  assert.equal(lead.questionBudget, 1);
+  assert.ok(cognition.reasons.includes("study_conversation_lead"));
+});
+
 test("cognitive contract is provider-neutral and encodes human conversation leadership", () => {
   const snapshot = buildConversationSnapshot({
     sessionContext: { goal: "Plan a Bali trip" },

@@ -43,9 +43,10 @@ export function derivePclConversationLead(input: {
     return { conversationLead: "resolve_blocker", leadingQuestionMode: "required", questionBudget: 1 };
   }
 
-  const isTravel = snapshot.currentTurn.studioDomain === "travel";
+  const isAdvisorLead = snapshot.currentTurn.studioDomain === "travel"
+    || snapshot.currentTurn.studioDomain === "education";
   const anticipatoryMove = decision.move === "anticipate";
-  const optionalLead = isTravel || anticipatoryMove;
+  const optionalLead = isAdvisorLead || anticipatoryMove;
 
   return {
     conversationLead: "answer_and_advance",

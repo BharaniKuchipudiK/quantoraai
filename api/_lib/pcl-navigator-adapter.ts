@@ -8,6 +8,7 @@ import {
 } from "./pcl-cognitive-kernel.js";
 import { evaluateProofOfDone, formatOutcomeContractForPrompt } from "./outcome-contract.js";
 import { buildPclAgentExecutionPlan, publicAgentPlanSummary } from "./agent-execution-fabric.js";
+import { studyAdvisorContractForTurn } from "./study-advisor-turn.js";
 
 /**
  * Thin integration seam between the existing Outcome Navigator and PCL.
@@ -36,7 +37,13 @@ export function formatPclNavigatorDirective(
   const governance = formatPclCognitiveContract(assessPclNavigatorTurn(snapshot, decision));
   const outcomeContract = formatOutcomeContractForPrompt(snapshot);
   const ledger = formatCognitiveLedgerForPrompt(snapshot.cognitiveLedger);
-  return governance + outcomeContract + ledger;
+  const study = snapshot.currentTurn.studioDomain === "education"
+    ? studyAdvisorContractForTurn({
+      message: snapshot.currentTurn.message,
+      goal: snapshot.goal?.statement || "",
+    })
+    : "";
+  return governance + outcomeContract + ledger + study;
 }
 
 /** Safe additive metadata for observability and future evaluation. */

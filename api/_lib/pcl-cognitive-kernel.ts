@@ -170,6 +170,7 @@ export function assessPclCognition(input: PclCognitiveInput): PclCognitiveAssess
     ...(input.snapshot.stateSource === "ephemeral" ? ["ephemeral_state_only"] : []),
     ...(input.projectContext ? ["project_continuity_available"] : []),
     ...(input.snapshot.currentTurn.studioDomain === "travel" ? ["travel_conversation_lead"] : []),
+    ...(input.snapshot.currentTurn.studioDomain === "education" ? ["study_conversation_lead"] : []),
     ...(activeLedger.some((entry) => entry.type === "rejection") ? ["active_rejections_known"] : []),
     ...(activeLedger.some((entry) => entry.type === "correction") ? ["active_corrections_known"] : []),
   ]);

@@ -74,6 +74,19 @@ test("preview deployment can proceed under supervision", () => {
   assert.equal(cognition.autonomy, "supervised");
 });
 
+test("education turns attach the existing Study advisor contract instead of a new tutor stack", () => {
+  const snapshot = buildConversationSnapshot({
+    sessionContext: { goal: "Get stronger at mechanics" },
+    studioDomain: "education",
+    message: "I keep missing projectile motion questions.",
+  });
+  const decision = chooseNextConversationMove(snapshot);
+  const directive = formatPclNavigatorDirective(snapshot, decision);
+  assert.match(directive, /PCL ADVISOR INTELLIGENCE/);
+  assert.match(directive, /Never invent a gap, mastery level/i);
+  assert.doesNotMatch(directive, /LangChain|Gemini|Claude/i);
+});
+
 test("PCL directive carries governance plus the living Outcome Contract", () => {
   const { snapshot, decision } = turn("Draft the analysis now.");
   const directive = formatPclNavigatorDirective(snapshot, decision);
