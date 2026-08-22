@@ -170,9 +170,14 @@ try {
   const fileTab = page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first();
   await visible(fileTab, 'Expected project file tab was not generated.');
   await fileTab.click();
-  const editor = page.locator('[data-quantora-code-workspace="true"] textarea').first();
-  await visible(editor, 'Project source editor is missing.');
-  if (!(await editor.inputValue()).includes('Mission Control is alive')) throw new Error('Selected file displays the wrong source.');
+  const editor = page.locator('[data-quantora-monaco="true"]').first();
+  await visible(editor, 'Project source editor is missing.', 15_000);
+  const sourceReady = await page.waitForFunction(
+    () => (document.querySelector('[data-quantora-monaco="true"]')?.innerText || '').includes('Mission Control is alive'),
+    null,
+    { timeout: 15_000 },
+  ).then(() => true).catch(() => false);
+  if (!sourceReady) throw new Error('Selected file displays the wrong source.');
 
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
