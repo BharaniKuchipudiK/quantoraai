@@ -161,7 +161,8 @@ ARTIFACT (routed to Live Preview — not read in chat):
 - External <script> tags only for payment SDKs (e.g. Stripe) or icon libraries when strictly needed.
 - Google Fonts via <link> are fine.
 - Polished, complete, real content — no TODOs or lorem ipsum.
-- For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd" }]\`. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
+- For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd", "image": "https://images.unsplash.com/..." }]\`. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
+- For a shop, boutique, catalog, or when the user asks for images: every product and hero MUST use a real \`<img src="https://images.unsplash.com/...">\` photo (silk, textile, product). Never SVG empty frames, CSS-only silhouettes, or gold placeholders. Do not tell the user images are done unless those img tags exist in the HTML.
 - After a shop, boutique, or catalog website, the chat explanation MUST end with ONE follow-up that would change how the business runs — payments, domestic vs international shipping, appointments, or inventory. Do not assume those answers. Then append quantora-continues (2–3 taps). This is required even though HTML is in the same reply.
 - Optional session-memory HTML comment after the code block only.
 - TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.
@@ -191,8 +192,8 @@ Gather what's still missing through normal dialogue (brand/vibe, sections or pro
 - Put ALL visual styling in a comprehensive <style> block (responsive @media included). Do NOT use Tailwind CDN or external CSS frameworks.
 - Inline all JavaScript; external scripts only for Stripe/icons when needed.
 - Polished, responsive, real content built from what the user told you. No lorem ipsum or TODOs.
-- If they wanted a shop: include a working client-side cart. You MUST output a \`products.json\` file alongside the HTML containing the catalog (e.g. \`[{ "id": "item1", "name": "Item 1", "priceCents": 1000, "currency": "usd" }]\`). The checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "item1", "quantity": 1 }] }\` to launch the secure Stripe payment flow.
-- Use tasteful placeholder imagery where the user has not supplied photos.
+- If they wanted a shop: include a working client-side cart. You MUST output a \`products.json\` file alongside the HTML containing the catalog (e.g. \`[{ "id": "item1", "name": "Item 1", "priceCents": 1000, "currency": "usd", "image": "https://images.unsplash.com/..." }]\`). The checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "item1", "quantity": 1 }] }\` to launch the secure Stripe payment flow.
+- For a shop, boutique, catalog, or when they ask for images: every product and hero MUST use a real \`<img src="https://images.unsplash.com/...">\` photo. Never SVG empty frames or gold placeholders. Do not claim images are done unless those img tags exist.
 - Put at most one short sentence before the code block, and nothing after it (except an optional session-memory HTML comment).`;
 
 const REFINE_ARTIFACT_DIRECTIVE = `REFINE / ITERATE MODE (a live site already exists)
