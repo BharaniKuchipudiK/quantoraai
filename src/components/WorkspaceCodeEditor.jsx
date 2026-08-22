@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import { languageFromPath } from '../lib/workspace-editor-language.js';
 
@@ -9,15 +9,28 @@ loader.config({ paths: { vs: '/monaco/vs' } });
  * auto-open this workspace.
  */
 export default function WorkspaceCodeEditor({ path, value, onChange, isLight }) {
+  const wrapRef = useRef(null);
+  const armed = useRef(false);
+
   return (
-    <div data-quantora-monaco="true" style={{ position: 'absolute', inset: 0 }}>
+    <div ref={wrapRef} data-quantora-monaco="true" style={{ position: 'absolute', inset: 0 }}>
       <Editor
         height="100%"
         theme={isLight ? 'vs' : 'vs-dark'}
         language={languageFromPath(path)}
         value={value || ''}
         loading={<div style={{ padding: 24, color: isLight ? '#64748b' : '#94a3b8' }}>Loading editor…</div>}
-        onChange={(next) => onChange(typeof next === 'string' ? next : '')}
+        onMount={() => {
+          requestAnimationFrame(() => {
+            armed.current = true;
+            wrapRef.current?.setAttribute('data-quantora-monaco-ready', 'true');
+          });
+        }}
+        onChange={(next) => {
+          if (!armed.current) return;
+          if (typeof next !== 'string') return;
+          onChange(next);
+        }}
         options={{
           minimap: { enabled: false },
           fontSize: 14,
