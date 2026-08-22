@@ -156,6 +156,7 @@ try {
   }
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
   await page.getByRole('button', { name: /New Chat/i }).first().click();
+  await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain !== 'travel');
 
   const travelAdvisor = page.locator('[data-quantora-advisor="travel"]').first();
   await visible(travelAdvisor, 'Travel specialist entry is missing.');
