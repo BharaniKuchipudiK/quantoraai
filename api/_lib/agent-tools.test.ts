@@ -72,6 +72,7 @@ test('unconnected read-only travel providers stop the agent instead of returning
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
   assert.match(hotel.message, /London/i);
   assert.doesNotMatch(hotel.message, /if you have not/i);
+  assert.match(hotel.message, /not connected|will not invent/i);
   assert.equal('hotels' in hotel, false, 'must not substitute hard-coded hotels');
 
   const vibeOnly = await executeToolCall('search_hotels', {
@@ -94,6 +95,14 @@ test('unconnected read-only travel providers stop the agent instead of returning
   assert.equal(attraction.status, 'unavailable');
   assert.equal(attraction.action, 'PAUSE_AND_ASK');
   assert.equal('attractions' in attraction, false, 'must not substitute hard-coded attractions');
+
+  const namedCity = await executeToolCall('search_attractions', { location: '' }, {
+    duffelClient: null,
+    googleMapsApiKey: null,
+    recentUserTexts: ['give me the list o attactions in Vizag and include the hotels to stay'],
+  });
+  assert.match(namedCity.message, /Vizag/i);
+  assert.doesNotMatch(namedCity.message, /Name the city/i);
 
   const route = await executeToolCall('get_places_routing', {
     origin: 'London Heathrow Airport',

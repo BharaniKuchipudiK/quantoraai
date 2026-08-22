@@ -110,11 +110,21 @@ function resilientDuffel(client: Duffel | null, policy?: Partial<ProviderResilie
   return wrapped;
 }
 
-function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: any) {
+function placesLookupConfigured(dependencies: TravelToolDependencies) {
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'googleMapsApiKey')) {
+    return Boolean(dependencies.googleMapsApiKey);
+  }
+  return Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY);
+}
+
+function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: any, configured = true) {
   if (!READ_ONLY_TRAVEL_TOOLS.has(name) || result?.status !== 'unavailable') return result;
-  if (result?.action === 'PAUSE_AND_ASK' && result?.message) return result;
+  if (result?.action === 'PAUSE_AND_ASK' && result?.reason === 'INVALID_ARGUMENT' && result?.message) return result;
 
   const providerMessage = String(result?.message || 'The connected travel provider is unavailable.');
+  if (result?.reason === 'INVALID_ARGUMENT' && result?.action === 'PAUSE_AND_ASK') {
+    return result;
+  }
   if (result?.reason === 'INVALID_ARGUMENT') {
     return {
       ...result,
@@ -126,11 +136,11 @@ function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: an
 
   const location = String(toolArgs?.location || '').trim();
   const message = name === 'search_hotels'
-    ? hotelProviderFailureAsk(location)
+    ? hotelProviderFailureAsk(location, { configured, kind: 'hotels' })
     : name === 'search_flights'
       ? 'I could not look up live flights just now. I will not invent fares. Give airports and dates, or we can retry when the flight provider answers.'
       : name === 'search_attractions'
-        ? 'I could not look up live attractions just now. Name the city or area and I will try again — I will not invent a list.'
+        ? hotelProviderFailureAsk(location, { configured, kind: 'attractions' })
         : 'I could not get live map or routing results just now. I will not invent a route.';
 
   return {
@@ -156,7 +166,7 @@ export async function executeToolCall(
     return core.executeToolCall(toolName, toolArgs, dependencies as any);
   }
 
-  if (toolName === 'search_hotels' && toolArgs && typeof toolArgs === 'object') {
+  if ((toolName === 'search_hotels' || toolName === 'search_attractions') && toolArgs && typeof toolArgs === 'object') {
     const location = resolveHotelSearchLocation(
       (toolArgs as { location?: string }).location,
       dependencies.recentUserTexts,
@@ -175,7 +185,7 @@ export async function executeToolCall(
     );
   }
 
-  if (toolName === 'search_hotels' && hotelLocationNeedsCity(validation.value?.location)) {
+  if ((toolName === 'search_hotels' || toolName === 'search_attractions') && hotelLocationNeedsCity(validation.value?.location)) {
     return {
       status: 'unavailable',
       executed: false,
@@ -210,9 +220,14 @@ export async function executeToolCall(
       status: 'unavailable',
       action: 'PAUSE_AND_ASK',
       reason: 'NO_RESULTS',
-      message: hotelEmptyResultsAsk(validation.value?.location),
+      message: hotelEmptyResultsAsk(validation.value?.location, { kind: 'hotels' }),
     };
   }
 
-  return stopAgentLoopOnProviderFailure(toolName, result, validation.value);
+  return stopAgentLoopOnProviderFailure(
+    toolName,
+    result,
+    validation.value,
+    placesLookupConfigured(dependencies),
+  );
 }

@@ -19,7 +19,7 @@ const DOMAIN_SIGNAL_REGISTRY: DomainSignalProfile[] = [
     patterns: [
       /\btravel\b/i, /\btrips?\b/i, /\bflights?\b/i, /\bhotels?\b/i, /\bitinerar(?:y|ies)\b/i,
       /\bdestinations?\b/i, /\bvisa\b/i, /\bholidays?\b/i, /\bvacations?\b/i, /\bairports?\b/i,
-      /\bresorts?\b/i, /\battractions?\b/i, /\btours?\b/i,
+      /\bresorts?\b/i, /\battractions?\b/i, /\battactions?\b/i, /\btours?\b/i,
     ],
   },
   {

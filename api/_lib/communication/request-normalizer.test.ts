@@ -91,6 +91,17 @@ test("a clear first-turn Travel request can recover domain before client metadat
   assert.equal(request.studioDomain, "travel");
 });
 
+test("attractions and hotels from ordinary Studio chat still resolve to Travel", () => {
+  const singapore = normalizeCommunicationRequest({
+    message: "give me the list o attactions in Singapore and include the hotels to stay",
+  });
+  const vizag = normalizeCommunicationRequest({
+    message: "give me the list o attactions in Vizag and include the hotels to stay",
+  });
+  assert.equal(singapore.studioDomain, "travel");
+  assert.equal(vizag.studioDomain, "travel");
+});
+
 test("Travel survives a short follow-up when the client omits studioDomain", () => {
   const request = normalizeCommunicationRequest({
     message: "September 12 to 15",
