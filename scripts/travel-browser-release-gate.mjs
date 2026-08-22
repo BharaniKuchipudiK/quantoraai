@@ -14,6 +14,7 @@ const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 let chatTurn = 0;
+let capturedAutoTravelDomain = null;
 
 function sseBody(text) {
   return [
@@ -64,6 +65,16 @@ await page.route('**/api/**', async (route) => {
   }
 
   if (path === '/api/chat') {
+    const body = request.postDataJSON?.() || {};
+    const userMessage = String(body.message || '');
+    if (/attactions/i.test(userMessage)) {
+      capturedAutoTravelDomain = body.studioDomain || null;
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
+        body: sseBody('This stay and attraction ask belongs on Travel.'),
+      });
+    }
     chatTurn += 1;
     const firstReply = [
       'Let us start with your departure city.',
@@ -134,6 +145,17 @@ try {
   await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into neutral Studio.');
   await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from neutral Studio.');
   await visible(page.locator('button[aria-controls="quantora-profile-menu"]').first(), 'Global Profile control is missing from neutral Studio.');
+
+  const studioPrompt = page.locator('.app-shell--studio textarea').first();
+  await visible(studioPrompt, 'Studio prompt input is missing.');
+  await studioPrompt.fill('give me the list o attactions in Singapore and include the hotels to stay');
+  await studioPrompt.press('Enter');
+  await page.waitForTimeout(400);
+  if (capturedAutoTravelDomain !== 'travel') {
+    throw new Error(`Ordinary Studio chat did not send a hotel/attraction ask as Travel (got ${capturedAutoTravelDomain}).`);
+  }
+  await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
+  await page.getByRole('button', { name: /New Chat/i }).first().click();
 
   const travelAdvisor = page.locator('[data-quantora-advisor="travel"]').first();
   await visible(travelAdvisor, 'Travel specialist entry is missing.');

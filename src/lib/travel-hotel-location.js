@@ -40,10 +40,18 @@ export function inferStayLocation(text = '') {
   if (/^20\d{2}-\d{2}-\d{2}$/.test(value)) return '';
   if (/^\d+\s+(adults?|kids?|children|nights?|people)\b/i.test(value)) return '';
 
-  const inPlace = value.match(/\b(?:in|near|at)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{1,60})/iu);
-  if (inPlace) {
-    const place = inPlace[1].replace(/[?.!,]+$/, '').trim();
-    return hotelLocationNeedsCity(place) ? '' : place;
+  const afterIn = value.match(/\b(?:in|near|at)\s+(.+)$/iu);
+  if (afterIn) {
+    const stop = new Set(['and', 'with', 'for', 'including', 'include', 'to', 'the', 'a', 'an', 'hotels', 'hotel', 'stay', 'stays', 'please', 'also']);
+    const tokens = [];
+    for (const raw of afterIn[1].split(/\s+/).filter(Boolean)) {
+      const token = raw.replace(/[?.!,]+$/g, '');
+      if (!token || stop.has(token.toLowerCase())) break;
+      tokens.push(token);
+      if (tokens.length >= 3) break;
+    }
+    const place = tokens.join(' ').trim();
+    if (place && !hotelLocationNeedsCity(place)) return place;
   }
 
   if (value.length > 60) return '';
@@ -53,26 +61,38 @@ export function inferStayLocation(text = '') {
 
 export function resolveHotelSearchLocation(toolLocation = '', recentUserTexts = []) {
   const direct = String(toolLocation || '').trim();
-  if (direct && !hotelLocationNeedsCity(direct)) return direct;
+  if (direct && !hotelLocationNeedsCity(direct) && direct.length <= 60) return direct;
+  const fromDirect = inferStayLocation(direct);
+  if (fromDirect) return fromDirect;
   const fromChat = [...(Array.isArray(recentUserTexts) ? recentUserTexts : [])]
     .reverse()
     .map((text) => inferStayLocation(text))
     .find(Boolean);
-  return fromChat || direct;
+  return fromChat || (direct && !hotelLocationNeedsCity(direct) ? direct : '') || direct;
 }
 
-export function hotelProviderFailureAsk(location = '') {
+export function hotelProviderFailureAsk(location = '', { configured = true, kind = 'hotels' } = {}) {
   const place = String(location || '').trim();
-  if (place && !hotelLocationNeedsCity(place)) {
-    return `I could not look up live hotels in ${place} just now. Places did not return a list — I will not invent one. Retry in a moment.`;
+  const known = place && !hotelLocationNeedsCity(place);
+  const noun = kind === 'attractions' ? 'attractions' : 'hotels';
+  if (!configured) {
+    return known
+      ? `Live Places lookup is not connected, so I cannot list ${noun} in ${place}. I will not invent a list.`
+      : `Live Places lookup is not connected. I will not invent a ${noun} list.`;
   }
-  return 'I could not look up live hotels just now. Tell me the city or area if you have not — I will not invent a list. If Places is down, we can retry after it is connected.';
+  if (known) {
+    return `I could not look up live ${noun} in ${place} just now. Places did not return a list — I will not invent one. Retry in a moment.`;
+  }
+  return kind === 'attractions'
+    ? 'I could not look up live attractions just now. Name the city or area and I will try again — I will not invent a list.'
+    : 'I could not look up live hotels just now. Tell me the city or area if you have not — I will not invent a list. If Places is down, we can retry after it is connected.';
 }
 
-export function hotelEmptyResultsAsk(location = '') {
+export function hotelEmptyResultsAsk(location = '', { kind = 'hotels' } = {}) {
   const place = String(location || '').trim();
+  const noun = kind === 'attractions' ? 'attractions' : 'stays';
   if (place && !hotelLocationNeedsCity(place)) {
-    return `Places returned no stays for ${place}. I will not invent a list. Try a neighbourhood, or retry.`;
+    return `Places returned no ${noun} for ${place}. I will not invent a list. Try a neighbourhood, or retry.`;
   }
-  return 'Places returned no stays. Tell me a city or area — I will not invent a list.';
+  return `Places returned no ${noun}. Tell me a city or area — I will not invent a list.`;
 }

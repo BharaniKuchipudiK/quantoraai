@@ -22,6 +22,8 @@ Travel and Study must never open this coding screen by themselves.
 
 - Flights and hotels only when a live search actually returns. No fake hotels.
 - Ask for a city before looking up hotels. If they already named one (Singapore), do not ask again.
+- Ordinary chat that asks for hotels or attractions should switch onto Travel by itself. Dual Arena off for that turn.
+- If Places is not connected, say so. Do not ask for the city again.
 - Keep it a trip partner. Not an IDE.
 
 ## Parked — Study

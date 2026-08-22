@@ -18,6 +18,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
+import { inferStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -351,7 +352,14 @@ export function useChatStream({
     let effectiveArenaMode = arenaMode;
     const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text);
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
-    if (briefingKind || isCodingRequest) effectiveArenaMode = false;
+    const turnDomain = isCodingRequest
+      ? studioDomain
+      : (inferStudioDomain({
+        explicit: studioDomain,
+        message: visibleUserText,
+        history: messages,
+      }) || studioDomain);
+    if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
     const mission = deriveStudioMission({
@@ -370,10 +378,13 @@ export function useChatStream({
         }),
       ),
       visibleUserText,
-      studioDomain,
+      turnDomain,
     );
     if (typeof updateActiveSession === 'function') {
-      updateActiveSession({ conversationContext: turnContext });
+      updateActiveSession({
+        conversationContext: turnContext,
+        ...(turnDomain && turnDomain !== studioDomain ? { studioDomain: turnDomain } : {}),
+      });
     }
 
     const requestBodyFor = (model) => ({
@@ -387,7 +398,7 @@ export function useChatStream({
       webSearch: false,
       sessionContext: turnContext,
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
-      studioDomain,
+      studioDomain: turnDomain,
       buildMode: isCodingRequest,
       taskCategory: isCodingRequest ? 'coding' : 'general',
       ...pclEnvelope,

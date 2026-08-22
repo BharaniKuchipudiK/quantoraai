@@ -22,6 +22,7 @@ export default async function handler(req: any, res: any) {
     ready: summary.ready,
     geminiConfigured: summary.geminiConfigured,
     openRouterConfigured: summary.openRouterConfigured,
+    placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     routeCount: summary.routeCount,
     usedLastResort: summary.usedLastResort,
   });
