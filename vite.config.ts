@@ -1,11 +1,22 @@
+import fs from 'node:fs';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+function copyMonacoAssets() {
+  const vsSrc = path.resolve('node_modules/monaco-editor/min/vs');
+  return {
+    name: 'copy-monaco-assets',
+    closeBundle() {
+      fs.cpSync(vsSrc, path.resolve('dist/monaco/vs'), { recursive: true });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), copyMonacoAssets()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

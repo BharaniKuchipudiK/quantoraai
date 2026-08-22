@@ -38,6 +38,8 @@ import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 
+const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
+
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
   const firstUser = (messages || []).find((m) => m.sender === 'user' && m.text);
@@ -3332,68 +3334,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     )}
                   </div>
              ) : (
-               <>
-                 {/* Line Numbers */}
-                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '48px', background: '#0a0d1e', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '24px', color: 'rgba(255,255,255,0.2)', fontSize: '0.85rem', fontFamily: 'monospace', userSelect: 'none', zIndex: 10 }}>
-                    {(function(){
-                      const currentText = (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode;
-                      return Array.from({ length: Math.max(20, (currentText.match(/\n/g) || []).length + 2) }).map((_, i) => (
-                        <div key={i} style={{ lineHeight: '1.6' }}>{i + 1}</div>
-                      ));
-                    })()}
-                 </div>
-                 
-                 {/* Textarea for actual input */}
-                 
-                 <textarea
-                    value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
-                    onChange={handleCodeChange}
-                    onKeyDown={handleCodeKeyDown}
-                    spellCheck="false"
-                    style={{
-                      position: 'absolute',
-                      top: '24px',
-                      left: '60px',
-                      width: 'calc(100% - 84px)',
-                      height: 'calc(100% - 48px)',
-                      background: 'transparent',
-                      color: 'transparent',
-                      caretColor: '#e2e8f0',
-                      border: 'none',
-                      outline: 'none',
-                      resize: 'none',
-                      fontFamily: '"Fira Code", monospace',
-                      fontSize: '0.9rem',
-                      lineHeight: '1.6',
-                      whiteSpace: 'pre-wrap',
-                      zIndex: 2,
-                      margin: 0,
-                      padding: 0
-                    }}
+               <Suspense fallback={<div style={{ padding: '24px', color: subtextColor }}>Loading editor…</div>}>
+                 <WorkspaceCodeEditor
+                   path={workspaceActiveTab}
+                   isLight={isLight}
+                   value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
+                   onChange={(val) => handleCodeChange({ target: { value: val, selectionStart: String(val || '').length } })}
                  />
-                 
-                 {/* Syntax Highlighted & Ghost Text Layer */}
-                 <pre style={{
-                    position: 'absolute',
-                    top: '24px',
-                    left: '60px',
-                    width: 'calc(100% - 84px)',
-                    pointerEvents: 'none',
-                    margin: 0,
-                    padding: 0,
-                    fontFamily: '"Fira Code", monospace',
-                    fontSize: '0.9rem',
-                    lineHeight: '1.6',
-                    color: '#e2e8f0',
-                    outline: 'none',
-                    whiteSpace: 'pre-wrap',
-                    zIndex: 1
-                 }}>
-                    {(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
-                    {ghostText && <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>{ghostText}</span>}
-                    {!workspaceCode && <span style={{ color: 'rgba(255, 255, 255, 0.3)' }}>{'// Quantora FX Interactive Canvas\n// Start typing or tell Quantora to build something...'}</span>}
-                 </pre>
-               </>
+               </Suspense>
              )}
           </div>
         </div>

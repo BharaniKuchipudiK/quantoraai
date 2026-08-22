@@ -29,6 +29,15 @@
       ]
     },
     {
+      "source": "/monaco/(.*)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "same-origin"
+        }
+      ]
+    },
+    {
       "source": "/((?!preview/).*)",
       "headers": [
         {
@@ -88,7 +97,7 @@
       "destination": "/api/pipeline?route=trace"
     },
     {
-      "source": "/((?!api/.*|preview/.*).*)",
+      "source": "/((?!api/.*|preview/.*|monaco/.*).*)",
       "destination": "/index.html"
     }
   ]
