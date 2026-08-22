@@ -272,7 +272,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         stylingFailedRef.current = true;
         setStatus('degraded');
       }
-    finally { setVerifyingQuality(false); }
+    } finally { setVerifyingQuality(false); }
   }, [onVerificationStatusChange, verifyBrief, modelId]);
 
   // One-click improve: feed the verifier's concrete issues back into the
