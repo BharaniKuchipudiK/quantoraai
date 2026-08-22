@@ -46,3 +46,33 @@ export async function syncVFSToWebContainer(vfs) {
   await instance.mount(tree);
   return instance;
 }
+
+export async function runCommandInWorkspace(vfs, commandLine) {
+  const line = String(commandLine || '').trim();
+  if (!line) return { ok: true, output: '' };
+
+  const instance = await syncVFSToWebContainer(vfs);
+  const process = await instance.spawn('jsh', ['-c', line]);
+  let output = '';
+  const reader = process.output.getReader();
+  const timeout = setTimeout(() => {
+    try { process.kill(); } catch { /* already exited */ }
+  }, 20_000);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      output += typeof value === 'string' ? value : new TextDecoder().decode(value);
+    }
+  } finally {
+    clearTimeout(timeout);
+    try { reader.releaseLock(); } catch { /* closed */ }
+  }
+  const exit = await process.exit;
+  const text = String(output || '').trim();
+  return {
+    ok: exit === 0,
+    output: text || `(exit ${exit})`,
+  };
+}
+

@@ -9,8 +9,8 @@ Plain list. We do one thing at a time.
 
 ## Now — coding desk
 
-1. Open Studio and see chat + files + editor + preview. **x** hides the desk. Left nav **Coding desk** opens it again. Preview must be the page, never the chat.
-2. Terminal that runs against those files. Real output only.
+1. Open Studio and see chat. **Coding desk** opens only when you click it (or Preview in a reply). **x** hides it. Preview must be the page, never the chat.
+2. Terminal on that desk runs against those files. Real output only. No fake `ls`.
 3. Git for that app only (status, diff, commit). Not Quantora’s github.
 4. Chat can change many files. Preview updates.
 

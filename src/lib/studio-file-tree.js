@@ -7,6 +7,7 @@ export function listStudioFiles(vfs = {}) {
 export function studioFileLabel(path) {
   const value = String(path || '').trim();
   if (!value || value === 'preview') return 'Preview';
+  if (value === 'terminal') return 'Terminal';
   if (value === 'code') return 'Code';
   return value;
 }

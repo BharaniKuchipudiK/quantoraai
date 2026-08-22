@@ -14,6 +14,7 @@ export function resolveStudioPartnerStatus({
   hasUserTurn = false,
   officeKind = null,
   studioDomain = null,
+  codingDeskOpen = false,
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
@@ -53,11 +54,10 @@ export function resolveStudioPartnerStatus({
           : 'Next: download the file, or tell me which slide or section to change.',
       };
     }
+    if (codingDeskOpen) return null;
     return {
-      now: 'You have a working preview of what we just built.',
-      next: continueLabel
-        ? `Next: ${continueLabel}. Or say what to change.`
-        : 'Next: tweak it, add anything the business still needs, or publish when you are ready.',
+      now: 'The app is ready. Open Coding desk for files and Preview.',
+      next: continueLabel ? `Next: ${continueLabel}.` : '',
     };
   }
 

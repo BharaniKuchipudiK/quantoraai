@@ -31,8 +31,16 @@ test('after a working preview, names the next business beat', () => {
     lastAiText: 'Built Varnika',
     continueLabel: 'Add a payment gateway',
   });
-  assert.match(status.now, /working preview/i);
+  assert.match(status.now, /Open Coding desk/i);
   assert.match(status.next, /Add a payment gateway/);
+});
+
+test('an open coding desk does not repeat that the preview exists', () => {
+  assert.equal(resolveStudioPartnerStatus({
+    hasPreview: true,
+    lastAiText: 'Built Varnika',
+    codingDeskOpen: true,
+  }), null);
 });
 
 test('errors stay honest and offer a retry, not fake success', () => {

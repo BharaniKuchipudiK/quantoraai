@@ -136,11 +136,13 @@ try {
   const arena = page.locator('[data-quantora-dual-arena]').first();
   await visible(arena, 'Dual Arena is missing from the Studio shell.');
   await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Fork Chat is incorrectly placed in the top bar.');
+  await hidden(page.locator('[data-quantora-code-workspace="true"]').first(), 'Coding desk opened before it was selected.');
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing.');
   await prompt.fill('Build me a simple calculator');
   await prompt.press('Enter');
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click();
 
   const calculatorPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
   await visible(calculatorPreview, 'Calculator did not enter the real project preview.', 15_000);
@@ -159,6 +161,7 @@ try {
   await newChat.click();
   await prompt.fill("let's build a mission control interface, similar to the expose-style window manager on macOS");
   await prompt.press('Enter');
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click();
 
   const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
   await visible(preview, 'Multi-file Vite project did not switch to real project preview.', 15_000);

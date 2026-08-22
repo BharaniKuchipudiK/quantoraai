@@ -18,6 +18,7 @@ import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
+import StudioTerminal from './StudioTerminal';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -465,7 +466,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
-  const [codingDeskOpen, setCodingDeskOpen] = useState(true);
+  const [codingDeskOpen, setCodingDeskOpen] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
@@ -498,13 +499,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const openCodingDesk = useCallback(() => {
     if (!canAutoOpenCodeWorkspace(studioDomain)) {
       handleCreateNewChat();
+      setStudioDomain(null);
     }
     setCodingDeskOpen(true);
     if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
-  }, [studioDomain, handleCreateNewChat]);
+  }, [studioDomain, handleCreateNewChat, setStudioDomain]);
+
+  const startNewChat = useCallback(() => {
+    setCodingDeskOpen(false);
+    handleCreateNewChat();
+  }, [handleCreateNewChat]);
 
   useEffect(() => {
     if (canAutoOpenCodeWorkspace(studioDomain)) return;
+    setCodingDeskOpen(false);
     setIsWorkspaceMode(false);
     setCanvasOpen(false);
   }, [studioDomain]);
@@ -583,7 +591,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (assembled.code) {
       setCanvasVfs(assembled.vfs);
       setCanvasCode(assembled.code);
-      setCanvasOpen(true);
+      if (canAutoOpenCodeWorkspace(studioDomain)) {
+        if (Object.keys(assembled.vfs).length > 0) setVfs(assembled.vfs);
+        setWorkspaceCode(assembled.code);
+        setWorkspaceActiveTab('preview');
+        setCodingDeskOpen(true);
+        setIsWorkspaceMode(true);
+      } else {
+        setCanvasOpen(true);
+      }
     }
   };
 
@@ -881,6 +897,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
     setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
+    setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
   }, [studioDomain, messages, vfs]);
 
@@ -1796,6 +1813,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     hasUserTurn,
     officeKind: officeKindNow,
     studioDomain,
+    codingDeskOpen,
   });
   const studioMission = deriveStudioMission({
     conversationContext,
@@ -1806,7 +1824,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     studioDomain,
   });
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
-  const isIdeLayout = isCodingDesk || isWorkspaceMode;
+  const isIdeLayout = isCodingDesk;
 
   return (
     <div style={{
@@ -1840,7 +1858,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         {/* Sidebar Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <button
-            onClick={handleCreateNewChat}
+            onClick={startNewChat}
             title="New Chat"
             style={{
               flex: 1,
@@ -2561,7 +2579,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 650, color: textColor, lineHeight: 1.4 }}>{partnerStatus.now}</div>
+            {partnerStatus.next ? (
             <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
+            ) : null}
           </div>
         )}
         {/* Prompt Card Container */}
@@ -3435,12 +3455,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       </div>
                     )}
                   </div>
+             ) : workspaceActiveTab === 'terminal' ? (
+               <StudioTerminal
+                 vfs={vfs}
+                 isLight={isLight}
+                 textColor={textColor}
+                 subtextColor={subtextColor}
+               />
              ) : (
                <Suspense fallback={<div style={{ padding: '24px', color: subtextColor }}>Loading editor…</div>}>
                  <WorkspaceCodeEditor
                    path={workspaceActiveTab}
                    isLight={isLight}
-                   value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
+                   value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
                    onChange={(val) => handleCodeChange({ target: { value: val, selectionStart: String(val || '').length } })}
                  />
                </Suspense>

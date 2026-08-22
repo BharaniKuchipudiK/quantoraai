@@ -1,6 +1,12 @@
 import { normalizeSessionContext } from './session-context.js';
 
+export const CANNED_PROJECT_DESCRIPTION = 'A flexible space for everyday questions and ideas.';
+
 const BUILDISH = /\b(build|create|make|develop|design|website|web site|calculator|app|shop|boutique|store|landing)\b/i;
+
+export function isCannedProjectDescription(text) {
+  return String(text || '').trim() === CANNED_PROJECT_DESCRIPTION;
+}
 
 function clip(text, max = 140) {
   const value = String(text || '').replace(/\s+/g, ' ').trim();
@@ -86,14 +92,15 @@ export function deriveStudioMission({
     || studioDomain === 'education'
     || studioDomain === 'finance'
     || studioDomain === 'research';
-  const understanding = ctx.understanding
+  const remembered = isCannedProjectDescription(ctx.understanding) ? '' : ctx.understanding;
+  const understanding = remembered
     || (hasPreview && officeKind
       ? 'An Office file is in Preview. This is not a website.'
-      : hasPreview && !lifeDomain ? 'A working preview is on screen for this session.' : '');
+      : '');
   const next = continueLabel
     || (hasPreview && officeKind
       ? 'Download the file, or tell me which slide or section to change.'
-      : hasPreview && !lifeDomain ? 'Tweak it, add a missing business piece, or publish.' : '');
+      : '');
   const lead = studioDomain === 'travel'
     ? 'Planning'
     : studioDomain === 'education'
