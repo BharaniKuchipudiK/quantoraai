@@ -20,6 +20,8 @@ import StudyTutorBoard from './StudyTutorBoard';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import TravelTripBoard from './TravelTripBoard';
 import { deriveTravelTripBrief } from '../lib/travel-trip-brief.js';
+import AdvisorFreshThreadBar from './AdvisorFreshThreadBar';
+import { newThreadLabel } from '../lib/advisor-thread.js';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
@@ -236,13 +238,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     projectArtifacts,
     studioDomain,
     setStudioDomain,
-    handleCreateAdvisorChat,
+    openAdvisorWorkspace,
     forkChatFromMessage,
     conversationContext,
     updateActiveSession,
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [dismissedLongThreadSessionId, setDismissedLongThreadSessionId] = useState(null);
   const { avatarSrc: profileAvatarSrc } = useProfileAvatar(user);
   const [profileAvatarFailed, setProfileAvatarFailed] = useState(false);
 
@@ -1700,6 +1703,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <button
             onClick={handleCreateNewChat}
+            title={newThreadLabel(studioDomain)}
             style={{
               flex: 1,
               display: 'flex',
@@ -1719,7 +1723,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             }}
           >
             <Plus size={16} />
-            <span>New Chat</span>
+            <span>{newThreadLabel(studioDomain)}</span>
           </button>
 
           <button
@@ -1790,7 +1794,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               data-quantora-advisor={card.domain}
               data-quantora-active-specialist={studioDomain === card.domain ? card.domain : undefined}
               onClick={() => {
-                handleCreateAdvisorChat(card.domain);
+                openAdvisorWorkspace(card.domain);
                 if (window.innerWidth < 768) setSidebarOpen(false);
               }}
               style={{
@@ -2332,6 +2336,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
         {travelBrief && messages.length > 1 ? (
+          <>
+          <AdvisorFreshThreadBar
+            domain="travel"
+            messages={messages}
+            dismissed={dismissedLongThreadSessionId === activeSessionId}
+            onDismiss={() => setDismissedLongThreadSessionId(activeSessionId)}
+            onFreshThread={handleCreateNewChat}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+          />
           <TravelTripBoard
             brief={travelBrief}
             isLight={isLight}
@@ -2344,7 +2359,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             }}
             onRequireAuth={onOpenAuth}
           />
+          </>
         ) : studyBrief && messages.length > 1 ? (
+          <>
+          <AdvisorFreshThreadBar
+            domain="education"
+            messages={messages}
+            dismissed={dismissedLongThreadSessionId === activeSessionId}
+            onDismiss={() => setDismissedLongThreadSessionId(activeSessionId)}
+            onFreshThread={handleCreateNewChat}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+          />
           <StudyTutorBoard
             brief={studyBrief}
             isLight={isLight}
@@ -2355,6 +2382,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
           />
+          </>
         ) : null}
         {!travelBrief && !studyBrief ? (
         <StudioMissionCard
