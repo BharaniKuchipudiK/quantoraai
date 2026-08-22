@@ -21,7 +21,7 @@ Travel and Study must never open this coding screen by themselves.
 ## Parked — Travel
 
 - Flights and hotels only when a live search actually returns. No fake hotels.
-- Ask for a city before looking up hotels.
+- Ask for a city before looking up hotels. If they already named one (Singapore), do not ask again.
 - Keep it a trip partner. Not an IDE.
 
 ## Parked — Study

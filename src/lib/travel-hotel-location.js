@@ -5,6 +5,8 @@ const AMENITY_WORDS = new Set([
   'with',
 ]);
 
+const CLOSED_REPLY = /^(yes|no|ok|okay|sure|thanks|thank you|please|hi|hello|hey|yep|nope|continue|go ahead|i['’]?m with you)$/i;
+
 /**
  * Google Places needs a city or area. "Beach resorts with kids' clubs" is a
  * preference, not a place — calling Places with that string just fails closed.
@@ -30,4 +32,47 @@ export function hotelCityAsk(location = '') {
   const hint = String(location || '').trim();
   const preference = hint && hotelLocationNeedsCity(hint) ? ` I noted “${hint.slice(0, 80)}”.` : '';
   return `I can look up live stays, but I need a city or area first — for example Phuket, Bali, or the Gold Coast.${preference} I will not invent a hotel list.`;
+}
+
+export function inferStayLocation(text = '') {
+  const value = String(text || '').trim();
+  if (!value || CLOSED_REPLY.test(value)) return '';
+  if (/^20\d{2}-\d{2}-\d{2}$/.test(value)) return '';
+  if (/^\d+\s+(adults?|kids?|children|nights?|people)\b/i.test(value)) return '';
+
+  const inPlace = value.match(/\b(?:in|near|at)\s+([\p{L}\p{N}][\p{L}\p{N} .'-]{1,60})/iu);
+  if (inPlace) {
+    const place = inPlace[1].replace(/[?.!,]+$/, '').trim();
+    return hotelLocationNeedsCity(place) ? '' : place;
+  }
+
+  if (value.length > 60) return '';
+  if (hotelLocationNeedsCity(value)) return '';
+  return value;
+}
+
+export function resolveHotelSearchLocation(toolLocation = '', recentUserTexts = []) {
+  const direct = String(toolLocation || '').trim();
+  if (direct && !hotelLocationNeedsCity(direct)) return direct;
+  const fromChat = [...(Array.isArray(recentUserTexts) ? recentUserTexts : [])]
+    .reverse()
+    .map((text) => inferStayLocation(text))
+    .find(Boolean);
+  return fromChat || direct;
+}
+
+export function hotelProviderFailureAsk(location = '') {
+  const place = String(location || '').trim();
+  if (place && !hotelLocationNeedsCity(place)) {
+    return `I could not look up live hotels in ${place} just now. Places did not return a list — I will not invent one. Retry in a moment.`;
+  }
+  return 'I could not look up live hotels just now. Tell me the city or area if you have not — I will not invent a list. If Places is down, we can retry after it is connected.';
+}
+
+export function hotelEmptyResultsAsk(location = '') {
+  const place = String(location || '').trim();
+  if (place && !hotelLocationNeedsCity(place)) {
+    return `Places returned no stays for ${place}. I will not invent a list. Try a neighbourhood, or retry.`;
+  }
+  return 'Places returned no stays. Tell me a city or area — I will not invent a list.';
 }

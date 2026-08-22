@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hotelCityAsk, hotelLocationNeedsCity } from './travel-hotel-location.js';
+import {
+  hotelCityAsk,
+  hotelEmptyResultsAsk,
+  hotelLocationNeedsCity,
+  hotelProviderFailureAsk,
+  inferStayLocation,
+  resolveHotelSearchLocation,
+} from './travel-hotel-location.js';
 
 test('kids-club beach prompt is not a city', () => {
   assert.equal(hotelLocationNeedsCity("Beach resorts with kids' clubs"), true);
@@ -13,4 +20,17 @@ test('named places can be searched', () => {
   assert.equal(hotelLocationNeedsCity('Gold Coast'), false);
   assert.equal(hotelLocationNeedsCity('hotels in Bali'), false);
   assert.equal(hotelLocationNeedsCity('Seminyak, Bali'), false);
+  assert.equal(hotelLocationNeedsCity('Singapore'), false);
+});
+
+test('Singapore as a one-word reply is the city, not a missing location', () => {
+  assert.equal(inferStayLocation('Singapore'), 'Singapore');
+  assert.equal(inferStayLocation('yes'), '');
+  assert.equal(resolveHotelSearchLocation("Beach resorts with kids' clubs", ['Look up hotels', 'Singapore']), 'Singapore');
+});
+
+test('when Places fails and the city is known, do not ask for the city again', () => {
+  assert.match(hotelProviderFailureAsk('Singapore'), /Singapore/);
+  assert.doesNotMatch(hotelProviderFailureAsk('Singapore'), /if you have not/i);
+  assert.match(hotelProviderFailureAsk(''), /city or area/i);
 });

@@ -70,7 +70,8 @@ test('unconnected read-only travel providers stop the agent instead of returning
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
-  assert.match(hotel.message, /city or area|will not invent/i);
+  assert.match(hotel.message, /London/i);
+  assert.doesNotMatch(hotel.message, /if you have not/i);
   assert.equal('hotels' in hotel, false, 'must not substitute hard-coded hotels');
 
   const vibeOnly = await executeToolCall('search_hotels', {
@@ -313,6 +314,35 @@ test('Google provider errors fail closed and terminate the interactive agent ste
   assert.equal(route.reason, 'PROVIDER_ERROR');
   assert.equal(route.action, 'PAUSE_AND_ASK');
   assert.equal('route' in route, false);
+});
+
+test('a one-word city in chat is used as the hotel location', async () => {
+  let capturedBody = '';
+  const fetchFn = (async (_url: any, init: any) => {
+    capturedBody = String(init?.body || '');
+    return new Response(JSON.stringify({
+      places: [{
+        id: 'sg-1',
+        displayName: { text: 'Marina Bay Hotel' },
+        rating: 4.5,
+        userRatingCount: 10,
+        websiteUri: 'https://marina.example',
+        googleMapsUri: 'https://maps.google.test/marina',
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  const result = await executeToolCall('search_hotels', {
+    location: "Beach resorts with kids' clubs",
+  }, {
+    googleMapsApiKey: 'test-google-key',
+    fetchFn,
+    recentUserTexts: ['Find me hotels', 'Singapore'],
+  });
+
+  assert.equal(result.status, 'success');
+  assert.match(capturedBody, /Singapore/i);
+  assert.doesNotMatch(capturedBody, /Beach resorts/i);
 });
 
 test('clarification remains a non-transactional human-in-loop action', async () => {

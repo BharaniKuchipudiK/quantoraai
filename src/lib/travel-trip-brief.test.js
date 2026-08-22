@@ -18,3 +18,14 @@ test('a SIN to DPS hop with a date can search live flights', () => {
   assert.equal(brief.returnDate, '2026-09-18');
   assert.equal(brief.canSearchFlights, true);
 });
+
+test('a one-word city reply is enough to look up stays', () => {
+  const brief = deriveTravelTripBrief({
+    messages: [
+      { sender: 'user', text: 'Find me hotels' },
+      { sender: 'user', text: 'Singapore' },
+    ],
+  });
+  assert.equal(brief.destinationLabel, 'Singapore');
+  assert.equal(brief.canSearchHotels, true);
+});
