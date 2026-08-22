@@ -28,6 +28,34 @@ export function isSpecifiedRunnableTool(text) {
   return SPECIFIED_TOOL.test(text);
 }
 
+/** Advisors are not a coding studio. Never force Live Preview HTML recovery. */
+export function advisorBlocksPreviewBuild(studioDomain) {
+  return studioDomain === 'travel'
+    || studioDomain === 'education'
+    || studioDomain === 'finance'
+    || studioDomain === 'research';
+}
+
+/**
+ * Whether this turn must emit a runnable web artifact.
+ * Study "make flashcards" is a tutor move, not a quiz app to preview.
+ */
+export function resolveEffectiveBuildMode({
+  message = '',
+  studioDomain = null,
+  studioMode = 'ask',
+  studioModeExplicit = false,
+  buildMode = false,
+} = {}) {
+  if (advisorBlocksPreviewBuild(studioDomain)) return false;
+  const explicitBuild = studioModeExplicit && studioMode === 'build';
+  const explicitAsk = studioModeExplicit && studioMode === 'ask';
+  const toolBuild = isSpecifiedRunnableTool(message);
+  if (explicitAsk && !toolBuild) return false;
+  if (explicitBuild || toolBuild) return true;
+  return Boolean(buildMode);
+}
+
 export function needsGuidedWebsiteIntake(text) {
   if (!text || typeof text !== 'string') return false;
   if (isSpecifiedRunnableTool(text)) return false;

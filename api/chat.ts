@@ -44,7 +44,7 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
-import { shouldHonorGuidedBuild, isSpecifiedRunnableTool } from "../src/lib/build-intent.js";
+import { shouldHonorGuidedBuild, resolveEffectiveBuildMode } from "../src/lib/build-intent.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
 const PREVIEW_HTML_RECOVERY = `
@@ -388,12 +388,13 @@ export default async function handler(req: any, res: any) {
       message,
       studioMode: mode,
     }) && !explicitBuild && !planMode;
-    const toolBuild = isSpecifiedRunnableTool(message);
-    const effectiveBuildMode = explicitAsk && !toolBuild
-      ? false
-      : explicitBuild || toolBuild
-        ? true
-        : Boolean(buildMode);
+    const effectiveBuildMode = resolveEffectiveBuildMode({
+      message,
+      studioDomain: normalizedStudioDomain,
+      studioMode: mode,
+      studioModeExplicit: communicationRequest.studioModeExplicit,
+      buildMode,
+    });
     // Studio users should not toggle web search. Live search is off until a
     // product surface needs it (advisors are frozen; BUILD does not use it).
     const grounding = false;

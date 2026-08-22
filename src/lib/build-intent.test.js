@@ -4,9 +4,26 @@ import {
   detectBuildIntent,
   isSpecifiedRunnableTool,
   needsGuidedWebsiteIntake,
+  resolveEffectiveBuildMode,
   shouldHonorGuidedBuild,
   shouldStartGuidedBuild,
 } from './build-intent.js';
+
+test('Study flashcards are a tutor move, not an iOS app to preview', () => {
+  assert.equal(isSpecifiedRunnableTool("Make 6 flashcards for Newton's laws"), true);
+  assert.equal(resolveEffectiveBuildMode({
+    message: "Make 6 flashcards for Newton's laws",
+    studioDomain: 'education',
+    studioMode: 'ask',
+    studioModeExplicit: true,
+  }), false);
+  assert.equal(resolveEffectiveBuildMode({
+    message: 'Build a calculator app',
+    studioDomain: null,
+    studioMode: 'ask',
+    studioModeExplicit: true,
+  }), true);
+});
 
 test('a calculator is a build, not a question', () => {
   assert.equal(detectBuildIntent('Make me a simple calculator app'), true);
