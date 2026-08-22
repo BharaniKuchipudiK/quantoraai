@@ -21,6 +21,7 @@ import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
+import { diffVfsReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -471,6 +472,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [codingDeskOpen, setCodingDeskOpen] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  const [deskReview, setDeskReview] = useState([]);
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
@@ -528,6 +530,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setWorkspaceCode('');
       setCodingDeskOpen(false);
       setIsWorkspaceMode(false);
+      setDeskReview([]);
       return;
     }
     const session = chatSessions.find((item) => item.id === activeSessionId);
@@ -538,6 +541,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCodingDeskOpen(false);
       setIsWorkspaceMode(false);
       setLastProcessedMessageId(null);
+      setDeskReview([]);
       return;
     }
     setVfs(restored.vfs);
@@ -546,6 +550,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(true);
     setCodingDeskOpen(restored.codingDeskOpen);
     setLastProcessedMessageId(restored.lastProcessedMessageId);
+    setDeskReview([]);
   }, [activeSessionId, studioDomain, chatSessions]);
 
   useEffect(() => {
@@ -638,7 +643,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(assembled.vfs);
       setCanvasCode(assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        if (Object.keys(assembled.vfs).length > 0) setVfs(assembled.vfs);
+        if (Object.keys(assembled.vfs).length > 0) {
+          setDeskReview(diffVfsReview(vfs, assembled.vfs));
+          setVfs(assembled.vfs);
+        }
         setWorkspaceCode(assembled.code);
         setWorkspaceActiveTab('preview');
         setCodingDeskOpen(true);
@@ -937,9 +945,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
     if (Object.keys(assembled.vfs).length > 0) {
+      setDeskReview(diffVfsReview(vfs, assembled.vfs));
       setVfs(assembled.vfs);
     } else {
-      setVfs({ 'index.html': { content: html, language: 'html' } });
+      const next = { 'index.html': { content: html, language: 'html' } };
+      setDeskReview(diffVfsReview(vfs, next));
+      setVfs(next);
     }
     setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
@@ -1788,6 +1799,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
+           setDeskReview(diffVfsReview(vfs, parsedVfs));
            setVfs(parsedVfs);
            setWorkspaceCorrelationId(lastMsg.correlationId || null);
            setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
@@ -1802,10 +1814,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            if (assembled.reopenDesk) setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
-           if (code) {
+              if (code) {
               setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
-              setVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } });
+              const nextVfs = { [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
+              setDeskReview(diffVfsReview(vfs, nextVfs));
+              setVfs(nextVfs);
               setWorkspaceCorrelationId(lastMsg.correlationId || null);
               setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
               void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
@@ -3437,6 +3451,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               isLight={isLight}
               textColor={textColor}
               subtextColor={subtextColor}
+              review={deskReview}
             />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
              {workspaceActiveTab === 'preview' ? (
