@@ -13,7 +13,7 @@ export default function WorkspaceCodeEditor({ path, value, onChange, isLight }) 
   const armed = useRef(false);
 
   return (
-    <div ref={wrapRef} data-quantora-monaco="true" style={{ position: 'absolute', inset: 0 }}>
+    <div ref={wrapRef} data-quantora-monaco="true" style={{ position: 'absolute', inset: 0, minHeight: 240 }}>
       <Editor
         height="100%"
         theme={isLight ? 'vs' : 'vs-dark'}
@@ -29,6 +29,7 @@ export default function WorkspaceCodeEditor({ path, value, onChange, isLight }) 
         onChange={(next) => {
           if (!armed.current) return;
           if (typeof next !== 'string') return;
+          if (next === '' && String(value || '').length > 0) return;
           onChange(next);
         }}
         options={{
