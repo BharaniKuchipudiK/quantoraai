@@ -21,6 +21,7 @@ import models from "./api/models.js";
 import moderate from "./api/moderate.js";
 import pipeline from "./api/pipeline.js";
 import productEvent from "./api/product-event.js";
+import travelSearch from "./api/travel-search.js";
 
 dotenv.config();
 
@@ -119,6 +120,7 @@ async function startServer() {
   route("all", "/api/admin/models", adminModels);
   route("all", "/api/admin/metrics", adminMetrics);
   route("all", "/api/product-event", productEvent);
+  route("all", "/api/travel-search", travelSearch);
   route("post", "/api/trace", (req, res) => {
     req.query = { ...(req.query || {}), route: "trace" };
     return pipeline(req, res);
