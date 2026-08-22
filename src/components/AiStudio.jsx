@@ -2130,10 +2130,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 isLight={isLight}
                 textColor={textColor}
                 subtextColor={subtextColor}
+                lessonText={lastAiMessage?.text || ''}
                 onAsk={(text) => {
                   setInputText(text);
                   requestAnimationFrame(() => textareaRef.current?.focus());
                 }}
+                onSend={(text) => handleSendMessage(text)}
               />
             )}
 
@@ -2377,10 +2379,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             isLight={isLight}
             textColor={textColor}
             subtextColor={subtextColor}
+            lessonText={lastAiMessage?.text || ''}
             onAsk={(text) => {
               setInputText(text);
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
+            onSend={(text) => handleSendMessage(text)}
           />
           </>
         ) : null}

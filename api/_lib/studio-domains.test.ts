@@ -37,10 +37,13 @@ test("Education directive behaves as an evidence-backed Study Advisor instead of
   assert.match(directive, /confidently wrong answer.*misconception/is);
   assert.match(directive, /smallest useful diagnostic/i);
   assert.match(directive, /durable mastery/i);
-  assert.match(directive, /Mini-quiz/i);
+  assert.match(directive, /Mini-quiz|Mini-practice/i);
   assert.match(directive, /SWAYAM/i);
   assert.match(directive, /NotebookLM/i);
   assert.match(directive, /Never invent a specific video/i);
+  assert.match(directive, /I will wait/i);
+  assert.match(directive, /shortest clean method/i);
+  assert.match(directive, /not an official IIT\/NEET timetable/i);
 });
 
 test("buildDomainDirective is empty for general chat", () => {

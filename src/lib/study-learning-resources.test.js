@@ -19,7 +19,7 @@ test('resource links are official search pages, not invented videos', () => {
 });
 
 test('lesson, quiz, flashcards, and notes asks stay tutor-like and fail-closed on fake videos', () => {
-  assert.match(studyLessonAsk("Newton's laws"), /Mini-quiz/i);
+  assert.match(studyLessonAsk("Newton's laws"), /I will wait/i);
   assert.match(studyLessonAsk("Newton's laws"), /Do not invent a specific YouTube/i);
   assert.match(studyQuizAsk("Newton's laws"), /Wait for my answers/i);
   assert.match(studyFlashcardAsk("Newton's laws"), /flashcards/i);

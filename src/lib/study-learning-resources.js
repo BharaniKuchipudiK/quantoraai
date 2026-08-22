@@ -46,7 +46,8 @@ export function studyLessonAsk(topic) {
     `Teach ${label} like a patient personal tutor.`,
     'Use numbered sections.',
     'For each idea: a short title, the formal definition in italics, what it means in plain words, one everyday picture, and a tiny worked example if there is math.',
-    'End with a Mini-quiz of 3 questions. Do not reveal the answers unless I ask.',
+    'Include a Real-world applications table: Situation | How the idea appears (4 rows).',
+    'Then a Mini-practice with questions only. Do not reveal answers. End with: Write your attempt. I will wait.',
     'Offer one visual I could sketch.',
     'Do not invent a specific YouTube video, channel episode, or URL. If I need a video, point me to an official search (Khan Academy, SWAYAM, Physics Wallah, YouTube) for this topic.',
   ].join(' ');
