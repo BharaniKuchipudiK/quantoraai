@@ -16,6 +16,8 @@ import { deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
+import StudyTutorBoard from './StudyTutorBoard';
+import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
 import { useChatStream } from '../hooks/useChatStream';
@@ -1654,6 +1656,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     continueLabel: partnerContinueLabel,
     officeKind: officeKindNow,
   });
+  const studyBrief = studioDomain === 'education'
+    ? deriveStudyTutorBrief({ conversationContext, messages })
+    : null;
 
   return (
     <div style={{
@@ -2108,7 +2113,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               {isAdvisorWorkspace ? domainPolicy.hero : 'What would you like to build today?'}
             </p>
 
-            {isAdvisorWorkspace && (
+            {isAdvisorWorkspace && studioDomain === 'education' && studyBrief && (
+              <StudyTutorBoard
+                brief={studyBrief}
+                isLight={isLight}
+                textColor={textColor}
+                subtextColor={subtextColor}
+                onAsk={(text) => {
+                  setInputText(text);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+              />
+            )}
+
+            {isAdvisorWorkspace && studioDomain !== 'education' && (
               <div data-quantora-workspace-capabilities={studioDomain} style={{ margin: '0 auto 24px auto', maxWidth: '660px' }}>
                 <p style={{ margin: '0 0 18px 0', color: subtextColor, fontSize: '0.95rem', lineHeight: 1.6 }}>{domainPolicy.supporting}</p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '9px', flexWrap: 'wrap' }}>
@@ -2291,6 +2309,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+        {studyBrief && messages.length > 1 ? (
+          <StudyTutorBoard
+            brief={studyBrief}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+            onAsk={(text) => {
+              setInputText(text);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+          />
+        ) : null}
         <StudioMissionCard
           mission={studioMission && partnerStatus && !isGenerating ? { ...studioMission, next: '' } : studioMission}
           isLight={isLight}
