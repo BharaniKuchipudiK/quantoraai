@@ -20,6 +20,7 @@ import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
+import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -517,6 +518,50 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(false);
     setCanvasOpen(false);
   }, [studioDomain]);
+
+  const deskSessionIdRef = useRef(null);
+  useEffect(() => {
+    if (deskSessionIdRef.current === activeSessionId) return;
+    deskSessionIdRef.current = activeSessionId;
+    if (!canAutoOpenCodeWorkspace(studioDomain)) {
+      setVfs({});
+      setWorkspaceCode('');
+      setCodingDeskOpen(false);
+      setIsWorkspaceMode(false);
+      return;
+    }
+    const session = chatSessions.find((item) => item.id === activeSessionId);
+    const restored = restoreStudioDeskSnapshot(session);
+    if (!restored) {
+      setVfs({});
+      setWorkspaceCode('');
+      setCodingDeskOpen(false);
+      setIsWorkspaceMode(false);
+      setLastProcessedMessageId(null);
+      return;
+    }
+    setVfs(restored.vfs);
+    setWorkspaceCode(restored.workspaceCode);
+    setWorkspaceActiveTab('preview');
+    setIsWorkspaceMode(true);
+    setCodingDeskOpen(restored.codingDeskOpen);
+    setLastProcessedMessageId(restored.lastProcessedMessageId);
+  }, [activeSessionId, studioDomain, chatSessions]);
+
+  useEffect(() => {
+    if (!canAutoOpenCodeWorkspace(studioDomain)) return;
+    const built = buildStudioDeskSnapshot({
+      vfs,
+      workspaceCode,
+      codingDeskOpen,
+      lastProcessedMessageId,
+    });
+    if (!built.ok) return;
+    const timer = setTimeout(() => {
+      updateActiveSession({ desk: built.snapshot });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [vfs, workspaceCode, codingDeskOpen, lastProcessedMessageId, studioDomain, updateActiveSession, activeSessionId]);
   const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
   const [feedbackStates, setFeedbackStates] = useState({});

@@ -169,6 +169,17 @@ try {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 
+  await page.waitForTimeout(700);
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 20_000 });
+  await enterSignedInStudio(page);
+  const restoredDesk = page.locator('[data-quantora-code-workspace="true"]').first();
+  if (!(await restoredDesk.isVisible().catch(() => false))) {
+    await page.locator('[data-quantora-coding-desk-nav="true"]').click();
+  }
+  await visible(restoredDesk, 'Coding desk did not come back after reload.', 15_000);
+  const restoredCalc = await visibleFrame('[data-testid="calculator-display"]', 20_000);
+  if (!restoredCalc) throw new Error('The running calculator did not survive reload. Preview is the product.');
+
   const newChat = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChat, 'New Chat control is missing after calculator preview.');
   await newChat.click();
