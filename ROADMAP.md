@@ -1,5 +1,7 @@
 # Quantora — Product Roadmap
 
+**2026-08-22:** Travel and Study are parked. Next work is the Studio coding desk (IDE). Leftovers live in `docs/PRODUCT_BACKLOG.md`.
+
 A living, prioritized plan. We tackle it **top to bottom, one item at a time.**
 Pair this with `ARCHITECTURE.md` (how the system is built) — this is *what we
 build next and why*.

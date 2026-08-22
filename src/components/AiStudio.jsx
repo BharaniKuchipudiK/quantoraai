@@ -17,6 +17,7 @@ import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
+import StudioFileTree from './StudioFileTree';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -469,7 +470,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
-  const [workspaceActiveTab, setWorkspaceActiveTab] = useState('App.jsx');
+  const [workspaceActiveTab, setWorkspaceActiveTab] = useState('preview');
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
   const [canvasVfs, setCanvasVfs] = useState({});
@@ -487,8 +488,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       dismissedOfficeFingerprintRef.current = fingerprint;
       dismissedOfficeMessageIdRef.current = lastAi?.id ?? null;
     }
-    setIsWorkspaceMode(false);
-  }, [messages]);
+    setWorkspaceCode('');
+    setVfs({});
+    setWorkspaceActiveTab('preview');
+    if (!canAutoOpenCodeWorkspace(studioDomain)) {
+      setIsWorkspaceMode(false);
+    }
+  }, [messages, studioDomain]);
 
   useEffect(() => {
     if (canAutoOpenCodeWorkspace(studioDomain)) return;
@@ -1798,13 +1804,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
   });
+  const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain);
+  const isIdeLayout = isCodingDesk || isWorkspaceMode;
 
   return (
     <div style={{
       display: 'flex',
       gap: '12px',
-      maxWidth: isWorkspaceMode ? '100%' : '1400px',
-      padding: isWorkspaceMode ? '12px' : '0',
+      maxWidth: isIdeLayout ? '100%' : '1400px',
+      padding: isIdeLayout ? '12px' : '0',
       margin: '0 auto',
       flex: 1,
       minHeight: 0,
@@ -1815,7 +1823,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }}>
       {/* Left Navigation Sidebar - Chat History */}
       <div style={{
-        width: sidebarOpen ? (isWorkspaceMode ? '220px' : '260px') : '0px',
+        width: sidebarOpen ? (isIdeLayout ? '220px' : '260px') : '0px',
         opacity: sidebarOpen ? 1 : 0,
         pointerEvents: sidebarOpen ? 'auto' : 'none',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -1823,7 +1831,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         flexDirection: 'column',
         background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
         border: 'none',
-        borderRadius: isWorkspaceMode ? '16px' : '0 24px 24px 0',
+        borderRadius: isIdeLayout ? '16px' : '0 24px 24px 0',
         padding: sidebarOpen ? '20px 16px' : '0px',
         overflow: 'hidden',
         flexShrink: 0
@@ -2115,12 +2123,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div style={{
-        flex: isWorkspaceMode ? '0 0 42%' : 1,
+        flex: isIdeLayout ? '0 0 36%' : 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isWorkspaceMode ? '42%' : '100%',
+        maxWidth: isIdeLayout ? '36%' : '100%',
         margin: '0 auto',
-        padding: isWorkspaceMode ? '0 8px 0 0' : '8px 20px 0',
+        padding: isIdeLayout ? '0 8px 0 0' : '8px 20px 0',
         minHeight: 0,
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
@@ -3273,9 +3281,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
       )}
 
-      {/* Right Panel: Interactive Code Canvas (Pillar 1) */}
-      {isWorkspaceMode && (canAutoOpenCodeWorkspace(studioDomain) || Boolean(detectOfficeIntent({ messages }))) && (
-        <div data-quantora-code-workspace="true" style={{
+      {/* Right Panel: Studio coding desk */}
+      {isCodingDesk && (
+        <div data-quantora-code-workspace="true" data-quantora-studio-ide="true" style={{
           flex: 1,
           background: isLight ? '#ffffff' : '#0d1127',
           border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -3284,10 +3292,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           flexDirection: 'column',
           overflow: 'hidden',
           boxShadow: isLight ? '0 10px 40px rgba(0,0,0,0.05)' : '0 20px 60px rgba(0,0,0,0.4)',
-          animation: 'slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          position: 'relative'
+          position: 'relative',
+          minWidth: 0,
         }}>
-          {/* Canvas Header (File Tabs) */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -3298,57 +3305,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             height: '48px',
             flexShrink: 0
           }}>
-            <div style={{ display: 'flex', gap: '4px', height: '100%' }}>
-              {(detectOfficeIntent({ messages }) ? ['preview'] : (Object.keys(vfs).length > 0 ? ['preview', ...Object.keys(vfs)] : ['preview', 'code'])).map(tab => (
-                <div key={tab} style={{
-                    background: workspaceActiveTab === tab ? (isLight ? '#ffffff' : '#0d1127') : 'transparent',
-                    borderTop: workspaceActiveTab === tab ? '2px solid #f97316' : '2px solid transparent',
-                    borderLeft: workspaceActiveTab === tab && isLight ? '1px solid #e2e8f0' : '1px solid transparent',
-                    borderRight: workspaceActiveTab === tab && isLight ? '1px solid #e2e8f0' : '1px solid transparent',
-                    display: 'flex', alignItems: 'center', height: '100%', marginTop: 'auto', transition: 'all 0.2s ease'
-                }}>
-                  <button
-                    onClick={() => setWorkspaceActiveTab(tab)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: workspaceActiveTab === tab ? '#f97316' : subtextColor,
-                      padding: '0 12px 0 16px',
-                      cursor: 'pointer',
-                      fontSize: '0.85rem',
-                      fontWeight: workspaceActiveTab === tab ? '600' : '500',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      height: '100%'
-                    }}
-                  >
-                    {tab === 'preview' ? <Play size={14} /> : <Code2 size={14} />}
-                    {tab === 'preview' ? 'Preview' : tab === 'code' ? 'Code' : tab}
-                  </button>
-                  {tab !== 'preview' && tab !== 'code' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newVfs = { ...vfs };
-                        delete newVfs[tab];
-                        setVfs(newVfs);
-                        if (workspaceActiveTab === tab) setWorkspaceActiveTab('preview');
-                      }}
-                      style={{
-                        background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer',
-                        padding: '0 12px 0 0', display: 'flex', alignItems: 'center', opacity: 0.6
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
-                      onMouseLeave={(e) => e.currentTarget.style.opacity = 0.6}
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor }}>Coding desk</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {canOfferVercelPublish({
                 messages,
@@ -3364,15 +3321,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                    <Rocket size={12} /> Publish to Vercel
                  </button>
               )}
-              {workspaceActiveTab === 'code' && (
-                 <button 
-                   onClick={() => setWorkspaceActiveTab('preview')}
-                   style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                   <Play size={12} /> Preview App
-                 </button>
-              )}
-              <button 
+              <button
+                type="button"
+                onClick={() => setWorkspaceActiveTab('preview')}
+                style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Play size={12} /> Preview
+              </button>
+              <button
                 onClick={closeStudioWorkspace}
+                title="Clear files"
                 style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
               >
                 <X size={16} />
@@ -3380,16 +3337,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           </div>
 
-          {/* Workspace Content Area */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+            <StudioFileTree
+              vfs={vfs}
+              activePath={workspaceActiveTab}
+              onSelect={setWorkspaceActiveTab}
+              isLight={isLight}
+              textColor={textColor}
+              subtextColor={subtextColor}
+            />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
              {workspaceActiveTab === 'preview' ? (
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                     {!workspaceCode ? (
+                      isGenerating ? (
                       <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
                         <Clock size={26} color="#f97316" />
                         <div style={{ fontWeight: 800, color: textColor }}>Preview is getting ready — hang tight</div>
                         <div style={{ fontSize: '0.82rem' }}>Your app will appear here as soon as it is ready to run.</div>
                       </div>
+                      ) : (
+                      <div data-quantora-ide-empty="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a', padding: '24px', textAlign: 'center' }}>
+                        <Code2 size={26} color="#f97316" />
+                        <div style={{ fontWeight: 800, color: textColor }}>Ask me to build something</div>
+                        <div style={{ fontSize: '0.82rem', maxWidth: '280px' }}>Files will show up here. This is the coding desk — not Travel, not Study.</div>
+                      </div>
+                      )
                     ) : (
                     <LivePreviewCanvas
                       ref={previewCanvasRef}
@@ -3448,6 +3421,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                  />
                </Suspense>
              )}
+            </div>
           </div>
         </div>
       )}
