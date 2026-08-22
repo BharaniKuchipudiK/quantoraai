@@ -7,6 +7,7 @@ import { officePclMemory } from '../lib/office-session-state.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
+import { mergeStudySyllabusFromText } from '../lib/study-syllabus-overlay.js';
 import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
 import { applyPclContinuityToOutcomeState } from '../lib/pcl-outcome-sync.js';
 import {
@@ -359,13 +360,17 @@ export function useChatStream({
       hasPreview: Boolean(isWorkspaceMode && (canvasCode || (vfs && Object.keys(vfs).length))),
       officeKind: briefingKind || activeOfficeArtifactKind(messages),
     });
-    const turnContext = mergeSessionContext(
-      conversationContext,
-      mergeSessionContext(sessionContext, {
-        ...(mission?.goal ? { goal: mission.goal } : {}),
-        ...(mission?.understanding ? { understanding: mission.understanding } : {}),
-        ...(answerFact ? { facts: [answerFact] } : {}),
-      }),
+    const turnContext = mergeStudySyllabusFromText(
+      mergeSessionContext(
+        conversationContext,
+        mergeSessionContext(sessionContext, {
+          ...(mission?.goal ? { goal: mission.goal } : {}),
+          ...(mission?.understanding ? { understanding: mission.understanding } : {}),
+          ...(answerFact ? { facts: [answerFact] } : {}),
+        }),
+      ),
+      visibleUserText,
+      studioDomain,
     );
     if (typeof updateActiveSession === 'function') {
       updateActiveSession({ conversationContext: turnContext });

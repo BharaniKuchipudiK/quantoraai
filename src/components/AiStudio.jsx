@@ -16,11 +16,17 @@ import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
-import AdvisorPromptPills from './AdvisorPromptPills';
 import StudioToolsMenu from './StudioToolsMenu';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
+import {
+  applyStudySyllabusOverlay,
+  inferStudySyllabus,
+  shouldShowStudySyllabusChips,
+  STUDY_SYLLABUS_CHIPS,
+  studySyllabusContinueSet,
+} from '../lib/study-syllabus-overlay.js';
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
@@ -580,6 +586,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const textareaRef = useRef(null);
   const plusMenuAnchorRef = useRef(null);
   const [dismissedContinueId, setDismissedContinueId] = useState(null);
+  const [dismissedSyllabus, setDismissedSyllabus] = useState(false);
+
+  useEffect(() => {
+    setDismissedSyllabus(false);
+  }, [activeSessionId]);
 
   // Auto-resize textarea when inputText changes programmatically (e.g., Magic Wand)
   useEffect(() => {
@@ -834,6 +845,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession,
   });
 
+  const showStudySyllabus = shouldShowStudySyllabusChips({
+    studioDomain,
+    conversationContext,
+    messages,
+    extra: inputText,
+    dismissed: dismissedSyllabus,
+  });
+  const studySyllabusSet = showStudySyllabus
+    ? studySyllabusContinueSet(conversationContext?.goal || '')
+    : null;
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
@@ -964,6 +985,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
     streamSendMessage(overrideText);
+  };
+
+  const commitStudySyllabusChip = (item) => {
+    if (!STUDY_SYLLABUS_CHIPS.some((chip) => chip.id === item.id)) return;
+    updateActiveSession({
+      conversationContext: applyStudySyllabusOverlay(
+        learnFromChipSelection(conversationContext, {
+          label: item.label,
+          value: item.value,
+          domain: studioDomain,
+        }),
+        item.id,
+      ),
+    });
+    setDismissedSyllabus(true);
+    handleSendMessage(item.value);
   };
 
   const handlePclDecision = (routeToFallback) => {
@@ -1330,7 +1367,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         const latestAiId = [...messages].reverse().find((item) => item.sender === 'ai' && item.text)?.id;
                         const priorUser = [...messages].slice(0, messages.findIndex((item) => item.id === msg.id) + 1).reverse().find((item) => item.sender === 'user')?.text || '';
                         const officeKindForChips = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind;
-                        const continueSet = msg.id === latestAiId && dismissedContinueId !== msg.id
+                        const advisorContinues = msg.id === latestAiId && dismissedContinueId !== msg.id
                           ? filterContinuesForAdvisor(
                             filterContinuesForOffice(
                               injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text, {
@@ -1342,6 +1379,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             studioDomain,
                           )
                           : null;
+                        const continueSet = studySyllabusSet && msg.id === latestAiId
+                          ? studySyllabusSet
+                          : advisorContinues;
                         return (
                         <>
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1415,10 +1455,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           )}
                         </div>
                         {continueSet?.items?.length > 0 && (
+                          <div data-quantora-study-syllabus={studySyllabusSet && msg.id === latestAiId ? 'true' : undefined}>
                           <StudioInlineSuggestions
                             suggestions={{ kind: 'continues', continueSet }}
                             isLight={isLight}
                             onSelectContinue={(item) => {
+                              if (STUDY_SYLLABUS_CHIPS.some((chip) => chip.id === item.id)) {
+                                commitStudySyllabusChip(item);
+                                return;
+                              }
                               updateActiveSession({
                                 conversationContext: learnFromChipSelection(conversationContext, {
                                   label: item.label,
@@ -1438,8 +1483,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               }
                               handleSendMessage(item.value);
                             }}
-                            onDismiss={() => setDismissedContinueId(msg.id)}
+                            onDismiss={() => {
+                              if (studySyllabusSet && msg.id === latestAiId) {
+                                setDismissedSyllabus(true);
+                                updateActiveSession({
+                                  conversationContext: applyStudySyllabusOverlay(conversationContext, 'open'),
+                                });
+                                return;
+                              }
+                              setDismissedContinueId(msg.id);
+                            }}
                           />
+                          </div>
                         )}
                         </>
                         );
@@ -1561,7 +1616,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip]);
 
   
   useEffect(() => {
@@ -2263,6 +2318,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     <span key={capability} style={{ padding: '7px 12px', borderRadius: '999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.22)', background: isLight ? '#ffffff' : 'rgba(15,23,42,0.48)', color: textColor, fontSize: '0.8rem', fontWeight: 700 }}>{capability}</span>
                   ))}
                 </div>
+                {studioDomain === 'education' && studySyllabusSet ? (
+                  <div data-quantora-study-syllabus="true" style={{ marginTop: '16px' }}>
+                    <StudioInlineSuggestions
+                      suggestions={{ kind: 'continues', continueSet: studySyllabusSet }}
+                      isLight={isLight}
+                      onSelectContinue={commitStudySyllabusChip}
+                      onDismiss={() => {
+                        setDismissedSyllabus(true);
+                        updateActiveSession({
+                          conversationContext: applyStudySyllabusOverlay(conversationContext, 'open'),
+                        });
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -2399,9 +2469,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </div>
                 <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, lineHeight: 1.45 }}>
                   <div>{partnerStatus?.now || generatingStatus || 'Working on a result you can actually use…'}</div>
-                  <div style={{ fontSize: '0.82rem', color: subtextColor, fontWeight: 500, marginTop: '4px' }}>
-                    {partnerStatus?.next || `0:${thinkingTime.toString().padStart(2, '0')}s`}
-                  </div>
+                  {partnerStatus?.next ? (
+                    <div style={{ fontSize: '0.82rem', color: subtextColor, fontWeight: 500, marginTop: '4px' }}>
+                      {partnerStatus.next}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -2461,13 +2533,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
           </div>
         )}
-          <AdvisorPromptPills
-            domain={studioDomain}
-            topic={conversationContext?.goal || ''}
-            onSend={(text) => handleSendMessage(text)}
-            isLight={isLight}
-            textColor={textColor}
-          />
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
@@ -2740,7 +2805,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   studioDomain={studioDomain}
                   topic={conversationContext?.goal || ''}
                   onSelectTool={(tool) => {
-                    const action = resolveStudioPlusAction(tool, studioDomain, conversationContext?.goal || '');
+                    const overlay = inferStudySyllabus({
+                      conversationContext,
+                      messages,
+                      extra: inputText,
+                    });
+                    const action = resolveStudioPlusAction(
+                      tool,
+                      studioDomain,
+                      conversationContext?.goal || '',
+                      overlay,
+                    );
                     setShowToolsMenu(false);
                     if (action.kind === STUDIO_PLUS_ACTION.FRESH_THREAD && action.domain) {
                       handleCreateAdvisorChat(action.domain);

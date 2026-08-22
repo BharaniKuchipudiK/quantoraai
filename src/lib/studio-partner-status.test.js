@@ -74,6 +74,17 @@ test('Travel never asks for a website preview', () => {
   assert.match(status.now, /trip conversation/i);
 });
 
+test('Study generating status is one line with the clock', () => {
+  const status = resolveStudioPartnerStatus({
+    isGenerating: true,
+    elapsedSec: 4,
+    studioDomain: 'education',
+  });
+  assert.match(status.now, /Working on your next step/i);
+  assert.match(status.now, /0:04/);
+  assert.equal(status.next, '');
+});
+
 test('Study never asks for a website preview', () => {
   const status = resolveStudioPartnerStatus({
     lastAiText: 'Let us repair vector components first.',

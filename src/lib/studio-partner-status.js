@@ -24,8 +24,8 @@ export function resolveStudioPartnerStatus({
   if (isGenerating) {
     if (lifeDomain) {
       return {
-        now: generatingLabel || 'Working on your next step…',
-        next: `Stay here — I will answer in this conversation. ${clock}`,
+        now: `${generatingLabel || 'Working on your next step…'} ${clock}`,
+        next: '',
       };
     }
     return {
