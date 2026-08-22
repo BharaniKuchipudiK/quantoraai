@@ -9,7 +9,7 @@ Plain list. We do one thing at a time.
 
 ## Now — coding desk
 
-1. Open Studio and see chat + files + editor + preview. Empty until you ask to build. (this slice)
+1. Open Studio and see chat + files + editor + preview. **x** hides the desk. Left nav **Coding desk** opens it again. Empty until you ask to build.
 2. Terminal that runs against those files. Real output only.
 3. Git for that app only (status, diff, commit). Not Quantora’s github.
 4. Chat can change many files. Preview updates.
