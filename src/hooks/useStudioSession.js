@@ -14,7 +14,7 @@ import {
 } from '../lib/project-store.js';
 import { compactOfficeMessages } from '../lib/office-session-state.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
-import { deriveProjectResume } from '../lib/studio-mission.js';
+import { deriveProjectResume, pickResumeSessionId } from '../lib/studio-mission.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -547,9 +547,10 @@ export function useStudioSession({ user, selectedModel }) {
     if (!project) return;
     setRemoteProjectContext(null);
     setActiveProjectIdState(projectId);
-    const firstSession = allChatSessions.find((session) => (session.projectId || DEFAULT_PROJECT_ID) === projectId);
-    if (firstSession) {
-      setActiveSessionId(firstSession.id);
+    const inProject = allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === projectId);
+    const resumeId = pickResumeSessionId(inProject);
+    if (resumeId) {
+      setActiveSessionId(resumeId);
       return;
     }
     const newSession = makeSession(projectId, defaultGreetingMsg);

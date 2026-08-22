@@ -1816,12 +1816,35 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: '30px' }}>
             {projectResume?.goal ? (
               <>
-                <div style={{ color: textColor, fontWeight: 650 }}>Last: {projectResume.goal}</div>
-                {projectResume.next ? (
-                  <div style={{ marginTop: '4px', color: isLight ? '#c2410c' : '#fdba74', fontWeight: 600 }}>
-                    Next: {projectResume.next}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (projectResume.sessionId) setActiveSessionId(projectResume.sessionId);
+                    if (projectResume.next && !String(inputText || '').trim()) setInputText(projectResume.next);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    font: 'inherit',
+                  }}
+                >
+                  <div style={{ color: textColor, fontWeight: 650 }}>Last: {projectResume.goal}</div>
+                  {projectResume.next ? (
+                    <div style={{ marginTop: '4px', color: isLight ? '#c2410c' : '#fdba74', fontWeight: 600 }}>
+                      Next: {projectResume.next}
+                    </div>
+                  ) : null}
+                  <div style={{ marginTop: '6px', color: isLight ? '#2563eb' : '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
+                    Resume this outcome
                   </div>
-                ) : null}
+                </button>
               </>
             ) : (
               activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'

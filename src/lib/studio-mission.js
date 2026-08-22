@@ -56,6 +56,13 @@ export function deriveProjectResume(sessions = []) {
   return null;
 }
 
+export function pickResumeSessionId(sessions = []) {
+  const resume = deriveProjectResume(sessions);
+  if (resume?.sessionId) return resume.sessionId;
+  const ranked = [...sessions].sort((left, right) => sessionActivityAt(right) - sessionActivityAt(left));
+  return ranked[0]?.id || null;
+}
+
 /**
  * Sticky world model for a Studio session: what we are building, what is true,
  * what is next. Derived locally so a missing quantora-ctx comment cannot wipe it.
