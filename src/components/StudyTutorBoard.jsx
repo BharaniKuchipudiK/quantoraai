@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
 import { gradeStudyCheck } from '../lib/study-tutor-brief.js';
+import {
+  studyFlashcardAsk,
+  studyLessonAsk,
+  studyNotesAsk,
+  studyQuizAsk,
+  studyResourceLinks,
+} from '../lib/study-learning-resources.js';
 
 /**
- * Personal tutor board: one concept, one real check, repair the foundation.
- * Not homework chat. Not a coding studio. Not an official IIT/NEET score.
+ * Personal tutor board: one concept, real checks, flashcards, and honest
+ * links to Khan / SWAYAM / PW / YouTube search. Not homework chat. Not an IDE.
  */
 export default function StudyTutorBoard({
   brief,
@@ -13,8 +20,14 @@ export default function StudyTutorBoard({
   onAsk,
 }) {
   const [showCheck, setShowCheck] = useState(false);
+  const [showCards, setShowCards] = useState(false);
+  const [cardIndex, setCardIndex] = useState(0);
+  const [cardBack, setCardBack] = useState(false);
   const [result, setResult] = useState(null);
   const check = brief?.check || null;
+  const topic = brief?.label || 'this idea';
+  const resources = studyResourceLinks(topic);
+  const cards = brief?.flashcards || [];
 
   const chip = (label, onClick, enabled = true) => (
     <button
@@ -40,6 +53,7 @@ export default function StudyTutorBoard({
   return (
     <div
       data-quantora-study-board="true"
+      data-quantora-workspace-capabilities="education"
       style={{
         margin: '0 auto 16px auto',
         maxWidth: '720px',
@@ -83,10 +97,79 @@ export default function StudyTutorBoard({
         Next: {brief.next}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+        {chip('Explain', () => onAsk?.(studyLessonAsk(topic)))}
+        {chip('Practise', () => onAsk?.(studyQuizAsk(topic)))}
+        {chip('Plan', () => onAsk?.(`Make a short study plan for ${topic}: foundation first, then this idea, then one mixed check. No fake timetable.`))}
+        {chip('Review', () => { setShowCards(true); setCardIndex(0); setCardBack(false); })}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+        {chip('Quiz', () => onAsk?.(studyQuizAsk(topic)))}
+        {chip('Flashcards', () => { setShowCards(true); setCardIndex(0); setCardBack(false); onAsk?.(studyFlashcardAsk(topic)); })}
+        {chip('Notes', () => onAsk?.(studyNotesAsk(topic)))}
         {chip('I got this wrong…', () => onAsk?.('I got this question wrong: '))}
         {chip('Test me on this', () => { setResult(null); setShowCheck(true); }, Boolean(check))}
-        {chip('Explain the foundation', () => onAsk?.(`Explain ${brief.foundation || 'the foundation'} simply, then give me one check.`), Boolean(brief.foundation))}
       </div>
+      <div style={{ marginTop: '14px' }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: subtextColor }}>
+          Learn with
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+          {resources.map((resource) => (
+            <a
+              key={resource.id}
+              href={resource.href}
+              target="_blank"
+              rel="noreferrer"
+              title={resource.why}
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                color: isLight ? '#c2410c' : '#fdba74',
+                textDecoration: 'none',
+                border: isLight ? '1px solid #fed7aa' : '1px solid rgba(251,146,60,0.35)',
+                borderRadius: '999px',
+                padding: '6px 10px',
+              }}
+            >
+              {resource.label}
+            </a>
+          ))}
+        </div>
+        <div style={{ marginTop: '6px', fontSize: '0.72rem', color: subtextColor, lineHeight: 1.4 }}>
+          Official search pages — not a made-up video. NotebookLM is for your PDF or podcast; paste the key points back here and I will quiz you.
+        </div>
+      </div>
+      {showCards && cards.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (cardBack) {
+              setCardBack(false);
+              setCardIndex((index) => (index + 1) % cards.length);
+            } else {
+              setCardBack(true);
+            }
+          }}
+          style={{
+            marginTop: '12px',
+            width: '100%',
+            textAlign: 'left',
+            padding: '12px 14px',
+            borderRadius: '12px',
+            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.25)',
+            background: isLight ? '#fffbeb' : 'rgba(120, 53, 15, 0.22)',
+            color: textColor,
+            cursor: 'pointer',
+          }}
+        >
+          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: subtextColor, textTransform: 'uppercase' }}>
+            Flashcard {cardIndex + 1} / {cards.length} · tap to {cardBack ? 'next' : 'reveal'}
+          </div>
+          <div style={{ marginTop: '6px', fontSize: '0.88rem', fontWeight: 650, lineHeight: 1.45 }}>
+            {cardBack ? cards[cardIndex].back : cards[cardIndex].front}
+          </div>
+        </button>
+      ) : null}
       {showCheck && check ? (
         <div style={{ marginTop: '14px' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 650, color: textColor, lineHeight: 1.45 }}>{check.prompt}</div>

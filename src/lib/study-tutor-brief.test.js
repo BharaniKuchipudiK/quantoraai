@@ -20,3 +20,12 @@ test('projectile motion opens a real check on the foundation path', () => {
   const right = gradeStudyCheck(brief.check, 'a');
   assert.equal(right.correct, true);
 });
+
+test("Newton's laws open a third-law check, not a fake rank", () => {
+  const brief = deriveStudyTutorBrief({
+    messages: [{ sender: 'user', text: "Teach me Newton's laws of motion" }],
+  });
+  assert.equal(brief.label, "Newton's laws");
+  assert.equal(brief.flashcards.length, 2);
+  assert.equal(gradeStudyCheck(brief.check, 'a').correct, true);
+});

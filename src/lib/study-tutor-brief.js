@@ -38,6 +38,19 @@ const CHECKS = [
     ifWrong: 'Cosine is adjacent over hypotenuse. We do not mark mastery until you can retrieve that without looking.',
     ifRight: 'Solid. Climb to vector components next.',
   },
+  {
+    id: 'physics.mechanics.newton-laws',
+    label: "Newton's laws",
+    foundation: 'Force as a push or pull, and net force',
+    prompt: 'You push a wall. The wall does not move. Which statement is true?',
+    options: [
+      { id: 'a', text: 'The wall pushes back on you with an equal force', correct: true },
+      { id: 'b', text: 'Only you apply a force; the wall applies none', correct: false },
+      { id: 'c', text: 'Equal forces on the same object always cancel, so you cannot move anything', correct: false },
+    ],
+    ifWrong: 'Action and reaction act on different objects. Repair that, then Newton 2 (F = ma) on one object.',
+    ifRight: 'Third law is holding. Next we use net force on one object — F = ma — not a full paper yet.',
+  },
 ];
 
 function haystack({ conversationContext = {}, messages = [] } = {}) {
@@ -51,6 +64,7 @@ function haystack({ conversationContext = {}, messages = [] } = {}) {
 export function deriveStudyTutorBrief(input = {}) {
   const hay = haystack(input);
   const hit = CHECKS.find((item) => hay.includes(item.label.toLowerCase()))
+    || (/\bnewton|inertia|\bf\s*=\s*ma\b/i.test(hay) ? CHECKS.find((item) => item.id.includes('newton')) : null)
     || (/\b(projectile|jee|neet|mechanics|iit)\b/i.test(hay) ? CHECKS[0] : null);
   if (!hit) {
     return {
@@ -59,6 +73,7 @@ export function deriveStudyTutorBrief(input = {}) {
       foundation: '',
       next: 'What should we make stronger — a topic, an exam, or a question you got wrong?',
       check: null,
+      flashcards: [],
     };
   }
   return {
@@ -67,6 +82,16 @@ export function deriveStudyTutorBrief(input = {}) {
     foundation: hit.foundation,
     next: `Check ${hit.label}. If it breaks, we repair ${hit.foundation} first.`,
     check: hit,
+    flashcards: [
+      {
+        front: hit.prompt,
+        back: (hit.options.find((option) => option.correct) || {}).text || '',
+      },
+      {
+        front: `What foundation sits under ${hit.label}?`,
+        back: hit.foundation,
+      },
+    ],
   };
 }
 

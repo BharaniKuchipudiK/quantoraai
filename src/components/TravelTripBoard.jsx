@@ -95,6 +95,7 @@ export default function TravelTripBoard({
   return (
     <div
       data-quantora-travel-board="true"
+      data-quantora-workspace-capabilities="travel"
       style={{
         margin: '0 auto 16px auto',
         maxWidth: '720px',
@@ -120,6 +121,12 @@ export default function TravelTripBoard({
         Next: {brief.next}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+        {chip('Flights', () => runSearch('flights'), brief.canSearchFlights)}
+        {chip('Hotels', () => runSearch('hotels'), brief.canSearchHotels)}
+        {chip('Attractions', () => onAsk?.('Suggest attractions that fit this trip. Keep it on this board — not a website.'), true)}
+        {chip('Itineraries', () => onAsk?.('Draft a balanced day-by-day itinerary for this trip.'), true)}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
         {chip('I am flying from…', () => onAsk?.('I am flying from '), true)}
         {chip('My dates are…', () => onAsk?.('My travel dates are '), true)}
         {chip('Show live flights', () => runSearch('flights'), brief.canSearchFlights)}
