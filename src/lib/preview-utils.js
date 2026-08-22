@@ -255,10 +255,32 @@ export function prepareCodeForPreview(code, vfs = {}) {
 
 export function assembledPreviewHasUsableCss(html = '') {
   const src = String(html || '');
+  if (isHonestPreviewFailurePage(src)) return false;
   if (/<style[\s>][\s\S]{12,}<\/style>/i.test(src)) return true;
   if (/\bstyle\s*=\s*["'][^"']{8,}/i.test(src)) return true;
   if (/cdn\.tailwindcss\.com/i.test(src) && /\bclass\s*=/i.test(src)) return true;
   return false;
+}
+
+/** Routing/fragment placeholders are not a successful outcome. */
+export function isHonestPreviewFailurePage(html = '') {
+  const src = String(html || '');
+  return /React preview routing error/i.test(src)
+    || /Preview needs a complete HTML page/i.test(src);
+}
+
+/**
+ * What Preview may claim. Never "clean" for a failure page, missing CSS, or a crash.
+ */
+export function decidePreviewTrustStatus({
+  assembledHtml = '',
+  styledCheckOk = true,
+  errorSeen = false,
+} = {}) {
+  if (errorSeen) return 'failed';
+  if (isHonestPreviewFailurePage(assembledHtml)) return 'failed';
+  if (!assembledPreviewHasUsableCss(assembledHtml) || styledCheckOk === false) return 'degraded';
+  return 'clean';
 }
 
 export function usesTailwindCdn(html) {
