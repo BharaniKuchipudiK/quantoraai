@@ -14,7 +14,7 @@ import {
 } from '../lib/project-store.js';
 import { compactOfficeMessages } from '../lib/office-session-state.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
-import { deriveProjectResume, pickResumeSessionId } from '../lib/studio-mission.js';
+import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, isCannedProjectDescription } from '../lib/studio-mission.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -41,7 +41,7 @@ function createDefaultProject() {
     id: DEFAULT_PROJECT_ID,
     version: 0,
     name: 'Personal Workspace',
-    description: 'A flexible space for everyday questions and ideas.',
+    description: CANNED_PROJECT_DESCRIPTION,
     goal: '',
     status: 'active',
     createdAt: now,
@@ -272,7 +272,9 @@ export function useStudioSession({ user, selectedModel }) {
       projectId: activeProject.id,
       projectName: activeProject.name,
       goal: activeProject.goal || remote?.goal || '',
-      understanding: activeProject.description || remote?.understanding || '',
+      understanding: isCannedProjectDescription(activeProject.description)
+        ? (isCannedProjectDescription(remote?.understanding) ? '' : (remote?.understanding || ''))
+        : (activeProject.description || remote?.understanding || ''),
       facts,
       decisions: remote?.decisions || [],
       constraints: remote?.constraints || [],

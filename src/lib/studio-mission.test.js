@@ -79,3 +79,14 @@ test('Travel is planning a trip, not building a website', () => {
   assert.equal(mission.lead, 'Planning');
   assert.doesNotMatch(mission.next || '', /publish|working page/i);
 });
+
+test('canned project copy is not treated as session understanding', () => {
+  const mission = deriveStudioMission({
+    conversationContext: { understanding: 'A flexible space for everyday questions and ideas.' },
+    messages: [{ sender: 'user', text: 'build a weather app for iOS' }],
+    hasPreview: true,
+  });
+  assert.match(mission.goal, /weather/i);
+  assert.doesNotMatch(mission.understanding || '', /flexible space/i);
+  assert.doesNotMatch(mission.next || '', /tweak it|publish/i);
+});

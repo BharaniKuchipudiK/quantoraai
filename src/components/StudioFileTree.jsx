@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileCode, Play } from 'lucide-react';
+import { FileCode, Play, Terminal } from 'lucide-react';
 import { listStudioFiles, studioFileLabel } from '../lib/studio-file-tree.js';
 
 export default function StudioFileTree({
@@ -43,6 +43,14 @@ export default function StudioFileTree({
       >
         <Play size={12} />
         Preview
+      </button>
+      <button
+        type="button"
+        onClick={() => onSelect('terminal')}
+        style={rowStyle(activePath === 'terminal', isLight, textColor, subtextColor)}
+      >
+        <Terminal size={12} />
+        Terminal
       </button>
       {files.length === 0 ? (
         <div style={{ padding: '10px 8px', fontSize: '0.72rem', color: subtextColor, lineHeight: 1.45 }}>

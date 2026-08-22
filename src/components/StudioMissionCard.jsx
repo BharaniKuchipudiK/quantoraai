@@ -1,4 +1,5 @@
 import React from 'react';
+import { isCannedProjectDescription } from '../lib/studio-mission.js';
 
 /**
  * Visible world model — what this session is building. Not an IDE, not notes chrome.
@@ -22,7 +23,7 @@ export default function StudioMissionCard({ mission, isLight, textColor, subtext
           {mission.lead || 'Building'}: {mission.goal}
         </div>
       ) : null}
-      {mission.understanding ? (
+      {mission.understanding && !isCannedProjectDescription(mission.understanding) ? (
         <div style={{ fontSize: '0.75rem', color: subtextColor, marginTop: '4px', lineHeight: 1.4 }}>
           {mission.understanding}
         </div>
