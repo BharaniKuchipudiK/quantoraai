@@ -19,6 +19,7 @@ export function deriveStudioMission({
   hasPreview = false,
   continueLabel = '',
   officeKind = null,
+  studioDomain = null,
 } = {}) {
   const ctx = normalizeSessionContext(conversationContext);
   const users = (messages || [])
@@ -27,18 +28,32 @@ export function deriveStudioMission({
     .filter(Boolean);
   const buildRequest = [...users].reverse().find((text) => BUILDISH.test(text)) || users[0] || '';
   const goal = ctx.goal || clip(buildRequest);
+  const lifeDomain = studioDomain === 'travel'
+    || studioDomain === 'education'
+    || studioDomain === 'finance'
+    || studioDomain === 'research';
   const understanding = ctx.understanding
     || (hasPreview && officeKind
       ? 'An Office file is in Preview. This is not a website.'
-      : hasPreview ? 'A working preview is on screen for this session.' : '');
+      : hasPreview && !lifeDomain ? 'A working preview is on screen for this session.' : '');
   const next = continueLabel
     || (hasPreview && officeKind
       ? 'Download the file, or tell me which slide or section to change.'
-      : hasPreview ? 'Tweak it, add a missing business piece, or publish.' : '');
+      : hasPreview && !lifeDomain ? 'Tweak it, add a missing business piece, or publish.' : '');
+  const lead = studioDomain === 'travel'
+    ? 'Planning'
+    : studioDomain === 'education'
+      ? 'Learning'
+      : studioDomain === 'finance'
+        ? 'Working through'
+        : studioDomain === 'research'
+          ? 'Investigating'
+          : 'Building';
 
   if (!goal && !understanding && !next && !(ctx.facts || []).length) return null;
 
   return {
+    lead,
     goal,
     understanding,
     facts: ctx.facts || [],

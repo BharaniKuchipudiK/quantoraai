@@ -1648,6 +1648,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     lastAiText: lastAiMessage?.text || '',
     hasUserTurn,
     officeKind: officeKindNow,
+    studioDomain,
   });
   const studioMission = deriveStudioMission({
     conversationContext,
@@ -1655,6 +1656,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     hasPreview: Boolean((isWorkspaceMode && workspaceCode) || activeOfficeArtifact(messages)),
     continueLabel: partnerContinueLabel,
     officeKind: officeKindNow,
+    studioDomain,
   });
   const studyBrief = studioDomain === 'education'
     ? deriveStudyTutorBrief({ conversationContext, messages })
@@ -2322,12 +2324,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           />
         ) : null}
         <StudioMissionCard
-          mission={studioMission && partnerStatus && !isGenerating ? { ...studioMission, next: '' } : studioMission}
+          mission={studioMission && partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) ? { ...studioMission, next: '' } : studioMission}
           isLight={isLight}
           textColor={textColor}
           subtextColor={subtextColor}
         />
-        {partnerStatus && !isGenerating && (
+        {partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) && (
           <div
             data-quantora-partner-status="true"
             role="status"

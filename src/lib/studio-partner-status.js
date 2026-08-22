@@ -13,10 +13,21 @@ export function resolveStudioPartnerStatus({
   lastAiText = '',
   hasUserTurn = false,
   officeKind = null,
+  studioDomain = null,
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
+  const lifeDomain = studioDomain === 'travel'
+    || studioDomain === 'education'
+    || studioDomain === 'finance'
+    || studioDomain === 'research';
 
   if (isGenerating) {
+    if (lifeDomain) {
+      return {
+        now: generatingLabel || 'Working on your next step…',
+        next: `Stay here — I will answer in this conversation. ${clock}`,
+      };
+    }
     return {
       now: generatingLabel || 'Working on a result you can actually use…',
       next: hasPreview
@@ -47,6 +58,23 @@ export function resolveStudioPartnerStatus({
       next: continueLabel
         ? `Next: ${continueLabel}. Or say what to change.`
         : 'Next: tweak it, add anything the business still needs, or publish when you are ready.',
+    };
+  }
+
+  if (lifeDomain && lastAiText && hasUserTurn) {
+    const nextByDomain = {
+      travel: continueLabel || 'Use the trip board, or tell me the next detail (dates, from city, or what to search).',
+      education: continueLabel || 'Use the tutor board, or tell me what to check next.',
+      finance: continueLabel || 'Tell me the decision or the numbers you want to work through.',
+      research: continueLabel || 'Tell me what to compare or verify next.',
+    };
+    return {
+      now: studioDomain === 'travel'
+        ? 'Answered in our trip conversation — this is not a website to preview.'
+        : studioDomain === 'education'
+          ? 'Answered as your tutor — this is not a website to preview.'
+          : 'Answered in this conversation — this is not a website to preview.',
+      next: nextByDomain[studioDomain],
     };
   }
 
