@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from 'node:process';
 import { chromium } from 'playwright';
+import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const VALID_VIDEO_ID = 'studyvalid123';
@@ -107,12 +108,9 @@ async function hidden(locator, message, timeout = 5000) {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+  await enterSignedInStudio(page);
 
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation did not become visible.');
-  await studio.click();
-
-  const study = page.getByText(/^Study Tutor$/i).first();
+  const study = page.locator('[data-quantora-advisor="education"]').first();
   await visible(study, 'Study Tutor is missing from the Agentic Workspace sidebar.');
   await study.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'education');

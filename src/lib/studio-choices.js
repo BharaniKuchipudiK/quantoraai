@@ -96,3 +96,20 @@ export function parseAssistantResponse(text) {
   const { displayText: afterChoices, choiceSet } = extractChoicesFromAssistantText(text);
   return { displayText: afterChoices, choiceSet };
 }
+
+/**
+ * A trip-length (or any) decision card is a question, not a souvenir.
+ * After the learner/traveller answers, it must not stay in the thread.
+ */
+export function shouldShowAssistantDecisionCard({
+  choiceUsed = false,
+  messageId = null,
+  messages = [],
+} = {}) {
+  if (choiceUsed) return false;
+  const index = (messages || []).findIndex((message) => message?.id === messageId);
+  if (index < 0) return true;
+  return !(messages || []).slice(index + 1).some((message) => (
+    message?.sender === 'user' && String(message.text || '').trim()
+  ));
+}

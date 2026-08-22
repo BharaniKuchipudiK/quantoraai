@@ -12,7 +12,9 @@ test("normalizeStudioDomain accepts known domains", () => {
 test("buildDomainDirective makes Travel an engaged outcome partner", () => {
   const directive = buildDomainDirective("travel");
   assert.match(directive, /DOMAIN FOCUS: TRAVEL ADVISOR/);
-  assert.match(directive, /move the planning forward/i);
+  assert.match(directive, /SESSION LOCK/i);
+  assert.match(directive, /Travel Advisor only/i);
+  assert.match(directive, /Study Tutor/i);
   assert.match(directive, /ONE highest-value next question or offer/i);
   assert.match(directive, /Never re-ask details/i);
   assert.match(directive, /dates.*travellers.*budget.*passport\/visa/is);
@@ -21,7 +23,8 @@ test("buildDomainDirective makes Travel an engaged outcome partner", () => {
 
 test("Travel directive requires ratings and usable property links without inventing hotel class", () => {
   const directive = buildDomainDirective("travel");
-  assert.match(directive, /Google user rating/i);
+  assert.match(directive, /Never call get_places_routing for hotels/i);
+  assert.match(directive, /Never list hotels from memory/i);
   assert.match(directive, /★ 4\.6\/5/);
   assert.match(directive, /NOT an official hotel star classification/i);
   assert.match(directive, /property name clickable/i);
@@ -32,7 +35,11 @@ test("Travel directive requires ratings and usable property links without invent
 test("Education directive behaves as an evidence-backed Study Advisor instead of a score bot", () => {
   const directive = buildDomainDirective("education");
   assert.match(directive, /DOMAIN FOCUS: STUDY ADVISOR/);
-  assert.match(directive, /deepest confirmed prerequisite\/root cause/i);
+  assert.match(directive, /SESSION LOCK/i);
+  assert.match(directive, /Study Tutor only/i);
+  assert.match(directive, /Travel Advisor/i);
+  assert.match(directive, /Icebreaker first/i);
+  assert.match(directive, /No leaderboards/i);
   assert.match(directive, /8\/10 is evidence, not the advice/i);
   assert.match(directive, /confidently wrong answer.*misconception/is);
   assert.match(directive, /smallest useful diagnostic/i);

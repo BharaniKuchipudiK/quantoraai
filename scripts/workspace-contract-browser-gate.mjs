@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import process from 'node:process';
 import { chromium } from 'playwright';
+import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
@@ -68,9 +69,7 @@ const workspaces = [
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation is missing.');
-  await studio.click();
+  await enterSignedInStudio(page);
 
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
   await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
@@ -79,7 +78,7 @@ try {
   await visible(headerProfile, 'Global Profile control is missing from Studio.');
 
   for (const workspace of workspaces) {
-    const advisor = page.getByText(new RegExp(`^${workspace.label}$`, 'i')).first();
+    const advisor = page.locator(`[data-quantora-advisor="${workspace.domain}"]`).first();
     await visible(advisor, `${workspace.label} is missing from the sidebar.`);
     await advisor.click();
     await page.waitForFunction((domain) => document.documentElement.dataset.quantoraDomain === domain, workspace.domain);

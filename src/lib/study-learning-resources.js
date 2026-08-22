@@ -40,10 +40,20 @@ export function studyResourceLinks(topic = '') {
   ];
 }
 
+export function studyIcebreakerAsk(topic) {
+  const label = String(topic || 'this idea').trim();
+  return [
+    `Give one true, checkable icebreaker for ${label} — a short origin, first use, or human story (for Newton’s laws: the apple as a question about why things fall the same way).`,
+    'Keep it to a few sentences. Invite me to picture it. Do not invent images, URLs, or animations you cannot show.',
+    'Then STOP. Ask me to say “I’m with you” before any definition, table, flashcards, or quiz.',
+    'No leaderboard, points, or rank. Do not plan trips, flights, or hotels.',
+  ].join(' ');
+}
+
 export function studyLessonAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
-    `Teach ${label} like a patient personal tutor.`,
+    `Open with one true one-sentence hook for ${label}, then teach like a patient personal tutor.`,
     'Use numbered sections.',
     'For each idea: a short title, the formal definition in italics, what it means in plain words, one everyday picture, and a tiny worked example if there is math.',
     'Include a Real-world applications table: Situation | How the idea appears (4 rows).',

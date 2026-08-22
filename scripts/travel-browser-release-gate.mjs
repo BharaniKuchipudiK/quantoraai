@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import process from 'node:process';
 import { chromium } from 'playwright';
+import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
@@ -127,17 +128,14 @@ async function anyVisible(locator, timeout = 5000) {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation never became visible.');
-  await studio.click();
+  await enterSignedInStudio(page);
 
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into neutral Studio.');
   await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into neutral Studio.');
   await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from neutral Studio.');
   await visible(page.locator('button[aria-controls="quantora-profile-menu"]').first(), 'Global Profile control is missing from neutral Studio.');
 
-  const travelAdvisor = page.getByText(/^(Travel Guide AI|Travel Advisor)$/i).first();
+  const travelAdvisor = page.locator('[data-quantora-advisor="travel"]').first();
   await visible(travelAdvisor, 'Travel specialist entry is missing.');
   await travelAdvisor.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
@@ -194,7 +192,10 @@ try {
   await hidden(page.locator('button[title="More"]').first(), 'Legacy three-dot response overflow is still visible in Travel.');
 
   await page.getByText('Singapore (SIN)', { exact: true }).first().click();
-  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  await hidden(
+    page.getByRole('button', { name: 'Submit', exact: true }).first(),
+    'The trip decision card stayed on screen after an answer.',
+  );
   await visible(page.getByText(/Singapore is locked in\. What dates are you considering\?/i).first(), 'Travel did not continue after the decision selection.');
 
   // The critical regression fixture: runnable code arrives while Travel is active.

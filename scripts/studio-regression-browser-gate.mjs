@@ -3,6 +3,7 @@ import process from 'node:process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { compilePreviewVfs } from '../api/_lib/preview-compiler.js';
+import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true });
@@ -113,9 +114,7 @@ async function visibleFrame(selector, timeout = 20000) {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation is missing.');
-  await studio.click();
+  await enterSignedInStudio(page);
 
   if (await page.locator('[data-quantora-sidebar-profile]').count()) throw new Error('Duplicate Profile entry leaked into the Studio sidebar.');
   if (await page.locator('[data-quantora-sidebar-canvas]').count()) throw new Error('Duplicate Canvas entry leaked into the Studio sidebar.');
@@ -123,7 +122,9 @@ try {
 
   const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
   await visible(profile, 'Header Profile entry is missing.');
-  await profile.click();
+  await page.mouse.move(1400, 12);
+  await page.waitForTimeout(250);
+  await profile.click({ timeout: 15_000, force: true });
   const accountMenu = page.locator('#quantora-profile-menu').first();
   await visible(accountMenu, 'Header Profile did not open the real account menu.');
   const changePicture = accountMenu.locator('[data-quantora-profile-picture-entry]').first();

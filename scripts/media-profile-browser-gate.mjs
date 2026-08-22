@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from 'node:process';
 import { chromium } from 'playwright';
+import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const VALID_VIDEO_ID = 'valid12345';
@@ -109,16 +110,15 @@ async function hidden(locator, message) {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-
-  const studioButton = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studioButton, 'Studio navigation did not become visible.');
-  await studioButton.click();
+  await enterSignedInStudio(page);
 
   await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
   const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
   await visible(profile, 'Global Profile control is missing.');
-  await profile.click();
+  await page.mouse.move(1400, 12);
+  await page.waitForTimeout(250);
+  await profile.click({ timeout: 15_000, force: true });
 
   const accountMenu = page.locator('#quantora-profile-menu').first();
   await visible(accountMenu, 'Profile click did not open the account menu.');

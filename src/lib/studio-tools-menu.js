@@ -1,0 +1,132 @@
+import { studyFlashcardAsk, studyIcebreakerAsk, studyLessonAsk, studyQuizAsk } from './study-learning-resources.js';
+import {
+  travelAttractionsAsk,
+  travelFlightsAsk,
+  travelHotelsAsk,
+  travelIcebreakerAsk,
+  travelItineraryAsk,
+} from './travel-advisor-asks.js';
+
+export const STUDIO_PLUS_ACTION = Object.freeze({
+  FRESH_THREAD: 'fresh-thread',
+  OPEN_DOMAIN: 'open-domain',
+  PROMPT: 'prompt',
+});
+
+const STUDIO_GENERAL = [
+  { id: 'Search', title: 'Search', subtitle: 'Auto-browse the web, YouTube & X', icon: 'globe' },
+  { id: 'Deep Research', title: 'Deep Research', subtitle: 'In-depth, multi-source research', icon: 'search', badge: 'Beta' },
+  { id: 'Podcast', title: 'Podcast', subtitle: 'Turn content into a podcast', icon: 'mic' },
+  { id: 'open-travel', title: 'Travel', subtitle: 'Plan trips, find flights & hotels', icon: 'plane', badge: 'Beta' },
+];
+
+const STUDIO_OFFICE = [
+  { id: 'PowerPoint', title: 'PowerPoint', subtitle: 'Create & edit presentations', icon: 'slides', badge: 'Beta', iconColor: '#ef4444' },
+  { id: 'Excel', title: 'Excel', subtitle: 'Create & edit spreadsheets', icon: 'table', badge: 'Beta', iconColor: '#10b981' },
+  { id: 'Word', title: 'Word', subtitle: 'Create & edit documents', icon: 'word', badge: 'Beta', iconColor: '#3b82f6' },
+  { id: 'PDF', title: 'PDF', subtitle: 'Create & edit PDFs', icon: 'pdf', badge: 'Beta', iconColor: '#ef4444' },
+];
+
+function itemIds(groups) {
+  return groups.flatMap((group) => group.items.map((item) => item.id));
+}
+
+/**
+ * Plus-menu catalog. Travel and Study never share items.
+ * Studio keeps Search / Office. Picking Travel opens the Travel advisor — it does not stay in Studio chat.
+ */
+export function studioToolsMenuGroups(studioDomain, topic = '') {
+  if (studioDomain === 'travel') {
+    return [
+      {
+        heading: 'THIS TRIP',
+        items: [
+          { id: 'new-trip', title: 'New trip', subtitle: 'Start a fresh trip. This one stays in your list.', icon: 'plus' },
+          { id: 'travel-icebreaker', title: 'Icebreaker', subtitle: 'One true hook, then pause so you stay focused.', icon: 'spark' },
+          { id: 'travel-flights', title: 'Flights', subtitle: 'Live options when you give airports and dates.', icon: 'plane' },
+          { id: 'travel-hotels', title: 'Hotels', subtitle: 'Shortlist stays. We do not invent ratings.', icon: 'hotel' },
+          { id: 'travel-attractions', title: 'Attractions', subtitle: 'Places that fit this trip, in chat.', icon: 'pin' },
+          { id: 'travel-itinerary', title: 'Itinerary', subtitle: 'A balanced day-by-day plan.', icon: 'route' },
+        ],
+      },
+    ];
+  }
+
+  if (studioDomain === 'education') {
+    const label = String(topic || 'this idea').trim() || 'this idea';
+    return [
+      {
+        heading: 'THIS TOPIC',
+        items: [
+          { id: 'new-topic', title: 'New topic', subtitle: 'Start a fresh topic. This one stays in your list.', icon: 'plus' },
+          { id: 'study-icebreaker', title: 'Icebreaker', subtitle: 'A true hook, then pause — then we teach.', icon: 'spark' },
+          { id: 'study-explain', title: 'Explain', subtitle: `Teach ${label} with a picture in words, then wait.`, icon: 'book' },
+          { id: 'study-flashcards', title: 'Flashcards', subtitle: 'Flip to recall. Not a website preview.', icon: 'cards' },
+          { id: 'study-quiz', title: 'Quiz', subtitle: 'Real checks. No leaderboard. I wait for you.', icon: 'quiz' },
+        ],
+      },
+    ];
+  }
+
+  if (studioDomain === 'finance' || studioDomain === 'research') {
+    return [
+      {
+        heading: studioDomain === 'finance' ? 'THIS MONEY QUESTION' : 'THIS RESEARCH',
+        items: [
+          {
+            id: 'new-advisor-chat',
+            title: 'New conversation',
+            subtitle: 'Start fresh in this advisor. The current thread stays in your list.',
+            icon: 'plus',
+          },
+        ],
+      },
+    ];
+  }
+
+  return [
+    { heading: 'GENERAL', items: STUDIO_GENERAL },
+    { heading: 'OFFICE', items: STUDIO_OFFICE },
+  ];
+}
+
+export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '') {
+  const id = String(toolId || '');
+  if (id === 'new-trip') return { kind: STUDIO_PLUS_ACTION.FRESH_THREAD, domain: 'travel' };
+  if (id === 'new-topic') return { kind: STUDIO_PLUS_ACTION.FRESH_THREAD, domain: 'education' };
+  if (id === 'new-advisor-chat') {
+    const domain = studioDomain === 'finance' || studioDomain === 'research' ? studioDomain : null;
+    return domain
+      ? { kind: STUDIO_PLUS_ACTION.FRESH_THREAD, domain }
+      : { kind: STUDIO_PLUS_ACTION.PROMPT, text: '' };
+  }
+  if (id === 'open-travel') return { kind: STUDIO_PLUS_ACTION.OPEN_DOMAIN, domain: 'travel' };
+
+  const prompts = {
+    Search: 'Search the web for ',
+    'Deep Research': 'Conduct a deep research report on ',
+    Podcast: 'Create a podcast script about ',
+    PowerPoint: 'Prepare a PowerPoint presentation about ',
+    Excel: 'Create an Excel spreadsheet that tracks ',
+    Word: 'Draft a formal Word document discussing ',
+    PDF: 'Generate a PDF summary of ',
+    'travel-icebreaker': travelIcebreakerAsk(),
+    'travel-flights': travelFlightsAsk(),
+    'travel-hotels': travelHotelsAsk(),
+    'travel-attractions': travelAttractionsAsk(),
+    'travel-itinerary': travelItineraryAsk(),
+    'study-icebreaker': studyIcebreakerAsk(topic),
+    'study-explain': studyLessonAsk(topic || 'this idea'),
+    'study-flashcards': studyFlashcardAsk(topic || 'this idea'),
+    'study-quiz': studyQuizAsk(topic || 'this idea'),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(prompts, id)) {
+    return { kind: STUDIO_PLUS_ACTION.PROMPT, text: prompts[id] };
+  }
+  return { kind: STUDIO_PLUS_ACTION.PROMPT, text: '' };
+}
+
+export function studioPlusCatalogIds(studioDomain) {
+  return itemIds(studioToolsMenuGroups(studioDomain));
+}

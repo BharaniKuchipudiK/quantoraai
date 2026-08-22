@@ -65,13 +65,18 @@ test('travel routing contract rejects half a route instead of guessing', () => {
   assert.match(result.issues.join(','), /destination/);
 });
 
-test('travel hotel contract enforces chronological stay dates', () => {
+test('travel hotel contract still rejects inverted stay dates', () => {
   const result = validateTravelToolArgs('search_hotels', {
     location: 'Bali',
     checkInDate: '2026-09-15',
     checkOutDate: '2026-09-10',
   });
   assert.equal(result.status, 'invalid');
+});
+
+test('travel hotel discovery is valid with only a location', () => {
+  const result = validateTravelToolArgs('search_hotels', { location: 'Tokyo' });
+  assert.equal(result.status, 'ok');
 });
 
 test('credential broker rejects unknown provider identifiers before backend access', async () => {

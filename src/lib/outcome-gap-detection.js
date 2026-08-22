@@ -20,7 +20,18 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
   const wantsUrls = /\b(url|urls|link|links|clickable)\b/i.test(userPrompt);
   const hasUrls = /https?:\/\//i.test(ai);
 
-  if (wantsUrls && !hasUrls) {
+  if (studioDomain === 'travel') {
+    const wantsStayFacts = /\b(rating|ratings|review|link|links|website|maps|propert(?:y|ies)|hotel|stay|stays)\b/i.test(userPrompt);
+    const hasStayFacts = /★/.test(ai) && /https?:\/\//i.test(ai);
+    if (wantsStayFacts && !hasStayFacts) {
+      gaps.push(beat(
+        'gap-live-hotels',
+        'Look up live stays',
+        'Call search_hotels for these properties. Paste Google user ratings ★ x/5 with review count, plus website or Maps links. Do not use map routing. Do not invent ratings.',
+        110,
+      ));
+    }
+  } else if (wantsUrls && !hasUrls) {
     gaps.push(beat(
       'gap-missing-urls',
       'Add direct links',
