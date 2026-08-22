@@ -88,6 +88,17 @@ test("build mode tells the model to ship working tools immediately", () => {
   assert.match(prompt, /domestic vs international shipping/);
 });
 
+test("a shop build must emit real product photos, not placeholder frames", () => {
+  const prompt = buildConversationSystemPrompt({
+    buildMode: true,
+    guided: false,
+    lastMessage: "build a website for an Indian ethnic saree boutique",
+  });
+  assert.match(prompt, /images\.unsplash\.com/);
+  assert.match(prompt, /Never SVG empty frames/);
+  assert.doesNotMatch(prompt, /tasteful placeholder imagery/);
+});
+
 test("Office JSON rules are only injected for Office requests", () => {
   const office = buildConversationSystemPrompt({
     buildMode: true,
@@ -103,6 +114,8 @@ test("guided build requires intake before HTML on first turn", () => {
   assert.match(prompt, /FIRST-TURN RULE/);
   assert.match(prompt, /MUST NOT output HTML/);
   assert.match(prompt, /Never invent a business name/);
+  assert.match(prompt, /images\.unsplash\.com/);
+  assert.doesNotMatch(prompt, /tasteful placeholder imagery/);
 });
 
 test("refine mode uses communication layer before code", () => {

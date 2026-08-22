@@ -48,6 +48,7 @@ test("a boutique with empty frames fails the product photo check", () => {
   const empty = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>Aaranya</title><style>body{font-family:Inter}</style></head><body><header><nav></nav></header><main><h1>Aaranya</h1><svg></svg><button class="add-to-cart">Add to bag</button></main><footer></footer></body></html>`;
   const checks = heuristicChecks(empty, "an Indian ethnic saree boutique website");
   assert.equal(checkById(checks, "feat-photos")?.ok, false);
+  assert.equal(checkById(checks, "feat-photos")?.critical, true);
 });
 
 test("a local stylesheet link without inlined CSS fails the critical styled check", () => {

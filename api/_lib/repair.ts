@@ -27,7 +27,7 @@ export function buildRepairPrompt(code: string, error: string, framework: string
     `Preserve the original design, content and intent EXACTLY; change only the single thing that causes the error. ` +
     `Do NOT simplify, restyle, or "clean up" the code. Keep every <style> block, inline style, CSS class, layout, color, font and image byte-for-byte unless it is the direct cause of the error. ` +
     `The corrected output must be at least as long as the input. ` +
-    (jobBlock ? `Honor the JOB below. Never turn this into a different product. ` : "") +
+    (jobBlock ? `Honor the JOB below. Never turn this into a different product. If the JOB requires real product photos and the page uses SVG or empty frames, replace those frames with https://images.unsplash.com/ <img> photos. That is the fix. ` : "") +
     (framework === "react"
       ? `The module must default-export a React component and must not import anything that is not available.`
       : `The document must remain fully self-contained: all CSS and JS inline, no external build step, no bare module imports.`);

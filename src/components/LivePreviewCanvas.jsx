@@ -11,6 +11,7 @@ import {
   revokePreviewEmbedObjectUrl,
   buildPreviewSandbox,
 } from '../lib/preview-utils.js';
+import { rewritePreviewImageUrls } from '../lib/preview-images.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
@@ -169,7 +170,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
-    const preparedHtml = prepareCodeForPreview(html, vfs);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, vfs), origin);
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
   }, [vfs]);
 
