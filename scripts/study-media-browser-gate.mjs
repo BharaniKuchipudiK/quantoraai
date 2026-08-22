@@ -112,7 +112,7 @@ try {
   await visible(studio, 'Studio navigation did not become visible.');
   await studio.click();
 
-  const study = page.getByText(/^Study Tutor$/i).first();
+  const study = page.locator('[data-quantora-advisor="education"]').first();
   await visible(study, 'Study Tutor is missing from the Agentic Workspace sidebar.');
   await study.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'education');

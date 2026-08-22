@@ -79,7 +79,7 @@ try {
   await visible(headerProfile, 'Global Profile control is missing from Studio.');
 
   for (const workspace of workspaces) {
-    const advisor = page.getByText(new RegExp(`^${workspace.label}$`, 'i')).first();
+    const advisor = page.locator(`[data-quantora-advisor="${workspace.domain}"]`).first();
     await visible(advisor, `${workspace.label} is missing from the sidebar.`);
     await advisor.click();
     await page.waitForFunction((domain) => document.documentElement.dataset.quantoraDomain === domain, workspace.domain);

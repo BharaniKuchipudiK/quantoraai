@@ -103,7 +103,7 @@ async function assertViewportIntegrity(label) {
 }
 
 async function switchWorkspace(label, domain) {
-  const target = page.getByText(new RegExp(`^${label}$`, 'i')).first();
+  const target = page.locator(`[data-quantora-advisor="${domain}"]`).first();
   await visible(target, `${label} is missing.`);
   const started = Date.now();
   await target.click();

@@ -137,7 +137,7 @@ try {
   await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from neutral Studio.');
   await visible(page.locator('button[aria-controls="quantora-profile-menu"]').first(), 'Global Profile control is missing from neutral Studio.');
 
-  const travelAdvisor = page.getByText(/^(Travel Guide AI|Travel Advisor)$/i).first();
+  const travelAdvisor = page.locator('[data-quantora-advisor="travel"]').first();
   await visible(travelAdvisor, 'Travel specialist entry is missing.');
   await travelAdvisor.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'travel');
@@ -194,7 +194,10 @@ try {
   await hidden(page.locator('button[title="More"]').first(), 'Legacy three-dot response overflow is still visible in Travel.');
 
   await page.getByText('Singapore (SIN)', { exact: true }).first().click();
-  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  await hidden(
+    page.getByRole('button', { name: 'Submit', exact: true }).first(),
+    'The trip decision card stayed on screen after an answer.',
+  );
   await visible(page.getByText(/Singapore is locked in\. What dates are you considering\?/i).first(), 'Travel did not continue after the decision selection.');
 
   // The critical regression fixture: runnable code arrives while Travel is active.
