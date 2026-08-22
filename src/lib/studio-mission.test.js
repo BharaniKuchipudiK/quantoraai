@@ -39,3 +39,13 @@ test('an Office mission does not tell the user to publish a website', () => {
   assert.doesNotMatch(mission.next, /publish/i);
   assert.match(mission.understanding || mission.goal, /Office|presentation|HAM/i);
 });
+
+test('Travel is planning a trip, not building a website', () => {
+  const mission = deriveStudioMission({
+    conversationContext: { goal: 'Plan a balanced trip to Mauritius for 2 adults' },
+    messages: [{ sender: 'user', text: '7 Days / 1 Week' }],
+    studioDomain: 'travel',
+  });
+  assert.equal(mission.lead, 'Planning');
+  assert.doesNotMatch(mission.next || '', /publish|working page/i);
+});

@@ -62,3 +62,24 @@ test('after a real chat reply with no preview, the strip explains the gap', () =
   });
   assert.match(status.now, /no runnable preview/i);
 });
+
+test('Travel never asks for a website preview', () => {
+  const status = resolveStudioPartnerStatus({
+    lastAiText: 'I could not retrieve live hotel results.',
+    hasUserTurn: true,
+    studioDomain: 'travel',
+  });
+  assert.doesNotMatch(status.now, /runnable preview/i);
+  assert.doesNotMatch(status.next, /working page/i);
+  assert.match(status.now, /trip conversation/i);
+});
+
+test('Study never asks for a website preview', () => {
+  const status = resolveStudioPartnerStatus({
+    lastAiText: 'Let us repair vector components first.',
+    hasUserTurn: true,
+    studioDomain: 'education',
+  });
+  assert.doesNotMatch(status.next, /working page/i);
+  assert.match(status.now, /tutor/i);
+});

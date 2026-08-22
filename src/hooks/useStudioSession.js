@@ -13,6 +13,7 @@ import {
   syncRemoteProjectSessions,
 } from '../lib/project-store.js';
 import { compactOfficeMessages } from '../lib/office-session-state.js';
+import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
@@ -140,14 +141,15 @@ function persistSessions(sessions) {
 }
 
 function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
+  const domain = normalizeStudioDomain(studioDomain);
   return {
     id: 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-    title: 'New Chat',
+    title: newThreadLabel(domain),
     createdAt: Date.now(),
     projectId,
     messages: [defaultGreetingMsg],
     studioMode: 'ask',
-    studioDomain: normalizeStudioDomain(studioDomain),
+    studioDomain: domain,
     boundRepo: null,
     conversationContext: {},
     memoryConsented: false,
@@ -421,7 +423,7 @@ export function useStudioSession({ user, selectedModel }) {
         const newMsgs = typeof updater === 'function' ? updater(session.messages || []) : updater;
         let newTitle = session.title;
         const firstUserMsg = newMsgs.find((m) => m.sender === 'user');
-        if (firstUserMsg && (session.title === 'New Chat' || session.title === 'Welcome to Quantora')) {
+        if (firstUserMsg && (session.title === 'New Chat' || session.title === 'New trip' || session.title === 'New topic' || session.title === 'Welcome to Quantora')) {
           newTitle = firstUserMsg.text.slice(0, 32) + (firstUserMsg.text.length > 32 ? '...' : '');
         }
         return { ...session, title: newTitle, messages: newMsgs, updatedAt: Date.now() };
@@ -445,16 +447,6 @@ export function useStudioSession({ user, selectedModel }) {
     });
   }, [activeSessionId]);
 
-  const handleCreateNewChat = useCallback(() => {
-    const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
-    setAllChatSessions((prev) => {
-      const updated = [newSession, ...prev];
-      persistSessions(updated);
-      return updated;
-    });
-    setActiveSessionId(newSession.id);
-  }, [activeProject.id, defaultGreetingMsg]);
-
   const handleCreateAdvisorChat = useCallback((domain) => {
     const normalizedDomain = normalizeStudioDomain(domain);
     if (!normalizedDomain) return null;
@@ -467,6 +459,38 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveSessionId(newSession.id);
     return newSession.id;
   }, [activeProject.id, defaultGreetingMsg]);
+
+  const handleCreateNewChat = useCallback(() => {
+    if (studioDomain) {
+      handleCreateAdvisorChat(studioDomain);
+      return;
+    }
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+  }, [activeProject.id, defaultGreetingMsg, handleCreateAdvisorChat, studioDomain]);
+
+  const openAdvisorWorkspace = useCallback((domain) => {
+    const requestedDomain = normalizeStudioDomain(domain);
+    if (!requestedDomain) return null;
+    const decision = resolveAdvisorSidebarClick({
+      currentDomain: studioDomain,
+      requestedDomain,
+      sessions: projectSessions,
+      activeSessionId,
+      projectId: activeProject.id,
+    });
+    if (decision.type === 'stay') return activeSessionId;
+    if (decision.type === 'switch') {
+      setActiveSessionId(decision.sessionId);
+      return decision.sessionId;
+    }
+    return handleCreateAdvisorChat(requestedDomain);
+  }, [activeProject.id, activeSessionId, handleCreateAdvisorChat, projectSessions, studioDomain]);
 
   const forkChatFromMessage = useCallback((messageId) => {
     let forkedSessionId = null;
@@ -615,6 +639,7 @@ export function useStudioSession({ user, selectedModel }) {
     recordListeningSignal,
     handleCreateNewChat,
     handleCreateAdvisorChat,
+    openAdvisorWorkspace,
     forkChatFromMessage,
     handleDeleteChat,
     projects,

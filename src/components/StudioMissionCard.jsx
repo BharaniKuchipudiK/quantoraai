@@ -19,7 +19,7 @@ export default function StudioMissionCard({ mission, isLight, textColor, subtext
     >
       {mission.goal ? (
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: textColor, lineHeight: 1.4 }}>
-          Building: {mission.goal}
+          {mission.lead || 'Building'}: {mission.goal}
         </div>
       ) : null}
       {mission.understanding ? (
