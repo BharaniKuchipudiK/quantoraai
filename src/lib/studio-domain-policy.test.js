@@ -30,3 +30,4 @@ test('neutral Studio remains a full build workspace', () => {
   assert.equal(canAutoOpenCodeWorkspace(null), true);
   assert.equal(canExplicitlyPreviewCode(null), true);
 });
+
