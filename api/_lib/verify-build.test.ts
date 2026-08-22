@@ -56,7 +56,9 @@ test("a calculator is not scored as a missing website header and footer", () => 
   assert.equal(checkById(checks, "structure"), undefined);
 });
 
-test("a plain landing page is not penalised for lacking a cart", () => {
-  const checks = heuristicChecks(GOOD, "a simple landing page for my app");
-  assert.equal(checkById(checks, "feat-cart"), undefined);
+test("a React routing error page fails the runnable-preview check", () => {
+  const routed = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:24px"><strong>React preview routing error.</strong><p>This generated app must run in the Quantora project runtime.</p></body></html>`;
+  const checks = heuristicChecks(routed);
+  assert.equal(checkById(checks, "runnable-preview")?.ok, false);
+  assert.equal(checkById(checks, "runnable-preview")?.critical, true);
 });

@@ -5,7 +5,7 @@ import {
   getPreviewEmbedPathUrl,
   injectPreviewHarness,
   prepareCodeForPreview,
-  assembledPreviewHasUsableCss,
+  decidePreviewTrustStatus,
   isIgnorableRuntimeError,
   isCriticalResourceError,
   revokePreviewEmbedObjectUrl,
@@ -233,20 +233,46 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         setQualityReport(data);
         onVerificationStatusChange?.({ kind: 'quality', score: data.score, passed: data.passed });
         const styledFailed = Array.isArray(data.checks) && data.checks.some((check) => check.id === 'styled' && check.ok === false);
-        if (styledFailed || !assembledPreviewHasUsableCss(assembled) || stylingFailedRef.current) {
+        const trust = decidePreviewTrustStatus({
+          assembledHtml: assembled,
+          styledCheckOk: !styledFailed,
+          errorSeen: errorSeenRef.current,
+        });
+        if (trust === 'degraded') {
           stylingFailedRef.current = true;
           setStatus('degraded');
           setLastError(data.summary || 'Preview loaded but styling may be incomplete');
           return;
         }
-        if (!errorSeenRef.current) setStatus('clean');
+        if (trust === 'failed') {
+          setStatus('failed');
+          setLastError(data.summary || 'Preview is not a runnable page.');
+          return;
+        }
+        setStatus('clean');
         return;
       }
-      if (!errorSeenRef.current && assembledPreviewHasUsableCss(assembled)) setStatus('clean');
+      const fallbackTrust = decidePreviewTrustStatus({
+        assembledHtml: assembled,
+        errorSeen: errorSeenRef.current,
+      });
+      if (fallbackTrust === 'clean') setStatus('clean');
+      else if (fallbackTrust === 'degraded') {
+        stylingFailedRef.current = true;
+        setStatus('degraded');
+      }
     } catch {
-      if (!errorSeenRef.current && assembledPreviewHasUsableCss(assembled)) setStatus('clean');
-    }
-    finally { setVerifyingQuality(false); }
+      const assembled = prepareCodeForPreview(codeToCheck, vfsRef.current);
+      const fallbackTrust = decidePreviewTrustStatus({
+        assembledHtml: assembled,
+        errorSeen: errorSeenRef.current,
+      });
+      if (fallbackTrust === 'clean') setStatus('clean');
+      else if (fallbackTrust === 'degraded') {
+        stylingFailedRef.current = true;
+        setStatus('degraded');
+      }
+    } finally { setVerifyingQuality(false); }
   }, [onVerificationStatusChange, verifyBrief, modelId]);
 
   // One-click improve: feed the verifier's concrete issues back into the
@@ -371,10 +397,19 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           return;
         }
         const prepared = prepareCodeForPreview(currentCodeRef.current, vfsRef.current);
-        if (!assembledPreviewHasUsableCss(prepared)) {
+        const trust = decidePreviewTrustStatus({
+          assembledHtml: prepared,
+          errorSeen: errorSeenRef.current,
+        });
+        if (trust === 'degraded') {
           stylingFailedRef.current = true;
           setStatus('degraded');
           setLastError('Preview loaded without usable CSS.');
+          return;
+        }
+        if (trust === 'failed') {
+          setStatus('failed');
+          setLastError('Preview is not a runnable page.');
           return;
         }
         if (!errorSeenRef.current && (headless || verifyOnly)) {
