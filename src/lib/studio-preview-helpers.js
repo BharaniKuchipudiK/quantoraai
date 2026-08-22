@@ -35,6 +35,24 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
   return { vfs: {}, code: '' };
 }
 
+/**
+ * Apply a chat turn onto the desk. A follow-up that only sends one file
+ * keeps the rest of the project. A first build does not force the desk open.
+ */
+export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
+  const assembled = assembleStudioPreview(rawText, currentVfs);
+  const hadProject = Object.keys(currentVfs || {}).some(
+    (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
+  );
+  const didUpdate = Object.keys(assembled.vfs).length > 0 && Boolean(assembled.code);
+  return {
+    vfs: assembled.vfs,
+    code: assembled.code,
+    didUpdate,
+    reopenDesk: hadProject && didUpdate,
+  };
+}
+
 export function extractHtmlFromResponse(rawText) {
   const { vfs, code } = assembleStudioPreview(rawText);
   const htmlFile = vfs['index.html']?.content

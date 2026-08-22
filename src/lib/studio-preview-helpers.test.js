@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyWorkspaceFromChat,
   assembleStudioPreview,
   canOpenStudioPreviewPane,
   extractHtmlFromResponse,
@@ -106,4 +107,40 @@ test('unfenced HTML after chat is sliced from the document start', () => {
   const assembled = assembleStudioPreview(text);
   assert.equal(assembled.code.startsWith('<!DOCTYPE html>'), true);
   assert.doesNotMatch(assembled.code, /Got it/);
+});
+
+test('a follow-up that only sends one file keeps the rest of the project', () => {
+  const first = assembleStudioPreview(`\`\`\`json filepath="package.json"
+{"name":"mission"}
+\`\`\`
+\`\`\`html filepath="index.html"
+<!DOCTYPE html><html><body><div id="root"></div></body></html>
+\`\`\`
+\`\`\`jsx filepath="src/App.jsx"
+export default function App(){return <main><h1>Mission Control is alive</h1></main>}
+\`\`\``);
+  const follow = applyWorkspaceFromChat(
+    '```jsx filepath="src/App.jsx"\nexport default function App(){return <main><h1>Mission Control is patched</h1></main>}\n```',
+    first.vfs,
+  );
+  assert.equal(follow.didUpdate, true);
+  assert.equal(follow.reopenDesk, true);
+  assert.equal(follow.vfs['package.json'].content.includes('mission'), true);
+  assert.ok(follow.vfs['index.html']);
+  assert.match(follow.vfs['src/App.jsx'].content, /patched/);
+});
+
+test('the first build does not force the coding desk open', () => {
+  const first = applyWorkspaceFromChat(splitApp, {});
+  assert.equal(first.didUpdate, true);
+  assert.equal(first.reopenDesk, false);
+});
+
+test('plain chat does not revive or reopen a project', () => {
+  const follow = applyWorkspaceFromChat('Looks good. What next?', {
+    'index.html': { content: '<!DOCTYPE html><html><body>Hi</body></html>', language: 'html' },
+  });
+  assert.equal(follow.didUpdate, false);
+  assert.equal(follow.reopenDesk, false);
+  assert.deepEqual(follow.vfs, {});
 });
