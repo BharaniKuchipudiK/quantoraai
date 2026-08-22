@@ -19,7 +19,8 @@ import StudioMissionCard from './StudioMissionCard';
 import AdvisorPromptPills from './AdvisorPromptPills';
 import StudioToolsMenu from './StudioToolsMenu';
 import { newThreadLabel } from '../lib/advisor-thread.js';
-import { resolveStudioPlusAction, STUDIO_PLUS_ACTION } from '../lib/studio-tools-menu.js';
+import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
+import { wantsStudyLab } from '../lib/study-pictures.js';
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
@@ -28,6 +29,7 @@ import { useStudioSession } from '../hooks/useStudioSession.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
+import StudyMarkdown from './StudyMarkdown.jsx';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -1220,12 +1222,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       )}
 
                       <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]}
-                          components={markdownComponents}
-                        >
-                          {cleanText}
-                        </ReactMarkdown>
+                        {studioDomain === 'education' && msg.sender === 'ai' ? (
+                          <StudyMarkdown
+                            text={cleanText}
+                            isLight={isLight}
+                            textColor={textColor}
+                            components={markdownComponents}
+                          />
+                        ) : (
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={markdownComponents}
+                          >
+                            {cleanText}
+                          </ReactMarkdown>
+                        )}
                       </div>
 
                       {/* Render Dedicated Office Download Card */}
@@ -1415,6 +1426,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                   domain: studioDomain,
                                 }),
                               });
+                              const chipText = `${item.label || ''} ${item.value || ''}`;
+                              if (studioDomain === 'education' && wantsStudyLab(chipText)) {
+                                const labKind = /fbd|free-?body|incline|diagram|vector/i.test(chipText) ? 'fbd' : 'newton';
+                                updateActiveMessages((prev) => [...prev, {
+                                  id: Date.now(),
+                                  sender: 'ai',
+                                  text: `<quantora-study-lab kind="${labKind}" />\n\nThis is the visual workspace — in this chat. Use the controls. There is no separate canvas.`,
+                                }]);
+                                return;
+                              }
                               handleSendMessage(item.value);
                             }}
                             onDismiss={() => setDismissedContinueId(msg.id)}
@@ -1540,7 +1561,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages]);
 
   
   useEffect(() => {
