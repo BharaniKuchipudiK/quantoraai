@@ -465,6 +465,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [secondModel, setSecondModel] = useState({ id: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'Nvidia Nemotron 3 Ultra' });
   const [showSecondModelDropdown, setShowSecondModelDropdown] = useState(false);
   const [isWorkspaceMode, setIsWorkspaceMode] = useState(false);
+  const [codingDeskOpen, setCodingDeskOpen] = useState(true);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
@@ -488,13 +489,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       dismissedOfficeFingerprintRef.current = fingerprint;
       dismissedOfficeMessageIdRef.current = lastAi?.id ?? null;
     }
-    setWorkspaceCode('');
-    setVfs({});
-    setWorkspaceActiveTab('preview');
+    setCodingDeskOpen(false);
     if (!canAutoOpenCodeWorkspace(studioDomain)) {
       setIsWorkspaceMode(false);
     }
   }, [messages, studioDomain]);
+
+  const openCodingDesk = useCallback(() => {
+    if (!canAutoOpenCodeWorkspace(studioDomain)) {
+      handleCreateNewChat();
+    }
+    setCodingDeskOpen(true);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
+  }, [studioDomain, handleCreateNewChat]);
 
   useEffect(() => {
     if (canAutoOpenCodeWorkspace(studioDomain)) return;
@@ -1804,7 +1811,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
   });
-  const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain);
+  const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const isIdeLayout = isCodingDesk || isWorkspaceMode;
 
   return (
@@ -1954,6 +1961,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           Specialized Agents
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', marginBottom: '24px' }}>
+          <div
+            data-quantora-coding-desk-nav="true"
+            onClick={openCodingDesk}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: '500',
+              color: isCodingDesk ? '#f97316' : textColor,
+              background: isCodingDesk ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
+              border: isCodingDesk ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
+              transition: 'all 0.15s ease',
+              marginBottom: '4px',
+            }}
+          >
+            <div style={{ flexShrink: 0 }}><Code2 size={15} color="#f97316" /></div>
+            <span>Coding desk</span>
+          </div>
           {[
             { domain: 'travel', title: 'Travel Advisor', icon: <Globe size={15} color="#3b82f6" /> },
             { domain: 'finance', title: 'Finance Advisor', icon: <PieChart size={15} color="#10b981" /> },
@@ -3329,7 +3358,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </button>
               <button
                 onClick={closeStudioWorkspace}
-                title="Clear files"
+                title="Hide coding desk"
+                aria-label="Hide coding desk"
                 style={{ background: 'transparent', border: 'none', color: subtextColor, cursor: 'pointer', padding: '4px', borderRadius: '4px' }}
               >
                 <X size={16} />
