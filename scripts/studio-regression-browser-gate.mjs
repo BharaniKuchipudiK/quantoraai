@@ -56,6 +56,14 @@ const projectReply = [
   '```',
 ].join('\n');
 
+const patchReply = [
+  'Updated the heading.',
+  '',
+  '```jsx filepath="src/App.jsx"',
+  "export default function App(){return <main><h1>Mission Control is patched</h1><p>Real project preview.</p></main>}",
+  '```',
+].join('\n');
+
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_profile_avatar_v1');
@@ -87,7 +95,12 @@ await page.route('**/api/**', async (route) => {
   }
   if (path === '/api/chat') {
     const body = request.postDataJSON?.() || {};
-    const reply = /calculator/i.test(String(body.message || '')) ? calculatorReply : projectReply;
+    const message = String(body.message || '');
+    const reply = /calculator/i.test(message)
+      ? calculatorReply
+      : /patched|heading/i.test(message)
+        ? patchReply
+        : projectReply;
     return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, body: sseBody(reply) });
   }
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [], ok: true }) });
@@ -181,6 +194,18 @@ try {
     return models.map((model) => model.getValue()).join('\n');
   });
   if (!String(source).includes('Mission Control is alive')) throw new Error('Selected file displays the wrong source.');
+
+  await prompt.fill('Change the heading to Mission Control is patched');
+  await prompt.press('Enter');
+  await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
+  const patchedFrame = await visibleFrame('h1', 20_000);
+  if (!patchedFrame || !/Mission Control is patched/.test(await patchedFrame.locator('h1').first().innerText().catch(() => ''))) {
+    throw new Error('Follow-up did not update Preview with the new heading.');
+  }
+  await visible(
+    page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'index.html' }).first(),
+    'Follow-up dropped the rest of the project files.',
+  );
 
   await page.locator('[data-quantora-studio-git-nav="true"]').click();
   await visible(page.locator('[data-quantora-studio-git="true"]').first(), 'Coding desk Git panel did not open.');

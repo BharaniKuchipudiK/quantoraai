@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, canOpenStudioPreviewPane } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -588,7 +588,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
     }
 
-    const assembled = assembleStudioPreview(rawText);
+    const assembled = applyWorkspaceFromChat(rawText, vfs);
     if (assembled.code) {
       setCanvasVfs(assembled.vfs);
       setCanvasCode(assembled.code);
@@ -1724,7 +1724,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        const assembled = assembleStudioPreview(lastMsg.text, vfs);
+        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs);
         const parsedVfs = assembled.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
           || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '');
@@ -1754,6 +1754,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            setWorkspaceCode(assembled.code || pickPreviewEntry(parsedVfs));
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
+           if (assembled.reopenDesk) setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
            if (code) {
