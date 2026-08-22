@@ -217,16 +217,19 @@ export function inlineVfsAssets(html, vfs = {}) {
   return out;
 }
 
-export function pickPreviewEntry(vfs = {}) {
+export function pickPreviewEntryPath(vfs = {}) {
   const preferred = ['index.html', 'presentation.html', 'src/main.jsx', 'App.jsx', 'src/App.jsx'];
   for (const key of preferred) {
-    const text = vfsText(vfs, key);
-    if (text) return text;
+    if (vfsText(vfs, key)) return key;
   }
   const htmlKey = Object.keys(vfs || {}).find((key) => /\.html$/i.test(key));
-  if (htmlKey) return vfsText(vfs, htmlKey);
-  const first = Object.keys(vfs || {})[0];
-  return first ? vfsText(vfs, first) : '';
+  if (htmlKey) return htmlKey;
+  return Object.keys(vfs || {})[0] || null;
+}
+
+export function pickPreviewEntry(vfs = {}) {
+  const path = pickPreviewEntryPath(vfs);
+  return path ? vfsText(vfs, path) : '';
 }
 
 export function prepareCodeForPreview(code, vfs = {}) {

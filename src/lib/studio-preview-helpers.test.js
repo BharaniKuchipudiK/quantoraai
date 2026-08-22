@@ -9,6 +9,7 @@ import {
   hasPreviewableContent,
   preparePreviewHtml,
   runningPreviewCode,
+  writeHealedPreviewToVfs,
 } from './studio-preview-helpers.js';
 
 const splitApp = `Here is the app.
@@ -152,4 +153,16 @@ test('Preview runs the project entry, not the file open in the editor', () => {
     'src/App.jsx': { content: 'export default function App(){ return <main>Editor</main> }', language: 'jsx' },
   };
   assert.match(runningPreviewCode(vfs, 'export default function App(){ return <main>Editor</main> }'), /<h1>Live<\/h1>/);
+});
+
+test('a healed HTML page writes into index.html and does not overwrite React source', () => {
+  const vfs = {
+    'App.jsx': { content: 'export default function App(){ return <main>Old</main> }', language: 'jsx' },
+  };
+  const healed = '<!DOCTYPE html><html><body><h1>Fixed</h1></body></html>';
+  const next = writeHealedPreviewToVfs(vfs, healed);
+  assert.equal(next.wrote, true);
+  assert.equal(next.path, 'index.html');
+  assert.match(next.vfs['index.html'].content, /Fixed/);
+  assert.match(next.vfs['App.jsx'].content, /Old/);
 });

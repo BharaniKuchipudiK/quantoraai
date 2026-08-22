@@ -63,6 +63,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   correlationId = null,
   goldenTransaction = null,
   verifyBrief = '',
+  jobCard = null,
+  onHealedPreview,
 }, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -101,6 +103,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const vfsRef = useRef(vfs);
   useEffect(() => { currentCodeRef.current = currentCode; }, [currentCode]);
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
+  const jobCardRef = useRef(jobCard);
+  useEffect(() => { jobCardRef.current = jobCard; }, [jobCard]);
+  const onHealedPreviewRef = useRef(onHealedPreview);
+  onHealedPreviewRef.current = onHealedPreview;
+  const autoJobHealRef = useRef(false);
   const attemptRef = useRef(0);
   const healingRef = useRef(false);
   const errorSeenRef = useRef(false);
@@ -175,6 +182,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
+    autoJobHealRef.current = false;
   }, [code]);
 
   useEffect(() => {
@@ -197,6 +205,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         code: prepareCodeForPreview(brokenCode, vfsRef.current),
         error: message,
         framework: 'html',
+        job: jobCardRef.current,
         modelId,
         ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
         ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
@@ -223,6 +232,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           code: assembled,
           vfs: vfsRef.current,
           brief: verifyBrief,
+          job: jobCardRef.current,
           modelId,
           ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
           ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
@@ -238,6 +248,24 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           styledCheckOk: !styledFailed,
           errorSeen: errorSeenRef.current,
         });
+        if (!verifyOnly && data.passed === false && Array.isArray(data.issues) && data.issues.length && jobCardRef.current && !autoJobHealRef.current) {
+          autoJobHealRef.current = true;
+          const instruction = `Improve this page for the JOB. Fix ONLY these issues, preserving the product:\n- ${data.issues.join('\n- ')}`;
+          try {
+            const repaired = await requestRepair(codeToCheck, instruction);
+            const original = currentCodeRef.current || '';
+            const fixed = repaired?.code || '';
+            const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(original);
+            const keepsStyle = /<style[\s>]/i.test(fixed) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(fixed);
+            if (fixed && !repaired.unchanged && fixed.trim() !== original.trim() && (!hadStyle || keepsStyle) && fixed.length >= original.length * 0.55) {
+              verifiedCodeRef.current = null;
+              setQualityReport(null);
+              onHealedPreviewRef.current?.(fixed);
+              setCurrentCode(fixed);
+              return;
+            }
+          } catch { /* keep the running page */ }
+        }
         if (trust === 'degraded') {
           stylingFailedRef.current = true;
           setStatus('degraded');
@@ -273,7 +301,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         setStatus('degraded');
       }
     } finally { setVerifyingQuality(false); }
-  }, [onVerificationStatusChange, verifyBrief, modelId]);
+  }, [onVerificationStatusChange, verifyBrief, modelId, requestRepair]);
 
   // One-click improve: feed the verifier's concrete issues back into the
   // self-heal loop, keeping the design (guarded like the runtime repair path).
@@ -282,7 +310,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     if (improving || !report?.issues?.length) return;
     setImproving(true);
     try {
-      const instruction = `Improve this page. Fix ONLY these specific issues, preserving the existing design, layout and content:\n- ${report.issues.join('\n- ')}`;
+      const instruction = `Improve this page for the JOB. Fix ONLY these specific issues, preserving the existing design, layout and content:\n- ${report.issues.join('\n- ')}`;
       const data = await requestRepair(currentCodeRef.current, instruction);
       const original = currentCodeRef.current || '';
       const fixed = data?.code || '';
@@ -291,6 +319,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       if (fixed && !data.unchanged && fixed.trim() !== original.trim() && (!hadStyle || keepsStyle) && fixed.length >= original.length * 0.55) {
         verifiedCodeRef.current = null; // re-verify the improved build
         setQualityReport(null);
+        onHealedPreviewRef.current?.(fixed);
         setCurrentCode(fixed);
       }
     } catch { /* leave the current build in place on failure */ }
@@ -356,6 +385,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         return;
       }
       setAttempt((a) => a + 1);
+      onHealedPreviewRef.current?.(data.code);
       setCurrentCode(data.code);
     } catch (err) {
       setLastError(err.message || 'Auto-repair failed.');

@@ -173,6 +173,11 @@ try {
   if (!/Preview is (starting|running|fixing)/i.test(runText) && !/Preview failed/i.test(runText)) {
     throw new Error(`Preview run status was not honest: ${runText || '(empty)'}`);
   }
+  const jobLabel = page.locator('[data-quantora-desk-job="true"]').first();
+  await visible(jobLabel, 'Coding desk did not name the job this Preview is for.');
+  if (!/calculator/i.test((await jobLabel.innerText()).trim())) {
+    throw new Error('Calculator Preview was missing a calculator job card.');
+  }
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 

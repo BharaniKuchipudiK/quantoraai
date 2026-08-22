@@ -21,6 +21,7 @@ test('files and preview round-trip with the session', () => {
     codingDeskOpen: true,
     lastProcessedMessageId: 42,
     review: [{ path: 'index.html', added: 3, removed: 0, exact: true }],
+    job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
   });
   assert.equal(built.ok, true);
   const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
@@ -29,6 +30,7 @@ test('files and preview round-trip with the session', () => {
   assert.match(restored.vfs['index.html'].content, /Hi/);
   assert.match(restored.workspaceCode, /Hi/);
   assert.deepEqual(restored.review, [{ path: 'index.html', added: 3, removed: 0, exact: true }]);
+  assert.equal(restored.job.purpose, 'A working calculator');
 });
 
 test('a snapshot that is too large is refused instead of faking persistence', () => {

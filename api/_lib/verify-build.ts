@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { stripDataUris } from "./model-payload.js";
 import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
+import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -172,17 +173,19 @@ export async function verifyBuild(opts: {
   code: string;
   vfs?: Record<string, unknown>;
   brief?: string;
+  job?: unknown;
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
 }): Promise<BuildReport> {
-  const { code, vfs = {}, brief = "", openRouterKey, geminiKey, model } = opts;
+  const { code, vfs = {}, brief = "", job, openRouterKey, geminiKey, model } = opts;
   if (!code || typeof code !== "string" || !code.trim()) {
     throw new Error("No code provided to verify.");
   }
 
   const assembled = prepareCodeForPreview(code, vfs);
-  const checks = heuristicChecks(assembled, brief);
+  const judgedBrief = formatJobCardForVerify(job, brief);
+  const checks = heuristicChecks(assembled, judgedBrief);
   const heuristicScore = scoreFromChecks(checks);
   const heuristicIssues = checks.filter((c) => !c.ok).map((c) => c.detail || `Missing: ${c.label}`);
 
@@ -200,8 +203,8 @@ export async function verifyBuild(opts: {
       // markup out of the 60k window. Heuristics above still see the real code.
       const critiqueCode = stripDataUris(assembled);
       const raw = openRouterKey
-        ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, critiqueCode, brief)
-        : await critiqueWithGemini(geminiKey as string, critiqueCode, brief);
+        ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, critiqueCode, judgedBrief)
+        : await critiqueWithGemini(geminiKey as string, critiqueCode, judgedBrief);
       const parsed = parseCritique(raw);
       critScore = parsed.score;
       critIssues = parsed.issues;

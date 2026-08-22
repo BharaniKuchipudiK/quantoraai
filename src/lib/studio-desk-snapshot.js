@@ -3,6 +3,8 @@
  * Persist files + Preview with the session, or lose the outcome on refresh.
  */
 
+import { normalizeStudioJobCard } from './studio-job-card.js';
+
 export function normalizeDeskReview(review = []) {
   if (!Array.isArray(review)) return [];
   return review.slice(0, 24).flatMap((row) => {
@@ -24,6 +26,7 @@ export function buildStudioDeskSnapshot({
   codingDeskOpen = false,
   lastProcessedMessageId = null,
   review = [],
+  job = null,
 } = {}) {
   const files = {};
   let chars = 0;
@@ -57,6 +60,7 @@ export function buildStudioDeskSnapshot({
       codingDeskOpen: Boolean(codingDeskOpen),
       lastProcessedMessageId: lastProcessedMessageId ?? null,
       review: normalizeDeskReview(review),
+      job: normalizeStudioJobCard(job),
       savedAt: Date.now(),
     },
   };
@@ -83,5 +87,6 @@ export function restoreStudioDeskSnapshot(session) {
     codingDeskOpen: snap.codingDeskOpen === true,
     lastProcessedMessageId: snap.lastProcessedMessageId ?? null,
     review: normalizeDeskReview(snap.review),
+    job: normalizeStudioJobCard(snap.job),
   };
 }

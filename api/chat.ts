@@ -490,6 +490,7 @@ export default async function handler(req: any, res: any) {
           code,
           error: typeof error === "string" ? error : "",
           framework: framework === "react" ? "react" : "html",
+          job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
           openRouterKey: effectiveOpenRouterKey,
           geminiKey: effectiveGeminiKey,
         });
@@ -508,6 +509,7 @@ export default async function handler(req: any, res: any) {
           code,
           vfs: req.body?.vfs && typeof req.body.vfs === "object" ? req.body.vfs : {},
           brief: typeof brief === "string" ? brief : "",
+          job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
           openRouterKey: effectiveOpenRouterKey,
           geminiKey: effectiveGeminiKey,
         });
