@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deriveStudioMission } from './studio-mission.js';
+import { deriveProjectResume, deriveStudioMission, pickResumeSessionId } from './studio-mission.js';
 
 test('keeps the boutique goal after a short follow-up in the same chat', () => {
   const mission = deriveStudioMission({
@@ -27,6 +27,36 @@ test('infers a goal from the first build request when memory is empty', () => {
 
 test('empty studio has no mission card', () => {
   assert.equal(deriveStudioMission({ messages: [] }), null);
+});
+
+test('project resume uses the latest chat, not the first empty one', () => {
+  const resume = deriveProjectResume([
+    { id: 'empty', createdAt: 9, title: 'New Chat', messages: [], conversationContext: {} },
+    {
+      id: 'deck',
+      createdAt: 2,
+      title: 'HAM deck',
+      messages: [{ id: 20, sender: 'user', text: 'pre-kick off HAM SAM' }],
+      conversationContext: { goal: 'HAM SAM kickoff deck', facts: ['Outcome kind: powerpoint'] },
+    },
+  ]);
+  assert.equal(resume.sessionId, 'deck');
+  assert.match(resume.goal, /HAM SAM/i);
+  assert.doesNotMatch(resume.next || '', /publish/i);
+});
+
+test('switching projects reopens the mission chat, not the newest empty one', () => {
+  const sessions = [
+    { id: 'empty', createdAt: 99, title: 'New Chat', messages: [], conversationContext: {} },
+    {
+      id: 'deck',
+      createdAt: 2,
+      title: 'HAM deck',
+      messages: [{ id: 20, sender: 'user', text: 'pre-kick off HAM SAM' }],
+      conversationContext: { goal: 'HAM SAM kickoff deck', facts: ['Outcome kind: powerpoint'] },
+    },
+  ];
+  assert.equal(pickResumeSessionId(sessions), 'deck');
 });
 
 test('an Office mission does not tell the user to publish a website', () => {

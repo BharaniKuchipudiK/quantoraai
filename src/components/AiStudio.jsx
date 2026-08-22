@@ -12,7 +12,7 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
-import { deriveStudioMission } from '../lib/studio-mission.js';
+import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
@@ -237,6 +237,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     handleCreateProject,
     projectContext,
     projectArtifacts,
+    projectResume,
     studioDomain,
     setStudioDomain,
     openAdvisorWorkspace,
@@ -1812,8 +1813,42 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           >
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <div style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: '30px' }}>
-            {activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'}
+          <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: '30px' }}>
+            {projectResume?.goal ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (projectResume.sessionId) setActiveSessionId(projectResume.sessionId);
+                    if (projectResume.next && !String(inputText || '').trim()) setInputText(projectResume.next);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    font: 'inherit',
+                  }}
+                >
+                  <div style={{ color: textColor, fontWeight: 650 }}>Last: {projectResume.goal}</div>
+                  {projectResume.next ? (
+                    <div style={{ marginTop: '4px', color: isLight ? '#c2410c' : '#fdba74', fontWeight: 600 }}>
+                      Next: {projectResume.next}
+                    </div>
+                  ) : null}
+                  <div style={{ marginTop: '6px', color: isLight ? '#2563eb' : '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
+                    Resume this outcome
+                  </div>
+                </button>
+              </>
+            ) : (
+              activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'
+            )}
           </div>
           <button
             onClick={() => {
@@ -1890,6 +1925,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '2px' }}>
           {chatSessions.map((session) => {
             const isActive = session.id === activeSessionId;
+            const resume = deriveSessionResume(session);
             return (
               <div
                 key={session.id}
@@ -1917,9 +1953,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
                   <MessageSquare size={15} color={isActive ? '#f97316' : subtextColor} style={{ flexShrink: 0 }} />
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {session.title || 'New Chat'}
-                  </span>
+                  <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                      {session.title || 'New Chat'}
+                    </span>
+                    {resume?.next ? (
+                      <span style={{
+                        display: 'block',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        fontSize: '0.68rem',
+                        fontWeight: 500,
+                        color: subtextColor,
+                        marginTop: '2px',
+                      }}>
+                        {resume.next}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
 
                 <button
