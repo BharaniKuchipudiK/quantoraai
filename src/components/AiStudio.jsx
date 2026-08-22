@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -295,14 +295,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const handleCodeChange = (e) => {
     const val = e.target.value;
     const pos = e.target.selectionStart;
-    setWorkspaceCode(val);
-    
-    // Update VFS if we are editing a specific file
-    if (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && workspaceActiveTab !== 'git' && vfs[workspaceActiveTab]) {
+    const editingProjectFile = workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && workspaceActiveTab !== 'git' && vfs[workspaceActiveTab];
+    if (editingProjectFile) {
       setVfs(prev => ({
         ...prev,
         [workspaceActiveTab]: { ...prev[workspaceActiveTab], content: val }
       }));
+    } else {
+      setWorkspaceCode(val);
     }
     setCursorPos(pos);
     setGhostText('');
@@ -1871,6 +1871,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     studioDomain,
   });
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
+  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const isIdeLayout = isCodingDesk;
 
   return (
@@ -3402,7 +3403,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 vfs,
                 conversationContext,
                 officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
-              }) && workspaceCode && workspaceActiveTab === 'preview' && (
+              }) && previewRunCode && workspaceActiveTab === 'preview' && (
                  <button
                    type="button"
                    data-quantora-publish="true"
@@ -3440,7 +3441,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
              {workspaceActiveTab === 'preview' ? (
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                    {!workspaceCode ? (
+                    {!previewRunCode ? (
                       isGenerating ? (
                       <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
                         <Clock size={26} color="#f97316" />
@@ -3457,7 +3458,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     ) : (
                     <LivePreviewCanvas
                       ref={previewCanvasRef}
-                      code={workspaceCode}
+                      code={previewRunCode}
                       isLight={isLight}
                       onClose={closeStudioWorkspace}
                       hideHeader

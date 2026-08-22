@@ -53,6 +53,11 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
   };
 }
 
+/** Preview runs the project, not the file currently open in the editor. */
+export function runningPreviewCode(vfs = {}, fallback = '') {
+  return pickPreviewEntry(vfs) || String(fallback || '');
+}
+
 export function extractHtmlFromResponse(rawText) {
   const { vfs, code } = assembleStudioPreview(rawText);
   const htmlFile = vfs['index.html']?.content
