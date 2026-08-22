@@ -1,6 +1,6 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
-import { parseVFSFromMarkdown } from './vfs-parser.js';
+import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
 import { pickPreviewEntry, prepareCodeForPreview } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 
@@ -9,9 +9,7 @@ function isHtmlDocument(source = '') {
 }
 
 function extractUnfencedHtml(rawText) {
-  const trimmed = String(rawText || '').trim();
-  if (!isHtmlDocument(trimmed)) return '';
-  return trimmed.replace(/```(?:html|javascript|js|css)?\s*\n?([\s\S]*?)(?:```|$)/gi, '$1').trim();
+  return isolateHtmlDocument(rawText);
 }
 
 /**

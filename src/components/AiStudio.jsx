@@ -584,13 +584,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(assembled.vfs);
       setCanvasCode(assembled.code);
       setCanvasOpen(true);
-      return;
     }
-
-    setCanvasVfs({});
-    setCanvasCode(`<!DOCTYPE html>\n<html>\n<head>\n<style>\nbody { font-family: sans-serif; padding: 24px; background: #0f172a; color: #fff; line-height: 1.6; }\n</style>\n</head>\n<body>\n<h2>Code Execution Preview</h2>\n<pre style="background: #1e293b; padding: 16px; border-radius: 12px; overflow: auto;">${String(rawText || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>\n</body>\n</html>`);
-    setCanvasOpen(true);
-  };
 
 
   const fileInputRef = useRef(null);
