@@ -11,7 +11,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
-import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel } from '../lib/studio-partner-status.js';
 import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
@@ -473,6 +473,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
   const [deskReview, setDeskReview] = useState([]);
+  const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
@@ -531,6 +532,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCodingDeskOpen(false);
       setIsWorkspaceMode(false);
       setDeskReview([]);
+      setPreviewRunStatus('');
       return;
     }
     const session = chatSessions.find((item) => item.id === activeSessionId);
@@ -542,6 +544,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setIsWorkspaceMode(false);
       setLastProcessedMessageId(null);
       setDeskReview([]);
+      setPreviewRunStatus('');
       return;
     }
     setVfs(restored.vfs);
@@ -550,7 +553,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(true);
     setCodingDeskOpen(restored.codingDeskOpen);
     setLastProcessedMessageId(restored.lastProcessedMessageId);
-    setDeskReview([]);
+    setDeskReview(restored.review || []);
   }, [activeSessionId, studioDomain, chatSessions]);
 
   useEffect(() => {
@@ -560,13 +563,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       workspaceCode,
       codingDeskOpen,
       lastProcessedMessageId,
+      review: deskReview,
     });
     if (!built.ok) return;
     const timer = setTimeout(() => {
       updateActiveSession({ desk: built.snapshot });
     }, 400);
     return () => clearTimeout(timer);
-  }, [vfs, workspaceCode, codingDeskOpen, lastProcessedMessageId, studioDomain, updateActiveSession, activeSessionId]);
+  }, [vfs, workspaceCode, codingDeskOpen, lastProcessedMessageId, deskReview, studioDomain, updateActiveSession, activeSessionId]);
   const { checkModelHealth, logPreference, logFeedback } = usePCLMemory();
   const [pclIntercept, setPclIntercept] = useState(null);
   const [feedbackStates, setFeedbackStates] = useState({});
@@ -1886,6 +1890,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   });
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const isIdeLayout = isCodingDesk;
 
   return (
@@ -3410,7 +3415,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             height: '48px',
             flexShrink: 0
           }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor }}>Coding desk</div>
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <span>Coding desk</span>
+              {previewRunLabel ? (
+                <span
+                  data-quantora-preview-run-status="true"
+                  style={{ fontSize: '0.68rem', fontWeight: 600, color: subtextColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {previewRunLabel}
+                </span>
+              ) : null}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {canOfferVercelPublish({
                 messages,
@@ -3480,6 +3495,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       user={user}
                       onRequireAuth={onOpenAuth}
                       vfs={vfs}
+                      onVerificationStatusChange={setPreviewRunStatus}
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}
                       officeKind={detectOfficeIntent({ messages })}
