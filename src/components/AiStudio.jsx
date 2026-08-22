@@ -585,7 +585,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasCode(assembled.code);
       setCanvasOpen(true);
     }
-
+  };
 
   const fileInputRef = useRef(null);
   const previewCanvasRef = useRef(null);
