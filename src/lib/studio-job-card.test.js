@@ -37,3 +37,9 @@ test('verify text carries the job so quality cannot ignore purpose', () => {
   assert.match(brief, /calculator/i);
   assert.match(brief, /display/i);
 });
+
+test('a boutique brief becomes a shop job that requires real photos', () => {
+  const job = buildStudioJobCard({ brief: 'build a website for an Indian ethnic saree & couture boutique' });
+  assert.equal(job.purpose, 'A shop website');
+  assert.match(job.mustWork.join(' '), /photos/i);
+});

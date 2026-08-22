@@ -1906,12 +1906,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     )?.items?.[0]?.label || '')
     : '';
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
+  const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
+  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
     elapsedSec: thinkingTime,
     lastAiIsError: Boolean(lastAiMessage?.isError),
-    hasPreview: Boolean((isWorkspaceMode && workspaceCode) || activeOfficeArtifact(messages)),
+    hasPreview: hasRunnablePreview,
     continueLabel: partnerContinueLabel,
     lastAiText: lastAiMessage?.text || '',
     hasUserTurn,
@@ -1922,13 +1925,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const studioMission = deriveStudioMission({
     conversationContext,
     messages,
-    hasPreview: Boolean((isWorkspaceMode && workspaceCode) || activeOfficeArtifact(messages)),
+    hasPreview: hasRunnablePreview,
     continueLabel: partnerContinueLabel,
     officeKind: officeKindNow,
     studioDomain,
   });
-  const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
-  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);
   const isIdeLayout = isCodingDesk;
@@ -3481,11 +3482,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 vfs,
                 conversationContext,
                 officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
-              }) && previewRunCode && workspaceActiveTab === 'preview' && (
+              }) && previewRunCode && (
                  <button
                    type="button"
                    data-quantora-publish="true"
-                   onClick={() => previewCanvasRef.current?.openPublish?.()}
+                   onClick={() => {
+                     setWorkspaceActiveTab('preview');
+                     previewCanvasRef.current?.openPublish?.();
+                   }}
                    style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                    <Rocket size={12} /> Publish to Vercel
                  </button>
