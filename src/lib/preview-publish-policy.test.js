@@ -21,13 +21,16 @@ test('PowerPoint preview never offers Publish to Vercel', () => {
   }), false);
 });
 
-test('a website offers Vercel only after the publish chip is confirmed', () => {
+test('a website on the desk offers Publish without waiting for a chat chip', () => {
   assert.equal(canOfferVercelPublish({
     vfs: { 'index.html': { content: '<html></html>' } },
     conversationContext: {},
-  }), false);
+  }), true);
   assert.equal(canOfferVercelPublish({
     vfs: { 'index.html': { content: '<html></html>' } },
     conversationContext: { facts: ['User action: chose "Publish this site"'] },
   }), true);
+  assert.equal(canOfferVercelPublish({
+    vfs: { 'notes.md': { content: 'hello' } },
+  }), false);
 });

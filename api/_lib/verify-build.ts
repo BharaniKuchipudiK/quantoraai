@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { stripDataUris } from "./model-payload.js";
 import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
+import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -89,6 +90,14 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
   if (/\b(shop|store|cart|checkout|buy|sell|product|boutique|ecommerce|e-commerce)\b/.test(b)) {
     const hasCart = has(/add[\s-]?to[\s-]?cart|data-quantora-checkout|quantoraCheckout|\bcart\b/i, src);
     checks.push({ id: "feat-cart", label: "Shopping cart / checkout present", ok: hasCart, weight: 3, detail: hasCart ? undefined : "Brief asks to sell, but no cart/checkout was built" });
+    const hasPhoto = imgTags.some((tag) => /\bsrc\s*=\s*["']https?:\/\//i.test(tag));
+    checks.push({
+      id: "feat-photos",
+      label: "Product photos are real images",
+      ok: hasPhoto,
+      weight: 2,
+      detail: hasPhoto ? undefined : "Brief asks for a catalog, but product images are missing",
+    });
   }
   if (/\b(book|booking|appointment|contact|enquiry|inquiry|sign\s?up|signup|waitlist|subscribe|form)\b/.test(b)) {
     const hasForm = has(/<form[\s>]/i, src);
@@ -172,17 +181,19 @@ export async function verifyBuild(opts: {
   code: string;
   vfs?: Record<string, unknown>;
   brief?: string;
+  job?: unknown;
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
 }): Promise<BuildReport> {
-  const { code, vfs = {}, brief = "", openRouterKey, geminiKey, model } = opts;
+  const { code, vfs = {}, brief = "", job, openRouterKey, geminiKey, model } = opts;
   if (!code || typeof code !== "string" || !code.trim()) {
     throw new Error("No code provided to verify.");
   }
 
   const assembled = prepareCodeForPreview(code, vfs);
-  const checks = heuristicChecks(assembled, brief);
+  const judgedBrief = formatJobCardForVerify(job, brief);
+  const checks = heuristicChecks(assembled, judgedBrief);
   const heuristicScore = scoreFromChecks(checks);
   const heuristicIssues = checks.filter((c) => !c.ok).map((c) => c.detail || `Missing: ${c.label}`);
 
@@ -200,8 +211,8 @@ export async function verifyBuild(opts: {
       // markup out of the 60k window. Heuristics above still see the real code.
       const critiqueCode = stripDataUris(assembled);
       const raw = openRouterKey
-        ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, critiqueCode, brief)
-        : await critiqueWithGemini(geminiKey as string, critiqueCode, brief);
+        ? await critiqueWithOpenRouter(openRouterKey, model || DEFAULT_CRITIC_MODEL, critiqueCode, judgedBrief)
+        : await critiqueWithGemini(geminiKey as string, critiqueCode, judgedBrief);
       const parsed = parseCritique(raw);
       critScore = parsed.score;
       critIssues = parsed.issues;

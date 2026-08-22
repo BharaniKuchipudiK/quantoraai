@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { formatJobCardForRepair } from "../../src/lib/studio-job-card.js";
 import { fetchWithTimeout } from "./fetch-timeout.js";
 import { tokenizeDataUris, restoreDataUris } from "./model-payload.js";
 
@@ -17,18 +18,20 @@ export const MAX_REPAIR_CODE_LENGTH = 200_000;
 // Stable, broadly-available coding model. Overridable per call.
 const DEFAULT_REPAIR_MODEL = "deepseek/deepseek-chat";
 
-function buildRepairPrompt(code: string, error: string, framework: string) {
+export function buildRepairPrompt(code: string, error: string, framework: string, job?: unknown) {
   const kind = framework === "react" ? "React component (a single /App.js module)" : "self-contained HTML document";
+  const jobBlock = formatJobCardForRepair(job);
   const system =
     `You are a precise code-repair engine. You are given a ${kind} that failed at runtime and the error it produced. ` +
     `Return the COMPLETE corrected ${framework === "react" ? "module" : "document"} and NOTHING else — no explanation, no commentary, no markdown code fences. ` +
     `Preserve the original design, content and intent EXACTLY; change only the single thing that causes the error. ` +
     `Do NOT simplify, restyle, or "clean up" the code. Keep every <style> block, inline style, CSS class, layout, color, font and image byte-for-byte unless it is the direct cause of the error. ` +
     `The corrected output must be at least as long as the input. ` +
+    (jobBlock ? `Honor the JOB below. Never turn this into a different product. ` : "") +
     (framework === "react"
       ? `The module must default-export a React component and must not import anything that is not available.`
       : `The document must remain fully self-contained: all CSS and JS inline, no external build step, no bare module imports.`);
-  const user = `RUNTIME ERROR:\n${error}\n\nCURRENT CODE:\n${code}`;
+  const user = `${jobBlock ? `${jobBlock}\n\n` : ""}RUNTIME ERROR:\n${error}\n\nCURRENT CODE:\n${code}`;
   return { system, user };
 }
 
@@ -98,11 +101,12 @@ export async function repairArtifact(opts: {
   code: string;
   error: string;
   framework?: string;
+  job?: unknown;
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
 }): Promise<{ code: string; unchanged: boolean }> {
-  const { code, error, openRouterKey, geminiKey, model } = opts;
+  const { code, error, job, openRouterKey, geminiKey, model } = opts;
   const framework = opts.framework === "react" ? "react" : "html";
 
   if (!code || typeof code !== "string" || !code.trim()) {
@@ -122,7 +126,7 @@ export async function repairArtifact(opts: {
   // error, and the model is told to preserve images — a token is far easier to
   // return intact than a 100KB blob. We restore the originals from the result.
   const { tokenized, assets } = tokenizeDataUris(code);
-  const { system, user } = buildRepairPrompt(tokenized, errText, framework);
+  const { system, user } = buildRepairPrompt(tokenized, errText, framework, job);
 
   const fixed = openRouterKey
     ? await repairWithOpenRouter(openRouterKey, model || DEFAULT_REPAIR_MODEL, system, user)

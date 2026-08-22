@@ -10,14 +10,16 @@ export default function StudioFileTree({
   textColor,
   subtextColor,
   review = [],
+  job = null,
 }) {
   const files = listStudioFiles(vfs);
+  const jobPurpose = typeof job?.purpose === 'string' ? job.purpose : '';
 
   return (
     <div
       data-quantora-file-tree="true"
       style={{
-        width: '196px',
+        width: '212px',
         flexShrink: 0,
         height: '100%',
         overflowY: 'auto',
@@ -37,6 +39,38 @@ export default function StudioFileTree({
       >
         Files
       </div>
+      {jobPurpose ? (
+        <div
+          data-quantora-desk-job-panel="true"
+          style={{
+            margin: '0 4px 8px',
+            padding: '8px',
+            borderRadius: '8px',
+            background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.08)',
+            border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.25)',
+          }}
+        >
+          <div style={{
+            fontSize: '0.62rem',
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+            color: subtextColor,
+            textTransform: 'uppercase',
+            marginBottom: '4px',
+          }}
+          >
+            Job
+          </div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: textColor, lineHeight: 1.35 }}>
+            {jobPurpose}
+          </div>
+          {Array.isArray(job?.mustWork) && job.mustWork[0] ? (
+            <div style={{ fontSize: '0.65rem', color: subtextColor, marginTop: '4px', lineHeight: 1.35 }}>
+              {job.mustWork[0]}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => onSelect('preview')}

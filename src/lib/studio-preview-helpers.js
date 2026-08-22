@@ -1,7 +1,7 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
 import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
-import { pickPreviewEntry, prepareCodeForPreview } from './preview-utils.js';
+import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 
 function isHtmlDocument(source = '') {
@@ -56,6 +56,26 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
 /** Preview runs the project, not the file currently open in the editor. */
 export function runningPreviewCode(vfs = {}, fallback = '') {
   return pickPreviewEntry(vfs) || String(fallback || '');
+}
+
+/**
+ * A healed Preview is the product. Write it into the project files so Review
+ * and reload match what is running. React source is not overwritten with HTML.
+ */
+export function writeHealedPreviewToVfs(vfs = {}, healed = '') {
+  const html = String(healed || '').trim();
+  if (!html) return { vfs: { ...(vfs || {}) }, wrote: false, path: null };
+  const asHtml = isHtmlDocument(html);
+  let path = pickPreviewEntryPath(vfs);
+  if (!path || (asHtml && /\.(jsx|tsx|js|ts)$/i.test(path))) {
+    path = 'index.html';
+  }
+  const next = { ...(vfs || {}) };
+  next[path] = {
+    content: html,
+    language: asHtml || /\.html$/i.test(path) ? 'html' : (next[path]?.language || ''),
+  };
+  return { vfs: next, wrote: true, path };
 }
 
 export function extractHtmlFromResponse(rawText) {

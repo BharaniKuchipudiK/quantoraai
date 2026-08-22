@@ -13,7 +13,8 @@ export function userConfirmedWebsitePublish(conversationContext = {}) {
 
 /**
  * Vercel publish is a website outcome. Office files never get the button.
- * Websites get it after the user confirms via the Publish chip / leading question.
+ * A running index.html / App.jsx on the coding desk is enough — do not hide
+ * Publish behind a chat chip.
  */
 export function canOfferVercelPublish({
   messages = [],
@@ -26,7 +27,5 @@ export function canOfferVercelPublish({
   }
   const names = Object.keys(vfs || {});
   if (names.some((name) => OFFICE_PREVIEW_FILE.test(name))) return false;
-  const looksLikeWebsite = names.some((name) => WEBSITE_FILE.test(name));
-  if (!looksLikeWebsite) return false;
-  return userConfirmedWebsitePublish(conversationContext);
+  return names.some((name) => WEBSITE_FILE.test(name));
 }
