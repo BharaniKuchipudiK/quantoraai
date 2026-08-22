@@ -53,7 +53,7 @@ const DOMAIN_CONTINUE_HINTS: Record<string, string> = {
   travel: `Travel anticipation beats (pick what is still missing): Pin down dates · Set a budget · Who is traveling · Day-by-day itinerary · Build trip page (Build mode).`,
   finance: `Finance anticipation beats: Clarify goal · Rough numbers · Time horizon · Simple action plan · Build tracker (Build mode).`,
   research: `Research anticipation beats: Narrow scope · Compare options · Audience · Executive summary · Research page (Build mode).`,
-  education: `Education anticipation beats: Match my level · Focus topic · Study plan · Quiz me · Learning app (Build mode).`,
+  education: `Education anticipation beats: Stay at the stored syllabus depth · One more check · Repair the foundation. Do not offer a website or learning app.`,
 };
 
 export function buildDomainContinueHint(domain: import("./studio-domains.js").StudioDomain | null): string {

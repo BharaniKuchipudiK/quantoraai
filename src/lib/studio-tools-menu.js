@@ -1,4 +1,5 @@
 import { studyFlashcardAsk, studyIcebreakerAsk, studyLessonAsk, studyQuizAsk } from './study-learning-resources.js';
+import { withStudySyllabusAsk } from './study-syllabus-overlay.js';
 import {
   travelAttractionsAsk,
   travelFlightsAsk,
@@ -41,7 +42,7 @@ export function studioToolsMenuGroups(studioDomain, topic = '') {
       {
         heading: 'THIS TRIP',
         items: [
-          { id: 'new-trip', title: 'New trip', subtitle: 'Start a fresh trip. This one stays in your list.', icon: 'plus' },
+          { id: 'new-trip', title: 'New trip', subtitle: 'Start fresh. This thread stays in the list.', icon: 'plus' },
           { id: 'travel-icebreaker', title: 'Icebreaker', subtitle: 'One true hook, then pause so you stay focused.', icon: 'spark' },
           { id: 'travel-flights', title: 'Flights', subtitle: 'Live options when you give airports and dates.', icon: 'plane' },
           { id: 'travel-hotels', title: 'Hotels', subtitle: 'Shortlist stays. We do not invent ratings.', icon: 'hotel' },
@@ -53,14 +54,13 @@ export function studioToolsMenuGroups(studioDomain, topic = '') {
   }
 
   if (studioDomain === 'education') {
-    const label = String(topic || 'this idea').trim() || 'this idea';
     return [
       {
         heading: 'THIS TOPIC',
         items: [
-          { id: 'new-topic', title: 'New topic', subtitle: 'Start a fresh topic. This one stays in your list.', icon: 'plus' },
+          { id: 'new-topic', title: 'New topic', subtitle: 'Start fresh. This thread stays in the list.', icon: 'plus' },
           { id: 'study-icebreaker', title: 'Icebreaker', subtitle: 'A true hook, then pause — then we teach.', icon: 'spark' },
-          { id: 'study-explain', title: 'Explain', subtitle: `Teach ${label} with a picture in words, then wait.`, icon: 'book' },
+          { id: 'study-explain', title: 'Explain', subtitle: 'Teach this topic with a picture, then wait.', icon: 'book' },
           { id: 'study-flashcards', title: 'Flashcards', subtitle: 'Flip to recall. Not a website preview.', icon: 'cards' },
           { id: 'study-quiz', title: 'Quiz', subtitle: 'Real checks. No leaderboard. I wait for you.', icon: 'quiz' },
         ],
@@ -90,7 +90,7 @@ export function studioToolsMenuGroups(studioDomain, topic = '') {
   ];
 }
 
-export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '') {
+export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '', overlay = null) {
   const id = String(toolId || '');
   if (id === 'new-trip') return { kind: STUDIO_PLUS_ACTION.FRESH_THREAD, domain: 'travel' };
   if (id === 'new-topic') return { kind: STUDIO_PLUS_ACTION.FRESH_THREAD, domain: 'education' };
@@ -115,10 +115,10 @@ export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '')
     'travel-hotels': travelHotelsAsk(),
     'travel-attractions': travelAttractionsAsk(),
     'travel-itinerary': travelItineraryAsk(),
-    'study-icebreaker': studyIcebreakerAsk(topic),
-    'study-explain': studyLessonAsk(topic || 'this idea'),
-    'study-flashcards': studyFlashcardAsk(topic || 'this idea'),
-    'study-quiz': studyQuizAsk(topic || 'this idea'),
+    'study-icebreaker': withStudySyllabusAsk(studyIcebreakerAsk(topic), overlay),
+    'study-explain': withStudySyllabusAsk(studyLessonAsk(topic || 'this idea'), overlay),
+    'study-flashcards': withStudySyllabusAsk(studyFlashcardAsk(topic || 'this idea'), overlay),
+    'study-quiz': withStudySyllabusAsk(studyQuizAsk(topic || 'this idea'), overlay),
   };
 
   if (Object.prototype.hasOwnProperty.call(prompts, id)) {
