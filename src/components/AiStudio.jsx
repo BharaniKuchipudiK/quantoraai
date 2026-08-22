@@ -2533,7 +2533,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
           </div>
         )}
-          />
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
