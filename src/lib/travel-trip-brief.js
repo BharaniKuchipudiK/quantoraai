@@ -1,4 +1,5 @@
 import { normalizeSessionContext } from './session-context.js';
+import { inferStayLocation } from './travel-hotel-location.js';
 
 const IATA_HOP = /\b([A-Z]{3})\s*(?:to|-|→)\s*([A-Z]{3})\b/;
 const ISO_DATE = /\b(20\d{2}-\d{2}-\d{2})\b/g;
@@ -24,7 +25,8 @@ export function deriveTravelTripBrief({ conversationContext = {}, messages = [] 
   const dates = [...blob.matchAll(ISO_DATE)].map((match) => match[1]);
   const origin = hop?.[1] || '';
   const destination = hop?.[2] || '';
-  const destinationLabel = destination || clip(ctx.goal) || '';
+  const cityFromChat = [...users].reverse().map((text) => inferStayLocation(text)).find(Boolean) || '';
+  const destinationLabel = destination || cityFromChat || clip(ctx.goal) || '';
   const departureDate = dates[0] || '';
   const returnDate = dates[1] || '';
   const canSearchFlights = Boolean(origin && destination && departureDate);

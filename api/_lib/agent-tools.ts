@@ -19,7 +19,7 @@ import {
   formatTravelPlaceShortlist,
   resolveTravelToolInvocation,
 } from '../../src/lib/travel-place-shortlist.js';
-import { hotelCityAsk, hotelLocationNeedsCity } from '../../src/lib/travel-hotel-location.js';
+import { hotelCityAsk, hotelEmptyResultsAsk, hotelLocationNeedsCity, hotelProviderFailureAsk, resolveHotelSearchLocation } from '../../src/lib/travel-hotel-location.js';
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = core.TRANSACTIONAL_TRAVEL_TOOL_NAMES;
 export const travelFunctionDeclarations = core.travelFunctionDeclarations;
@@ -31,6 +31,7 @@ type TravelToolDependencies = {
   googleMapsApiKey?: string | null;
   fetchFn?: typeof fetch;
   providerPolicy?: Partial<ProviderResiliencePolicy>;
+  recentUserTexts?: string[];
 };
 
 const defaultDuffelClient = process.env.DUFFEL_API_KEY
@@ -109,7 +110,7 @@ function resilientDuffel(client: Duffel | null, policy?: Partial<ProviderResilie
   return wrapped;
 }
 
-function stopAgentLoopOnProviderFailure(name: string, result: any) {
+function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: any) {
   if (!READ_ONLY_TRAVEL_TOOLS.has(name) || result?.status !== 'unavailable') return result;
   if (result?.action === 'PAUSE_AND_ASK' && result?.message) return result;
 
@@ -123,8 +124,9 @@ function stopAgentLoopOnProviderFailure(name: string, result: any) {
     };
   }
 
+  const location = String(toolArgs?.location || '').trim();
   const message = name === 'search_hotels'
-    ? 'I could not look up live hotels just now. Tell me the city or area if you have not — I will not invent a list. If Places is down, we can retry after it is connected.'
+    ? hotelProviderFailureAsk(location)
     : name === 'search_flights'
       ? 'I could not look up live flights just now. I will not invent fares. Give airports and dates, or we can retry when the flight provider answers.'
       : name === 'search_attractions'
@@ -146,12 +148,20 @@ export async function executeToolCall(
 ): Promise<any> {
   const invocation = resolveTravelToolInvocation(name, args && typeof args === 'object' ? args : {});
   const toolName = invocation.name;
-  const toolArgs = invocation.args;
+  let toolArgs = invocation.args && typeof invocation.args === 'object' ? { ...invocation.args } : invocation.args;
 
   // Preserve the existing strongest backstop: transactions stay disabled even
   // if a stale client sends malformed arguments for a transactional tool.
   if (isTransactionalTravelTool(toolName)) {
     return core.executeToolCall(toolName, toolArgs, dependencies as any);
+  }
+
+  if (toolName === 'search_hotels' && toolArgs && typeof toolArgs === 'object') {
+    const location = resolveHotelSearchLocation(
+      (toolArgs as { location?: string }).location,
+      dependencies.recentUserTexts,
+    );
+    toolArgs = { ...toolArgs, location };
   }
 
   const validation = validateTravelToolArgs(toolName, toolArgs);
@@ -194,5 +204,15 @@ export async function executeToolCall(
     result.instruction = 'Paste mandatoryShortlist verbatim. Do not omit ratings or links. Do not invent extra hotels.';
   }
 
-  return stopAgentLoopOnProviderFailure(toolName, result);
+  if (toolName === 'search_hotels' && result?.status === 'success' && Array.isArray(result.hotels) && result.hotels.length === 0) {
+    return {
+      ...result,
+      status: 'unavailable',
+      action: 'PAUSE_AND_ASK',
+      reason: 'NO_RESULTS',
+      message: hotelEmptyResultsAsk(validation.value?.location),
+    };
+  }
+
+  return stopAgentLoopOnProviderFailure(toolName, result, validation.value);
 }

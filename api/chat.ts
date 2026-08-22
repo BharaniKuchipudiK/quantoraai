@@ -169,6 +169,20 @@ function buildGeminiContents(history: any[], currentMessage: string, attachedIma
   return contents;
 }
 
+function recentUserTextsFromChat(history: any[], currentMessage: string) {
+  const texts: string[] = [];
+  if (Array.isArray(history)) {
+    for (const msg of history) {
+      if (!msg || (msg.sender === 'ai' || msg.role === 'model' || msg.role === 'assistant')) continue;
+      const text = String(msg.text || msg.content || '').trim();
+      if (text) texts.push(text);
+    }
+  }
+  const current = String(currentMessage || '').trim();
+  if (current) texts.push(current);
+  return texts;
+}
+
 async function openGeminiStream(input: {
   apiKey: string;
   model: string;
@@ -948,7 +962,7 @@ export default async function handler(req: any, res: any) {
 - Use connected travel tools only for the current travel-domain request.
 - Live flight search may be available through Duffel. If any provider reports unavailable or errors, say so plainly and do not substitute invented results.
 - Hotels, stays, property ratings, websites, Google Maps links, and photos MUST use search_hotels (Google Places). Never call get_places_routing for hotels. Dates are optional for discovery.
-- search_hotels location MUST be a city, island, or neighbourhood (Phuket, Seminyak, Gold Coast). If the traveller only named a vibe such as beach resorts or kids' clubs, ASK for the place first. Do not call the tool with that vibe as the location.
+- search_hotels location MUST be a city, island, or neighbourhood (Phuket, Seminyak, Gold Coast, Singapore). If the latest user message is that place, use it. Do not ask for the city again. If the traveller only named a vibe such as beach resorts or kids' clubs, ASK for the place first. Do not call the tool with that vibe as the location.
 - After search_hotels succeeds, paste mandatoryShortlist verbatim so every property has ★ Google user rating (when supplied), a website or Maps link, and is clickable. Do not invent extra hotels or ratings.
 - Google Places may provide hotel/place identity and ratings, not date-specific room inventory or nightly rates.
 - Transactional booking, ticketing, and background price-alert creation are disabled in this production build. Never claim a booking, ticket, PNR, confirmation code, purchase, alert, or background monitor exists unless a connected provider has actually confirmed it.
@@ -1056,7 +1070,9 @@ export default async function handler(req: any, res: any) {
             throw new Error(`Blocked unexpected travel tool call outside travel domain: ${signedFunctionTurn.call.name || 'unknown'}`);
           }
           sse.status({ phase: 'tool', state: 'running', tool: signedFunctionTurn.call.name });
-          const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args);
+          const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args, {
+            recentUserTexts: recentUserTextsFromChat(boundedHistory, message),
+          });
           if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) {
             travelPlaces = toolResult.hotels;
           } else if (Array.isArray(toolResult?.attractions) && toolResult.attractions.length) {
