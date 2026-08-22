@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import StudyPicture from './StudyPicture.jsx';
+import StudyVisualLab from './StudyVisualLab.jsx';
 import { decorateStudyMessage, splitStudySegments } from '../lib/study-pictures.js';
 
 export default function StudyMarkdown({
@@ -22,15 +23,27 @@ export default function StudyMarkdown({
       data-quantora-study-lesson="true"
       style={{ color: textColor, width: '100%' }}
     >
-      {segments.map((segment, index) => (
-        segment.type === 'picture' ? (
-          <StudyPicture
-            key={`pic-${index}-${segment.kind}`}
-            kind={segment.kind}
-            caption={segment.caption}
-            isLight={isLight}
-          />
-        ) : (
+      {segments.map((segment, index) => {
+        if (segment.type === 'picture') {
+          return (
+            <StudyPicture
+              key={`pic-${index}-${segment.kind}`}
+              kind={segment.kind}
+              caption={segment.caption}
+              isLight={isLight}
+            />
+          );
+        }
+        if (segment.type === 'lab') {
+          return (
+            <StudyVisualLab
+              key={`lab-${index}-${segment.kind}`}
+              kind={segment.kind}
+              isLight={isLight}
+            />
+          );
+        }
+        return (
           <ReactMarkdown
             key={`md-${index}`}
             remarkPlugins={[remarkGfm, remarkMath]}
@@ -39,8 +52,8 @@ export default function StudyMarkdown({
           >
             {segment.text}
           </ReactMarkdown>
-        )
-      ))}
+        );
+      })}
       {waiting ? (
         <div
           data-quantora-study-your-turn="true"

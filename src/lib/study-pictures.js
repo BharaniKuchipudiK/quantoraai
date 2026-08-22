@@ -8,7 +8,9 @@ export const STUDY_PICTURE_KINDS = Object.freeze([
   'ice-puck',
 ]);
 
-const PICTURE_RE = /<quantora-study-picture\b([^>]*)\/?>/gi;
+const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab)\b([^>]*)\/?>/gi;
+
+export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
 
 function attr(raw, name) {
   const match = new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, 'i').exec(raw || '');
@@ -33,37 +35,57 @@ export function splitStudySegments(text = '') {
   const source = String(text || '');
   const segments = [];
   let last = 0;
-  PICTURE_RE.lastIndex = 0;
-  let match = PICTURE_RE.exec(source);
+  TOKEN_RE.lastIndex = 0;
+  let match = TOKEN_RE.exec(source);
   while (match) {
     if (match.index > last) {
       segments.push({ type: 'md', text: source.slice(last, match.index) });
     }
-    const kindRaw = attr(match[1], 'kind').toLowerCase();
-    const kind = STUDY_PICTURE_KINDS.includes(kindRaw) ? kindRaw : 'force-arrows';
-    segments.push({
-      type: 'picture',
-      kind,
-      caption: studyPictureCaption(kind, attr(match[1], 'caption')),
-    });
+    const tag = String(match[1] || '').toLowerCase();
+    const kindRaw = attr(match[2], 'kind').toLowerCase();
+    if (tag === 'quantora-study-lab') {
+      segments.push({
+        type: 'lab',
+        kind: STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton',
+      });
+    } else {
+      const kind = STUDY_PICTURE_KINDS.includes(kindRaw) ? kindRaw : 'force-arrows';
+      segments.push({
+        type: 'picture',
+        kind,
+        caption: studyPictureCaption(kind, attr(match[2], 'caption')),
+      });
+    }
     last = match.index + match[0].length;
-    match = PICTURE_RE.exec(source);
+    match = TOKEN_RE.exec(source);
   }
   if (last < source.length) segments.push({ type: 'md', text: source.slice(last) });
-  return segments.filter((segment) => segment.type === 'picture' || String(segment.text || '').trim());
+  return segments.filter((segment) => segment.type !== 'md' || String(segment.text || '').trim());
 }
 
 function hasPictureTag(text) {
   return /<quantora-study-picture\b/i.test(text);
 }
 
+function hasLabTag(text) {
+  return /<quantora-study-lab\b/i.test(text);
+}
+
+export function wantsStudyLab(text = '') {
+  return /visual (workspace|laboratory|board|lab)|free-?body|fbd\b|vector tab|give one quick push|inertia tab|incline angle|interactive visual/i.test(String(text || ''));
+}
+
 /**
- * Old Study replies never emitted picture tags. Attach up to two real drawings
- * so a Newton wall of text still gets images on screen.
+ * Old Study replies described labs that were never drawn. Attach real pictures
+ * and, when they promised a workspace, the actual in-chat lab.
  */
 export function decorateStudyMessage(text = '') {
-  const source = String(text || '');
+  let source = String(text || '');
   if (!source.trim()) return source;
+  if (!hasLabTag(source) && wantsStudyLab(source)) {
+    const kind = /fbd|free-?body|incline|normal force|gravity|vector/i.test(source) ? 'fbd' : 'newton';
+    source = `<quantora-study-lab kind="${kind}" />\n\n${source}`;
+  }
   if (hasPictureTag(source)) return source;
 
   const kinds = [];

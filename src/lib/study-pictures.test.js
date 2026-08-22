@@ -9,8 +9,10 @@ test('Study picture tags become real segments, not markdown text', () => {
   assert.equal(parts[1].caption, 'The apple');
 });
 
-test('a Newton lesson without tags still gets drawings', () => {
-  const decorated = decorateStudyMessage("Newton's First Law. A book on a table does not move.");
-  assert.match(decorated, /quantora-study-picture kind="apple-tree"/);
-  assert.match(decorated, /quantora-study-picture kind="book-table"/);
+test('a promised visual workspace becomes a real in-chat lab', () => {
+  const decorated = decorateStudyMessage('What has been added to your visual workspace: Dedicated FBD Vector Tab.');
+  assert.match(decorated, /quantora-study-lab kind="fbd"/);
+  const parts = splitStudySegments(decorated);
+  assert.equal(parts[0].type, 'lab');
+  assert.equal(parts[0].kind, 'fbd');
 });

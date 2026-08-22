@@ -19,7 +19,8 @@ import StudioMissionCard from './StudioMissionCard';
 import AdvisorPromptPills from './AdvisorPromptPills';
 import StudioToolsMenu from './StudioToolsMenu';
 import { newThreadLabel } from '../lib/advisor-thread.js';
-import { resolveStudioPlusAction, STUDIO_PLUS_ACTION } from '../lib/studio-tools-menu.js';
+import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
+import { wantsStudyLab } from '../lib/study-pictures.js';
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
@@ -1425,6 +1426,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                   domain: studioDomain,
                                 }),
                               });
+                              const chipText = `${item.label || ''} ${item.value || ''}`;
+                              if (studioDomain === 'education' && wantsStudyLab(chipText)) {
+                                const labKind = /fbd|free-?body|incline|diagram|vector/i.test(chipText) ? 'fbd' : 'newton';
+                                updateActiveMessages((prev) => [...prev, {
+                                  id: Date.now(),
+                                  sender: 'ai',
+                                  text: `<quantora-study-lab kind="${labKind}" />\n\nThis is the visual workspace — in this chat. Use the controls. There is no separate canvas.`,
+                                }]);
+                                return;
+                              }
                               handleSendMessage(item.value);
                             }}
                             onDismiss={() => setDismissedContinueId(msg.id)}
@@ -1550,7 +1561,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages]);
 
   
   useEffect(() => {
