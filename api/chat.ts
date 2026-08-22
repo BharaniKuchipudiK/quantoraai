@@ -948,6 +948,7 @@ export default async function handler(req: any, res: any) {
 - Use connected travel tools only for the current travel-domain request.
 - Live flight search may be available through Duffel. If any provider reports unavailable or errors, say so plainly and do not substitute invented results.
 - Hotels, stays, property ratings, websites, Google Maps links, and photos MUST use search_hotels (Google Places). Never call get_places_routing for hotels. Dates are optional for discovery.
+- search_hotels location MUST be a city, island, or neighbourhood (Phuket, Seminyak, Gold Coast). If the traveller only named a vibe such as beach resorts or kids' clubs, ASK for the place first. Do not call the tool with that vibe as the location.
 - After search_hotels succeeds, paste mandatoryShortlist verbatim so every property has ★ Google user rating (when supplied), a website or Maps link, and is clickable. Do not invent extra hotels or ratings.
 - Google Places may provide hotel/place identity and ratings, not date-specific room inventory or nightly rates.
 - Transactional booking, ticketing, and background price-alert creation are disabled in this production build. Never claim a booking, ticket, PNR, confirmation code, purchase, alert, or background monitor exists unless a connected provider has actually confirmed it.

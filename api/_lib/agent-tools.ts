@@ -19,6 +19,7 @@ import {
   formatTravelPlaceShortlist,
   resolveTravelToolInvocation,
 } from '../../src/lib/travel-place-shortlist.js';
+import { hotelCityAsk, hotelLocationNeedsCity } from '../../src/lib/travel-hotel-location.js';
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = core.TRANSACTIONAL_TRAVEL_TOOL_NAMES;
 export const travelFunctionDeclarations = core.travelFunctionDeclarations;
@@ -110,24 +111,31 @@ function resilientDuffel(client: Duffel | null, policy?: Partial<ProviderResilie
 
 function stopAgentLoopOnProviderFailure(name: string, result: any) {
   if (!READ_ONLY_TRAVEL_TOOLS.has(name) || result?.status !== 'unavailable') return result;
+  if (result?.action === 'PAUSE_AND_ASK' && result?.message) return result;
 
   const providerMessage = String(result?.message || 'The connected travel provider is unavailable.');
-  const subject = name === 'search_hotels'
-    ? 'live hotel results'
+  if (result?.reason === 'INVALID_ARGUMENT') {
+    return {
+      ...result,
+      action: 'PAUSE_AND_ASK',
+      providerMessage,
+      message: providerMessage,
+    };
+  }
+
+  const message = name === 'search_hotels'
+    ? 'I could not look up live hotels just now. Tell me the city or area if you have not — I will not invent a list. If Places is down, we can retry after it is connected.'
     : name === 'search_flights'
-      ? 'live flight results'
+      ? 'I could not look up live flights just now. I will not invent fares. Give airports and dates, or we can retry when the flight provider answers.'
       : name === 'search_attractions'
-        ? 'live attraction results'
-        : 'live map or routing results';
+        ? 'I could not look up live attractions just now. Name the city or area and I will try again — I will not invent a list.'
+        : 'I could not get live map or routing results just now. I will not invent a route.';
 
   return {
     ...result,
-    // Provider failure is a terminal interaction state, not another model turn.
-    // This is the same contract as a legitimate clarifying question and prevents
-    // a broken provider from creating an LLM/tool retry storm.
     action: 'PAUSE_AND_ASK',
     providerMessage,
-    message: `I couldn't retrieve ${subject} from the connected provider, so I stopped instead of retrying in a loop. Would you like me to continue without those live results?`,
+    message,
   };
 }
 
@@ -155,6 +163,16 @@ export async function executeToolCall(
       `Travel tool input was rejected before provider execution (${validation.issues.join(', ')}).`,
       'INVALID_ARGUMENT',
     );
+  }
+
+  if (toolName === 'search_hotels' && hotelLocationNeedsCity(validation.value?.location)) {
+    return {
+      status: 'unavailable',
+      executed: false,
+      reason: 'INVALID_ARGUMENT',
+      action: 'PAUSE_AND_ASK',
+      message: hotelCityAsk(validation.value?.location),
+    };
   }
 
   const rawFetch = dependencies.fetchFn || fetch;
