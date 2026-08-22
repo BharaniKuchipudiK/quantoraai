@@ -8,6 +8,7 @@ export function studioFileLabel(path) {
   const value = String(path || '').trim();
   if (!value || value === 'preview') return 'Preview';
   if (value === 'terminal') return 'Terminal';
+  if (value === 'git') return 'Git';
   if (value === 'code') return 'Code';
   return value;
 }

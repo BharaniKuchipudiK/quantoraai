@@ -182,6 +182,11 @@ try {
   });
   if (!String(source).includes('Mission Control is alive')) throw new Error('Selected file displays the wrong source.');
 
+  await page.locator('[data-quantora-studio-git-nav="true"]').click();
+  await visible(page.locator('[data-quantora-studio-git="true"]').first(), 'Coding desk Git panel did not open.');
+  await visible(page.locator('[data-quantora-studio-git-status="true"]').first(), 'Git status control is missing.');
+  await hidden(page.locator('[data-quantora-monaco="true"]').first(), 'Git tab still showed the file editor.');
+
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
   await arena.click();

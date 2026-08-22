@@ -19,6 +19,7 @@ import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
+import StudioGit from './StudioGit';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -296,7 +297,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCode(val);
     
     // Update VFS if we are editing a specific file
-    if (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && vfs[workspaceActiveTab]) {
+    if (workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && workspaceActiveTab !== 'git' && vfs[workspaceActiveTab]) {
       setVfs(prev => ({
         ...prev,
         [workspaceActiveTab]: { ...prev[workspaceActiveTab], content: val }
@@ -3462,12 +3463,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                  textColor={textColor}
                  subtextColor={subtextColor}
                />
+             ) : workspaceActiveTab === 'git' ? (
+               <StudioGit
+                 vfs={vfs}
+                 workspaceKey={activeSessionId || ''}
+                 isLight={isLight}
+                 textColor={textColor}
+               />
              ) : (
                <Suspense fallback={<div style={{ padding: '24px', color: subtextColor }}>Loading editor…</div>}>
                  <WorkspaceCodeEditor
                    path={workspaceActiveTab}
                    isLight={isLight}
-                   value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
+                   value={(workspaceActiveTab !== 'preview' && workspaceActiveTab !== 'code' && workspaceActiveTab !== 'terminal' && workspaceActiveTab !== 'git' && vfs[workspaceActiveTab]) ? vfs[workspaceActiveTab].content : workspaceCode}
                    onChange={(val) => handleCodeChange({ target: { value: val, selectionStart: String(val || '').length } })}
                  />
                </Suspense>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileCode, Play, Terminal } from 'lucide-react';
+import { FileCode, GitBranch, Play, Terminal } from 'lucide-react';
 import { listStudioFiles, studioFileLabel } from '../lib/studio-file-tree.js';
 
 export default function StudioFileTree({
@@ -51,6 +51,15 @@ export default function StudioFileTree({
       >
         <Terminal size={12} />
         Terminal
+      </button>
+      <button
+        type="button"
+        data-quantora-studio-git-nav="true"
+        onClick={() => onSelect('git')}
+        style={rowStyle(activePath === 'git', isLight, textColor, subtextColor)}
+      >
+        <GitBranch size={12} />
+        Git
       </button>
       {files.length === 0 ? (
         <div style={{ padding: '10px 8px', fontSize: '0.72rem', color: subtextColor, lineHeight: 1.45 }}>
