@@ -461,10 +461,6 @@ export function useStudioSession({ user, selectedModel }) {
   }, [activeProject.id, defaultGreetingMsg]);
 
   const handleCreateNewChat = useCallback(() => {
-    if (studioDomain) {
-      handleCreateAdvisorChat(studioDomain);
-      return;
-    }
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
@@ -472,7 +468,7 @@ export function useStudioSession({ user, selectedModel }) {
       return updated;
     });
     setActiveSessionId(newSession.id);
-  }, [activeProject.id, defaultGreetingMsg, handleCreateAdvisorChat, studioDomain]);
+  }, [activeProject.id, defaultGreetingMsg]);
 
   const openAdvisorWorkspace = useCallback((domain) => {
     const requestedDomain = normalizeStudioDomain(domain);

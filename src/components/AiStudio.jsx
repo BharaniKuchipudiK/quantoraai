@@ -10,17 +10,13 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
-import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice } from '../lib/outcome-gap-detection.js';
+import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus } from '../lib/studio-partner-status.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
-import StudyTutorBoard from './StudyTutorBoard';
-import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
-import TravelTripBoard from './TravelTripBoard';
-import { deriveTravelTripBrief } from '../lib/travel-trip-brief.js';
-import AdvisorFreshThreadBar from './AdvisorFreshThreadBar';
+import AdvisorPromptPills from './AdvisorPromptPills';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioDecisionModal from './StudioDecisionModal';
@@ -228,6 +224,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages,
     updateActiveMessages,
     handleCreateNewChat,
+    handleCreateAdvisorChat,
     handleDeleteChat,
     projects,
     activeProjectId,
@@ -245,7 +242,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [dismissedLongThreadSessionId, setDismissedLongThreadSessionId] = useState(null);
   const { avatarSrc: profileAvatarSrc } = useProfileAvatar(user);
   const [profileAvatarFailed, setProfileAvatarFailed] = useState(false);
 
@@ -1271,9 +1267,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         const priorUser = [...messages].slice(0, messages.findIndex((item) => item.id === msg.id) + 1).reverse().find((item) => item.sender === 'user')?.text || '';
                         const officeKindForChips = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind;
                         const continueSet = msg.id === latestAiId && dismissedContinueId !== msg.id
-                          ? filterContinuesForOffice(
-                            injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text, { officeKind: officeKindForChips })),
-                            officeKindForChips,
+                          ? filterContinuesForAdvisor(
+                            filterContinuesForOffice(
+                              injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text, {
+                                officeKind: officeKindForChips,
+                                studioDomain,
+                              })),
+                              officeKindForChips,
+                            ),
+                            studioDomain,
                           )
                           : null;
                         return (
@@ -1635,11 +1637,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text
-    ? (filterContinuesForOffice(
-      injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text, {
-        officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
-      })),
-      detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+    ? (filterContinuesForAdvisor(
+      filterContinuesForOffice(
+        injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text, {
+          officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+          studioDomain,
+        })),
+        detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+      ),
+      studioDomain,
     )?.items?.[0]?.label || '')
     : '';
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
@@ -1663,12 +1669,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
   });
-  const studyBrief = studioDomain === 'education'
-    ? deriveStudyTutorBrief({ conversationContext, messages })
-    : null;
-  const travelBrief = studioDomain === 'travel'
-    ? deriveTravelTripBrief({ conversationContext, messages })
-    : null;
 
   return (
     <div style={{
@@ -1703,7 +1703,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <button
             onClick={handleCreateNewChat}
-            title={newThreadLabel(studioDomain)}
+            title="New Chat"
             style={{
               flex: 1,
               display: 'flex',
@@ -1723,7 +1723,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             }}
           >
             <Plus size={16} />
-            <span>{newThreadLabel(studioDomain)}</span>
+            <span>New Chat</span>
           </button>
 
           <button
@@ -1786,13 +1786,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           {[
             { domain: 'travel', title: 'Travel Advisor', icon: <Globe size={15} color="#3b82f6" /> },
             { domain: 'finance', title: 'Finance Advisor', icon: <PieChart size={15} color="#10b981" /> },
-            { domain: 'education', title: 'Study Tutor', icon: <Lightbulb size={15} color="#f59e0b" /> },
+            { domain: 'education', title: 'Study Tutor', icon: <Lightbulb size={15} color="#64748b" /> },
             { domain: 'research', title: 'Research Analyst', icon: <Layers size={15} color="#8b5cf6" /> }
-          ].map((card, idx) => (
+          ].map((card) => {
+            const selected = studioDomain === card.domain;
+            return (
+            <div key={card.domain}>
             <div
-              key={idx}
               data-quantora-advisor={card.domain}
-              data-quantora-active-specialist={studioDomain === card.domain ? card.domain : undefined}
+              data-quantora-active-specialist={selected ? card.domain : undefined}
               onClick={() => {
                 openAdvisorWorkspace(card.domain);
                 if (window.innerWidth < 768) setSidebarOpen(false);
@@ -1806,16 +1808,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 cursor: 'pointer',
                 fontSize: '0.85rem',
                 fontWeight: '500',
-                color: studioDomain === card.domain ? '#f97316' : textColor,
-                background: studioDomain === card.domain ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
-                border: studioDomain === card.domain ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
+                color: selected ? '#f97316' : textColor,
+                background: selected ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
+                border: selected ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
                 transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
+                if (selected) return;
                 e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
                 e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
               }}
               onMouseLeave={(e) => {
+                if (selected) return;
                 e.currentTarget.style.background = 'transparent';
                 e.currentTarget.style.borderColor = 'transparent';
               }}
@@ -1823,7 +1827,34 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <div style={{ flexShrink: 0 }}>{card.icon}</div>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
             </div>
-          ))}
+            {(card.domain === 'travel' || card.domain === 'education') ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleCreateAdvisorChat(card.domain);
+                  if (window.innerWidth < 768) setSidebarOpen(false);
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  margin: '2px 0 6px 22px',
+                  padding: '4px 8px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: subtextColor,
+                  fontSize: '0.75rem',
+                  fontWeight: 650,
+                  cursor: 'pointer',
+                }}
+              >
+                {newThreadLabel(card.domain)}
+              </button>
+            ) : null}
+            </div>
+            );
+          })}
         </div>
 
         {/* History Section Title */}
@@ -2124,37 +2155,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               {isAdvisorWorkspace ? domainPolicy.hero : 'What would you like to build today?'}
             </p>
 
-            {isAdvisorWorkspace && studioDomain === 'education' && studyBrief && (
-              <StudyTutorBoard
-                brief={studyBrief}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                lessonText={lastAiMessage?.text || ''}
-                onAsk={(text) => {
-                  setInputText(text);
-                  requestAnimationFrame(() => textareaRef.current?.focus());
-                }}
-                onSend={(text) => handleSendMessage(text)}
-              />
-            )}
-
-            {isAdvisorWorkspace && studioDomain === 'travel' && travelBrief && (
-              <TravelTripBoard
-                brief={travelBrief}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                signedIn={Boolean(user)}
-                onAsk={(text) => {
-                  setInputText(text);
-                  requestAnimationFrame(() => textareaRef.current?.focus());
-                }}
-                onRequireAuth={onOpenAuth}
-              />
-            )}
-
-            {isAdvisorWorkspace && studioDomain !== 'education' && studioDomain !== 'travel' && (
+            {isAdvisorWorkspace && (
               <div data-quantora-workspace-capabilities={studioDomain} style={{ margin: '0 auto 24px auto', maxWidth: '660px' }}>
                 <p style={{ margin: '0 0 18px 0', color: subtextColor, fontSize: '0.95rem', lineHeight: 1.6 }}>{domainPolicy.supporting}</p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '9px', flexWrap: 'wrap' }}>
@@ -2337,65 +2338,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
-        {travelBrief && messages.length > 1 ? (
-          <>
-          <AdvisorFreshThreadBar
-            domain="travel"
-            messages={messages}
-            dismissed={dismissedLongThreadSessionId === activeSessionId}
-            onDismiss={() => setDismissedLongThreadSessionId(activeSessionId)}
-            onFreshThread={handleCreateNewChat}
-            isLight={isLight}
-            textColor={textColor}
-            subtextColor={subtextColor}
-          />
-          <TravelTripBoard
-            brief={travelBrief}
-            isLight={isLight}
-            textColor={textColor}
-            subtextColor={subtextColor}
-            signedIn={Boolean(user)}
-            onAsk={(text) => {
-              setInputText(text);
-              requestAnimationFrame(() => textareaRef.current?.focus());
-            }}
-            onRequireAuth={onOpenAuth}
-          />
-          </>
-        ) : studyBrief && messages.length > 1 ? (
-          <>
-          <AdvisorFreshThreadBar
-            domain="education"
-            messages={messages}
-            dismissed={dismissedLongThreadSessionId === activeSessionId}
-            onDismiss={() => setDismissedLongThreadSessionId(activeSessionId)}
-            onFreshThread={handleCreateNewChat}
-            isLight={isLight}
-            textColor={textColor}
-            subtextColor={subtextColor}
-          />
-          <StudyTutorBoard
-            brief={studyBrief}
-            isLight={isLight}
-            textColor={textColor}
-            subtextColor={subtextColor}
-            lessonText={lastAiMessage?.text || ''}
-            onAsk={(text) => {
-              setInputText(text);
-              requestAnimationFrame(() => textareaRef.current?.focus());
-            }}
-            onSend={(text) => handleSendMessage(text)}
-          />
-          </>
-        ) : null}
-        {!travelBrief && !studyBrief ? (
         <StudioMissionCard
-          mission={studioMission && partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) ? { ...studioMission, next: '' } : studioMission}
+          mission={studioMission && partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) ? { ...studioMission, next: '' } : (!['travel', 'education', 'finance', 'research'].includes(studioDomain) ? studioMission : null)}
           isLight={isLight}
           textColor={textColor}
           subtextColor={subtextColor}
         />
-        ) : null}
         {partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) && (
           <div
             data-quantora-partner-status="true"
@@ -2425,6 +2373,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           flexDirection: 'column',
           gap: '4px'
         }}>
+          <AdvisorPromptPills
+            domain={studioDomain}
+            topic={conversationContext?.goal || ''}
+            onSend={(text) => handleSendMessage(text)}
+            isLight={isLight}
+            textColor={textColor}
+          />
           {/* Attachment Files Badge Bar (Moved inside pill) */}
           {attachments.length > 0 && (
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>

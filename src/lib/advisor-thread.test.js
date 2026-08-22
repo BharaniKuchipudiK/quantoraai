@@ -12,6 +12,7 @@ test('Travel starts a new trip, Study starts a new topic, Studio stays New Chat'
   assert.equal(newThreadLabel('travel'), 'New trip');
   assert.equal(newThreadLabel('education'), 'New topic');
   assert.equal(newThreadLabel(null), 'New Chat');
+  assert.equal(newThreadLabel(undefined), 'New Chat');
 });
 
 test('a long Travel thread warns without wiping the current trip', () => {
