@@ -23,6 +23,15 @@ test('commerce chips still appear when the model omitted quantora-continues', ()
   assert.ok(chips.items.some((item) => /Domestic or international/i.test(item.label)));
 });
 
+test('Study does not get boutique website continue chips', () => {
+  const gaps = detectOutcomeGaps(
+    'help me learn the Newton laws',
+    'Here is a mini-quiz on force.',
+    { studioDomain: 'education' },
+  );
+  assert.equal(gaps.some((gap) => /payment|publish/i.test(gap.label)), false);
+});
+
 test('an Office deck gets presentation chips, not Vercel publish', () => {
   const gaps = detectOutcomeGaps(
     'pre-kick off HAM SAM presentation',

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Download } from 'lucide-react';
 import { gradeStudyCheck } from '../lib/study-tutor-brief.js';
 import {
   studyFlashcardAsk,
@@ -7,6 +8,15 @@ import {
   studyQuizAsk,
   studyResourceLinks,
 } from '../lib/study-learning-resources.js';
+import {
+  buildStudyNotesFile,
+  downloadTextFile,
+  miniPracticeFor,
+  studyAnswerDebriefAsk,
+  studyMiniPracticeAsk,
+  studyRealWorldAsk,
+  studyScheduleAsk,
+} from '../lib/study-practice-desk.js';
 
 /**
  * Personal tutor board: one concept, real checks, flashcards, and honest
@@ -18,9 +28,13 @@ export default function StudyTutorBoard({
   textColor,
   subtextColor,
   onAsk,
+  onSend,
+  lessonText = '',
 }) {
   const [showCheck, setShowCheck] = useState(false);
   const [showCards, setShowCards] = useState(false);
+  const [showPractice, setShowPractice] = useState(false);
+  const [attempt, setAttempt] = useState('');
   const [cardIndex, setCardIndex] = useState(0);
   const [cardBack, setCardBack] = useState(false);
   const [result, setResult] = useState(null);
@@ -28,6 +42,12 @@ export default function StudyTutorBoard({
   const topic = brief?.label || 'this idea';
   const resources = studyResourceLinks(topic);
   const cards = brief?.flashcards || [];
+  const practice = miniPracticeFor(brief?.conceptId, topic);
+
+  const askOrSend = (text) => {
+    if (onSend) onSend(text);
+    else onAsk?.(text);
+  };
 
   const chip = (label, onClick, enabled = true) => (
     <button
@@ -64,8 +84,37 @@ export default function StudyTutorBoard({
         border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.2)',
       }}
     >
-      <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: subtextColor }}>
-        Your tutor board
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: subtextColor }}>
+          Your tutor board
+        </div>
+        <button
+          type="button"
+          title="Download notes"
+          onClick={() => downloadTextFile(
+            `${String(topic).replace(/[^\w]+/g, '-').slice(0, 40) || 'study'}-notes.md`,
+            buildStudyNotesFile({
+              topic,
+              foundation: brief.foundation,
+              lessonText,
+              studentAttempt: attempt,
+            }),
+          )}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            border: 'none',
+            background: 'transparent',
+            color: subtextColor,
+            cursor: 'pointer',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+          }}
+        >
+          <Download size={14} />
+          Download
+        </button>
       </div>
       <div style={{ marginTop: '8px', fontSize: '0.92rem', fontWeight: 700, color: textColor }}>
         {brief.label || 'What are we strengthening?'}
@@ -97,15 +146,18 @@ export default function StudyTutorBoard({
         Next: {brief.next}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-        {chip('Explain', () => onAsk?.(studyLessonAsk(topic)))}
-        {chip('Practise', () => onAsk?.(studyQuizAsk(topic)))}
-        {chip('Plan', () => onAsk?.(`Make a short study plan for ${topic}: foundation first, then this idea, then one mixed check. No fake timetable.`))}
+        {chip('Explain', () => askOrSend(studyLessonAsk(topic)))}
+        {chip('Practise', () => { setShowPractice(true); askOrSend(studyMiniPracticeAsk(topic, practice)); })}
+        {chip('Plan', () => askOrSend(studyScheduleAsk(topic)))}
         {chip('Review', () => { setShowCards(true); setCardIndex(0); setCardBack(false); })}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-        {chip('Quiz', () => onAsk?.(studyQuizAsk(topic)))}
-        {chip('Flashcards', () => { setShowCards(true); setCardIndex(0); setCardBack(false); onAsk?.(studyFlashcardAsk(topic)); })}
-        {chip('Notes', () => onAsk?.(studyNotesAsk(topic)))}
+        {chip('Real world', () => askOrSend(studyRealWorldAsk(topic)))}
+        {chip('Mini practice', () => { setShowPractice(true); askOrSend(studyMiniPracticeAsk(topic, practice)); })}
+        {chip('Schedule', () => askOrSend(studyScheduleAsk(topic)))}
+        {chip('Quiz', () => askOrSend(studyQuizAsk(topic)))}
+        {chip('Flashcards', () => { setShowCards(true); setCardIndex(0); setCardBack(false); askOrSend(studyFlashcardAsk(topic)); })}
+        {chip('Notes', () => askOrSend(studyNotesAsk(topic)))}
         {chip('I got this wrong…', () => onAsk?.('I got this question wrong: '))}
         {chip('Test me on this', () => { setResult(null); setShowCheck(true); }, Boolean(check))}
       </div>
@@ -139,6 +191,60 @@ export default function StudyTutorBoard({
           Official search pages — not a made-up video. NotebookLM is for your PDF or podcast; paste the key points back here and I will quiz you.
         </div>
       </div>
+      {showPractice ? (
+        <div style={{ marginTop: '14px', padding: '12px', borderRadius: '12px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.25)' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 800, color: textColor }}>{practice.title}</div>
+          <div style={{ marginTop: '6px', fontSize: '0.82rem', color: subtextColor, lineHeight: 1.5 }}>{practice.setup}</div>
+          <ol style={{ margin: '8px 0 0', paddingLeft: '18px', color: textColor, fontSize: '0.82rem', lineHeight: 1.5 }}>
+            {practice.questions.map((question) => <li key={question}>{question}</li>)}
+          </ol>
+          <div style={{ marginTop: '8px', fontSize: '0.72rem', color: subtextColor }}>Answers stay hidden. Write your attempt. I will wait.</div>
+          <textarea
+            value={attempt}
+            onChange={(event) => setAttempt(event.target.value)}
+            placeholder="Your working and answers…"
+            rows={4}
+            style={{
+              width: '100%',
+              marginTop: '8px',
+              resize: 'vertical',
+              borderRadius: '10px',
+              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.3)',
+              background: isLight ? '#f8fafc' : 'rgba(15,23,42,0.55)',
+              color: textColor,
+              padding: '8px 10px',
+              fontSize: '0.82rem',
+              fontFamily: 'inherit',
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const text = studyAnswerDebriefAsk({
+                topic,
+                setup: practice.setup,
+                questions: practice.questions,
+                studentAnswer: attempt,
+              });
+              askOrSend(text);
+            }}
+            disabled={!String(attempt).trim()}
+            style={{
+              marginTop: '8px',
+              border: 'none',
+              background: String(attempt).trim() ? '#ea580c' : (isLight ? '#e2e8f0' : '#334155'),
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              cursor: String(attempt).trim() ? 'pointer' : 'default',
+            }}
+          >
+            Check my attempt
+          </button>
+        </div>
+      ) : null}
       {showCards && cards.length > 0 ? (
         <button
           type="button"

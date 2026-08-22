@@ -8,7 +8,7 @@ function beat(id, label, value, priority = 0) {
 }
 
 /** Detect gaps between user intent and assistant reply. Returns proactive fix chips. */
-export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind = null } = {}) {
+export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind = null, studioDomain = null } = {}) {
   const user = String(userPrompt).toLowerCase();
   const ai = String(aiResponse);
   const gaps = [];
@@ -80,7 +80,11 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
   const chatWithoutCode = ai.replace(/```[\s\S]*?```/g, ' ');
   const wantsShop = /\b(saree|sari|boutique|ready.?made|dress(?:es)?|shop|storefront|e-?commerce|online shop|catalog|sell)\b/i.test(userPrompt)
     || /\b(cart|checkout|products\.json|book appointment)\b/i.test(ai);
-  if (wantsShop) {
+  const lifeAdvisor = studioDomain === 'travel'
+    || studioDomain === 'education'
+    || studioDomain === 'finance'
+    || studioDomain === 'research';
+  if (wantsShop && !lifeAdvisor) {
     if (!/\b(stripe|razorpay|payment gateway|pay online|checkout session)\b/i.test(chatWithoutCode)) {
       gaps.push(beat(
         'gap-payments',
@@ -134,6 +138,24 @@ export function filterContinuesForOffice(continueSet, officeKind = null) {
   if (!officeKind || !continueSet?.items?.length) return continueSet;
   const items = continueSet.items.filter((item) => (
     !/vercel|publish this site|go live|payment gateway|shipping/i.test(`${item.label} ${item.value}`)
+  ));
+  if (!items.length) return null;
+  return { ...continueSet, items: items.slice(0, 3) };
+}
+
+/** Travel/Study must not inherit boutique/website continue chips. */
+export function filterContinuesForAdvisor(continueSet, studioDomain = null) {
+  if (
+    studioDomain !== 'travel'
+    && studioDomain !== 'education'
+    && studioDomain !== 'finance'
+    && studioDomain !== 'research'
+  ) {
+    return continueSet;
+  }
+  if (!continueSet?.items?.length) return continueSet;
+  const items = continueSet.items.filter((item) => (
+    !/vercel|publish this site|go live|payment gateway|shipping|boutique|calculator/i.test(`${item.label} ${item.value}`)
   ));
   if (!items.length) return null;
   return { ...continueSet, items: items.slice(0, 3) };
