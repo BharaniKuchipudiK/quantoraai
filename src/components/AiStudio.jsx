@@ -17,6 +17,7 @@ import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import AdvisorPromptPills from './AdvisorPromptPills';
+import StudioToolsMenu from './StudioToolsMenu';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { resolveStudioPlusAction, STUDIO_PLUS_ACTION } from '../lib/studio-tools-menu.js';
 import StudioDecisionModal from './StudioDecisionModal';
