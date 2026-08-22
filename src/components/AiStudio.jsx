@@ -28,6 +28,7 @@ import { useStudioSession } from '../hooks/useStudioSession.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
+import StudyMarkdown from './StudyMarkdown.jsx';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -1220,12 +1221,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       )}
 
                       <div className="markdown-prose" style={{ width: '100%', overflowX: 'hidden' }}>
-                        <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]}
-                          components={markdownComponents}
-                        >
-                          {cleanText}
-                        </ReactMarkdown>
+                        {studioDomain === 'education' && msg.sender === 'ai' ? (
+                          <StudyMarkdown
+                            text={cleanText}
+                            isLight={isLight}
+                            textColor={textColor}
+                            components={markdownComponents}
+                          />
+                        ) : (
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={markdownComponents}
+                          >
+                            {cleanText}
+                          </ReactMarkdown>
+                        )}
                       </div>
 
                       {/* Render Dedicated Office Download Card */}
