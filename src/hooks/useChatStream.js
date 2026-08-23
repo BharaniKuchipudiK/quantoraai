@@ -23,6 +23,7 @@ import { inferStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -30,6 +31,7 @@ import {
   recordClientBoundary,
 } from '../lib/transaction-trace.js';
 
+const MIN_ATTEMPT_BUDGET_MS = 20_000;
 const CHAT_TURN_DEADLINE_MS = 90_000;
 const BUILD_TURN_DEADLINE_MS = 135_000;
 
@@ -562,166 +564,220 @@ export function useChatStream({
     const extraContext = [briefingPrompt, learned, activeOfficeContext].filter(Boolean).join('\n\n');
     const messageForModel = extraContext ? `${text}\n\n${extraContext}` : text;
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    const timeoutId = setTimeout(() => controller.abort('timeout'), turnDeadlineMs);
+    const turnStartedAt = Date.now();
+    const announceRecovery = (notice) => updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+      ...m,
+      text: '',
+      isError: false,
+      executionStatus: { label: notice },
+    } : m));
 
     try {
-      const res = await fetch('/api/chat', {
-        signal: controller.signal,
-        method: 'POST',
-        headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          ...requestBodyFor(targetModel),
-          message: messageForModel,
-        })
-      });
-      const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
+      for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        // The deadline covers the whole turn, so a second attempt inherits what
+        // is left of it rather than doubling how long the person waits.
+        const attemptBudgetMs = Math.max(
+          MIN_ATTEMPT_BUDGET_MS,
+          turnDeadlineMs - (Date.now() - turnStartedAt),
+        );
+        const timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        const message = responseErrorMessage(res.status, errData, targetModel.name);
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: res.status === 401 && errData.requiresAuth
-            ? `🔒 **Please sign in to continue.**\n\n${message}`
-            : `⚠️ **Request failed:** ${message}`,
-          isAuthPrompt: res.status === 401 && errData.requiresAuth,
-          isError: true,
-          executionStatus: null,
-        } : m));
-        return;
-      }
+        try {
+          const res = await fetch('/api/chat', {
+            signal: controller.signal,
+            method: 'POST',
+            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              ...requestBodyFor(targetModel),
+              message: messageForModel,
+            })
+          });
+          const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let currentText = '';
-      let buffer = '';
-      let receivedDone = false;
-      let streamedError = null;
-      let travelPlaces = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const dataStr = line.slice(6);
-          if (dataStr === '[DONE]') {
-            receivedDone = true;
-            continue;
-          }
-          let parsed;
-          try { parsed = JSON.parse(dataStr); } catch { continue; }
-
-          if (parsed.error?.message) {
-            streamedError = parsed.error;
-            continue;
-          }
-          if (parsed.status) {
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-              ...m,
-              executionStatus: parsed.status,
-            } : m));
-          }
-          if (parsed.text) {
-            currentText += parsed.text;
-            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-              ...m,
-              text: sanitizeAssistantStream(currentText),
-              modelUsed: targetModel.name,
-            } : m));
-          }
-          if (parsed.provider) {
-            if (Array.isArray(parsed.travelPlaces) && parsed.travelPlaces.length) {
-              travelPlaces = parsed.travelPlaces;
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const recovery = resolveTurnRecovery({
+              attempt,
+              status: res.status,
+              code: errData.code,
+              retryable: errData.retryable === true,
+            });
+            if (recovery.retry) {
+              announceRecovery(recovery.notice);
+              continue;
             }
+            const message = responseErrorMessage(res.status, errData, targetModel.name);
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
-              provider: parsed.provider,
-              latencyMs: parsed.latencyMs || 0,
+              text: res.status === 401 && errData.requiresAuth
+                ? `🔒 **Please sign in to continue.**\n\n${message}`
+                : `⚠️ **Request failed:** ${message}`,
+              isAuthPrompt: res.status === 401 && errData.requiresAuth,
+              isError: true,
               executionStatus: null,
-              ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
-              correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
-              ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
-              ...(travelPlaces ? { travelPlaces } : {}),
             } : m));
+            return;
           }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let currentText = '';
+          let buffer = '';
+          let receivedDone = false;
+          let streamedError = null;
+          let travelPlaces = null;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const dataStr = line.slice(6);
+              if (dataStr === '[DONE]') {
+                receivedDone = true;
+                continue;
+              }
+              let parsed;
+              try { parsed = JSON.parse(dataStr); } catch { continue; }
+
+              if (parsed.error?.message) {
+                streamedError = parsed.error;
+                continue;
+              }
+              if (parsed.status) {
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  executionStatus: parsed.status,
+                } : m));
+              }
+              if (parsed.text) {
+                currentText += parsed.text;
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  text: sanitizeAssistantStream(currentText),
+                  modelUsed: targetModel.name,
+                } : m));
+              }
+              if (parsed.provider) {
+                if (Array.isArray(parsed.travelPlaces) && parsed.travelPlaces.length) {
+                  travelPlaces = parsed.travelPlaces;
+                }
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  provider: parsed.provider,
+                  latencyMs: parsed.latencyMs || 0,
+                  executionStatus: null,
+                  ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
+                  correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
+                  ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
+                  ...(travelPlaces ? { travelPlaces } : {}),
+                } : m));
+              }
+            }
+          }
+
+          if (streamedError || !receivedDone) {
+            const recovery = resolveTurnRecovery({
+              attempt,
+              code: streamedError?.code,
+              retryable: streamedError ? streamedError.retryable === true : true,
+              hasPartialText: Boolean(currentText),
+            });
+            if (recovery.retry) {
+              announceRecovery(recovery.notice);
+              continue;
+            }
+          }
+
+          if (streamedError) {
+            const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: artifactFailed
+                ? `⚠️ **Preview could not run:** ${streamedError.message}`
+                : currentText
+                ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
+                : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
+              isError: true,
+              executionStatus: null,
+            } : m));
+            return;
+          }
+          if (!receivedDone) {
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: currentText
+                ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ The response stream ended unexpectedly.`
+                : '⚠️ **Connection Error:** The response stream ended unexpectedly.',
+              isError: true,
+              executionStatus: null,
+            } : m));
+            return;
+          }
+
+          const normalized = normalizeAssistantResponse(currentText);
+          void recordClientBoundary(responseCorrelationId, 'browser.response-parser', 'parsed', {
+            transaction: goldenTransaction,
+            detailCode: normalized.displayText ? 'assistant-response-valid' : 'assistant-response-empty',
+          });
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: normalized.displayText,
+            executionStatus: null,
+            ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
+            ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
+            ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
+            correlationId: responseCorrelationId,
+            ...(travelPlaces ? { travelPlaces } : {}),
+          } : m));
+          if (normalized.contextUpdate && typeof updateActiveSession === 'function') {
+            updateActiveSession({
+              conversationContext: mergeSessionContext(turnContext, normalized.contextUpdate),
+            });
+          }
+          await persistPclContinuity({
+            sessionId: pclEnvelope.sessionId,
+            memoryConsented: pclEnvelope.memoryConsented,
+            assistantContext: normalized.contextUpdate,
+            confirmedUserFact,
+            sourceTurn: String(userMsg.id),
+          });
+          return;
+        } catch (error) {
+          const timedOut = controller.signal.aborted && controller.signal.reason === 'timeout';
+          const stopped = controller.signal.aborted && controller.signal.reason === 'user';
+          const recovery = resolveTurnRecovery({
+            attempt,
+            networkError: true,
+            timedOut,
+            stoppedByUser: stopped,
+          });
+          if (recovery.retry) {
+            announceRecovery(recovery.notice);
+            continue;
+          }
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            text: stopped
+              ? '⚠️ **Generation Stopped**'
+              : timedOut
+                ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
+                : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
+            isError: true,
+            executionStatus: null,
+          } : m));
+          return;
+        } finally {
+          clearTimeout(timeoutId);
         }
       }
-
-      if (streamedError) {
-        const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: artifactFailed
-            ? `⚠️ **Preview could not run:** ${streamedError.message}`
-            : currentText
-            ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
-            : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
-          isError: true,
-          executionStatus: null,
-        } : m));
-        return;
-      }
-      if (!receivedDone) {
-        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          text: currentText
-            ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ The response stream ended unexpectedly.`
-            : '⚠️ **Connection Error:** The response stream ended unexpectedly.',
-          isError: true,
-          executionStatus: null,
-        } : m));
-        return;
-      }
-
-      const normalized = normalizeAssistantResponse(currentText);
-      void recordClientBoundary(responseCorrelationId, 'browser.response-parser', 'parsed', {
-        transaction: goldenTransaction,
-        detailCode: normalized.displayText ? 'assistant-response-valid' : 'assistant-response-empty',
-      });
-      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-        ...m,
-        text: normalized.displayText,
-        executionStatus: null,
-        ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
-        ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
-        ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
-        correlationId: responseCorrelationId,
-        ...(travelPlaces ? { travelPlaces } : {}),
-      } : m));
-      if (normalized.contextUpdate && typeof updateActiveSession === 'function') {
-        updateActiveSession({
-          conversationContext: mergeSessionContext(turnContext, normalized.contextUpdate),
-        });
-      }
-      await persistPclContinuity({
-        sessionId: pclEnvelope.sessionId,
-        memoryConsented: pclEnvelope.memoryConsented,
-        assistantContext: normalized.contextUpdate,
-        confirmedUserFact,
-        sourceTurn: String(userMsg.id),
-      });
-    } catch (error) {
-      const timedOut = controller.signal.aborted && controller.signal.reason === 'timeout';
-      const stopped = controller.signal.aborted && controller.signal.reason === 'user';
-      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-        ...m,
-        text: stopped
-          ? '⚠️ **Generation Stopped**'
-          : timedOut
-            ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
-            : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
-        isError: true,
-        executionStatus: null,
-      } : m));
     } finally {
-      clearTimeout(timeoutId);
       abortControllerRef.current = null;
       setIsGenerating(false);
     }

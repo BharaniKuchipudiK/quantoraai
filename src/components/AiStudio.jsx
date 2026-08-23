@@ -2044,6 +2044,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     continueLabel: partnerContinueLabel,
     officeKind: officeKindNow,
     studioDomain,
+    lastTurnFailed: Boolean(lastAiMessage?.isError) && !isGenerating,
   });
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);

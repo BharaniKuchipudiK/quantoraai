@@ -144,6 +144,13 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/code-highlight-browser-gate.mjs
 
+      - name: Execute failed-turn self-heal journey
+        id: self_heal_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/self-heal-browser-gate.mjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -163,9 +170,10 @@ jobs:
           MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
           STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
           CODE_PAYLOAD_OUTCOME: ${{ steps.code_payload_gate.outcome }}
+          SELF_HEAL_OUTCOME: ${{ steps.self_heal_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODE_PAYLOAD_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME; do
             outcome="${!gate}"
             if [ "$outcome" != "success" ]; then
               echo "::error::$gate finished with outcome: $outcome"

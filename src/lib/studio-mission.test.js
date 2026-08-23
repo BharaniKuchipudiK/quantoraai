@@ -29,6 +29,15 @@ test('empty studio has no mission card', () => {
   assert.equal(deriveStudioMission({ messages: [] }), null);
 });
 
+test('a failed turn does not keep claiming the build is under way', () => {
+  const args = {
+    messages: [{ sender: 'user', text: 'build an agent that cleans my Google Drive' }],
+    hasPreview: true,
+  };
+  assert.match(deriveStudioMission(args).goal, /Drive/i);
+  assert.equal(deriveStudioMission({ ...args, lastTurnFailed: true }), null);
+});
+
 test('project resume uses the latest chat, not the first empty one', () => {
   const resume = deriveProjectResume([
     { id: 'empty', createdAt: 9, title: 'New Chat', messages: [], conversationContext: {} },

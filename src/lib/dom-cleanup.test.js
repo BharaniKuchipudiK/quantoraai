@@ -88,7 +88,9 @@ test('build timeout and deployed canary credentials honor the release contract',
   const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
   const canary = fs.readFileSync(new URL('../../scripts/deployed-golden-transactions.mjs', import.meta.url), 'utf8');
   assert.match(stream, /BUILD_TURN_DEADLINE_MS = 135_000/);
-  assert.match(stream, /controller\.abort\('timeout'\), turnDeadlineMs/);
+  assert.match(stream, /controller\.abort\('timeout'\), attemptBudgetMs/);
+  // A self-healing retry must spend what is left of the turn deadline, never a fresh one.
+  assert.match(stream, /turnDeadlineMs - \(Date\.now\(\) - turnStartedAt\)/);
   assert.match(stream, /buildMode: isCodingRequest/);
   assert.match(fs.readFileSync(new URL('../../api/chat.ts', import.meta.url), 'utf8'), /error\?\.code !== 'BUILD_ARTIFACT_CONTRACT'/);
   assert.doesNotMatch(canary, /extraHTTPHeaders/);
