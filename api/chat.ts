@@ -47,6 +47,7 @@ import { evaluationFromVerification } from "../src/lib/communication/evaluation/
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../src/lib/build-intent.js";
 import { shouldRefineRunningDesk } from "../src/lib/workspace-intent.js";
+import { formatDeskContextForPrompt, sanitizeDeskContext } from "../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
 const PREVIEW_HTML_RECOVERY = `
@@ -395,9 +396,15 @@ export default async function handler(req: any, res: any) {
         studioDomain: normalizedStudioDomain,
       })));
     const previewCode = typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "";
-    const refineUserMessage = isRefine && previewCode
-      ? `${message}\n\nCURRENT RUNNING PREVIEW (source of truth — return the FULL updated document in a \`\`\`html block after a short explanation; do not claim a change unless the HTML contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
-      : message;
+    const deskContext = sanitizeDeskContext(req.body?.deskContext);
+    const deskBlock = formatDeskContextForPrompt(deskContext);
+    const refineUserMessage = [
+      message,
+      deskBlock,
+      isRefine && previewCode
+        ? `CURRENT RUNNING PREVIEW (source of truth — return the FULL updated document in a \`\`\`html block after a short explanation; do not claim a change unless the HTML contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
+        : '',
+    ].filter(Boolean).join('\n\n');
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";

@@ -53,6 +53,24 @@ test('Study does not get boutique website continue chips', () => {
   assert.equal(gaps.some((gap) => /payment|publish/i.test(gap.label)), false);
 });
 
+test('Preview facts suppress a photo chip even when chat HTML omitted images', () => {
+  const gaps = detectOutcomeGaps(
+    'website for my saree boutique',
+    'I added high-resolution photos.',
+    { deskFacts: { hasPhotos: true, photoCount: 4 } },
+  );
+  assert.equal(gaps.some((gap) => gap.label === 'Add real product photos'), false);
+});
+
+test('failed desk probes become continue chips ahead of chat vibes', () => {
+  const gaps = detectOutcomeGaps(
+    'please include a currency converter',
+    'Done — currency is on the boutique.',
+    { deskChecks: [{ id: 'currency', ok: false, label: 'Currency switcher missing from Preview' }] },
+  );
+  assert.equal(gaps[0].id, 'gap-currency');
+});
+
 test('an Office deck gets presentation chips, not Vercel publish', () => {
   const gaps = detectOutcomeGaps(
     'pre-kick off HAM SAM presentation',
