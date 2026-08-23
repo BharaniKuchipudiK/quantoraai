@@ -10,11 +10,12 @@ import { decorateStudyMessage, splitStudySegments } from '../lib/study-pictures.
 
 export default function StudyMarkdown({
   text = '',
+  topic = '',
   isLight = false,
   textColor,
   components,
 }) {
-  const segments = splitStudySegments(decorateStudyMessage(text));
+  const segments = splitStudySegments(decorateStudyMessage(text, topic), topic);
   const waiting = /i[’']m with you|write your attempt|i will wait/i.test(String(text || ''));
 
   return (
@@ -27,8 +28,7 @@ export default function StudyMarkdown({
         if (segment.type === 'picture') {
           return (
             <StudyPicture
-              key={`pic-${index}-${segment.kind}`}
-              kind={segment.kind}
+              key={`pic-${index}-${segment.caption}`}
               caption={segment.caption}
               isLight={isLight}
             />
