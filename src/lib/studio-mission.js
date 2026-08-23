@@ -85,7 +85,11 @@ export function deriveStudioMission({
   continueLabel = '',
   officeKind = null,
   studioDomain = null,
+  lastTurnFailed = false,
 } = {}) {
+  // "Building: X" next to a turn that just died reads as work still happening.
+  // The failure line is the only honest thing to say at that moment.
+  if (lastTurnFailed) return null;
   const ctx = normalizeSessionContext(conversationContext);
   const users = (messages || [])
     .filter((message) => message?.sender === 'user' && message.text)
