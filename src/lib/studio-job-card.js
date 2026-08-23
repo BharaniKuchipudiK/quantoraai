@@ -82,6 +82,12 @@ export function studioJobCardLabel(job) {
   return normalizeStudioJobCard(job)?.purpose || '';
 }
 
+export function jobNeedsProductPhotos(job) {
+  const card = normalizeStudioJobCard(job);
+  if (!card) return false;
+  return /\b(shop|boutique|catalog|photo)/i.test([card.purpose, ...card.mustWork].join(' '));
+}
+
 export function formatJobCardForRepair(job) {
   const card = normalizeStudioJobCard(job);
   if (!card) return '';

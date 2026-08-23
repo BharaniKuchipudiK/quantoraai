@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  injectMissingShopPhotos,
+  injectProductCatalogImages,
   isAllowedPreviewImageUrl,
+  previewHtmlHasRealPhotos,
   rewritePreviewImageUrls,
 } from './preview-images.js';
 
@@ -18,4 +21,33 @@ test('Preview rewrites Unsplash photos to the Quantora proxy so they can load', 
   assert.match(out, /\/api\/preview-image\?u=/);
   assert.match(out, /images\.unsplash\.com/);
   assert.equal(rewritePreviewImageUrls(html, ''), html);
+});
+
+test('a boutique card with a large SVG gets a real Unsplash photo', () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg>`;
+  const html = `<!DOCTYPE html><html><body><div class="product-card">${svg}<p>Pure Gold Zari Kanjeevaram</p></div></body></html>`;
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, true);
+  assert.equal(previewHtmlHasRealPhotos(result.html), true);
+  assert.match(result.html, /images\.unsplash\.com/);
+});
+
+test('a shop that already has photos is not rewritten into a different catalog', () => {
+  const html = '<article class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="saree"></article>';
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, false);
+  assert.equal(result.html, html);
+});
+
+test('a CSS-only boutique still gets a collection photo', () => {
+  const html = '<!DOCTYPE html><html><body><main><div class="hero">Aaranya gold frame</div></main></body></html>';
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, true);
+  assert.match(result.html, /<img\b[^>]*src="https:\/\/images\.unsplash\.com/);
+});
+
+test('products.json without image URLs gets catalog photos', () => {
+  const catalog = injectProductCatalogImages('[{"id":"a","name":"Kanjeevaram","priceCents":38000}]');
+  assert.equal(catalog.changed, true);
+  assert.match(catalog.text, /images\.unsplash\.com/);
 });

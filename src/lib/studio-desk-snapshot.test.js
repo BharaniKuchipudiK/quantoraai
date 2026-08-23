@@ -33,6 +33,23 @@ test('files and preview round-trip with the session', () => {
   assert.equal(restored.job.purpose, 'A working calculator');
 });
 
+test('a saved boutique without photos gets them back on restore', () => {
+  const built = buildStudioDeskSnapshot({
+    vfs: {
+      'index.html': {
+        content: '<!DOCTYPE html><html><body><main><div class="hero">Aaranya</div></main></body></html>',
+        language: 'html',
+      },
+      'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+    },
+    workspaceCode: '<!DOCTYPE html><html><body><main><div class="hero">Aaranya</div></main></body></html>',
+    codingDeskOpen: true,
+  });
+  const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
+  assert.match(restored.vfs['index.html'].content, /images\.unsplash\.com/);
+  assert.match(restored.workspaceCode, /images\.unsplash\.com/);
+});
+
 test('a snapshot that is too large is refused instead of faking persistence', () => {
   const huge = 'x'.repeat(800_001);
   const built = buildStudioDeskSnapshot({

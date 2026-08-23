@@ -10,6 +10,8 @@ import {
   preparePreviewHtml,
   runningPreviewCode,
   writeHealedPreviewToVfs,
+  ensureShopPhotosInVfs,
+  userAskedForPreviewPhotos,
 } from './studio-preview-helpers.js';
 
 const splitApp = `Here is the app.
@@ -165,4 +167,38 @@ test('a healed HTML page writes into index.html and does not overwrite React sou
   assert.equal(next.path, 'index.html');
   assert.match(next.vfs['index.html'].content, /Fixed/);
   assert.match(next.vfs['App.jsx'].content, /Old/);
+});
+
+test('healing a boutique writes real photos, not gold frames', () => {
+  const vfs = {
+    'index.html': { content: '<!DOCTYPE html><html><body><p>old</p></body></html>', language: 'html' },
+    'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+  };
+  const healed = '<!DOCTYPE html><html><body><main><div class="hero">Kanjeevaram</div></main></body></html>';
+  const next = writeHealedPreviewToVfs(vfs, healed);
+  assert.match(next.vfs['index.html'].content, /images\.unsplash\.com/);
+});
+
+test('a chat that only talks still gets shop photos when the desk already has a boutique', () => {
+  assert.equal(userAskedForPreviewPhotos('no images .. please fix'), true);
+  const before = {
+    'index.html': {
+      content: `<!DOCTYPE html><html><body><div class="product-card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg><p>Kanjeevaram</p></div></body></html>`,
+      language: 'html',
+    },
+    'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+  };
+  const next = ensureShopPhotosInVfs(before);
+  assert.equal(next.changed, true);
+  assert.match(next.vfs['index.html'].content, /images\.unsplash\.com/);
+  assert.match(next.vfs['products.json'].content, /images\.unsplash\.com/);
+});
+
+test('a calculator is not given a clothing catalog', () => {
+  const vfs = {
+    'index.html': { content: '<!DOCTYPE html><html><body><button class="key">7</button></body></html>', language: 'html' },
+  };
+  const next = ensureShopPhotosInVfs(vfs);
+  assert.equal(next.changed, false);
+  assert.doesNotMatch(next.vfs['index.html'].content, /unsplash/);
 });
