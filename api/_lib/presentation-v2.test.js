@@ -56,6 +56,9 @@ test('rejects a seven-slide deck that repeats an elementary body composition', (
   const result = validatePresentationSpec({ title: 'Weak deck', archetype: 'general', slides });
   assert.equal(result.valid, false);
   assert.ok(result.issues.some((issue) => /repeat the same bullets composition/i.test(issue)));
+  const shipped = validatePresentationSpec({ title: 'Weak deck', archetype: 'general', slides }, { consultingGate: 'soft' });
+  assert.equal(shipped.valid, true);
+  assert.ok(shipped.warnings.some((issue) => /repeat the same bullets composition/i.test(issue)));
 });
 
 test('accepts a context-appropriate QBR with diverse semantic compositions', () => {

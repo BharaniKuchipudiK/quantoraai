@@ -296,8 +296,13 @@ export function useChatStream({
       }]);
 
       try {
-        const res = await fetch('/api/generate-office', {
+        const officeAbort = new AbortController();
+        const officeTimer = setTimeout(() => officeAbort.abort(), 58_000);
+        let res;
+        try {
+          res = await fetch('/api/generate-office', {
           method: 'POST',
+          signal: officeAbort.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: buildApprovedOfficeGenerationPrompt(text, sessionContext, currentOfficeArtifact),
@@ -314,14 +319,22 @@ export function useChatStream({
               .map((attachment) => ({ name: attachment.name, dataUrl: attachment.dataUrl }))
           })
         });
+        } catch (fetchError) {
+          if (fetchError?.name === 'AbortError') {
+            throw new Error('The document generator ran out of host time before a file could be compiled. This is Quantora hitting the platform clock, not a missing API key. Shorten the brief and try once.');
+          }
+          throw fetchError;
+        } finally {
+          clearTimeout(officeTimer);
+        }
 
         const raw = await res.text();
         let data;
         try {
           data = JSON.parse(raw);
         } catch {
-          throw new Error(res.status === 504
-            ? 'The document generator timed out. Please try again.'
+          throw new Error(res.status === 504 || res.status === 503
+            ? 'The document generator ran out of host time before a file could be compiled. This is Quantora hitting the platform clock, not a missing API key. Shorten the brief and try once.'
             : 'The server hit an error generating the document. Please try again.');
         }
         if (!res.ok) throw new Error(data.error || 'Compilation failed');
