@@ -13,6 +13,7 @@ import {
   studioSidebarHistoryListStyle,
   studioSidebarHistoryPaneStyle,
   studioSidebarHistoryTitle,
+  studioSidebarMembershipCopy,
   studioSidebarYieldingSectionStyle,
 } from './studio-sidebar.js';
 
@@ -62,6 +63,7 @@ test('sidebar flex column gives History a real pane and lets Projects/agents yie
   const css = fs.readFileSync(new URL('../index.css', import.meta.url), 'utf8');
   assert.match(css, /data-quantora-sidebar-history="true"/);
   assert.match(css, /data-quantora-sidebar-history-list="true"/);
+  assert.match(css, /data-quantora-sidebar-move-chat/);
   assert.match(css, /--studio-sidebar-history-min/);
 });
 
@@ -71,6 +73,11 @@ test('history copy names the selected project instead of a global inbox', () => 
   assert.equal(studioSidebarHistoryHint(0, 'Personal Workspace'), 'No chats in Personal Workspace yet. New Chat starts one here.');
   assert.equal(studioSidebarHistoryHint(1, 'Boutique'), '1 chat in this project');
   assert.equal(studioSidebarHistoryHint(4, 'Boutique'), '4 chats in this project');
+  assert.equal(
+    studioSidebarMembershipCopy('Personal Workspace'),
+    'These chats belong to Personal Workspace. New Chat stays here.',
+  );
+  assert.equal(studioSidebarMembershipCopy(''), 'These chats belong to this project. New Chat stays here.');
 });
 
 test('section persistence keeps agents open unless the user collapsed them', () => {

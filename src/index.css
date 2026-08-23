@@ -296,6 +296,11 @@ body {
 
   .app-shell--studio [data-quantora-sidebar-chat] {
     flex-shrink: 0;
+    min-width: 0;
+  }
+
+  .app-shell--studio [data-quantora-sidebar-move-chat] {
+    max-width: 92px;
   }
 }
 

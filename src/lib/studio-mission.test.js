@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deriveProjectResume, deriveStudioMission, pickResumeSessionId } from './studio-mission.js';
+import { deriveProjectResume, deriveStudioMission, isResumeSession, pickResumeSessionId } from './studio-mission.js';
 
 test('keeps the boutique goal after a short follow-up in the same chat', () => {
   const mission = deriveStudioMission({
@@ -57,6 +57,11 @@ test('switching projects reopens the mission chat, not the newest empty one', ()
     },
   ];
   assert.equal(pickResumeSessionId(sessions), 'deck');
+  const resume = deriveProjectResume(sessions);
+  assert.equal(isResumeSession(sessions[1], resume), true);
+  assert.equal(isResumeSession(sessions[0], resume), false);
+  assert.equal(isResumeSession('deck', resume), true);
+  assert.equal(isResumeSession({ id: 'deck' }, null), false);
 });
 
 test('an Office mission does not tell the user to publish a website', () => {

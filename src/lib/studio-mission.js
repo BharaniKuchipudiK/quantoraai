@@ -69,6 +69,11 @@ export function pickResumeSessionId(sessions = []) {
   return ranked[0]?.id || null;
 }
 
+export function isResumeSession(session, projectResume) {
+  const sessionId = typeof session === 'string' ? session : session?.id;
+  return Boolean(sessionId && projectResume?.sessionId && sessionId === projectResume.sessionId);
+}
+
 /**
  * Sticky world model for a Studio session: what we are building, what is true,
  * what is next. Derived locally so a missing quantora-ctx comment cannot wipe it.
