@@ -12,6 +12,11 @@ import {
   tabFromLocation,
   takeStudioPrefill,
 } from './lib/studio-isolation.js';
+import {
+  authGoogleWellStyle,
+  authModalCardStyle,
+  authModalOverlayStyle,
+} from './lib/auth-modal-styles.js';
 
 /*
  * The heavy surfaces load on demand.
@@ -526,33 +531,10 @@ export default function App() {
         </>
       )}
 
-      {/* Google OAuth Modal */}
+      {/* Google OAuth Modal — isolated so landing filters cannot hide the iframe */}
       {showAuthModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(12px)',
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px'
-        }}>
-          <div style={{
-            background: isLight ? '#ffffff' : '#1a1a1d', // Adapts to theme
-            color: isLight ? '#0f172a' : '#ffffff',
-            borderRadius: '48px', // Extremely rounded pill-like corners
-            maxWidth: '540px',
-            width: '100%',
-            padding: '64px 40px',
-            boxShadow: isLight ? '0 40px 120px rgba(0, 0, 0, 0.15)' : '0 40px 120px rgba(0, 0, 0, 0.8)',
-            textAlign: 'center',
-            position: 'relative'
-          }}>
+        <div data-quantora-auth-modal="true" style={authModalOverlayStyle()}>
+          <div style={authModalCardStyle(isLight)}>
             <button
               onClick={() => {
                 setShowAuthModal(false);
@@ -608,14 +590,16 @@ export default function App() {
                   )}
                   {/* Google Login Component using a dynamic pill button matching the aesthetic */}
                   {!(typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) ? (
+                  <div style={authGoogleWellStyle()}>
                   <GoogleLogin
                     onSuccess={handleGoogleSuccess}
                     onError={handleGoogleError}
                     shape="pill"
-                    theme={isLight ? "outline" : "filled_black"}
-                    text="signin"
+                    theme="outline"
+                    text="signin_with"
                     size="large"
                   />
+                  </div>
                   ) : (
                     <p style={{ color: '#a1a1aa' }}>Sign in from the home page so Google Sign-In can open.</p>
                   )}
