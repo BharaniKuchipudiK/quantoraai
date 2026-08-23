@@ -122,6 +122,7 @@ test("refine mode uses communication layer before code", () => {
   const prompt = buildConversationSystemPrompt({ buildMode: true, refineMode: true });
   assert.match(prompt, /COMMUNICATION LAYER/);
   assert.match(prompt, /REFINE \/ ITERATE MODE/);
+  assert.match(prompt, /You MUST emit that HTML block/);
   assert.match(prompt, /What do you think/);
 });
 

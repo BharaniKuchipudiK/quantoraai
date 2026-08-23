@@ -208,6 +208,7 @@ COMMUNICATION FIRST (always):
 WHEN IMPLEMENTING (after confirmation or a specific change request):
 - Keep the conversational explanation FIRST (2–4 sentences), then the complete updated HTML in one \`\`\`html block.
 - Return the FULL updated document, not a diff.
+- You MUST emit that HTML block on this turn. Never say you added currency, cart, photos, or any control unless those tags exist in the HTML.
 - Code is shown in the preview panel; chat stays readable.`;
 
 const FEATURE_SUGGEST_DIRECTIVE = `FEATURE SUGGESTION MODE

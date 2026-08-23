@@ -45,13 +45,19 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
-import { shouldHonorGuidedBuild, resolveEffectiveBuildMode } from "../src/lib/build-intent.js";
+import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../src/lib/build-intent.js";
+import { shouldRefineRunningDesk } from "../src/lib/workspace-intent.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
 
 const PREVIEW_HTML_RECOVERY = `
 
 PREVIEW RECOVERY
 The previous attempt emitted native iOS/Android source (Swift, Kotlin, or similar). Quantora Live Preview cannot run those files. Output EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that looks like the requested platform. Do not emit .swift, .kt, or Xcode/Android project files.`;
+
+const PREVIEW_REFINE_RECOVERY = `
+
+PREVIEW RECOVERY
+This turn must update the running page. The previous reply only talked. Output a short explanation, then EXACTLY one complete updated HTML document in a single \`\`\`html fence that implements the user's request. Do not claim the change unless those tags exist in the HTML.`;
 
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
@@ -379,9 +385,19 @@ export default async function handler(req: any, res: any) {
       buildMode,
       guidedBuild,
       featureSuggest,
-      isRefine,
+      isRefine: requestedRefine,
       hasPreviewCode,
     } = communicationRequest;
+    const isRefine = !advisorBlocksPreviewBuild(normalizedStudioDomain)
+      && (requestedRefine || (hasPreviewCode && shouldRefineRunningDesk({
+        prompt: message,
+        hasDeskFiles: true,
+        studioDomain: normalizedStudioDomain,
+      })));
+    const previewCode = typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "";
+    const refineUserMessage = isRefine && previewCode
+      ? `${message}\n\nCURRENT RUNNING PREVIEW (source of truth — return the FULL updated document in a \`\`\`html block after a short explanation; do not claim a change unless the HTML contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
+      : message;
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
@@ -408,8 +424,8 @@ export default async function handler(req: any, res: any) {
       studioDomain: normalizedStudioDomain,
       studioMode: mode,
       studioModeExplicit: communicationRequest.studioModeExplicit,
-      buildMode,
-    });
+      buildMode: buildMode || isRefine,
+    }) || isRefine;
     // Studio users should not toggle web search. Live search is off until a
     // product surface needs it (advisors are frozen; BUILD does not use it).
     const grounding = false;
@@ -656,11 +672,11 @@ export default async function handler(req: any, res: any) {
         content: visionImages.length
           ? [
               ...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })),
-              { type: "text", text: message },
+              { type: "text", text: refineUserMessage },
             ]
-          : message,
+          : refineUserMessage,
       });
-      const geminiContents = buildGeminiContents(boundedHistory, message, visionImages);
+      const geminiContents = buildGeminiContents(boundedHistory, refineUserMessage, visionImages);
       const sources: Array<{ uri: string; title: string }> = [];
       const seenSources = new Set<string>();
       let fullReply = '';
@@ -668,6 +684,7 @@ export default async function handler(req: any, res: any) {
       let lastRouteError: any = null;
       const failedQuotaDomains = new Set<string>();
       let recoverHtmlPreview = false;
+      let htmlRecoveryTried = false;
 
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
@@ -711,7 +728,9 @@ export default async function handler(req: any, res: any) {
         try {
           let attemptReply = '';
           const buildBeat = { t: 0 };
-          const attemptSystemPrompt = recoverHtmlPreview ? `${finalSystemPrompt}${PREVIEW_HTML_RECOVERY}` : finalSystemPrompt;
+          const attemptSystemPrompt = recoverHtmlPreview
+            ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}`
+            : finalSystemPrompt;
           formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat);
           if (route.provider === 'gemini') {
@@ -857,7 +876,9 @@ export default async function handler(req: any, res: any) {
           break;
         } catch (error: any) {
           lastRouteError = error;
-          if (error?.detailCode === 'browser-preview-missing') recoverHtmlPreview = true;
+          const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
+            || (isRefine && error?.detailCode === 'code-fences-missing');
+          if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
           // A response-contract miss is specific to this prompt/output. It may
@@ -883,6 +904,11 @@ export default async function handler(req: any, res: any) {
               ? error.detailCode
               : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
           });
+          if (shouldRecoverHtml && !htmlRecoveryTried && !sse.isCommitted) {
+            htmlRecoveryTried = true;
+            index -= 1;
+            continue;
+          }
           const nextRoute = attempts[index + 1];
           if (
             sse.isCommitted
@@ -1159,9 +1185,9 @@ export default async function handler(req: any, res: any) {
       content: visionImages.length
         ? [
             ...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })),
-            { type: "text", text: message },
+            { type: "text", text: refineUserMessage },
           ]
-        : message,
+        : refineUserMessage,
     });
 
     const openRouterAttempts = attempts.filter((attempt) => attempt.provider === 'openrouter');

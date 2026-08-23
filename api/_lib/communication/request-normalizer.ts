@@ -61,7 +61,7 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     hasPreviewCode: typeof body?.previewCode === "string" && body.previewCode.trim().length > 0,
     isRefine: body?.refineMode === true,
     explicitModelId: typeof body?.modelId === "string" && body.modelId.trim() ? body.modelId.trim() : null,
-    buildMode: body?.buildMode === true || inferredBuildMode,
+    buildMode: body?.buildMode === true || inferredBuildMode || body?.refineMode === true,
     guidedBuild: body?.guidedBuild === true,
     featureSuggest: body?.featureSuggest === true,
   };
