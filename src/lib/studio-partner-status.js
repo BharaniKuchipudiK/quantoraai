@@ -16,6 +16,7 @@ export function resolveStudioPartnerStatus({
   studioDomain = null,
   codingDeskOpen = false,
   photosMissing = false,
+  shopUiMissing = false,
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
@@ -63,6 +64,16 @@ export function resolveStudioPartnerStatus({
         next: continueLabel && !/publish this site/i.test(continueLabel)
           ? `Next: ${continueLabel}.`
           : 'Ask me to put real photos on the catalog — not empty frames.',
+      };
+    }
+    if (shopUiMissing) {
+      return {
+        now: codingDeskOpen
+          ? 'Preview is running. Currency and Add to Cart are still missing from the page.'
+          : 'The app is ready, but currency and Add to Cart are still missing.',
+        next: continueLabel && !/publish this site/i.test(continueLabel)
+          ? `Next: ${continueLabel}.`
+          : 'Ask again — those controls have to appear in Preview, not only in chat.',
       };
     }
     if (codingDeskOpen) return null;
@@ -115,4 +126,8 @@ export function studioPreviewRunLabel(status) {
 
 export function assistantClaimsImagesReady(text = '') {
   return /\b(high-resolution|high-definition|overhauled the image|product cards now|visual illustrations|studio visuals|textile visuals|images are (now |all )?ready|catalog to include visual)\b/i.test(String(text || ''));
+}
+
+export function assistantClaimsShopUiReady(text = '') {
+  return /\b(currency|multi-currency|add to cart|shopping bag|cart drawer|cart totals)\b/i.test(String(text || ''));
 }

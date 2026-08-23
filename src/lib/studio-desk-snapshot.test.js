@@ -48,6 +48,8 @@ test('a saved boutique without photos gets them back on restore', () => {
   const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
   assert.match(restored.vfs['index.html'].content, /images\.unsplash\.com/);
   assert.match(restored.workspaceCode, /images\.unsplash\.com/);
+  assert.match(restored.vfs['index.html'].content, /Add to Cart/);
+  assert.match(restored.vfs['index.html'].content, /USD/);
 });
 
 test('a snapshot that is too large is refused instead of faking persistence', () => {

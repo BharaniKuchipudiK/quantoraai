@@ -7,6 +7,7 @@ import {
   injectMissingShopPhotos,
   injectProductCatalogImages,
 } from './preview-images.js';
+import { injectShopCommerceUi } from './shop-preview-ui.js';
 
 function isHtmlDocument(source = '') {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
@@ -48,7 +49,7 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
   );
-  const ensured = ensureShopPhotosInVfs(assembled.vfs);
+  const ensured = ensureShopDeskInVfs(assembled.vfs);
   const vfs = ensured.vfs;
   const code = pickPreviewEntry(vfs) || assembled.code;
   const didUpdate = Object.keys(vfs).length > 0 && Boolean(code);
@@ -70,6 +71,12 @@ export function userAskedForPreviewPhotos(text = '') {
   return /\b(no images|images?|photos?|pictures?|visuals?)\b/i.test(String(text || ''));
 }
 
+export function userAskedForShopDeskFix(text = '') {
+  const src = String(text || '');
+  return userAskedForPreviewPhotos(src)
+    || /\b(currency|converter|usd|sgd|aud|aed|add to cart|add to bag|shopping bag)\b/i.test(src);
+}
+
 export function ensureShopPhotosInVfs(vfs = {}) {
   if (!vfsLooksLikeShop(vfs)) return { vfs, changed: false };
   const next = { ...vfs };
@@ -77,7 +84,7 @@ export function ensureShopPhotosInVfs(vfs = {}) {
   const htmlPath = pickPreviewEntryPath(next);
   if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
     const result = injectMissingShopPhotos(next[htmlPath].content);
-    if (result.injected && result.html !== next[htmlPath].content) {
+    if (result.html !== next[htmlPath].content) {
       next[htmlPath] = { ...next[htmlPath], content: result.html };
       changed = true;
     }
@@ -90,6 +97,19 @@ export function ensureShopPhotosInVfs(vfs = {}) {
     }
   }
   return { vfs: next, changed };
+}
+
+/** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
+export function ensureShopDeskInVfs(vfs = {}) {
+  const withPhotos = ensureShopPhotosInVfs(vfs);
+  if (!vfsLooksLikeShop(withPhotos.vfs)) return withPhotos;
+  const next = { ...withPhotos.vfs };
+  const htmlPath = pickPreviewEntryPath(next);
+  if (!htmlPath || !next[htmlPath] || typeof next[htmlPath].content !== 'string') return withPhotos;
+  const ui = injectShopCommerceUi(next[htmlPath].content);
+  if (!ui.changed) return withPhotos;
+  next[htmlPath] = { ...next[htmlPath], content: ui.html };
+  return { vfs: next, changed: true };
 }
 
 /** Preview runs the project, not the file currently open in the editor. */
@@ -114,8 +134,8 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '') {
     content: html,
     language: asHtml || /\.html$/i.test(path) ? 'html' : (next[path]?.language || ''),
   };
-  const withPhotos = ensureShopPhotosInVfs(next);
-  return { vfs: withPhotos.vfs, wrote: true, path };
+  const withDesk = ensureShopDeskInVfs(next);
+  return { vfs: withDesk.vfs, wrote: true, path };
 }
 
 export function extractHtmlFromResponse(rawText) {

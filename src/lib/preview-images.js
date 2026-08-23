@@ -68,9 +68,26 @@ const SHOP_PHOTOS = [
   'https://images.unsplash.com/photo-1603252109303-2751441dd157?auto=format&fit=crop&w=1200&q=80',
 ];
 
+const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
+const MAX_SHOP_PHOTOS = 6;
+const PRODUCT_OPEN_RE = /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>/gi;
+const INJECTED_PHOTO_RE = /<img\b[^>]*data-quantora-shop-photo="true"[^>]*>/gi;
+
 function shopPhotoTag(index, alt = 'Textile photo') {
   const src = SHOP_PHOTOS[index % SHOP_PHOTOS.length];
-  return `<img src="${src}" alt="${alt}" width="1200" height="800" style="width:100%;height:min(52vh,420px);object-fit:cover;display:block">`;
+  return `<img ${INJECTED_PHOTO_MARK} src="${src}" alt="${alt}" width="1200" height="800" style="width:100%;max-height:280px;object-fit:cover;display:block">`;
+}
+
+/** Previous inject put a photo on every nested "card". Strip those so Preview is not a repeating stack. */
+export function stripInjectedShopPhotos(html = '') {
+  return String(html || '')
+    .replace(INJECTED_PHOTO_RE, '')
+    .replace(/<img\b[^>]*height:min\(52vh,420px\)[^>]*>/gi, '');
+}
+
+export function countRealPreviewPhotos(html = '') {
+  const matches = String(html || '').match(/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/gi);
+  return matches ? matches.length : 0;
 }
 
 function isTinyDecorativeSvg(svg) {
@@ -86,17 +103,21 @@ function isTinyDecorativeSvg(svg) {
  * in the HTML when a shop has none.
  */
 export function injectMissingShopPhotos(html = '') {
-  const source = String(html || '');
-  if (!source || previewHtmlHasRealPhotos(source)) {
-    return { html: source, injected: false };
+  const cleaned = stripInjectedShopPhotos(html);
+  if (!cleaned) {
+    return { html: String(html || ''), injected: false };
+  }
+  if (previewHtmlHasRealPhotos(cleaned)) {
+    return { html: cleaned, injected: cleaned !== String(html || '') };
   }
   let index = 0;
-  let out = source.replace(/<(article|div|section|li)([^>]*class=["'][^"']*(?:product|card|tile|catalog|saree|look|piece|showcase)[^"']*["'][^>]*)>/gi, (open) => (
-    `${open}${shopPhotoTag(index++)}`
-  ));
+  let out = cleaned.replace(PRODUCT_OPEN_RE, (open) => {
+    if (index >= MAX_SHOP_PHOTOS) return open;
+    return `${open}${shopPhotoTag(index++)}`;
+  });
   if (!previewHtmlHasRealPhotos(out)) {
     out = out.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
-      if (isTinyDecorativeSvg(svg) || index >= 8) return svg;
+      if (isTinyDecorativeSvg(svg) || index >= MAX_SHOP_PHOTOS) return svg;
       return shopPhotoTag(index++);
     });
   }

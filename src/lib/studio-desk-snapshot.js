@@ -4,7 +4,7 @@
  */
 
 import { normalizeStudioJobCard } from './studio-job-card.js';
-import { ensureShopPhotosInVfs } from './studio-preview-helpers.js';
+import { ensureShopDeskInVfs } from './studio-preview-helpers.js';
 import { pickPreviewEntry } from './preview-utils.js';
 
 export function normalizeDeskReview(review = []) {
@@ -83,7 +83,7 @@ export function restoreStudioDeskSnapshot(session) {
   }
   let workspaceCode = typeof snap.workspaceCode === 'string' ? snap.workspaceCode : '';
   if (!Object.keys(vfs).length && !workspaceCode.trim()) return null;
-  const withPhotos = ensureShopPhotosInVfs(vfs);
+  const withPhotos = ensureShopDeskInVfs(vfs);
   if (withPhotos.changed) {
     workspaceCode = pickPreviewEntry(withPhotos.vfs) || workspaceCode;
   }
