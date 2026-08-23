@@ -2453,3 +2453,13 @@ html[data-quantora-domain="education"] .app-shell--studio .markdown-prose p {
   line-height: 1.5 !important;
   margin: 0 0 0.7rem;
 }
+
+/* Google Sign-In iframe must not inherit dark color-scheme or landing filters. */
+[data-quantora-auth-modal="true"] {
+  isolation: isolate;
+  z-index: 10000;
+}
+
+[data-quantora-auth-modal="true"] iframe {
+  color-scheme: light;
+}

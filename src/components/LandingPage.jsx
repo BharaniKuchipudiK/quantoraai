@@ -306,8 +306,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               {isLight ? <Moon size={18} color="#8b5cf6" /> : <Sun size={18} color="#fb923c" />}
             </button>
 
-            {user && (
+            {user ? (
               <button
+                type="button"
                 onClick={onLaunchStudio}
                 style={{
                   background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
@@ -325,6 +326,27 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 }}
               >
                 <Sparkles size={16} color="#ffffff" /> Enter Portal
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-quantora-login="true"
+                onClick={onOpenAuth}
+                style={{
+                  background: isLight ? '#0f172a' : '#ffffff',
+                  color: isLight ? '#ffffff' : '#0f172a',
+                  border: 'none',
+                  padding: '10px 22px',
+                  borderRadius: '9999px',
+                  fontSize: '0.9rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <LogIn size={16} /> Log In
               </button>
             )}
           </div>
