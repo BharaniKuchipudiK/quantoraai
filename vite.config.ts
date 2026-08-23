@@ -16,25 +16,26 @@ function copyMonacoAssets() {
 }
 
 function isolatedDeskHeaders() {
+  const apply = (req, res, next) => {
+    const url = String(req.url || '').split('?')[0];
+    const isolated = isIsolatedStudioPath(url);
+    const original = res.setHeader.bind(res);
+    res.setHeader = (name, value) => {
+      if (String(name).toLowerCase() === 'cross-origin-opener-policy' && isolated) {
+        return original(name, 'same-origin');
+      }
+      return original(name, value);
+    };
+    if (isolated) original('Cross-Origin-Opener-Policy', 'same-origin');
+    next();
+  };
   return {
     name: 'isolated-desk-headers',
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const url = String(req.url || '').split('?')[0];
-        if (isIsolatedStudioPath(url)) {
-          res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-        }
-        next();
-      });
+      server.middlewares.use(apply);
     },
     configurePreviewServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const url = String(req.url || '').split('?')[0];
-        if (isIsolatedStudioPath(url)) {
-          res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-        }
-        next();
-      });
+      server.middlewares.use(apply);
     },
   };
 }
