@@ -12,18 +12,17 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
-import { buildStudioJobCard, studioJobCardLabel, jobNeedsProductPhotos } from '../lib/studio-job-card.js';
+import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
-import { previewHtmlHasRealPhotos } from '../lib/preview-images.js';
-import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from '../lib/shop-preview-ui.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
+import { buildDeskContextPacket } from '../lib/studio-desk-context.js';
 import { diffVfsReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
@@ -950,6 +949,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     canvasCode,
     vfs,
     isWorkspaceMode,
+    deskJob,
     messages,
     setLastPrompt,
     sessionContext: projectContext,
@@ -1152,12 +1152,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const deskPacket = buildDeskContextPacket({
+    vfs,
+    job: deskJob,
+    html: previewRunCode,
+    studioDomain,
+  });
   const photosMissing = Boolean(previewRunCode)
-    && !previewHtmlHasRealPhotos(previewRunCode)
-    && (jobNeedsProductPhotos(deskJob) || vfsLooksLikeShop(vfs));
-  const shopUiMissing = vfsLooksLikeShop(vfs)
-    && Boolean(previewRunCode)
-    && (!previewHtmlHasCurrencySwitcher(previewRunCode) || !previewHtmlHasAddToCartControl(previewRunCode));
+    && deskPacket?.facts?.shop
+    && !deskPacket.facts.hasPhotos;
+  const shopUiMissing = Boolean(deskPacket?.facts?.shop)
+    && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
@@ -1525,6 +1530,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text, {
                                 officeKind: officeKindForChips,
                                 studioDomain,
+                                deskChecks: deskPacket?.checks || [],
+                                deskFacts: deskPacket?.facts || null,
                               })),
                               officeKindForChips,
                             ),
@@ -1768,7 +1775,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket]);
 
   
   useEffect(() => {
@@ -1949,6 +1956,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text, {
           officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
           studioDomain,
+          deskChecks: deskPacket?.checks || [],
+          deskFacts: deskPacket?.facts || null,
         })),
         detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
       ),
@@ -3571,6 +3580,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               textColor={textColor}
               subtextColor={subtextColor}
               review={deskReview}
+              probes={deskPacket?.checks || []}
+              nextBeat={deskPacket?.nextBeat || ''}
               job={deskJob}
             />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>

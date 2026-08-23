@@ -10,6 +10,8 @@ export default function StudioFileTree({
   textColor,
   subtextColor,
   review = [],
+  probes = [],
+  nextBeat = '',
   job = null,
 }) {
   const files = listStudioFiles(vfs);
@@ -134,6 +136,48 @@ export default function StudioFileTree({
               )}
             </button>
           ))}
+        </div>
+      ) : null}
+      {Array.isArray(probes) && probes.length > 0 ? (
+        <div data-quantora-desk-probes="true" style={{ padding: '4px 4px 10px' }}>
+          <div style={{
+            fontSize: '0.65rem',
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+            color: subtextColor,
+            padding: '4px 8px 6px',
+            textTransform: 'uppercase',
+          }}
+          >
+            Preview checks
+          </div>
+          {probes.map((check) => (
+            <div
+              key={`probe-${check.id}`}
+              data-quantora-desk-probe={check.id}
+              data-quantora-desk-probe-ok={check.ok ? 'true' : 'false'}
+              style={{
+                display: 'flex',
+                gap: '6px',
+                alignItems: 'flex-start',
+                padding: '4px 8px',
+                fontSize: '0.68rem',
+                lineHeight: 1.35,
+                color: check.ok ? textColor : (isLight ? '#b45309' : '#fbbf24'),
+              }}
+            >
+              <span style={{ flexShrink: 0, fontWeight: 800 }}>{check.ok ? 'ok' : 'fix'}</span>
+              <span>{check.label}</span>
+            </div>
+          ))}
+          {nextBeat ? (
+            <div
+              data-quantora-desk-next="true"
+              style={{ padding: '4px 8px 0', fontSize: '0.65rem', color: subtextColor, lineHeight: 1.35 }}
+            >
+              Next: {nextBeat}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {files.length === 0 ? (

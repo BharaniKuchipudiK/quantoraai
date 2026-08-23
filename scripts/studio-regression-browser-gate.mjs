@@ -190,6 +190,12 @@ try {
   if (!/calculator/i.test((await jobLabel.innerText()).trim())) {
     throw new Error('Calculator Preview was missing a calculator job card.');
   }
+  await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Coding desk did not show Preview checks against the running job.');
+  const calcProbe = page.locator('[data-quantora-desk-probe="calc-display"]').first();
+  await visible(calcProbe, 'Calculator display probe was missing.');
+  if ((await calcProbe.getAttribute('data-quantora-desk-probe-ok')) !== 'true') {
+    throw new Error('Calculator display probe failed while the calculator was running.');
+  }
   await visible(page.locator('[data-quantora-publish="true"]').first(), 'A running website desk did not offer Publish.');
   const partner = page.locator('[data-quantora-partner-status="true"]').first();
   if (await partner.isVisible().catch(() => false)) {

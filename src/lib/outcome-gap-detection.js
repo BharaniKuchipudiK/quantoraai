@@ -7,8 +7,28 @@ function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
 }
 
+function chipsFromDeskChecks(checks = []) {
+  if (!Array.isArray(checks) || !checks.length) return [];
+  const beats = {
+    photos: beat('gap-photos', 'Add real product photos', 'Put real <img src="https://images.unsplash.com/..."> photos on every product card in the running Preview. Do not say images are done until Preview shows photos.', 108),
+    cart: beat('gap-cart', 'Add to Cart on Preview', 'Put a working Add to Cart control on the running page. Do not say it is done unless Preview shows it.', 107),
+    currency: beat('gap-currency', 'Add a currency converter', 'Put a currency converter on the running Preview. Do not say it is done unless Preview shows it.', 106),
+    catalog: beat('gap-catalog', 'Fill the product catalog', 'Put named products in products.json and on the page. Preview is the proof.', 105),
+    'calc-display': beat('gap-calc', 'Fix the calculator display', 'The calculator Preview is missing a working display. Fix the running page.', 108),
+    'calc-key': beat('gap-calc-key', 'Fix the calculator keys', 'The calculator Preview is missing working keys. Fix the running page.', 107),
+  };
+  return checks
+    .filter((check) => check && check.ok === false && beats[check.id])
+    .map((check) => beats[check.id]);
+}
+
 /** Detect gaps between user intent and assistant reply. Returns proactive fix chips. */
-export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind = null, studioDomain = null } = {}) {
+export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
+  officeKind = null,
+  studioDomain = null,
+  deskChecks = [],
+  deskFacts = null,
+} = {}) {
   const user = String(userPrompt).toLowerCase();
   const ai = String(aiResponse);
   const gaps = [];
@@ -16,6 +36,8 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
   if (officeKind) {
     return officeFollowUpGaps(officeKind);
   }
+
+  const probeGaps = chipsFromDeskChecks(deskChecks);
 
   const wantsUrls = /\b(url|urls|link|links|clickable)\b/i.test(userPrompt);
   const hasUrls = /https?:\/\//i.test(ai);
@@ -97,7 +119,8 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
     || studioDomain === 'research';
     if (wantsShop && !lifeAdvisor) {
     const hasPhotoInAi = /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai);
-    if (!hasPhotoInAi) {
+    const hasPhotos = (deskFacts && (deskFacts.hasPhotos === true || Number(deskFacts.photoCount) > 0)) || hasPhotoInAi;
+    if (!hasPhotos && !probeGaps.some((gap) => gap.id === 'gap-photos')) {
       gaps.push(beat(
         'gap-photos',
         'Add real product photos',
@@ -121,7 +144,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
         95,
       ));
     }
-    if (hasPhotoInAi && !/\b(publish|vercel|go live|live url)\b/i.test(chatWithoutCode)) {
+    if (hasPhotos && !/\b(publish|vercel|go live|live url)\b/i.test(chatWithoutCode)) {
       gaps.push(beat(
         'gap-publish',
         'Publish this site',
@@ -131,7 +154,9 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
     }
   } else {
     const wantsPhotos = /\b(images?|photos?|pictures?|visuals?)\b/i.test(userPrompt);
-    if (wantsPhotos && !lifeAdvisor && !/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai)) {
+    const hasPhotos = (deskFacts && (deskFacts.hasPhotos === true || Number(deskFacts.photoCount) > 0))
+      || /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai);
+    if (wantsPhotos && !lifeAdvisor && !hasPhotos && !probeGaps.some((gap) => gap.id === 'gap-photos')) {
       gaps.push(beat(
         'gap-photos',
         'Add real product photos',
@@ -141,7 +166,9 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
     }
   }
 
-  return gaps.sort((a, b) => b.priority - a.priority);
+  return [...probeGaps, ...gaps]
+    .filter((gap, index, list) => list.findIndex((item) => item.id === gap.id) === index)
+    .sort((a, b) => b.priority - a.priority);
 }
 
 function officeFollowUpGaps(officeKind) {
