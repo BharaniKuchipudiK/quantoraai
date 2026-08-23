@@ -56,6 +56,8 @@ import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
+import StudyTutorBoard from './StudyTutorBoard.jsx';
+import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -989,6 +991,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     ? studySyllabusContinueSet(conversationContext?.goal || '')
     : null;
 
+  // The board only earns its place once a real concept is on the table, so an
+  // empty Study desk cannot show a progress bar for nothing.
+  const studyTutorBrief = React.useMemo(
+    () => (studioDomain === 'education' ? deriveStudyTutorBrief({ conversationContext, messages }) : null),
+    [studioDomain, conversationContext, messages],
+  );
+
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
@@ -1690,6 +1699,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           />
                           </div>
                         )}
+                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.label ? (
+                          <StudyTutorBoard
+                            brief={studyTutorBrief}
+                            isLight={isLight}
+                            textColor={textColor}
+                            subtextColor={subtextColor}
+                            lessonText={cleanText}
+                            onAsk={(text) => setInputText(text)}
+                            onSend={(text) => handleSendMessage(text)}
+                          />
+                        ) : null}
                         </>
                         );
                       })()}
@@ -1810,7 +1830,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket]);
 
   
   useEffect(() => {
