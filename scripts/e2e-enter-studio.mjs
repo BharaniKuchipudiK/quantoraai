@@ -5,9 +5,12 @@
  * then enter Studio and wait for the composer.
  */
 export async function enterSignedInStudio(page) {
-  const enterPortal = page.getByRole('button', { name: /Enter Portal/i }).first();
-  await enterPortal.waitFor({ state: 'visible', timeout: 15_000 });
-  await enterPortal.click();
+  if (!/\/desk\/?(\?|$)/.test(page.url())) {
+    const enterPortal = page.getByRole('button', { name: /Enter Portal/i }).first();
+    await enterPortal.waitFor({ state: 'visible', timeout: 15_000 });
+    await enterPortal.click();
+    await page.waitForURL(/\/desk\/?$/, { timeout: 20_000 });
+  }
   const enteredAt = Date.now();
 
   const composer = page.locator('.app-shell--studio textarea').first();

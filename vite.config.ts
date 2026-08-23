@@ -3,6 +3,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
+import { isIsolatedStudioPath } from './src/lib/studio-isolation.js';
 
 function copyMonacoAssets() {
   const vsSrc = path.resolve('node_modules/monaco-editor/min/vs');
@@ -14,9 +15,33 @@ function copyMonacoAssets() {
   };
 }
 
+function isolatedDeskHeaders() {
+  return {
+    name: 'isolated-desk-headers',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = String(req.url || '').split('?')[0];
+        if (isIsolatedStudioPath(url)) {
+          res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        }
+        next();
+      });
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = String(req.url || '').split('?')[0];
+        if (isIsolatedStudioPath(url)) {
+          res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), copyMonacoAssets()],
+    plugins: [isolatedDeskHeaders(), react(), tailwindcss(), copyMonacoAssets()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -33,6 +58,12 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? undefined : {},
+    },
+    preview: {
+      headers: {
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
     },
   };
 });
