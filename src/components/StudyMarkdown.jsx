@@ -28,8 +28,7 @@ export default function StudyMarkdown({
         if (segment.type === 'picture') {
           return (
             <StudyPicture
-              key={`pic-${index}-${segment.kind}`}
-              kind={segment.kind}
+              key={`pic-${index}-${segment.caption}`}
               caption={segment.caption}
               isLight={isLight}
             />

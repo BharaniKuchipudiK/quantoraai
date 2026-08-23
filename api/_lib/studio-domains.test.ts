@@ -45,8 +45,8 @@ test("Education directive behaves as an evidence-backed Study Advisor instead of
   assert.match(directive, /smallest useful diagnostic/i);
   assert.match(directive, /durable mastery/i);
   assert.match(directive, /quantora-study-picture/i);
-  assert.match(directive, /mystery-box/);
-  assert.match(directive, /Never use Newton/);
+  assert.match(directive, /caption=/);
+  assert.match(directive, /this conversation/i);
   assert.match(directive, /One idea per message/i);
   assert.match(directive, /wall of text/i);
   assert.match(directive, /SWAYAM/i);

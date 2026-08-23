@@ -1634,7 +1634,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               });
                               const chipText = `${item.label || ''} ${item.value || ''}`;
                               if (studioDomain === 'education' && wantsStudyLab(chipText)) {
-                                const labKind = /fbd|free-?body|incline|diagram|vector/i.test(chipText) ? 'fbd' : 'newton';
+                                const labKind = /fbd|free-?body/i.test(chipText)
+                                  ? 'fbd'
+                                  : /\bnewton\b|inertia tab/i.test(chipText)
+                                    ? 'newton'
+                                    : null;
+                                if (!labKind) {
+                                  handleSendMessage(item.value);
+                                  return;
+                                }
                                 updateActiveMessages((prev) => [...prev, {
                                   id: Date.now(),
                                   sender: 'ai',
