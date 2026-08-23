@@ -263,6 +263,40 @@ body {
   .app-shell--studio .ai-studio-messages:not(.ai-studio-messages--empty) {
     overscroll-behavior: contain;
   }
+
+  /* Chat History stays a real pane at laptop height. Projects/agents may
+     shrink and scroll; History cannot collapse into a clipped orange row. */
+  .app-shell--studio [data-quantora-studio-sidebar="true"] {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell--studio [data-quantora-sidebar-projects="true"],
+  .app-shell--studio [data-quantora-sidebar-agents="true"] {
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
+  .app-shell--studio [data-quantora-sidebar-history="true"] {
+    flex: 1 1 var(--studio-sidebar-history-min, 220px);
+    min-height: var(--studio-sidebar-history-min, 220px);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .app-shell--studio [data-quantora-sidebar-history-list="true"] {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-shell--studio [data-quantora-sidebar-chat] {
+    flex-shrink: 0;
+  }
 }
 
 @media (min-width: 768px) and (max-height: 900px) {
