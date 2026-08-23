@@ -1,6 +1,9 @@
 import React from 'react';
 import { FileCode, GitBranch, Play, Terminal } from 'lucide-react';
 import { listStudioFiles, studioFileLabel } from '../lib/studio-file-tree.js';
+import { checkState } from '../lib/studio-desk-criteria.js';
+
+const PROBE_MARK = { ok: 'ok', fix: 'fix', unverified: '?' };
 
 export default function StudioFileTree({
   vfs,
@@ -151,25 +154,29 @@ export default function StudioFileTree({
           >
             Preview checks
           </div>
-          {probes.map((check) => (
-            <div
-              key={`probe-${check.id}`}
-              data-quantora-desk-probe={check.id}
-              data-quantora-desk-probe-ok={check.ok ? 'true' : 'false'}
-              style={{
-                display: 'flex',
-                gap: '6px',
-                alignItems: 'flex-start',
-                padding: '4px 8px',
-                fontSize: '0.68rem',
-                lineHeight: 1.35,
-                color: check.ok ? textColor : (isLight ? '#b45309' : '#fbbf24'),
-              }}
-            >
-              <span style={{ flexShrink: 0, fontWeight: 800 }}>{check.ok ? 'ok' : 'fix'}</span>
-              <span>{check.label}</span>
-            </div>
-          ))}
+          {probes.map((check) => {
+            const state = checkState(check);
+            return (
+              <div
+                key={`probe-${check.id}`}
+                data-quantora-desk-probe={check.id}
+                data-quantora-desk-probe-ok={state === 'ok' ? 'true' : 'false'}
+                data-quantora-desk-probe-state={state}
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  alignItems: 'flex-start',
+                  padding: '4px 8px',
+                  fontSize: '0.68rem',
+                  lineHeight: 1.35,
+                  color: state === 'ok' ? textColor : (state === 'unverified' ? subtextColor : (isLight ? '#b45309' : '#fbbf24')),
+                }}
+              >
+                <span style={{ flexShrink: 0, fontWeight: 800 }}>{PROBE_MARK[state]}</span>
+                <span>{check.label}</span>
+              </div>
+            );
+          })}
           {nextBeat ? (
             <div
               data-quantora-desk-next="true"

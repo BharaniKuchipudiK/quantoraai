@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildPreviewSandbox } from '../lib/preview-utils.js';
 import { correlationHeaders, normalizeClientCorrelationId, recordClientBoundary } from '../lib/transaction-trace.js';
 
-export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransaction = null }) {
+export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransaction = null, onDeskProbe }) {
   const frameRef = useRef(null);
   const renderedRef = useRef(false);
+  const onDeskProbeRef = useRef(onDeskProbe);
+  onDeskProbeRef.current = onDeskProbe;
   const [html, setHtml] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,8 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
     setError('');
     setHtml('');
     renderedRef.current = false;
+    // Facts observed on the previous build must not vouch for this one.
+    onDeskProbeRef.current?.(null);
 
     (async () => {
       try {
@@ -71,6 +75,10 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
           transaction: goldenTransaction,
           detailCode: runtimeMessage.includes('rendered no content') ? 'runtime-empty-root' : 'runtime-exception',
         });
+      } else if (event.data.kind === 'desk-probe') {
+        if (event.data.facts && typeof event.data.facts === 'object') {
+          onDeskProbeRef.current?.(event.data.facts);
+        }
       } else if (event.data.kind === 'ready' && !renderedRef.current) {
         renderedRef.current = true;
         void recordClientBoundary(correlationId, 'browser.iframe', 'rendered', {
