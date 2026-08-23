@@ -1,38 +1,70 @@
-export const STUDY_PICTURE_KINDS = Object.freeze([
-  'apple-tree',
-  'book-table',
-  'truck-car',
-  'canoe-dock',
-  'rocket',
-  'force-arrows',
-  'ice-puck',
-]);
+/**
+ * Study pictures are caption-first and conversation-scoped.
+ * There is no stock scene playlist. The client never invents a Newton
+ * (or Algebra) picture because a keyword fired.
+ */
 
 const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab)\b([^>]*)\/?>/gi;
 
 export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
+
+/** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
+const STOCK_SCENE_CAPTION = /newton under the tree|apple fall the same way|book at rest on a table|two forces, no motion|truck vs car|step out of a canoe|rocket pushes gas|net force and mass together|on ice, a shove keeps going/i;
 
 function attr(raw, name) {
   const match = new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, 'i').exec(raw || '');
   return match ? match[1].trim() : '';
 }
 
-export function studyPictureCaption(kind, caption = '') {
-  if (caption) return caption;
-  const labels = {
-    'apple-tree': 'Newton under the tree — why does the apple fall the same way every time?',
-    'book-table': 'A book at rest on a table — two forces, no motion.',
-    'truck-car': 'Truck vs car — same pair of forces, different accelerations.',
-    'canoe-dock': 'Step out of a canoe — you go one way, the boat goes the other.',
-    rocket: 'A rocket pushes gas down, so the gas pushes the rocket up.',
-    'force-arrows': 'Net force and mass together set acceleration.',
-    'ice-puck': 'On ice, a shove keeps going until something else acts.',
-  };
-  return labels[kind] || 'A picture of this idea.';
+function withoutStudyTags(text = '') {
+  return String(text || '').replace(/<(quantora-study-picture|quantora-study-lab)\b[^>]*\/?>/gi, ' ');
 }
 
-export function splitStudySegments(text = '') {
+function contextHay(topic = '', body = '') {
+  return `${topic}\n${withoutStudyTags(body)}`.toLowerCase();
+}
+
+function lessonAsksForMechanicsLab(hay = '') {
+  return /\bnewton|\binertia\b|free-?body|\bfbd\b|kinematics|\bf\s*=\s*ma\b|first law of motion|third law/i.test(hay);
+}
+
+/**
+ * A picture stays only when its caption is about this conversation.
+ * Empty captions and leftover stock Newton lines are dropped.
+ */
+export function pictureCaptionFitsLesson(caption = '', topic = '', body = '') {
+  const cap = String(caption || '').trim();
+  if (!cap) return false;
+  const hay = contextHay(topic, body);
+  if (!STOCK_SCENE_CAPTION.test(cap)) return true;
+  return lessonAsksForMechanicsLab(hay);
+}
+
+export function studyPictureCaption(caption = '', topic = '', body = '') {
+  const custom = String(caption || '').trim();
+  if (!pictureCaptionFitsLesson(custom, topic, body)) return '';
+  return custom;
+}
+
+export function rewriteStudyPictureTags(text = '', topic = '') {
   const source = String(text || '');
+  const hay = contextHay(topic, source);
+  TOKEN_RE.lastIndex = 0;
+  return source.replace(TOKEN_RE, (full, tagName, attrs) => {
+    if (String(tagName || '').toLowerCase() === 'quantora-study-lab') {
+      if (!lessonAsksForMechanicsLab(hay)) return '';
+      const kindRaw = attr(attrs, 'kind').toLowerCase();
+      const kind = STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton';
+      return `<quantora-study-lab kind="${kind}" />`;
+    }
+    const caption = studyPictureCaption(attr(attrs, 'caption'), topic, source);
+    if (!caption) return '';
+    return `<quantora-study-picture caption="${caption.replace(/"/g, '')}" />`;
+  });
+}
+
+export function splitStudySegments(text = '', topic = '') {
+  const source = rewriteStudyPictureTags(text, topic);
   const segments = [];
   let last = 0;
   TOKEN_RE.lastIndex = 0;
@@ -42,19 +74,20 @@ export function splitStudySegments(text = '') {
       segments.push({ type: 'md', text: source.slice(last, match.index) });
     }
     const tag = String(match[1] || '').toLowerCase();
-    const kindRaw = attr(match[2], 'kind').toLowerCase();
     if (tag === 'quantora-study-lab') {
+      const kindRaw = attr(match[2], 'kind').toLowerCase();
       segments.push({
         type: 'lab',
         kind: STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton',
       });
     } else {
-      const kind = STUDY_PICTURE_KINDS.includes(kindRaw) ? kindRaw : 'force-arrows';
-      segments.push({
-        type: 'picture',
-        kind,
-        caption: studyPictureCaption(kind, attr(match[2], 'caption')),
-      });
+      const caption = attr(match[2], 'caption');
+      if (caption) {
+        segments.push({
+          type: 'picture',
+          caption,
+        });
+      }
     }
     last = match.index + match[0].length;
     match = TOKEN_RE.exec(source);
@@ -63,41 +96,23 @@ export function splitStudySegments(text = '') {
   return segments.filter((segment) => segment.type !== 'md' || String(segment.text || '').trim());
 }
 
-function hasPictureTag(text) {
-  return /<quantora-study-picture\b/i.test(text);
-}
-
-function hasLabTag(text) {
-  return /<quantora-study-lab\b/i.test(text);
-}
-
 export function wantsStudyLab(text = '') {
-  return /visual (workspace|laboratory|board|lab)|free-?body|fbd\b|vector tab|give one quick push|inertia tab|incline angle|interactive visual/i.test(String(text || ''));
+  return /free-?body|\bfbd\b|inertia tab|newton lab|quantora-study-lab/i.test(String(text || ''));
 }
 
 /**
- * Old Study replies described labs that were never drawn. Attach real pictures
- * and, when they promised a workspace, the actual in-chat lab.
+ * Never invent a picture. Only keep tags the model already wrote, and only
+ * when they still match this conversation.
  */
-export function decorateStudyMessage(text = '') {
-  let source = String(text || '');
-  if (!source.trim()) return source;
-  if (!hasLabTag(source) && wantsStudyLab(source)) {
-    const kind = /fbd|free-?body|incline|normal force|gravity|vector/i.test(source) ? 'fbd' : 'newton';
-    source = `<quantora-study-lab kind="${kind}" />\n\n${source}`;
-  }
-  if (hasPictureTag(source)) return source;
+export function decorateStudyMessage(text = '', topic = '') {
+  return rewriteStudyPictureTags(String(text || ''), topic);
+}
 
-  const kinds = [];
-  if (/apple|newton|first law|inertia/i.test(source)) kinds.push('apple-tree');
-  if (/book|table|normal force|second law/i.test(source)) kinds.push('book-table');
-  if (/truck|collision|third law|action/i.test(source)) kinds.push('truck-car');
-  if (/canoe|dock|rocket|recoil/i.test(source)) kinds.push('rocket');
-  if (/ice|puck|skat/i.test(source)) kinds.push('ice-puck');
-  if (!kinds.length && /force|accelerat|momentum/i.test(source)) kinds.push('force-arrows');
-
-  const unique = [...new Set(kinds)].slice(0, 2);
-  if (!unique.length) return source;
-  const tags = unique.map((kind) => `<quantora-study-picture kind="${kind}" />`).join('\n');
-  return `${tags}\n\n${source}`;
+export function studyPicturePromptHint(topic = '') {
+  const label = String(topic || 'this idea').trim();
+  return [
+    `If a picture helps ${label}, put this tag on its own line: <quantora-study-picture caption="one sentence about this idea" />`,
+    'The caption must come from THIS conversation — the idea the learner just asked about.',
+    'Do not reuse a scene from another subject. Do not invent image URLs.',
+  ].join(' ');
 }

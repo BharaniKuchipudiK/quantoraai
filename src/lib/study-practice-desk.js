@@ -38,7 +38,7 @@ export function studyRealWorldAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
     `Show Real-world applications of ${label} as a two-column Markdown table: Situation | How the laws or idea appear.`,
-    'Use 4 everyday rows (for example car safety, walking, sport, a vehicle or rocket).',
+    'Use 4 everyday rows that actually use this idea — not a stock physics example unless this topic is physics.',
     'Keep each cell to one or two short sentences.',
     'Do not invent a specific YouTube video.',
     'Then STOP. Do not add a worked numerical solution unless I ask.',

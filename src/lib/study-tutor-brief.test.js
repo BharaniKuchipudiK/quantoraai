@@ -29,3 +29,11 @@ test("Newton's laws open a third-law check, not a fake rank", () => {
   assert.equal(brief.flashcards.length, 2);
   assert.equal(gradeStudyCheck(brief.check, 'a').correct, true);
 });
+
+test('JEE Algebra does not open a projectile or Newton check', () => {
+  const brief = deriveStudyTutorBrief({
+    messages: [{ sender: 'user', text: 'What is Algebra? I am doing JEE.' }],
+  });
+  assert.equal(brief.check, null);
+  assert.equal(brief.label, '');
+});

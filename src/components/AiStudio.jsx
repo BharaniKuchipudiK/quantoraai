@@ -33,6 +33,7 @@ import {
   shouldShowStudySyllabusChips,
   STUDY_SYLLABUS_CHIPS,
   studySyllabusContinueSet,
+  studySyllabusHaystack,
 } from '../lib/study-syllabus-overlay.js';
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
@@ -1403,6 +1404,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
                           <StudyMarkdown
                             text={cleanText}
+                            topic={studySyllabusHaystack({ conversationContext, messages })}
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}
@@ -1632,7 +1634,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               });
                               const chipText = `${item.label || ''} ${item.value || ''}`;
                               if (studioDomain === 'education' && wantsStudyLab(chipText)) {
-                                const labKind = /fbd|free-?body|incline|diagram|vector/i.test(chipText) ? 'fbd' : 'newton';
+                                const labKind = /fbd|free-?body/i.test(chipText)
+                                  ? 'fbd'
+                                  : /\bnewton\b|inertia tab/i.test(chipText)
+                                    ? 'newton'
+                                    : null;
+                                if (!labKind) {
+                                  handleSendMessage(item.value);
+                                  return;
+                                }
                                 updateActiveMessages((prev) => [...prev, {
                                   id: Date.now(),
                                   sender: 'ai',

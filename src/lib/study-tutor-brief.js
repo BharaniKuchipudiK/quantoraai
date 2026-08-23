@@ -63,9 +63,7 @@ function haystack({ conversationContext = {}, messages = [] } = {}) {
 
 export function deriveStudyTutorBrief(input = {}) {
   const hay = haystack(input);
-  const hit = CHECKS.find((item) => hay.includes(item.label.toLowerCase()))
-    || (/\bnewton|inertia|\bf\s*=\s*ma\b/i.test(hay) ? CHECKS.find((item) => item.id.includes('newton')) : null)
-    || (/\b(projectile|jee|neet|mechanics|iit)\b/i.test(hay) ? CHECKS[0] : null);
+  const hit = CHECKS.find((item) => hay.includes(item.label.toLowerCase()));
   if (!hit) {
     return {
       conceptId: '',
