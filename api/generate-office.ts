@@ -30,6 +30,15 @@ import { fetchPublicHttpsImage } from './_lib/safe-image-fetch.js';
 import { PRESENTATION_CANVAS } from './_lib/presentation-layout.js';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
+import {
+  officeGenerationMaxAttempts,
+  officeModelCallBudgetMs,
+  officeProviderOrder,
+  officeTimeoutUserMessage,
+  remainingOfficeBudgetMs,
+  shouldOfficeProviderFailover,
+  shouldStartAnotherOfficeAttempt,
+} from './_lib/office-generation-budget.js';
 
 const require = createRequire(import.meta.url);
 const OFFICE_GENERATE_RATE_PER_MINUTE = 6;
@@ -52,11 +61,11 @@ function isLegacyPowerPointSpec(input) {
   return !slides.some((slide) => V2_ONLY_SLIDE_TYPES.has(String(slide?.type || '').toLowerCase().trim()));
 }
 
-function validateSpec(format, input, { legacyPowerPoint = false } = {}) {
+function validateSpec(format, input, { legacyPowerPoint = false, consultingGate = 'hard' } = {}) {
   if (format === 'powerpoint') {
     return legacyPowerPoint
       ? validateOfficeSpec('powerpoint', input || {})
-      : validatePresentationSpec(input || {});
+      : validatePresentationSpec(input || {}, { consultingGate });
   }
   return validateOfficeSpec(format, input || {});
 }
@@ -162,6 +171,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const generationStartedAt = Date.now();
     let validJson;
     let generationAttempts = 0;
     const generationWarnings = [];
@@ -181,12 +191,15 @@ export default async function handler(req, res) {
       validJson = validation.spec;
       generationWarnings.push(...validation.warnings);
     } else {
-      const maxAttempts = format === 'powerpoint' ? 3 : 2;
+      const maxAttempts = officeGenerationMaxAttempts(format);
       let lastError = '';
       let lastStage = 'provider';
       let lastCandidate = null;
 
-      while (generationAttempts < maxAttempts && !validJson) {
+      while (generationAttempts < maxAttempts) {
+        const remainingMs = remainingOfficeBudgetMs(generationStartedAt);
+        if (generationAttempts > 0 && !shouldStartAnotherOfficeAttempt(remainingMs, generationAttempts, maxAttempts)) break;
+        if (remainingMs < 5_000) break;
         generationAttempts += 1;
         try {
           let rawResponse;
@@ -202,8 +215,9 @@ export default async function handler(req, res) {
                 sessionContext,
                 { operation, baseSpec: canonicalBaseSpec, baseFingerprint },
                 lastCandidate,
+                generationStartedAt,
               ),
-              110_000,
+              officeModelCallBudgetMs(remainingMs),
               'The AI model took too long to respond',
             );
           } catch (error) {
@@ -222,7 +236,9 @@ export default async function handler(req, res) {
           const candidate = format === 'powerpoint'
             ? materializePresentationTransportSpec(parsed)
             : parsed;
-          const validation = validateSpec(format, candidate);
+          const validation = validateSpec(format, candidate, {
+            consultingGate: format === 'powerpoint' ? 'soft' : 'hard',
+          });
           if (!validation.valid) {
             lastStage = 'semantic-gate';
             if (format === 'powerpoint') lastCandidate = parsed;
@@ -231,6 +247,10 @@ export default async function handler(req, res) {
 
           validJson = validation.spec;
           generationWarnings.push(...validation.warnings);
+          if (validation.warnings.length && format === 'powerpoint') {
+            generationWarnings.push('Consulting polish was deferred so the file could ship before the host timeout.');
+          }
+          break;
         } catch (error) {
           lastError = String(error?.message || error);
           console.warn(`Office ${lastStage} failed (attempt ${generationAttempts}):`, lastError);
@@ -239,8 +259,12 @@ export default async function handler(req, res) {
       }
 
       if (!validJson) {
-        return res.status(502).json({
-          error: `Gatekeeper failed to produce a valid ${format} specification after ${generationAttempts} attempts.`,
+        const timedOut = remainingOfficeBudgetMs(generationStartedAt) < 12_000
+          || /took too long|timeout|deadline/i.test(lastError);
+        return res.status(timedOut ? 503 : 502).json({
+          error: timedOut
+            ? officeTimeoutUserMessage()
+            : `Gatekeeper failed to produce a valid ${format} specification after ${generationAttempts} attempts.`,
           stage: lastStage,
           detail: lastError || undefined,
         });
@@ -249,7 +273,10 @@ export default async function handler(req, res) {
 
     validJson = attachUserImages(format, validJson, imageAttachments);
     validJson = normalizeSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
-    const finalSpecValidation = validateSpec(format, validJson, { legacyPowerPoint: legacyPowerPointCompile });
+    const finalSpecValidation = validateSpec(format, validJson, {
+      legacyPowerPoint: legacyPowerPointCompile,
+      consultingGate: (!isCompileRequest && format === 'powerpoint') ? 'soft' : 'hard',
+    });
     if (!finalSpecValidation.valid) {
       return res.status(422).json({
         error: `Office specification could not be repaired safely: ${finalSpecValidation.issues.join(' ')}`,
@@ -637,7 +664,7 @@ function buildRepairContext(format, candidate, errorText) {
   return `SEMANTIC REPAIR PASS — DO NOT RESTART THE DECK\nThe previous candidate is structurally valid JSON but failed Quantora's hard Presentation V2 semantic gate. Repair this SAME candidate. Preserve every slide and field that is not implicated by the failures. Populate the correct structured items for each semantic composition, or change a slide to a truthful composition when evidence is unavailable. Never invent numeric data.\nGATEKEEPER FAILURES:\n${String(errorText || '')}\nINVALID TRANSPORT CANDIDATE:\n${JSON.stringify(candidate)}`;
 }
 
-async function generateJsonSchema(prompt, format, history, modelKeys, lastError, attemptIndex = 0, sessionContext = null, revision = null, repairCandidate = null) {
+async function generateJsonSchema(prompt, format, history, modelKeys, lastError, attemptIndex = 0, sessionContext = null, revision = null, repairCandidate = null, startedAt = Date.now()) {
   const priorContext = buildOfficeHistoryContext(history);
   const session = buildSessionGenerationContext(sessionContext);
   const revisionContext = buildRevisionContext(revision, format);
@@ -657,13 +684,24 @@ async function generateJsonSchema(prompt, format, history, modelKeys, lastError,
   if (!available.length) throw new Error('No model credential available for Office generation.');
 
   let lastProviderError: any;
-  for (const provider of available) {
+  const ordered = officeProviderOrder(available, attemptIndex);
+  let providersTried = 0;
+  let firstElapsedMs = 0;
+  const firstStartedAt = Date.now();
+  for (const provider of ordered) {
+    const remainingMs = remainingOfficeBudgetMs(startedAt);
+    if (providersTried > 0) {
+      firstElapsedMs = Date.now() - firstStartedAt;
+      if (!shouldOfficeProviderFailover({ providersTried, firstElapsedMs, remainingMs })) break;
+    }
     try {
       if (provider === 'anthropic') return await callAnthropic(systemPrompt, promptWithContext, modelKeys.anthropic, format);
-      if (provider === 'gemini') return await callGemini(systemPrompt, promptWithContext, modelKeys.gemini, format);
+      if (provider === 'gemini') return await callGemini(systemPrompt, promptWithContext, modelKeys.gemini, format, remainingMs);
       return await callOpenRouter(systemPrompt, promptWithContext, modelKeys.openRouter, format);
     } catch (error: any) {
       lastProviderError = error;
+      providersTried += 1;
+      if (providersTried === 1) firstElapsedMs = Date.now() - firstStartedAt;
       console.warn(`Office generation provider '${provider}' failed:`, String(error?.message || error));
     }
   }
@@ -713,10 +751,11 @@ async function callAnthropic(systemPrompt, promptWithContext, anthropicKey, form
   return String(content).trim();
 }
 
-async function callGemini(systemPrompt, promptWithContext, apiKey, format) {
+async function callGemini(systemPrompt, promptWithContext, apiKey, format, remainingMs = 55_000) {
   const client = new GoogleGenAI({ apiKey });
   let geminiError: any = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const geminiAttempts = remainingMs < 30_000 ? 1 : 2;
+  for (let attempt = 0; attempt < geminiAttempts; attempt += 1) {
     try {
       const response = await client.models.generateContent({
         model: process.env.GEMINI_OFFICE_MODEL || 'gemini-flash-latest',
@@ -735,7 +774,7 @@ async function callGemini(systemPrompt, promptWithContext, apiKey, format) {
     } catch (error: any) {
       geminiError = error;
       const errorText = String(error?.message || error);
-      if (shouldRetrySameProvider(errorText) && attempt < 1) {
+      if (shouldRetrySameProvider(errorText) && attempt + 1 < geminiAttempts) {
         await sleep(1200);
         continue;
       }
