@@ -100,6 +100,36 @@ test('treats Tailwind script load failures as critical', () => {
   assert.equal(isIgnorableRuntimeError('Failed to load SCRIPT: https://cdn.tailwindcss.com'), false);
 });
 
+test('font and other stylesheet misses are styling problems, not a rewrite loop', () => {
+  assert.equal(
+    isCriticalResourceError('Failed to load LINK: https://fonts.googleapis.com/css2?family=Cormorant'),
+    true,
+  );
+});
+
+test('opaque-origin catalog fetch failures do not count as a crash', () => {
+  assert.equal(
+    isIgnorableRuntimeError('Unhandled promise rejection: Failed to fetch'),
+    true,
+  );
+  assert.equal(
+    isIgnorableRuntimeError('Unhandled promise rejection: TypeError: Failed to fetch'),
+    true,
+  );
+});
+
+test('inlines products.json fetch so the boutique catalog can run without a server', () => {
+  const html = `<!DOCTYPE html><html><head></head><body>
+<script>fetch('products.json').then((r)=>r.json()).then((items)=>{window.__catalog=items})</script>
+</body></html>`;
+  const prepared = prepareCodeForPreview(html, {
+    'products.json': { content: '[{"id":"a","name":"Dharmavaram"}]' },
+  });
+  assert.match(prepared, /Promise\.resolve\(new Response\(/);
+  assert.match(prepared, /Dharmavaram/);
+  assert.doesNotMatch(prepared, /fetch\('products\.json'\)/);
+});
+
 test('still ignores opaque script errors', () => {
   assert.equal(isIgnorableRuntimeError('Script error.'), true);
 });

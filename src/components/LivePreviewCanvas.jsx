@@ -11,7 +11,8 @@ import {
   revokePreviewEmbedObjectUrl,
   buildPreviewSandbox,
 } from '../lib/preview-utils.js';
-import { rewritePreviewImageUrls } from '../lib/preview-images.js';
+import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
+import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
@@ -252,6 +253,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         });
         if (!verifyOnly && data.passed === false && Array.isArray(data.issues) && data.issues.length && jobCardRef.current && !autoJobHealRef.current) {
           autoJobHealRef.current = true;
+          const photos = injectMissingShopPhotos(codeToCheck);
+          const shop = injectShopCommerceUi(photos.html);
+          if (photos.injected || shop.changed) {
+            verifiedCodeRef.current = null;
+            setQualityReport(null);
+            onHealedPreviewRef.current?.(shop.html);
+            setCurrentCode(shop.html);
+            return;
+          }
           const instruction = `Improve this page for the JOB. Fix ONLY these issues, preserving the product:\n- ${data.issues.join('\n- ')}`;
           try {
             const repaired = await requestRepair(codeToCheck, instruction);
@@ -358,9 +368,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setLastError(message);
 
     if (attemptRef.current >= MAX_HEAL_ATTEMPTS) {
-      setStatus('failed');
-      const errHtml = `<div style="font-family:sans-serif;padding:2rem;color:#ef4444;background:#fee2e2;border:1px solid #f87171;border-radius:8px;margin:2rem;"><h2>Runtime Error</h2><p>${message}</p></div>`;
-      pushHtmlToEmbed(errHtml);
+      setStatus('degraded');
       return;
     }
 
@@ -369,10 +377,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     try {
       const data = await requestRepair(currentCodeRef.current, message);
       if (data.unchanged || !data.code || data.code.trim() === currentCodeRef.current.trim()) {
-        setStatus('failed');
+        setStatus('degraded');
         healingRef.current = false;
-        const errHtml = `<div style="font-family:sans-serif;padding:2rem;color:#ef4444;background:#fee2e2;border:1px solid #f87171;border-radius:8px;margin:2rem;"><h2>Auto-repair Failed</h2><p>${message}</p></div>`;
-        pushHtmlToEmbed(errHtml);
         return;
       }
       const original = currentCodeRef.current || '';
@@ -391,10 +397,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setCurrentCode(data.code);
     } catch (err) {
       setLastError(err.message || 'Auto-repair failed.');
-      setStatus('failed');
+      setStatus('degraded');
       healingRef.current = false;
-      const errHtml = `<div style="font-family:sans-serif;padding:2rem;color:#ef4444;background:#fee2e2;border:1px solid #f87171;border-radius:8px;margin:2rem;"><h2>Auto-repair Failed</h2><p>${err.message || 'Auto-repair failed.'}</p></div>`;
-      pushHtmlToEmbed(errHtml);
     }
   }, [requestRepair, verifyOnly]);
 
@@ -662,7 +666,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
     clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
     degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    failed: { icon: <AlertTriangle size={14} />, label: `Couldn't auto-fix after ${MAX_HEAL_ATTEMPTS} attempts`, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
+    failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[status] || null;
 
   const projectRuntimeVfs = useMemo(

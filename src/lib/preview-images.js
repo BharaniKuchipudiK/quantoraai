@@ -70,7 +70,6 @@ const SHOP_PHOTOS = [
 
 const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
 const MAX_SHOP_PHOTOS = 6;
-const PRODUCT_OPEN_RE = /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>/gi;
 const INJECTED_PHOTO_RE = /<img\b[^>]*data-quantora-shop-photo="true"[^>]*>/gi;
 
 function shopPhotoTag(index, alt = 'Textile photo') {
@@ -92,7 +91,12 @@ export function countRealPreviewPhotos(html = '') {
 
 function isTinyDecorativeSvg(svg) {
   const head = svg.slice(0, 280);
-  if (/\b(icon|logo|bag|cart|lucide)\b/i.test(head)) return true;
+  const viewBox = head.match(/viewBox=["']0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)/i);
+  const boxW = viewBox ? Number(viewBox[1]) : 0;
+  const boxH = viewBox ? Number(viewBox[2]) : 0;
+  if (boxW && boxH && boxW <= 48 && boxH <= 48) return true;
+  if (boxW && boxH && (boxW > 96 || boxH > 96)) return false;
+  if (/\b(icon|logo|bag|cart|lucide)\b/i.test(head) && (!boxW || boxW <= 48)) return true;
   const width = head.match(/\bwidth=["'](\d+)/i);
   if (width && Number(width[1]) <= 48) return true;
   return svg.length < 480;
@@ -107,27 +111,26 @@ export function injectMissingShopPhotos(html = '') {
   if (!cleaned) {
     return { html: String(html || ''), injected: false };
   }
-  if (previewHtmlHasRealPhotos(cleaned)) {
-    return { html: cleaned, injected: cleaned !== String(html || '') };
-  }
   let index = 0;
-  let out = cleaned.replace(PRODUCT_OPEN_RE, (open) => {
-    if (index >= MAX_SHOP_PHOTOS) return open;
-    return `${open}${shopPhotoTag(index++)}`;
+  let out = cleaned.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
+    if (isTinyDecorativeSvg(svg) || index >= MAX_SHOP_PHOTOS) return svg;
+    return shopPhotoTag(index++);
   });
-  if (!previewHtmlHasRealPhotos(out)) {
-    out = out.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
-      if (isTinyDecorativeSvg(svg) || index >= MAX_SHOP_PHOTOS) return svg;
-      return shopPhotoTag(index++);
-    });
-  }
+  out = out.replace(
+    /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi,
+    (full, tag, attrs, inner) => {
+      if (/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
+      if (index >= MAX_SHOP_PHOTOS) return full;
+      return `<${tag}${attrs}>${shopPhotoTag(index++)}${inner}</${tag}>`;
+    },
+  );
   if (!previewHtmlHasRealPhotos(out) && /<main\b/i.test(out)) {
-    out = out.replace(/<main\b[^>]*>/i, (open) => `${open}${shopPhotoTag(0, 'Collection photo')}`);
+    out = out.replace(/<main\b[^>]*>/i, (open) => `${open}${shopPhotoTag(index++, 'Collection photo')}`);
   }
   if (!previewHtmlHasRealPhotos(out) && /<\/body>/i.test(out)) {
-    out = out.replace(/<\/body>/i, `${shopPhotoTag(0, 'Collection photo')}</body>`);
+    out = out.replace(/<\/body>/i, `${shopPhotoTag(index++, 'Collection photo')}</body>`);
   }
-  return { html: out, injected: previewHtmlHasRealPhotos(out) };
+  return { html: out, injected: out !== cleaned };
 }
 
 export function injectProductCatalogImages(raw = '') {

@@ -522,6 +522,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
   }, [vfs]);
 
+  useEffect(() => {
+    if (!vfsLooksLikeShop(vfs)) return;
+    const next = ensureShopDeskInVfs(vfs);
+    if (!next.changed) return;
+    setDeskReview(diffVfsReview(vfs, next.vfs));
+    setVfs(next.vfs);
+    const code = pickPreviewEntry(next.vfs);
+    if (code) setWorkspaceCode(code);
+  }, [vfs]);
+
   const startNewChat = useCallback(() => {
     setCodingDeskOpen(false);
     handleCreateNewChat();
