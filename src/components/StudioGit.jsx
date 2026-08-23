@@ -74,11 +74,13 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
         {blocker ? (
           <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div>
         ) : null}
+        <div data-quantora-studio-git-log="true">
         {log.map((line, index) => (
           <div key={`${index}-${line.slice(0, 24)}`} style={{ color: line.startsWith('$ ') ? '#fdba74' : '#e2e8f0' }}>
             {line}
           </div>
         ))}
+        </div>
         {busy ? <div style={{ color: '#94a3b8' }}>running…</div> : null}
       </div>
       <form
