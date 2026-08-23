@@ -1,5 +1,9 @@
 # PCL Presentation Director
 
+> Status: design only. `api/_lib/pcl-presentation-director.js` was written to this
+> spec but never imported by any endpoint, so it was removed rather than left to
+> look implemented. Deck generation today runs through `api/generate-office.ts`.
+
 ## Objective
 
 Quantora should not equate presentation quality with one model vendor. PCL owns the presentation brief, context discipline, model tier, semantic composition requirements, validation and repair policy. The selected model supplies reasoning and language inside those boundaries.
