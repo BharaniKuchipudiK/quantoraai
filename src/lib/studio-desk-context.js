@@ -7,6 +7,8 @@ import { advisorBlocksPreviewBuild } from './build-intent.js';
 import { countRealPreviewPhotos, previewHtmlHasRealPhotos, uniqueShopPhotoIds } from './preview-images.js';
 import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from './shop-preview-ui.js';
 import { pickPreviewEntry } from './preview-utils.js';
+import { DESK_PROBE_FACT_KEYS } from './desk-probe-script.js';
+import { checkState, deriveJobChecks, failingChecks, unverifiedChecks } from './studio-desk-criteria.js';
 import { listStudioFiles } from './studio-file-tree.js';
 import { jobNeedsProductPhotos, normalizeStudioJobCard } from './studio-job-card.js';
 
@@ -71,14 +73,14 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   };
 
   const includeCatalog = Boolean(vfsText(vfs, 'products.json') || facts.catalogCount);
-  const checks = buildDeskChecks(facts, { includeCatalog });
-  const failed = checks.filter((check) => !check.ok);
+  const checks = buildDeskChecks(facts, { includeCatalog, job });
+  const failed = failingChecks(checks);
   const nextBeat = failed[0]?.label || '';
   return { facts, checks, failed, nextBeat, catalog };
 }
 
 /** Review labels come from these facts — live Preview may overwrite HTML regex later. */
-export function buildDeskChecks(facts = {}, { includeCatalog = false } = {}) {
+export function buildDeskChecks(facts = {}, { includeCatalog = false, job = null, live = null } = {}) {
   const checks = [];
   if (facts.shop) {
     checks.push({
@@ -121,6 +123,9 @@ export function buildDeskChecks(facts = {}, { includeCatalog = false } = {}) {
       label: facts.hasCalculatorKey ? 'Calculator keys are on Preview' : 'Calculator keys missing',
     });
   }
+  // Shop and calculator desks already probe the running page for their own
+  // must-work lines. The job card fills the gap only where nothing else does.
+  if (!checks.length) checks.push(...deriveJobChecks(job, live));
   return checks;
 }
 
@@ -161,9 +166,12 @@ export function mergeLiveDeskProbe(packet, live = null) {
     facts.hasDistinctPhotos = (facts.uniquePhotoCount || 0) >= 2 || !needsVariety;
   }
   facts.bagIncremented = live.bagIncremented === true;
+  for (const key of DESK_PROBE_FACT_KEYS) {
+    if (typeof live[key] === 'boolean') facts[key] = live[key];
+  }
 
   const includeCatalog = (packet.checks || []).some((check) => check.id === 'catalog');
-  const checks = buildDeskChecks(facts, { includeCatalog });
+  const checks = buildDeskChecks(facts, { includeCatalog, job: packet.job, live: facts });
   if (facts.shop) {
     checks.push({
       id: 'cart-click',
@@ -173,13 +181,13 @@ export function mergeLiveDeskProbe(packet, live = null) {
         : (facts.hasCart === true ? 'Add to Cart did not increment the bag' : 'Add to Cart missing from Preview'),
     });
   }
-  const failed = checks.filter((check) => !check.ok);
+  const failed = failingChecks(checks);
   return {
     ...packet,
     facts,
     checks,
     failed: failed.map((check) => check.id),
-    nextBeat: failed[0]?.label || packet.nextBeat || '',
+    nextBeat: failed[0]?.label || '',
   };
 }
 
@@ -232,11 +240,16 @@ export function sanitizeDeskContext(raw) {
     bagIncremented: raw.facts.bagIncremented === true,
     shop: raw.facts.shop === true,
     calculator: raw.facts.calculator === true,
+    // Tri-state on purpose: an unobserved fact must not collapse into false.
+    ...Object.fromEntries(DESK_PROBE_FACT_KEYS
+      .filter((key) => typeof raw.facts[key] === 'boolean')
+      .map((key) => [key, raw.facts[key]])),
   } : null;
   const checks = Array.isArray(raw.checks)
     ? raw.checks.slice(0, 8).map((check) => ({
       id: String(check?.id || '').slice(0, 40),
       ok: check?.ok === true,
+      state: check?.state === 'unverified' ? 'unverified' : (check?.ok === true ? 'ok' : 'fix'),
       label: String(check?.label || '').slice(0, 160),
     })).filter((check) => check.id)
     : [];
@@ -252,7 +265,7 @@ export function sanitizeDeskContext(raw) {
     catalog,
     facts,
     checks,
-    failed: Array.isArray(raw.failed) ? raw.failed.map((id) => String(id).slice(0, 40)).slice(0, 8) : checks.filter((check) => !check.ok).map((check) => check.id),
+    failed: Array.isArray(raw.failed) ? raw.failed.map((id) => String(id).slice(0, 40)).slice(0, 8) : failingChecks(checks).map((check) => check.id),
     nextBeat: typeof raw.nextBeat === 'string' ? raw.nextBeat.slice(0, 160) : '',
   };
 }
@@ -275,9 +288,13 @@ export function formatDeskContextForPrompt(packet) {
     const cartClick = desk.checks.find((check) => check.id === 'cart-click');
     if (cartClick) lines.push(`CART CLICK: ${cartClick.ok ? 'bag incremented' : 'bag did not increment'}`);
   }
-  if (desk.failed?.length) {
-    const labels = desk.checks.filter((check) => !check.ok).map((check) => check.label);
-    lines.push(`FAILED CHECKS: ${labels.join('; ') || desk.failed.join(', ')}`);
+  const failed = failingChecks(desk.checks);
+  if (failed.length) {
+    lines.push(`FAILED CHECKS: ${failed.map((check) => check.label).join('; ')}`);
+  }
+  const unverified = unverifiedChecks(desk.checks);
+  if (unverified.length) {
+    lines.push(`UNVERIFIED (Preview was never asked — do not claim these): ${unverified.map((check) => check.label).join('; ')}`);
   }
   lines.push('Never claim a control, photo, catalog item, or calculator key unless LIVE PREVIEW FACTS say it is present. If FAILED CHECKS lists it, it is not on Preview yet.');
   return lines.join('\n');
@@ -327,8 +344,26 @@ export function chipsFromDeskProbes(checks = []) {
       value: 'The calculator Preview is missing working keys. Fix the running page.',
       priority: 107,
     },
+    'job-add-item': {
+      id: 'gap-add-item',
+      label: 'Make adding an item work',
+      value: 'The running Preview has an add control that does not add anything. Fix it on the page.',
+      priority: 108,
+    },
+    'job-controls': {
+      id: 'gap-controls',
+      label: 'Make the controls respond',
+      value: 'Clicking a control on the running Preview changes nothing. Fix it on the page.',
+      priority: 107,
+    },
+    'job-runs': {
+      id: 'gap-page-runs',
+      label: 'Make the page render',
+      value: 'The running Preview renders nothing. Fix the page before anything else.',
+      priority: 109,
+    },
   };
   return (Array.isArray(checks) ? checks : [])
-    .filter((check) => check && check.ok === false && beats[check.id])
+    .filter((check) => checkState(check) === 'fix' && beats[check.id])
     .map((check) => beats[check.id]);
 }

@@ -177,3 +177,79 @@ test('a catalog that repeats one photo fails the photos check', () => {
   assert.equal(probed.facts.hasDistinctPhotos, false);
   assert.ok(probed.checks.some((check) => check.id === 'photos' && check.ok === false));
 });
+
+const todoHtml = '<!DOCTYPE html><html><body><h1>My day</h1><input type="text"><button>Add</button><ul><li>Ship the gate</li></ul></body></html>';
+const todoJob = { purpose: 'A to-do list', mustWork: ['Items can still be added', 'Keep this a to-do list'] };
+
+test('a desk that is neither a shop nor a calculator still gets review criteria', () => {
+  const packet = buildDeskContextPacket({
+    html: todoHtml,
+    job: todoJob,
+    vfs: { 'index.html': { content: todoHtml } },
+  });
+  assert.equal(packet.facts.shop, false);
+  assert.equal(packet.facts.calculator, false);
+  assert.ok(packet.checks.length > 0);
+  assert.equal(packet.checks.find((check) => check.id === 'job-add-item').state, 'unverified');
+  assert.equal(packet.failed.length, 0);
+  assert.equal(packet.nextBeat, '');
+});
+
+test('the running page decides the generic beat, and unverified stays out of it', () => {
+  const packet = buildDeskContextPacket({ html: todoHtml, job: todoJob, vfs: { 'index.html': { content: todoHtml } } });
+  const broken = mergeLiveDeskProbe(packet, { itemAdded: false });
+  assert.equal(broken.checks.find((check) => check.id === 'job-add-item').state, 'fix');
+  assert.equal(broken.nextBeat, 'Adding an item does nothing on the running Preview');
+  assert.deepEqual(broken.failed, ['job-add-item']);
+  assert.ok(chipsFromDeskProbes(broken.checks).some((chip) => chip.id === 'gap-add-item'));
+
+  const fixed = mergeLiveDeskProbe(packet, { itemAdded: true });
+  assert.equal(fixed.checks.find((check) => check.id === 'job-add-item').state, 'ok');
+  assert.equal(fixed.nextBeat, '');
+  assert.deepEqual(fixed.failed, []);
+  assert.equal(chipsFromDeskProbes(fixed.checks).length, 0);
+});
+
+test('the prompt tells the model what Preview was never asked', () => {
+  const packet = buildDeskContextPacket({ html: todoHtml, job: todoJob, vfs: { 'index.html': { content: todoHtml } } });
+  const prompt = formatDeskContextForPrompt(mergeLiveDeskProbe(packet, { itemAdded: false }));
+  assert.match(prompt, /FAILED CHECKS: Adding an item does nothing on the running Preview/);
+  assert.match(prompt, /UNVERIFIED \(Preview was never asked[^)]*\): Not checked on Preview: Keep this a to-do list/);
+});
+
+test('a shop desk keeps its own probes and gains no generic rows', () => {
+  const packet = buildDeskContextPacket({
+    html: shopHtml,
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work', 'Keep this a shop, not a different app'] },
+    vfs: { 'index.html': { content: shopHtml }, 'products.json': { content: '[{"id":"a","name":"Silk"}]' } },
+  });
+  assert.deepEqual(packet.checks.map((check) => check.id).sort(), ['cart', 'catalog', 'currency', 'photos']);
+  assert.equal(packet.checks.some((check) => check.id.startsWith('job-')), false);
+});
+
+test('a calculator desk keeps its own probes and gains no generic rows', () => {
+  const html = '<main><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></main>';
+  const probed = probeRunningDesk({
+    html,
+    vfs: { 'App.jsx': { content: html } },
+    job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display', 'Keep this a calculator, not a different app'] },
+  });
+  assert.deepEqual(probed.checks.map((check) => check.id).sort(), ['calc-display', 'calc-key']);
+});
+
+test('sanitize keeps a criterion unverified across the wire', () => {
+  const clean = sanitizeDeskContext({
+    job: todoJob,
+    files: ['index.html'],
+    checks: [
+      { id: 'job-add-item', ok: false, state: 'unverified', label: 'Not checked on Preview yet: Items can still be added' },
+      { id: 'job-controls', ok: false, label: 'Controls on the running Preview do not respond' },
+    ],
+    facts: { itemAdded: true },
+  });
+  assert.equal(clean.checks[0].state, 'unverified');
+  assert.equal(clean.checks[1].state, 'fix');
+  assert.deepEqual(clean.failed, ['job-controls']);
+  assert.equal(clean.facts.itemAdded, true);
+  assert.equal('controlResponded' in clean.facts, false);
+});

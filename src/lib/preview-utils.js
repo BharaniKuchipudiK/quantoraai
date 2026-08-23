@@ -1,3 +1,5 @@
+import { DESK_PROBE_FN_SOURCE } from './desk-probe-script.js';
+
 export const PREVIEW_EMBED_PATH = '/preview/embed.html';
 
 export const PREVIEW_RELAXED_CSP =
@@ -191,6 +193,9 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
           hasCalculatorKey: Boolean(document.querySelector('[data-testid="calculator-one"]'))
         });
       } catch (probeErr) {}
+      try {
+        __quantoraDeskProbe(function(facts){ report(Object.assign({ kind:'desk-probe' }, facts)); });
+      } catch (deskErr) {}
     }, 1200);
   });
   document.addEventListener('keydown', function(e) {
@@ -199,6 +204,7 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
       report({ kind:'preview-close-request' });
     }
   }, true);
+  ${DESK_PROBE_FN_SOURCE}
 })();<\/script>`;
 
 export function injectPreviewHarness(html) {

@@ -11,6 +11,7 @@ import {
   revokePreviewEmbedObjectUrl,
   buildPreviewSandbox,
 } from '../lib/preview-utils.js';
+import { DESK_PROBE_FACT_KEYS } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
 import { vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
@@ -113,6 +114,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   onHealedPreviewRef.current = onHealedPreview;
   const onLiveDeskProbeRef = useRef(onLiveDeskProbe);
   onLiveDeskProbeRef.current = onLiveDeskProbe;
+  const liveDeskFactsRef = useRef(null);
+  const publishLiveDeskProbe = useCallback((partial) => {
+    if (partial === null) {
+      liveDeskFactsRef.current = null;
+      onLiveDeskProbeRef.current?.(null);
+      return;
+    }
+    liveDeskFactsRef.current = { ...(liveDeskFactsRef.current || {}), ...partial };
+    onLiveDeskProbeRef.current?.({ ...liveDeskFactsRef.current });
+  }, []);
   const autoJobHealRef = useRef(false);
   const attemptRef = useRef(0);
   const healingRef = useRef(false);
@@ -444,7 +455,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         if (typeof d.uniquePhotoCount === 'number') live.uniquePhotoCount = d.uniquePhotoCount;
         if (typeof d.hasCalculatorDisplay === 'boolean') live.hasCalculatorDisplay = d.hasCalculatorDisplay;
         if (typeof d.hasCalculatorKey === 'boolean') live.hasCalculatorKey = d.hasCalculatorKey;
-        onLiveDeskProbeRef.current?.(live);
+        publishLiveDeskProbe(live);
+        return;
+      }
+      if (d.kind === 'desk-probe') {
+        const live = {};
+        for (const key of DESK_PROBE_FACT_KEYS) {
+          if (typeof d[key] === 'boolean') live[key] = d[key];
+        }
+        publishLiveDeskProbe(live);
         return;
       }
       if (d.kind === 'loaded') {
@@ -485,7 +504,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRuntimeError, onClose, runQualityCheck, headless, verifyOnly]);
+  }, [handleRuntimeError, onClose, runQualityCheck, headless, verifyOnly, publishLiveDeskProbe]);
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
@@ -751,7 +770,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   }, [correlationId, goldenRuntimeContractError, goldenTransaction, vfs]);
 
   const previewFrame = projectRuntimeActive ? (
-    <ProjectRuntimePreview vfs={projectRuntimeVfs} correlationId={correlationId} goldenTransaction={goldenTransaction} />
+    <ProjectRuntimePreview
+      vfs={projectRuntimeVfs}
+      correlationId={correlationId}
+      goldenTransaction={goldenTransaction}
+      onDeskProbe={publishLiveDeskProbe}
+    />
   ) : ((currentCode && embedSrc) || wcUrl ? (
     <div style={{ width: '100%', height: '100%', minHeight: headless ? '480px' : viewportStyles[viewport].height, position: 'relative' }}>
       {previewWarmingOverlay}
