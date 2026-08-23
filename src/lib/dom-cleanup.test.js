@@ -35,8 +35,11 @@ test('shared shell owns Profile and Canvas/Journey while Studio owns workspace c
   assert.match(studio, /data-quantora-message-fork/);
   assert.match(studio, /data-quantora-code-workspace/);
   assert.match(studio, /data-quantora-sidebar-history/);
+  assert.match(studio, /data-quantora-sidebar-history-list/);
   assert.match(studio, /studioSidebarHistoryTitle/);
-  assert.match(studio, /STUDIO_SIDEBAR_HISTORY_MIN_PX/);
+  assert.match(studio, /studioSidebarHistoryPaneStyle/);
+  assert.match(studio, /studioSidebarFrameStyle/);
+  assert.match(studio, /studioSidebarYieldingSectionStyle/);
   assert.match(studio, /canAutoOpenCodeWorkspace\(studioDomain\)/);
   assert.doesNotMatch(studio, /Live API Engine Active/);
   assert.doesNotMatch(studio, /Selected Model:/);

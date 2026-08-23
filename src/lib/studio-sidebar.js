@@ -1,8 +1,52 @@
-export const STUDIO_SIDEBAR_HISTORY_MIN_PX = 168;
+export const STUDIO_SIDEBAR_HISTORY_MIN_PX = 220;
 export const STUDIO_SIDEBAR_SECTIONS_KEY = 'quantora_studio_sidebar_sections';
 
 export function defaultStudioSidebarSections() {
   return { projectDetails: false, agents: true };
+}
+
+export function studioSidebarFrameStyle() {
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+    height: '100%',
+    overflow: 'hidden',
+    ['--studio-sidebar-history-min']: `${STUDIO_SIDEBAR_HISTORY_MIN_PX}px`,
+  };
+}
+
+export function studioSidebarYieldingSectionStyle(extra = {}) {
+  return {
+    flex: '0 1 auto',
+    minHeight: 0,
+    minWidth: 0,
+    ...extra,
+  };
+}
+
+export function studioSidebarHistoryPaneStyle() {
+  return {
+    flex: `1 1 ${STUDIO_SIDEBAR_HISTORY_MIN_PX}px`,
+    minHeight: STUDIO_SIDEBAR_HISTORY_MIN_PX,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  };
+}
+
+export function studioSidebarHistoryListStyle() {
+  return {
+    flex: '1 1 auto',
+    minHeight: 0,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    paddingRight: '2px',
+  };
 }
 
 export function normalizeStudioSidebarSections(value) {

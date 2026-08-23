@@ -42,11 +42,14 @@ import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import {
-  STUDIO_SIDEBAR_HISTORY_MIN_PX,
   loadStudioSidebarSections,
   persistStudioSidebarSections,
+  studioSidebarFrameStyle,
   studioSidebarHistoryHint,
+  studioSidebarHistoryListStyle,
+  studioSidebarHistoryPaneStyle,
   studioSidebarHistoryTitle,
+  studioSidebarYieldingSectionStyle,
 } from '../lib/studio-sidebar.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
@@ -2026,7 +2029,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const isIdeLayout = isCodingDesk;
 
   return (
-    <div style={{
+    <div
+      className="ai-studio-shell"
+      style={{
       display: 'flex',
       gap: '12px',
       maxWidth: isIdeLayout ? '100%' : '1400px',
@@ -2034,9 +2039,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       margin: '0 auto',
       flex: 1,
       minHeight: 0,
+      height: '100%',
       width: '100%',
       alignItems: 'stretch',
       position: 'relative',
+      overflow: 'hidden',
       transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
       {/* Left Navigation Sidebar — New Chat + footer stay; Chat History is the scroll region. */}
@@ -2047,15 +2054,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         opacity: sidebarOpen ? 1 : 0,
         pointerEvents: sidebarOpen ? 'auto' : 'none',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        height: '100%',
+        ...studioSidebarFrameStyle(),
         background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
         border: 'none',
         borderRadius: isIdeLayout ? '16px' : '0 24px 24px 0',
         padding: sidebarOpen ? '14px 12px' : '0px',
-        overflow: 'hidden',
         flexShrink: 0
       }}>
         {/* Sidebar Header */}
@@ -2109,12 +2112,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         <div
           data-quantora-sidebar-projects="true"
           style={{
-          padding: '10px',
-          marginBottom: '10px',
+          ...studioSidebarYieldingSectionStyle({
+            padding: '10px',
+            marginBottom: '10px',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }),
           borderRadius: '12px',
           background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.72)',
           border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.16)',
-          flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
             <button
@@ -2175,7 +2182,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           >
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px' }}>
+          <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: 0, maxHeight: sidebarSections.projectDetails ? '28vh' : undefined, overflow: sidebarSections.projectDetails ? 'auto' : 'hidden', flexShrink: 1 }}>
             {projectResume?.goal ? (
               <button
                 type="button"
@@ -2230,7 +2237,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         </div>
 
         {/* Specialized Agents — collapsible, open by default so desks stay discoverable for gates. */}
-        <div data-quantora-sidebar-agents="true" style={{ flexShrink: 0, marginBottom: sidebarSections.agents ? '10px' : '8px' }}>
+        <div data-quantora-sidebar-agents="true" style={studioSidebarYieldingSectionStyle({ marginBottom: sidebarSections.agents ? '10px' : '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' })}>
           <button
             type="button"
             data-quantora-sidebar-section="agents"
@@ -2251,13 +2258,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               fontWeight: '700',
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
+              flexShrink: 0,
             }}
           >
             <span>Specialized Agents</span>
             {sidebarSections.agents ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {sidebarSections.agents ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '2px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '2px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', flex: '1 1 auto' }}>
           <div
             data-quantora-coding-desk-nav="true"
             onClick={openCodingDesk}
@@ -2333,14 +2341,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         {/* Chat History — always visible, flex-grow, internal scroll, scoped to the selected project. */}
         <div
           data-quantora-sidebar-history="true"
-          style={{
-            flex: '1 1 auto',
-            minHeight: STUDIO_SIDEBAR_HISTORY_MIN_PX,
-            display: 'flex',
-            flexDirection: 'column',
-            minWidth: 0,
-            overflow: 'hidden',
-          }}
+          style={studioSidebarHistoryPaneStyle()}
         >
           <div style={{ flexShrink: 0, paddingLeft: '4px', marginBottom: '8px' }}>
             <div
@@ -2357,7 +2358,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             </div>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px' }}>
+          <div data-quantora-sidebar-history-list="true" style={studioSidebarHistoryListStyle()}>
             {chatSessions.length === 0 ? (
               <div style={{ color: subtextColor, fontSize: '0.78rem', lineHeight: 1.4, padding: '8px 4px' }}>
                 {studioSidebarHistoryHint(0, activeProject?.name)}
@@ -2377,6 +2378,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   padding: '8px 10px',
                   borderRadius: '10px',
                   cursor: 'pointer',
+                  flexShrink: 0,
                   background: isActive ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
                   border: isActive ? (isLight ? '1px solid #ffedd5' : '1px solid rgba(249, 115, 22, 0.3)') : '1px solid transparent',
                   color: isActive ? '#f97316' : textColor,
