@@ -59,11 +59,13 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
             Shell runs against the files on this desk. Real output only.
           </div>
         )}
+        <div data-quantora-studio-terminal-log="true">
         {lines.map((line, index) => (
           <div key={`${index}-${line.slice(0, 24)}`} style={{ color: line.startsWith('$ ') ? '#fdba74' : '#e2e8f0' }}>
             {line}
           </div>
         ))}
+        </div>
         {busy ? <div style={{ color: '#94a3b8' }}>running…</div> : null}
       </div>
       <form onSubmit={runLine} style={{ display: 'flex', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
