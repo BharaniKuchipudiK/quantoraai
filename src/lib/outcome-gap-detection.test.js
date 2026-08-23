@@ -71,6 +71,34 @@ test('failed desk probes become continue chips ahead of chat vibes', () => {
   assert.equal(gaps[0].id, 'gap-currency');
 });
 
+test('chat HTML photos do not hide a missing Preview photo or offer Publish', () => {
+  const gaps = detectOutcomeGaps(
+    'website for my saree boutique',
+    'Built.\n```html\n<img src="https://images.unsplash.com/photo-silk" alt="saree">\n```',
+    { deskFacts: { hasPhotos: false, photoCount: 0 } },
+  );
+  assert.ok(gaps.some((gap) => gap.label === 'Add real product photos'));
+  assert.equal(gaps.some((gap) => gap.label === 'Publish this site'), false);
+});
+
+test('passing Preview checks do not invent cart work from chat', () => {
+  const gaps = detectOutcomeGaps(
+    'please include Add to Cart',
+    'I still need to add the bag.',
+    {
+      deskChecks: [
+        { id: 'cart', ok: true, label: 'Add to Cart is on Preview' },
+        { id: 'currency', ok: true, label: 'Currency switcher is on Preview' },
+        { id: 'photos', ok: true, label: '2 distinct product photos on Preview' },
+      ],
+      deskFacts: { hasCart: true, hasCurrency: true, hasPhotos: true, photoCount: 2 },
+    },
+  );
+  assert.equal(gaps.some((gap) => gap.id === 'gap-cart'), false);
+  assert.equal(gaps.some((gap) => gap.id === 'gap-currency'), false);
+  assert.equal(gaps.some((gap) => gap.id === 'gap-photos'), false);
+});
+
 test('an Office deck gets presentation chips, not Vercel publish', () => {
   const gaps = detectOutcomeGaps(
     'pre-kick off HAM SAM presentation',

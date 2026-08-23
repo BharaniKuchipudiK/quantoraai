@@ -435,10 +435,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         return;
       }
       if (d.kind === 'shop-probe') {
-        onLiveDeskProbeRef.current?.({
+        const live = {
           hasCart: d.hasCart === true,
           bagIncremented: d.bagIncremented === true,
-        });
+        };
+        if (typeof d.hasCurrency === 'boolean') live.hasCurrency = d.hasCurrency;
+        if (typeof d.photoCount === 'number') live.photoCount = d.photoCount;
+        if (typeof d.uniquePhotoCount === 'number') live.uniquePhotoCount = d.uniquePhotoCount;
+        if (typeof d.hasCalculatorDisplay === 'boolean') live.hasCalculatorDisplay = d.hasCalculatorDisplay;
+        if (typeof d.hasCalculatorKey === 'boolean') live.hasCalculatorKey = d.hasCalculatorKey;
+        onLiveDeskProbeRef.current?.(live);
         return;
       }
       if (d.kind === 'loaded') {

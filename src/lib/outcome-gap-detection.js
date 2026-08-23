@@ -7,6 +7,24 @@ function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
 }
 
+/** Preview facts win. Chat HTML must not invent or hide a photo gap. */
+function previewHasPhotos(deskFacts) {
+  if (!deskFacts || typeof deskFacts !== 'object') return null;
+  if (deskFacts.hasPhotos === true || Number(deskFacts.photoCount) > 0) return true;
+  if (deskFacts.hasPhotos === false) return false;
+  if (Number.isFinite(Number(deskFacts.photoCount)) && Number(deskFacts.photoCount) === 0) return false;
+  return null;
+}
+
+function chatHasPhotoMarkup(ai = '') {
+  return /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(String(ai || ''));
+}
+
+function photosPresent({ deskFacts = null, ai = '' } = {}) {
+  const preview = previewHasPhotos(deskFacts);
+  return preview === null ? chatHasPhotoMarkup(ai) : preview;
+}
+
 function chipsFromDeskChecks(checks = []) {
   if (!Array.isArray(checks) || !checks.length) return [];
   const beats = {
@@ -119,8 +137,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     || studioDomain === 'finance'
     || studioDomain === 'research';
     if (wantsShop && !lifeAdvisor) {
-    const hasPhotoInAi = /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai);
-    const hasPhotos = (deskFacts && (deskFacts.hasPhotos === true || Number(deskFacts.photoCount) > 0)) || hasPhotoInAi;
+    const hasPhotos = photosPresent({ deskFacts, ai });
     if (!hasPhotos && !probeGaps.some((gap) => gap.id === 'gap-photos')) {
       gaps.push(beat(
         'gap-photos',
@@ -155,8 +172,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     }
   } else {
     const wantsPhotos = /\b(images?|photos?|pictures?|visuals?)\b/i.test(userPrompt);
-    const hasPhotos = (deskFacts && (deskFacts.hasPhotos === true || Number(deskFacts.photoCount) > 0))
-      || /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai);
+    const hasPhotos = photosPresent({ deskFacts, ai });
     if (wantsPhotos && !lifeAdvisor && !hasPhotos && !probeGaps.some((gap) => gap.id === 'gap-photos')) {
       gaps.push(beat(
         'gap-photos',

@@ -70,11 +70,20 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
     calculator: looksLikeCalculatorDesk({ html: haystack, job }),
   };
 
+  const includeCatalog = Boolean(vfsText(vfs, 'products.json') || facts.catalogCount);
+  const checks = buildDeskChecks(facts, { includeCatalog });
+  const failed = checks.filter((check) => !check.ok);
+  const nextBeat = failed[0]?.label || '';
+  return { facts, checks, failed, nextBeat, catalog };
+}
+
+/** Review labels come from these facts — live Preview may overwrite HTML regex later. */
+export function buildDeskChecks(facts = {}, { includeCatalog = false } = {}) {
   const checks = [];
   if (facts.shop) {
     checks.push({
       id: 'photos',
-      ok: facts.hasPhotos && facts.hasDistinctPhotos,
+      ok: facts.hasPhotos === true && facts.hasDistinctPhotos === true,
       label: !facts.hasPhotos
         ? 'Product photos missing from Preview'
         : (facts.hasDistinctPhotos
@@ -83,38 +92,36 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
     });
     checks.push({
       id: 'cart',
-      ok: facts.hasCart,
+      ok: facts.hasCart === true,
       label: facts.hasCart ? 'Add to Cart is on Preview' : 'Add to Cart missing from Preview',
     });
     checks.push({
       id: 'currency',
-      ok: facts.hasCurrency,
+      ok: facts.hasCurrency === true,
       label: facts.hasCurrency ? 'Currency switcher is on Preview' : 'Currency switcher missing from Preview',
     });
-    if (vfsText(vfs, 'products.json') || facts.catalogCount) {
+    if (includeCatalog) {
+      const catalogCount = Number(facts.catalogCount) || 0;
       checks.push({
         id: 'catalog',
-        ok: facts.catalogCount > 0,
-        label: facts.catalogCount ? `${facts.catalogCount} catalog item${facts.catalogCount === 1 ? '' : 's'}` : 'products.json has no named items',
+        ok: catalogCount > 0,
+        label: catalogCount ? `${catalogCount} catalog item${catalogCount === 1 ? '' : 's'}` : 'products.json has no named items',
       });
     }
   }
   if (facts.calculator) {
     checks.push({
       id: 'calc-display',
-      ok: facts.hasCalculatorDisplay,
+      ok: facts.hasCalculatorDisplay === true,
       label: facts.hasCalculatorDisplay ? 'Calculator display is on Preview' : 'Calculator display missing',
     });
     checks.push({
       id: 'calc-key',
-      ok: facts.hasCalculatorKey,
+      ok: facts.hasCalculatorKey === true,
       label: facts.hasCalculatorKey ? 'Calculator keys are on Preview' : 'Calculator keys missing',
     });
   }
-
-  const failed = checks.filter((check) => !check.ok);
-  const nextBeat = failed[0]?.label || '';
-  return { facts, checks, failed, nextBeat, catalog };
+  return checks;
 }
 
 export function deskChecksRegressed(beforeChecks = [], afterChecks = []) {
@@ -122,23 +129,50 @@ export function deskChecksRegressed(beforeChecks = [], afterChecks = []) {
   return (beforeChecks || []).some((check) => check && check.ok === true && after.get(check.id) !== true);
 }
 
+function applyLiveBool(facts, live, key) {
+  if (typeof live[key] === 'boolean') facts[key] = live[key];
+}
+
+function applyLiveCount(facts, live, key) {
+  if (typeof live[key] === 'number' && Number.isFinite(live[key])) facts[key] = live[key];
+}
+
+/**
+ * Running Preview wins. HTML regex and chat must not keep a failed check
+ * after the live iframe already has the control.
+ */
 export function mergeLiveDeskProbe(packet, live = null) {
   if (!packet) return null;
   if (!live || typeof live !== 'object') return packet;
-  const facts = {
-    ...packet.facts,
-    hasCart: packet.facts?.hasCart === true || live.hasCart === true,
-    bagIncremented: live.bagIncremented === true,
-  };
-  const clickCheck = {
-    id: 'cart-click',
-    ok: live.bagIncremented === true,
-    label: live.bagIncremented === true
-      ? 'Add to Cart increments the bag'
-      : (live.hasCart === true ? 'Add to Cart did not increment the bag' : 'Add to Cart missing from Preview'),
-  };
-  const checks = [...(packet.checks || []).filter((check) => check.id !== 'cart-click')];
-  if (facts.shop) checks.push(clickCheck);
+  const facts = { ...packet.facts };
+  applyLiveBool(facts, live, 'hasCart');
+  applyLiveBool(facts, live, 'hasCurrency');
+  applyLiveBool(facts, live, 'hasCalculatorDisplay');
+  applyLiveBool(facts, live, 'hasCalculatorKey');
+  applyLiveCount(facts, live, 'photoCount');
+  applyLiveCount(facts, live, 'uniquePhotoCount');
+  if (typeof live.photoCount === 'number' && Number.isFinite(live.photoCount)) {
+    facts.hasPhotos = live.photoCount > 0;
+  }
+  if (typeof live.photoCount === 'number' || typeof live.uniquePhotoCount === 'number') {
+    const needsVariety = (facts.catalogCount || 0) >= 2
+      || (facts.uniquePhotoCount || 0) >= 2
+      || (facts.photoCount || 0) >= 2;
+    facts.hasDistinctPhotos = (facts.uniquePhotoCount || 0) >= 2 || !needsVariety;
+  }
+  facts.bagIncremented = live.bagIncremented === true;
+
+  const includeCatalog = (packet.checks || []).some((check) => check.id === 'catalog');
+  const checks = buildDeskChecks(facts, { includeCatalog });
+  if (facts.shop) {
+    checks.push({
+      id: 'cart-click',
+      ok: live.bagIncremented === true,
+      label: live.bagIncremented === true
+        ? 'Add to Cart increments the bag'
+        : (facts.hasCart === true ? 'Add to Cart did not increment the bag' : 'Add to Cart missing from Preview'),
+    });
+  }
   const failed = checks.filter((check) => !check.ok);
   return {
     ...packet,

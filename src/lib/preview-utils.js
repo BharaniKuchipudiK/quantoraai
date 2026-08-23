@@ -129,6 +129,32 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
         for (var i = 0; i < buttons.length; i++) {
           if (/add to (bag|cart)/i.test(buttons[i].textContent || '')) { cartBtn = buttons[i]; break; }
         }
+        var photoCount = 0;
+        var photoIds = {};
+        var imgs = document.querySelectorAll('img');
+        for (var p = 0; p < imgs.length; p++) {
+          var src = imgs[p].getAttribute('src') || '';
+          if (!/^(https?:\\/\\/|\\/api\\/preview-image)/i.test(src)) continue;
+          photoCount += 1;
+          var idMatch = src.match(/photo-[\\w-]+/i);
+          var id = idMatch ? idMatch[0].toLowerCase() : src.split('?')[0].toLowerCase();
+          photoIds[id] = 1;
+        }
+        var uniquePhotoCount = 0;
+        for (var pid in photoIds) {
+          if (Object.prototype.hasOwnProperty.call(photoIds, pid)) uniquePhotoCount += 1;
+        }
+        var currencySel = document.getElementById('quantora-currency');
+        if (!currencySel) {
+          var selects = document.querySelectorAll('select');
+          for (var s = 0; s < selects.length; s++) {
+            var selMeta = ((selects[s].id || '') + ' ' + (selects[s].getAttribute('name') || '') + ' ' + (selects[s].getAttribute('aria-label') || '')).toLowerCase();
+            if (selMeta.indexOf('currenc') !== -1) { currencySel = selects[s]; break; }
+          }
+        }
+        var currencyText = currencySel ? String(currencySel.textContent || '') : '';
+        var hasCurrency = Boolean(currencySel && /USD/i.test(currencyText) && /INR/i.test(currencyText));
+        var bagIncremented = false;
         if (cartBtn) {
           var bagBefore = 0;
           var nodes = document.querySelectorAll('a,button,span,div');
@@ -152,8 +178,18 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
           if (typeof window.__quantoraBagCount === 'number' && window.__quantoraBagCount > bagBefore) {
             bagAfter = window.__quantoraBagCount;
           }
-          report({ kind:'shop-probe', hasCart:true, bagIncremented: bagAfter > bagBefore });
+          bagIncremented = bagAfter > bagBefore;
         }
+        report({
+          kind:'shop-probe',
+          hasCart: Boolean(cartBtn),
+          bagIncremented: bagIncremented,
+          hasCurrency: hasCurrency,
+          photoCount: photoCount,
+          uniquePhotoCount: uniquePhotoCount,
+          hasCalculatorDisplay: Boolean(document.querySelector('[data-testid="calculator-display"]')),
+          hasCalculatorKey: Boolean(document.querySelector('[data-testid="calculator-one"]'))
+        });
       } catch (probeErr) {}
     }, 1200);
   });
