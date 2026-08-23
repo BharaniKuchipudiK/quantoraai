@@ -141,6 +141,45 @@ function persistSessions(sessions) {
   }
 }
 
+export function applyMoveChatToProject({
+  sessions = [],
+  sessionId,
+  nextProjectId,
+  sourceProjectId,
+  activeSessionId,
+  defaultGreeting,
+} = {}) {
+  if (!sessionId || !nextProjectId) {
+    return { sessions, activeSessionId, changed: false };
+  }
+  const target = sessions.find((session) => session.id === sessionId);
+  if (!target) return { sessions, activeSessionId, changed: false };
+  const leftProjectId = target.projectId || sourceProjectId || DEFAULT_PROJECT_ID;
+  if (leftProjectId === nextProjectId) {
+    return { sessions, activeSessionId, changed: false };
+  }
+
+  let nextSessions = sessions.map((session) => (
+    session.id === sessionId
+      ? { ...session, projectId: nextProjectId, updatedAt: Date.now() }
+      : session
+  ));
+  let nextActiveSessionId = activeSessionId;
+  const remainingInSource = nextSessions.filter(
+    (session) => (session.projectId || DEFAULT_PROJECT_ID) === leftProjectId,
+  );
+
+  if (remainingInSource.length === 0) {
+    const empty = makeSession(leftProjectId, defaultGreeting);
+    nextSessions = [empty, ...nextSessions];
+    if (activeSessionId === sessionId) nextActiveSessionId = empty.id;
+  } else if (activeSessionId === sessionId) {
+    nextActiveSessionId = remainingInSource[0].id;
+  }
+
+  return { sessions: nextSessions, activeSessionId: nextActiveSessionId, changed: true };
+}
+
 function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
   const domain = normalizeStudioDomain(studioDomain);
   return {
@@ -641,6 +680,27 @@ export function useStudioSession({ user, selectedModel }) {
     });
   }, [activeProject.id, activeSessionId, defaultGreetingMsg]);
 
+  const handleMoveChatToProject = useCallback((event, sessionId, nextProjectId) => {
+    event?.stopPropagation?.();
+    if (!nextProjectId || !projects.some((project) => project.id === nextProjectId)) return;
+    setAllChatSessions((prev) => {
+      const result = applyMoveChatToProject({
+        sessions: prev,
+        sessionId,
+        nextProjectId,
+        sourceProjectId: activeProject.id,
+        activeSessionId,
+        defaultGreeting: defaultGreetingMsg,
+      });
+      if (!result.changed) return prev;
+      if (result.activeSessionId && result.activeSessionId !== activeSessionId) {
+        setActiveSessionId(result.activeSessionId);
+      }
+      persistSessions(result.sessions);
+      return result.sessions;
+    });
+  }, [activeProject.id, activeSessionId, defaultGreetingMsg, projects]);
+
   return {
     chatSessions,
     setChatSessions: setAllChatSessions,
@@ -665,6 +725,7 @@ export function useStudioSession({ user, selectedModel }) {
     openAdvisorWorkspace,
     forkChatFromMessage,
     handleDeleteChat,
+    handleMoveChatToProject,
     projects,
     activeProjectId: activeProject.id,
     activeProject,
