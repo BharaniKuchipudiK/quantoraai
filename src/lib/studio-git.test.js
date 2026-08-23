@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  classifyDeskGitLine,
   looksLikeMissingGitRepo,
   normalizeStudioGitAction,
   normalizeStudioGitCommitMessage,
@@ -104,6 +105,48 @@ test('Git does not invent a status when the Preview tree is empty', () => {
   const empty = runDeskGit({}, { action: 'status', workspaceKey: 'empty' });
   assert.equal(empty.ok, false);
   assert.match(empty.output, /empty/i);
+});
+
+test('Git diff prints the changed lines, not a list of filenames', () => {
+  resetDeskGitRepos();
+  const project = {
+    'index.html': { content: '<!doctype html><div id="root"></div>', language: 'html' },
+    'src/App.jsx': { content: 'export default function App(){\n  return <h1>alive</h1>;\n}\n', language: 'jsx' },
+  };
+  assert.equal(runDeskGit(project, { action: 'commit', message: 'save it', workspaceKey: 'diff' }).ok, true);
+  const clean = runDeskGit(project, { action: 'diff', workspaceKey: 'diff' });
+  assert.match(clean.output, /working tree clean/);
+
+  const patched = {
+    ...project,
+    'src/App.jsx': { content: 'export default function App(){\n  return <h1>patched</h1>;\n}\n', language: 'jsx' },
+  };
+  const diff = runDeskGit(patched, { action: 'diff', workspaceKey: 'diff' });
+  assert.equal(diff.ok, true);
+  assert.match(diff.output, /^diff --git a\/src\/App\.jsx b\/src\/App\.jsx$/m);
+  assert.match(diff.output, /^-\s+return <h1>alive<\/h1>;$/m);
+  assert.match(diff.output, /^\+\s+return <h1>patched<\/h1>;$/m);
+  assert.equal(/index\.html/.test(diff.output), false);
+});
+
+test('Git diff before the first commit does not pretend to be a diff', () => {
+  resetDeskGitRepos();
+  const diff = runDeskGit(boutique, { action: 'diff', workspaceKey: 'fresh' });
+  assert.equal(diff.ok, true);
+  assert.match(diff.output, /No commits yet/i);
+  assert.match(diff.output, /\?\? index\.html/);
+  assert.equal(/^@@/m.test(diff.output), false);
+});
+
+test('diff lines are classified so added and removed cannot look alike', () => {
+  assert.equal(classifyDeskGitLine('$ git diff'), 'command');
+  assert.equal(classifyDeskGitLine('diff --git a/src/App.jsx b/src/App.jsx'), 'file');
+  assert.equal(classifyDeskGitLine('--- a/src/App.jsx'), 'file');
+  assert.equal(classifyDeskGitLine('+++ b/src/App.jsx'), 'file');
+  assert.equal(classifyDeskGitLine('@@ -1,4 +1,4 @@'), 'hunk');
+  assert.equal(classifyDeskGitLine('+  added line'), 'add');
+  assert.equal(classifyDeskGitLine('-  removed line'), 'del');
+  assert.equal(classifyDeskGitLine('?? index.html'), 'plain');
 });
 
 test('changing chats drops the previous desk repo', () => {

@@ -4,6 +4,9 @@
  */
 
 const MAX_LCS_LINES = 800;
+const DIFF_CONTEXT = 3;
+const MAX_DIFF_LINES_PER_FILE = 240;
+const MAX_DIFF_LINES_TOTAL = 600;
 
 function linesOf(text) {
   if (typeof text !== 'string' || text.length === 0) return [];
@@ -43,6 +46,157 @@ export function lineDiffStats(before = '', after = '') {
     removed: oldLines.length - common,
     exact: true,
   };
+}
+
+/** Line-level alignment of two files. Every op is a line that really exists. */
+function alignLines(oldLines, newLines) {
+  const n = oldLines.length;
+  const m = newLines.length;
+  const width = m + 1;
+  const table = new Int32Array((n + 1) * width);
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      table[i * width + j] = oldLines[i] === newLines[j]
+        ? table[(i + 1) * width + (j + 1)] + 1
+        : Math.max(table[(i + 1) * width + j], table[i * width + (j + 1)]);
+    }
+  }
+  const ops = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (oldLines[i] === newLines[j]) {
+      ops.push({ kind: ' ', text: oldLines[i] });
+      i += 1;
+      j += 1;
+    } else if (table[(i + 1) * width + j] >= table[i * width + (j + 1)]) {
+      ops.push({ kind: '-', text: oldLines[i] });
+      i += 1;
+    } else {
+      ops.push({ kind: '+', text: newLines[j] });
+      j += 1;
+    }
+  }
+  while (i < n) {
+    ops.push({ kind: '-', text: oldLines[i] });
+    i += 1;
+  }
+  while (j < m) {
+    ops.push({ kind: '+', text: newLines[j] });
+    j += 1;
+  }
+  return ops;
+}
+
+function groupHunks(ops, context) {
+  const keep = new Array(ops.length).fill(false);
+  for (let index = 0; index < ops.length; index += 1) {
+    if (ops[index].kind === ' ') continue;
+    const from = Math.max(0, index - context);
+    const to = Math.min(ops.length - 1, index + context);
+    for (let near = from; near <= to; near += 1) keep[near] = true;
+  }
+  const oldNumbers = [];
+  const newNumbers = [];
+  let oldLine = 1;
+  let newLine = 1;
+  for (const op of ops) {
+    oldNumbers.push(oldLine);
+    newNumbers.push(newLine);
+    if (op.kind !== '+') oldLine += 1;
+    if (op.kind !== '-') newLine += 1;
+  }
+  const hunks = [];
+  let cursor = 0;
+  while (cursor < ops.length) {
+    if (!keep[cursor]) {
+      cursor += 1;
+      continue;
+    }
+    const start = cursor;
+    while (cursor < ops.length && keep[cursor]) cursor += 1;
+    const slice = ops.slice(start, cursor);
+    const oldCount = slice.filter((op) => op.kind !== '+').length;
+    const newCount = slice.filter((op) => op.kind !== '-').length;
+    hunks.push({
+      header: `@@ -${oldCount ? oldNumbers[start] : oldNumbers[start] - 1},${oldCount} +${newCount ? newNumbers[start] : newNumbers[start] - 1},${newCount} @@`,
+      lines: slice.map((op) => `${op.kind}${op.text}`),
+    });
+  }
+  return hunks;
+}
+
+/**
+ * Unified diff for one desk file. Nothing is summarised into a filename:
+ * either the real changed lines are printed or the reason they are not.
+ */
+export function unifiedFileDiff(path, before, after, { context = DIFF_CONTEXT, maxLines = MAX_DIFF_LINES_PER_FILE } = {}) {
+  const had = typeof before === 'string';
+  const has = typeof after === 'string';
+  const lines = [`diff --git a/${path} b/${path}`];
+  if (!had) lines.push('new file');
+  else if (!has) lines.push('deleted file');
+  lines.push(`--- ${had ? `a/${path}` : '/dev/null'}`);
+  lines.push(`+++ ${has ? `b/${path}` : '/dev/null'}`);
+
+  const oldLines = had ? linesOf(before) : [];
+  const newLines = has ? linesOf(after) : [];
+  if (oldLines.length > MAX_LCS_LINES || newLines.length > MAX_LCS_LINES) {
+    lines.push(`${oldLines.length} lines before, ${newLines.length} after — too large to diff exactly. No hunks were invented.`);
+    return { path, exact: false, truncated: false, lines };
+  }
+
+  const hunks = groupHunks(alignLines(oldLines, newLines), context);
+  let budget = maxLines;
+  let truncated = false;
+  for (const hunk of hunks) {
+    if (budget <= 0) {
+      truncated = true;
+      break;
+    }
+    lines.push(hunk.header);
+    budget -= 1;
+    for (const line of hunk.lines) {
+      if (budget <= 0) {
+        truncated = true;
+        break;
+      }
+      lines.push(line);
+      budget -= 1;
+    }
+  }
+  if (truncated) lines.push(`… diff cut off after ${maxLines} lines. Open ${path} to read the rest.`);
+  return { path, exact: true, truncated, lines };
+}
+
+/**
+ * Unified diff across a desk tree. Values are file contents keyed by path,
+ * so this reads the same snapshot Git committed and the tree Preview runs.
+ */
+export function unifiedTreeDiff(before = {}, after = {}, { context = DIFF_CONTEXT, maxLines = MAX_DIFF_LINES_TOTAL } = {}) {
+  const paths = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  const lines = [];
+  let budget = maxLines;
+  for (const path of [...paths].sort((left, right) => left.localeCompare(right))) {
+    if (!path) continue;
+    const previous = before?.[path];
+    const next = after?.[path];
+    const had = typeof previous === 'string';
+    const has = typeof next === 'string';
+    if (!had && !has) continue;
+    if (had && has && previous === next) continue;
+    if (budget <= 0) {
+      lines.push('… more files changed than this pane can show. Commit, then diff one file at a time.');
+      break;
+    }
+    const file = unifiedFileDiff(path, had ? previous : undefined, has ? next : undefined, {
+      context,
+      maxLines: Math.min(MAX_DIFF_LINES_PER_FILE, budget),
+    });
+    lines.push(...file.lines);
+    budget -= file.lines.length;
+  }
+  return lines;
 }
 
 export function diffVfsReview(before = {}, after = {}) {

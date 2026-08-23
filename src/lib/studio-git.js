@@ -4,6 +4,7 @@
  * Preview is often a blob, so status/commit run on that tree — not a hung WebContainer.
  */
 
+import { unifiedTreeDiff } from './studio-file-review.js';
 import { studioFileCount } from './studio-terminal.js';
 import {
   deskListing,
@@ -73,6 +74,17 @@ export function studioGitArgv(action, message) {
   ];
 }
 
+/** The panel must show a diff as a diff, so added and removed lines are told apart. */
+export function classifyDeskGitLine(line = '') {
+  const text = String(line || '');
+  if (text.startsWith('$ ')) return 'command';
+  if (text.startsWith('@@')) return 'hunk';
+  if (text.startsWith('diff --git ') || text.startsWith('--- ') || text.startsWith('+++ ')) return 'file';
+  if (text.startsWith('+')) return 'add';
+  if (text.startsWith('-')) return 'del';
+  return 'plain';
+}
+
 export function looksLikeMissingGitRepo(output) {
   return /not a git repository/i.test(String(output || ''));
 }
@@ -114,18 +126,19 @@ function formatStatusLines(current, committed) {
   return lines;
 }
 
+/**
+ * A filename is not a diff. Before there is a commit to diff against, say so
+ * and list the untracked tree instead of printing a file list under "diff".
+ */
 function formatDiffLines(current, committed) {
   if (!committed) {
-    return Object.keys(current).sort((a, b) => a.localeCompare(b)).map((path) => `+ ${path}`);
+    return [
+      '## No commits yet — this app',
+      ...Object.keys(current).sort((a, b) => a.localeCompare(b)).map((path) => `?? ${path}`),
+      'Commit once, then Diff shows the exact lines that changed.',
+    ];
   }
-  const lines = [];
-  const paths = new Set([...Object.keys(current), ...Object.keys(committed)]);
-  for (const path of [...paths].sort((a, b) => a.localeCompare(b))) {
-    if (!(path in committed)) lines.push(`+ ${path}`);
-    else if (!(path in current)) lines.push(`- ${path}`);
-    else if (committed[path] !== current[path]) lines.push(`M ${path}`);
-  }
-  return lines;
+  return unifiedTreeDiff(committed, current);
 }
 
 /**
@@ -165,8 +178,7 @@ export function runDeskGit(vfs = {}, { action, message, workspaceKey } = {}) {
 
   if (kind === 'diff') {
     const lines = formatDiffLines(current, repo.committed);
-    const output = (lines.length ? lines.join('\n') : listing);
-    return { ok: true, output };
+    return { ok: true, output: lines.length ? lines.join('\n') : '## desk\nworking tree clean' };
   }
 
   let commitMessage;

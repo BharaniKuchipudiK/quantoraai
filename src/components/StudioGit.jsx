@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { looksLikeMissingGitRepo, studioGitBlocker, studioGitFileCount } from '../lib/studio-git.js';
+import { classifyDeskGitLine, looksLikeMissingGitRepo, studioGitBlocker, studioGitFileCount } from '../lib/studio-git.js';
 import { runGitInWorkspace } from '../lib/webcontainer.js';
 
 export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textColor }) {
@@ -97,11 +97,18 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
           <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div>
         ) : null}
         <div data-quantora-studio-git-log="true">
-        {log.map((line, index) => (
-          <div key={`${index}-${line.slice(0, 24)}`} style={{ color: line.startsWith('$ ') ? '#fdba74' : '#e2e8f0' }}>
-            {line}
-          </div>
-        ))}
+        {log.flatMap((entry, index) => String(entry).split('\n').map((line, lineIndex) => {
+          const kind = classifyDeskGitLine(line);
+          return (
+            <div
+              key={`${index}-${lineIndex}-${line.slice(0, 24)}`}
+              data-quantora-studio-git-line={kind}
+              style={{ color: GIT_LINE_COLORS[kind], minHeight: '1.15em' }}
+            >
+              {line}
+            </div>
+          );
+        }))}
         </div>
         {busy ? <div style={{ color: '#94a3b8' }}>running…</div> : null}
       </div>
@@ -134,6 +141,15 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
     </div>
   );
 }
+
+const GIT_LINE_COLORS = {
+  command: '#fdba74',
+  hunk: '#38bdf8',
+  file: '#a5b4fc',
+  add: '#4ade80',
+  del: '#f87171',
+  plain: '#e2e8f0',
+};
 
 const gitButtonStyle = {
   border: '1px solid rgba(249,115,22,0.35)',
