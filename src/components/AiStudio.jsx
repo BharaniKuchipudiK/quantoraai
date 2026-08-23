@@ -1,5 +1,6 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
@@ -1167,6 +1168,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const shellVfs = deskShellVfs(vfs, previewRunCode);
   const deskPacket = mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,
     job: deskJob,
@@ -3798,14 +3800,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   </div>
              ) : workspaceActiveTab === 'terminal' ? (
                <StudioTerminal
-                 vfs={vfs}
+                 vfs={shellVfs}
                  isLight={isLight}
                  textColor={textColor}
                  subtextColor={subtextColor}
                />
              ) : workspaceActiveTab === 'git' ? (
                <StudioGit
-                 vfs={vfs}
+                 vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
                  isLight={isLight}
                  textColor={textColor}
