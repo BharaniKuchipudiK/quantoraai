@@ -73,3 +73,8 @@ export function listingShowsGeneratedProjectFile(output = '') {
 export function formatWorkspaceListing(paths = []) {
   return [...new Set(paths.filter(Boolean))].sort((a, b) => a.localeCompare(b)).join('\n');
 }
+
+/** Names already on this desk. ls prints these; it does not invent extra files. */
+export function deskListing(vfs = {}) {
+  return formatWorkspaceListing(studioWorkspaceFileEntries(vfs).map((file) => file.path));
+}

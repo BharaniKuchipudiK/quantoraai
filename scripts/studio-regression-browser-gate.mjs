@@ -245,9 +245,10 @@ try {
   await terminalInput.fill('ls');
   await terminalInput.press('Enter');
   await page.waitForFunction(() => {
+    const panel = document.querySelector('[data-quantora-studio-terminal="true"]')?.innerText || '';
     const text = document.querySelector('[data-quantora-studio-terminal-log="true"]')?.innerText || '';
-    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
-  }, null, { timeout: 45_000 }).catch(() => {});
+    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text) && !/running…/.test(panel);
+  }, null, { timeout: 20_000 }).catch(() => {});
   const lsText = await page.locator('[data-quantora-studio-terminal-log="true"]').first().innerText().catch(() => '');
   if (!listingShowsGeneratedProjectFile(lsText)) {
     throw new Error(`Terminal ls did not list the Preview project files after the calculator. Saw: ${String(lsText || terminalText).slice(0, 400)}`);
@@ -354,7 +355,7 @@ try {
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
     return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
-  }, null, { timeout: 45_000 }).catch(() => {});
+  }, null, { timeout: 30_000 }).catch(() => {});
   const gitLog = await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '');
   if (!listingShowsGeneratedProjectFile(gitLog)) {
     throw new Error(`Git status did not operate on the Preview tree. Saw: ${String(gitLog).slice(0, 400)}`);

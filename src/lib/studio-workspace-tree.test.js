@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  deskListing,
   deskShellVfs,
   formatWorkspaceListing,
   isWorkspaceListingCommand,
@@ -66,4 +67,12 @@ test('ls is recognized so an empty shell listing can be checked against the moun
   assert.equal(isWorkspaceListingCommand('rm -rf /'), false);
   assert.equal(listingShowsGeneratedProjectFile(''), false);
   assert.equal(listingShowsGeneratedProjectFile('App.jsx\nstyles.css'), false);
+});
+
+test('ls prints the Preview tree already on the desk, not a lone chat App.jsx', () => {
+  const vfs = deskShellVfs({ 'App.jsx': { content: calculator, language: 'jsx' } }, calculator);
+  const listing = deskListing(vfs);
+  assert.equal(listingShowsGeneratedProjectFile(listing), true);
+  assert.match(listing, /index\.html/);
+  assert.match(listing, /src\/App\.jsx/);
 });
