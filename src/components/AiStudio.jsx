@@ -41,6 +41,13 @@ import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
+import {
+  STUDIO_SIDEBAR_HISTORY_MIN_PX,
+  loadStudioSidebarSections,
+  persistStudioSidebarSections,
+  studioSidebarHistoryHint,
+  studioSidebarHistoryTitle,
+} from '../lib/studio-sidebar.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
@@ -266,6 +273,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarSections, setSidebarSections] = useState(() => loadStudioSidebarSections());
+  const toggleSidebarSection = useCallback((key) => {
+    setSidebarSections((prev) => persistStudioSidebarSections({ ...prev, [key]: !prev[key] }));
+  }, []);
   const { avatarSrc: profileAvatarSrc } = useProfileAvatar(user);
   const [profileAvatarFailed, setProfileAvatarFailed] = useState(false);
 
@@ -2028,23 +2039,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       position: 'relative',
       transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
-      {/* Left Navigation Sidebar - Chat History */}
-      <div style={{
+      {/* Left Navigation Sidebar — New Chat + footer stay; Chat History is the scroll region. */}
+      <div
+        data-quantora-studio-sidebar="true"
+        style={{
         width: sidebarOpen ? (isIdeLayout ? '220px' : '260px') : '0px',
         opacity: sidebarOpen ? 1 : 0,
         pointerEvents: sidebarOpen ? 'auto' : 'none',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         display: 'flex',
         flexDirection: 'column',
+        minHeight: 0,
+        height: '100%',
         background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
         border: 'none',
         borderRadius: isIdeLayout ? '16px' : '0 24px 24px 0',
-        padding: sidebarOpen ? '20px 16px' : '0px',
+        padding: sidebarOpen ? '14px 12px' : '0px',
         overflow: 'hidden',
         flexShrink: 0
       }}>
         {/* Sidebar Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexShrink: 0 }}>
           <button
             onClick={startNewChat}
             title="New Chat"
@@ -2090,77 +2105,159 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </button>
         </div>
 
-        {/* Projects */}
-        <div style={{
-          padding: '12px',
-          marginBottom: '18px',
+        {/* Projects — picker stays; long resume details collapse so they cannot steal Chat History. */}
+        <div
+          data-quantora-sidebar-projects="true"
+          style={{
+          padding: '10px',
+          marginBottom: '10px',
           borderRadius: '12px',
           background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.72)',
-          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.16)'
+          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.16)',
+          flexShrink: 0
         }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: '800', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Projects</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <button
+              type="button"
+              data-quantora-sidebar-section="projectDetails"
+              aria-expanded={sidebarSections.projectDetails}
+              onClick={() => toggleSidebarSection('projectDetails')}
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: subtextColor,
+                fontSize: '0.68rem',
+                fontWeight: '800',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
+              <span>Projects</span>
+              {sidebarSections.projectDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const name = window.prompt('What should we call this project?', 'New project');
+                if (name && name.trim()) handleCreateProject({ name: name.trim() });
+              }}
+              title="New Project"
+              style={{
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: 'transparent',
+                color: isLight ? '#2563eb' : '#60a5fa',
+                border: isLight ? '1px solid #bfdbfe' : '1px solid rgba(96, 165, 250, 0.35)',
+                borderRadius: '7px',
+                padding: '4px 7px',
+                fontSize: '0.68rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={12} /> New
+            </button>
+          </div>
           <select
             aria-label="Active project"
             value={activeProjectId}
             onChange={(event) => setActiveProjectId(event.target.value)}
-            style={{ width: '100%', background: isLight ? '#f8fafc' : '#111827', color: textColor, border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(148, 163, 184, 0.28)', borderRadius: '8px', padding: '8px 9px', fontSize: '0.82rem', fontWeight: '650', outline: 'none' }}
+            style={{ width: '100%', background: isLight ? '#f8fafc' : '#111827', color: textColor, border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(148, 163, 184, 0.28)', borderRadius: '8px', padding: '7px 8px', fontSize: '0.82rem', fontWeight: '650', outline: 'none' }}
           >
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: '30px' }}>
+          <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px' }}>
             {projectResume?.goal ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (projectResume.sessionId) setActiveSessionId(projectResume.sessionId);
-                    if (projectResume.next && !String(inputText || '').trim()) setInputText(projectResume.next);
-                    requestAnimationFrame(() => textareaRef.current?.focus());
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    background: 'transparent',
-                    border: 'none',
-                    padding: 0,
-                    cursor: 'pointer',
-                    color: 'inherit',
-                    font: 'inherit',
-                  }}
-                >
-                  <div style={{ color: textColor, fontWeight: 650 }}>Last: {projectResume.goal}</div>
-                  {projectResume.next ? (
-                    <div style={{ marginTop: '4px', color: isLight ? '#c2410c' : '#fdba74', fontWeight: 600 }}>
-                      Next: {projectResume.next}
-                    </div>
-                  ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  if (projectResume.sessionId) setActiveSessionId(projectResume.sessionId);
+                  if (projectResume.next && !String(inputText || '').trim()) setInputText(projectResume.next);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  font: 'inherit',
+                }}
+              >
+                <div style={{
+                  color: textColor,
+                  fontWeight: 650,
+                  whiteSpace: sidebarSections.projectDetails ? 'normal' : 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  Last: {projectResume.goal}
+                </div>
+                {sidebarSections.projectDetails && projectResume.next ? (
+                  <div style={{ marginTop: '4px', color: isLight ? '#c2410c' : '#fdba74', fontWeight: 600 }}>
+                    Next: {projectResume.next}
+                  </div>
+                ) : null}
+                {sidebarSections.projectDetails ? (
                   <div style={{ marginTop: '6px', color: isLight ? '#2563eb' : '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
                     Resume this outcome
                   </div>
-                </button>
-              </>
+                ) : null}
+              </button>
             ) : (
-              activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'
+              <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'}
+              </div>
             )}
           </div>
-          <button
-            onClick={() => {
-              const name = window.prompt('What should we call this project?', 'New project');
-              if (name && name.trim()) handleCreateProject({ name: name.trim() });
-            }}
-            style={{ marginTop: '10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'transparent', color: isLight ? '#2563eb' : '#60a5fa', border: isLight ? '1px solid #bfdbfe' : '1px solid rgba(96, 165, 250, 0.35)', borderRadius: '8px', padding: '7px 8px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer' }}
-          >
-            <Plus size={14} /> New Project
-          </button>
-          {projectArtifacts.length > 0 && <div style={{ color: subtextColor, fontSize: '0.7rem', marginTop: '8px', textAlign: 'center' }}>{projectArtifacts.length} linked artifact{projectArtifacts.length === 1 ? '' : 's'}</div>}
+          {sidebarSections.projectDetails && projectArtifacts.length > 0 && (
+            <div style={{ color: subtextColor, fontSize: '0.7rem', marginTop: '8px', textAlign: 'center' }}>
+              {projectArtifacts.length} linked artifact{projectArtifacts.length === 1 ? '' : 's'}
+            </div>
+          )}
         </div>
 
-        {/* Specialized Agents Section */}
-        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
-          Specialized Agents
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', marginBottom: '24px' }}>
+        {/* Specialized Agents — collapsible, open by default so desks stay discoverable for gates. */}
+        <div data-quantora-sidebar-agents="true" style={{ flexShrink: 0, marginBottom: sidebarSections.agents ? '10px' : '8px' }}>
+          <button
+            type="button"
+            data-quantora-sidebar-section="agents"
+            aria-expanded={sidebarSections.agents}
+            onClick={() => toggleSidebarSection('agents')}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'transparent',
+              border: 'none',
+              padding: '0 4px',
+              marginBottom: sidebarSections.agents ? '8px' : 0,
+              cursor: 'pointer',
+              color: subtextColor,
+              fontSize: '0.72rem',
+              fontWeight: '700',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            <span>Specialized Agents</span>
+            {sidebarSections.agents ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {sidebarSections.agents ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '2px' }}>
           <div
             data-quantora-coding-desk-nav="true"
             onClick={openCodingDesk}
@@ -2168,16 +2265,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              padding: '8px 12px',
+              padding: '6px 10px',
               borderRadius: '8px',
               cursor: 'pointer',
-              fontSize: '0.85rem',
+              fontSize: '0.82rem',
               fontWeight: '500',
               color: isCodingDesk ? '#f97316' : textColor,
               background: isCodingDesk ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
               border: isCodingDesk ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
               transition: 'all 0.15s ease',
-              marginBottom: '4px',
             }}
           >
             <div style={{ flexShrink: 0 }}><Code2 size={15} color="#f97316" /></div>
@@ -2203,10 +2299,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                padding: '8px 12px',
+                padding: '6px 10px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                fontSize: '0.85rem',
+                fontSize: '0.82rem',
                 fontWeight: '500',
                 color: selected ? '#f97316' : textColor,
                 background: selected ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
@@ -2231,26 +2327,54 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             );
           })}
         </div>
-
-        {/* History Section Title */}
-        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px', paddingLeft: '4px' }}>
-          Chat History
+          ) : null}
         </div>
 
-        {/* Sessions List */}
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '2px' }}>
-          {chatSessions.map((session) => {
+        {/* Chat History — always visible, flex-grow, internal scroll, scoped to the selected project. */}
+        <div
+          data-quantora-sidebar-history="true"
+          style={{
+            flex: '1 1 auto',
+            minHeight: STUDIO_SIDEBAR_HISTORY_MIN_PX,
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ flexShrink: 0, paddingLeft: '4px', marginBottom: '8px' }}>
+            <div
+              data-quantora-sidebar-history-title="true"
+              style={{ fontSize: '0.78rem', fontWeight: '750', color: textColor, letterSpacing: '0.01em' }}
+            >
+              {studioSidebarHistoryTitle(activeProject?.name)}
+            </div>
+            <div
+              data-quantora-sidebar-history-hint="true"
+              style={{ fontSize: '0.68rem', fontWeight: '500', color: subtextColor, marginTop: '3px' }}
+            >
+              {studioSidebarHistoryHint(chatSessions.length, activeProject?.name)}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px' }}>
+            {chatSessions.length === 0 ? (
+              <div style={{ color: subtextColor, fontSize: '0.78rem', lineHeight: 1.4, padding: '8px 4px' }}>
+                {studioSidebarHistoryHint(0, activeProject?.name)}
+              </div>
+            ) : chatSessions.map((session) => {
             const isActive = session.id === activeSessionId;
             const resume = deriveSessionResume(session);
             return (
               <div
                 key={session.id}
+                data-quantora-sidebar-chat={session.id}
                 onClick={() => setActiveSessionId(session.id)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '10px 12px',
+                  padding: '8px 10px',
                   borderRadius: '10px',
                   cursor: 'pointer',
                   background: isActive ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
@@ -2313,10 +2437,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           })}
+          </div>
         </div>
 
         {/* Product feedback — explicit signed-in Studio entry point. */}
-        <div style={{ paddingTop: '12px', marginTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-feedback'))}
@@ -2325,7 +2450,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              padding: '9px 12px',
+              padding: '8px 10px',
               borderRadius: '8px',
               background: 'transparent',
               border: '1px solid transparent',
