@@ -21,6 +21,19 @@ test("real calculator phrasing is inferred as a build even when the client misse
   assert.equal(request.taskCategory, "coding");
 });
 
+test("refineMode forces a coding build even when the prompt is a follow-up", () => {
+  const request = normalizeCommunicationRequest({
+    message: "Please include a currency converter",
+    refineMode: true,
+    previewCode: "<!DOCTYPE html><html><body>shop</body></html>",
+    buildMode: false,
+  });
+
+  assert.equal(request.isRefine, true);
+  assert.equal(request.hasPreviewCode, true);
+  assert.equal(request.buildMode, true);
+});
+
 test("ordinary design discussion is not forced into build mode", () => {
   const request = normalizeCommunicationRequest({
     message: "Explain Apple's design principles",

@@ -19,6 +19,8 @@ import {
 } from '../lib/pcl-session-runtime.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
 import { inferStudioDomain } from '../../api/_lib/studio-domain-inference.js';
+import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -350,7 +352,13 @@ export function useChatStream({
     }
 
     let effectiveArenaMode = arenaMode;
-    const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text);
+    const deskFiles = Boolean(isWorkspaceMode && vfs && Object.keys(vfs).length > 0);
+    const refineDesk = shouldRefineRunningDesk({
+      prompt: visibleUserText,
+      hasDeskFiles: deskFiles,
+      studioDomain,
+    });
+    const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     const turnDomain = isCodingRequest
       ? studioDomain
@@ -401,6 +409,10 @@ export function useChatStream({
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
       taskCategory: isCodingRequest ? 'coding' : 'general',
+      ...(refineDesk ? {
+        refineMode: true,
+        previewCode: String(pickPreviewEntry(vfs) || canvasCode || '').slice(0, 80_000),
+      } : {}),
       ...pclEnvelope,
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),

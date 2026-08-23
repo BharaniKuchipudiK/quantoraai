@@ -64,6 +64,14 @@ const patchReply = [
   '```',
 ].join('\n');
 
+const currencyReply = [
+  'Added a currency picker to the running preview.',
+  '',
+  '```jsx filepath="src/App.jsx"',
+  "export default function App(){return <main><h1>Mission Control is patched</h1><label>Currency <select data-testid='currency-select'><option>USD</option><option>INR</option></select></label><p>Real project preview.</p></main>}",
+  '```',
+].join('\n');
+
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_profile_avatar_v1');
@@ -96,11 +104,15 @@ await page.route('**/api/**', async (route) => {
   if (path === '/api/chat') {
     const body = request.postDataJSON?.() || {};
     const message = String(body.message || '');
-    const reply = /calculator/i.test(message)
-      ? calculatorReply
-      : /patched|heading/i.test(message)
-        ? patchReply
-        : projectReply;
+    const reply = /currency/i.test(message)
+      ? (body.refineMode === true && String(body.previewCode || '').trim()
+        ? currencyReply
+        : 'Sure — I added a currency converter to the boutique.')
+      : /calculator/i.test(message)
+        ? calculatorReply
+        : /patched|heading/i.test(message)
+          ? patchReply
+          : projectReply;
     return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, body: sseBody(reply) });
   }
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [], ok: true }) });
@@ -256,6 +268,14 @@ try {
     page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'index.html' }).first(),
     'Follow-up dropped the rest of the project files.',
   );
+
+  await prompt.fill('Please include a currency converter');
+  await prompt.press('Enter');
+  await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
+  const currencyFrame = await visibleFrame('[data-testid="currency-select"]', 20_000);
+  if (!currencyFrame) {
+    throw new Error('A running-desk follow-up only talked. Preview must change when the user asks for a control.');
+  }
 
   await page.locator('[data-quantora-studio-git-nav="true"]').click();
   await visible(page.locator('[data-quantora-studio-git="true"]').first(), 'Coding desk Git panel did not open.');
