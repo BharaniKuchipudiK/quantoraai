@@ -305,11 +305,14 @@ try {
   if (!boutiqueFrame) throw new Error('Boutique Preview never rendered.');
   const addToCart = boutiqueFrame.locator('button').filter({ hasText: /add to cart/i }).first();
   await visible(addToCart, 'Boutique Preview is missing Add to Cart.', 15_000);
-  const cartClick = page.locator('[data-quantora-desk-probe="cart-click"]').first();
-  await visible(cartClick, 'Boutique did not run a live Add to Cart probe.', 12_000);
-  if ((await cartClick.getAttribute('data-quantora-desk-probe-ok')) !== 'true') {
-    throw new Error('Add to Cart is on Preview but the bag did not increment.');
-  }
+  await addToCart.click();
+  const bagCount = boutiqueFrame.locator('button, [data-quantora-bag="true"]').filter({ hasText: /^Bag\s+[1-9]/ }).first();
+  await visible(bagCount, 'Add to Cart is on Preview but the bag did not increment.', 12_000);
+  await visible(
+    page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(),
+    'Boutique did not confirm a live Add to Cart probe.',
+    15_000,
+  );
 
   await page.locator('[data-quantora-studio-git-nav="true"]').click();
   await visible(page.locator('[data-quantora-studio-git="true"]').first(), 'Coding desk Git panel did not open.');

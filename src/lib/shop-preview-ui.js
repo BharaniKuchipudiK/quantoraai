@@ -90,10 +90,7 @@ function shopUiScript() {
     }
     cards.forEach(function(card, i){
       var existing = Array.from(card.querySelectorAll('button, a')).find(function(n){ return /add to (bag|cart)/i.test(n.textContent || ''); });
-      if (existing) {
-        existing.addEventListener('click', bumpBag);
-        return;
-      }
+      if (existing) return;
       if (!card.querySelector('[data-quantora-price], .price, [class*="price"]')) {
         var price = document.createElement('div');
         price.className = 'price';
@@ -108,7 +105,6 @@ function shopUiScript() {
       btn.textContent = 'Add to Cart';
       btn.style.cssText = 'margin-top:8px;padding:8px 14px;border:0;border-radius:999px;background:#c4a35a;color:#111;font-weight:700;cursor:pointer';
       btn.addEventListener('click', function(){
-        bumpBag();
         btn.textContent = 'Added';
         setTimeout(function(){ btn.textContent = 'Add to Cart'; }, 900);
       });
@@ -120,6 +116,17 @@ function shopUiScript() {
     ensureCartButtons();
     paintPrices();
     bagLabel();
+    document.addEventListener('click', function(e){
+      var node = e.target;
+      while (node && node !== document) {
+        var tag = node.tagName;
+        if ((tag === 'BUTTON' || tag === 'A') && /add to (bag|cart)/i.test(node.textContent || '')) {
+          bumpBag();
+          return;
+        }
+        node = node.parentElement;
+      }
+    }, true);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

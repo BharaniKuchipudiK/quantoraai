@@ -1168,7 +1168,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
 
   useEffect(() => {
-    setLiveDeskProbe(null);
+    if (!previewRunCode) setLiveDeskProbe(null);
   }, [previewRunCode]);
 
   const renderedChatFeed = React.useMemo(() => {

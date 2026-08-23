@@ -155,7 +155,7 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
           report({ kind:'shop-probe', hasCart:true, bagIncremented: bagAfter > bagBefore });
         }
       } catch (probeErr) {}
-    }, 500);
+    }, 1200);
   });
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
