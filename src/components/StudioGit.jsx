@@ -8,6 +8,7 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
   const [busy, setBusy] = useState(false);
   const [needsInit, setNeedsInit] = useState(true);
   const scrollerRef = useRef(null);
+  const primedKey = useRef('');
   const isolated = typeof window !== 'undefined' && window.crossOriginIsolated === true;
   const fileCount = studioGitFileCount(vfs);
   const blocker = studioGitBlocker({ isolated, fileCount });
@@ -15,6 +16,27 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
   useEffect(() => {
     scrollerRef.current?.scrollTo?.(0, scrollerRef.current.scrollHeight);
   }, [log, busy]);
+
+  useEffect(() => {
+    if (blocker || !fileCount || primedKey.current === workspaceKey) return undefined;
+    primedKey.current = workspaceKey;
+    let cancelled = false;
+    (async () => {
+      setBusy(true);
+      try {
+        const result = await runGitInWorkspace(vfs, { action: 'status', workspaceKey });
+        if (cancelled) return;
+        const output = result.output || '(git failed)';
+        setNeedsInit(!result.ok || looksLikeMissingGitRepo(output));
+        setLog((prev) => (prev.length ? prev : [`$ git status`, output]));
+      } catch (error) {
+        if (!cancelled) setLog((prev) => (prev.length ? prev : [error?.message || 'Git could not start.']));
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [blocker, fileCount, vfs, workspaceKey]);
 
   async function runAction(action) {
     if (busy) return;

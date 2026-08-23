@@ -152,6 +152,71 @@ async function visibleFrame(selector, timeout = 20000) {
   return null;
 }
 
+/** Terminal ls and Git status/commit must list the same files Preview is running. */
+async function proveDeskFilesMatchPreview(job) {
+  await page.locator('[data-quantora-studio-terminal-nav="true"]').click();
+  const terminal = page.locator('[data-quantora-studio-terminal="true"]').first();
+  await visible(terminal, `${job}: Terminal panel did not open.`);
+  const terminalText = await terminal.innerText();
+  if (/cannot start on this page/i.test(terminalText)) {
+    throw new Error(`${job}: Terminal still said it cannot start on the isolated desk.`);
+  }
+  if (/No files in this desk yet/i.test(terminalText)) {
+    throw new Error(`${job}: Preview is running but Terminal said there are no files.`);
+  }
+  const terminalInput = page.locator('[data-quantora-studio-terminal-input="true"]').first();
+  await visible(terminalInput, `${job}: Terminal input is missing after Preview.`);
+  await terminalInput.fill('ls');
+  await terminalInput.press('Enter');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('[data-quantora-studio-terminal="true"]')?.innerText || '';
+    const text = document.querySelector('[data-quantora-studio-terminal-log="true"]')?.innerText || '';
+    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text) && !/running…/.test(panel);
+  }, null, { timeout: 8_000 }).catch(() => {});
+  const lsText = await page.locator('[data-quantora-studio-terminal-log="true"]').first().innerText().catch(() => '');
+  if (!listingShowsGeneratedProjectFile(lsText)) {
+    throw new Error(`${job}: Terminal ls did not list the Preview project files. Saw: ${String(lsText || terminalText).slice(0, 400)}`);
+  }
+
+  await page.locator('[data-quantora-studio-git-nav="true"]').click();
+  await visible(page.locator('[data-quantora-studio-git="true"]').first(), `${job}: Git panel did not open.`);
+  await visible(page.locator('[data-quantora-studio-git-status="true"]').first(), `${job}: Git status control is missing.`);
+  await hidden(page.locator('[data-quantora-monaco="true"]').first(), `${job}: Git tab still showed the file editor.`);
+  const gitPanel = page.locator('[data-quantora-studio-git="true"]').first();
+  if (/No files in this desk yet|cannot start on this page/i.test(await gitPanel.innerText())) {
+    throw new Error(`${job}: Preview is running but Git said it cannot use those files.`);
+  }
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
+    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
+  }, null, { timeout: 8_000 }).catch(() => {});
+  if (!listingShowsGeneratedProjectFile(await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => ''))) {
+    await page.locator('[data-quantora-studio-git-status="true"]').first().click();
+    await page.waitForFunction(() => {
+      const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
+      return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
+    }, null, { timeout: 8_000 }).catch(() => {});
+  }
+  const gitLog = await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '');
+  if (!listingShowsGeneratedProjectFile(gitLog)) {
+    throw new Error(`${job}: Git status did not operate on the Preview tree. Saw: ${String(gitLog).slice(0, 400)}`);
+  }
+
+  const message = page.locator('[data-quantora-studio-git-message="true"]').first();
+  await visible(message, `${job}: Git commit message input is missing.`);
+  await message.fill(`Save the ${job} Preview tree`);
+  await page.locator('[data-quantora-studio-git-commit="true"]').first().click();
+  await page.waitForFunction((expected) => {
+    const panel = document.querySelector('[data-quantora-studio-git="true"]')?.innerText || '';
+    const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
+    return text.includes(expected) && /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text) && !/running…/.test(panel);
+  }, `Save the ${job} Preview tree`, { timeout: 8_000 }).catch(() => {});
+  const commitLog = await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '');
+  if (!commitLog.includes(`Save the ${job} Preview tree`) || !listingShowsGeneratedProjectFile(commitLog)) {
+    throw new Error(`${job}: Git commit did not record the Preview tree. Saw: ${String(commitLog).slice(0, 400)}`);
+  }
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   await enterSignedInStudio(page);
@@ -230,29 +295,7 @@ try {
   if (!isolation.isolated) {
     throw new Error('Coding desk is not isolated, so Terminal and Git cannot run.');
   }
-  await page.locator('[data-quantora-studio-terminal-nav="true"]').click();
-  const terminal = page.locator('[data-quantora-studio-terminal="true"]').first();
-  await visible(terminal, 'Terminal panel did not open.');
-  const terminalText = await terminal.innerText();
-  if (/cannot start on this page/i.test(terminalText)) {
-    throw new Error('Terminal still said it cannot start on the isolated desk.');
-  }
-  if (/No files in this desk yet/i.test(terminalText)) {
-    throw new Error('Preview is running but Terminal said there are no files.');
-  }
-  const terminalInput = page.locator('[data-quantora-studio-terminal-input="true"]').first();
-  await visible(terminalInput, 'Terminal input is missing after calculator Preview.');
-  await terminalInput.fill('ls');
-  await terminalInput.press('Enter');
-  await page.waitForFunction(() => {
-    const panel = document.querySelector('[data-quantora-studio-terminal="true"]')?.innerText || '';
-    const text = document.querySelector('[data-quantora-studio-terminal-log="true"]')?.innerText || '';
-    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text) && !/running…/.test(panel);
-  }, null, { timeout: 20_000 }).catch(() => {});
-  const lsText = await page.locator('[data-quantora-studio-terminal-log="true"]').first().innerText().catch(() => '');
-  if (!listingShowsGeneratedProjectFile(lsText)) {
-    throw new Error(`Terminal ls did not list the Preview project files after the calculator. Saw: ${String(lsText || terminalText).slice(0, 400)}`);
-  }
+  await proveDeskFilesMatchPreview('calculator');
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
@@ -335,31 +378,7 @@ try {
     15_000,
   );
 
-  await page.locator('[data-quantora-studio-git-nav="true"]').click();
-  await visible(page.locator('[data-quantora-studio-git="true"]').first(), 'Coding desk Git panel did not open.');
-  await visible(page.locator('[data-quantora-studio-git-status="true"]').first(), 'Git status control is missing.');
-  await hidden(page.locator('[data-quantora-monaco="true"]').first(), 'Git tab still showed the file editor.');
-  const gitPanel = page.locator('[data-quantora-studio-git="true"]').first();
-  if (/No files in this desk yet|cannot start on this page/i.test(await gitPanel.innerText())) {
-    throw new Error('Boutique Preview is running but Git said it cannot use those files.');
-  }
-  const startGit = page.locator('[data-quantora-studio-git-init="true"]').first();
-  if (await startGit.isVisible().catch(() => false)) {
-    await startGit.click();
-    await page.waitForFunction(() => {
-      const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
-      return /git is ready|initialized|master|main|desk@quantora/i.test(text);
-    }, null, { timeout: 45_000 }).catch(() => {});
-  }
-  await page.locator('[data-quantora-studio-git-status="true"]').first().click();
-  await page.waitForFunction(() => {
-    const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
-    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
-  }, null, { timeout: 30_000 }).catch(() => {});
-  const gitLog = await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '');
-  if (!listingShowsGeneratedProjectFile(gitLog)) {
-    throw new Error(`Git status did not operate on the Preview tree. Saw: ${String(gitLog).slice(0, 400)}`);
-  }
+  await proveDeskFilesMatchPreview('boutique');
 
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  answerWorkspaceListing,
   deskListing,
   deskShellVfs,
   formatWorkspaceListing,
@@ -75,4 +76,25 @@ test('ls prints the Preview tree already on the desk, not a lone chat App.jsx', 
   assert.equal(listingShowsGeneratedProjectFile(listing), true);
   assert.match(listing, /index\.html/);
   assert.match(listing, /src\/App\.jsx/);
+});
+
+test('ls on a raw chat App.jsx still expands to the Preview tree', () => {
+  const result = answerWorkspaceListing({ 'App.jsx': { content: calculator, language: 'jsx' } }, calculator);
+  assert.equal(result.ok, true);
+  assert.equal(listingShowsGeneratedProjectFile(result.output), true);
+});
+
+test('a blob HTML Preview with no VFS is still index.html, not an empty ls', () => {
+  const html = '<!DOCTYPE html><html><body><div class="product-card">Silk</div></body></html>';
+  const tree = deskShellVfs({}, html);
+  assert.equal(tree['index.html']?.content, html);
+  const result = answerWorkspaceListing({}, html);
+  assert.equal(result.ok, true);
+  assert.match(result.output, /index\.html/);
+});
+
+test('empty desk does not invent an ls listing', () => {
+  const result = answerWorkspaceListing({}, '');
+  assert.equal(result.ok, false);
+  assert.match(result.output, /empty/i);
 });
