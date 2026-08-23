@@ -14,7 +14,7 @@ import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
-import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
+import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
@@ -49,6 +49,7 @@ import {
   studioSidebarHistoryListStyle,
   studioSidebarHistoryPaneStyle,
   studioSidebarHistoryTitle,
+  studioSidebarMembershipCopy,
   studioSidebarYieldingSectionStyle,
 } from '../lib/studio-sidebar.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
@@ -259,6 +260,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     handleCreateNewChat,
     handleCreateAdvisorChat,
     handleDeleteChat,
+    handleMoveChatToProject,
     projects,
     activeProjectId,
     activeProject,
@@ -2108,7 +2110,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           </button>
         </div>
 
-        {/* Projects — picker stays; long resume details collapse so they cannot steal Chat History. */}
+        {/* Projects — picker stays; one-line goal/description. Resume lives on the chat row. */}
         <div
           data-quantora-sidebar-projects="true"
           style={{
@@ -2183,51 +2185,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
           <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: 0, maxHeight: sidebarSections.projectDetails ? '28vh' : undefined, overflow: sidebarSections.projectDetails ? 'auto' : 'hidden', flexShrink: 1 }}>
-            {projectResume?.goal ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (projectResume.sessionId) setActiveSessionId(projectResume.sessionId);
-                  if (projectResume.next && !String(inputText || '').trim()) setInputText(projectResume.next);
-                  requestAnimationFrame(() => textareaRef.current?.focus());
-                }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  color: 'inherit',
-                  font: 'inherit',
-                }}
-              >
-                <div style={{
-                  color: textColor,
-                  fontWeight: 650,
-                  whiteSpace: sidebarSections.projectDetails ? 'normal' : 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
-                  Last: {projectResume.goal}
-                </div>
-                {sidebarSections.projectDetails && projectResume.next ? (
-                  <div style={{ marginTop: '4px', color: isLight ? '#c2410c' : '#fdba74', fontWeight: 600 }}>
-                    Next: {projectResume.next}
-                  </div>
-                ) : null}
-                {sidebarSections.projectDetails ? (
-                  <div style={{ marginTop: '6px', color: isLight ? '#2563eb' : '#60a5fa', fontWeight: 700, fontSize: '0.72rem' }}>
-                    Resume this outcome
-                  </div>
-                ) : null}
-              </button>
-            ) : (
-              <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'}
-              </div>
-            )}
+            <div style={{
+              whiteSpace: sidebarSections.projectDetails ? 'normal' : 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'}
+            </div>
           </div>
           {sidebarSections.projectDetails && projectArtifacts.length > 0 && (
             <div style={{ color: subtextColor, fontSize: '0.7rem', marginTop: '8px', textAlign: 'center' }}>
@@ -2356,6 +2320,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             >
               {studioSidebarHistoryHint(chatSessions.length, activeProject?.name)}
             </div>
+            <div
+              data-quantora-sidebar-history-membership="true"
+              style={{ fontSize: '0.66rem', fontWeight: '500', color: subtextColor, marginTop: '3px', lineHeight: 1.35 }}
+            >
+              {studioSidebarMembershipCopy(activeProject?.name)}
+            </div>
           </div>
 
           <div data-quantora-sidebar-history-list="true" style={studioSidebarHistoryListStyle()}>
@@ -2366,6 +2336,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             ) : chatSessions.map((session) => {
             const isActive = session.id === activeSessionId;
             const resume = deriveSessionResume(session);
+            const showResumeChip = isResumeSession(session, projectResume);
             return (
               <div
                 key={session.id}
@@ -2375,6 +2346,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  minWidth: 0,
                   padding: '8px 10px',
                   borderRadius: '10px',
                   cursor: 'pointer',
@@ -2393,7 +2367,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   if (!isActive) e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: '1 1 120px', minWidth: 0 }}>
                   <MessageSquare size={15} color={isActive ? '#f97316' : subtextColor} style={{ flexShrink: 0 }} />
                   <div style={{ minWidth: 0, overflow: 'hidden' }}>
                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
@@ -2416,26 +2390,80 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   </div>
                 </div>
 
-                <button
-                  onClick={(e) => handleDeleteChat(e, session.id)}
-                  title="Delete chat"
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: subtextColor,
-                    cursor: 'pointer',
-                    padding: '4px',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    opacity: isActive ? 1 : 0.6,
-                    transition: 'opacity 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = subtextColor}
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, marginLeft: 'auto', minWidth: 0 }}
+                  onClick={(event) => event.stopPropagation()}
                 >
-                  <Trash2 size={13} />
-                </button>
+                  {showResumeChip ? (
+                    <span
+                      data-quantora-sidebar-resume-chip="true"
+                      title="Latest outcome in this project"
+                      style={{
+                        flexShrink: 0,
+                        borderRadius: '999px',
+                        padding: '2px 6px',
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.02em',
+                        color: isLight ? '#c2410c' : '#fdba74',
+                        background: isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.16)',
+                        border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249, 115, 22, 0.35)',
+                      }}
+                    >
+                      Resume
+                    </span>
+                  ) : null}
+                  {projects.length > 1 ? (
+                    <select
+                      aria-label="Move chat to project"
+                      data-quantora-sidebar-move-chat={session.id}
+                      value=""
+                      onChange={(event) => {
+                        const nextProjectId = event.target.value;
+                        if (nextProjectId) handleMoveChatToProject(event, session.id, nextProjectId);
+                      }}
+                      style={{
+                        maxWidth: '92px',
+                        background: isLight ? '#f8fafc' : '#111827',
+                        color: subtextColor,
+                        border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.28)',
+                        borderRadius: '6px',
+                        padding: '2px 4px',
+                        fontSize: '0.62rem',
+                        fontWeight: 650,
+                        outline: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="" disabled>Move to…</option>
+                      {projects
+                        .filter((project) => project.id !== (session.projectId || activeProjectId))
+                        .map((project) => (
+                          <option key={project.id} value={project.id}>{project.name}</option>
+                        ))}
+                    </select>
+                  ) : null}
+                  <button
+                    onClick={(e) => handleDeleteChat(e, session.id)}
+                    title="Delete chat"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: subtextColor,
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      opacity: isActive ? 1 : 0.6,
+                      transition: 'opacity 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = subtextColor}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             );
           })}

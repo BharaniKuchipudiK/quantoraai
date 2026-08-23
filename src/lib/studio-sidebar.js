@@ -105,3 +105,7 @@ export function studioSidebarHistoryHint(count, projectName) {
   if (n === 1) return '1 chat in this project';
   return `${n} chats in this project`;
 }
+
+export function studioSidebarMembershipCopy(projectName) {
+  return `These chats belong to ${studioProjectLabel(projectName)}. New Chat stays here.`;
+}
