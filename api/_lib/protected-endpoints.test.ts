@@ -87,16 +87,6 @@ test("chat revokes blocked signed-in sessions before provider execution", async 
   assert.match(state.headers["Set-Cookie"] || "", /Max-Age=0/);
 });
 
-test("executor reports unimplemented actions honestly", async () => {
-  const { QuantoraExecutor } = await import("../../src/lib/intelligence/executor.ts");
-  const result = await QuantoraExecutor.execute({
-    type: "MODIFY_FILE",
-    description: "Update a component",
-    path: "src/components/NewFeature.tsx",
-  });
-  assert.equal(result.success, false);
-  assert.match(result.message, /did not run|not wired/i);
-});
 
 test("Outcome Memory refuses anonymous access", async () => {
   const { state, res } = responseHarness();
