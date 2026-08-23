@@ -167,6 +167,30 @@ try {
   await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Top-level Fork Chat leaked into Study.');
   await visible(page.locator('[data-quantora-message-fork="true"]').last(), 'Study response footer is missing Fork Chat.');
 
+  const board = page.locator('[data-quantora-study-board="true"]').first();
+  await visible(board, 'Study answered about a concept but showed no tutor board.');
+  await visible(
+    board.getByText("Newton's laws", { exact: false }).first(),
+    'Tutor board did not name the concept the student asked about.',
+  );
+  await visible(
+    board.getByText('No fake score. A filled bar only after a real check.', { exact: true }),
+    'Tutor board implied progress before the student passed any check.',
+  );
+
+  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
+  const rightAnswer = board.getByRole('button', { name: 'The wall pushes back on you with an equal force', exact: true });
+  await visible(rightAnswer, 'Tutor board offered no real check to answer.');
+  await rightAnswer.click();
+  await visible(
+    board.getByText('Third law is holding.', { exact: false }),
+    'Tutor board did not grade the check the student answered.',
+  );
+  await hidden(
+    board.getByText('No fake score. A filled bar only after a real check.', { exact: true }),
+    'Tutor board still claimed no check had happened after grading one.',
+  );
+
   console.log('Study media browser gate passed.');
 } catch (error) {
   console.error('Study media browser gate FAILED:', error?.stack || error);
