@@ -169,6 +169,16 @@ test('a healed HTML page writes into index.html and does not overwrite React sou
   assert.match(next.vfs['App.jsx'].content, /Old/);
 });
 
+test('healing a boutique writes real photos, not gold frames', () => {
+  const vfs = {
+    'index.html': { content: '<!DOCTYPE html><html><body><p>old</p></body></html>', language: 'html' },
+    'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+  };
+  const healed = '<!DOCTYPE html><html><body><main><div class="hero">Kanjeevaram</div></main></body></html>';
+  const next = writeHealedPreviewToVfs(vfs, healed);
+  assert.match(next.vfs['index.html'].content, /images\.unsplash\.com/);
+});
+
 test('a chat that only talks still gets shop photos when the desk already has a boutique', () => {
   assert.equal(userAskedForPreviewPhotos('no images .. please fix'), true);
   const before = {

@@ -1138,6 +1138,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (previousUserMessage?.text) handleSendMessage(previousUserMessage.text);
   };
 
+  const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
+  const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
+  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const photosMissing = Boolean(previewRunCode)
+    && !previewHtmlHasRealPhotos(previewRunCode)
+    && (jobNeedsProductPhotos(deskJob) || vfsLooksLikeShop(vfs));
+
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text)) : null;
@@ -1739,7 +1746,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing]);
 
   
   useEffect(() => {
@@ -1913,9 +1920,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen]);
 
   const hasUserTurn = messages.some((message) => message.sender === 'user');
-  const generatingStatus = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting')?.executionStatus?.label;
-  const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
-  const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
+  const generatingStatus = lastAiMessage?.executionStatus?.label;
   const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text
     ? (filterContinuesForAdvisor(
       filterContinuesForOffice(
@@ -1930,9 +1935,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     : '';
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
-  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
-  const photosMissing = jobNeedsProductPhotos(deskJob) && Boolean(previewRunCode) && !previewHtmlHasRealPhotos(previewRunCode);
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,

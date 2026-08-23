@@ -14,14 +14,6 @@ const ALLOWED_HOSTS = new Set([
   'upload.wikimedia.org',
 ]);
 
-function hostnameOf(url) {
-  try {
-    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-  } catch {
-    return '';
-  }
-}
-
 export function isBlockedPreviewImageHost(hostname = '') {
   const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   if (!host || host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return true;

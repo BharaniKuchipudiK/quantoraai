@@ -4,6 +4,8 @@
  */
 
 import { normalizeStudioJobCard } from './studio-job-card.js';
+import { ensureShopPhotosInVfs } from './studio-preview-helpers.js';
+import { pickPreviewEntry } from './preview-utils.js';
 
 export function normalizeDeskReview(review = []) {
   if (!Array.isArray(review)) return [];
@@ -79,10 +81,14 @@ export function restoreStudioDeskSnapshot(session) {
       language: typeof file.language === 'string' ? file.language : '',
     };
   }
-  const workspaceCode = typeof snap.workspaceCode === 'string' ? snap.workspaceCode : '';
+  let workspaceCode = typeof snap.workspaceCode === 'string' ? snap.workspaceCode : '';
   if (!Object.keys(vfs).length && !workspaceCode.trim()) return null;
+  const withPhotos = ensureShopPhotosInVfs(vfs);
+  if (withPhotos.changed) {
+    workspaceCode = pickPreviewEntry(withPhotos.vfs) || workspaceCode;
+  }
   return {
-    vfs,
+    vfs: withPhotos.vfs,
     workspaceCode,
     codingDeskOpen: snap.codingDeskOpen === true,
     lastProcessedMessageId: snap.lastProcessedMessageId ?? null,

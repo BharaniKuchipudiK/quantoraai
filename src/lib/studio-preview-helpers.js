@@ -114,7 +114,8 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '') {
     content: html,
     language: asHtml || /\.html$/i.test(path) ? 'html' : (next[path]?.language || ''),
   };
-  return { vfs: next, wrote: true, path };
+  const withPhotos = ensureShopPhotosInVfs(next);
+  return { vfs: withPhotos.vfs, wrote: true, path };
 }
 
 export function extractHtmlFromResponse(rawText) {
