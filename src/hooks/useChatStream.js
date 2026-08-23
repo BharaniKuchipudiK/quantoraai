@@ -1,5 +1,6 @@
 import { useModelExperienceMemory } from './useModelExperienceMemory.js';
 import { useRef } from 'react';
+import { OFFICE_CLIENT_GENERATE_ABORT_MS } from '../../api/_lib/office-generation-budget.js';
 import { detectOfficeIntent } from '../lib/office-intent.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
@@ -297,7 +298,7 @@ export function useChatStream({
 
       try {
         const officeAbort = new AbortController();
-        const officeTimer = setTimeout(() => officeAbort.abort(), 58_000);
+        const officeTimer = setTimeout(() => officeAbort.abort(), OFFICE_CLIENT_GENERATE_ABORT_MS);
         let res;
         try {
           res = await fetch('/api/generate-office', {

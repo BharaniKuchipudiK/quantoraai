@@ -15,6 +15,7 @@
  * PDF remains browser print-to-PDF because it is not an OOXML Office artifact.
  */
 
+import { OFFICE_CLIENT_COMPILE_ABORT_MS } from '../../api/_lib/office-generation-budget.js';
 import { OFFICE_KIND, sanitizeOfficeFilename } from './office-intent.js';
 import {
   cacheOfficeArtifact,
@@ -55,7 +56,7 @@ async function compileCanonicalOffice(kind, html) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90_000);
+  const timeout = setTimeout(() => controller.abort(), OFFICE_CLIENT_COMPILE_ABORT_MS);
   try {
     const res = await fetch('/api/generate-office', {
       method: 'POST',

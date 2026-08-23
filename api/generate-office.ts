@@ -33,9 +33,10 @@ import { getSessionUser } from './_lib/session.js';
 import {
   officeGenerationMaxAttempts,
   officeModelCallBudgetMs,
+  officeProviderOrder,
   officeTimeoutUserMessage,
-  pickOfficeProvidersForAttempt,
   remainingOfficeBudgetMs,
+  shouldOfficeProviderFailover,
   shouldStartAnotherOfficeAttempt,
 } from './_lib/office-generation-budget.js';
 
@@ -683,16 +684,24 @@ async function generateJsonSchema(prompt, format, history, modelKeys, lastError,
   if (!available.length) throw new Error('No model credential available for Office generation.');
 
   let lastProviderError: any;
-  const ordered = pickOfficeProvidersForAttempt(available, attemptIndex);
+  const ordered = officeProviderOrder(available, attemptIndex);
+  let providersTried = 0;
+  let firstElapsedMs = 0;
+  const firstStartedAt = Date.now();
   for (const provider of ordered) {
     const remainingMs = remainingOfficeBudgetMs(startedAt);
-    if (lastProviderError && remainingMs < 18_000) break;
+    if (providersTried > 0) {
+      firstElapsedMs = Date.now() - firstStartedAt;
+      if (!shouldOfficeProviderFailover({ providersTried, firstElapsedMs, remainingMs })) break;
+    }
     try {
       if (provider === 'anthropic') return await callAnthropic(systemPrompt, promptWithContext, modelKeys.anthropic, format);
       if (provider === 'gemini') return await callGemini(systemPrompt, promptWithContext, modelKeys.gemini, format, remainingMs);
       return await callOpenRouter(systemPrompt, promptWithContext, modelKeys.openRouter, format);
     } catch (error: any) {
       lastProviderError = error;
+      providersTried += 1;
+      if (providersTried === 1) firstElapsedMs = Date.now() - firstStartedAt;
       console.warn(`Office generation provider '${provider}' failed:`, String(error?.message || error));
     }
   }
