@@ -4,7 +4,7 @@
  */
 
 import { advisorBlocksPreviewBuild } from './build-intent.js';
-import { countRealPreviewPhotos, previewHtmlHasRealPhotos } from './preview-images.js';
+import { countRealPreviewPhotos, previewHtmlHasRealPhotos, uniqueShopPhotoIds } from './preview-images.js';
 import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from './shop-preview-ui.js';
 import { jobNeedsProductPhotos, normalizeStudioJobCard } from './studio-job-card.js';
 import { listStudioFiles } from './studio-file-tree.js';
@@ -50,9 +50,14 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   const haystack = `${source}\n${listStudioFiles(vfs).map((path) => vfsText(vfs, path)).join('\n')}`;
   const catalog = summarizeCatalog(vfsText(vfs, 'products.json'));
   const photoCount = Math.max(countRealPreviewPhotos(source), countRealPreviewPhotos(haystack));
+  const uniquePhotoCount = uniqueShopPhotoIds(haystack).size;
+  const needsVariety = catalog.length >= 2 || uniquePhotoCount >= 2 || photoCount >= 2;
+  const hasDistinctPhotos = uniquePhotoCount >= 2 || !needsVariety;
   const facts = {
     photoCount,
+    uniquePhotoCount,
     hasPhotos: photoCount > 0 || previewHtmlHasRealPhotos(source) || previewHtmlHasRealPhotos(haystack),
+    hasDistinctPhotos,
     hasCart: previewHtmlHasAddToCartControl(source) || previewHtmlHasAddToCartControl(haystack),
     hasCurrency: previewHtmlHasCurrencySwitcher(source) || previewHtmlHasCurrencySwitcher(haystack),
     catalogCount: catalog.length,
@@ -67,8 +72,12 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   if (facts.shop) {
     checks.push({
       id: 'photos',
-      ok: facts.hasPhotos,
-      label: facts.hasPhotos ? `${facts.photoCount || 1} product photo${facts.photoCount === 1 ? '' : 's'} on Preview` : 'Product photos missing from Preview',
+      ok: facts.hasPhotos && facts.hasDistinctPhotos,
+      label: !facts.hasPhotos
+        ? 'Product photos missing from Preview'
+        : (facts.hasDistinctPhotos
+          ? `${facts.uniquePhotoCount || facts.photoCount} distinct product photo${(facts.uniquePhotoCount || facts.photoCount) === 1 ? '' : 's'} on Preview`
+          : 'Catalog cards share one photo — each product needs its own'),
     });
     checks.push({
       id: 'cart',
@@ -141,7 +150,9 @@ export function sanitizeDeskContext(raw) {
     : [];
   const facts = raw.facts && typeof raw.facts === 'object' ? {
     photoCount: Number(raw.facts.photoCount) || 0,
+    uniquePhotoCount: Number(raw.facts.uniquePhotoCount) || 0,
     hasPhotos: raw.facts.hasPhotos === true,
+    hasDistinctPhotos: raw.facts.hasDistinctPhotos === true,
     hasCart: raw.facts.hasCart === true,
     hasCurrency: raw.facts.hasCurrency === true,
     catalogCount: Number(raw.facts.catalogCount) || catalog.length,
@@ -191,7 +202,7 @@ export function formatDeskContextForPrompt(packet) {
   }
   if (desk.facts) {
     const facts = desk.facts;
-    lines.push(`LIVE PREVIEW FACTS: photos=${facts.hasPhotos ? facts.photoCount || 'yes' : 'no'} cart=${facts.hasCart ? 'yes' : 'no'} currency=${facts.hasCurrency ? 'yes' : 'no'} catalog=${facts.catalogCount || 0}${facts.calculator ? ` calculator=${facts.hasCalculatorDisplay ? 'yes' : 'no'}` : ''}`);
+    lines.push(`LIVE PREVIEW FACTS: photos=${facts.hasPhotos ? facts.photoCount || 'yes' : 'no'} distinctPhotos=${facts.hasDistinctPhotos ? facts.uniquePhotoCount || 'yes' : 'no'} cart=${facts.hasCart ? 'yes' : 'no'} currency=${facts.hasCurrency ? 'yes' : 'no'} catalog=${facts.catalogCount || 0}${facts.calculator ? ` calculator=${facts.hasCalculatorDisplay ? 'yes' : 'no'}` : ''}`);
   }
   if (desk.failed?.length) {
     const labels = desk.checks.filter((check) => !check.ok).map((check) => check.label);
@@ -206,7 +217,7 @@ export function chipsFromDeskProbes(checks = []) {
     photos: {
       id: 'gap-photos',
       label: 'Add real product photos',
-      value: 'Put real <img src="https://images.unsplash.com/..."> photos on every product card in the running Preview. Do not say images are done until Preview shows photos.',
+      value: 'Put a different real photo on every product card in the running Preview. Repeating one Unsplash image on the whole catalog is not done.',
       priority: 108,
     },
     cart: {
