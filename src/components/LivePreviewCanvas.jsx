@@ -176,12 +176,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, vfs), origin);
-    if (vfsLooksLikeShop(vfs) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
+    const files = vfsRef.current;
+    let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, files), origin);
+    if (vfsLooksLikeShop(files) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
       preparedHtml = injectShopCommerceUi(preparedHtml).html;
     }
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
-  }, [vfs]);
+  }, []);
+  const pushHtmlToEmbedRef = useRef(pushHtmlToEmbed);
+  pushHtmlToEmbedRef.current = pushHtmlToEmbed;
 
   useEffect(() => {
     setCurrentCode(code || '');
@@ -416,6 +419,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       if (d.kind === 'embed-ready') {
         embedReadyRef.current = true;
         setEmbedReady(true);
+        if (currentCodeRef.current) pushHtmlToEmbedRef.current?.(currentCodeRef.current);
         return;
       }
       if (d.kind === 'preview-close-request') {
@@ -747,7 +751,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       {previewWarmingOverlay}
       <iframe
         ref={iframeRef}
-        key={`${attempt}-${embedSrc}-${String(currentCode).length}`}
+        key={`${attempt}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
         onError={handleEmbedFrameError}

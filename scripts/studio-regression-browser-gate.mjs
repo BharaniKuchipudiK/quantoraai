@@ -72,7 +72,7 @@ const boutiqueReply = [
   '```',
   '',
   '```html filepath="index.html"',
-  '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button>Add to Cart</button></div></main></body></html>',
+  '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=400&q=80" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button type="button">Add to Cart</button></div></main></body></html>',
   '```',
 ].join('\n');
 
