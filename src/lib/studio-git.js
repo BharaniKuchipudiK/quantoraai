@@ -1,9 +1,16 @@
 /**
  * Git on the coding desk is for this generated app only.
  * Status, diff, commit, and init. Never Quantora's GitHub, never push.
+ * Preview is often a blob, so status/commit run on that tree — not a hung WebContainer.
  */
 
 import { studioFileCount } from './studio-terminal.js';
+import {
+  deskListing,
+  deskShellVfs,
+  listingShowsGeneratedProjectFile,
+  studioWorkspaceFileEntries,
+} from './studio-workspace-tree.js';
 
 export const STUDIO_GIT_ACTIONS = Object.freeze(['init', 'status', 'diff', 'commit']);
 
@@ -68,4 +75,112 @@ export function studioGitArgv(action, message) {
 
 export function looksLikeMissingGitRepo(output) {
   return /not a git repository/i.test(String(output || ''));
+}
+
+/** Last committed snapshot per coding-desk session. Changing chats drops that repo. */
+const deskRepos = new Map();
+
+export function resetDeskGitRepos() {
+  deskRepos.clear();
+}
+
+function snapshotDeskFiles(vfs = {}) {
+  return Object.fromEntries(studioWorkspaceFileEntries(vfs).map((file) => [file.path, file.content]));
+}
+
+function ensureDeskRepo(workspaceKey = '') {
+  const key = String(workspaceKey || 'default');
+  if (!deskRepos.has(key)) {
+    deskRepos.set(key, { committed: null, commits: [] });
+  }
+  return { key, repo: deskRepos.get(key) };
+}
+
+function formatStatusLines(current, committed) {
+  const paths = Object.keys(current).sort((a, b) => a.localeCompare(b));
+  if (!committed) {
+    return ['## No commits yet — this app', ...paths.map((path) => `?? ${path}`)];
+  }
+  const lines = ['## desk'];
+  const seen = new Set(paths);
+  for (const path of paths) {
+    if (!(path in committed)) lines.push(`?? ${path}`);
+    else if (committed[path] !== current[path]) lines.push(` M ${path}`);
+  }
+  for (const path of Object.keys(committed).sort((a, b) => a.localeCompare(b))) {
+    if (!seen.has(path)) lines.push(` D ${path}`);
+  }
+  if (lines.length === 1) lines.push('working tree clean');
+  return lines;
+}
+
+function formatDiffLines(current, committed) {
+  if (!committed) {
+    return Object.keys(current).sort((a, b) => a.localeCompare(b)).map((path) => `+ ${path}`);
+  }
+  const lines = [];
+  const paths = new Set([...Object.keys(current), ...Object.keys(committed)]);
+  for (const path of [...paths].sort((a, b) => a.localeCompare(b))) {
+    if (!(path in committed)) lines.push(`+ ${path}`);
+    else if (!(path in current)) lines.push(`- ${path}`);
+    else if (committed[path] !== current[path]) lines.push(`M ${path}`);
+  }
+  return lines;
+}
+
+/**
+ * Status, diff, commit, and init against the Preview tree.
+ * Same files Preview is running. No WebContainer wait.
+ */
+export function runDeskGit(vfs = {}, { action, message, workspaceKey } = {}) {
+  const tree = deskShellVfs(vfs);
+  const files = studioWorkspaceFileEntries(tree);
+  const listing = deskListing(tree);
+  if (!files.length) {
+    return {
+      ok: false,
+      output: 'The shell is empty while Preview has files. No fake status was shown.',
+    };
+  }
+
+  let kind;
+  try {
+    kind = normalizeStudioGitAction(action);
+  } catch (error) {
+    return { ok: false, output: error?.message || 'Git did not run.' };
+  }
+
+  const { repo } = ensureDeskRepo(workspaceKey);
+  const current = snapshotDeskFiles(tree);
+
+  if (kind === 'init') {
+    if (!repo.commits.length) repo.committed = null;
+    const output = ['Git is ready in this app.', listing].filter(Boolean).join('\n');
+    return { ok: true, output };
+  }
+
+  if (kind === 'status') {
+    return { ok: true, output: formatStatusLines(current, repo.committed).join('\n') };
+  }
+
+  if (kind === 'diff') {
+    const lines = formatDiffLines(current, repo.committed);
+    const output = (lines.length ? lines.join('\n') : listing);
+    return { ok: true, output };
+  }
+
+  let commitMessage;
+  try {
+    commitMessage = normalizeStudioGitCommitMessage(message);
+  } catch (error) {
+    return { ok: false, output: [error?.message || 'Commit needs a real message.', listing].filter(Boolean).join('\n') };
+  }
+
+  repo.committed = current;
+  repo.commits.push({ message: commitMessage, files: Object.keys(current) });
+  const output = [`[desk] ${commitMessage}`, listing].filter(Boolean).join('\n');
+  if (files.length && !listingShowsGeneratedProjectFile(output)) {
+    return { ok: true, output: [output, listing].filter(Boolean).join('\n') };
+  }
+  return { ok: true, output };
 }

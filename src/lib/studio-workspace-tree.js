@@ -6,15 +6,25 @@
 import { pickPreviewEntry } from './preview-utils.js';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from './project-runtime-preview.js';
 
+function looksLikeHtmlDocument(source = '') {
+  return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
+}
+
 export function previewRuntimeVfs(vfs = {}, code = '') {
   if (isProjectRuntimeVfs(vfs)) return vfs;
   return createInlineReactRuntimeVfs(String(code || ''), vfs);
 }
 
-/** The tree a running Preview is actually serving. */
+/** The tree a running Preview is actually serving — React runtime or blob HTML. */
 export function deskShellVfs(vfs = {}, code = '') {
   const source = String(code || pickPreviewEntry(vfs) || '');
-  return previewRuntimeVfs(vfs, source) || vfs || {};
+  const runtime = previewRuntimeVfs(vfs, source);
+  if (runtime) return runtime;
+  if (studioWorkspaceFileEntries(vfs).length) return vfs;
+  if (looksLikeHtmlDocument(source)) {
+    return { 'index.html': { content: source, language: 'html' } };
+  }
+  return vfs || {};
 }
 
 export function normalizeStudioWorkspacePath(path = '') {
@@ -77,4 +87,20 @@ export function formatWorkspaceListing(paths = []) {
 /** Names already on this desk. ls prints these; it does not invent extra files. */
 export function deskListing(vfs = {}) {
   return formatWorkspaceListing(studioWorkspaceFileEntries(vfs).map((file) => file.path));
+}
+
+/**
+ * ls/dir answer for the Preview tree. Does not invent files and does not
+ * wait on WebContainer — Preview is often a blob, not a WC mount.
+ */
+export function answerWorkspaceListing(vfs = {}, code = '') {
+  const tree = deskShellVfs(vfs, code);
+  const listing = deskListing(tree);
+  if (listingShowsGeneratedProjectFile(listing) || listing) {
+    return { ok: true, output: listing };
+  }
+  return {
+    ok: false,
+    output: 'The shell is empty while Preview has files. No fake listing was shown.',
+  };
 }

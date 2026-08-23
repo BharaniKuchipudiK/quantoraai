@@ -1,16 +1,12 @@
 import { WebContainer } from '@webcontainer/api';
-import { studioGitArgv } from './studio-git.js';
+import { runDeskGit } from './studio-git.js';
 import {
-  deskListing,
-  formatWorkspaceListing,
+  answerWorkspaceListing,
+  deskShellVfs,
   isWorkspaceListingCommand,
-  listingShowsGeneratedProjectFile,
   studioWorkspaceFileEntries,
   vfsToFileSystemTree,
 } from './studio-workspace-tree.js';
-
-/** Last coding-desk session whose .git we keep. Changing chats drops that repo. */
-let gitWorkspaceKey = '';
 
 /** @type {WebContainer}  */
 let webcontainerInstance = null;
@@ -56,12 +52,13 @@ async function writeWorkspaceFiles(instance, vfs) {
 
 export async function syncVFSToWebContainer(vfs) {
   const instance = await bootWebContainer();
+  const workspace = deskShellVfs(vfs);
   await withTimeout((async () => {
-    const tree = vfsToFileSystemTree(vfs);
+    const tree = vfsToFileSystemTree(workspace);
     if (Object.keys(tree).length > 0) {
       await instance.mount(tree);
     }
-    const files = await writeWorkspaceFiles(instance, vfs);
+    const files = await writeWorkspaceFiles(instance, workspace);
     if (files.length && !await workspaceHasGeneratedFile(instance, files)) {
       throw new Error('The shell filesystem does not have the Preview files. No fake listing was shown.');
     }
@@ -78,25 +75,6 @@ async function workspaceHasGeneratedFile(instance, files) {
     return typeof contents === 'string' && contents.length > 0;
   } catch {
     return false;
-  }
-}
-
-async function listMountedWorkspace(instance, files) {
-  const found = [];
-  for (const { path } of files) {
-    try {
-      await instance.fs.readFile(path, 'utf-8');
-      found.push(path);
-    } catch {
-      /* file was not actually written */
-    }
-  }
-  if (found.length > 0) return formatWorkspaceListing(found);
-  try {
-    const names = await instance.fs.readdir('.');
-    return formatWorkspaceListing((names || []).filter((name) => name && name !== '.' && name !== '..' && name !== '.git'));
-  } catch {
-    return '';
   }
 }
 
@@ -143,17 +121,11 @@ export async function runCommandInWorkspace(vfs, commandLine) {
   if (!line) return { ok: true, output: '' };
 
   if (isWorkspaceListingCommand(line)) {
-    const listing = deskListing(vfs);
-    if (listingShowsGeneratedProjectFile(listing) || listing) {
-      return { ok: true, output: listing };
-    }
-    return {
-      ok: false,
-      output: 'The shell is empty while Preview has files. No fake listing was shown.',
-    };
+    return answerWorkspaceListing(vfs);
   }
 
-  const instance = await syncVFSToWebContainer(vfs);
+  const tree = deskShellVfs(vfs);
+  const instance = await syncVFSToWebContainer(tree);
   const result = await spawnCollected(instance, 'jsh', ['-c', line]);
   return {
     ok: result.ok,
@@ -162,52 +134,5 @@ export async function runCommandInWorkspace(vfs, commandLine) {
 }
 
 export async function runGitInWorkspace(vfs, { action, message, workspaceKey } = {}) {
-  const argvList = studioGitArgv(action, message);
-  const files = studioWorkspaceFileEntries(vfs);
-  let instance;
-  try {
-    instance = await syncVFSToWebContainer(vfs);
-  } catch (error) {
-    const listing = deskListing(vfs);
-    return {
-      ok: false,
-      output: [error?.message || 'Git is not available in this shell. No fake status was shown.', listing].filter(Boolean).join('\n'),
-    };
-  }
-  const nextKey = String(workspaceKey || 'default');
-  if (gitWorkspaceKey && gitWorkspaceKey !== nextKey) {
-    await spawnCollected(instance, 'rm', ['-rf', '.git']);
-  }
-  gitWorkspaceKey = nextKey;
-
-  const chunks = [];
-  let ok = true;
-  for (const argv of argvList) {
-    const [command, ...args] = argv;
-    let result;
-    try {
-      result = await spawnCollected(instance, command, args);
-    } catch (error) {
-      const listing = await listMountedWorkspace(instance, files) || deskListing(vfs);
-      return {
-        ok: false,
-        output: [error?.message || 'Git is not available in this shell. No fake status was shown.', listing].filter(Boolean).join('\n'),
-      };
-    }
-    if (result.output) chunks.push(result.output);
-    if (!result.ok) {
-      ok = false;
-      if (!result.output) chunks.push(`(exit failed)`);
-      break;
-    }
-  }
-  let output = chunks.join('\n\n').trim();
-  if (files.length && !listingShowsGeneratedProjectFile(output)) {
-    const mounted = await listMountedWorkspace(instance, files);
-    if (mounted) output = [output, mounted].filter(Boolean).join('\n');
-  }
-  return {
-    ok,
-    output,
-  };
+  return runDeskGit(deskShellVfs(vfs), { action, message, workspaceKey });
 }
