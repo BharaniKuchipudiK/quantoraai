@@ -123,6 +123,38 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
         stylingOk = window.getComputedStyle(probe).display === 'none';
       }
       report({ kind:'loaded', stylingOk: stylingOk, usesTailwind: Boolean(tailwindScript) });
+      try {
+        var cartBtn = null;
+        var buttons = document.querySelectorAll('button, a');
+        for (var i = 0; i < buttons.length; i++) {
+          if (/add to (bag|cart)/i.test(buttons[i].textContent || '')) { cartBtn = buttons[i]; break; }
+        }
+        if (cartBtn) {
+          var bagBefore = 0;
+          var nodes = document.querySelectorAll('a,button,span,div');
+          for (var j = 0; j < nodes.length; j++) {
+            var bagText = nodes[j].textContent || '';
+            if (/^\\s*Bag\\s*\\d+/i.test(bagText) && (nodes[j].children || []).length === 0) {
+              bagBefore = parseInt((bagText.match(/\\d+/) || ['0'])[0], 10) || 0;
+              break;
+            }
+          }
+          cartBtn.click();
+          var bagAfter = bagBefore;
+          nodes = document.querySelectorAll('a,button,span,div');
+          for (var k = 0; k < nodes.length; k++) {
+            var bagTextAfter = nodes[k].textContent || '';
+            if (/^\\s*Bag\\s*\\d+/i.test(bagTextAfter) && (nodes[k].children || []).length === 0) {
+              bagAfter = parseInt((bagTextAfter.match(/\\d+/) || ['0'])[0], 10) || 0;
+              break;
+            }
+          }
+          if (typeof window.__quantoraBagCount === 'number' && window.__quantoraBagCount > bagBefore) {
+            bagAfter = window.__quantoraBagCount;
+          }
+          report({ kind:'shop-probe', hasCart:true, bagIncremented: bagAfter > bagBefore });
+        }
+      } catch (probeErr) {}
     }, 500);
   });
   document.addEventListener('keydown', function(e) {

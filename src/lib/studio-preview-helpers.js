@@ -8,6 +8,7 @@ import {
   injectProductCatalogImages,
 } from './preview-images.js';
 import { injectShopCommerceUi } from './shop-preview-ui.js';
+import { deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
 
 function isHtmlDocument(source = '') {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
@@ -44,7 +45,7 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
  * Apply a chat turn onto the desk. A follow-up that only sends one file
  * keeps the rest of the project. A first build does not force the desk open.
  */
-export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
+export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
   const assembled = assembleStudioPreview(rawText, currentVfs);
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
@@ -53,11 +54,25 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
   const vfs = ensured.vfs;
   const code = pickPreviewEntry(vfs) || assembled.code;
   const didUpdate = Object.keys(vfs).length > 0 && Boolean(code);
+  if (hadProject && didUpdate) {
+    const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job });
+    const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job });
+    if (deskChecksRegressed(before.checks, after.checks)) {
+      return {
+        vfs: currentVfs,
+        code: pickPreviewEntry(currentVfs),
+        didUpdate: false,
+        reopenDesk: false,
+        rejected: true,
+      };
+    }
+  }
   return {
     vfs,
     code,
     didUpdate,
     reopenDesk: hadProject && didUpdate,
+    rejected: false,
   };
 }
 
@@ -121,7 +136,7 @@ export function runningPreviewCode(vfs = {}, fallback = '') {
  * A healed Preview is the product. Write it into the project files so Review
  * and reload match what is running. React source is not overwritten with HTML.
  */
-export function writeHealedPreviewToVfs(vfs = {}, healed = '') {
+export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
   const html = String(healed || '').trim();
   if (!html) return { vfs: { ...(vfs || {}) }, wrote: false, path: null };
   const asHtml = isHtmlDocument(html);
@@ -135,6 +150,11 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '') {
     language: asHtml || /\.html$/i.test(path) ? 'html' : (next[path]?.language || ''),
   };
   const withDesk = ensureShopDeskInVfs(next);
+  const before = probeRunningDesk({ html: pickPreviewEntry(vfs), vfs, job });
+  const after = probeRunningDesk({ html: pickPreviewEntry(withDesk.vfs), vfs: withDesk.vfs, job });
+  if (deskChecksRegressed(before.checks, after.checks)) {
+    return { vfs: { ...(vfs || {}) }, wrote: false, path: null, rejected: true };
+  }
   return { vfs: withDesk.vfs, wrote: true, path };
 }
 

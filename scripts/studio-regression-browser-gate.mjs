@@ -64,6 +64,18 @@ const patchReply = [
   '```',
 ].join('\n');
 
+const boutiqueReply = [
+  'Here is the boutique.',
+  '',
+  '```json filepath="products.json"',
+  '[{"id":"silk","name":"Kanjeevaram Silk","priceCents":1800000,"currency":"inr"}]',
+  '```',
+  '',
+  '```html filepath="index.html"',
+  '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button>Add to Cart</button></div></main></body></html>',
+  '```',
+].join('\n');
+
 const currencyReply = [
   'Added a currency picker to the running preview.',
   '',
@@ -104,7 +116,9 @@ await page.route('**/api/**', async (route) => {
   if (path === '/api/chat') {
     const body = request.postDataJSON?.() || {};
     const message = String(body.message || '');
-    const reply = /currency/i.test(message)
+    const reply = /saree|boutique|kanjeevaram/i.test(message)
+      ? boutiqueReply
+      : /currency/i.test(message)
       ? (body.refineMode === true && String(body.previewCode || '').trim()
         ? currencyReply
         : 'Sure — I added a currency converter to the boutique.')
@@ -281,6 +295,20 @@ try {
   const currencyFrame = await visibleFrame('[data-testid="currency-select"]', 20_000);
   if (!currencyFrame) {
     throw new Error('A running-desk follow-up only talked. Preview must change when the user asks for a control.');
+  }
+
+  await newChat.click();
+  await prompt.fill('Build a Kanjeevaram saree boutique');
+  await prompt.press('Enter');
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click();
+  const boutiqueFrame = await visibleFrame('button', 20_000);
+  if (!boutiqueFrame) throw new Error('Boutique Preview never rendered.');
+  const addToCart = boutiqueFrame.locator('button').filter({ hasText: /add to cart/i }).first();
+  await visible(addToCart, 'Boutique Preview is missing Add to Cart.', 15_000);
+  const cartClick = page.locator('[data-quantora-desk-probe="cart-click"]').first();
+  await visible(cartClick, 'Boutique did not run a live Add to Cart probe.', 12_000);
+  if ((await cartClick.getAttribute('data-quantora-desk-probe-ok')) !== 'true') {
+    throw new Error('Add to Cart is on Preview but the bag did not increment.');
   }
 
   await page.locator('[data-quantora-studio-git-nav="true"]').click();

@@ -43,6 +43,11 @@ function shopUiScript() {
       el.textContent = (symbols[currency] || '') + shown;
     });
   }
+  function bumpBag(){
+    bagCount += 1;
+    window.__quantoraBagCount = bagCount;
+    bagLabel();
+  }
   function bagLabel(){
     var nodes = document.querySelectorAll('a,button,span,div');
     for (var i = 0; i < nodes.length; i++) {
@@ -51,13 +56,20 @@ function shopUiScript() {
         return;
       }
     }
+    var host = document.querySelector('[data-quantora-shop-ui="bar"]') || document.querySelector('header') || document.body;
+    var bag = document.createElement('button');
+    bag.setAttribute('data-quantora-bag', 'true');
+    bag.type = 'button';
+    bag.textContent = 'Bag ' + bagCount;
+    bag.style.cssText = 'padding:4px 10px;border:0;border-radius:999px;background:#f8f4e8;color:#111;font-weight:700;cursor:pointer';
+    host.appendChild(bag);
   }
   function ensureBar(){
     if (document.querySelector('[data-quantora-shop-ui="bar"]')) return;
     var bar = document.createElement('div');
     bar.setAttribute('data-quantora-shop-ui', 'bar');
     bar.style.cssText = 'display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:10px 16px;background:#111;color:#f8f4e8;font-family:system-ui,sans-serif;font-size:14px';
-    bar.innerHTML = '<label>Currency <select id="quantora-currency" style="margin-left:6px;padding:4px 8px;border-radius:8px"><option value="INR">INR \\u20B9</option><option value="USD">USD $</option><option value="SGD">SGD S$</option><option value="AUD">AUD A$</option><option value="AED">AED</option></select></label>';
+    bar.innerHTML = '<label>Currency <select id="quantora-currency" style="margin-left:6px;padding:4px 8px;border-radius:8px"><option value="INR">INR \\u20B9</option><option value="USD">USD $</option><option value="SGD">SGD S$</option><option value="AUD">AUD A$</option><option value="AED">AED</option></select></label><button type="button" data-quantora-bag="true" style="padding:4px 10px;border:0;border-radius:999px;background:#f8f4e8;color:#111;font-weight:700">Bag 0</button>';
     var host = document.querySelector('header') || document.body;
     host.insertBefore(bar, host.firstChild);
     bar.querySelector('select').addEventListener('change', function(e){
@@ -78,7 +90,10 @@ function shopUiScript() {
     }
     cards.forEach(function(card, i){
       var existing = Array.from(card.querySelectorAll('button, a')).find(function(n){ return /add to (bag|cart)/i.test(n.textContent || ''); });
-      if (existing) return;
+      if (existing) {
+        existing.addEventListener('click', bumpBag);
+        return;
+      }
       if (!card.querySelector('[data-quantora-price], .price, [class*="price"]')) {
         var price = document.createElement('div');
         price.className = 'price';
@@ -93,8 +108,7 @@ function shopUiScript() {
       btn.textContent = 'Add to Cart';
       btn.style.cssText = 'margin-top:8px;padding:8px 14px;border:0;border-radius:999px;background:#c4a35a;color:#111;font-weight:700;cursor:pointer';
       btn.addEventListener('click', function(){
-        bagCount += 1;
-        bagLabel();
+        bumpBag();
         btn.textContent = 'Added';
         setTimeout(function(){ btn.textContent = 'Add to Cart'; }, 900);
       });

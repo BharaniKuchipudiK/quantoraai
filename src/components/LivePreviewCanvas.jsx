@@ -67,6 +67,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   verifyBrief = '',
   jobCard = null,
   onHealedPreview,
+  onLiveDeskProbe,
 }, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -109,6 +110,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   useEffect(() => { jobCardRef.current = jobCard; }, [jobCard]);
   const onHealedPreviewRef = useRef(onHealedPreview);
   onHealedPreviewRef.current = onHealedPreview;
+  const onLiveDeskProbeRef = useRef(onLiveDeskProbe);
+  onLiveDeskProbeRef.current = onLiveDeskProbe;
   const autoJobHealRef = useRef(false);
   const attemptRef = useRef(0);
   const healingRef = useRef(false);
@@ -422,6 +425,13 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       }
       if (d.kind === 'error') {
         handleRuntimeError(String(d.message || 'Runtime error'));
+        return;
+      }
+      if (d.kind === 'shop-probe') {
+        onLiveDeskProbeRef.current?.({
+          hasCart: d.hasCart === true,
+          bagIncremented: d.bagIncremented === true,
+        });
         return;
       }
       if (d.kind === 'loaded') {

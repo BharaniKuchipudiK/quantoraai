@@ -14,6 +14,7 @@ function chipsFromDeskChecks(checks = []) {
     cart: beat('gap-cart', 'Add to Cart on Preview', 'Put a working Add to Cart control on the running page. Do not say it is done unless Preview shows it.', 107),
     currency: beat('gap-currency', 'Add a currency converter', 'Put a currency converter on the running Preview. Do not say it is done unless Preview shows it.', 106),
     catalog: beat('gap-catalog', 'Fill the product catalog', 'Put named products in products.json and on the page. Preview is the proof.', 105),
+    'cart-click': beat('gap-cart-click', 'Fix Add to Cart', 'Add to Cart is on the page but the bag does not increment. Fix the running Preview.', 107),
     'calc-display': beat('gap-calc', 'Fix the calculator display', 'The calculator Preview is missing a working display. Fix the running page.', 108),
     'calc-key': beat('gap-calc-key', 'Fix the calculator keys', 'The calculator Preview is missing working keys. Fix the running page.', 107),
   };

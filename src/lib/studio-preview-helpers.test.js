@@ -212,6 +212,28 @@ test('currency and Add to Cart land on the boutique desk, not only in chat', () 
   assert.match(next.vfs['index.html'].content, /quantora-currency|quantora-shop-ui/);
 });
 
+test('a one-file patch that breaks a running calculator is rejected', () => {
+  const html = '<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></body></html>';
+  const current = { 'index.html': { content: html, language: 'html' } };
+  const follow = applyWorkspaceFromChat(
+    '```html filepath="index.html"\n<!DOCTYPE html><html><body><p>broken</p></body></html>\n```',
+    current,
+    { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
+  );
+  assert.equal(follow.rejected, true);
+  assert.equal(follow.didUpdate, false);
+  assert.match(follow.vfs['index.html'].content, /calculator-display/);
+});
+
+test('healing must not replace a working calculator with a dead page', () => {
+  const html = '<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></body></html>';
+  const vfs = { 'index.html': { content: html, language: 'html' } };
+  const next = writeHealedPreviewToVfs(vfs, '<!DOCTYPE html><html><body><p>error</p></body></html>', { purpose: 'A working calculator' });
+  assert.equal(next.wrote, false);
+  assert.equal(next.rejected, true);
+  assert.match(next.vfs['index.html'].content, /calculator-display/);
+});
+
 test('a calculator is not given a clothing catalog', () => {
   const vfs = {
     'index.html': { content: '<!DOCTYPE html><html><body><button class="key">7</button></body></html>', language: 'html' },

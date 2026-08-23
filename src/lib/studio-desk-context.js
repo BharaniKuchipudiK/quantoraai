@@ -6,9 +6,9 @@
 import { advisorBlocksPreviewBuild } from './build-intent.js';
 import { countRealPreviewPhotos, previewHtmlHasRealPhotos } from './preview-images.js';
 import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from './shop-preview-ui.js';
-import { jobNeedsProductPhotos, normalizeStudioJobCard } from './studio-job-card.js';
+import { pickPreviewEntry } from './preview-utils.js';
 import { listStudioFiles } from './studio-file-tree.js';
-import { vfsLooksLikeShop } from './studio-preview-helpers.js';
+import { jobNeedsProductPhotos, normalizeStudioJobCard } from './studio-job-card.js';
 
 const MAX_FILES = 24;
 const MAX_CATALOG = 12;
@@ -35,7 +35,9 @@ export function summarizeCatalog(raw = '') {
 }
 
 export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
-  if (vfsLooksLikeShop(vfs) || vfsLooksLikeShop({ 'index.html': { content: html } })) return true;
+  if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
+  const hay = `${html || ''}\n${pickPreviewEntry(vfs) || ''}`;
+  if (/\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|kanjeevaram|catalog|atelier|priceCents)\b/i.test(hay)) return true;
   return jobNeedsProductPhotos(job);
 }
 
@@ -106,6 +108,38 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   return { facts, checks, failed, nextBeat, catalog };
 }
 
+export function deskChecksRegressed(beforeChecks = [], afterChecks = []) {
+  const after = new Map((afterChecks || []).map((check) => [check.id, check.ok === true]));
+  return (beforeChecks || []).some((check) => check && check.ok === true && after.get(check.id) !== true);
+}
+
+export function mergeLiveDeskProbe(packet, live = null) {
+  if (!packet) return null;
+  if (!live || typeof live !== 'object') return packet;
+  const facts = {
+    ...packet.facts,
+    hasCart: packet.facts?.hasCart === true || live.hasCart === true,
+    bagIncremented: live.bagIncremented === true,
+  };
+  const clickCheck = {
+    id: 'cart-click',
+    ok: live.bagIncremented === true,
+    label: live.bagIncremented === true
+      ? 'Add to Cart increments the bag'
+      : (live.hasCart === true ? 'Add to Cart did not increment the bag' : 'Add to Cart missing from Preview'),
+  };
+  const checks = [...(packet.checks || []).filter((check) => check.id !== 'cart-click')];
+  if (facts.shop) checks.push(clickCheck);
+  const failed = checks.filter((check) => !check.ok);
+  return {
+    ...packet,
+    facts,
+    checks,
+    failed: failed.map((check) => check.id),
+    nextBeat: failed[0]?.label || packet.nextBeat || '',
+  };
+}
+
 export function buildDeskContextPacket({
   vfs = {},
   job = null,
@@ -150,6 +184,7 @@ export function sanitizeDeskContext(raw) {
       : catalog.map((item) => item.name),
     hasCalculatorDisplay: raw.facts.hasCalculatorDisplay === true,
     hasCalculatorKey: raw.facts.hasCalculatorKey === true,
+    bagIncremented: raw.facts.bagIncremented === true,
     shop: raw.facts.shop === true,
     calculator: raw.facts.calculator === true,
   } : null;
@@ -192,6 +227,8 @@ export function formatDeskContextForPrompt(packet) {
   if (desk.facts) {
     const facts = desk.facts;
     lines.push(`LIVE PREVIEW FACTS: photos=${facts.hasPhotos ? facts.photoCount || 'yes' : 'no'} cart=${facts.hasCart ? 'yes' : 'no'} currency=${facts.hasCurrency ? 'yes' : 'no'} catalog=${facts.catalogCount || 0}${facts.calculator ? ` calculator=${facts.hasCalculatorDisplay ? 'yes' : 'no'}` : ''}`);
+    const cartClick = desk.checks.find((check) => check.id === 'cart-click');
+    if (cartClick) lines.push(`CART CLICK: ${cartClick.ok ? 'bag incremented' : 'bag did not increment'}`);
   }
   if (desk.failed?.length) {
     const labels = desk.checks.filter((check) => !check.ok).map((check) => check.label);
@@ -226,6 +263,12 @@ export function chipsFromDeskProbes(checks = []) {
       label: 'Fill the product catalog',
       value: 'Put named products in products.json and on the page. Preview is the proof.',
       priority: 105,
+    },
+    'cart-click': {
+      id: 'gap-cart-click',
+      label: 'Fix Add to Cart',
+      value: 'Add to Cart is on the page but the bag does not increment. Fix the running Preview.',
+      priority: 107,
     },
     'calc-display': {
       id: 'gap-calc',

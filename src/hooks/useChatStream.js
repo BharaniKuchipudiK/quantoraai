@@ -21,7 +21,7 @@ import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.
 import { inferStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
-import { buildDeskContextPacket } from '../lib/studio-desk-context.js';
+import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -130,6 +130,7 @@ export function useChatStream({
   vfs,
   isWorkspaceMode,
   deskJob = null,
+  liveDeskProbe = null,
   messages,
   setLastPrompt,
   sessionContext,
@@ -360,12 +361,12 @@ export function useChatStream({
       hasDeskFiles: deskFiles,
       studioDomain,
     });
-    const deskPacket = buildDeskContextPacket({
+    const deskPacket = mergeLiveDeskProbe(buildDeskContextPacket({
       vfs,
       job: deskJob,
       html: pickPreviewEntry(vfs) || canvasCode || '',
       studioDomain,
-    });
+    }), liveDeskProbe);
     const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     const turnDomain = isCodingRequest

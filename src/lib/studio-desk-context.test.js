@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   buildDeskContextPacket,
   chipsFromDeskProbes,
+  deskChecksRegressed,
   formatDeskContextForPrompt,
+  mergeLiveDeskProbe,
   probeRunningDesk,
   sanitizeDeskContext,
 } from './studio-desk-context.js';
@@ -85,4 +87,28 @@ test('sanitize drops oversized untrusted fields', () => {
   assert.equal(clean.files.length, 24);
   assert.equal(clean.facts.photoCount, 3);
   assert.equal(clean.facts.hasCart, true);
+});
+
+test('a live cart click is merged into Preview checks', () => {
+  const packet = buildDeskContextPacket({
+    html: shopHtml,
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
+    vfs: {
+      'index.html': { content: shopHtml, language: 'html' },
+      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
+    },
+  });
+  const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: false });
+  assert.equal(merged.facts.bagIncremented, false);
+  assert.ok(merged.checks.some((check) => check.id === 'cart-click' && check.ok === false));
+  assert.ok(chipsFromDeskProbes(merged.checks).some((chip) => chip.id === 'gap-cart-click'));
+  assert.match(formatDeskContextForPrompt(merged), /CART CLICK: bag did not increment/);
+});
+
+test('probes regress only when a passing check starts failing', () => {
+  const before = [{ id: 'photos', ok: true }, { id: 'cart', ok: false }];
+  const after = [{ id: 'photos', ok: false }, { id: 'cart', ok: false }, { id: 'currency', ok: false }];
+  assert.equal(deskChecksRegressed(before, after), true);
+  assert.equal(deskChecksRegressed(before, [{ id: 'photos', ok: true }, { id: 'cart', ok: true }]), false);
+  assert.equal(deskChecksRegressed(before, [{ id: 'currency', ok: false }]), true);
 });

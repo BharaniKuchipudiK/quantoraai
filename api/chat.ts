@@ -402,7 +402,7 @@ export default async function handler(req: any, res: any) {
       message,
       deskBlock,
       isRefine && previewCode
-        ? `CURRENT RUNNING PREVIEW (source of truth — return the FULL updated document in a \`\`\`html block after a short explanation; do not claim a change unless the HTML contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
+        ? `CURRENT RUNNING PREVIEW (source of truth — patch one existing file with filepath=, or return the full HTML document in a \`\`\`html block after a short explanation; do not claim a change unless the fenced file contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
         : '',
     ].filter(Boolean).join('\n\n');
 
