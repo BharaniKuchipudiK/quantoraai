@@ -22,7 +22,7 @@ import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
-import { buildDeskContextPacket } from '../lib/studio-desk-context.js';
+import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
 import { diffVfsReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
@@ -477,6 +477,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [vfs, setVfs] = useState({});
   const [deskReview, setDeskReview] = useState([]);
   const [deskJob, setDeskJob] = useState(null);
+  const [liveDeskProbe, setLiveDeskProbe] = useState(null);
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -515,12 +516,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [studioDomain, handleCreateNewChat, setStudioDomain]);
 
   const handleHealedPreview = useCallback((healedHtml) => {
-    const next = writeHealedPreviewToVfs(vfs, healedHtml);
+    const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob);
     if (!next.wrote) return;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
-  }, [vfs]);
+  }, [vfs, deskJob]);
 
   useEffect(() => {
     if (!vfsLooksLikeShop(vfs)) return;
@@ -668,7 +669,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
     }
 
-    const assembled = applyWorkspaceFromChat(rawText, vfs);
+    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob);
+    if (assembled.rejected) return;
     if (assembled.code) {
       setCanvasVfs(assembled.vfs);
       setCanvasCode(assembled.code);
@@ -951,6 +953,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     vfs,
     isWorkspaceMode,
     deskJob,
+    liveDeskProbe,
     messages,
     setLastPrompt,
     sessionContext: projectContext,
@@ -1153,17 +1156,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
-  const deskPacket = buildDeskContextPacket({
+  const deskPacket = mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,
     job: deskJob,
     html: previewRunCode,
     studioDomain,
-  });
+  }), liveDeskProbe);
   const photosMissing = Boolean(previewRunCode)
     && deskPacket?.facts?.shop
     && (!deskPacket.facts.hasPhotos || deskPacket.facts.hasDistinctPhotos === false);
   const shopUiMissing = Boolean(deskPacket?.facts?.shop)
     && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
+
+  useEffect(() => {
+    if (!previewRunCode) setLiveDeskProbe(null);
+  }, [previewRunCode]);
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
@@ -1868,7 +1875,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs);
+        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob);
+        if (assembled.rejected) return;
         const parsedVfs = assembled.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
           || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '');
@@ -3624,6 +3632,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       onVerificationStatusChange={setPreviewRunStatus}
                       jobCard={deskJob}
                       onHealedPreview={handleHealedPreview}
+                      onLiveDeskProbe={setLiveDeskProbe}
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}
                       officeKind={detectOfficeIntent({ messages })}

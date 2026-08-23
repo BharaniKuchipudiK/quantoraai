@@ -13,6 +13,7 @@ import {
 } from '../lib/preview-utils.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
+import { vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
@@ -67,6 +68,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   verifyBrief = '',
   jobCard = null,
   onHealedPreview,
+  onLiveDeskProbe,
 }, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -109,6 +111,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   useEffect(() => { jobCardRef.current = jobCard; }, [jobCard]);
   const onHealedPreviewRef = useRef(onHealedPreview);
   onHealedPreviewRef.current = onHealedPreview;
+  const onLiveDeskProbeRef = useRef(onLiveDeskProbe);
+  onLiveDeskProbeRef.current = onLiveDeskProbe;
   const autoJobHealRef = useRef(false);
   const attemptRef = useRef(0);
   const healingRef = useRef(false);
@@ -172,16 +176,21 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, vfs), origin);
+    const files = vfsRef.current;
+    let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, files), origin);
+    if (vfsLooksLikeShop(files) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
+      preparedHtml = injectShopCommerceUi(preparedHtml).html;
+    }
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
-  }, [vfs]);
+  }, []);
+  const pushHtmlToEmbedRef = useRef(pushHtmlToEmbed);
+  pushHtmlToEmbedRef.current = pushHtmlToEmbed;
 
   useEffect(() => {
     setCurrentCode(code || '');
     setStatus(code ? 'running' : 'clean');
     setAttempt(0);
     setLastError(null);
-    setEmbedReady(false);
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
@@ -410,6 +419,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       if (d.kind === 'embed-ready') {
         embedReadyRef.current = true;
         setEmbedReady(true);
+        if (currentCodeRef.current) pushHtmlToEmbedRef.current?.(currentCodeRef.current);
         return;
       }
       if (d.kind === 'preview-close-request') {
@@ -422,6 +432,13 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       }
       if (d.kind === 'error') {
         handleRuntimeError(String(d.message || 'Runtime error'));
+        return;
+      }
+      if (d.kind === 'shop-probe') {
+        onLiveDeskProbeRef.current?.({
+          hasCart: d.hasCart === true,
+          bagIncremented: d.bagIncremented === true,
+        });
         return;
       }
       if (d.kind === 'loaded') {
@@ -734,7 +751,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       {previewWarmingOverlay}
       <iframe
         ref={iframeRef}
-        key={`${attempt}-${embedSrc}-${String(currentCode).length}`}
+        key={`${attempt}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
         onError={handleEmbedFrameError}

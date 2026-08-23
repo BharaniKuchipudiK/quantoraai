@@ -123,6 +123,7 @@ test("refine mode uses communication layer before code", () => {
   assert.match(prompt, /COMMUNICATION LAYER/);
   assert.match(prompt, /REFINE \/ ITERATE MODE/);
   assert.match(prompt, /You MUST emit that HTML block/);
+  assert.match(prompt, /filepath=/);
   assert.match(prompt, /LIVE PREVIEW FACTS are present/);
   assert.match(prompt, /What do you think/);
 });

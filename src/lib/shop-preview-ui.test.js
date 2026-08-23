@@ -14,6 +14,11 @@ test('a boutique page without cart or currency gets both in Preview HTML', () =>
   assert.equal(previewHtmlHasAddToCartControl(result.html), true);
   assert.match(result.html, /USD/);
   assert.match(result.html, /Add to Cart/);
+  assert.match(result.html, /Bag 0/);
+  assert.match(result.html, /data-quantora-bag/);
+  assert.match(result.html, /USD:'\$'/);
+  assert.doesNotMatch(result.html, /USD:'<\/html>/);
+  assert.match(result.html, /addEventListener\('click'/);
 });
 
 test('a shop that already has currency and cart is left alone', () => {
