@@ -10,7 +10,7 @@ function beat(id, label, value, priority = 0) {
 function chipsFromDeskChecks(checks = []) {
   if (!Array.isArray(checks) || !checks.length) return [];
   const beats = {
-    photos: beat('gap-photos', 'Add real product photos', 'Put real <img src="https://images.unsplash.com/..."> photos on every product card in the running Preview. Do not say images are done until Preview shows photos.', 108),
+    photos: beat('gap-photos', 'Add real product photos', 'Put a different real photo on every product card in the running Preview. Repeating one image on the whole catalog is not done.', 108),
     cart: beat('gap-cart', 'Add to Cart on Preview', 'Put a working Add to Cart control on the running page. Do not say it is done unless Preview shows it.', 107),
     currency: beat('gap-currency', 'Add a currency converter', 'Put a currency converter on the running Preview. Do not say it is done unless Preview shows it.', 106),
     catalog: beat('gap-catalog', 'Fill the product catalog', 'Put named products in products.json and on the page. Preview is the proof.', 105),

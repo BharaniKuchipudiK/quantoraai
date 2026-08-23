@@ -77,3 +77,27 @@ test('products.json without image URLs gets catalog photos', () => {
   assert.equal(catalog.changed, true);
   assert.match(catalog.text, /images\.unsplash\.com/);
 });
+
+test('cloned Unsplash URLs on every card become distinct photos', () => {
+  const clone = 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80';
+  const html = `<!DOCTYPE html><html><body>
+    <div class="product-card"><img src="${clone}" alt="Uppada"><button>Add to Cart</button></div>
+    <div class="product-card"><img src="${clone}" alt="Mangalagiri"><button>Add to Cart</button></div>
+    <div class="product-card"><img src="${clone}" alt="Kanjeevaram"><button>Add to Cart</button></div>
+  </body></html>`;
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, true);
+  const ids = [...new Set([...result.html.matchAll(/photo-[\w-]+/gi)].map((match) => match[0]))];
+  assert.ok(ids.length >= 3, `expected 3 distinct photos, got ${ids.join(',')}`);
+});
+
+test('products.json that repeats one image URL gets a unique photo per item', () => {
+  const clone = 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80';
+  const catalog = injectProductCatalogImages(JSON.stringify([
+    { id: 'a', name: 'Uppada', image: clone },
+    { id: 'b', name: 'Mangalagiri', image: clone },
+  ]));
+  assert.equal(catalog.changed, true);
+  const parsed = JSON.parse(catalog.text);
+  assert.notEqual(parsed[0].image, parsed[1].image);
+});

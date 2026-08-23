@@ -13,7 +13,7 @@ import {
 const shopHtml = `<!DOCTYPE html><html><body>
 <header>Aaranya</header>
 <img src="https://images.unsplash.com/photo-silk" alt="Dharmavaram">
-<div class="product-card"><button>Add to Cart</button><span class="price">INR 18000</span></div>
+<div class="product-card"><img src="https://images.unsplash.com/photo-1610030469983-98e550d6193c" alt="Uppada"><button>Add to Cart</button><span class="price">INR 18000</span></div>
 <select id="quantora-currency"><option>INR</option><option>USD</option></select>
 <script data-quantora-shop-ui="script"></script>
 </body></html>`;
@@ -111,4 +111,23 @@ test('probes regress only when a passing check starts failing', () => {
   assert.equal(deskChecksRegressed(before, after), true);
   assert.equal(deskChecksRegressed(before, [{ id: 'photos', ok: true }, { id: 'cart', ok: true }]), false);
   assert.equal(deskChecksRegressed(before, [{ id: 'currency', ok: false }]), true);
+});
+
+test('a catalog that repeats one photo fails the photos check', () => {
+  const clone = 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80';
+  const html = `<!DOCTYPE html><html><body>
+    <div class="product-card"><img src="${clone}" alt="Uppada"><button>Add to Cart</button></div>
+    <div class="product-card"><img src="${clone}" alt="Mangalagiri"><button>Add to Cart</button></div>
+  </body></html>`;
+  const probed = probeRunningDesk({
+    html,
+    vfs: {
+      'index.html': { content: html },
+      'products.json': { content: '[{"id":"a","name":"Uppada"},{"id":"b","name":"Mangalagiri"}]' },
+    },
+    job: { purpose: 'A shop website', mustWork: ['Product images are real photos'] },
+  });
+  assert.equal(probed.facts.hasPhotos, true);
+  assert.equal(probed.facts.hasDistinctPhotos, false);
+  assert.ok(probed.checks.some((check) => check.id === 'photos' && check.ok === false));
 });

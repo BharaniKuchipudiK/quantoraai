@@ -1163,7 +1163,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }), liveDeskProbe);
   const photosMissing = Boolean(previewRunCode)
     && deskPacket?.facts?.shop
-    && !deskPacket.facts.hasPhotos;
+    && (!deskPacket.facts.hasPhotos || deskPacket.facts.hasDistinctPhotos === false);
   const shopUiMissing = Boolean(deskPacket?.facts?.shop)
     && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
 
