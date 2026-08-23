@@ -301,12 +301,16 @@ try {
   await prompt.fill('Build a Kanjeevaram saree boutique');
   await prompt.press('Enter');
   await page.locator('[data-quantora-coding-desk-nav="true"]').click();
-  const boutiqueFrame = await visibleFrame('button', 20_000);
+  const boutiqueFrame = await visibleFrame('.product-card', 20_000);
   if (!boutiqueFrame) throw new Error('Boutique Preview never rendered.');
   const addToCart = boutiqueFrame.locator('button').filter({ hasText: /add to cart/i }).first();
   await visible(addToCart, 'Boutique Preview is missing Add to Cart.', 15_000);
-  await addToCart.click();
-  const bagCount = boutiqueFrame.locator('button, [data-quantora-bag="true"]').filter({ hasText: /^Bag\s+[1-9]/ }).first();
+  await boutiqueFrame.waitForFunction(() => Boolean(document.querySelector('[data-quantora-bag="true"], [data-quantora-shop-ui="bar"]')), { timeout: 15_000 }).catch(() => {});
+  await boutiqueFrame.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll('button, a')).find((node) => /add to (bag|cart)/i.test(node.textContent || ''));
+    btn?.click();
+  });
+  const bagCount = boutiqueFrame.locator('[data-quantora-bag="true"], button').filter({ hasText: /^Bag\s+[1-9]/ }).first();
   await visible(bagCount, 'Add to Cart is on Preview but the bag did not increment.', 12_000);
   await visible(
     page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(),

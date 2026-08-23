@@ -13,6 +13,7 @@ import {
 } from '../lib/preview-utils.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
+import { vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
@@ -175,7 +176,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, vfs), origin);
+    let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, vfs), origin);
+    if (vfsLooksLikeShop(vfs) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
+      preparedHtml = injectShopCommerceUi(preparedHtml).html;
+    }
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
   }, [vfs]);
 
@@ -184,7 +188,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setStatus(code ? 'running' : 'clean');
     setAttempt(0);
     setLastError(null);
-    setEmbedReady(false);
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
