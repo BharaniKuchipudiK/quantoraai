@@ -32,7 +32,7 @@ Track what shipped, what’s in progress, and what’s next. Architecture detail
 - [x] Vision attachments (Gemini routing, Build-mode bypass) — PR #66
 - [x] Arena “Prefer this” + auto-select learning — PR #66
 - [x] Session memory client-side capture (clarify answers) — PR #66
-- [x] Collapsible studio header (`StudioChromeBar`)
+- [ ] Collapsible studio header — `StudioChromeBar` was written but never rendered; component removed
 - [x] Choice cards protocol (`quantora-choices` markers)
 - [x] Real admin analytics (`ProductAnalyticsPanel`)
 - [x] Floating choice card above prompt — PR #71
@@ -185,8 +185,8 @@ Captured between sessions — not yet scheduled.
 **v0.3 shipped (2026-08-13):**
 - [x] `src/lib/domain-anticipation.js` — client-side continue chip enrichment per domain
 - [x] API domain continue hints in `studio-continues.ts` + `conversation-policy.ts`
-- [x] `StudioJourneyStrip` — Captured / In progress / Done in Studio header area
-- [x] `StudioIdleReturnBanner` — welcome back after 24h idle
+- [ ] Captured / In progress / Done strip in the Studio header — `StudioJourneyStrip` was written but never rendered; component removed
+- [ ] Welcome back after 24h idle — `StudioIdleReturnBanner` was written but never rendered; component removed
 
 **v0.4 candidates:**
 - [ ] Server-side event log (`session_signals` table)
