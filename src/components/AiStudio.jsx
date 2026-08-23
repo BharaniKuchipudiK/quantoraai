@@ -7,8 +7,7 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 
 import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import PlainCodeBlock from './PlainCodeBlock.jsx';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
@@ -1090,9 +1089,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               <Play size={12} fill="currentColor" /> Preview
             </button>
           )}
-          <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', fontSize: '0.85rem', paddingTop: '30px' }} {...props}>
+          <PlainCodeBlock language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', fontSize: '0.85rem', paddingTop: '30px' }} {...props}>
             {rawCode}
-          </SyntaxHighlighter>
+          </PlainCodeBlock>
         </div>
       ) : (
         <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
@@ -1285,9 +1284,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return !inline && match ? (
-                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                    <PlainCodeBlock language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
                                       {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
+                                    </PlainCodeBlock>
                                   ) : (
                                     <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
                                   )
@@ -1359,9 +1358,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             code({node, inline, className, children, ...props}) {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return !inline && match ? (
-                                    <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
+                                    <PlainCodeBlock language={match[1]} PreTag="div" customStyle={{ borderRadius: '8px', margin: '10px 0', fontSize: '0.85rem' }} {...props}>
                                       {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
+                                    </PlainCodeBlock>
                                   ) : (
                                     <code style={{ background: 'rgba(128,128,128,0.2)', padding: '2px 5px', borderRadius: '4px', fontFamily: 'monospace' }} {...props}>{children}</code>
                                   )

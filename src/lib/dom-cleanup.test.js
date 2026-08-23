@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { getChatDisplayText } from './build-communication.js';
 
 const legacyInstallers = [
   'installSpecialistExperience',
@@ -57,6 +58,21 @@ test('one component renders the chat feed, so a fix cannot land on a dead copy',
 
   assert.deepEqual(renderers, ['AiStudio.jsx']);
   assert.equal(fs.existsSync(new URL('StudioChatFeed.jsx', components)), false);
+});
+
+test('the desk ships no syntax highlighter, because chat strips every fence before one could run', () => {
+  const components = new URL('../components/', import.meta.url);
+  const importers = fs.readdirSync(components)
+    .filter((name) => name.endsWith('.jsx') || name.endsWith('.tsx'))
+    .filter((name) => /react-syntax-highlighter/.test(fs.readFileSync(new URL(name, components), 'utf8')));
+
+  assert.deepEqual(importers, []);
+
+  const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  assert.equal('react-syntax-highlighter' in (pkg.dependencies || {}), false);
+
+  // The rule that makes highlighting unreachable, asserted next to its consequence.
+  assert.equal(getChatDisplayText('Here it is:\n\n```js\nconst a = 1;\n```'), 'Here it is:');
 });
 
 test('multi-file project preview is a React-owned runtime', () => {
