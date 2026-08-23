@@ -33,6 +33,7 @@ import {
   shouldShowStudySyllabusChips,
   STUDY_SYLLABUS_CHIPS,
   studySyllabusContinueSet,
+  studySyllabusHaystack,
 } from '../lib/study-syllabus-overlay.js';
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
@@ -1403,6 +1404,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
                           <StudyMarkdown
                             text={cleanText}
+                            topic={studySyllabusHaystack({ conversationContext, messages })}
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}

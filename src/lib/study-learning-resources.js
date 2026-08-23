@@ -3,8 +3,10 @@
  * not invented videos. A specific YouTube episode is only valid if a live
  * check in this session confirmed it.
  */
+import { studyPicturePromptHint } from './study-pictures.js';
+
 export function studyResourceLinks(topic = '') {
-  const query = String(topic || '').replace(/\s+/g, ' ').trim() || 'physics';
+  const query = String(topic || '').replace(/\s+/g, ' ').trim() || 'this topic';
   const encoded = encodeURIComponent(query);
   return [
     {
@@ -44,7 +46,7 @@ export function studyIcebreakerAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
     `Open ${label} with one true icebreaker and a picture tag.`,
-    'Write at most five short sentences. Put this tag on its own line: <quantora-study-picture kind="apple-tree" /> (use book-table, truck-car, canoe-dock, rocket, force-arrows, or ice-puck if that fits better).',
+    studyPicturePromptHint(label),
     'Do not invent image URLs or YouTube IDs. The tag is how Quantora draws the scene.',
     'Then STOP. Ask me to say “I’m with you” before any definition, table, or quiz.',
     'No leaderboard, points, or rank. Do not plan trips.',
@@ -54,8 +56,8 @@ export function studyIcebreakerAsk(topic) {
 export function studyLessonAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
-    `Teach ONE idea about ${label} in this message — not all three laws, not a chapter.`,
-    'Start with a <quantora-study-picture kind="..."> tag (apple-tree, book-table, truck-car, canoe-dock, rocket, force-arrows, or ice-puck).',
+    `Teach ONE idea about ${label} in this message — not a whole chapter.`,
+    studyPicturePromptHint(label),
     'Then at most 8 short lines: a title, one plain-language beat, one everyday scene pointing at the picture, and at most one short formula in $$...$$.',
     'No giant tables. No wall of LaTeX. No kiwi pep-talk.',
     'End with one question and: Write your attempt. I will wait.',

@@ -79,17 +79,59 @@ function PictureArt({ kind, isLight }) {
       </Frame>
     );
   }
+  if (kind === 'apple-tree') {
+    return (
+      <Frame isLight={isLight}>
+        <rect x="150" y="40" width="18" height="110" fill={ground} />
+        <circle cx="200" cy="78" r="36" fill="#16a34a" />
+        <circle cx="228" cy="148" r="14" fill="#dc2626" />
+        <circle cx="86" cy="150" r="22" fill={ink} opacity="0.9" />
+      </Frame>
+    );
+  }
+  if (kind === 'mystery-box') {
+    return (
+      <Frame isLight={isLight}>
+        <rect x="120" y="58" width="120" height="96" rx="10" fill={ground} />
+        <path d="M120 82 H240" stroke={ink} strokeWidth="4" />
+        <text x="180" y="124" textAnchor="middle" fill={isLight ? '#fff7ed' : '#1c1917'} fontSize="42" fontWeight="700" fontFamily="Georgia, serif">x</text>
+      </Frame>
+    );
+  }
+  if (kind === 'balance-scale') {
+    return (
+      <Frame isLight={isLight}>
+        <rect x="174" y="70" width="12" height="90" fill={ground} />
+        <rect x="70" y="68" width="220" height="8" rx="4" fill={ink} />
+        <rect x="64" y="76" width="70" height="36" rx="6" fill={ground} />
+        <rect x="226" y="76" width="70" height="36" rx="6" fill={ground} />
+        <text x="99" y="100" textAnchor="middle" fill={isLight ? '#fff7ed' : '#1c1917'} fontSize="18" fontWeight="700">x</text>
+        <text x="261" y="100" textAnchor="middle" fill={isLight ? '#fff7ed' : '#1c1917'} fontSize="16" fontWeight="700">15</text>
+      </Frame>
+    );
+  }
+  if (kind === 'number-line') {
+    return (
+      <Frame isLight={isLight}>
+        <path d="M40 110 H320" stroke={ground} strokeWidth="6" />
+        <polygon points="328,110 312,100 312,120" fill={ground} />
+        {[80, 140, 200, 260].map((x) => (
+          <rect key={x} x={x} y="98" width="4" height="24" fill={ink} />
+        ))}
+        <circle cx="200" cy="110" r="12" fill={ink} />
+      </Frame>
+    );
+  }
   return (
     <Frame isLight={isLight}>
-      <rect x="150" y="40" width="18" height="110" fill={ground} />
-      <circle cx="200" cy="78" r="36" fill="#16a34a" />
-      <circle cx="228" cy="148" r="14" fill="#dc2626" />
-      <circle cx="86" cy="150" r="22" fill={ink} opacity="0.9" />
+      <rect x="70" y="60" width="90" height="80" rx="12" fill={ground} />
+      <circle cx="230" cy="100" r="36" fill={ink} />
+      <rect x="150" y="130" width="60" height="18" rx="6" fill={isLight ? '#9a3412' : '#fed7aa'} />
     </Frame>
   );
 }
 
-export default function StudyPicture({ kind = 'apple-tree', caption = '', isLight = false }) {
+export default function StudyPicture({ kind = 'concept-card', caption = '', isLight = false }) {
   const label = studyPictureCaption(kind, caption);
   return (
     <figure

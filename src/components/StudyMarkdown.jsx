@@ -10,11 +10,12 @@ import { decorateStudyMessage, splitStudySegments } from '../lib/study-pictures.
 
 export default function StudyMarkdown({
   text = '',
+  topic = '',
   isLight = false,
   textColor,
   components,
 }) {
-  const segments = splitStudySegments(decorateStudyMessage(text));
+  const segments = splitStudySegments(decorateStudyMessage(text, topic), topic);
   const waiting = /i[’']m with you|write your attempt|i will wait/i.test(String(text || ''));
 
   return (
