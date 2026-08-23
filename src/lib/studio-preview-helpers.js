@@ -3,6 +3,10 @@
 import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
 import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
+import {
+  injectMissingShopPhotos,
+  injectProductCatalogImages,
+} from './preview-images.js';
 
 function isHtmlDocument(source = '') {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
@@ -44,13 +48,48 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}) {
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
   );
-  const didUpdate = Object.keys(assembled.vfs).length > 0 && Boolean(assembled.code);
+  const ensured = ensureShopPhotosInVfs(assembled.vfs);
+  const vfs = ensured.vfs;
+  const code = pickPreviewEntry(vfs) || assembled.code;
+  const didUpdate = Object.keys(vfs).length > 0 && Boolean(code);
   return {
-    vfs: assembled.vfs,
-    code: assembled.code,
+    vfs,
+    code,
     didUpdate,
     reopenDesk: hadProject && didUpdate,
   };
+}
+
+export function vfsLooksLikeShop(vfs = {}) {
+  if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
+  const html = pickPreviewEntry(vfs);
+  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|kanjeevaram|catalog|atelier|priceCents)\b/i.test(html);
+}
+
+export function userAskedForPreviewPhotos(text = '') {
+  return /\b(no images|images?|photos?|pictures?|visuals?)\b/i.test(String(text || ''));
+}
+
+export function ensureShopPhotosInVfs(vfs = {}) {
+  if (!vfsLooksLikeShop(vfs)) return { vfs, changed: false };
+  const next = { ...vfs };
+  let changed = false;
+  const htmlPath = pickPreviewEntryPath(next);
+  if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
+    const result = injectMissingShopPhotos(next[htmlPath].content);
+    if (result.injected && result.html !== next[htmlPath].content) {
+      next[htmlPath] = { ...next[htmlPath], content: result.html };
+      changed = true;
+    }
+  }
+  if (next['products.json'] && typeof next['products.json'].content === 'string') {
+    const catalog = injectProductCatalogImages(next['products.json'].content);
+    if (catalog.changed) {
+      next['products.json'] = { ...next['products.json'], content: catalog.text };
+      changed = true;
+    }
+  }
+  return { vfs: next, changed };
 }
 
 /** Preview runs the project, not the file currently open in the editor. */

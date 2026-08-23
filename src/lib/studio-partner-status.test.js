@@ -43,6 +43,18 @@ test('an open coding desk does not repeat that the preview exists', () => {
   }), null);
 });
 
+test('an open desk still says when Preview has no product photos', () => {
+  const status = resolveStudioPartnerStatus({
+    hasPreview: true,
+    lastAiText: 'I overhauled the image rendering system',
+    codingDeskOpen: true,
+    photosMissing: true,
+  });
+  assert.match(status.now, /Preview is running/);
+  assert.match(status.now, /photos are still missing/i);
+  assert.doesNotMatch(status.now, /no runnable preview/i);
+});
+
 test('errors stay honest and offer a retry, not fake success', () => {
   const status = resolveStudioPartnerStatus({
     lastAiIsError: true,

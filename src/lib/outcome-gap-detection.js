@@ -95,7 +95,16 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
     || studioDomain === 'education'
     || studioDomain === 'finance'
     || studioDomain === 'research';
-  if (wantsShop && !lifeAdvisor) {
+    if (wantsShop && !lifeAdvisor) {
+    const hasPhotoInAi = /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai);
+    if (!hasPhotoInAi) {
+      gaps.push(beat(
+        'gap-photos',
+        'Add real product photos',
+        'Put real <img src="https://images.unsplash.com/..."> photos on every product card. Do not use SVG empty frames. Do not say images are done until Preview shows photos.',
+        108,
+      ));
+    }
     if (!/\b(stripe|razorpay|payment gateway|pay online|checkout session)\b/i.test(chatWithoutCode)) {
       gaps.push(beat(
         'gap-payments',
@@ -112,12 +121,22 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', { officeKind
         95,
       ));
     }
-    if (!/\b(publish|vercel|go live|live url)\b/i.test(chatWithoutCode)) {
+    if (hasPhotoInAi && !/\b(publish|vercel|go live|live url)\b/i.test(chatWithoutCode)) {
       gaps.push(beat(
         'gap-publish',
         'Publish this site',
         'The site looks ready. Publish this website to Vercel and give me the live URL.',
         90,
+      ));
+    }
+  } else {
+    const wantsPhotos = /\b(images?|photos?|pictures?|visuals?)\b/i.test(userPrompt);
+    if (wantsPhotos && !lifeAdvisor && !/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(ai)) {
+      gaps.push(beat(
+        'gap-photos',
+        'Add real product photos',
+        'Put real <img src="https://images.unsplash.com/..."> photos on the page. Do not use SVG empty frames. Do not say images are done until Preview shows photos.',
+        108,
       ));
     }
   }

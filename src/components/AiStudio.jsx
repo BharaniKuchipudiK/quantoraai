@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopPhotosInVfs, userAskedForPreviewPhotos, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -11,11 +11,12 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
-import { resolveStudioPartnerStatus, studioPreviewRunLabel } from '../lib/studio-partner-status.js';
-import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady } from '../lib/studio-partner-status.js';
+import { buildStudioJobCard, studioJobCardLabel, jobNeedsProductPhotos } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
+import { previewHtmlHasRealPhotos } from '../lib/preview-images.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
@@ -1389,6 +1390,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           </ReactMarkdown>
                         )}
                       </div>
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && photosMissing && (assistantClaimsImagesReady(msg.text) || userAskedForPreviewPhotos(lastUserMessage?.text || '')) ? (
+                        <div
+                          data-quantora-preview-honesty="true"
+                          style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
+                        >
+                          Preview still has no product photos. The gold frames on the desk are not images. Ask again, or tap Add real product photos.
+                        </div>
+                      ) : null}
 
                       {/* Render Dedicated Office Download Card */}
                       {msg.officeAttachment && (
@@ -1819,8 +1828,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '');
 
         if (!previewable) {
+          const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
+          if (userAskedForPreviewPhotos(userPrompt) && vfsLooksLikeShop(vfs)) {
+            const ensured = ensureShopPhotosInVfs(vfs);
+            if (ensured.changed) {
+              setDeskReview(diffVfsReview(vfs, ensured.vfs));
+              setVfs(ensured.vfs);
+              setWorkspaceCode(pickPreviewEntry(ensured.vfs));
+              setWorkspaceActiveTab('preview');
+              setIsWorkspaceMode(true);
+              setCodingDeskOpen(true);
+            }
+            return;
+          }
           const keepWorkspace = shouldKeepWorkspaceForPrompt({
-            prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
+            prompt: userPrompt,
             hasWorkspace: isWorkspaceMode || canvasOpen,
             officeKind: detectOfficeIntent({ messages }),
           });
@@ -1832,11 +1854,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           setDeskReview(diffVfsReview(vfs, parsedVfs));
-           setVfs(parsedVfs);
+           const shopVfs = ensureShopPhotosInVfs(parsedVfs).vfs;
+           setDeskReview(diffVfsReview(vfs, shopVfs));
+           setVfs(shopVfs);
            setDeskJob((prev) => buildStudioJobCard({
              brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-             vfs: parsedVfs,
+             vfs: shopVfs,
              existing: prev,
            }));
            setWorkspaceCorrelationId(lastMsg.correlationId || null);
@@ -1846,7 +1869,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
              fileCount: Object.keys(parsedVfs).length,
              detailCode: 'runnable-files-present',
            });
-           setWorkspaceCode(assembled.code || pickPreviewEntry(parsedVfs));
+           setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
            if (assembled.reopenDesk) setCodingDeskOpen(true);
@@ -1855,7 +1878,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               if (code) {
               setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
-              const nextVfs = { [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
+              const nextVfs = ensureShopPhotosInVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } }).vfs;
               setDeskReview(diffVfsReview(vfs, nextVfs));
               setVfs(nextVfs);
               setDeskJob((prev) => buildStudioJobCard({
@@ -1909,6 +1932,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
+  const photosMissing = jobNeedsProductPhotos(deskJob) && Boolean(previewRunCode) && !previewHtmlHasRealPhotos(previewRunCode);
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -1921,6 +1945,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
     codingDeskOpen,
+    photosMissing,
   });
   const studioMission = deriveStudioMission({
     conversationContext,

@@ -179,6 +179,13 @@ try {
     throw new Error('Calculator Preview was missing a calculator job card.');
   }
   await visible(page.locator('[data-quantora-publish="true"]').first(), 'A running website desk did not offer Publish.');
+  const partner = page.locator('[data-quantora-partner-status="true"]').first();
+  if (await partner.isVisible().catch(() => false)) {
+    const partnerText = (await partner.innerText()).trim();
+    if (/no runnable preview/i.test(partnerText)) {
+      throw new Error('Chat said there is no Preview while the calculator was running.');
+    }
+  }
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 

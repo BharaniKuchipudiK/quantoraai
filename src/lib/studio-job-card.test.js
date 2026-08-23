@@ -4,6 +4,7 @@ import {
   buildStudioJobCard,
   formatJobCardForRepair,
   formatJobCardForVerify,
+  jobNeedsProductPhotos,
   studioJobCardLabel,
 } from './studio-job-card.js';
 
@@ -42,4 +43,6 @@ test('a boutique brief becomes a shop job that requires real photos', () => {
   const job = buildStudioJobCard({ brief: 'build a website for an Indian ethnic saree & couture boutique' });
   assert.equal(job.purpose, 'A shop website');
   assert.match(job.mustWork.join(' '), /photos/i);
+  assert.equal(jobNeedsProductPhotos(job), true);
+  assert.equal(jobNeedsProductPhotos(buildStudioJobCard({ brief: 'Build me a simple calculator' })), false);
 });

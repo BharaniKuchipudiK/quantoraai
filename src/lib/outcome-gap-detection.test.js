@@ -10,7 +10,8 @@ test('a boutique website reply without payments or shipping gets those follow-up
   const labels = gaps.map((gap) => gap.label);
   assert.ok(labels.includes('Add a payment gateway'));
   assert.ok(labels.includes('Domestic or international?'));
-  assert.ok(labels.includes('Publish this site'));
+  assert.ok(labels.includes('Add real product photos'));
+  assert.equal(labels.includes('Publish this site'), false);
 });
 
 test('commerce chips still appear when the model omitted quantora-continues', () => {
@@ -21,6 +22,15 @@ test('commerce chips still appear when the model omitted quantora-continues', ()
   const chips = injectGapContinues(null, gaps);
   assert.ok(chips.items.some((item) => /payment/i.test(item.label)));
   assert.ok(chips.items.some((item) => /Domestic or international/i.test(item.label)));
+});
+
+test('a boutique with real product photos may offer Publish', () => {
+  const gaps = detectOutcomeGaps(
+    'website for my saree boutique',
+    'Built.\n```html\n<img src="https://images.unsplash.com/photo-silk" alt="saree">\n```',
+  );
+  assert.ok(gaps.some((gap) => gap.label === 'Publish this site'));
+  assert.equal(gaps.some((gap) => gap.label === 'Add real product photos'), false);
 });
 
 test('Travel missing ratings and links asks for live Places stays, not invented URLs', () => {

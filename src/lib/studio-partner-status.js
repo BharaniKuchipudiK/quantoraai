@@ -15,6 +15,7 @@ export function resolveStudioPartnerStatus({
   officeKind = null,
   studioDomain = null,
   codingDeskOpen = false,
+  photosMissing = false,
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
@@ -52,6 +53,16 @@ export function resolveStudioPartnerStatus({
         next: continueLabel
           ? `Next: ${continueLabel}. Or tell me which part to change.`
           : 'Next: download the file, or tell me which slide or section to change.',
+      };
+    }
+    if (photosMissing) {
+      return {
+        now: codingDeskOpen
+          ? 'Preview is running. Product photos are still missing.'
+          : 'The app is ready, but product photos are still missing.',
+        next: continueLabel && !/publish this site/i.test(continueLabel)
+          ? `Next: ${continueLabel}.`
+          : 'Ask me to put real photos on the catalog — not empty frames.',
       };
     }
     if (codingDeskOpen) return null;
@@ -100,4 +111,8 @@ export function studioPreviewRunLabel(status) {
   if (value === 'degraded') return 'Preview is running — styling may be incomplete';
   if (value === 'failed') return 'Preview failed — the page did not run';
   return '';
+}
+
+export function assistantClaimsImagesReady(text = '') {
+  return /\b(high-resolution|high-definition|overhauled the image|product cards now|visual illustrations|studio visuals|textile visuals|images are (now |all )?ready|catalog to include visual)\b/i.test(String(text || ''));
 }
