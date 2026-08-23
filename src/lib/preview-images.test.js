@@ -46,6 +46,19 @@ test('a CSS-only boutique still gets a collection photo', () => {
   assert.match(result.html, /<img\b[^>]*src="https:\/\/images\.unsplash\.com/);
 });
 
+test('nested catalog and stat cards do not get a repeating photo stack', () => {
+  const html = `<!DOCTYPE html><html><body><main>
+    <div class="catalog">${'<div class="card gold-card"><p>stat</p></div>'.repeat(8)}</div>
+    <div class="product-card"><p>Kanjeevaram</p></div>
+    <div class="product-card"><p>Uppada</p></div>
+  </main></body></html>`;
+  const stacked = html.replace(/<main>/, `<main>${'<img alt="Textile photo" style="width:100%;height:min(52vh,420px);object-fit:cover;display:block" src="https://images.unsplash.com/photo-1">'.repeat(12)}`);
+  const result = injectMissingShopPhotos(stacked);
+  const photos = result.html.match(/<img\b/gi) || [];
+  assert.ok(photos.length <= 6, `expected at most 6 photos, got ${photos.length}`);
+  assert.equal((result.html.match(/class="card gold-card"/g) || []).length, 8);
+});
+
 test('products.json without image URLs gets catalog photos', () => {
   const catalog = injectProductCatalogImages('[{"id":"a","name":"Kanjeevaram","priceCents":38000}]');
   assert.equal(catalog.changed, true);

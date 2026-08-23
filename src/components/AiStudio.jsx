@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopPhotosInVfs, userAskedForPreviewPhotos, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -11,12 +11,13 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
-import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady } from '../lib/studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
 import { buildStudioJobCard, studioJobCardLabel, jobNeedsProductPhotos } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import { previewHtmlHasRealPhotos } from '../lib/preview-images.js';
+import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from '../lib/shop-preview-ui.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
@@ -1144,6 +1145,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const photosMissing = Boolean(previewRunCode)
     && !previewHtmlHasRealPhotos(previewRunCode)
     && (jobNeedsProductPhotos(deskJob) || vfsLooksLikeShop(vfs));
+  const shopUiMissing = vfsLooksLikeShop(vfs)
+    && Boolean(previewRunCode)
+    && (!previewHtmlHasCurrencySwitcher(previewRunCode) || !previewHtmlHasAddToCartControl(previewRunCode));
 
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
@@ -1403,6 +1407,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
                           Preview still has no product photos. The gold frames on the desk are not images. Ask again, or tap Add real product photos.
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && shopUiMissing && (assistantClaimsShopUiReady(msg.text) || userAskedForShopDeskFix(lastUserMessage?.text || '')) ? (
+                        <div
+                          data-quantora-preview-honesty="shop-ui"
+                          style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
+                        >
+                          Preview still has no currency switcher or Add to Cart. Chat cannot add those until they appear on the desk.
                         </div>
                       ) : null}
 
@@ -1746,7 +1758,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing]);
 
   
   useEffect(() => {
@@ -1836,8 +1848,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (!previewable) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
-          if (userAskedForPreviewPhotos(userPrompt) && vfsLooksLikeShop(vfs)) {
-            const ensured = ensureShopPhotosInVfs(vfs);
+          if (vfsLooksLikeShop(vfs)) {
+            const ensured = ensureShopDeskInVfs(vfs);
             if (ensured.changed) {
               setDeskReview(diffVfsReview(vfs, ensured.vfs));
               setVfs(ensured.vfs);
@@ -1861,7 +1873,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           const shopVfs = ensureShopPhotosInVfs(parsedVfs).vfs;
+           const shopVfs = ensureShopDeskInVfs(parsedVfs).vfs;
            setDeskReview(diffVfsReview(vfs, shopVfs));
            setVfs(shopVfs);
            setDeskJob((prev) => buildStudioJobCard({
@@ -1885,7 +1897,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               if (code) {
               setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
-              const nextVfs = ensureShopPhotosInVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } }).vfs;
+              const nextVfs = ensureShopDeskInVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } }).vfs;
               setDeskReview(diffVfsReview(vfs, nextVfs));
               setVfs(nextVfs);
               setDeskJob((prev) => buildStudioJobCard({
@@ -1949,6 +1961,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     studioDomain,
     codingDeskOpen,
     photosMissing,
+    shopUiMissing,
   });
   const studioMission = deriveStudioMission({
     conversationContext,

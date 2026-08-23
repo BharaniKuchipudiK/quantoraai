@@ -55,6 +55,17 @@ test('an open desk still says when Preview has no product photos', () => {
   assert.doesNotMatch(status.now, /no runnable preview/i);
 });
 
+test('an open desk still says when currency and cart never reached Preview', () => {
+  const status = resolveStudioPartnerStatus({
+    hasPreview: true,
+    lastAiText: 'I have added an interactive multi-currency selector',
+    codingDeskOpen: true,
+    shopUiMissing: true,
+  });
+  assert.match(status.now, /Preview is running/);
+  assert.match(status.now, /Add to Cart/i);
+});
+
 test('errors stay honest and offer a retry, not fake success', () => {
   const status = resolveStudioPartnerStatus({
     lastAiIsError: true,

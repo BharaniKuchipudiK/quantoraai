@@ -11,7 +11,9 @@ import {
   runningPreviewCode,
   writeHealedPreviewToVfs,
   ensureShopPhotosInVfs,
+  ensureShopDeskInVfs,
   userAskedForPreviewPhotos,
+  userAskedForShopDeskFix,
 } from './studio-preview-helpers.js';
 
 const splitApp = `Here is the app.
@@ -194,11 +196,28 @@ test('a chat that only talks still gets shop photos when the desk already has a 
   assert.match(next.vfs['products.json'].content, /images\.unsplash\.com/);
 });
 
+test('currency and Add to Cart land on the boutique desk, not only in chat', () => {
+  assert.equal(userAskedForShopDeskFix('Please include a currency converter'), true);
+  assert.equal(userAskedForShopDeskFix('Please give an option to Add to Cart'), true);
+  const vfs = {
+    'index.html': {
+      content: '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card">Silk</div></main></body></html>',
+      language: 'html',
+    },
+    'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+  };
+  const next = ensureShopDeskInVfs(vfs);
+  assert.match(next.vfs['index.html'].content, /Add to Cart/);
+  assert.match(next.vfs['index.html'].content, /USD/);
+  assert.match(next.vfs['index.html'].content, /quantora-currency|quantora-shop-ui/);
+});
+
 test('a calculator is not given a clothing catalog', () => {
   const vfs = {
     'index.html': { content: '<!DOCTYPE html><html><body><button class="key">7</button></body></html>', language: 'html' },
   };
-  const next = ensureShopPhotosInVfs(vfs);
+  const next = ensureShopDeskInVfs(vfs);
   assert.equal(next.changed, false);
   assert.doesNotMatch(next.vfs['index.html'].content, /unsplash/);
+  assert.doesNotMatch(next.vfs['index.html'].content, /Add to Cart/);
 });
