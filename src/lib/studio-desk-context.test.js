@@ -113,6 +113,52 @@ test('probes regress only when a passing check starts failing', () => {
   assert.equal(deskChecksRegressed(before, [{ id: 'currency', ok: false }]), true);
 });
 
+test('live Preview cart and currency win over a failed HTML regex check', () => {
+  const html = '<!DOCTYPE html><html><body><div class="product-card">saree boutique</div></body></html>';
+  const packet = buildDeskContextPacket({
+    html,
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
+    vfs: {
+      'index.html': { content: html },
+      'products.json': { content: '[{"id":"a","name":"Uppada"}]' },
+    },
+  });
+  assert.equal(packet.facts.hasCart, false);
+  assert.equal(packet.facts.hasCurrency, false);
+  const merged = mergeLiveDeskProbe(packet, {
+    hasCart: true,
+    hasCurrency: true,
+    photoCount: 2,
+    uniquePhotoCount: 2,
+    bagIncremented: true,
+  });
+  assert.equal(merged.facts.hasCart, true);
+  assert.equal(merged.facts.hasCurrency, true);
+  assert.equal(merged.facts.hasPhotos, true);
+  assert.ok(merged.checks.some((check) => check.id === 'cart' && check.ok === true));
+  assert.ok(merged.checks.some((check) => check.id === 'currency' && check.ok === true));
+  assert.ok(merged.checks.some((check) => check.id === 'photos' && check.ok === true));
+  const chips = chipsFromDeskProbes(merged.checks);
+  assert.equal(chips.some((chip) => chip.id === 'gap-cart'), false);
+  assert.equal(chips.some((chip) => chip.id === 'gap-currency'), false);
+  assert.equal(chips.some((chip) => chip.id === 'gap-photos'), false);
+});
+
+test('an older live probe without photo counts does not wipe HTML photo facts', () => {
+  const packet = buildDeskContextPacket({
+    html: shopHtml,
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
+    vfs: {
+      'index.html': { content: shopHtml, language: 'html' },
+      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
+    },
+  });
+  assert.equal(packet.facts.hasPhotos, true);
+  const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: true });
+  assert.equal(merged.facts.hasPhotos, true);
+  assert.ok(merged.checks.some((check) => check.id === 'photos' && check.ok === true));
+});
+
 test('a catalog that repeats one photo fails the photos check', () => {
   const clone = 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80';
   const html = `<!DOCTYPE html><html><body>
