@@ -4,6 +4,14 @@ import Header from './components/Header';
 import AuroraBackground from './components/AuroraBackground';
 import Footer from './components/Footer';
 import { createJourneyNode } from './lib/build-journey';
+import {
+  homeHrefForTab,
+  isIsolatedStudioPath,
+  isolatedStudioHref,
+  stashStudioPrefill,
+  tabFromLocation,
+  takeStudioPrefill,
+} from './lib/studio-isolation.js';
 
 /*
  * The heavy surfaces load on demand.
@@ -89,8 +97,16 @@ class ErrorBoundary extends React.Component {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('landing');
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [activeTab, setActiveTab] = useState(() => (
+    typeof window === 'undefined'
+      ? 'landing'
+      : tabFromLocation(window.location.pathname, window.location.search)
+  ));
+  const [showAuthModal, setShowAuthModal] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).has('signin');
+  });
   const [themeMode, setThemeMode] = useState('dark'); // 'light' | 'dark' | 'system'
 
   const [showCustomAccountInput, setShowCustomAccountInput] = useState(false);
@@ -150,7 +166,10 @@ export default function App() {
           try { localStorage.removeItem('quantora_user'); } catch (e) {}
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSessionReady(true);
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -182,6 +201,13 @@ export default function App() {
        */
       setUser(newUser);
       setShowAuthModal(false);
+      const next = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('next')
+        : '';
+      if (next === isolatedStudioHref()) {
+        window.location.assign(isolatedStudioHref());
+        return;
+      }
       setActiveTab('hub');
     } catch (error) {
       console.error("Error during secure login:", error);
@@ -197,8 +223,23 @@ export default function App() {
 
   const handleTabChange = (tabName) => {
     if (!user && tabName !== 'landing') {
+      if (typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) {
+        window.location.assign(`/?signin=1&next=${encodeURIComponent(isolatedStudioHref())}`);
+        return;
+      }
       setShowAuthModal(true);
       return;
+    }
+    if (typeof window !== 'undefined') {
+      const onDesk = isIsolatedStudioPath(window.location.pathname);
+      if (tabName === 'studio' && !onDesk) {
+        window.location.assign(isolatedStudioHref());
+        return;
+      }
+      if (tabName !== 'studio' && onDesk) {
+        window.location.assign(homeHrefForTab(tabName));
+        return;
+      }
     }
     setActiveTab(tabName);
   };
@@ -209,6 +250,7 @@ export default function App() {
   const handleStartBuild = (prompt) => {
     if (typeof prompt === 'string' && prompt.trim()) {
       setStudioPrefill({ id: Date.now(), text: prompt.trim() });
+      stashStudioPrefill(prompt.trim());
     }
     handleTabChange('studio');
   };
@@ -288,7 +330,23 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('quantora_canvas_nodes', JSON.stringify(dreamNodes));
   }, [dreamNodes]);
-  const [studioPrefill, setStudioPrefill] = useState(null);
+  const [studioPrefill, setStudioPrefill] = useState(() => takeStudioPrefill());
+
+  useEffect(() => {
+    if (!sessionReady || typeof window === 'undefined') return;
+    if (!isIsolatedStudioPath(window.location.pathname)) return;
+    if (!user) {
+      window.location.replace(`/?signin=1&next=${encodeURIComponent(isolatedStudioHref())}`);
+    }
+  }, [sessionReady, user]);
+
+  const openAuth = () => {
+    if (typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) {
+      window.location.assign(`/?signin=1&next=${encodeURIComponent(isolatedStudioHref())}`);
+      return;
+    }
+    setShowAuthModal(true);
+  };
 
   const handleSendToCanvas = (payload) => {
     const node = createJourneyNode(
@@ -302,7 +360,10 @@ export default function App() {
 
   const handleContinueInStudio = (node) => {
     const prompt = node?.studioPrompt || node?.brief || node?.title || '';
-    if (prompt) setStudioPrefill({ id: Date.now(), text: prompt });
+    if (prompt) {
+      setStudioPrefill({ id: Date.now(), text: prompt });
+      stashStudioPrefill(prompt);
+    }
     handleTabChange('studio');
   };
 
@@ -315,7 +376,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
-    <div className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}${isWorkspaceShell ? ' app-shell--workspace' : ''}`} style={{
+    <div
+      className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}${isWorkspaceShell ? ' app-shell--workspace' : ''}`}
+      data-quantora-isolated-desk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname) ? 'true' : 'false'}
+      style={{
       minHeight: '100dvh',
       height: isStudioShell || isFramedShell ? '100dvh' : 'auto',
       overflow: isStudioShell || isFramedShell ? 'hidden' : 'visible',
@@ -334,7 +398,7 @@ export default function App() {
         <LandingPage
           onLaunchStudio={() => handleTabChange('studio')}
           onStartBuild={handleStartBuild}
-          onOpenAuth={() => setShowAuthModal(true)}
+          onOpenAuth={openAuth}
           user={user}
           availableModels={availableModels}
           themeMode={themeMode}
@@ -350,7 +414,7 @@ export default function App() {
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
             availableModels={availableModels}
-            onOpenAuth={() => setShowAuthModal(true)}
+            onOpenAuth={openAuth}
             themeMode={themeMode}
             setThemeMode={setThemeMode}
             isLight={isLight}
@@ -389,14 +453,14 @@ export default function App() {
             {activeTab === 'hub' && (
               <WelcomeHub
                 user={user}
-                onNavigate={setActiveTab}
+                onNavigate={handleTabChange}
                 isLight={isLight}
               />
             )}
 
             {activeTab === 'studio' && (
               <AiStudio
-                onOpenAuth={() => setShowAuthModal(true)}
+                onOpenAuth={openAuth}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
                 availableModels={availableModels}
@@ -409,7 +473,7 @@ export default function App() {
                 isLight={isLight}
                 dreamNodes={dreamNodes}
                 setDreamNodes={setDreamNodes}
-                setActiveTab={setActiveTab}
+                setActiveTab={handleTabChange}
                 prefillPrompt={studioPrefill}
               />
             )}
@@ -543,6 +607,7 @@ export default function App() {
                     </div>
                   )}
                   {/* Google Login Component using a dynamic pill button matching the aesthetic */}
+                  {!(typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) ? (
                   <GoogleLogin
                     onSuccess={handleGoogleSuccess}
                     onError={handleGoogleError}
@@ -551,6 +616,9 @@ export default function App() {
                     text="signin"
                     size="large"
                   />
+                  ) : (
+                    <p style={{ color: '#a1a1aa' }}>Sign in from the home page so Google Sign-In can open.</p>
+                  )}
                 </div>
               )}
             </div>

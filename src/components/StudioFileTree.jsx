@@ -81,6 +81,7 @@ export default function StudioFileTree({
       </button>
       <button
         type="button"
+        data-quantora-studio-terminal-nav="true"
         onClick={() => onSelect('terminal')}
         style={rowStyle(activePath === 'terminal', isLight, textColor, subtextColor)}
       >

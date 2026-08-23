@@ -186,6 +186,25 @@ try {
       throw new Error('Chat said there is no Preview while the calculator was running.');
     }
   }
+
+  const isolation = await page.evaluate(() => ({
+    path: window.location.pathname,
+    isolated: window.crossOriginIsolated === true,
+  }));
+  if (!/\/desk\/?$/.test(isolation.path)) {
+    throw new Error(`Studio opened on ${isolation.path || '(none)'} instead of the isolated /desk page.`);
+  }
+  if (!isolation.isolated) {
+    throw new Error('Coding desk is not isolated, so Terminal and Git cannot run.');
+  }
+  await page.locator('[data-quantora-studio-terminal-nav="true"]').click();
+  const terminal = page.locator('[data-quantora-studio-terminal="true"]').first();
+  await visible(terminal, 'Terminal panel did not open.');
+  const terminalText = await terminal.innerText();
+  if (/cannot start on this page/i.test(terminalText)) {
+    throw new Error('Terminal still said it cannot start on the isolated desk.');
+  }
+  await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 
