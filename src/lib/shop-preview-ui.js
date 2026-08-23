@@ -134,6 +134,17 @@ function shopUiScript() {
 </script>`;
 }
 
+function shopUiBar() {
+  return `<div ${SHOP_UI_MARK}="bar" style="display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:10px 16px;background:#111;color:#f8f4e8;font-family:system-ui,sans-serif;font-size:14px"><label>Currency <select id="quantora-currency" style="margin-left:6px;padding:4px 8px;border-radius:8px"><option value="INR">INR</option><option value="USD">USD $</option><option value="SGD">SGD S$</option><option value="AUD">AUD A$</option><option value="AED">AED</option></select></label><button type="button" data-quantora-bag="true" style="padding:4px 10px;border:0;border-radius:999px;background:#f8f4e8;color:#111;font-weight:700">Bag 0</button></div>`;
+}
+
+function withWorkingCartClicks(html = '') {
+  return String(html).replace(/<(button|a)(\b[^>]*)>([^<]*?add to (?:bag|cart)[^<]*?)<\/\1>/gi, (full, tag, attrs, text) => {
+    if (/\bonclick\s*=/i.test(attrs)) return full;
+    return `<${tag}${attrs} onclick="var b=document.querySelector('[data-quantora-bag]');if(b){var n=parseInt(String(b.textContent).replace(/[^0-9]/g,''),10)||0;b.textContent='Bag '+(n+1);}">${text}</${tag}>`;
+  });
+}
+
 export function injectShopCommerceUi(html = '') {
   const source = String(html || '');
   if (!source) return { html: source, changed: false };
@@ -142,9 +153,16 @@ export function injectShopCommerceUi(html = '') {
   const hasCart = previewHtmlHasAddToCartControl(source);
   if (hasCurrency && hasCart) return { html: source, changed: false };
 
-  const snippet = shopUiScript();
-  if (/<\/body>/i.test(source)) {
-    return { html: source.replace(/<\/body>/i, `${snippet}</body>`), changed: true };
+  let next = source;
+  if (/<body[^>]*>/i.test(next)) {
+    next = next.replace(/<body[^>]*>/i, (m) => `${m}${shopUiBar()}`);
+  } else {
+    next = `${shopUiBar()}${next}`;
   }
-  return { html: source + snippet, changed: true };
+  next = withWorkingCartClicks(next);
+  const snippet = shopUiScript();
+  if (/<\/body>/i.test(next)) {
+    return { html: next.replace(/<\/body>/i, () => `${snippet}</body>`), changed: true };
+  }
+  return { html: next + snippet, changed: true };
 }

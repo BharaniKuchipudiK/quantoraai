@@ -15,6 +15,9 @@ test('a boutique page without cart or currency gets both in Preview HTML', () =>
   assert.match(result.html, /USD/);
   assert.match(result.html, /Add to Cart/);
   assert.match(result.html, /Bag 0/);
+  assert.match(result.html, /data-quantora-bag/);
+  assert.match(result.html, /USD:'\$'/);
+  assert.doesNotMatch(result.html, /USD:'<\/html>/);
   assert.match(result.html, /addEventListener\('click'/);
 });
 
