@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { diffVfsReview, lineDiffStats } from './studio-file-review.js';
+import { diffVfsReview, lineDiffStats, unifiedFileDiff, unifiedTreeDiff } from './studio-file-review.js';
 
 test('identical files produce no review rows', () => {
   const vfs = { 'src/App.jsx': { content: 'export default function App(){return 1}' } };
@@ -32,4 +32,63 @@ test('a follow-up that only changes App.jsx does not invent other files', () => 
   assert.equal(review.length, 1);
   assert.equal(review[0].path, 'src/App.jsx');
   assert.equal(review[0].added > 0 || review[0].removed > 0, true);
+});
+
+const before = [
+  'export default function App() {',
+  '  return (',
+  '    <main>',
+  '      <h1>Mission Control is alive</h1>',
+  '      <p>Docking bay clear.</p>',
+  '      <p>Fuel margin nominal.</p>',
+  '      <p>Crew roster locked.</p>',
+  '      <p>Telemetry is nominal.</p>',
+  '      <p>Heat shield green.</p>',
+  '    </main>',
+  '  );',
+  '}',
+].join('\n');
+const after = before.replace('Mission Control is alive', 'Mission Control is patched');
+
+test('a unified diff prints the real removed and added lines', () => {
+  const diff = unifiedFileDiff('src/App.jsx', before, after);
+  assert.equal(diff.exact, true);
+  assert.ok(diff.lines.includes('-      <h1>Mission Control is alive</h1>'));
+  assert.ok(diff.lines.includes('+      <h1>Mission Control is patched</h1>'));
+  assert.ok(diff.lines.some((line) => /^@@ -\d+,\d+ \+\d+,\d+ @@$/.test(line)));
+});
+
+test('a unified diff stays a hunk instead of dumping the whole file', () => {
+  const diff = unifiedFileDiff('src/App.jsx', before, after);
+  assert.ok(diff.lines.includes('       <p>Fuel margin nominal.</p>'));
+  assert.equal(diff.lines.some((line) => line.includes('Telemetry is nominal')), false);
+  assert.equal(diff.lines.some((line) => line.includes('Heat shield green')), false);
+});
+
+test('a deleted file diffs against /dev/null rather than vanishing', () => {
+  const diff = unifiedFileDiff('products.json', '[]', undefined);
+  assert.ok(diff.lines.includes('+++ /dev/null'));
+  assert.ok(diff.lines.includes('-[]'));
+});
+
+test('a file too long to align exactly says so instead of inventing hunks', () => {
+  const huge = Array.from({ length: 900 }, (_, index) => `line ${index}`).join('\n');
+  const diff = unifiedFileDiff('src/App.jsx', huge, `${huge}\nline 900`);
+  assert.equal(diff.exact, false);
+  assert.equal(diff.lines.some((line) => line.startsWith('@@')), false);
+  assert.match(diff.lines.join('\n'), /too large to diff exactly/i);
+});
+
+test('a tree diff names only the file that actually changed', () => {
+  const lines = unifiedTreeDiff(
+    { 'index.html': '<!doctype html>', 'src/App.jsx': before },
+    { 'index.html': '<!doctype html>', 'src/App.jsx': after },
+  );
+  assert.ok(lines.includes('diff --git a/src/App.jsx b/src/App.jsx'));
+  assert.equal(lines.some((line) => line.includes('index.html')), false);
+});
+
+test('a tree with no edits produces no diff lines', () => {
+  const tree = { 'src/App.jsx': before };
+  assert.deepEqual(unifiedTreeDiff(tree, tree), []);
 });
