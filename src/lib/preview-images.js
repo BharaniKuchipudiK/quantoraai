@@ -89,6 +89,77 @@ export function countRealPreviewPhotos(html = '') {
   return matches ? matches.length : 0;
 }
 
+export function photoIdentity(src = '') {
+  const raw = String(src || '').trim();
+  if (!raw) return '';
+  let href = raw;
+  try {
+    const parsed = new URL(raw, 'https://quantoraai.app');
+    if (parsed.pathname.includes('preview-image')) {
+      href = parsed.searchParams.get('u') || href;
+    }
+  } catch { /* keep href */ }
+  const photo = href.match(/photo-[\w-]+/i);
+  if (photo) return photo[0].toLowerCase();
+  return href.split('?')[0].toLowerCase();
+}
+
+export function uniqueShopPhotoIds(html = '') {
+  const ids = new Set();
+  String(html || '').replace(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)/gi, (_, src) => {
+    const id = photoIdentity(src);
+    if (id) ids.add(id);
+    return _;
+  });
+  return ids;
+}
+
+function productCardRe() {
+  return /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi;
+}
+
+function nextUnusedShopPhoto(used) {
+  const found = SHOP_PHOTOS.find((src) => !used.has(photoIdentity(src)));
+  const src = found || SHOP_PHOTOS[used.size % SHOP_PHOTOS.length];
+  used.add(photoIdentity(src));
+  return src;
+}
+
+function rewriteCardPhoto(inner, used) {
+  let first = true;
+  return String(inner || '').replace(/<img\b[^>]*>/gi, (tag) => {
+    if (!/\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(tag)) return tag;
+    if (!first) return tag;
+    first = false;
+    const src = (tag.match(/\bsrc\s*=\s*["']([^"']+)/i) || [])[1] || '';
+    const id = photoIdentity(src);
+    if (id && !used.has(id)) {
+      used.add(id);
+      return tag;
+    }
+    return tag.replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${nextUnusedShopPhoto(used)}"`);
+  });
+}
+
+/** One repeated Unsplash URL on every card is not a catalog. Give each card its own photo. */
+export function diversifyDuplicateShopPhotos(html = '') {
+  const source = String(html || '');
+  if (!source) return source;
+  const used = new Set();
+  let out = source.replace(productCardRe(), (full, tag, attrs, inner) => (
+    `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`
+  ));
+  out = out.replace(
+    /<(article|div|li)(\b[^>]*)>([\s\S]*?add to (?:bag|cart)[\s\S]*?)<\/\1>/gi,
+    (full, tag, attrs, inner) => {
+      if (/\b(?:product-card|product-item|product-tile|saree-card)\b/i.test(attrs)) return full;
+      if (!/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
+      return `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`;
+    },
+  );
+  return out;
+}
+
 function isTinyDecorativeSvg(svg) {
   const head = svg.slice(0, 280);
   const viewBox = head.match(/viewBox=["']0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)/i);
@@ -117,7 +188,7 @@ export function injectMissingShopPhotos(html = '') {
     return shopPhotoTag(index++);
   });
   out = out.replace(
-    /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi,
+    productCardRe(),
     (full, tag, attrs, inner) => {
       if (/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
       if (index >= MAX_SHOP_PHOTOS) return full;
@@ -130,7 +201,8 @@ export function injectMissingShopPhotos(html = '') {
   if (!previewHtmlHasRealPhotos(out) && /<\/body>/i.test(out)) {
     out = out.replace(/<\/body>/i, `${shopPhotoTag(index++, 'Collection photo')}</body>`);
   }
-  return { html: out, injected: out !== cleaned };
+  const diversified = diversifyDuplicateShopPhotos(out);
+  return { html: diversified, injected: diversified !== cleaned };
 }
 
 export function injectProductCatalogImages(raw = '') {
@@ -138,13 +210,17 @@ export function injectProductCatalogImages(raw = '') {
     const data = JSON.parse(String(raw || ''));
     const list = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : null);
     if (!list?.length) return { text: String(raw || ''), changed: false };
-    let index = 0;
+    const used = new Set();
     let changed = false;
     const next = list.map((item) => {
       if (!item || typeof item !== 'object') return item;
-      if (isAllowedPreviewImageUrl(item.image)) return item;
+      const id = photoIdentity(item.image);
+      if (isAllowedPreviewImageUrl(item.image) && id && !used.has(id)) {
+        used.add(id);
+        return item;
+      }
       changed = true;
-      return { ...item, image: SHOP_PHOTOS[index++ % SHOP_PHOTOS.length] };
+      return { ...item, image: nextUnusedShopPhoto(used) };
     });
     if (!changed) return { text: String(raw || ''), changed: false };
     const body = Array.isArray(data) ? next : { ...data, products: next };
