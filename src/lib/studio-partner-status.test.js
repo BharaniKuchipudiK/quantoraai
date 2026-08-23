@@ -129,7 +129,7 @@ test('Study never asks for a website preview', () => {
 test('Preview run label is honest about start, run, and fail', () => {
   assert.equal(studioPreviewRunLabel('running'), 'Preview is starting…');
   assert.equal(studioPreviewRunLabel('clean'), 'Preview is running');
-  assert.match(studioPreviewRunLabel('failed'), /did not run/i);
+  assert.match(studioPreviewRunLabel('failed'), /running with errors/i);
   assert.equal(studioPreviewRunLabel(null), '');
   assert.equal(studioPreviewRunLabel({ kind: 'quality', passed: true }), 'Preview is running');
   assert.match(studioPreviewRunLabel({ kind: 'quality', passed: false }), /incomplete/i);

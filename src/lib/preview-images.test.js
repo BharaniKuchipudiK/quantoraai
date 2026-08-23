@@ -39,6 +39,19 @@ test('a shop that already has photos is not rewritten into a different catalog',
   assert.equal(result.html, html);
 });
 
+test('gold frames still get photos when the hero already has one', () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg>`;
+  const html = `<!DOCTYPE html><html><body>
+    <img src="https://images.unsplash.com/photo-silk" alt="hero">
+    <div class="product-card">${svg}<p>Pure Silk</p></div>
+  </body></html>`;
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, true);
+  const photos = result.html.match(/<img\b/gi) || [];
+  assert.ok(photos.length >= 2);
+  assert.doesNotMatch(result.html, /<svg\b/);
+});
+
 test('a CSS-only boutique still gets a collection photo', () => {
   const html = '<!DOCTYPE html><html><body><main><div class="hero">Aaranya gold frame</div></main></body></html>';
   const result = injectMissingShopPhotos(html);

@@ -214,6 +214,15 @@ export function inlineVfsAssets(html, vfs = {}) {
     else out += tag;
   }
 
+  const catalog = vfsText(vfs, 'products.json');
+  if (catalog) {
+    const payload = JSON.stringify(catalog);
+    out = out.replace(
+      /fetch\(\s*(['"`])(?:\.\/|\/)?products\.json\1\s*\)/g,
+      `Promise.resolve(new Response(${payload},{headers:{'Content-Type':'application/json'}}))`,
+    );
+  }
+
   return out;
 }
 
@@ -292,13 +301,14 @@ export function usesTailwindCdn(html) {
 
 export function isCriticalResourceError(message) {
   const text = String(message || '');
-  return /Failed to load (SCRIPT|LINK):/i.test(text) && /tailwindcss|unpkg|jsdelivr|stripe/i.test(text);
+  return /Failed to load (SCRIPT|LINK):/i.test(text);
 }
 
-// Benign noise — broken hero images, etc. Must NOT suppress Tailwind/script load failures.
+// Benign noise — broken hero images, opaque-origin fetch, fonts. Must NOT
+// trigger a three-strike HTML rewrite while the boutique is already on screen.
 export function isIgnorableRuntimeError(message) {
   if (!message) return true;
   const text = String(message);
   if (isCriticalResourceError(text)) return false;
-  return /(?:^Script error\.?$|ResizeObserver loop|Non-Error promise rejection)/i.test(text);
+  return /(?:^Script error\.?$|ResizeObserver loop|Non-Error promise rejection|Unhandled promise rejection:.*(?:Failed to fetch|NetworkError|Load failed|products\.json)|Failed to load IMG:)/i.test(text);
 }
