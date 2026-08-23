@@ -349,6 +349,33 @@ try {
     'Follow-up dropped the rest of the project files.',
   );
 
+  // A patch that only reaches the iframe leaves the desk lying about its own
+  // files: the editor, ls and Git would still describe the pre-patch tree.
+  await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: 'src/App.jsx' }).first().click();
+  await visible(page.locator('[data-quantora-monaco="true"]').first(), 'Editor did not reopen after the patch.', 15_000);
+  await page.locator('[data-quantora-monaco-ready="true"]').first().waitFor({ state: 'attached', timeout: 15_000 });
+  await page.waitForFunction(() => (window.monaco?.editor?.getModels?.() || [])
+    .some((model) => model.getValue().includes('Mission Control is patched')), null, { timeout: 15_000 }).catch(() => {});
+  const patchedSource = await page.evaluate(() => (window.monaco?.editor?.getModels?.() || [])
+    .map((model) => model.getValue()).join('\n'));
+  if (!String(patchedSource).includes('Mission Control is patched')) {
+    throw new Error('Preview shows the patch but the desk editor still shows the old source.');
+  }
+
+  await page.locator('[data-quantora-studio-terminal-nav="true"]').click();
+  const patchedTerminalInput = page.locator('[data-quantora-studio-terminal-input="true"]').first();
+  await visible(patchedTerminalInput, 'Terminal input is missing after the patch.');
+  await patchedTerminalInput.fill('cat src/App.jsx');
+  await patchedTerminalInput.press('Enter');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('[data-quantora-studio-terminal="true"]')?.innerText || '';
+    return /Mission Control is patched/.test(panel) && !/running…/.test(panel);
+  }, null, { timeout: 10_000 }).catch(() => {});
+  const catText = await page.locator('[data-quantora-studio-terminal="true"]').first().innerText().catch(() => '');
+  if (!/Mission Control is patched/.test(catText)) {
+    throw new Error(`Terminal read the pre-patch file. Saw: ${String(catText).slice(-400)}`);
+  }
+
   await prompt.fill('Please include a currency converter');
   await prompt.press('Enter');
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
