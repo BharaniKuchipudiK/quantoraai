@@ -5,7 +5,14 @@ import {
   metadataFingerprint,
   providerFromId,
 } from './model-catalog.js';
+import { runModelCanary } from './model-canary.js';
 import {
+  MAX_CANARIES_PER_SCAN,
+  applyCanaryPromotion,
+  rankCanaryCandidates,
+} from './model-lifecycle.js';
+import {
+  clearModelRegistryCache,
   isModelStoreConfigured,
   readModelRegistry,
   writeModelEvents,
@@ -17,7 +24,62 @@ export function isAuthorizedModelScan(req) {
   return Boolean(secret && req.headers.authorization === `Bearer ${secret}`);
 }
 
-export async function scanModelCatalog() {
+async function promoteWithCanaries(registryRows, {
+  maxCanaries = MAX_CANARIES_PER_SCAN,
+  actor = 'auto-canary',
+} = {}) {
+  const candidates = rankCanaryCandidates(registryRows).slice(0, maxCanaries);
+  const summary = {
+    attempted: 0,
+    promoted: 0,
+    failed: 0,
+    skipped: 0,
+    models: [],
+  };
+
+  if (!candidates.length) return summary;
+
+  const updates = [];
+  const events = [];
+
+  for (const row of candidates) {
+    summary.attempted += 1;
+    const canary = await runModelCanary(row.id);
+    if (!canary.ok && !canary.results?.length) {
+      summary.skipped += 1;
+      summary.models.push({ id: row.id, promoted: false, error: canary.error || 'canary unavailable' });
+      continue;
+    }
+    const result = applyCanaryPromotion(row, canary, { actor });
+    updates.push(result.row);
+    events.push(result.event);
+    if (result.promoted) summary.promoted += 1;
+    else summary.failed += 1;
+    summary.models.push({
+      id: row.id,
+      promoted: result.promoted,
+      passed: canary.passed === true,
+      error: canary.error || null,
+    });
+  }
+
+  if (updates.length) {
+    const stored = await writeModelRegistry(updates);
+    if (!stored) {
+      return { ...summary, error: 'Could not persist canary results' };
+    }
+    await writeModelEvents(events);
+    clearModelRegistryCache();
+  }
+
+  return summary;
+}
+
+export async function scanModelCatalog({
+  runCanaries = true,
+  maxCanaries = MAX_CANARIES_PER_SCAN,
+  actor = 'auto-canary',
+} = {}) {
   if (!isModelStoreConfigured()) return { status: 503, body: { error: 'Model registry storage is not configured' } };
 
   const catalog = await fetchOpenRouterCatalog();
@@ -86,6 +148,12 @@ export async function scanModelCatalog() {
   const stored = await writeModelRegistry(rows);
   if (!stored) return { status: 503, body: { error: 'Could not update model registry' } };
   await writeModelEvents(events);
+  clearModelRegistryCache();
+
+  let canaries = { attempted: 0, promoted: 0, failed: 0, skipped: 0, models: [] };
+  if (runCanaries) {
+    canaries = await promoteWithCanaries(rows, { maxCanaries, actor });
+  }
 
   return {
     status: 200,
@@ -96,6 +164,7 @@ export async function scanModelCatalog() {
       freeModels: freeModels.length,
       changes: events.length,
       events: events.reduce((counts, event) => ({ ...counts, [event.event_type]: (counts[event.event_type] || 0) + 1 }), {}),
+      canaries,
     },
   };
 }
