@@ -19,7 +19,7 @@ function previewHasPhotos(deskFacts) {
 }
 
 function chatHasPhotoMarkup(ai = '') {
-  return /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(String(ai || ''));
+  return /<img\b[^>]*\bsrc\s*=\s*["'](?:data:image\/|https?:\/\/|\/api\/preview-image)/i.test(String(ai || ''));
 }
 
 function photosPresent({ deskFacts = null, ai = '' } = {}) {
@@ -148,7 +148,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
       gaps.push(beat(
         'gap-photos',
         'Add real product photos',
-        'Put real <img src="https://images.unsplash.com/..."> photos on every product card. Do not use SVG empty frames. Do not say images are done until Preview shows photos.',
+        'Put real <img src="data:image/..."> or /api/preview-image photos on every product card. Do not use SVG empty frames or remote Unsplash URLs that break in Preview. Do not say images are done until Preview shows decoded photos.',
         108,
       ));
     }
@@ -186,7 +186,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
       gaps.push(beat(
         'gap-photos',
         'Add real product photos',
-        'Put real <img src="https://images.unsplash.com/..."> photos on the page. Do not use SVG empty frames. Do not say images are done until Preview shows photos.',
+        'Put real <img src="data:image/..."> or /api/preview-image photos on the page. Do not use SVG empty frames or remote Unsplash URLs that break in Preview. Do not say images are done until Preview shows decoded photos.',
         108,
       ));
     }

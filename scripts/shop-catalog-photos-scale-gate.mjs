@@ -38,7 +38,7 @@ assert.equal(previewHtmlHasCurrencySwitcher(html), true, 'Currency required');
 assert.ok(next.vfs['products.json'], 'products.json required');
 const catalog = JSON.parse(next.vfs['products.json'].content);
 assert.ok(catalog.length <= SHOP_CATALOG_CAP, `catalog capped at ${SHOP_CATALOG_CAP}`);
-assert.ok(catalog.every((row) => /images\.unsplash\.com/.test(row.image)), 'each SKU needs a photo URL');
+assert.ok(catalog.every((row) => /^data:image\//.test(row.image)), 'each SKU needs a loadable data-URI photo');
 
 const probed = probeRunningDesk({ html, vfs: next.vfs, job });
 assert.equal(probed.facts.hasPhotos, true);
