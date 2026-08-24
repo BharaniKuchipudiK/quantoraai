@@ -149,17 +149,16 @@ export function injectShopCommerceUi(html = '') {
   const source = String(html || '');
   if (!source) return { html: source, changed: false };
   if (source.includes(SHOP_UI_MARK)) return { html: source, changed: false };
-  const hasCurrency = previewHtmlHasCurrencySwitcher(source);
-  const hasCart = previewHtmlHasAddToCartControl(source);
-  if (hasCurrency && hasCart) return { html: source, changed: false };
 
-  let next = source;
-  if (/<body[^>]*>/i.test(next)) {
-    next = next.replace(/<body[^>]*>/i, (m) => `${m}${shopUiBar()}`);
-  } else {
-    next = `${shopUiBar()}${next}`;
+  let next = withWorkingCartClicks(source);
+  const hasCurrency = previewHtmlHasCurrencySwitcher(next);
+  if (!hasCurrency) {
+    if (/<body[^>]*>/i.test(next)) {
+      next = next.replace(/<body[^>]*>/i, (m) => `${m}${shopUiBar()}`);
+    } else {
+      next = `${shopUiBar()}${next}`;
+    }
   }
-  next = withWorkingCartClicks(next);
   const snippet = shopUiScript();
   if (/<\/body>/i.test(next)) {
     return { html: next.replace(/<\/body>/i, () => `${snippet}</body>`), changed: true };

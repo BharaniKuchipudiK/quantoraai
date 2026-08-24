@@ -92,6 +92,37 @@ export function userAskedForShopDeskFix(text = '') {
     || /\b(currency|converter|usd|sgd|aud|aed|add to cart|add to bag|shopping bag)\b/i.test(src);
 }
 
+export function userAskedForDeskReview(text = '') {
+  return /\breview(?:\s+this|\s+the\s+(?:desk|preview|page|shop))?\s*$/i.test(String(text || '').trim())
+    || /^review this\b/i.test(String(text || '').trim());
+}
+
+/**
+ * Review applies a surgical desk patch before any LLM rewrite.
+ * Shop photos/cart/currency are deterministic. Reject if a passing probe would regress.
+ */
+export function applyDeskReviewPatch(vfs = {}, job = null) {
+  const before = probeRunningDesk({ html: pickPreviewEntry(vfs), vfs, job });
+  const ensured = ensureShopDeskInVfs(vfs);
+  const after = probeRunningDesk({ html: pickPreviewEntry(ensured.vfs), vfs: ensured.vfs, job });
+  if (deskChecksRegressed(before.checks, after.checks)) {
+    return {
+      vfs,
+      changed: false,
+      rejected: true,
+      checks: before.checks,
+      nextBeat: before.nextBeat,
+    };
+  }
+  return {
+    vfs: ensured.vfs,
+    changed: ensured.changed,
+    rejected: false,
+    checks: after.checks,
+    nextBeat: after.nextBeat,
+  };
+}
+
 export function ensureShopPhotosInVfs(vfs = {}) {
   if (!vfsLooksLikeShop(vfs)) return { vfs, changed: false };
   const next = { ...vfs };

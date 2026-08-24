@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
@@ -1136,6 +1136,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if ((isWorkspaceMode || canvasOpen) && !keepExisting) {
       setIsWorkspaceMode(false);
       setCanvasOpen(false);
+    }
+
+    if (userAskedForDeskReview(textToSend) && Object.keys(vfs || {}).length) {
+      const patched = applyDeskReviewPatch(vfs, deskJob);
+      if (patched.changed && !patched.rejected) {
+        setDeskReview(diffVfsReview(vfs, patched.vfs));
+        setVfs(patched.vfs);
+        const code = pickPreviewEntry(patched.vfs);
+        if (code) setWorkspaceCode(code);
+      }
     }
 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
