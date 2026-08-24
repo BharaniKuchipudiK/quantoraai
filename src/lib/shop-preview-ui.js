@@ -149,6 +149,13 @@ function withWorkingCartClicks(html = '') {
   });
 }
 
+/** Remove Quantora-injected currency bar / cart script from a non-shop Preview. */
+export function stripShopCommerceUi(html = '') {
+  return String(html || '')
+    .replace(new RegExp(`<div[^>]*${SHOP_UI_MARK}=["']bar["'][^>]*>[\\s\\S]*?<\\/div>`, 'gi'), '')
+    .replace(new RegExp(`<script[^>]*${SHOP_UI_MARK}=["']script["'][^>]*>[\\s\\S]*?<\\/script>`, 'gi'), '');
+}
+
 export function injectShopCommerceUi(html = '') {
   const source = String(html || '');
   if (!source) return { html: source, changed: false };
