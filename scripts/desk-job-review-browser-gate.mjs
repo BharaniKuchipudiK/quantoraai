@@ -80,6 +80,52 @@ function projectReply(app) {
   ].join('\n');
 }
 
+function driveCleanerApp() {
+  return `import React from 'react';
+
+export default function App() {
+  return (
+    <main>
+      <h1>Drive Cleaner</h1>
+      <p>Scan and remove duplicate files from Google Drive.</p>
+      <button type="button">Scan Drive</button>
+      <ul className="file-list">
+        <li>Report Q3.pdf</li>
+        <li>Vacation.jpg</li>
+      </ul>
+    </main>
+  );
+}
+`;
+}
+
+function driveCleanerReply() {
+  return [
+    'Here is a Drive Cleaner Agent dashboard.',
+    '',
+    '```json filepath="package.json"',
+    JSON.stringify({
+      name: 'drive-cleaner-agent', private: true, version: '1.0.0', type: 'module',
+      scripts: { dev: 'vite', build: 'vite build' },
+      dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0' },
+      devDependencies: { '@vitejs/plugin-react': '^4.2.1', vite: '^5.1.4' },
+    }),
+    '```',
+    '',
+    '```html filepath="index.html"',
+    '<!doctype html><html><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>',
+    '```',
+    '',
+    '```jsx filepath="src/main.jsx"',
+    "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nReactDOM.createRoot(document.getElementById('root')).render(<App />);",
+    '```',
+    '',
+    '```jsx filepath="src/App.jsx"',
+    driveCleanerApp(),
+    '```',
+  ].join('\n');
+}
+
 function patchReply(app) {
   return ['Updated the list.', '', '```jsx filepath="src/App.jsx"', app, '```'].join('\n');
 }
@@ -135,11 +181,15 @@ await page.route('**/api/**', async (route) => {
   }
   if (path === '/api/chat') {
     const message = String(request.postDataJSON?.()?.message || '');
-    const reply = /footer/i.test(message)
-      ? patchReply(todoApp({ working: false, footer: true }))
-      : /add button|fix/i.test(message)
-        ? patchReply(todoApp({ working: true, footer: true }))
-        : projectReply(todoApp({ working: false, footer: false }));
+    const reply = /drive\s*cleaner|google drive/i.test(message)
+      ? driveCleanerReply()
+      : /newton|study/i.test(message)
+        ? 'Sure — we can study Newton\'s laws. Tell me which chapter to open first.<!-- quantora-ctx: {"goal":"I want to study newton laws of motion. prepare me","understanding":"Study session for Newton\'s laws."} -->'
+        : /footer/i.test(message)
+          ? patchReply(todoApp({ working: false, footer: true }))
+          : /add button|fix/i.test(message)
+            ? patchReply(todoApp({ working: true, footer: true }))
+            : projectReply(todoApp({ working: false, footer: false }));
     return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, body: sseBody(reply) });
   }
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [], ok: true }) });
@@ -207,6 +257,42 @@ try {
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing.');
+
+  // --- Drive Cleaner hygiene first (clean session, before todo pollutes the desk) ---
+  await prompt.fill('build a Drive Cleaner Agent web dashboard for my Google Drive');
+  await prompt.press('Enter');
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click();
+  await visible(page.locator('[data-quantora-real-project-preview="true"]').first(), 'Drive Cleaner never entered Preview.', 25_000);
+  if (!(await frameShowing('h1', 'Drive Cleaner'))) {
+    throw new Error('Preview never rendered the Drive Cleaner dashboard.');
+  }
+  const driveMission = page.locator('[data-quantora-mission="true"]').first();
+  await visible(driveMission, 'Mission card missing for Drive Cleaner desk.', 12_000);
+  const driveMissionText = (await driveMission.innerText()).trim();
+  if (!/Drive|cleaner/i.test(driveMissionText)) {
+    throw new Error(`Mission card did not name Drive Cleaner. Saw: ${driveMissionText}`);
+  }
+  if (/newton/i.test(driveMissionText)) {
+    throw new Error(`Mission card showed Study Newton on a Drive Cleaner desk. Saw: ${driveMissionText}`);
+  }
+  await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Drive Cleaner desk has no Preview checks panel.', 15_000);
+  const driveRows = await probeRows();
+  const shopLabels = driveRows.filter((row) => /Add to Cart|Product photos|Currency|catalog item/i.test(row.label));
+  if (shopLabels.length) {
+    throw new Error(`Drive Cleaner Review fired shop checks: ${JSON.stringify(shopLabels)}`);
+  }
+  if (driveRows.some((row) => ['photos', 'cart', 'currency', 'catalog', 'cart-click'].includes(row.id))) {
+    throw new Error(`Drive Cleaner Review has shop probe ids: ${JSON.stringify(driveRows)}`);
+  }
+  const partner = (await page.locator('[data-quantora-partner-status="true"]').innerText().catch(() => '')).trim();
+  if (/Product photos are still missing/i.test(partner)) {
+    throw new Error(`Partner status claimed missing product photos on a non-shop desk: ${partner}`);
+  }
+
+  // Fresh chat for the to-do review phases (title avoids matching a session named New Chat).
+  await page.locator('button[title="New Chat"]').first().click();
+  await page.waitForTimeout(600);
+  await visible(prompt, 'Studio prompt missing after New Chat.');
   await prompt.fill('build me a to-do list app for my week');
   await prompt.press('Enter');
   await page.locator('[data-quantora-coding-desk-nav="true"]').click();
@@ -304,7 +390,7 @@ try {
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review.png', fullPage: true });
-  console.log('Desk job review browser gate passed. A generic desk derives its criteria from the job card and probes them on the running page.');
+  console.log('Desk job review browser gate passed. Generic desks derive criteria from the job card; Drive Cleaner never gets shop probes.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review-failure.png', fullPage: true }).catch(() => {});

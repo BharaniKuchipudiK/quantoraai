@@ -22,8 +22,14 @@ import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
+import {
+  GITHUB_IMPORT_ENDPOINT,
+  buildGithubImportRequestBody,
+  readGithubApiJson,
+} from '../lib/github-import.js';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
@@ -568,6 +574,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   useEffect(() => {
     if (deskSessionIdRef.current === activeSessionId) return;
     deskSessionIdRef.current = activeSessionId;
+    setImportedGithubRepoUrl('');
+    setImportedGithubBaseBranch('main');
     if (!canAutoOpenCodeWorkspace(studioDomain)) {
       setVfs({});
       setWorkspaceCode('');
@@ -634,6 +642,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
+  const [importedGithubRepoUrl, setImportedGithubRepoUrl] = useState('');
+  const [importedGithubBaseBranch, setImportedGithubBaseBranch] = useState('main');
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubError, setGithubError] = useState('');
 
@@ -647,15 +657,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setGithubError('');
 
     try {
-      const response = await fetch('/api/github/fetch-repo', {
+      const response = await fetch(GITHUB_IMPORT_ENDPOINT, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: githubRepoUrl })
+        body: JSON.stringify(buildGithubImportRequestBody(githubRepoUrl)),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import repository');
+      const parsed = await readGithubApiJson(response);
+      if (!parsed.ok) {
+        throw new Error(parsed.error || 'Failed to import repository');
+      }
+
+      const data = parsed.data || {};
+      if (!data.name || !data.content) {
+        throw new Error('GitHub import succeeded but returned no repository context.');
       }
 
       setAttachments(prev => [...prev, {
@@ -663,11 +679,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         name: data.name,
         content: data.content
       }]);
+      setImportedGithubRepoUrl(githubRepoUrl.trim());
+      setImportedGithubBaseBranch(typeof data.branch === 'string' && data.branch.trim() ? data.branch.trim() : 'main');
       
       setIsGithubModalOpen(false);
       setGithubRepoUrl('');
     } catch (err) {
-      setGithubError(err.message);
+      setGithubError(err.message || 'Failed to import repository');
     } finally {
       setIsFetchingGithub(false);
     }
@@ -907,10 +925,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
 
-  // Intelligent Router Logic
+  // Intelligent Router Logic — Auto Mode switches silently; never interrupt with a Switch pill.
   useEffect(() => {
     const text = inputText.toLowerCase();
-    if (!text.trim()) {
+    if (!text.trim() || isCodingDeskAutoSelection(selectedModel)) {
       setSuggestedModel(null);
       return;
     }
@@ -1571,6 +1589,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         />
                       )}
 
+                      {msg.sender === 'ai' && msg.autoRouted && msg.modelUsed && !isActiveGenerating && (
+                        <div style={{
+                          marginTop: '6px',
+                          fontSize: '0.68rem',
+                          color: subtextColor,
+                          fontWeight: 500,
+                          opacity: 0.85,
+                        }}>
+                          using {String(msg.modelUsed).replace(/^.*\(([^)]+)\).*$/, '$1')}
+                        </div>
+                      )}
+
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && !isActiveGenerating && (() => {
                         // Actions are DERIVED from the message content — not a
@@ -1719,7 +1749,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           />
                           </div>
                         )}
-                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.label ? (
+                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active ? (
                           <StudyTutorBoard
                             brief={studyTutorBrief}
                             isLight={isLight}
@@ -1728,6 +1758,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             lessonText={cleanText}
                             onAsk={(text) => setInputText(text)}
                             onSend={(text) => handleSendMessage(text)}
+                            onCheckOutcome={(fact) => {
+                              const line = String(fact || '').trim();
+                              if (!line) return;
+                              const facts = conversationContext?.facts || [];
+                              if (facts.some((row) => String(row).toLowerCase() === line.toLowerCase())) return;
+                              updateActiveSession({
+                                conversationContext: {
+                                  ...(conversationContext || {}),
+                                  facts: [...facts, line],
+                                },
+                              });
+                            }}
                           />
                         ) : null}
                         </>
@@ -2043,6 +2085,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
+  const hasDeskFiles = Boolean(vfs && Object.keys(vfs).some((path) => path && vfs[path]?.content));
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -2055,6 +2098,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
     codingDeskOpen,
+    hasDeskFiles,
     photosMissing,
     shopUiMissing,
   });
@@ -3443,7 +3487,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   }}
                 >
                   <Cpu size={15} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
-                  <span>{selectedModel ? formatModelName(selectedModel.name).split(' ')[0] : 'Engine'}</span>
+                  <span>{isCodingDeskAutoSelection(selectedModel) ? 'Auto' : (selectedModel ? formatModelName(selectedModel.name).split(' ')[0] : 'Engine')}</span>
                 </button>
 
                 {showInBarModelDropdown && (
@@ -3500,7 +3544,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         AI Model
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {availableModels && availableModels.filter(m => m.available !== false).map(model => (
+                        {[CODING_DESK_AUTO_MODEL, ...((availableModels || []).filter(m => m.available !== false && m.id !== CODING_DESK_AUTO_MODEL.id))].map(model => {
+                          const isActive = isCodingDeskAutoSelection(selectedModel)
+                            ? model.id === CODING_DESK_AUTO_MODEL.id
+                            : selectedModel?.id === model.id;
+                          return (
                           <div
                             key={model.id}
                             onClick={() => {
@@ -3511,33 +3559,34 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               padding: '8px 10px',
                               borderRadius: '8px',
                               cursor: 'pointer',
-                              background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
+                              background: isActive ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               fontSize: '0.8rem',
-                              color: selectedModel?.id === model.id ? '#f97316' : textColor,
-                              fontWeight: selectedModel?.id === model.id ? '700' : '500',
+                              color: isActive ? '#f97316' : textColor,
+                              fontWeight: isActive ? '700' : '500',
                               transition: 'all 0.2s ease'
                             }}
                             onMouseEnter={(e) => {
-                              if (selectedModel?.id !== model.id) {
+                              if (!isActive) {
                                 e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
                               }
                             }}
                             onMouseLeave={(e) => {
-                              if (selectedModel?.id !== model.id) e.currentTarget.style.background = 'transparent';
+                              if (!isActive) e.currentTarget.style.background = 'transparent';
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
                               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatModelName(model.name)}</span>
-                              <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter')}</span>
+                              <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.id === 'auto' ? 'Silent routing for Coding Desk' : (model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter'))}</span>
                             </div>
-                            {selectedModel?.id === model.id && (
+                            {isActive && (
                               <span style={{ fontSize: '0.65rem', background: '#f97316', color: '#fff', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Active</span>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -3880,6 +3929,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                <StudioGit
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
+                 githubRepoUrl={importedGithubRepoUrl}
+                 githubBaseBranch={importedGithubBaseBranch}
                  isLight={isLight}
                  textColor={textColor}
                />
@@ -3943,7 +3994,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Import Repository</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Load codebase context directly into AI Studio.</p>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Load read-only codebase context into AI Studio (not a full clone).</p>
               </div>
             </div>
 

@@ -46,3 +46,14 @@ test('a boutique brief becomes a shop job that requires real photos', () => {
   assert.equal(jobNeedsProductPhotos(job), true);
   assert.equal(jobNeedsProductPhotos(buildStudioJobCard({ brief: 'Build me a simple calculator' })), false);
 });
+
+test('a Drive cleaner brief replaces a leftover shop job card', () => {
+  const shop = buildStudioJobCard({ brief: 'build a website for an Indian ethnic saree boutique' });
+  const next = buildStudioJobCard({
+    brief: 'build a Drive Cleaner Agent web dashboard for my Google Drive files',
+    existing: shop,
+  });
+  assert.match(next.purpose, /Drive|cleaner|Agent/i);
+  assert.doesNotMatch(next.purpose, /shop/i);
+  assert.equal(jobNeedsProductPhotos(next), false);
+});

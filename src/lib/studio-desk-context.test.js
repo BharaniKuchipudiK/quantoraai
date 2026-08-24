@@ -344,3 +344,46 @@ test('Travel, Study, Finance, and Research never receive a coding packet', () =>
     }), {});
   }
 });
+
+const driveCleanerHtml = `<!DOCTYPE html><html><head><title>Drive Cleaner Agent</title></head><body>
+<main>
+  <h1>Drive Cleaner</h1>
+  <p>Scan and remove duplicate files from Google Drive.</p>
+  <button type="button">Scan Drive</button>
+  <ul class="file-catalog"><li>Report Q3.pdf</li><li>Vacation.jpg</li></ul>
+</main>
+</body></html>`;
+
+test('a Drive cleaner dashboard never gets shop Preview checks', () => {
+  const staleShopJob = {
+    purpose: 'A shop website',
+    mustWork: ['Catalog and bag still work', 'Product images are real photos, not empty frames'],
+  };
+  const packet = buildDeskContextPacket({
+    html: driveCleanerHtml,
+    job: staleShopJob,
+    vfs: { 'index.html': { content: driveCleanerHtml } },
+  });
+  assert.equal(packet.facts.shop, false);
+  const shopIds = ['photos', 'cart', 'currency', 'catalog', 'cart-click'];
+  assert.equal(packet.checks.some((check) => shopIds.includes(check.id)), false);
+  assert.equal(packet.checks.some((check) => /Add to Cart|Product photos|Currency/i.test(check.label)), false);
+  const live = mergeLiveDeskProbe(packet, { hasCart: false, hasCurrency: false, photoCount: 0 });
+  assert.equal(live.facts.shop, false);
+  assert.equal(live.nextBeat.includes('Add to Cart'), false);
+  assert.equal(chipsFromDeskProbes(live.checks).some((chip) => /cart|photo|currency/i.test(chip.id)), false);
+});
+
+test('Drive cleaner job cards do not classify as shop desks', () => {
+  const job = {
+    purpose: 'Drive Cleaner Agent dashboard',
+    mustWork: ['Interactive controls still work', 'Do not replace this with a different product'],
+  };
+  const probed = probeRunningDesk({
+    html: driveCleanerHtml,
+    vfs: { 'index.html': { content: driveCleanerHtml } },
+    job,
+  });
+  assert.equal(probed.facts.shop, false);
+  assert.ok(probed.checks.every((check) => !['photos', 'cart', 'currency', 'catalog'].includes(check.id)));
+});

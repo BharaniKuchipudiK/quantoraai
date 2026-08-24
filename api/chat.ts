@@ -14,6 +14,7 @@ import { repairArtifact } from "./_lib/repair.js";
 import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
+import { DIRECT_MODELS, CURATED_MODELS } from "./_lib/model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
 import { formatTravelPlaceShortlist } from '../src/lib/travel-place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
@@ -45,6 +46,7 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
+import { activeModelsForRouting } from "../src/lib/coding-desk-auto-model.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../src/lib/build-intent.js";
 import { shouldRefineRunningDesk } from "../src/lib/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../src/lib/studio-desk-context.js";
@@ -53,7 +55,7 @@ import { buildArtifactContractError, validateBuildArtifactResponse } from './_li
 const PREVIEW_HTML_RECOVERY = `
 
 PREVIEW RECOVERY
-The previous attempt emitted native iOS/Android source (Swift, Kotlin, or similar). Quantora Live Preview cannot run those files. Output EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that looks like the requested platform. Do not emit .swift, .kt, or Xcode/Android project files.`;
+The previous attempt did not emit a runnable web page — either a chat-only plan or native iOS/Android/Python source. Quantora Live Preview can only run HTML/CSS/JS (or a React VFS). Output a short explanation, then EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that demonstrates the product in the browser. For macOS/native/agent asks, ship a glossy web dashboard mock of the workflow. Do not emit .swift, .kt, .py, or Xcode/Android project files as the only artifact.`;
 
 const PREVIEW_REFINE_RECOVERY = `
 
@@ -494,7 +496,9 @@ export default async function handler(req: any, res: any) {
     const effectiveGeminiKey = userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
 
     const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;
-    if (usingServerOwnedModelAccess) {
+    const autoModelRequest = !modelId || modelId === 'auto';
+    // Auto resolves after registry load; approval applies to the chosen route, not the sentinel.
+    if (usingServerOwnedModelAccess && !autoModelRequest) {
       const approved = await isApprovedServerModel(modelId);
       if (!approved) {
         return res.status(403).json({
@@ -555,15 +559,52 @@ export default async function handler(req: any, res: any) {
         : Promise.resolve(null),
     ]);
     const registryModels = await readModelRegistryCached();
+    const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
+      ? {
+          probeFailure: req.body.qualityHints.probeFailure === true,
+          repair: req.body.qualityHints.repair === true || req.body?.task === "repair",
+          fileCount: Number(req.body.qualityHints.fileCount) || 0,
+        }
+      : {
+          probeFailure: req.body?.probeFailure === true,
+          repair: req.body?.task === "repair",
+          fileCount: 0,
+        };
+    const routingModels = activeModelsForRouting({
+      registryRows: registryModels,
+      featuredModels: [
+        ...DIRECT_MODELS,
+        ...CURATED_MODELS.map((model) => ({
+          ...model,
+          available: true,
+          pricingKind: model.id.endsWith(':free') || String(model.id).startsWith('gemini') ? 'free' : 'paid',
+        })),
+      ],
+    });
     const modelRouting = selectModelsForTurn({
-      models: registryModels.length ? registryModels : [],
+      models: routingModels,
       message,
       explicitModelId: typeof modelId === "string" ? modelId : null,
       hasImages: visionImages.length > 0,
       studioMode: mode,
       guidedBuild: honorGuided,
       refineMode: isRefine,
+      buildMode: effectiveBuildMode,
+      taskCategory,
+      hasVFS: Boolean(hasPreviewCode) || Boolean(req.body?.hasVFS),
+      // Free Studio without BYOK must not Auto-pick paid-only OpenRouter routes.
+      allowPaid: Boolean(openRouterKey),
+      qualityHints,
     });
+    if (usingServerOwnedModelAccess && autoModelRequest) {
+      const approved = await isApprovedServerModel(modelRouting.primaryModelId);
+      if (!approved) {
+        return res.status(403).json({
+          error: `The model "${modelRouting.primaryModelId}" is not approved for Quantora-managed usage yet.`,
+          requiresApprovedModel: true,
+        });
+      }
+    }
     const conversationSnapshot = buildConversationSnapshot({
       outcomeRecord: authoritativeOutcome,
       projectContext: authoritativeProjectContext,
@@ -887,6 +928,7 @@ export default async function handler(req: any, res: any) {
         } catch (error: any) {
           lastRouteError = error;
           const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
+            || error?.detailCode === 'code-fences-missing'
             || (isRefine && error?.detailCode === 'code-fences-missing');
           if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
@@ -1303,9 +1345,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
-    const publicError = err?.code === 'BUILD_ARTIFACT_CONTRACT'
+    const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
+    const publicError = artifactContractFailure
       ? (err?.detailCode === 'browser-preview-missing'
         ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
+        : err?.detailCode === 'code-fences-missing'
+          ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
         : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
@@ -1315,7 +1360,7 @@ export default async function handler(req: any, res: any) {
       sse.fail({
         message: publicError,
         code: err?.code || 'CHAT_STREAM_FAILURE',
-        retryable: retryableProviderFailure,
+        retryable: retryableProviderFailure || artifactContractFailure,
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,
         correlationId,

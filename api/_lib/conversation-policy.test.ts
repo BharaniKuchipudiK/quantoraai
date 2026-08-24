@@ -155,3 +155,13 @@ test("identifies the selected underlying model without changing the persona", ()
   assert.match(prompt, /using Claude Sonnet as the underlying model/);
   assert.match(prompt, /following the Quantora policy/);
 });
+
+test("education prompt carries tutor stance from session signals, not a chapter pack", () => {
+  const education = buildConversationSystemPrompt({ studioDomain: "education" });
+  assert.match(education, /Never invent a syllabus chapter/i);
+  assert.match(education, /Empathize with struggle/i);
+  assert.match(education, /recall, apply, multi-concept, numerical, assertion-reason/);
+  const travel = buildConversationSystemPrompt({ studioDomain: "travel" });
+  assert.doesNotMatch(travel, /Never invent a syllabus chapter/i);
+  assert.doesNotMatch(travel, /Empathize with struggle/i);
+});

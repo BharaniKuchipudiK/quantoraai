@@ -1,4 +1,5 @@
 const OPENROUTER_CATALOG_URL = 'https://openrouter.ai/api/v1/models';
+const GEMINI_CATALOG_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const FETCH_TIMEOUT_MS = 4_000;
 
 export const CURATED_MODELS = [
@@ -96,6 +97,85 @@ export async function fetchOpenRouterCatalog() {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Official Gemini model list (Generative Language API). Requires GEMINI_API_KEY.
+ * Used for the admin "Available on internet" catalog — not an approval signal.
+ */
+export async function fetchGeminiCatalog() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const url = new URL(GEMINI_CATALOG_URL);
+    url.searchParams.set('key', key);
+    url.searchParams.set('pageSize', '100');
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    const body = await response.json();
+    const list = Array.isArray(body?.models) ? body.models : [];
+    const catalog = new Map();
+    for (const model of list) {
+      const rawName = typeof model?.name === 'string' ? model.name : '';
+      if (!rawName) continue;
+      const id = rawName.replace(/^models\//, '');
+      if (!id.startsWith('gemini')) continue;
+      catalog.set(id, {
+        id,
+        name: model.displayName || id,
+        description: model.description || '',
+        pricingKind: 'free-tier',
+        provider: 'Google',
+        source: 'gemini',
+        supportedGenerationMethods: model.supportedGenerationMethods || [],
+      });
+    }
+    return catalog.size ? catalog : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Flatten live provider catalogues into admin Internet-available rows. */
+export function buildInternetCatalogEntries({ openRouter = null, gemini = null } = {}) {
+  const entries = [];
+  if (openRouter) {
+    for (const model of openRouter.values()) {
+      if (!model?.id) continue;
+      entries.push({
+        id: model.id,
+        name: model.name || model.id,
+        provider: providerFromId(model.id),
+        description: model.description || '',
+        pricing: model.pricing || {},
+        pricingKind: isFreeModel(model) ? 'free' : 'paid',
+        contextWindow: formatContext(model.context_length),
+        createdAt: catalogCreatedAt(model),
+        source: 'openrouter',
+      });
+    }
+  }
+  if (gemini) {
+    for (const model of gemini.values()) {
+      if (!model?.id) continue;
+      entries.push({
+        id: model.id,
+        name: model.name || model.id,
+        provider: model.provider || 'Google',
+        description: model.description || '',
+        pricingKind: model.pricingKind || 'free-tier',
+        contextWindow: null,
+        createdAt: null,
+        source: 'gemini',
+      });
+    }
+  }
+  return entries;
 }
 
 export function isFreeModel(entry) {
