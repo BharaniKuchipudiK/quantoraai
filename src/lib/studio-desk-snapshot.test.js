@@ -59,8 +59,8 @@ test('a saved boutique without photos gets them back on restore', () => {
     codingDeskOpen: true,
   });
   const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
-  assert.match(restored.vfs['index.html'].content, /images\.unsplash\.com/);
-  assert.match(restored.workspaceCode, /images\.unsplash\.com/);
+  assert.match(restored.vfs['index.html'].content, /data:image\/svg\+xml/);
+  assert.match(restored.workspaceCode, /data:image\/svg\+xml/);
   assert.match(restored.vfs['index.html'].content, /Add to Cart/);
   assert.match(restored.vfs['index.html'].content, /USD/);
 });

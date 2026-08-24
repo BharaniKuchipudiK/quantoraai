@@ -107,11 +107,14 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
     var photoIds = {};
     var imgs = document.querySelectorAll('img');
     for (var p = 0; p < imgs.length; p++) {
-      var src = imgs[p].getAttribute('src') || '';
-      if (!/^(https?:\\/\\/|\\/api\\/preview-image)/i.test(src)) continue;
+      var img = imgs[p];
+      var src = img.getAttribute('src') || '';
+      if (!/^(data:image\\/|https?:\\/\\/|\\/api\\/preview-image)/i.test(src)) continue;
+      // Broken remote icons still have a src — require a decoded bitmap.
+      if (!(img.complete && img.naturalWidth > 0)) continue;
       photoCount += 1;
-      var idMatch = src.match(/photo-[\\w-]+/i);
-      var id = idMatch ? idMatch[0].toLowerCase() : src.split('?')[0].toLowerCase();
+      var idMatch = src.match(/quantora-photo-\\d+|photo-[\\w-]+/i);
+      var id = idMatch ? idMatch[0].toLowerCase() : src.slice(0, 96).toLowerCase();
       photoIds[id] = 1;
     }
     var uniquePhotoCount = 0;

@@ -25,15 +25,17 @@ export default function StudioFileTree({
   probes = [],
   nextBeat = '',
   job = null,
+  width = 212,
 }) {
   const files = listStudioFiles(vfs);
   const jobPurpose = typeof job?.purpose === 'string' ? job.purpose : '';
+  const paneWidth = Math.max(120, Number(width) || 212);
 
   return (
     <div
       data-quantora-file-tree="true"
       style={{
-        width: '212px',
+        width: `${paneWidth}px`,
         flexShrink: 0,
         height: '100%',
         overflowY: 'auto',

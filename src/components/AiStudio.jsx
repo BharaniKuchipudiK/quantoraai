@@ -1,11 +1,12 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import { deskChatClaimWasFiltered, filterDeskChatClaims } from '../lib/desk-chat-claim-filter.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
@@ -74,6 +75,14 @@ import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
+import {
+  isStudioSplitMobile,
+  loadChatWidthPct,
+  loadFilesWidthPx,
+  maxChatWidthPctForShell,
+  saveChatWidthPct,
+  saveFilesWidthPx,
+} from '../lib/studio-split-layout.js';
 
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
 
@@ -512,6 +521,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
   const [canvasVfs, setCanvasVfs] = useState({});
+  const [deskPublishMenuOpen, setDeskPublishMenuOpen] = useState(false);
+  const [chatWidthPct, setChatWidthPct] = useState(() => loadChatWidthPct());
+  const [filesWidthPx, setFilesWidthPx] = useState(() => loadFilesWidthPx());
+  const [splitMobile, setSplitMobile] = useState(() => (
+    typeof window !== 'undefined' ? isStudioSplitMobile(window.innerWidth) : false
+  ));
+  const chatDeskSplitRef = useRef(null);
+  const filesPreviewSplitRef = useRef(null);
+  const deskPublishMenuRef = useRef(null);
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
@@ -550,14 +568,69 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [vfs, deskJob]);
 
   useEffect(() => {
-    if (!vfsLooksLikeShop(vfs)) return;
-    const next = ensureShopDeskInVfs(vfs);
+    if (!vfsLooksLikeShop(vfs, deskJob)) return;
+    const brief = [...messages].reverse().find((m) => m?.sender === 'user' && m.text)?.text || '';
+    const next = ensureShopDeskInVfs(vfs, deskJob, { brief });
     if (!next.changed) return;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
     const code = pickPreviewEntry(next.vfs);
     if (code) setWorkspaceCode(code);
-  }, [vfs]);
+  }, [vfs, deskJob, messages]);
+
+  useEffect(() => {
+    const onResize = () => setSplitMobile(isStudioSplitMobile(window.innerWidth));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    if (!deskPublishMenuOpen) return undefined;
+    const onDoc = (event) => {
+      if (deskPublishMenuRef.current && !deskPublishMenuRef.current.contains(event.target)) {
+        setDeskPublishMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [deskPublishMenuOpen]);
+
+  const beginChatDeskResize = useCallback((event) => {
+    if (splitMobile || !codingDeskOpen) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startPct = chatWidthPct;
+    const onMove = (moveEvent) => {
+      const parent = chatDeskSplitRef.current?.parentElement;
+      const width = parent?.getBoundingClientRect().width || window.innerWidth;
+      if (!width) return;
+      const deltaPct = ((moveEvent.clientX - startX) / width) * 100;
+      const capped = Math.min(startPct + deltaPct, maxChatWidthPctForShell(width));
+      setChatWidthPct(saveChatWidthPct(capped));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [splitMobile, codingDeskOpen, chatWidthPct]);
+
+  const beginFilesPreviewResize = useCallback((event) => {
+    if (splitMobile) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startPx = filesWidthPx;
+    const onMove = (moveEvent) => {
+      setFilesWidthPx(saveFilesWidthPx(startPx + (moveEvent.clientX - startX)));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [splitMobile, filesWidthPx]);
 
   const startNewChat = useCallback(() => {
     setCodingDeskOpen(false);
@@ -707,7 +780,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
     }
 
-    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob);
+    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, {
+      brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+    });
     if (assembled.rejected) return;
     if (assembled.code) {
       setCanvasVfs(assembled.vfs);
@@ -716,11 +791,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         if (Object.keys(assembled.vfs).length > 0) {
           setDeskReview(diffVfsReview(vfs, assembled.vfs));
           setVfs(assembled.vfs);
-          setDeskJob((prev) => buildStudioJobCard({
-            brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-            vfs: assembled.vfs,
-            existing: prev,
-          }));
+          if (assembled.job) setDeskJob(assembled.job);
         }
         setWorkspaceCode(assembled.code);
         setWorkspaceActiveTab('preview');
@@ -1163,13 +1234,46 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasOpen(false);
     }
 
-    if (userAskedForDeskReview(textToSend) && Object.keys(vfs || {}).length) {
-      const patched = applyDeskReviewPatch(vfs, deskJob);
+    const deskFileCount = Object.keys(vfs || {}).length;
+    if ((userAskedForShopDeskFix(textToSend) || userAskedForDeskReview(textToSend)) && deskFileCount) {
+      const patched = applyDeskReviewPatch(vfs, deskJob, { brief: textToSend });
       if (patched.changed && !patched.rejected) {
         setDeskReview(diffVfsReview(vfs, patched.vfs));
         setVfs(patched.vfs);
         const code = pickPreviewEntry(patched.vfs);
         if (code) setWorkspaceCode(code);
+        setWorkspaceActiveTab('preview');
+        setIsWorkspaceMode(true);
+        setCodingDeskOpen(true);
+      }
+      // Deterministic repair only for cart/currency or broken-photo intents.
+      // Semantic asks (“replace photos with blue dresses”) must reach the model.
+      if (
+        userAskedForShopDeskFix(textToSend)
+        && !patched.rejected
+        && !userAskedForSemanticPhotoEdit(textToSend)
+      ) {
+        const html = pickPreviewEntry(patched.vfs) || '';
+        const photoCount = countRealPreviewPhotos(html);
+        const brokenPhotoAsk = userAskedForBrokenPreviewPhotos(textToSend);
+        const canShortCircuit = patched.changed || (brokenPhotoAsk && photoCount > 0);
+        if (canShortCircuit) {
+          const trimmed = String(textToSend || '').trim();
+          if (!overrideText) setInputText('');
+          updateActiveMessages((prev) => [
+            ...prev,
+            { id: Date.now(), sender: 'user', text: trimmed, attachments: [...attachments] },
+            {
+              id: Date.now() + 1,
+              sender: 'ai',
+              text: patched.changed
+                ? 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.'
+                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old Unsplash URLs are still cached in the iframe.',
+            },
+          ]);
+          setAttachments([]);
+          return;
+        }
       }
     }
 
@@ -1501,7 +1605,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="true"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no product photos. The gold frames on the desk are not images. Ask again, or tap Add real product photos.
+                          Preview still has no product photos. Empty gold frames are not images — tap Add real product photos so the desk injects catalog photos.
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && shopUiMissing && (assistantClaimsShopUiReady(msg.text) || userAskedForShopDeskFix(lastUserMessage?.text || '')) ? (
@@ -1982,7 +2086,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
-        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob);
+        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob, { brief: userBrief });
         if (assembled.rejected) return;
         const parsedVfs = assembled.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
@@ -1991,8 +2095,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (!previewable) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
-          if (vfsLooksLikeShop(vfs)) {
-            const ensured = ensureShopDeskInVfs(vfs);
+          if (vfsLooksLikeShop(vfs, deskJob)) {
+            const ensured = ensureShopDeskInVfs(vfs, deskJob, { brief: userBrief || userPrompt });
             if (ensured.changed) {
               setDeskReview(diffVfsReview(vfs, ensured.vfs));
               setVfs(ensured.vfs);
@@ -2016,11 +2120,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           const shopVfs = ensureShopDeskInVfs(parsedVfs).vfs;
+           const shopVfs = ensureShopDeskInVfs(parsedVfs, assembled.job || deskJob, { brief: userBrief }).vfs;
            setDeskReview(diffVfsReview(vfs, shopVfs));
            setVfs(shopVfs);
            setDeskJob((prev) => {
-             const base = buildStudioJobCard({
+             const base = assembled.job || buildStudioJobCard({
                brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
                vfs: shopVfs,
                existing: prev,
@@ -2050,14 +2154,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               if (code) {
               setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
-              const nextVfs = ensureShopDeskInVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } }).vfs;
+              const seedPath = detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx');
+              const seedVfs = { [seedPath]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
+              const nextJob = assembled.job || buildStudioJobCard({
+                brief: userBrief,
+                vfs: seedVfs,
+                existing: deskJob,
+              });
+              const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob, { brief: userBrief }).vfs;
               setDeskReview(diffVfsReview(vfs, nextVfs));
               setVfs(nextVfs);
-              setDeskJob((prev) => buildStudioJobCard({
-                brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-                vfs: nextVfs,
-                existing: prev,
-              }));
+              setDeskJob(nextJob);
               setWorkspaceCorrelationId(lastMsg.correlationId || null);
               setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
               void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
@@ -2610,14 +2717,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div style={{
-        flex: isIdeLayout ? '0 0 36%' : 1,
+        flex: isIdeLayout ? `0 0 ${splitMobile ? 36 : chatWidthPct}%` : 1,
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isIdeLayout ? '36%' : '100%',
+        maxWidth: isIdeLayout ? `${splitMobile ? 36 : chatWidthPct}%` : '100%',
         margin: '0 auto',
         padding: isIdeLayout ? '0 8px 0 0' : '8px 20px 0',
         minHeight: 0,
-        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+        transition: splitMobile ? 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)' : 'none'
       }}>
         {/* Top Header Bar */}
         <div style={{
@@ -3776,6 +3883,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       )}
 
       {/* Right Panel: Studio coding desk */}
+      {isCodingDesk && !splitMobile ? (
+        <div
+          ref={chatDeskSplitRef}
+          data-quantora-chat-desk-split="true"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat and Coding desk"
+          onMouseDown={beginChatDeskResize}
+          style={{ width: '5px', flexShrink: 0, cursor: 'col-resize', alignSelf: 'stretch', margin: '0 2px', borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)' }}
+        />
+      ) : null}
       {isCodingDesk && (
         <div data-quantora-code-workspace="true" data-quantora-studio-ide="true" style={{
           flex: 1,
@@ -3819,29 +3937,50 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 </span>
               ) : null}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {canOfferVercelPublish({
                 messages,
                 vfs,
                 conversationContext,
                 officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
               }) && previewRunCode && (
-                 <button
-                   type="button"
-                   data-quantora-publish="true"
-                   onClick={() => {
-                     setWorkspaceActiveTab('preview');
-                     previewCanvasRef.current?.openPublish?.();
-                   }}
-                   style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                   <Rocket size={12} /> Publish to Vercel
-                 </button>
+                <div ref={deskPublishMenuRef} style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    data-quantora-publish="true"
+                    data-quantora-desk-publish="true"
+                    onClick={() => setDeskPublishMenuOpen((open) => !open)}
+                    style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <Link2 size={12} /> Publish <ChevronDown size={12} />
+                  </button>
+                  {deskPublishMenuOpen ? (
+                    <div data-quantora-desk-publish-menu="true" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40, minWidth: '180px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <button type="button" onClick={() => { setDeskPublishMenuOpen(false); setWorkspaceActiveTab('preview'); previewCanvasRef.current?.openShare?.(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: textColor, padding: '8px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, textAlign: 'left' }}>
+                        <Link2 size={13} color="#0284c7" /> Share link
+                      </button>
+                      <button type="button" onClick={() => { setDeskPublishMenuOpen(false); setWorkspaceActiveTab('preview'); previewCanvasRef.current?.openPublish?.(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: textColor, padding: '8px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, textAlign: 'left' }}>
+                        <Rocket size={13} color="#f97316" /> Publish to Vercel
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               )}
               <button
                 type="button"
-                onClick={() => setWorkspaceActiveTab('preview')}
-                style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#f97316', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Play size={12} /> Preview
+                data-quantora-desk-canvas="true"
+                disabled={!previewRunCode}
+                onClick={() => {
+                  if (!previewRunCode) return;
+                  setWorkspaceActiveTab('preview');
+                  setCanvasVfs(vfs);
+                  setCanvasCode(previewRunCode);
+                  setCanvasOpen(true);
+                }}
+                title="Open full Preview canvas"
+                style={{ background: 'transparent', border: '1px solid rgba(249, 115, 22, 0.3)', color: previewRunCode ? '#f97316' : subtextColor, padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', cursor: previewRunCode ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '4px', opacity: previewRunCode ? 1 : 0.55 }}
+              >
+                <Layers size={12} /> Canvas
               </button>
               <button
                 onClick={closeStudioWorkspace}
@@ -3866,7 +4005,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               probes={deskPacket?.checks || []}
               nextBeat={deskPacket?.nextBeat || ''}
               job={deskJob}
+              width={splitMobile ? 212 : filesWidthPx}
             />
+            {!splitMobile ? (
+              <div
+                ref={filesPreviewSplitRef}
+                data-quantora-files-preview-split="true"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize Files and Preview"
+                onMouseDown={beginFilesPreviewResize}
+                style={{ width: '5px', flexShrink: 0, cursor: 'col-resize', background: isLight ? '#f1f5f9' : '#0a0d1e', borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)' }}
+              />
+            ) : null}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
              {workspaceActiveTab === 'preview' ? (
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
