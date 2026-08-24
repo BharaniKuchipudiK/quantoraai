@@ -3,6 +3,8 @@
  * Powers proactive continue chips so users don't have to say "that's missing."
  */
 
+import { expandCatalogChip, shopCatalogWasCapped } from './shop-catalog-scale.js';
+
 function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
 }
@@ -173,6 +175,9 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
         'The site looks ready. Publish this website to Vercel and give me the live URL.',
         90,
       ));
+    }
+    if (shopCatalogWasCapped(userPrompt) && hasPhotos) {
+      gaps.push(expandCatalogChip());
     }
   } else {
     const wantsPhotos = /\b(images?|photos?|pictures?|visuals?)\b/i.test(userPrompt);
