@@ -56,6 +56,17 @@ test('ordinary shop briefs are not oversize intake', () => {
   assert.equal(ask.userCopy, '');
 });
 
+test('non-shop counts do not trigger shop intake honesty', () => {
+  const checklist = assessShopBuildAsk('Give me 20 items for a camping checklist');
+  assert.equal(checklist.oversize, false);
+  assert.equal(checklist.chips.length, 0);
+  assert.equal(checklist.userCopy, '');
+
+  const gallery = assessShopBuildAsk('Build a gallery showing 100 images');
+  assert.equal(gallery.oversize, false);
+  assert.equal(gallery.chips.length, 0);
+});
+
 test('Fox & Wolf collection shell is a shop desk even without products.json', () => {
   assert.equal(looksLikeShopDesk({ html: FOX_SHELL }), true);
   assert.equal(vfsLooksLikeShop({ 'index.html': { content: FOX_SHELL, language: 'html' } }), true);

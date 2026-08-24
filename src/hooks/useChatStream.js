@@ -28,6 +28,7 @@ import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-de
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
 import {
   assessShopBuildAsk,
+  messageLooksLikeShopBuild,
   shopIntakeSessionFacts,
   shopPhotoTurnFailureCopy,
 } from '../lib/shop-catalog-scale.js';
@@ -971,7 +972,10 @@ export function useChatStream({
             ...m,
             text: stopped
               ? '⚠️ **Generation Stopped**'
-              : timedOut && (shopIntakeAsk.oversize || /image|photo|catalog|merchandise|shop|boutique/i.test(visibleUserText))
+              : timedOut && (
+                shopIntakeAsk.oversize
+                || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText))
+              )
                 ? shopPhotoTurnFailureCopy({
                   timedOut: true,
                   seconds: Math.round(turnDeadlineMs / 1000),

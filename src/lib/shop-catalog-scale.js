@@ -11,6 +11,16 @@ export const SHOP_INTAKE_CATALOG_SIZE = 10;
 /** ≥ this many unique images / designs in one turn → oversize intake. */
 export const SHOP_OVERSIZE_IMAGE_ASK = 20;
 
+/** Shop / merchandise intent — do not treat checklists or galleries as catalog intake. */
+const SHOP_BUILD_INTENT_RE = /\b(boutique|saree|sari|e-?commerce|storefront|online\s+shop|\bshop\b|merchandise|product\s+catalog|product\s+pages?|kids?\s+(?:wear|apparel|collection)|clothing\s+(?:store|shop)|apparel|checkout|add\s+to\s+(?:cart|bag)|catalog\s+photos?|storefront)\b/i;
+
+/**
+ * True when the brief is actually a shop / merchandise build (not a generic count of items/images).
+ */
+export function messageLooksLikeShopBuild(message = '') {
+  return SHOP_BUILD_INTENT_RE.test(String(message || ''));
+}
+
 /** User asked for N unique designs / photos / SKUs in one turn. */
 export function requestedShopCatalogSize(text = '') {
   const raw = String(text || '');
@@ -43,8 +53,9 @@ export function requestedShopCatalogSize(text = '') {
  * }}
  */
 export function assessShopBuildAsk(message = '') {
-  const imageAskCount = requestedShopCatalogSize(message);
-  const oversize = imageAskCount >= SHOP_OVERSIZE_IMAGE_ASK;
+  const shopIntent = messageLooksLikeShopBuild(message);
+  const imageAskCount = shopIntent ? requestedShopCatalogSize(message) : 0;
+  const oversize = shopIntent && imageAskCount >= SHOP_OVERSIZE_IMAGE_ASK;
   const proposedCatalogSize = oversize
     ? SHOP_INTAKE_CATALOG_SIZE
     : (imageAskCount
