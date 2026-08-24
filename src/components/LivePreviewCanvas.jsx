@@ -47,6 +47,7 @@ const MAX_HEAL_ATTEMPTS = 3;
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
   vfs = {},
+  assemblyKey = '',
   isLight,
   onClose,
   isFullscreen,
@@ -115,6 +116,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const onLiveDeskProbeRef = useRef(onLiveDeskProbe);
   onLiveDeskProbeRef.current = onLiveDeskProbe;
   const liveDeskFactsRef = useRef(null);
+  const lastAssemblyKeyRef = useRef(assemblyKey || '');
   const publishLiveDeskProbe = useCallback((partial) => {
     if (partial === null) {
       liveDeskFactsRef.current = null;
@@ -206,16 +208,21 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
     autoJobHealRef.current = false;
-  }, [code]);
+    verifiedCodeRef.current = null;
+  }, [code, assemblyKey]);
 
   useEffect(() => {
     if (!currentCode || !embedReady) return;
+    const assembly = String(assemblyKey || '');
+    const sameAssembly = lastAssemblyKeyRef.current === assembly
+      && verifiedCodeRef.current === currentCodeRef.current;
+    lastAssemblyKeyRef.current = assembly;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
     healingRef.current = false;
-    setStatus('running');
+    if (!sameAssembly) setStatus('running');
     pushHtmlToEmbed(currentCode);
-  }, [currentCode, embedReady, pushHtmlToEmbed]);
+  }, [currentCode, embedReady, pushHtmlToEmbed, assemblyKey]);
 
   const requestRepair = useCallback(async (brokenCode, message) => {
     const openRouterApiKey = getClientSecret('openrouter');
@@ -485,6 +492,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           if (verifiedCodeRef.current !== currentCodeRef.current) {
             verifiedCodeRef.current = currentCodeRef.current;
             void runQualityCheck(prepared);
+          } else {
+            setStatus(stylingFailedRef.current ? 'degraded' : 'clean');
           }
         }
       }

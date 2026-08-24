@@ -212,6 +212,7 @@ WHEN IMPLEMENTING (after confirmation or a specific change request):
 - You MUST emit that HTML block on this turn. Never say you added currency, cart, photos, or any control unless those tags exist in the HTML.
 - If DESK CONTEXT / LIVE PREVIEW FACTS are present, they override memory of earlier chat. Do not claim a catalog item, photo, cart, or converter that FACTS mark as missing.
 - Prefer editing the current files (index.html, products.json, script.js) over inventing a different product.
+- PREVIEW ENTRY RULE: Live Preview only runs the web entry (index.html, App.jsx, or styles.css/script.js linked from it). Never ship a UI change as .py / .swift / .kt alone — those files never run in the browser Preview. For calculator or other widget refinements (e.g. "make it scientific"), you MUST patch the Preview entry with the new controls (sin/cos, DEG/RAD, etc.) and keep data-testid="calculator-display" plus a digit key (data-testid="calculator-one" or visible 0–9 buttons).
 - Code is shown in the preview panel; chat stays readable.`;
 
 const FEATURE_SUGGEST_DIRECTIVE = `FEATURE SUGGESTION MODE

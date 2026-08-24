@@ -387,3 +387,32 @@ test('Drive cleaner job cards do not classify as shop desks', () => {
   assert.equal(probed.facts.shop, false);
   assert.ok(probed.checks.every((check) => !['photos', 'cart', 'currency', 'catalog'].includes(check.id)));
 });
+
+test('a visible class=display readout counts as calculator display in source facts', () => {
+  const html = '<!DOCTYPE html><html><body><div class="display">9 * 6 = 54</div><button>1</button></body></html>';
+  const probed = probeRunningDesk({
+    html,
+    vfs: { 'index.html': { content: html } },
+    job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
+  });
+  assert.equal(probed.facts.hasCalculatorDisplay, true);
+  assert.equal(probed.facts.hasCalculatorKey, true);
+});
+
+test('scientific calculator jobs require sin/cos on Preview', () => {
+  const basic = '<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></body></html>';
+  const scientific = '<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button><button>sin</button><button>cos</button></body></html>';
+  const job = { purpose: 'A scientific calculator', mustWork: ['Scientific keys (sin/cos) appear on Preview'] };
+  const missing = probeRunningDesk({ html: basic, vfs: { 'index.html': { content: basic } }, job });
+  assert.equal(missing.facts.wantsScientific, true);
+  assert.equal(missing.facts.hasScientificKeys, false);
+  assert.equal(missing.checks.find((row) => row.id === 'calc-scientific').ok, false);
+  const packet = buildDeskContextPacket({
+    html: scientific,
+    job,
+    vfs: { 'index.html': { content: scientific } },
+  });
+  assert.equal(packet.facts.hasScientificKeys, true);
+  assert.equal(packet.checks.find((row) => row.id === 'calc-scientific').state, 'unverified');
+});
+
