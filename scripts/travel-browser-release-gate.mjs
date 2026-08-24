@@ -90,12 +90,13 @@ await page.route('**/api/**', async (route) => {
       '<html><body><h1>This must never auto-open in Travel</h1></body></html>',
       '```',
     ].join('\n');
-    const flightHealReply = 'Fallback path recovered. SIN → DPS on 2026-09-12: sample fare $210 on Fallback Air. I will not invent extra options.';
+    const flightHealReply = 'Fallback path recovered. SIN to DPS on 2026-09-12: sample fare $210 on Fallback Air. I will not invent extra options.';
 
-    // Complete flight query: mocked provider failure must self-heal once.
-    if (/SIN to DPS on 2026-09-12/i.test(message)) {
+    // After the first three Travel fixtures, the next chat turn is the mocked
+    // flight provider failure. A retryable tool error must self-heal once.
+    if (chatTurn >= 4 || /SIN to DPS on 2026-09-12/i.test(message)) {
       flightHealCalls += 1;
-      if (turnAttempt < 2) {
+      if (flightHealCalls < 2) {
         return route.fulfill({
           status: 200,
           headers: {
@@ -271,8 +272,7 @@ try {
   await textarea.fill('Flights SIN to DPS on 2026-09-12');
   await textarea.press('Enter');
   await page.waitForFunction(
-    () => [...document.querySelectorAll('.markdown-prose')]
-      .some((node) => /Fallback path recovered\. SIN → DPS on 2026-09-12/i.test(node.textContent || '')),
+    () => /Fallback path recovered\. SIN to DPS on 2026-09-12/i.test(document.body?.innerText || ''),
     null,
     { timeout: 20_000 },
   );
