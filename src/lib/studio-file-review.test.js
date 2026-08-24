@@ -9,9 +9,13 @@ test('identical files produce no review rows', () => {
 
 test('a new file counts every line as added', () => {
   const after = { 'index.html': { content: '<!doctype html>\n<html>\n</html>' } };
-  assert.deepEqual(diffVfsReview({}, after), [
-    { path: 'index.html', added: 3, removed: 0, exact: true },
-  ]);
+  const review = diffVfsReview({}, after);
+  assert.equal(review.length, 1);
+  assert.equal(review[0].path, 'index.html');
+  assert.equal(review[0].added, 3);
+  assert.equal(review[0].removed, 0);
+  assert.equal(review[0].exact, true);
+  assert.ok(review[0].hunks.some((hunk) => hunk.lines.includes('+<!doctype html>')));
 });
 
 test('a one-line edit is +1 −1', () => {
@@ -91,4 +95,18 @@ test('a tree diff names only the file that actually changed', () => {
 test('a tree with no edits produces no diff lines', () => {
   const tree = { 'src/App.jsx': before };
   assert.deepEqual(unifiedTreeDiff(tree, tree), []);
+});
+
+test('review rows carry the real hunk, not only +/− counts', () => {
+  const review = diffVfsReview(
+    { 'src/App.jsx': { content: before } },
+    { 'src/App.jsx': { content: after } },
+  );
+  assert.equal(review.length, 1);
+  assert.equal(review[0].path, 'src/App.jsx');
+  assert.ok(review[0].hunks.some((hunk) => /^@@ -\d+,\d+ \+\d+,\d+ @@$/.test(hunk.header)));
+  const lines = review[0].hunks.flatMap((hunk) => hunk.lines);
+  assert.ok(lines.includes('-      <h1>Mission Control is alive</h1>'));
+  assert.ok(lines.includes('+      <h1>Mission Control is patched</h1>'));
+  assert.equal(lines.some((line) => line.includes('Telemetry is nominal')), false);
 });

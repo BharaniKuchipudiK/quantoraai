@@ -20,7 +20,13 @@ test('files and preview round-trip with the session', () => {
     workspaceCode: '<!DOCTYPE html><html><body>Hi</body></html>',
     codingDeskOpen: true,
     lastProcessedMessageId: 42,
-    review: [{ path: 'index.html', added: 3, removed: 0, exact: true }],
+    review: [{
+      path: 'index.html',
+      added: 3,
+      removed: 0,
+      exact: true,
+      hunks: [{ header: '@@ -0,0 +1,3 @@', lines: ['+<!DOCTYPE html>'] }],
+    }],
     job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
   });
   assert.equal(built.ok, true);
@@ -29,7 +35,14 @@ test('files and preview round-trip with the session', () => {
   assert.equal(restored.lastProcessedMessageId, 42);
   assert.match(restored.vfs['index.html'].content, /Hi/);
   assert.match(restored.workspaceCode, /Hi/);
-  assert.deepEqual(restored.review, [{ path: 'index.html', added: 3, removed: 0, exact: true }]);
+  assert.deepEqual(restored.review, [{
+    path: 'index.html',
+    added: 3,
+    removed: 0,
+    exact: true,
+    hunks: [{ header: '@@ -0,0 +1,3 @@', lines: ['+<!DOCTYPE html>'] }],
+    note: '',
+  }]);
   assert.equal(restored.job.purpose, 'A working calculator');
 });
 

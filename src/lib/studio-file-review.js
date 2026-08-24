@@ -199,6 +199,49 @@ export function unifiedTreeDiff(before = {}, after = {}, { context = DIFF_CONTEX
   return lines;
 }
 
+/**
+ * Hunks for the Review rail: the real added and removed lines, not a +/− count.
+ * Same alignment as the Git pane. Nothing is invented when the file is too large.
+ */
+export function fileReviewHunks(before, after, { context = DIFF_CONTEXT, maxLines = MAX_DIFF_LINES_PER_FILE } = {}) {
+  const had = typeof before === 'string';
+  const has = typeof after === 'string';
+  const oldLines = had ? linesOf(before) : [];
+  const newLines = has ? linesOf(after) : [];
+  if (oldLines.length > MAX_LCS_LINES || newLines.length > MAX_LCS_LINES) {
+    return {
+      exact: false,
+      truncated: false,
+      hunks: [],
+      note: `${oldLines.length} lines before, ${newLines.length} after — too large to diff exactly. No hunks were invented.`,
+    };
+  }
+  const raw = groupHunks(alignLines(oldLines, newLines), context);
+  let budget = maxLines;
+  const hunks = [];
+  let truncated = false;
+  for (const hunk of raw) {
+    if (budget <= 0) {
+      truncated = true;
+      break;
+    }
+    const take = Math.max(0, budget - 1);
+    const lines = hunk.lines.slice(0, take);
+    hunks.push({ header: hunk.header, lines });
+    budget -= 1 + lines.length;
+    if (lines.length < hunk.lines.length) {
+      truncated = true;
+      break;
+    }
+  }
+  return {
+    exact: true,
+    truncated,
+    hunks,
+    note: truncated ? `… diff cut off after ${maxLines} lines. Open the file to read the rest.` : '',
+  };
+}
+
 export function diffVfsReview(before = {}, after = {}) {
   const paths = new Set([
     ...Object.keys(before || {}),
@@ -215,11 +258,14 @@ export function diffVfsReview(before = {}, after = {}) {
     if (had && has && previous === next) continue;
     const stats = lineDiffStats(had ? previous : '', has ? next : '');
     if (stats.exact && stats.added === 0 && stats.removed === 0) continue;
+    const hunkView = fileReviewHunks(had ? previous : undefined, has ? next : undefined);
     rows.push({
       path,
       added: stats.exact ? stats.added : 0,
       removed: stats.exact ? stats.removed : 0,
-      exact: stats.exact,
+      exact: stats.exact && hunkView.exact,
+      hunks: hunkView.hunks,
+      note: hunkView.note,
     });
   }
   return rows.sort((left, right) => left.path.localeCompare(right.path));

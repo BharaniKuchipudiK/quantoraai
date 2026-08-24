@@ -7,15 +7,33 @@ import { normalizeStudioJobCard } from './studio-job-card.js';
 import { ensureShopDeskInVfs } from './studio-preview-helpers.js';
 import { pickPreviewEntry } from './preview-utils.js';
 
+function normalizeReviewHunk(hunk) {
+  if (!hunk || typeof hunk !== 'object') return null;
+  const header = typeof hunk.header === 'string' ? hunk.header.slice(0, 80) : '';
+  const lines = Array.isArray(hunk.lines)
+    ? hunk.lines.slice(0, 80).flatMap((line) => (typeof line === 'string' ? [line.slice(0, 240)] : []))
+    : [];
+  if (!header && !lines.length) return null;
+  return { header, lines };
+}
+
 export function normalizeDeskReview(review = []) {
   if (!Array.isArray(review)) return [];
   return review.slice(0, 24).flatMap((row) => {
     if (!row || typeof row.path !== 'string' || !row.path.trim()) return [];
+    const hunks = Array.isArray(row.hunks)
+      ? row.hunks.slice(0, 8).flatMap((hunk) => {
+        const next = normalizeReviewHunk(hunk);
+        return next ? [next] : [];
+      })
+      : [];
     return [{
       path: row.path,
       added: Number.isFinite(row.added) ? Math.max(0, Math.floor(row.added)) : 0,
       removed: Number.isFinite(row.removed) ? Math.max(0, Math.floor(row.removed)) : 0,
       exact: row.exact !== false,
+      hunks,
+      note: typeof row.note === 'string' ? row.note.slice(0, 200) : '',
     }];
   });
 }
