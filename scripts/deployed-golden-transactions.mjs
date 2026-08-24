@@ -14,19 +14,27 @@ if (!/^https:\/\//.test(BASE_URL)) throw new Error('QUANTORA_E2E_BASE_URL must b
 if (CANARY_TOKEN.length < 24) throw new Error('QUANTORA_GOLDEN_CANARY_TOKEN is missing or too short.');
 if (VERCEL_BYPASS_TOKEN.length < 24) throw new Error('VERCEL_AUTOMATION_BYPASS_SECRET is missing or too short.');
 
-const bypassHeaders = {
+// Node's fetch does not persist Set-Cookie across redirects. Sending
+// x-vercel-set-bypass-cookie here makes Vercel 307 forever (redirect count
+// exceeded). Header-only bypass is enough for this readiness probe; the
+// browser path below still sets the cookie for in-page navigations.
+const apiBypassHeaders = {
   'X-Quantora-Golden-Canary': CANARY_TOKEN,
   'x-vercel-protection-bypass': VERCEL_BYPASS_TOKEN,
+};
+const browserBypassHeaders = {
+  ...apiBypassHeaders,
   'x-vercel-set-bypass-cookie': 'samesitenone',
 };
 
-const healthResponse = await fetch(`${BASE_URL}/api/inference-health`, { headers: bypassHeaders });
+mkdirSync(ARTIFACT_DIR, { recursive: true });
+
+const healthResponse = await fetch(`${BASE_URL}/api/inference-health`, { headers: apiBypassHeaders });
 const health = await healthResponse.json().catch(() => ({}));
 if (!healthResponse.ok || health.ready !== true) {
   throw new Error(`Deployed inference is not executable (${healthResponse.status}): ${JSON.stringify(health)}`);
 }
 
-mkdirSync(ARTIFACT_DIR, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
   viewport: { width: 1600, height: 1000 },
@@ -37,7 +45,7 @@ await context.route('**/*', (route) => {
   return route.continue({
     headers: {
       ...request.headers(),
-      ...bypassHeaders,
+      ...browserBypassHeaders,
     },
   });
 });
