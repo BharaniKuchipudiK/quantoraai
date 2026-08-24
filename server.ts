@@ -132,6 +132,19 @@ async function startServer() {
     req.body = { ...(req.body || {}), targetStage: "repository-preview" };
     return pipeline(req, res);
   });
+  // Legacy Studio Import Repository path — same read-only context import.
+  route("post", "/api/github/fetch-repo", (req, res) => {
+    req.body = { ...(req.body || {}), targetStage: "repository-preview" };
+    return pipeline(req, res);
+  });
+  route("post", "/api/github/create-pr", (req, res) => {
+    req.body = { ...(req.body || {}), targetStage: "github-create-pr" };
+    return pipeline(req, res);
+  });
+  route("post", "/api/github/merge-pr", (req, res) => {
+    req.body = { ...(req.body || {}), targetStage: "github-merge-pr" };
+    return pipeline(req, res);
+  });
   route("post", "/api/outcomes", (req, res) => {
     req.body = { ...(req.body || {}), targetStage: "outcome-state" };
     return pipeline(req, res);

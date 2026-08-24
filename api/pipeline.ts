@@ -5,6 +5,7 @@ import { getSessionUser } from "./_lib/session.js";
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
+import { createGithubPullRequest, mergeGithubPullRequest, resolveGithubToken, githubWriteAuthMessage } from "./_lib/github-pr.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
 import { appendExplicitHumanLedgerEvent, reconcileOutcomeCognitiveLedger } from "./_lib/cognitive-ledger-transitions.js";
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
@@ -132,6 +133,15 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const githubRoute = typeof req.query?.github === 'string' ? req.query.github : '';
+    if (githubRoute === 'preview' && !req.body?.targetStage) {
+      req.body = { ...(req.body || {}), targetStage: 'repository-preview' };
+    } else if (githubRoute === 'create-pr' && !req.body?.targetStage) {
+      req.body = { ...(req.body || {}), targetStage: 'github-create-pr' };
+    } else if (githubRoute === 'merge-pr' && !req.body?.targetStage) {
+      req.body = { ...(req.body || {}), targetStage: 'github-merge-pr' };
+    }
+
     const { node, targetStage, repoUrl, task } = req.body || {};
 
     if (targetStage === 'feedback') {
@@ -352,16 +362,73 @@ export default async function handler(req: any, res: any) {
      * Vercel Hobby permits twelve serverless functions; a dedicated endpoint
      * would make thirteen. The URL is rewritten here in vercel.json, while the
      * local Express server keeps its friendly /api/github/preview route.
+     * Legacy /api/github/fetch-repo is an alias for the same stage.
      */
     if (targetStage === 'repository-preview') {
       if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to preview a GitHub repository.' });
+        return res.status(401).json({ error: 'Sign in to import a GitHub repository.' });
       }
       try {
         const preview = await buildRepositoryPreview(repoUrl, task);
         return res.status(200).json(preview);
       } catch (error: any) {
-        return res.status(400).json({ error: error?.message || "Could not prepare the repository preview." });
+        return res.status(400).json({ error: error?.message || "Could not import repository context." });
+      }
+    }
+
+    /*
+     * Thin write path: create a PR when GITHUB_TOKEN exists and the head branch
+     * already lives on GitHub. Desk git does not push; merge requires the same token.
+     */
+    if (targetStage === 'github-create-pr') {
+      if (!sessionUser) {
+        return res.status(401).json({ error: 'Sign in to create a GitHub pull request.' });
+      }
+      if (!resolveGithubToken()) {
+        return res.status(503).json({
+          error: githubWriteAuthMessage(),
+          needsGithubToken: true,
+          canMerge: false,
+        });
+      }
+      try {
+        const pullRequest = await createGithubPullRequest({
+          repoUrl,
+          title: req.body?.title,
+          head: req.body?.head,
+          base: req.body?.base,
+          body: req.body?.body,
+        });
+        return res.status(201).json({
+          ...pullRequest,
+          canMerge: Boolean(resolveGithubToken()),
+          note: 'Merge is available via targetStage github-merge-pr when GITHUB_TOKEN has repo scope. Desk git still cannot push.',
+        });
+      } catch (error: any) {
+        return res.status(400).json({ error: error?.message || 'Could not create the pull request.' });
+      }
+    }
+
+    if (targetStage === 'github-merge-pr') {
+      if (!sessionUser) {
+        return res.status(401).json({ error: 'Sign in to merge a GitHub pull request.' });
+      }
+      if (!resolveGithubToken()) {
+        return res.status(503).json({
+          error: githubWriteAuthMessage(),
+          needsGithubToken: true,
+          canMerge: false,
+        });
+      }
+      try {
+        const result = await mergeGithubPullRequest({
+          repoUrl,
+          number: Number(req.body?.number),
+          mergeMethod: req.body?.mergeMethod,
+        });
+        return res.status(200).json(result);
+      } catch (error: any) {
+        return res.status(400).json({ error: error?.message || 'Could not merge the pull request.' });
       }
     }
 

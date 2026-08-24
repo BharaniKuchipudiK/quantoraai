@@ -1,21 +1,36 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { classifyDeskGitLine, looksLikeMissingGitRepo, studioGitBlocker, studioGitFileCount } from '../lib/studio-git.js';
+import {
+  GITHUB_CREATE_PR_ENDPOINT,
+  buildGithubCreatePrRequestBody,
+  githubCompareUrl,
+  readGithubApiJson,
+} from '../lib/github-import.js';
 import { runGitInWorkspace } from '../lib/webcontainer.js';
 
-export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textColor }) {
+export default function StudioGit({
+  vfs = {},
+  workspaceKey = '',
+  githubRepoUrl = '',
+  isLight,
+  textColor,
+}) {
   const [log, setLog] = useState([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [needsInit, setNeedsInit] = useState(true);
+  const [prHead, setPrHead] = useState('quantora-desk');
+  const [prBusy, setPrBusy] = useState(false);
   const scrollerRef = useRef(null);
   const primedKey = useRef('');
   const isolated = typeof window !== 'undefined' && window.crossOriginIsolated === true;
   const fileCount = studioGitFileCount(vfs);
   const blocker = studioGitBlocker({ isolated, fileCount });
+  const compareUrl = githubCompareUrl(githubRepoUrl, prHead || 'quantora-desk', 'main');
 
   useEffect(() => {
     scrollerRef.current?.scrollTo?.(0, scrollerRef.current.scrollHeight);
-  }, [log, busy]);
+  }, [log, busy, prBusy]);
 
   useEffect(() => {
     if (blocker || !fileCount || primedKey.current === workspaceKey) return undefined;
@@ -62,6 +77,67 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
     }
   }
 
+  function openOnGithub() {
+    if (!compareUrl) {
+      setLog((prev) => [
+        ...prev,
+        'Open on GitHub needs an imported repository URL (use Import Repository in the composer). Desk git still does not push.',
+      ]);
+      return;
+    }
+    window.open(compareUrl, '_blank', 'noopener,noreferrer');
+    setLog((prev) => [
+      ...prev,
+      `$ open ${compareUrl}`,
+      'Opened GitHub compare. Push the head branch from your machine first — desk git cannot push to Quantora’s GitHub.',
+    ]);
+  }
+
+  async function createPullRequest() {
+    if (prBusy) return;
+    if (!githubRepoUrl) {
+      setLog((prev) => [
+        ...prev,
+        'Create PR needs an imported repository URL. Import the repo first, push a head branch from your machine, then retry.',
+      ]);
+      return;
+    }
+    setPrBusy(true);
+    setLog((prev) => [...prev, `$ create-pr ${prHead || 'quantora-desk'} → main`]);
+    try {
+      const response = await fetch(GITHUB_CREATE_PR_ENDPOINT, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildGithubCreatePrRequestBody({
+          repoUrl: githubRepoUrl,
+          title: message.trim() || `Quantora desk: ${prHead || 'quantora-desk'}`,
+          head: prHead || 'quantora-desk',
+          base: 'main',
+          body: 'Opened from Quantora Coding Desk. Desk git commits locally only; the head branch must already exist on GitHub.',
+        })),
+      });
+      const parsed = await readGithubApiJson(response);
+      if (!parsed.ok) {
+        setLog((prev) => [...prev, parsed.error || 'Could not create the pull request.']);
+        return;
+      }
+      const url = parsed.data?.htmlUrl || parsed.data?.url;
+      setLog((prev) => [
+        ...prev,
+        url ? `Pull request #${parsed.data.number}: ${url}` : `Pull request #${parsed.data?.number} created.`,
+        parsed.data?.canMerge
+          ? 'Merge is available server-side when GITHUB_TOKEN has repo scope (see docs/GITHUB.md).'
+          : 'Merge is not configured until GITHUB_TOKEN is set in Vercel.',
+      ]);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      setLog((prev) => [...prev, error?.message || 'Could not create the pull request.']);
+    } finally {
+      setPrBusy(false);
+    }
+  }
+
   return (
     <div
       data-quantora-studio-git="true"
@@ -77,7 +153,7 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
       }}
     >
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
-        Git is for this app’s files on the desk. Status, diff, and commit only — not Quantora’s GitHub.
+        Git is for this app’s files on the desk. Status, diff, and commit only — not Quantora’s GitHub. Push still happens outside the desk; Create PR needs GITHUB_TOKEN and an existing head branch.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>
@@ -91,7 +167,47 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
             Start git in this app
           </button>
         ) : null}
+        <button
+          type="button"
+          data-quantora-studio-git-open-github="true"
+          disabled={busy || prBusy}
+          onClick={openOnGithub}
+          style={gitButtonStyle}
+        >
+          Open on GitHub
+        </button>
+        <button
+          type="button"
+          data-quantora-studio-git-create-pr="true"
+          disabled={busy || prBusy || !githubRepoUrl}
+          onClick={createPullRequest}
+          style={gitButtonStyle}
+        >
+          {prBusy ? 'Creating PR…' : 'Create PR'}
+        </button>
       </div>
+      {githubRepoUrl ? (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <label htmlFor="quantora-pr-head" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>Head branch</label>
+          <input
+            id="quantora-pr-head"
+            data-quantora-studio-git-pr-head="true"
+            value={prHead}
+            disabled={prBusy}
+            onChange={(event) => setPrHead(event.target.value)}
+            placeholder="quantora-desk"
+            style={{
+              flex: 1,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '8px',
+              color: '#e2e8f0',
+              padding: '6px 10px',
+              font: 'inherit',
+            }}
+          />
+        </div>
+      ) : null}
       <div ref={scrollerRef} style={{ flex: 1, overflow: 'auto', padding: '12px 14px', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
         {blocker ? (
           <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div>
@@ -110,7 +226,7 @@ export default function StudioGit({ vfs = {}, workspaceKey = '', isLight, textCo
           );
         }))}
         </div>
-        {busy ? <div style={{ color: '#94a3b8' }}>running…</div> : null}
+        {busy || prBusy ? <div style={{ color: '#94a3b8' }}>running…</div> : null}
       </div>
       <form
         onSubmit={(event) => {

@@ -22,6 +22,11 @@ import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
+import {
+  GITHUB_IMPORT_ENDPOINT,
+  buildGithubImportRequestBody,
+  readGithubApiJson,
+} from '../lib/github-import.js';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
@@ -635,6 +640,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
+  const [importedGithubRepoUrl, setImportedGithubRepoUrl] = useState('');
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubError, setGithubError] = useState('');
 
@@ -648,15 +654,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setGithubError('');
 
     try {
-      const response = await fetch('/api/github/fetch-repo', {
+      const response = await fetch(GITHUB_IMPORT_ENDPOINT, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: githubRepoUrl })
+        body: JSON.stringify(buildGithubImportRequestBody(githubRepoUrl)),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import repository');
+      const parsed = await readGithubApiJson(response);
+      if (!parsed.ok) {
+        throw new Error(parsed.error || 'Failed to import repository');
+      }
+
+      const data = parsed.data || {};
+      if (!data.name || !data.content) {
+        throw new Error('GitHub import succeeded but returned no repository context.');
       }
 
       setAttachments(prev => [...prev, {
@@ -664,11 +676,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         name: data.name,
         content: data.content
       }]);
+      setImportedGithubRepoUrl(githubRepoUrl.trim());
       
       setIsGithubModalOpen(false);
       setGithubRepoUrl('');
     } catch (err) {
-      setGithubError(err.message);
+      setGithubError(err.message || 'Failed to import repository');
     } finally {
       setIsFetchingGithub(false);
     }
@@ -2068,6 +2081,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
+  const hasDeskFiles = Boolean(vfs && Object.keys(vfs).some((path) => path && vfs[path]?.content));
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -2080,6 +2094,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
     codingDeskOpen,
+    hasDeskFiles,
     photosMissing,
     shopUiMissing,
   });
@@ -3910,6 +3925,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                <StudioGit
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
+                 githubRepoUrl={importedGithubRepoUrl}
                  isLight={isLight}
                  textColor={textColor}
                />
@@ -3973,7 +3989,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: textColor }}>Import Repository</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Load codebase context directly into AI Studio.</p>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: subtextColor }}>Load read-only codebase context into AI Studio (not a full clone).</p>
               </div>
             </div>
 
