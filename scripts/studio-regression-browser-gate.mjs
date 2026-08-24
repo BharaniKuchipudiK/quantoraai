@@ -28,6 +28,14 @@ const calculatorReply = [
   '```',
 ].join('\n');
 
+const scientificReply = [
+  'Updated — scientific keys are on the running Preview.',
+  '',
+  '```jsx',
+  "import React, { useState } from 'react';\nimport { Delete } from 'lucide-react';\nimport './App.css';\nexport default function Calculator(){ const [value,setValue]=useState('0'); return <main style={{padding:24}}><output data-testid='calculator-display'>{value}</output><button data-testid='calculator-one' onClick={()=>setValue('1')}>1</button><button type='button'>sin</button><button type='button'>cos</button><button type='button'>DEG</button><Delete /></main>}",
+  '```',
+].join('\n');
+
 const projectReply = [
   'Done — here is the implementation.',
   '',
@@ -126,6 +134,8 @@ await page.route('**/api/**', async (route) => {
       ? (body.refineMode === true && String(body.previewCode || '').trim()
         ? currencyReply
         : 'Sure — I added a currency converter to the boutique.')
+      : /scientific/i.test(message)
+        ? scientificReply
       : /calculator/i.test(message)
         ? calculatorReply
         : /patched|heading/i.test(message)
@@ -310,6 +320,26 @@ try {
   }
   await proveDeskFilesMatchPreview('calculator');
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
+
+  // Refine must update the Preview entry — not only sidecar .py files.
+  await prompt.fill('can you modify this to be a scientific calculator');
+  await prompt.press('Enter');
+  await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
+  const scientificFrame = await visibleFrame('button', 20_000);
+  if (!scientificFrame) throw new Error('Scientific refine never remounted Preview.');
+  const hasSin = await scientificFrame.locator('button').filter({ hasText: /^sin$/i }).first().isVisible().catch(() => false);
+  const hasCos = await scientificFrame.locator('button').filter({ hasText: /^cos$/i }).first().isVisible().catch(() => false);
+  if (!hasSin || !hasCos) {
+    throw new Error('Scientific refine claimed an update but Preview still lacks sin/cos keys.');
+  }
+  await page.waitForFunction(() => {
+    const row = document.querySelector('[data-quantora-desk-probe="calc-display"]');
+    return row?.getAttribute('data-quantora-desk-probe-ok') === 'true';
+  }, null, { timeout: 12_000 }).catch(() => {});
+  if ((await page.locator('[data-quantora-desk-probe="calc-display"]').first().getAttribute('data-quantora-desk-probe-ok')) !== 'true') {
+    throw new Error('Calculator display probe failed after the scientific refine while the display was on Preview.');
+  }
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/studio-calculator-preview.png', fullPage: true });
 
