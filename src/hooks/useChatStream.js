@@ -635,6 +635,7 @@ export function useChatStream({
             body: JSON.stringify({
               ...requestBodyFor(targetModel),
               message: messageForModel,
+              turnAttempt: attempt,
             })
           });
           const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
