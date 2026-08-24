@@ -20,9 +20,8 @@ import {
 } from '../lib/pcl-session-runtime.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
 import { inferStudioDomain } from '../../api/_lib/studio-domain-inference.js';
-import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
-import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
 import {
   correlationHeaders,
@@ -377,12 +376,13 @@ export function useChatStream({
       hasDeskFiles: deskFiles,
       studioDomain,
     });
-    const deskPacket = mergeLiveDeskProbe(buildDeskContextPacket({
+    const deskPacket = buildCodingTurnPacket({
       vfs,
+      canvasCode,
       job: deskJob,
-      html: pickPreviewEntry(vfs) || canvasCode || '',
       studioDomain,
-    }), liveDeskProbe);
+      live: liveDeskProbe,
+    });
     const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     const turnDomain = isCodingRequest
@@ -434,11 +434,11 @@ export function useChatStream({
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
       taskCategory: isCodingRequest ? 'coding' : 'general',
-      ...(refineDesk ? {
-        refineMode: true,
-        previewCode: String(pickPreviewEntry(vfs) || canvasCode || '').slice(0, 80_000),
-      } : {}),
-      ...(deskPacket ? { deskContext: deskPacket } : {}),
+      ...codingTurnRequestFields({
+        isCodingRequest,
+        refineDesk,
+        packet: deskPacket,
+      }),
       ...pclEnvelope,
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),

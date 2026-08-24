@@ -15,6 +15,11 @@ import { jobNeedsProductPhotos, normalizeStudioJobCard } from './studio-job-card
 const MAX_FILES = 24;
 const MAX_CATALOG = 12;
 const MAX_PURPOSE = 120;
+export const MAX_PREVIEW_CODE = 80_000;
+
+export function capPreviewCode(code = '') {
+  return String(code || '').slice(0, MAX_PREVIEW_CODE);
+}
 
 function vfsText(vfs, path) {
   const entry = vfs?.[path];
@@ -271,12 +276,14 @@ export function buildDeskContextPacket({
   job = null,
   html = '',
   studioDomain = null,
+  previewCode = '',
 } = {}) {
   if (advisorBlocksPreviewBuild(studioDomain)) return null;
   const files = listStudioFiles(vfs).slice(0, MAX_FILES);
   if (!files.length && !String(html || '').trim()) return null;
   const probed = probeRunningDesk({ html, vfs, job });
   const card = normalizeStudioJobCard(job);
+  const source = capPreviewCode(previewCode || html);
   return {
     job: card ? { purpose: card.purpose.slice(0, MAX_PURPOSE), mustWork: card.mustWork.slice(0, 4) } : null,
     files,
@@ -285,7 +292,44 @@ export function buildDeskContextPacket({
     checks: probed.checks,
     failed: probed.failed.map((check) => check.id),
     nextBeat: probed.nextBeat,
+    previewCode: source,
   };
+}
+
+/** First coding turn with a VFS, and every coding turn after, carry this packet. */
+export function buildCodingTurnPacket({
+  vfs = {},
+  canvasCode = '',
+  job = null,
+  studioDomain = null,
+  live = null,
+} = {}) {
+  const html = pickPreviewEntry(vfs) || canvasCode || '';
+  return mergeLiveDeskProbe(buildDeskContextPacket({
+    vfs,
+    job,
+    html,
+    studioDomain,
+    previewCode: html,
+  }), live);
+}
+
+export function codingTurnRequestFields({
+  isCodingRequest = false,
+  refineDesk = false,
+  packet = null,
+} = {}) {
+  if (!packet) return refineDesk ? { refineMode: true } : {};
+  if (isCodingRequest || refineDesk) {
+    const fields = {
+      deskContext: packet,
+      previewCode: capPreviewCode(packet.previewCode),
+    };
+    if (refineDesk) fields.refineMode = true;
+    return fields;
+  }
+  const { previewCode: _previewCode, ...desk } = packet;
+  return { deskContext: desk };
 }
 
 export function sanitizeDeskContext(raw) {
@@ -342,6 +386,7 @@ export function sanitizeDeskContext(raw) {
     checks,
     failed: Array.isArray(raw.failed) ? raw.failed.map((id) => String(id).slice(0, 40)).slice(0, 8) : failingChecks(checks).map((check) => check.id),
     nextBeat: typeof raw.nextBeat === 'string' ? raw.nextBeat.slice(0, 160) : '',
+    previewCode: typeof raw.previewCode === 'string' ? capPreviewCode(raw.previewCode) : '',
   };
 }
 
@@ -354,6 +399,7 @@ export function formatDeskContextForPrompt(packet) {
     if (desk.job.mustWork.length) lines.push(`MUST STILL WORK: ${desk.job.mustWork.join('; ')}`);
   }
   if (desk.files.length) lines.push(`FILES: ${desk.files.join(', ')}`);
+  if (desk.previewCode) lines.push(`PREVIEW SOURCE: attached (${desk.previewCode.length} chars)`);
   if (desk.catalog.length) {
     lines.push(`CATALOG: ${desk.catalog.map((item) => item.name).join(', ')}`);
   }

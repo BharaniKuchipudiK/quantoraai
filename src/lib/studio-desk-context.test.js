@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildCodingTurnPacket,
   buildDeskContextPacket,
   chipsFromDeskProbes,
+  codingTurnRequestFields,
   deskChecksRegressed,
   formatDeskContextForPrompt,
   mergeLiveDeskProbe,
@@ -304,4 +306,41 @@ test('sanitize keeps a criterion unverified across the wire', () => {
   assert.deepEqual(clean.failed, ['job-controls']);
   assert.equal(clean.facts.itemAdded, true);
   assert.equal('controlResponded' in clean.facts, false);
+});
+
+test('a first coding turn with a VFS sends deskContext and capped previewCode', () => {
+  const packet = buildCodingTurnPacket({
+    vfs: {
+      'index.html': { content: shopHtml, language: 'html' },
+      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
+    },
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
+  });
+  assert.ok(packet.files.includes('index.html'));
+  assert.match(packet.previewCode, /Aaranya/);
+  assert.ok(packet.previewCode.length <= 80_000);
+  const body = codingTurnRequestFields({ isCodingRequest: true, refineDesk: false, packet });
+  assert.equal(body.refineMode, undefined);
+  assert.ok(body.deskContext);
+  assert.equal(body.previewCode, packet.previewCode);
+  assert.ok(Array.isArray(body.deskContext.files));
+  assert.ok(body.deskContext.facts);
+  assert.ok(Array.isArray(body.deskContext.checks));
+  assert.match(formatDeskContextForPrompt(body.deskContext), /PREVIEW SOURCE: attached/);
+  const chatOnly = codingTurnRequestFields({ isCodingRequest: false, refineDesk: false, packet });
+  assert.equal('previewCode' in chatOnly, false);
+  assert.equal('previewCode' in chatOnly.deskContext, false);
+});
+
+test('Travel, Study, Finance, and Research never receive a coding packet', () => {
+  for (const studioDomain of ['travel', 'education', 'finance', 'research']) {
+    assert.equal(buildCodingTurnPacket({
+      vfs: { 'index.html': { content: shopHtml } },
+      studioDomain,
+    }), null);
+    assert.deepEqual(codingTurnRequestFields({
+      isCodingRequest: true,
+      packet: buildCodingTurnPacket({ vfs: { 'index.html': { content: shopHtml } }, studioDomain }),
+    }), {});
+  }
 });
