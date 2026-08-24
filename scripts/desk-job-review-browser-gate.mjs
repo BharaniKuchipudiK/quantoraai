@@ -239,11 +239,14 @@ try {
     throw new Error(`The desk invented a beat from criteria it never checked: ${await nextBeat()}`);
   }
 
-  // Positive control: chat really did claim the list works, so proving the
-  // beat does not echo chat means something.
+  // Positive control: the mock injected a claim that the list works. Chat
+  // must not keep that sentence as fact; the beat still must not echo it.
   const transcript = await page.locator('.app-shell--studio').first().innerText();
-  if (!transcript.includes(CHAT_CLAIM)) {
-    throw new Error('Chat never made its claim, so this gate cannot prove the beat ignores chat.');
+  if (transcript.includes(CHAT_CLAIM)) {
+    throw new Error('Chat presented the injected lie as fact. Preview is the source of truth.');
+  }
+  if (!/Preview cannot add an item yet/i.test(transcript)) {
+    throw new Error('Chat never received the injected add-item claim, so this gate cannot prove the beat ignores chat.');
   }
 
   // Phase B — same broken button, but now the running page gets asked.
