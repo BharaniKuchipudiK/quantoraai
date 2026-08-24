@@ -1719,7 +1719,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           />
                           </div>
                         )}
-                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.label ? (
+                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active ? (
                           <StudyTutorBoard
                             brief={studyTutorBrief}
                             isLight={isLight}
@@ -1728,6 +1728,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             lessonText={cleanText}
                             onAsk={(text) => setInputText(text)}
                             onSend={(text) => handleSendMessage(text)}
+                            onCheckOutcome={(fact) => {
+                              const line = String(fact || '').trim();
+                              if (!line) return;
+                              const facts = conversationContext?.facts || [];
+                              if (facts.some((row) => String(row).toLowerCase() === line.toLowerCase())) return;
+                              updateActiveSession({
+                                conversationContext: {
+                                  ...(conversationContext || {}),
+                                  facts: [...facts, line],
+                                },
+                              });
+                            }}
                           />
                         ) : null}
                         </>
