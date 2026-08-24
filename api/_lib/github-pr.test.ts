@@ -4,6 +4,7 @@ import {
   githubWriteAuthMessage,
   normalizeCreatePullRequestInput,
   resolveGithubToken,
+  assertGithubWriteAllowed,
 } from "./github-pr.js";
 
 test("resolves GITHUB_TOKEN / GITHUB_PAT / GH_TOKEN", () => {
@@ -35,4 +36,24 @@ test("create-pr input requires repo, title, and head branch", () => {
 test("write-auth message is honest about missing credentials and no desk push", () => {
   assert.match(githubWriteAuthMessage(), /GITHUB_TOKEN/);
   assert.match(githubWriteAuthMessage(), /cannot push/i);
+  assert.match(githubWriteAuthMessage(), /GITHUB_ALLOWED_REPOS/);
+});
+
+test("write allowlist fails closed without GITHUB_ALLOWED_REPOS", () => {
+  assert.throws(
+    () => assertGithubWriteAllowed("https://github.com/acme/widget", {} as NodeJS.ProcessEnv),
+    /GITHUB_ALLOWED_REPOS/,
+  );
+  assert.throws(
+    () => assertGithubWriteAllowed("https://github.com/acme/widget", {
+      GITHUB_ALLOWED_REPOS: "other/repo",
+    } as NodeJS.ProcessEnv),
+    /not on the GITHUB_ALLOWED_REPOS allowlist/,
+  );
+  assert.deepEqual(
+    assertGithubWriteAllowed("https://github.com/Acme/Widget.git", {
+      GITHUB_ALLOWED_REPOS: "acme/widget, other/repo",
+    } as NodeJS.ProcessEnv),
+    { owner: "Acme", repo: "Widget" },
+  );
 });

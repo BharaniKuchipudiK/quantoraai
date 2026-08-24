@@ -574,6 +574,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   useEffect(() => {
     if (deskSessionIdRef.current === activeSessionId) return;
     deskSessionIdRef.current = activeSessionId;
+    setImportedGithubRepoUrl('');
+    setImportedGithubBaseBranch('main');
     if (!canAutoOpenCodeWorkspace(studioDomain)) {
       setVfs({});
       setWorkspaceCode('');
@@ -641,6 +643,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
   const [importedGithubRepoUrl, setImportedGithubRepoUrl] = useState('');
+  const [importedGithubBaseBranch, setImportedGithubBaseBranch] = useState('main');
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubError, setGithubError] = useState('');
 
@@ -677,6 +680,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         content: data.content
       }]);
       setImportedGithubRepoUrl(githubRepoUrl.trim());
+      setImportedGithubBaseBranch(typeof data.branch === 'string' && data.branch.trim() ? data.branch.trim() : 'main');
       
       setIsGithubModalOpen(false);
       setGithubRepoUrl('');
@@ -3926,6 +3930,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
                  githubRepoUrl={importedGithubRepoUrl}
+                 githubBaseBranch={importedGithubBaseBranch}
                  isLight={isLight}
                  textColor={textColor}
                />

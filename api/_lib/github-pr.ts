@@ -27,7 +27,30 @@ export function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): string
 }
 
 export function githubWriteAuthMessage(): string {
-  return "Creating or merging pull requests requires GITHUB_TOKEN (or GITHUB_PAT) in Vercel with repo scope. Desk git still cannot push branches; push the head branch from your machine or a CI job first, then create the PR.";
+  return "Creating or merging pull requests requires GITHUB_TOKEN (or GITHUB_PAT) in Vercel with repo scope, plus GITHUB_ALLOWED_REPOS (comma-separated owner/repo). Desk git still cannot push branches; push the head branch from your machine or a CI job first, then create the PR.";
+}
+
+/**
+ * Prevent confused-deputy writes: the shared deployment token may only touch
+ * repositories explicitly allowlisted in GITHUB_ALLOWED_REPOS.
+ */
+export function assertGithubWriteAllowed(repoUrl: string, env: NodeJS.ProcessEnv = process.env): { owner: string; repo: string } {
+  const { owner, repo } = parseGithubRepositoryUrl(repoUrl);
+  const allow = String(env.GITHUB_ALLOWED_REPOS || "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  if (allow.length === 0) {
+    throw new Error(
+      "GitHub write operations are disabled until GITHUB_ALLOWED_REPOS is set in Vercel (comma-separated owner/repo allowlist). " +
+        githubWriteAuthMessage(),
+    );
+  }
+  const key = `${owner}/${repo}`.toLowerCase();
+  if (!allow.includes(key)) {
+    throw new Error(`Repository ${owner}/${repo} is not on the GITHUB_ALLOWED_REPOS allowlist.`);
+  }
+  return { owner, repo };
 }
 
 function githubHeaders(token: string): Record<string, string> {
@@ -65,6 +88,7 @@ export async function createGithubPullRequest(
   }
 
   const normalized = normalizeCreatePullRequestInput(input);
+  assertGithubWriteAllowed(normalized.repoUrl);
   const { owner, repo } = parseGithubRepositoryUrl(normalized.repoUrl);
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
     method: "POST",
@@ -131,6 +155,7 @@ export async function mergeGithubPullRequest(input: {
     throw new Error("A repository URL and pull-request number are required to merge.");
   }
 
+  assertGithubWriteAllowed(repoUrl);
   const { owner, repo } = parseGithubRepositoryUrl(repoUrl);
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${number}/merge`, {
     method: "PUT",

@@ -25,6 +25,10 @@ Set these in the Vercel project → Settings → Environment Variables (Producti
 # (merge also needs permission to merge PRs on the target repo).
 GITHUB_TOKEN=
 
+# Required for Create PR / merge (comma-separated owner/repo).
+# Without this allowlist, write APIs fail closed even if a token exists.
+GITHUB_ALLOWED_REPOS=BharaniKuchipudiK/quantoraai
+
 # Optional aliases if you prefer these names (first match wins):
 # GITHUB_PAT=
 # GH_TOKEN=

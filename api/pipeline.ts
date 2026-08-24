@@ -5,7 +5,7 @@ import { getSessionUser } from "./_lib/session.js";
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
-import { createGithubPullRequest, mergeGithubPullRequest, resolveGithubToken, githubWriteAuthMessage } from "./_lib/github-pr.js";
+import { createGithubPullRequest, mergeGithubPullRequest, resolveGithubToken, githubWriteAuthMessage, assertGithubWriteAllowed } from "./_lib/github-pr.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
 import { appendExplicitHumanLedgerEvent, reconcileOutcomeCognitiveLedger } from "./_lib/cognitive-ledger-transitions.js";
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
@@ -392,6 +392,16 @@ export default async function handler(req: any, res: any) {
         });
       }
       try {
+        assertGithubWriteAllowed(repoUrl);
+      } catch (error: any) {
+        return res.status(503).json({
+          error: error?.message || githubWriteAuthMessage(),
+          needsGithubToken: false,
+          needsAllowedRepos: true,
+          canMerge: false,
+        });
+      }
+      try {
         const pullRequest = await createGithubPullRequest({
           repoUrl,
           title: req.body?.title,
@@ -417,6 +427,16 @@ export default async function handler(req: any, res: any) {
         return res.status(503).json({
           error: githubWriteAuthMessage(),
           needsGithubToken: true,
+          canMerge: false,
+        });
+      }
+      try {
+        assertGithubWriteAllowed(repoUrl);
+      } catch (error: any) {
+        return res.status(503).json({
+          error: error?.message || githubWriteAuthMessage(),
+          needsGithubToken: false,
+          needsAllowedRepos: true,
           canMerge: false,
         });
       }

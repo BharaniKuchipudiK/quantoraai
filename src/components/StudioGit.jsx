@@ -12,6 +12,7 @@ export default function StudioGit({
   vfs = {},
   workspaceKey = '',
   githubRepoUrl = '',
+  githubBaseBranch = 'main',
   isLight,
   textColor,
 }) {
@@ -26,7 +27,8 @@ export default function StudioGit({
   const isolated = typeof window !== 'undefined' && window.crossOriginIsolated === true;
   const fileCount = studioGitFileCount(vfs);
   const blocker = studioGitBlocker({ isolated, fileCount });
-  const compareUrl = githubCompareUrl(githubRepoUrl, prHead || 'quantora-desk', 'main');
+  const baseBranch = (githubBaseBranch && String(githubBaseBranch).trim()) || 'main';
+  const compareUrl = githubCompareUrl(githubRepoUrl, prHead || 'quantora-desk', baseBranch);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo?.(0, scrollerRef.current.scrollHeight);
@@ -103,7 +105,7 @@ export default function StudioGit({
       return;
     }
     setPrBusy(true);
-    setLog((prev) => [...prev, `$ create-pr ${prHead || 'quantora-desk'} → main`]);
+    setLog((prev) => [...prev, `$ create-pr ${prHead || 'quantora-desk'} → ${baseBranch}`]);
     try {
       const response = await fetch(GITHUB_CREATE_PR_ENDPOINT, {
         method: 'POST',
@@ -113,7 +115,7 @@ export default function StudioGit({
           repoUrl: githubRepoUrl,
           title: message.trim() || `Quantora desk: ${prHead || 'quantora-desk'}`,
           head: prHead || 'quantora-desk',
-          base: 'main',
+          base: baseBranch,
           body: 'Opened from Quantora Coding Desk. Desk git commits locally only; the head branch must already exist on GitHub.',
         })),
       });
