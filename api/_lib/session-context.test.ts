@@ -21,6 +21,14 @@ test("normalizeSessionContext trims and caps facts", () => {
   assert.equal(ctx.understanding, "Couple trip");
 });
 
+test("normalizeSessionContext keeps the newest facts at the cap", () => {
+  const facts = Array.from({ length: 18 }, (_, index) => `fact-${index + 1}`);
+  const ctx = normalizeSessionContext({ facts });
+  assert.equal(ctx.facts?.length, 16);
+  assert.equal(ctx.facts?.[0], "fact-3");
+  assert.equal(ctx.facts?.at(-1), "fact-18");
+});
+
 test("mergeSessionContext accumulates facts and prefers newer goal", () => {
   const merged = mergeSessionContext(
     { goal: "Old", facts: ["dates: March"] },
