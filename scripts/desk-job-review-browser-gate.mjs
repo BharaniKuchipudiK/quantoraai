@@ -80,20 +80,48 @@ function projectReply(app) {
   ].join('\n');
 }
 
+function driveCleanerApp() {
+  return `import React from 'react';
+
+export default function App() {
+  return (
+    <main>
+      <h1>Drive Cleaner</h1>
+      <p>Scan and remove duplicate files from Google Drive.</p>
+      <button type="button">Scan Drive</button>
+      <ul className="file-list">
+        <li>Report Q3.pdf</li>
+        <li>Vacation.jpg</li>
+      </ul>
+    </main>
+  );
+}
+`;
+}
+
 function driveCleanerReply() {
-  const html = `<!DOCTYPE html><html><head><title>Drive Cleaner Agent</title></head><body>
-<main>
-  <h1>Drive Cleaner</h1>
-  <p>Scan and remove duplicate files from Google Drive.</p>
-  <button type="button">Scan Drive</button>
-  <ul class="file-list"><li>Report Q3.pdf</li><li>Vacation.jpg</li></ul>
-</main>
-</body></html>`;
   return [
     'Here is a Drive Cleaner Agent dashboard.',
     '',
+    '```json filepath="package.json"',
+    JSON.stringify({
+      name: 'drive-cleaner-agent', private: true, version: '1.0.0', type: 'module',
+      scripts: { dev: 'vite', build: 'vite build' },
+      dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0' },
+      devDependencies: { '@vitejs/plugin-react': '^4.2.1', vite: '^5.1.4' },
+    }),
+    '```',
+    '',
     '```html filepath="index.html"',
-    html,
+    '<!doctype html><html><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>',
+    '```',
+    '',
+    '```jsx filepath="src/main.jsx"',
+    "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nReactDOM.createRoot(document.getElementById('root')).render(<App />);",
+    '```',
+    '',
+    '```jsx filepath="src/App.jsx"',
+    driveCleanerApp(),
     '```',
   ].join('\n');
 }
