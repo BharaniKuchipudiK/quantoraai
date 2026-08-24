@@ -4,6 +4,7 @@ import {
   injectShopCommerceUi,
   previewHtmlHasAddToCartControl,
   previewHtmlHasCurrencySwitcher,
+  stripShopCommerceUi,
 } from './shop-preview-ui.js';
 
 test('a boutique page without cart or currency gets both in Preview HTML', () => {
@@ -36,3 +37,11 @@ test('a dead Add to Cart button still gets a working click', () => {
   assert.match(result.html, /addEventListener\('click'/);
   assert.match(result.html, /data-quantora-shop-ui/);
 });
+
+test('stripShopCommerceUi removes injected boutique chrome', () => {
+  const injected = injectShopCommerceUi('<!DOCTYPE html><html><body><main>Shop</main></body></html>').html;
+  const stripped = stripShopCommerceUi(injected);
+  assert.doesNotMatch(stripped, /data-quantora-shop-ui/);
+  assert.doesNotMatch(stripped, /quantora-currency/);
+});
+

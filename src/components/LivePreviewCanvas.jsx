@@ -13,8 +13,8 @@ import {
 } from '../lib/preview-utils.js';
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
+import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
-import { vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { getClientSecret } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
@@ -191,7 +191,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const files = vfsRef.current;
     let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, files), origin);
-    if (vfsLooksLikeShop(files) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
+    if (looksLikeShopDesk({ html: preparedHtml, vfs: files, job: jobCardRef.current }) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
       preparedHtml = injectShopCommerceUi(preparedHtml).html;
     }
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
@@ -280,14 +280,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         });
         if (!verifyOnly && data.passed === false && Array.isArray(data.issues) && data.issues.length && jobCardRef.current && !autoJobHealRef.current) {
           autoJobHealRef.current = true;
-          const photos = injectMissingShopPhotos(codeToCheck);
-          const shop = injectShopCommerceUi(photos.html);
-          if (photos.injected || shop.changed) {
-            verifiedCodeRef.current = null;
-            setQualityReport(null);
-            onHealedPreviewRef.current?.(shop.html);
-            setCurrentCode(shop.html);
-            return;
+          if (looksLikeShopDesk({ html: codeToCheck, vfs: vfsRef.current, job: jobCardRef.current })) {
+            const photos = injectMissingShopPhotos(codeToCheck);
+            const shop = injectShopCommerceUi(photos.html);
+            if (photos.injected || shop.changed) {
+              verifiedCodeRef.current = null;
+              setQualityReport(null);
+              onHealedPreviewRef.current?.(shop.html);
+              setCurrentCode(shop.html);
+              return;
+            }
           }
           const instruction = `Improve this page for the JOB. Fix ONLY these issues, preserving the product:\n- ${data.issues.join('\n- ')}`;
           try {
@@ -582,10 +584,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setShowPublishDialog(true);
   };
 
-  useImperativeHandle(ref, () => ({
-    openPublish: handlePublishClick,
-  }), [handlePublishClick]);
-
   const handlePublish = async () => {
     if (isDeploying) return;
     setShowPublishDialog(false);
@@ -688,6 +686,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setIsSharing(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    openPublish: handlePublishClick,
+    openShare: handleSharePreview,
+  }), [handlePublishClick, handleSharePreview]);
 
   const retryVerification = () => {
     setAttempt(0);
