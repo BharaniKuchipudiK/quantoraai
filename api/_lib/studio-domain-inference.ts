@@ -15,6 +15,7 @@ const MINIMUM_CONFIDENCE_SCORE = 2;
 /** Shop / preview follow-ups mention money without being Finance Advisor work. */
 const CODING_DESK_CONTEXT = /\b(boutique|storefront|e-?commerce|saree|kanjeevaram|online shop|add[\s-]?to[\s-]?(?:bag|cart)|shopping cart|currency converter)\b/i;
 const CODING_SHOP_FOLLOWUP = /\b(cart|checkout|catalog|currency|prices?|costs?)\b/i;
+const CODING_BUILD_CUE = /\b(build|create|develop|design|website|html|preview|css|add[\s-]?to[\s-]?(?:bag|cart))\b/i;
 
 /** Declarative domain semantics; provider/model routing must not own this knowledge. */
 const DOMAIN_SIGNAL_REGISTRY: DomainSignalProfile[] = [
@@ -70,8 +71,11 @@ function signalScore(profile: DomainSignalProfile, current: string, prior: strin
 
 function hasCodingDeskContext(current: string, prior: string): boolean {
   const hay = `${current}\n${prior}`;
-  if (CODING_DESK_CONTEXT.test(hay)) return true;
-  return CODING_SHOP_FOLLOWUP.test(hay) && /\b(shop|product|website|boutique|html|preview)\b/i.test(hay);
+  const shopFollowUp = CODING_DESK_CONTEXT.test(hay)
+    || (CODING_SHOP_FOLLOWUP.test(hay) && /\b(shop|product|website|boutique|html|preview)\b/i.test(hay));
+  // A boutique in a tax question is still Finance. Only suppress advisor
+  // inference when the thread already looks like a site being built.
+  return shopFollowUp && CODING_BUILD_CUE.test(hay);
 }
 
 /**

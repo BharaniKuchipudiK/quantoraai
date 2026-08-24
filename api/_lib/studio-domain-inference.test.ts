@@ -85,4 +85,7 @@ test('a cold money question from empty chat can still open Finance', () => {
     isCodingRequest: false,
     hasCodingWorkspace: false,
   }), 'finance');
+  assert.equal(inferStudioDomain({
+    message: 'help with taxes and cash flow for my boutique',
+  }), 'finance');
 });
