@@ -49,6 +49,21 @@ test('oversize merchandise asks offer Start with 10 intake chips', () => {
   assert.match(shopPhotoTurnFailureCopy({ timedOut: true, assessment: ask }), /Start with 10/);
 });
 
+test('typed start with 10 expands to the intake chip brief using the prior Fox ask', async () => {
+  const { expandShopIntakeAccept, isShopIntakeAcceptShorthand } = await import('./shop-catalog-scale.js');
+  assert.equal(isShopIntakeAcceptShorthand('start with 10'), true);
+  assert.equal(isShopIntakeAcceptShorthand('Start with 10 photos.'), true);
+  assert.equal(isShopIntakeAcceptShorthand('build a shop with 10 photos'), false);
+  const expanded = expandShopIntakeAccept('start with 10', [FOX_BRIEF]);
+  assert.equal(expanded.expanded, true);
+  assert.equal(expanded.catalogTarget, SHOP_INTAKE_CATALOG_SIZE);
+  assert.equal(expanded.userAsked, 100);
+  assert.match(expanded.text, /about 10 working catalog photos/i);
+  assert.match(expanded.text, /not 100 unique/i);
+  assert.match(expanded.text, /preview-image/i);
+  assert.equal(shopCatalogTargetSize(expanded.text), SHOP_INTAKE_CATALOG_SIZE);
+});
+
 test('ordinary shop briefs are not oversize intake', () => {
   const ask = assessShopBuildAsk('Build a small boutique with 8 sarees and checkout');
   assert.equal(ask.oversize, false);
