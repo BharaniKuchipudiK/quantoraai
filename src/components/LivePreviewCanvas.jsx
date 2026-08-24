@@ -149,9 +149,14 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   onVerificationStatusChangeRef.current = onVerificationStatusChange;
 
   useEffect(() => {
-    const reported = !embedReady && !wcUrl && status === 'running' ? 'warming' : status;
+    // Project-runtime / WebContainer shells are ready without embed-ready.
+    const shellReady = Boolean(wcUrl)
+      || embedReady
+      || isProjectRuntimeVfs(vfs)
+      || Boolean(createInlineReactRuntimeVfs(currentCode, vfs));
+    const reported = !shellReady && status === 'running' ? 'warming' : status;
     onVerificationStatusChangeRef.current?.(reported);
-  }, [status, embedReady, wcUrl, headless, verifyOnly]);
+  }, [status, embedReady, wcUrl, vfs, currentCode, headless, verifyOnly]);
 
   useEffect(() => {
     setEmbedReady(false);
