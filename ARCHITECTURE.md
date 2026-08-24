@@ -153,8 +153,13 @@ response contract. Don't add a third.)
 - **Headers**: CSP (app/`desk` `script-src` without `unsafe-inline`; `/preview/`
   keeps inline scripts for user artifacts), HSTS, `X-Frame-Options: DENY`,
   `nosniff`, referrer & permissions policy in `vercel.json`.
-- **Abuse**: two-layer rate limiting (in-memory + durable) on `/api/chat`;
-  moderation pass on prompts; safety-policy checks.
+- **Abuse / control plane**: two-layer rate limiting (in-memory + durable) on
+  cost-bearing routes; when Supabase RL is unreachable, those routes collapse
+  to ~1/3 in-memory burst (`applyDurableCostBearingGuard`). Provider circuits
+  are shared via Supabase when healthy; on outage they run `local-degraded`
+  (open after ~half the normal failures) so cold instances do not keep hammering
+  a broken upstream. `/api/inference-health` reports `circuitStore` mode.
+  Moderation pass on prompts; safety-policy checks.
 - **Published sites**: `/api/deploy` allows `*` CORS *only* so a published shop
   can call the Stripe checkout bridge; the Vercel/Stripe secrets stay server-side.
 
