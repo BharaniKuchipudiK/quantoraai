@@ -1,0 +1,46 @@
+name: Market Data Ingestion (Finance)
+
+# Fills the Finance market-data tables (ADR-025) from free public sources —
+# ECB FX via Frankfurter and the SEC EDGAR equity universe. Isolated: it only
+# writes market_* tables in Supabase and touches no application code path.
+#
+# Runs manually today. To turn on the daily schedule, first add the repository
+# secrets SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Settings -> Secrets and
+# variables -> Actions), then uncomment the `schedule:` block below. Until then
+# the job is a safe no-op, so there is nothing to schedule yet.
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "30 5 * * 1-5"   # 05:30 UTC on weekdays, after ECB publishes reference rates
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-data-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: Pull free market data into Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Ingest market data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/ingest-market-data.ts

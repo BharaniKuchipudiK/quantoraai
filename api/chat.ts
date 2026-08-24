@@ -16,6 +16,7 @@ import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
 import { DIRECT_MODELS, CURATED_MODELS } from "./_lib/model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
+import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../src/lib/travel-flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../src/lib/travel-place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
 import { shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
@@ -1040,7 +1041,7 @@ export default async function handler(req: any, res: any) {
 
       const travelPersona = travelToolsEnabled ? `\n\nTRAVEL TOOL SAFETY DIRECTIVE:
 - Use connected travel tools only for the current travel-domain request.
-- Live flight search may be available through Duffel. If any provider reports unavailable or errors, say so plainly and do not substitute invented results.
+- Live flight search may be available through Duffel. Do not call search_flights until origin airport, destination airport, and a YYYY-MM-DD departure date are known — ask for what is missing instead. If the provider is not connected or errors, say so plainly and do not substitute invented results.
 - Hotels, stays, property ratings, websites, Google Maps links, and photos MUST use search_hotels (Google Places). Never call get_places_routing for hotels. Dates are optional for discovery.
 - search_hotels location MUST be a city, island, or neighbourhood (Phuket, Seminyak, Gold Coast, Singapore). If the latest user message is that place, use it. Do not ask for the city again. If the traveller only named a vibe such as beach resorts or kids' clubs, ASK for the place first. Do not call the tool with that vibe as the location.
 - After search_hotels succeeds, paste mandatoryShortlist verbatim so every property has ★ Google user rating (when supplied), a website or Maps link, and is clickable. Do not invent extra hotels or ratings.
@@ -1150,8 +1151,11 @@ export default async function handler(req: any, res: any) {
             throw new Error(`Blocked unexpected travel tool call outside travel domain: ${signedFunctionTurn.call.name || 'unknown'}`);
           }
           sse.status({ phase: 'tool', state: 'running', tool: signedFunctionTurn.call.name });
+          const hasTurnAttempt = Object.prototype.hasOwnProperty.call(req.body || {}, 'turnAttempt');
+          const turnAttempt = hasTurnAttempt ? Math.max(1, Number(req.body?.turnAttempt) || 1) : null;
           const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args, {
             recentUserTexts: recentUserTextsFromChat(boundedHistory, message),
+            ...(hasTurnAttempt ? { turnAttempt } : {}),
           });
           if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) {
             travelPlaces = toolResult.hotels;
@@ -1162,11 +1166,28 @@ export default async function handler(req: any, res: any) {
           }
 
           if (toolResult?.action === 'PAUSE_AND_ASK') {
+            const autoRetryToolTurn = toolResult?.autoRetryTurn === true
+              && toolResult?.retryable === true
+              && !sse.isCommitted;
             sse.status({
               phase: 'tool',
-              state: toolResult?.status === 'unavailable' ? 'unavailable' : 'waiting_for_user',
+              state: autoRetryToolTurn
+                ? 'cleared'
+                : (toolResult?.status === 'unavailable' ? 'unavailable' : 'waiting_for_user'),
               tool: signedFunctionTurn.call.name,
             });
+            if (autoRetryToolTurn) {
+              // Mirror turn-recovery (#273): clear the tool status and fail the
+              // stream as retryable so the desk re-runs the tool turn once.
+              sse.fail({
+                message: String(toolResult?.message || 'Live flight lookup failed. Retrying…'),
+                code: TRAVEL_FLIGHT_PROVIDER_CODE,
+                retryable: true,
+                requestId,
+                correlationId,
+              });
+              return;
+            }
             const askMsg = toolResult?.status === 'unavailable'
               ? `\n\n${toolResult.message}\n\n`
               : `\n\n**Clarifying Question:** ${toolResult.message}\n\n`;

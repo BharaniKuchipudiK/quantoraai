@@ -55,3 +55,10 @@ test('a dropped connection retries once', () => {
   assert.equal(decision.retry, true);
   assert.equal(decision.reason, 'network');
 });
+
+test('travel flight provider failures auto-retry with a flight-specific notice', () => {
+  const decision = resolveTurnRecovery({ attempt: 1, code: 'TRAVEL_FLIGHT_PROVIDER', retryable: true });
+  assert.equal(decision.retry, true);
+  assert.equal(decision.reason, 'travel-flight');
+  assert.match(decision.notice, /flight/i);
+});

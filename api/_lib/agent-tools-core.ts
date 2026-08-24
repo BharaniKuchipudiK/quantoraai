@@ -330,7 +330,10 @@ export async function executeToolCall(
   switch (name) {
     case 'search_flights': {
       if (!duffelClient) {
-        return unavailable('Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.');
+        return unavailable(
+          'Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.',
+          'NOT_CONFIGURED',
+        );
       }
 
       try {

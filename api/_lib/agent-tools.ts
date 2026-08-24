@@ -20,6 +20,12 @@ import {
   resolveTravelToolInvocation,
 } from '../../src/lib/travel-place-shortlist.js';
 import { hotelCityAsk, hotelEmptyResultsAsk, hotelLocationNeedsCity, hotelProviderFailureAsk, resolveHotelSearchLocation } from '../../src/lib/travel-hotel-location.js';
+import {
+  flightIncompleteAsk,
+  flightInvalidArgsAsk,
+  flightProviderFailureAsk,
+  resolveFlightToolRecovery,
+} from '../../src/lib/travel-flight-resilience.js';
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = core.TRANSACTIONAL_TRAVEL_TOOL_NAMES;
 export const travelFunctionDeclarations = core.travelFunctionDeclarations;
@@ -28,23 +34,33 @@ export const isTransactionalTravelTool = core.isTransactionalTravelTool;
 
 type TravelToolDependencies = {
   duffelClient?: Duffel | null;
+  duffelFallbackClient?: Duffel | null;
   googleMapsApiKey?: string | null;
   fetchFn?: typeof fetch;
   providerPolicy?: Partial<ProviderResiliencePolicy>;
   recentUserTexts?: string[];
+  turnAttempt?: number;
 };
 
 const defaultDuffelClient = process.env.DUFFEL_API_KEY
   ? new Duffel({ token: process.env.DUFFEL_API_KEY })
   : null;
 
-// Travel searches are interactive user actions, not background jobs. One
-// provider attempt gets a bounded six-second budget. If the provider cannot
-// answer inside that budget, Quantora stops the agent loop and explains the
-// limitation instead of spending another 30-60 seconds retrying upstreams.
+const defaultDuffelFallbackClient = process.env.DUFFEL_FALLBACK_API_KEY
+  ? new Duffel({ token: process.env.DUFFEL_FALLBACK_API_KEY })
+  : null;
+
+// Hotels/places stay single-shot. Flight lookups get one bounded retry on the
+// same provider (and an optional second Duffel token) before the desk self-heals.
 const INTERACTIVE_TRAVEL_POLICY: Partial<ProviderResiliencePolicy> = {
   timeoutMs: 6_000,
   maxAttempts: 1,
+};
+
+const INTERACTIVE_FLIGHT_POLICY: Partial<ProviderResiliencePolicy> = {
+  timeoutMs: 6_000,
+  maxAttempts: 2,
+  baseDelayMs: 120,
 };
 
 const READ_ONLY_TRAVEL_TOOLS = new Set([
@@ -117,7 +133,31 @@ function placesLookupConfigured(dependencies: TravelToolDependencies) {
   return Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY);
 }
 
-function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: any, configured = true) {
+
+function flightLookupConfigured(dependencies: TravelToolDependencies) {
+  const hasExplicit = Object.prototype.hasOwnProperty.call(dependencies, 'duffelClient');
+  const hasExplicitFallback = Object.prototype.hasOwnProperty.call(dependencies, 'duffelFallbackClient');
+  const primary = hasExplicit ? dependencies.duffelClient ?? null : defaultDuffelClient;
+  const fallback = hasExplicitFallback ? dependencies.duffelFallbackClient ?? null : defaultDuffelFallbackClient;
+  return Boolean(primary || fallback);
+}
+
+function resolveFlightClients(dependencies: TravelToolDependencies) {
+  const hasExplicit = Object.prototype.hasOwnProperty.call(dependencies, 'duffelClient');
+  const hasExplicitFallback = Object.prototype.hasOwnProperty.call(dependencies, 'duffelFallbackClient');
+  return {
+    primary: hasExplicit ? dependencies.duffelClient ?? null : defaultDuffelClient,
+    fallback: hasExplicitFallback ? dependencies.duffelFallbackClient ?? null : defaultDuffelFallbackClient,
+  };
+}
+
+function stopAgentLoopOnProviderFailure(
+  name: string,
+  result: any,
+  toolArgs?: any,
+  configured = true,
+  options: { turnAttempt?: number } = {},
+) {
   if (!READ_ONLY_TRAVEL_TOOLS.has(name) || result?.status !== 'unavailable') return result;
   if (result?.action === 'PAUSE_AND_ASK' && result?.reason === 'INVALID_ARGUMENT' && result?.message) return result;
 
@@ -126,6 +166,15 @@ function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: an
     return result;
   }
   if (result?.reason === 'INVALID_ARGUMENT') {
+    if (name === 'search_flights') {
+      return {
+        ...result,
+        action: 'PAUSE_AND_ASK',
+        providerMessage,
+        message: flightIncompleteAsk(toolArgs),
+        retryable: false,
+      };
+    }
     return {
       ...result,
       action: 'PAUSE_AND_ASK',
@@ -135,13 +184,32 @@ function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: an
   }
 
   const location = String(toolArgs?.location || '').trim();
+  if (name === 'search_flights') {
+    const reason = result?.reason === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : (result?.reason || 'PROVIDER_ERROR');
+    const recovery = resolveFlightToolRecovery({
+      reason,
+      configured,
+      turnAttempt: options.turnAttempt,
+    });
+    return {
+      ...result,
+      reason,
+      action: 'PAUSE_AND_ASK',
+      providerMessage,
+      message: flightProviderFailureAsk(toolArgs, {
+        configured,
+        includeRetry: recovery.includeRetry,
+      }),
+      retryable: recovery.retryable,
+      autoRetryTurn: recovery.autoRetryTurn,
+    };
+  }
+
   const message = name === 'search_hotels'
     ? hotelProviderFailureAsk(location, { configured, kind: 'hotels' })
-    : name === 'search_flights'
-      ? 'I could not look up live flights just now. I will not invent fares. Give airports and dates, or we can retry when the flight provider answers.'
-      : name === 'search_attractions'
-        ? hotelProviderFailureAsk(location, { configured, kind: 'attractions' })
-        : 'I could not get live map or routing results just now. I will not invent a route.';
+    : name === 'search_attractions'
+      ? hotelProviderFailureAsk(location, { configured, kind: 'attractions' })
+      : 'I could not get live map or routing results just now. I will not invent a route.';
 
   return {
     ...result,
@@ -149,6 +217,61 @@ function stopAgentLoopOnProviderFailure(name: string, result: any, toolArgs?: an
     providerMessage,
     message,
   };
+}
+
+async function executeFlightSearch(
+  toolArgs: any,
+  dependencies: TravelToolDependencies,
+  providerPolicy: Partial<ProviderResiliencePolicy>,
+) {
+  const rawFetch = dependencies.fetchFn || fetch;
+  const { primary, fallback } = resolveFlightClients(dependencies);
+  const flightPolicy = {
+    ...INTERACTIVE_TRAVEL_POLICY,
+    ...INTERACTIVE_FLIGHT_POLICY,
+    ...(dependencies.providerPolicy || {}),
+  };
+
+  if (!primary && !fallback) {
+    return unavailable(
+      'Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.',
+      'NOT_CONFIGURED',
+    );
+  }
+
+  let result = await core.executeToolCall('search_flights', toolArgs, {
+    ...dependencies,
+    fetchFn: resilientFetch(rawFetch, flightPolicy),
+    duffelClient: resilientDuffel(primary, flightPolicy),
+  } as any);
+
+  const primaryFailed = result?.status === 'unavailable'
+    && (result?.reason === 'PROVIDER_ERROR' || result?.reason === 'NOT_CONFIGURED' || !result?.reason);
+  if (primaryFailed && fallback && fallback !== primary) {
+    const fallbackResult = await core.executeToolCall('search_flights', toolArgs, {
+      ...dependencies,
+      fetchFn: resilientFetch(rawFetch, {
+        ...INTERACTIVE_TRAVEL_POLICY,
+        ...providerPolicy,
+        maxAttempts: 1,
+      }),
+      duffelClient: resilientDuffel(fallback, {
+        ...INTERACTIVE_TRAVEL_POLICY,
+        ...providerPolicy,
+        maxAttempts: 1,
+      }),
+    } as any);
+    if (fallbackResult?.status === 'success') {
+      return {
+        ...fallbackResult,
+        fallbackUsed: true,
+        source: fallbackResult.source || 'Duffel',
+      };
+    }
+    result = fallbackResult?.status === 'unavailable' ? fallbackResult : result;
+  }
+
+  return result;
 }
 
 export async function executeToolCall(
@@ -179,6 +302,19 @@ export async function executeToolCall(
     return core.executeToolCall(toolName, toolArgs, dependencies as any);
   }
   if (validation.status === 'invalid') {
+    if (toolName === 'search_flights') {
+      return {
+        status: 'unavailable',
+        executed: false,
+        reason: 'INVALID_ARGUMENT',
+        action: 'PAUSE_AND_ASK',
+        message: flightInvalidArgsAsk(
+          toolArgs && typeof toolArgs === 'object' ? toolArgs : {},
+          validation.issues,
+        ),
+        retryable: false,
+      };
+    }
     return unavailable(
       `Travel tool input was rejected before provider execution (${validation.issues.join(', ')}).`,
       'INVALID_ARGUMENT',
@@ -202,6 +338,17 @@ export async function executeToolCall(
     ...INTERACTIVE_TRAVEL_POLICY,
     ...(dependencies.providerPolicy || {}),
   };
+
+  if (toolName === 'search_flights') {
+    const result = await executeFlightSearch(validation.value, dependencies, providerPolicy);
+    return stopAgentLoopOnProviderFailure(
+      toolName,
+      result,
+      validation.value,
+      flightLookupConfigured(dependencies),
+      { turnAttempt: dependencies.turnAttempt },
+    );
+  }
 
   const result = await core.executeToolCall(toolName, validation.value, {
     ...dependencies,
