@@ -18,18 +18,28 @@ export function resolveStudioPartnerStatus({
   hasDeskFiles = false,
   photosMissing = false,
   shopUiMissing = false,
+  shopIntake = null,
+  shopTurnFailureCopy = '',
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'
     || studioDomain === 'finance'
     || studioDomain === 'research';
+  const intakeCopy = typeof shopIntake?.userCopy === 'string' ? shopIntake.userCopy.trim() : '';
+  const intakeOversize = Boolean(shopIntake?.oversize && intakeCopy);
 
   if (isGenerating) {
     if (lifeDomain) {
       return {
         now: `${generatingLabel || 'Working on your next step…'} ${clock}`,
         next: '',
+      };
+    }
+    if (intakeOversize) {
+      return {
+        now: intakeCopy,
+        next: `Building about ${shopIntake.proposedCatalogSize || 10} working catalog photos — not the full unique-image ask. ${clock}`,
       };
     }
     return {
@@ -41,6 +51,12 @@ export function resolveStudioPartnerStatus({
   }
 
   if (lastAiIsError) {
+    if (shopTurnFailureCopy) {
+      return {
+        now: shopTurnFailureCopy,
+        next: continueLabel || `Tap Start with ${shopIntake?.proposedCatalogSize || 10}, or Add real product photos.`,
+      };
+    }
     return {
       now: 'That turn did not finish.',
       next: 'Retry, or tell me what to try instead.',
@@ -57,10 +73,18 @@ export function resolveStudioPartnerStatus({
           : 'Next: download the file, or tell me which slide or section to change.',
       };
     }
+    if (intakeOversize && !photosMissing) {
+      return {
+        now: intakeCopy,
+        next: continueLabel
+          ? `Next: ${continueLabel}.`
+          : `Catalog target is about ${shopIntake.proposedCatalogSize || 10} photos this turn — upload more or expand when you are ready.`,
+      };
+    }
     if (photosMissing) {
       return {
         now: codingDeskOpen
-          ? 'Preview is running. Product photos are still missing — empty frames are not done.'
+          ? 'Preview is running. Product photos are still missing — empty picture boxes are not done.'
           : 'The app is ready, but product photos are still missing.',
         next: continueLabel && !/publish this site/i.test(continueLabel)
           ? `Next: ${continueLabel}.`

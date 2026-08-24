@@ -27,6 +27,12 @@ import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
 import {
+  assessShopBuildAsk,
+  messageLooksLikeShopBuild,
+  shopIntakeSessionFacts,
+  shopPhotoTurnFailureCopy,
+} from '../lib/shop-catalog-scale.js';
+import {
   correlationHeaders,
   createCorrelationId,
   normalizeClientCorrelationId,
@@ -437,6 +443,7 @@ export function useChatStream({
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
+    const shopIntakeAsk = assessShopBuildAsk(visibleUserText || text);
     if (autoMode && isCodingRequest) {
       const openRouterApiKeyHint = getClientSecret('openrouter');
       const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
@@ -446,7 +453,10 @@ export function useChatStream({
         hasVFS: vfsFileCount > 0,
         refineMode: refineDesk,
         availableModels: availableModels || [],
-        qualityHints: { fileCount: vfsFileCount },
+        qualityHints: {
+          fileCount: vfsFileCount,
+          shopImageOversize: shopIntakeAsk.oversize,
+        },
         allowPaid: Boolean(openRouterApiKeyHint),
       });
       autoResolvedLabel = resolved.model?.name || resolved.modelId;
@@ -473,13 +483,16 @@ export function useChatStream({
       hasPreview: Boolean(isWorkspaceMode && (canvasCode || (vfs && Object.keys(vfs).length))),
       officeKind: briefingKind || activeOfficeArtifactKind(messages),
     });
+    const intakeFacts = shopIntakeSessionFacts(shopIntakeAsk);
     const turnContext = mergeStudySyllabusFromText(
       mergeSessionContext(
         conversationContext,
         mergeSessionContext(sessionContext, {
           ...(mission?.goal ? { goal: mission.goal } : {}),
           ...(mission?.understanding ? { understanding: mission.understanding } : {}),
-          ...(answerFact ? { facts: [answerFact] } : {}),
+          ...((answerFact || intakeFacts.length)
+            ? { facts: [...(answerFact ? [answerFact] : []), ...intakeFacts] }
+            : {}),
         }),
       ),
       visibleUserText,
@@ -511,6 +524,7 @@ export function useChatStream({
         qualityHints: {
           fileCount: vfsFileCountForHints,
           repair: refineDesk,
+          shopImageOversize: shopIntakeAsk.oversize,
         },
       } : {}),
       ...codingTurnRequestFields({
@@ -876,25 +890,60 @@ export function useChatStream({
           }
 
           const normalized = normalizeAssistantResponse(currentText);
+          const intakeHonesty = shopIntakeAsk.oversize ? shopIntakeAsk.userCopy : '';
+          const displayWithIntake = intakeHonesty
+            && !String(normalized.displayText || '').includes('can’t generate')
+            && !String(normalized.displayText || '').includes("can't generate")
+            ? `${intakeHonesty}\n\n${normalized.displayText || ''}`.trim()
+            : normalized.displayText;
+          const intakeContinueItems = shopIntakeAsk.oversize
+            ? shopIntakeAsk.chips.map((chip) => ({
+              id: chip.id,
+              label: chip.label,
+              value: chip.value,
+            }))
+            : [];
+          const mergedContinueSet = intakeContinueItems.length
+            ? {
+              items: [
+                ...intakeContinueItems,
+                ...((normalized.continueSet?.items || []).filter(
+                  (item) => !intakeContinueItems.some((chip) => chip.id === item.id),
+                )),
+              ],
+            }
+            : (normalized.continueSet || null);
           void recordClientBoundary(responseCorrelationId, 'browser.response-parser', 'parsed', {
             transaction: goldenTransaction,
-            detailCode: normalized.displayText ? 'assistant-response-valid' : 'assistant-response-empty',
+            detailCode: displayWithIntake ? 'assistant-response-valid' : 'assistant-response-empty',
           });
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: withTravelDegradedNotice(normalized.displayText, travelDegraded),
+            text: withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
             ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
-            ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
+            ...(mergedContinueSet ? { continueSet: mergedContinueSet } : {}),
             ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
             correlationId: responseCorrelationId,
             ...(travelPlaces ? { travelPlaces } : {}),
             ...(travelDegraded ? { travelDegraded: true } : {}),
+            ...(shopIntakeAsk.oversize ? {
+              shopIntake: {
+                catalogTarget: shopIntakeAsk.catalogTarget,
+                userAsked: shopIntakeAsk.userAsked,
+              },
+            } : {}),
           } : m));
-          if (normalized.contextUpdate && typeof updateActiveSession === 'function') {
+          if (typeof updateActiveSession === 'function' && (normalized.contextUpdate || intakeFacts.length)) {
             updateActiveSession({
-              conversationContext: mergeSessionContext(turnContext, normalized.contextUpdate),
+              conversationContext: mergeSessionContext(
+                turnContext,
+                mergeSessionContext(
+                  normalized.contextUpdate || {},
+                  intakeFacts.length ? { facts: intakeFacts } : {},
+                ),
+              ),
             });
           }
           await persistPclContinuity({
@@ -923,11 +972,31 @@ export function useChatStream({
             ...m,
             text: stopped
               ? '⚠️ **Generation Stopped**'
-              : timedOut
-                ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
+              : timedOut && (
+                shopIntakeAsk.oversize
+                || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText))
+              )
+                ? shopPhotoTurnFailureCopy({
+                  timedOut: true,
+                  seconds: Math.round(turnDeadlineMs / 1000),
+                  assessment: shopIntakeAsk,
+                })
+                : timedOut
+                  ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
                 : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
             isError: true,
             executionStatus: null,
+            ...(timedOut && shopIntakeAsk.oversize
+              ? {
+                continueSet: {
+                  items: shopIntakeAsk.chips.map((chip) => ({
+                    id: chip.id,
+                    label: chip.label,
+                    value: chip.value,
+                  })),
+                },
+              }
+              : {}),
           } : m));
           return;
         } finally {
