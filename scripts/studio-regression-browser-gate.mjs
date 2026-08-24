@@ -325,8 +325,22 @@ try {
   await prompt.fill('can you modify this to be a scientific calculator');
   await prompt.press('Enter');
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
-  const scientificFrame = await visibleFrame('button', 20_000);
-  if (!scientificFrame) throw new Error('Scientific refine never remounted Preview.');
+  // Wait for sin specifically — a generic button match would pass on the old basic calculator.
+  let scientificFrame = null;
+  {
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline && !scientificFrame) {
+      for (const frame of page.frames()) {
+        const sinBtn = frame.locator('button').filter({ hasText: /^sin$/i }).first();
+        if (await sinBtn.isVisible().catch(() => false)) {
+          scientificFrame = frame;
+          break;
+        }
+      }
+      if (!scientificFrame) await page.waitForTimeout(200);
+    }
+  }
+  if (!scientificFrame) throw new Error('Scientific refine never remounted Preview with sin/cos keys.');
   const hasSin = await scientificFrame.locator('button').filter({ hasText: /^sin$/i }).first().isVisible().catch(() => false);
   const hasCos = await scientificFrame.locator('button').filter({ hasText: /^cos$/i }).first().isVisible().catch(() => false);
   if (!hasSin || !hasCos) {
