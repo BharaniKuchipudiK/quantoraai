@@ -1,5 +1,5 @@
-import { applyCors } from "../_lib/rate-limit.js";
-import { clearSessionCookie } from "../_lib/session.js";
+import { applyCors } from "../rate-limit.js";
+import { clearSessionCookie } from "../session.js";
 
 /*
  * End the session server-side.

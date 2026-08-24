@@ -1,25 +1,11 @@
-import handler from './api/auth/verify.ts';
+import handler from './api/auth.ts';
 
-async function run() {
-  const req = {
-    method: 'POST',
-    body: { credential: 'fake.jwt.token' }
-  };
-  
-  const res = {
-    status: function(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json: function(data) {
-      console.log(`Status: ${this.statusCode}`);
-      console.log(`Data:`, data);
-      return this;
-    },
-    setHeader: () => {}
-  };
-
-  await handler(req, res);
-}
-
-run();
+// Smoke: auth hub still loads. Full OAuth needs a live Google token.
+const req = { method: 'POST', query: { route: 'verify' }, headers: {}, body: {}, socket: {} };
+const res = {
+  status(code) { console.log('status', code); return this; },
+  json(body) { console.log('json', body); return this; },
+  setHeader() { return this; },
+  end() { return this; },
+};
+await handler(req, res);

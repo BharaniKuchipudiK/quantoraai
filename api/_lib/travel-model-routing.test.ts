@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   hasTravelConversationContext,
   isLiveTravelToolTurn,
+  isTravelToolExecutionDeferred,
   routeTravelConversationBody,
   shouldPreferTravelConversationProvider,
   TRAVEL_CONVERSATION_MODEL_ID,
+  TRAVEL_DEGRADED_DIRECTIVE,
 } from "./travel-model-routing.js";
 
 test("routes ordinary Travel conversation away from a Gemini-only path", () => {
@@ -132,4 +134,15 @@ test("does not affect clearly non-Travel Studio requests", () => {
 
   assert.equal(hasTravelConversationContext(body), false);
   assert.equal(routeTravelConversationBody(body), body);
+});
+
+test("isTravelToolExecutionDeferred reads the routed flag", () => {
+  assert.equal(isTravelToolExecutionDeferred({ travelToolExecutionDeferred: true }), true);
+  assert.equal(isTravelToolExecutionDeferred({ travelToolExecutionDeferred: false }), false);
+  assert.equal(isTravelToolExecutionDeferred({}), false);
+});
+
+test("TRAVEL_DEGRADED_DIRECTIVE tells the model not to invent live fares", () => {
+  assert.match(TRAVEL_DEGRADED_DIRECTIVE, /Do not invent live fares/i);
+  assert.match(TRAVEL_DEGRADED_DIRECTIVE, /temporarily unavailable/i);
 });

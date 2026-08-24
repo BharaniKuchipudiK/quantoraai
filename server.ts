@@ -5,49 +5,26 @@ import { createServer as createViteServer } from "vite";
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 
-import adminMetrics from "./api/admin/metrics.js";
-import adminModels from "./api/admin/models.js";
-import authLogout from "./api/auth/logout.js";
-import authSession from "./api/auth/session.js";
-import authVerify from "./api/auth/verify.js";
-import autocomplete from "./api/autocomplete.js";
-import chat from "./api/chat.js";
+import admin from "./api/admin.js";
+import auth from "./api/auth.js";
+import autocomplete, { fetchApiGatewayKey } from "./api/autocomplete.js";
+import chat from "./api/_lib/chat-handler.js";
 import { handleAffordabilityDecision } from "./api/_lib/chat-decision-gateway.js";
+import { getSessionUser } from "./api/_lib/session.js";
+import {
+  routeTravelConversationBody,
+  shouldPreferTravelConversationProvider,
+} from "./api/_lib/travel-model-routing.js";
 import deploy from "./api/deploy.js";
 import domains from "./api/domains.js";
 import enhance from "./api/enhance.js";
 import generateOffice from "./api/generate-office.js";
 import models from "./api/models.js";
-import moderate from "./api/moderate.js";
 import pipeline from "./api/pipeline.js";
-import productEvent from "./api/product-event.js";
-import travelSearch from "./api/travel-search.js";
 
 dotenv.config();
 
 type ApiHandler = (req: any, res: any) => unknown | Promise<unknown>;
-
-async function fetchApiGatewayKey(providerName: string): Promise<string | null> {
-  try {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!supabaseUrl || !supabaseKey) return null;
-    
-    const res = await fetch(`${supabaseUrl}/rest/v1/api_gateway_keys?provider=eq.${providerName}&select=api_key`, {
-       headers: {
-         'apikey': supabaseKey,
-         'Authorization': `Bearer ${supabaseKey}`
-       }
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data && data.length > 0) return data[0].api_key;
-    return null;
-  } catch(e) {
-    console.error("Failed to fetch API key from Supabase Gateway:", e);
-    return null;
-  }
-}
 
 /**
  * Local/standalone adapter for the same handlers deployed by Vercel.
@@ -102,11 +79,37 @@ async function startServer() {
     });
   };
 
-  route("all", "/api/auth/verify", authVerify);
-  route("all", "/api/auth/session", authSession);
-  route("all", "/api/auth/logout", authLogout);
+  route("all", "/api/auth/verify", (req, res) => {
+    req.query = { ...(req.query || {}), route: "verify" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/session", (req, res) => {
+    req.query = { ...(req.query || {}), route: "session" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/logout", (req, res) => {
+    req.query = { ...(req.query || {}), route: "logout" };
+    return auth(req, res);
+  });
   route("all", "/api/chat", async (req, res) => {
     if (await handleAffordabilityDecision(req, res)) return;
+
+    // Mirror pipeline?route=chat Travel preamble so local Express matches Vercel.
+    if (shouldPreferTravelConversationProvider(req.body)) {
+      const signedIn = Boolean(getSessionUser(req));
+      let openRouterAvailable = Boolean(req.body?.openRouterKey || (signedIn && process.env.OPENROUTER_API_KEY));
+      if (!openRouterAvailable && signedIn) {
+        try {
+          openRouterAvailable = Boolean(await fetchApiGatewayKey("OPENROUTER"));
+        } catch (error: any) {
+          console.warn("Travel provider routing could not resolve OpenRouter availability:", error?.message || error);
+        }
+      }
+      if (openRouterAvailable) {
+        req.body = routeTravelConversationBody(req.body);
+      }
+    }
+
     return chat(req, res);
   });
   route("all", "/api/autocomplete", autocomplete);
@@ -115,12 +118,31 @@ async function startServer() {
   route("all", "/api/domains", domains);
   route("all", "/api/deploy", deploy);
   route("all", "/api/pipeline", pipeline);
-  route("all", "/api/moderate", moderate);
+  route("all", "/api/moderate", (req, res) => {
+    req.query = { ...(req.query || {}), route: "moderate" };
+    return pipeline(req, res);
+  });
   route("all", "/api/models", models);
-  route("all", "/api/admin/models", adminModels);
-  route("all", "/api/admin/metrics", adminMetrics);
-  route("all", "/api/product-event", productEvent);
-  route("all", "/api/travel-search", travelSearch);
+  route("all", "/api/admin/models", (req, res) => {
+    req.query = { ...(req.query || {}), route: "models" };
+    return admin(req, res);
+  });
+  route("all", "/api/admin/metrics", (req, res) => {
+    req.query = { ...(req.query || {}), route: "metrics" };
+    return admin(req, res);
+  });
+  route("all", "/api/admin/feedback", (req, res) => {
+    req.query = { ...(req.query || {}), route: "feedback" };
+    return admin(req, res);
+  });
+  route("all", "/api/product-event", (req, res) => {
+    req.query = { ...(req.query || {}), route: "product-event" };
+    return pipeline(req, res);
+  });
+  route("all", "/api/travel-search", (req, res) => {
+    req.query = { ...(req.query || {}), route: "travel-search" };
+    return pipeline(req, res);
+  });
   route("post", "/api/trace", (req, res) => {
     req.query = { ...(req.query || {}), route: "trace" };
     return pipeline(req, res);

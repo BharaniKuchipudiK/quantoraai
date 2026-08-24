@@ -55,3 +55,18 @@ export function routeTravelConversationBody(body: any) {
     travelToolExecutionDeferred: isLiveTravelToolTurn(body),
   };
 }
+
+/** True when the request body asks chat to skip live Gemini travel tools. */
+export function isTravelToolExecutionDeferred(body: any): boolean {
+  return body?.travelToolExecutionDeferred === true;
+}
+
+export const TRAVEL_DEGRADED_DIRECTIVE = `
+
+TRAVEL DEGRADED MODE
+Live travel tools (flights/hotels via Gemini function calling) are unavailable for this turn.
+- Do not invent live fares, seat maps, PNRs, hotel nightly rates, or availability.
+- Give high-level trip advice, itinerary structure, and clarifying questions only.
+- Tell the traveller plainly that live lookup is temporarily unavailable and they can retry shortly.
+`;
+

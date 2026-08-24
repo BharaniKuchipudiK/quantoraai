@@ -1,6 +1,6 @@
-import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
-import { summarizeInferenceReadiness } from './_lib/inference-control-plane.js';
-import { providerCircuitStore } from './_lib/provider-circuit-store.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { summarizeInferenceReadiness } from '../inference-control-plane.js';
+import { providerCircuitStore } from '../provider-circuit-store.js';
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'GET,OPTIONS');

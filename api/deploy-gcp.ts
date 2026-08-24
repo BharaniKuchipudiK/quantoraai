@@ -3,6 +3,7 @@ import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { ownedProjectName } from './_lib/publish-policy.js';
 import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
+import deployStatus from './_lib/handlers/deploy-status.js';
 import { GoogleAuth } from 'google-auth-library';
 import archiver from 'archiver';
 import { Writable } from 'stream';
@@ -39,6 +40,11 @@ function vfsFingerprint(vfs: Record<string, { content: string }>): string {
 }
 
 export default async function handler(req: any, res: any) {
+  // Folded /api/deploy-status rewrite lands here (GET) without a second function.
+  if (req.query?.action === 'status') {
+    return deployStatus(req, res);
+  }
+
   applyCors(req, res, 'POST,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 

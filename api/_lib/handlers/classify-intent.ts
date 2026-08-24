@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
-import { applyCors, isRateLimited } from './_lib/rate-limit.js';
-import { requireActiveSession } from "./_lib/authz.js";
-import { fetchApiGatewayKey } from "./autocomplete.js";
+import { applyCors, isRateLimited } from '../rate-limit.js';
+import { requireActiveSession } from "../authz.js";
+import { fetchApiGatewayKey } from "../../autocomplete.js";
 
 const REQUESTS_PER_MINUTE = 60;
 const OFFICE_KINDS = new Set(['powerpoint', 'word', 'excel']);

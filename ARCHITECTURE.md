@@ -31,10 +31,11 @@ There are **two** ways the server code runs, and they are not the same:
   works in dev but **not on serverless prod**. Treat it as dev-only until it has
   a persistent host.
 - **Serverless function budget.** Every top-level `api/*.ts|js` is a function
-  (currently **12**). Do **not** add a new top-level file for a new capability —
-  **fold it into an existing handler via task routing.** `/api/chat` already
-  multiplexes `chat`, `repair`, `verify-build`, and `feedback` this way. Shared
-  logic goes in `api/_lib/**`, which are modules, not functions.
+  (target **≤12** on Hobby; thin routes fold into `pipeline` / `auth` / `admin`
+  via `vercel.json` rewrites). Do **not** add a new top-level file for a new
+  capability — **fold it into an existing handler via task routing.** `/api/chat`
+  already multiplexes `chat`, `repair`, `verify-build`, and `feedback` this way.
+  Shared logic goes in `api/_lib/**`, which are modules, not functions.
 
 ---
 
