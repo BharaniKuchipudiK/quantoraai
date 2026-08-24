@@ -65,6 +65,24 @@ test('a saved boutique without photos gets them back on restore', () => {
   assert.match(restored.vfs['index.html'].content, /USD/);
 });
 
+test('a saved hunk that does not fit is marked cut off, not still exact', () => {
+  const built = buildStudioDeskSnapshot({
+    vfs: { 'index.html': { content: '<html></html>', language: 'html' } },
+    workspaceCode: '<html></html>',
+    review: [{
+      path: 'index.html',
+      added: 1,
+      removed: 0,
+      exact: true,
+      hunks: [{ header: '@@ -1,1 +1,1 @@', lines: [`+${'x'.repeat(300)}`] }],
+    }],
+  });
+  const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
+  assert.equal(restored.review[0].exact, false);
+  assert.match(restored.review[0].note, /cut off/i);
+  assert.equal(restored.review[0].hunks[0].lines[0].length, 240);
+});
+
 test('a snapshot that is too large is refused instead of faking persistence', () => {
   const huge = 'x'.repeat(800_001);
   const built = buildStudioDeskSnapshot({

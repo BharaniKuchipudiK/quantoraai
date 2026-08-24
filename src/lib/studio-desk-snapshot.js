@@ -7,33 +7,47 @@ import { normalizeStudioJobCard } from './studio-job-card.js';
 import { ensureShopDeskInVfs } from './studio-preview-helpers.js';
 import { pickPreviewEntry } from './preview-utils.js';
 
+const MAX_SAVED_HUNKS = 8;
+const MAX_SAVED_HUNK_LINES = 80;
+const MAX_SAVED_HUNK_LINE = 240;
+const MAX_SAVED_HUNK_HEADER = 80;
+
 function normalizeReviewHunk(hunk) {
-  if (!hunk || typeof hunk !== 'object') return null;
-  const header = typeof hunk.header === 'string' ? hunk.header.slice(0, 80) : '';
-  const lines = Array.isArray(hunk.lines)
-    ? hunk.lines.slice(0, 80).flatMap((line) => (typeof line === 'string' ? [line.slice(0, 240)] : []))
-    : [];
-  if (!header && !lines.length) return null;
-  return { header, lines };
+  if (!hunk || typeof hunk !== 'object') return { hunk: null, truncated: false };
+  const rawHeader = typeof hunk.header === 'string' ? hunk.header : '';
+  const rawLines = Array.isArray(hunk.lines) ? hunk.lines : [];
+  const truncated = rawHeader.length > MAX_SAVED_HUNK_HEADER
+    || rawLines.length > MAX_SAVED_HUNK_LINES
+    || rawLines.some((line) => typeof line === 'string' && line.length > MAX_SAVED_HUNK_LINE);
+  const header = rawHeader.slice(0, MAX_SAVED_HUNK_HEADER);
+  const lines = rawLines.slice(0, MAX_SAVED_HUNK_LINES).flatMap((line) => (
+    typeof line === 'string' ? [line.slice(0, MAX_SAVED_HUNK_LINE)] : []
+  ));
+  if (!header && !lines.length) return { hunk: null, truncated };
+  return { hunk: { header, lines }, truncated };
 }
 
 export function normalizeDeskReview(review = []) {
   if (!Array.isArray(review)) return [];
   return review.slice(0, 24).flatMap((row) => {
     if (!row || typeof row.path !== 'string' || !row.path.trim()) return [];
-    const hunks = Array.isArray(row.hunks)
-      ? row.hunks.slice(0, 8).flatMap((hunk) => {
-        const next = normalizeReviewHunk(hunk);
-        return next ? [next] : [];
-      })
-      : [];
+    const rawHunks = Array.isArray(row.hunks) ? row.hunks : [];
+    let truncated = rawHunks.length > MAX_SAVED_HUNKS;
+    const hunks = rawHunks.slice(0, MAX_SAVED_HUNKS).flatMap((hunk) => {
+      const next = normalizeReviewHunk(hunk);
+      if (next.truncated) truncated = true;
+      return next.hunk ? [next.hunk] : [];
+    });
+    const incomingNote = typeof row.note === 'string' ? row.note.slice(0, 200) : '';
     return [{
       path: row.path,
       added: Number.isFinite(row.added) ? Math.max(0, Math.floor(row.added)) : 0,
       removed: Number.isFinite(row.removed) ? Math.max(0, Math.floor(row.removed)) : 0,
-      exact: row.exact !== false,
+      exact: row.exact !== false && !truncated,
       hunks,
-      note: typeof row.note === 'string' ? row.note.slice(0, 200) : '',
+      note: truncated
+        ? (incomingNote || '… saved Review hunk was cut off. Open the file to read the rest.')
+        : incomingNote,
     }];
   });
 }
