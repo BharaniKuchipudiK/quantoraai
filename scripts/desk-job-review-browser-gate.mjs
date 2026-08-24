@@ -325,12 +325,33 @@ try {
   await fixedFrame.waitForFunction((count) => document.querySelectorAll('li').length > count, beforeFix, { timeout: 8_000 });
 
   // --- Drive Cleaner hygiene: shop probes and Study goals must not bleed in ---
+  // New chat clears the todo VFS (a product switch was rejected as check regression).
+  await page.locator('button').filter({ hasText: /^New Chat$/ }).first().click();
+  await page.waitForTimeout(500);
+  // Seed sticky Study goal into this chat's conversationContext without opening Study desk.
+  await page.evaluate(() => {
+    const key = 'quantora_chat_sessions';
+    const sessions = JSON.parse(localStorage.getItem(key) || '[]');
+    const projectId = sessions[0]?.projectId || 'default';
+    localStorage.setItem(key, JSON.stringify([{
+      id: 'session-drive-gate',
+      title: 'Drive Cleaner',
+      createdAt: Date.now(),
+      projectId,
+      messages: [{ id: Date.now(), sender: 'ai', type: 'greeting', text: 'Ready when you are.' }],
+      studioMode: 'ask',
+      studioDomain: null,
+      conversationContext: {
+        goal: 'I want to study newton laws of motion. prepare me',
+        understanding: 'Drive Cleaner Agent dashboard is in Preview.',
+      },
+    }]));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await enterSignedInStudio(page);
+
   const drivePrompt = page.locator('.app-shell--studio textarea').first();
   await visible(drivePrompt, 'Studio prompt input missing for Drive cleaner hygiene.');
-  // Stick a Study goal into this session's conversationContext, then build Drive.
-  await drivePrompt.fill('I want to study newton laws of motion. prepare me');
-  await drivePrompt.press('Enter');
-  await page.waitForTimeout(900);
   await drivePrompt.fill('build a Drive Cleaner Agent web dashboard for my Google Drive');
   await drivePrompt.press('Enter');
   await page.locator('[data-quantora-coding-desk-nav="true"]').click({ timeout: 15_000 }).catch(() => {});
