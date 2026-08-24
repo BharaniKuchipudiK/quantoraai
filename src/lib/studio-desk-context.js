@@ -41,7 +41,7 @@ export function summarizeCatalog(raw = '') {
   }
 }
 
-const SHOP_DOM_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce)\b/i;
+const SHOP_DOM_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i;
 const SHOP_PRODUCTS_RE = /"priceCents"\s*:|"currency"\s*:\s*"(?:inr|usd|sgd|aud|aed)"/i;
 
 /** Job cards from another product must not force shop probes onto this Preview. */
@@ -57,8 +57,12 @@ export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
   if (jobClearlyNotShop(job)) return false;
   const products = vfsText(vfs, 'products.json');
   const hay = `${html || ''}\n${pickPreviewEntry(vfs) || ''}`;
-  const liveShop = SHOP_DOM_RE.test(hay) || Boolean(products && SHOP_PRODUCTS_RE.test(products));
+  const namedProducts = summarizeCatalog(products).length > 0;
+  const liveShop = SHOP_DOM_RE.test(hay)
+    || Boolean(products && (SHOP_PRODUCTS_RE.test(products) || namedProducts));
   if (liveShop) return true;
+  // Empty products.json still marks an intentional shop scaffold.
+  if (products !== '' && jobNeedsProductPhotos(job)) return true;
   // A leftover boutique job must not invent cart/photo failures on a non-shop Preview.
   // Do not match bare "catalog" — file catalogs and agent dashboards false-positive.
   if (!jobNeedsProductPhotos(job)) return false;
