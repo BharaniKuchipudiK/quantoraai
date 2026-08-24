@@ -24,6 +24,29 @@ test('mission goal is a short title, not a Help-me prompt dump', () => {
   assert.ok(mission.goal.length < raw.length / 2);
 });
 
+test('greeting sentence does not become the mission goal', () => {
+  assert.match(toShortMissionGoal('Hi. Build a scientific calculator'), /calculator/i);
+  assert.doesNotMatch(toShortMissionGoal('Hi. Build a scientific calculator'), /^Hi\b/i);
+});
+
+test('modal can-you prefixes peel into a product title', () => {
+  assert.match(toShortMissionGoal('Can you build me a weather app?'), /weather/i);
+  assert.doesNotMatch(toShortMissionGoal('Can you build me a weather app?'), /^Can you/i);
+});
+
+test('bare drive verb is not treated as Google Drive', () => {
+  const goal = toShortMissionGoal('Build an AI agent that helps us drive sales with personalized outreach');
+  assert.doesNotMatch(goal, /Google Drive/i);
+  assert.match(goal, /agent|sales|AI/i);
+});
+
+test('short product heads still compress relative clauses', () => {
+  const goal = toShortMissionGoal('Build an app that tracks inventory across all stores and alerts managers before popular products run out');
+  assert.ok(goal.length <= 80, `goal too long: ${goal}`);
+  assert.doesNotMatch(goal, /alerts managers/i);
+  assert.match(goal, /app/i);
+});
+
 test('keeps the boutique goal after a short follow-up in the same chat', () => {
   const mission = deriveStudioMission({
     messages: [

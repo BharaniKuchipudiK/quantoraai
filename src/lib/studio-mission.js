@@ -5,10 +5,13 @@ export const CANNED_PROJECT_DESCRIPTION = 'A flexible space for everyday questio
 const BUILDISH = /\b(build|create|make|develop|design|website|web site|calculator|app|shop|boutique|store|landing|agent|dashboard|cleaner)\b/i;
 const GOAL_MAX = 72;
 const LEAD_IN = /^(?:(?:please|pls|hey|hi|hello)[,!]?\s+)+/i;
+const GREETING_SENTENCE = /^(?:(?:hi|hey|hello|yo|thanks|thank you)[.!,]?\s+)+/i;
 const HELP_ME = /^(?:(?:can|could|would|will)\s+you\s+)?(?:(?:help|assist)\s+me(?:\s+to|\s+with)?\s+)/i;
+const CAN_YOU = /^(?:(?:can|could|would|will)\s+you\s+)/i;
 const I_WANT = /^(?:i\s+(?:want|need|would\s+like)\s+to\s+|i'?d\s+like\s+to\s+|i'?m\s+(?:trying|looking)\s+to\s+)/i;
 const BUILD_LEAD = /^(?:build|create|make|develop|design|implement|code|write)\s+(?:me\s+)?(?:an?\s+|the\s+)?/i;
-const DOMAIN_RE = /\b(google\s+drive|g\s*drive|drive|gmail|slack|notion|github|weather|sarees?|boutique|ios|android|mauritius|newton(?:'?s)?(?:\s+laws?)?|ham\s+sam)\b/i;
+// Explicit Drive product names only — bare "drive" is often the verb ("drive sales").
+const DOMAIN_RE = /\b(google\s+drive|g\s*drive|my\s+drive|gmail|slack|notion|github|weather|sarees?|boutique|ios|android|mauritius|newton(?:'?s)?(?:\s+laws?)?|ham\s+sam)\b/i;
 
 export function isCannedProjectDescription(text) {
   return String(text || '').trim() === CANNED_PROJECT_DESCRIPTION;
@@ -22,7 +25,9 @@ function clip(text, max = 140) {
 }
 
 function firstClause(text) {
-  return String(text || '')
+  // "Hi. Build a calculator" — drop greeting sentences, keep the ask.
+  let value = String(text || '').replace(GREETING_SENTENCE, '').trim();
+  return value
     .split(/[.!?]+\s+/)[0]
     .split(/\s+and also\s+/i)[0]
     .split(/\s+and then\s+/i)[0]
@@ -34,7 +39,12 @@ function stripLeadIns(text) {
   let previous = '';
   while (value && value !== previous) {
     previous = value;
-    value = value.replace(LEAD_IN, '').replace(HELP_ME, '').replace(I_WANT, '').trim();
+    value = value
+      .replace(LEAD_IN, '')
+      .replace(HELP_ME, '')
+      .replace(CAN_YOU, '')
+      .replace(I_WANT, '')
+      .trim();
   }
   return value;
 }
@@ -55,8 +65,7 @@ function extractDomain(text) {
   const match = String(text || '').match(DOMAIN_RE);
   if (!match) return '';
   const raw = match[0].replace(/\s+/g, ' ').trim();
-  if (/google\s*drive|g\s*drive/i.test(raw)) return 'Google Drive';
-  if (/^drive$/i.test(raw)) return 'Google Drive';
+  if (/google\s*drive|g\s*drive|my\s+drive/i.test(raw)) return 'Google Drive';
   return titleCaseWords(raw);
 }
 
@@ -110,17 +119,18 @@ export function toShortMissionGoal(text, max = GOAL_MAX) {
   // "AI agent that help me to go through my google drive…" → "Google Drive AI agent"
   // Skip when a "for …" phrase owns the relative clause (handled above).
   const thatIdx = value.search(/\s+that\s+/i);
-  if (thatIdx >= 4 && !/\s+for\s+/i.test(value.slice(0, thatIdx))) {
+  if (thatIdx >= 2 && !/\s+for\s+/i.test(value.slice(0, thatIdx))) {
     const head = value.slice(0, thatIdx).trim();
     const domain = extractDomain(value.slice(thatIdx)) || extractDomain(value);
     const composed = composeProductDomain(head, domain);
-    if (composed && (value.length > max || domain || /\bthat\s+(?:help|helps|will|can|should|would|cleans?|goes?|analyses?|analyzes?)\b/i.test(value))) {
+    if (composed && (value.length > max || domain || /\bthat\s+(?:help|helps|will|can|should|would|cleans?|goes?|tracks?|analyses?|analyzes?)\b/i.test(value))) {
       value = composed;
     }
   }
 
   if (value) {
-    value = value.charAt(0).toUpperCase() + value.slice(1);
+    value = value.replace(/[?!.]+$/g, '').trim();
+    if (value) value = value.charAt(0).toUpperCase() + value.slice(1);
   }
 
   return clip(value, max);
