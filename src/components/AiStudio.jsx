@@ -2068,6 +2068,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
+  const hasDeskFiles = Boolean(vfs && Object.keys(vfs).some((path) => path && vfs[path]?.content));
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -2080,6 +2081,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     officeKind: officeKindNow,
     studioDomain,
     codingDeskOpen,
+    hasDeskFiles,
     photosMissing,
     shopUiMissing,
   });

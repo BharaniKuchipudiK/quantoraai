@@ -18,7 +18,9 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
+import { resolveIsCodingRequest } from '../lib/build-intent.js';
+import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
+import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
@@ -387,7 +389,10 @@ export function useChatStream({
       studioDomain,
       live: liveDeskProbe,
     });
-    const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
+    const isCodingRequest = resolveIsCodingRequest(text, {
+      codingDeskOpen: Boolean(codingDeskOpen),
+      refineDesk,
+    });
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
@@ -736,6 +741,17 @@ export function useChatStream({
 
           if (streamedError) {
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
+            if (artifactFailed && isCodingRequest && codingDeskOpen) {
+              const scaffolded = buildCodingDeskScaffoldReply(visibleUserText);
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: scaffolded,
+                isError: false,
+                executionStatus: null,
+                deskScaffolded: true,
+              } : m));
+              return;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: artifactFailed
@@ -754,6 +770,39 @@ export function useChatStream({
               text: currentText
                 ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ The response stream ended unexpectedly.`
                 : '⚠️ **Connection Error:** The response stream ended unexpectedly.',
+              isError: true,
+              executionStatus: null,
+            } : m));
+            return;
+          }
+
+          // Coding Desk build turns must land files. A chat-only plan is not success.
+          if (isCodingRequest && !assembleStudioPreview(currentText).code) {
+            const recovery = resolveTurnRecovery({
+              attempt,
+              code: 'BUILD_ARTIFACT_CONTRACT',
+              hasPartialText: Boolean(currentText),
+            });
+            if (recovery.retry) {
+              announceRecovery(recovery.notice);
+              continue;
+            }
+            const scaffolded = codingDeskOpen
+              ? buildCodingDeskScaffoldReply(visibleUserText)
+              : null;
+            if (scaffolded) {
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: scaffolded,
+                isError: false,
+                executionStatus: null,
+                deskScaffolded: true,
+              } : m));
+              return;
+            }
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: '⚠️ **Preview could not run:** Quantora generated a chat plan with no runnable files. Retry and I will rebuild a complete page.',
               isError: true,
               executionStatus: null,
             } : m));
