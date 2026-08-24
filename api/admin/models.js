@@ -1,7 +1,15 @@
 import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
 import { authenticateAdminRequest } from '../_lib/admin-auth.js';
-import { fetchOpenRouterCatalog, formatContext, providerFromId } from '../_lib/model-catalog.js';
+import {
+  CURATED_MODELS,
+  DIRECT_MODELS,
+  buildInternetCatalogEntries,
+  fetchGeminiCatalog,
+  fetchOpenRouterCatalog,
+} from '../_lib/model-catalog.js';
 import { runAndStoreModelSmokeTest, updateModelApproval } from '../_lib/model-qualification.js';
+import { buildAdminModelLists } from '../_lib/model-lifecycle.js';
+import { scanModelCatalog } from '../_lib/model-scanner.js';
 import { readModelRegistry } from '../_lib/model-store.js';
 import { getSessionUser } from '../_lib/session.js';
 
@@ -13,29 +21,36 @@ function mapSmokeTest(row) {
     ranAt: smoke.ran_at || smoke.ranAt || null,
     results: Array.isArray(smoke.results) ? smoke.results : [],
     error: smoke.error || null,
+    kind: smoke.kind || null,
   };
 }
 
-function mapQueueRow(row, catalog) {
-  const live = catalog?.get(row.id);
+async function loadAdminLists() {
+  const [storedRows, openRouter, gemini] = await Promise.all([
+    readModelRegistry(),
+    fetchOpenRouterCatalog(),
+    fetchGeminiCatalog(),
+  ]);
+
+  const internetEntries = buildInternetCatalogEntries({ openRouter, gemini });
+  const lists = buildAdminModelLists({
+    registryRows: storedRows,
+    featuredModels: [...DIRECT_MODELS, ...CURATED_MODELS],
+    internetEntries,
+  });
+
+  // Queue = newly added models still awaiting Active (compat for older UI clients).
+  const queue = lists.newlyAdded.filter((model) => !model.approved || model.status !== 'available');
+
   return {
-    id: row.id,
-    name: live?.name || row.name,
-    provider: row.provider || providerFromId(row.id),
-    description: live?.description || row.description || 'New free model discovered through OpenRouter.',
-    contextWindow: live?.context_length ? formatContext(live.context_length) : formatContext(row.context_length),
-    pricingKind: 'free',
-    status: row.lifecycle === 'testing' ? 'testing' : 'discovered',
-    health: live ? 'listed' : 'unlisted',
-    event: row.last_event,
-    isNew: row.last_event === 'discovered' || row.last_event === 'restored',
-    isUpdated: row.last_event === 'updated',
-    approved: false,
-    firstSeenAt: row.first_seen_at,
-    lastChangedAt: row.last_changed_at,
-    selectable: false,
-    category: 'candidate',
-    smokeTest: mapSmokeTest(row),
+    ...lists,
+    models: queue,
+    fetchedAt: new Date().toISOString(),
+    catalogs: {
+      openRouter: Boolean(openRouter),
+      gemini: Boolean(gemini),
+      internetEntryCount: internetEntries.length,
+    },
   };
 }
 
@@ -54,28 +69,46 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const [storedRows, catalog] = await Promise.all([
-      readModelRegistry(),
-      fetchOpenRouterCatalog(),
-    ]);
-
-    const queue = storedRows
-      .filter((row) => !row.approved && ['discovered', 'testing'].includes(row.lifecycle))
-      .map((row) => mapQueueRow(row, catalog))
-      .sort((a, b) => new Date(b.lastChangedAt) - new Date(a.lastChangedAt));
-
+    const payload = await loadAdminLists();
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ models: queue, fetchedAt: new Date().toISOString() });
+    return res.status(200).json(payload);
   }
 
   if (req.method === 'POST') {
     const { modelId, action } = req.body || {};
-    if (!modelId || !['approve', 'reject', 'testing', 'smoke-test'].includes(action)) {
-      return res.status(400).json({ error: 'modelId and action (approve|reject|testing|smoke-test) are required' });
+    if (!action || !['approve', 'reject', 'testing', 'smoke-test', 'discover', 'run-discovery'].includes(action)) {
+      return res.status(400).json({
+        error: 'action (approve|reject|testing|smoke-test|discover) is required; modelId required except for discover',
+      });
     }
 
     const sessionUser = getSessionUser(req);
     const adminSub = sessionUser?.sub || 'api-key';
+
+    if (action === 'discover' || action === 'run-discovery') {
+      if (isRateLimited(`admin-discover:${clientIp(req)}`, 2, 60_000)) {
+        return res.status(429).json({ error: 'Discovery rate limit reached. Wait a minute and try again.' });
+      }
+
+      const result = await scanModelCatalog({
+        runCanaries: true,
+        actor: `admin:${adminSub}`,
+      });
+      if (result.status !== 200) {
+        return res.status(result.status).json(result.body);
+      }
+
+      const lists = await loadAdminLists();
+      return res.status(200).json({
+        ok: true,
+        discovery: result.body,
+        ...lists,
+      });
+    }
+
+    if (!modelId) {
+      return res.status(400).json({ error: 'modelId is required for this action' });
+    }
 
     if (action === 'smoke-test') {
       if (isRateLimited(`admin-smoke:${clientIp(req)}:${modelId}`, 3, 60_000)) {

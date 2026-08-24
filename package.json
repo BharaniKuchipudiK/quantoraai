@@ -11,7 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:conversation": "tsx --test api/_lib/conversation-policy.test.ts",
-    "test:models": "node --test api/_lib/model-catalog.test.js",
+    "test:models": "node --test api/_lib/model-catalog.test.js api/_lib/model-canary.test.js api/_lib/model-lifecycle.test.js api/_lib/model-smoke-test.test.js api/_lib/model-store.test.js",
     "test:repository-preview": "tsx --test api/_lib/repository-preview.test.ts",
     "test:quantum": "node --test src/lib/quantum/*.test.js",
     "test:studio-synthetic": "node scripts/studio-synthetic-test.mjs",
