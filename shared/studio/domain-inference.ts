@@ -1,4 +1,5 @@
 import { normalizeStudioDomain, type StudioDomain } from "./domains.js";
+import { detectBuildIntent, isSpecifiedRunnableTool } from "../build-intent.js";
 
 type HistoryItem = { sender?: unknown; text?: unknown };
 
@@ -16,10 +17,6 @@ const MINIMUM_CONFIDENCE_SCORE = 2;
 const CODING_DESK_CONTEXT = /\b(boutique|storefront|e-?commerce|saree|kanjeevaram|online shop|add[\s-]?to[\s-]?(?:bag|cart)|shopping cart|currency converter)\b/i;
 const CODING_SHOP_FOLLOWUP = /\b(cart|checkout|catalog|currency|prices?|costs?)\b/i;
 const CODING_BUILD_CUE = /\b(build|create|develop|design|website|html|preview|css|add[\s-]?to[\s-]?(?:bag|cart))\b/i;
-/** Mirror of build-intent verbs/nouns — kept local so inference stays self-contained. */
-const CODING_BUILD_VERB = /\b(build|create|make|generate|design|develop|code|prototype|clone|scaffold)\b/i;
-const CODING_BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone)\b/i;
-const CODING_SPECIFIED_TOOL = /\b(calculator|calc\b|todo(?:s| list)?|to-do list|timer|stopwatch|pomodoro|counter|unit converter|tip calculator|bmi(?: calculator)?|notepad|markdown editor|tic-?tac-?toe|snake(?: game)?|pong|weather (?:app|widget)|password generator|color picker|habit tracker|kanban|clock|alarm|notes app|drawing (?:app|pad)|whiteboard|kanban board)\b/i;
 /** Preview / VFS markers that prove a coding desk already ran in this thread. */
 const CODING_PREVIEW_ARTIFACT = /\b(filepath=["'][^"']+\.(?:html|jsx|tsx|css|js)|```(?:html|jsx|tsx)|index\.html|vite|src\/app)\b/i;
 
@@ -75,10 +72,15 @@ function signalScore(profile: DomainSignalProfile, current: string, prior: strin
   return score;
 }
 
+/** Strong coding nouns — excludes advisor-ambiguous words like portfolio. */
+const STRONG_CODING_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|html|preview|calculator|dashboard|component|widget|todo(?:s| list)?|timer|stopwatch|game|storefront|boutique|shop)\b/i;
+
 function lineLooksLikeCodingBuild(line: string): boolean {
   if (!line.trim()) return false;
-  if (CODING_SPECIFIED_TOOL.test(line)) return true;
-  return CODING_BUILD_VERB.test(line) && CODING_BUILD_NOUN.test(line);
+  // Reuse build-intent semantics, then require a coding-strong noun so
+  // “create an investment portfolio?” cannot lock the thread as a desk.
+  if (isSpecifiedRunnableTool(line)) return true;
+  return detectBuildIntent(line) && STRONG_CODING_NOUN.test(line);
 }
 
 /** True when earlier turns already started a coding build / preview desk. */
@@ -87,7 +89,8 @@ function historyHasCodingBuild(prior: string): boolean {
   for (const chunk of prior.split("\n")) {
     if (lineLooksLikeCodingBuild(chunk)) return true;
   }
-  if (CODING_PREVIEW_ARTIFACT.test(prior) && CODING_BUILD_CUE.test(prior)) return true;
+  // Artifact / shop-desk evidence is stronger than ambiguous verb+noun pairs.
+  if (CODING_PREVIEW_ARTIFACT.test(prior)) return true;
   if (CODING_DESK_CONTEXT.test(prior) && CODING_BUILD_CUE.test(prior)) return true;
   return false;
 }

@@ -145,6 +145,19 @@ test('cold Study, Travel, and Research opens still work without a coding desk', 
   }), 'research');
 });
 
+test('a Finance create-portfolio question does not lock later turns as coding', () => {
+  assert.equal(inferStudioDomain({
+    message: 'Can you create an investment portfolio?',
+  }), 'finance');
+  assert.equal(inferStudioDomain({
+    message: 'what allocation should I use for taxes and savings?',
+    history: [
+      { sender: 'user', text: 'Can you create an investment portfolio?' },
+      { sender: 'ai', text: 'Here is a starter allocation framework.' },
+    ],
+  }), 'finance');
+});
+
 test('mutation: without codingWorkspace lock, advisor cues would steal the turn', () => {
   // Proves the sticky assertion is load-bearing: if codingWorkspace / history
   // lock regresses to plain keyword inference, Study wins and this test fails.
