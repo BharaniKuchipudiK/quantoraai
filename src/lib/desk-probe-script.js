@@ -95,7 +95,7 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
     var nodes = document.querySelectorAll('a,button,span,div');
     for (var i = 0; i < nodes.length; i++) {
       var text = nodes[i].textContent || '';
-      if (/^\\s*Bag\\s*\\d+/i.test(text) && (nodes[i].children || []).length === 0) {
+      if (/^\\s*(?:Bag|Cart)\\s*[:.(]?\\s*\\d+/i.test(text) && (nodes[i].children || []).length === 0) {
         return parseInt((text.match(/\\d+/) || ['0'])[0], 10) || 0;
       }
     }
@@ -148,6 +148,18 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
   var facts = {};
   facts.pageRendered = Boolean(document.body && (visibleText().length > 0 || document.body.querySelectorAll('*').length > 3));
 
+  // Snapshot the page before typing into search or clicking filters.
+  var photos = countPhotos();
+  facts.photoCount = photos.photoCount;
+  facts.uniquePhotoCount = photos.uniquePhotoCount;
+  facts.hasCurrency = hasCurrency();
+  facts.catalogCount = catalogCount();
+  facts.hasCalculatorDisplay = Boolean(document.querySelector('[data-testid="calculator-display"], output'));
+  facts.hasCalculatorKey = hasDigitKey();
+  var cartBtn = findCart();
+  facts.hasCart = Boolean(cartBtn);
+  var bagBefore = readBag();
+
   var list = controls();
   var field = document.querySelector('input[type="text"], input[type="search"], input:not([type]), textarea');
   var adder = addControl(list);
@@ -155,8 +167,6 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
   var typed = false;
   var itemsBefore = countItems();
   var textBefore = visibleText();
-  var cartBtn = findCart();
-  var bagBefore = readBag();
 
   if (adder && field) {
     typed = typeInto(field, ${JSON.stringify(DESK_PROBE_ITEM_TEXT)});
@@ -179,14 +189,6 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
         && (countItems() > itemsBefore || textAfter.indexOf(${JSON.stringify(DESK_PROBE_ITEM_TEXT)}) !== -1));
     }
     if (clicked) facts.controlResponded = moved;
-    var photos = countPhotos();
-    facts.photoCount = photos.photoCount;
-    facts.uniquePhotoCount = photos.uniquePhotoCount;
-    facts.hasCurrency = hasCurrency();
-    facts.catalogCount = catalogCount();
-    facts.hasCalculatorDisplay = Boolean(document.querySelector('[data-testid="calculator-display"], output'));
-    facts.hasCalculatorKey = hasDigitKey();
-    facts.hasCart = Boolean(cartBtn);
     var bagAfter = readBag();
     if (typeof window.__quantoraBagCount === 'number' && window.__quantoraBagCount > bagBefore) {
       bagAfter = window.__quantoraBagCount;
