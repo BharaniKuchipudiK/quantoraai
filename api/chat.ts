@@ -395,13 +395,16 @@ export default async function handler(req: any, res: any) {
         hasDeskFiles: true,
         studioDomain: normalizedStudioDomain,
       })));
-    const previewCode = typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "";
-    const deskContext = sanitizeDeskContext(req.body?.deskContext);
+    const advisorTurn = advisorBlocksPreviewBuild(normalizedStudioDomain);
+    const previewCode = advisorTurn
+      ? ""
+      : (typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "");
+    const deskContext = advisorTurn ? null : sanitizeDeskContext(req.body?.deskContext);
     const deskBlock = formatDeskContextForPrompt(deskContext);
     const refineUserMessage = [
       message,
       deskBlock,
-      isRefine && previewCode
+      previewCode
         ? `CURRENT RUNNING PREVIEW (source of truth — patch one existing file with filepath=, or return the full HTML document in a \`\`\`html block after a short explanation; do not claim a change unless the fenced file contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
         : '',
     ].filter(Boolean).join('\n\n');
