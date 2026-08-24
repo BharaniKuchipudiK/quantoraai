@@ -136,6 +136,7 @@ export function shouldEscalateCodingDeskModel({
 } = {}) {
   if (refineMode) return true;
   if (qualityHints?.probeFailure || qualityHints?.repair) return true;
+  if (qualityHints?.shopImageOversize) return true;
   const text = String(message || '');
   if (COMPLEX_ASK.test(text) || MULTI_FILE_ASK.test(text)) return true;
   const fileCount = Number(qualityHints?.fileCount) || 0;
@@ -152,6 +153,15 @@ export function shouldEscalateCodingDeskModel({
  *   selectionSource: 'coding_desk_auto'
  * }}
  */
+
+function pickShopIntakeModel(models, { allowPaid = false, gemini = null } = {}) {
+  const stronger = pickStrongCoding(models, { allowPaid });
+  if (!stronger) return gemini;
+  const hay = `${stronger.id || ''} ${stronger.name || ''}`.toLowerCase();
+  if (/nemotron/.test(hay)) return gemini || stronger;
+  return stronger;
+}
+
 export function resolveCodingDeskModel({
   task = 'coding',
   message = '',
@@ -176,6 +186,7 @@ export function resolveCodingDeskModel({
     };
   }
 
+  const shopOversize = Boolean(qualityHints?.shopImageOversize);
   const escalate = shouldEscalateCodingDeskModel({ message, refineMode, hasVFS, qualityHints });
   if (!escalate) {
     return {
@@ -187,7 +198,9 @@ export function resolveCodingDeskModel({
     };
   }
 
-  const stronger = pickStrongCoding(models, { allowPaid });
+  const stronger = shopOversize
+    ? pickShopIntakeModel(models, { allowPaid, gemini })
+    : pickStrongCoding(models, { allowPaid });
   if (!stronger || stronger.id === geminiId) {
     return {
       model: gemini,
@@ -203,7 +216,9 @@ export function resolveCodingDeskModel({
     modelId: stronger.id,
     reason: refineMode || qualityHints?.probeFailure || qualityHints?.repair
       ? 'escalate_refine_or_repair'
-      : 'escalate_complex_coding',
+      : shopOversize
+        ? 'escalate_shop_image_oversize'
+        : 'escalate_complex_coding',
     escalated: true,
     selectionSource: 'coding_desk_auto',
   };

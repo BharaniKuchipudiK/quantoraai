@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   SHOP_CATALOG_CAP,
+  SHOP_INTAKE_CATALOG_SIZE,
+  assessShopBuildAsk,
   requestedShopCatalogSize,
   shopCatalogScaleNote,
   shopCatalogTargetSize,
   shopCatalogWasCapped,
+  shopPhotoTurnFailureCopy,
 } from './shop-catalog-scale.js';
 import {
   countRealPreviewPhotos,
@@ -27,12 +30,30 @@ const FOX_SHELL = `<!DOCTYPE html><html><head><title>Fox & Wolf Kids Collection<
 <footer>Fox & Wolf</footer>
 </body></html>`;
 
-test('100 unique designs caps at the platform catalog limit', () => {
+test('100 unique designs caps at the honest intake catalog size', () => {
   assert.equal(requestedShopCatalogSize(FOX_BRIEF), 100);
   assert.equal(shopCatalogWasCapped(FOX_BRIEF), true);
-  assert.equal(shopCatalogTargetSize(FOX_BRIEF), SHOP_CATALOG_CAP);
-  assert.match(shopCatalogScaleNote(FOX_BRIEF), /24/);
-  assert.match(shopCatalogScaleNote(FOX_BRIEF), /not 100/i);
+  assert.equal(shopCatalogTargetSize(FOX_BRIEF), SHOP_INTAKE_CATALOG_SIZE);
+  assert.match(shopCatalogScaleNote(FOX_BRIEF), /10/);
+  assert.match(shopCatalogScaleNote(FOX_BRIEF), /100/);
+});
+
+test('oversize merchandise asks offer Start with 10 intake chips', () => {
+  const ask = assessShopBuildAsk(FOX_BRIEF);
+  assert.equal(ask.oversize, true);
+  assert.equal(ask.proposedCatalogSize, SHOP_INTAKE_CATALOG_SIZE);
+  assert.equal(ask.catalogTarget, SHOP_INTAKE_CATALOG_SIZE);
+  assert.match(ask.userCopy, /can’t generate 100|can't generate 100/i);
+  assert.ok(ask.chips.some((chip) => chip.id === 'shop-intake-start-10'));
+  assert.match(ask.chips.find((chip) => chip.id === 'shop-intake-start-10').label, /Start with 10/);
+  assert.match(shopPhotoTurnFailureCopy({ timedOut: true, assessment: ask }), /Start with 10/);
+});
+
+test('ordinary shop briefs are not oversize intake', () => {
+  const ask = assessShopBuildAsk('Build a small boutique with 8 sarees and checkout');
+  assert.equal(ask.oversize, false);
+  assert.equal(ask.chips.length, 0);
+  assert.equal(ask.userCopy, '');
 });
 
 test('Fox & Wolf collection shell is a shop desk even without products.json', () => {

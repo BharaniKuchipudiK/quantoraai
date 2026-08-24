@@ -14,6 +14,7 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
+import { assessShopBuildAsk, shopPhotoTurnFailureCopy } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
@@ -1605,7 +1606,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="true"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no product photos. Empty gold frames are not images — tap Add real product photos so the desk injects catalog photos.
+                          Preview still has no product photos. Empty picture boxes are not images — tap Add real product photos so the desk injects catalog photos.
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && shopUiMissing && (assistantClaimsShopUiReady(msg.text) || userAskedForShopDeskFix(lastUserMessage?.text || '')) ? (
@@ -2211,6 +2212,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
   const hasDeskFiles = Boolean(vfs && Object.keys(vfs).some((path) => path && vfs[path]?.content));
+  const shopIntake = assessShopBuildAsk(lastUserMessage?.text || '');
+  const shopTurnFailureCopy = lastAiMessage?.isError
+    && (shopIntake.oversize || userAskedForPreviewPhotos(lastUserMessage?.text || '') || userAskedForShopDeskFix(lastUserMessage?.text || ''))
+    ? shopPhotoTurnFailureCopy({
+      timedOut: /timed out|90s limit|hit the \d+s limit/i.test(lastAiMessage?.text || ''),
+      seconds: 90,
+      assessment: shopIntake,
+    })
+    : '';
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -2226,6 +2236,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     hasDeskFiles,
     photosMissing,
     shopUiMissing,
+    shopIntake,
+    shopTurnFailureCopy,
   });
   const studioMission = deriveStudioMission({
     conversationContext,
