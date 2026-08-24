@@ -2254,6 +2254,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     shopUiMissing,
     shopIntake,
     shopTurnFailureCopy,
+    previewRunStatus,
   });
   const studioMission = deriveStudioMission({
     conversationContext,

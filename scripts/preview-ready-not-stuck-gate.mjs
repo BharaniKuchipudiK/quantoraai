@@ -9,6 +9,9 @@
  * the parent waiting forever.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { buildStudioJobCard } from '../src/lib/studio-job-card.js';
 import { ensureShopDeskInVfs } from '../src/lib/studio-preview-helpers.js';
@@ -19,6 +22,9 @@ import {
 } from '../src/lib/preview-utils.js';
 import { countRealPreviewPhotos } from '../src/lib/preview-images.js';
 import { expandShopIntakeAccept } from '../src/lib/shop-catalog-scale.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PATH_EMBED_HTML = readFileSync(join(HERE, '../public/preview/embed.html'), 'utf8');
 
 const FOX_BRIEF = 'Build Fox & Wolf kids merchandise shop with 100 unique design images and a full website.';
 const SAMPLE_SVG = (n) => (
@@ -68,6 +74,7 @@ assert.ok(countRealPreviewPhotos(prepared) >= 1, 'prepared Preview needs ≥1 re
 assert.match(prepared, /data:image\/svg\+xml/, 'VFS SVGs must be wired as data-URIs');
 assert.doesNotMatch(prepared, /src="foxwolf_\d+\.svg"/, 'relative SVG srcs must not survive prepare');
 assert.match(PREVIEW_EMBED_SHELL_HTML, /setTimeout\(signalReady/, 'shell must re-post embed-ready');
+assert.match(PATH_EMBED_HTML, /setTimeout\(signalReady/, 'path embed shell must re-post embed-ready');
 
 const READY_MS = 12_000;
 const browser = await chromium.launch({ headless: true });
