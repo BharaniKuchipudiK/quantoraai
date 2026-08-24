@@ -251,18 +251,34 @@ function injectCatalogGrid(html = '', count = SHOP_PHOTO_FLOOR) {
  */
 export function injectMissingShopPhotos(html = '', options = {}) {
   const target = shopCatalogTargetSize(options.brief || '', Number(options.targetCount) || 0);
-  const cleaned = stripInjectedShopPhotos(html);
-  if (!cleaned) {
-    return { html: String(html || ''), injected: false };
+  const source = String(html || '');
+  if (!source) {
+    return { html: source, injected: false };
   }
+  // Keep an already-injected capped catalog across unrelated follow-ups
+  // (“change the heading”) — do not strip and rebuild on every turn.
+  const existingCards = (source.match(/data-quantora-shop-card="true"/gi) || []).length;
+  const existingPhotos = countRealPreviewPhotos(source);
+  if (
+    existingCards >= SHOP_PHOTO_FLOOR
+    && existingPhotos >= SHOP_PHOTO_FLOOR
+    && /data-quantora-shop-catalog="true"/i.test(source)
+  ) {
+    return { html: source, injected: false };
+  }
+
+  const cleaned = stripInjectedShopPhotos(source);
   let index = 0;
   let out = cleaned.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
     if (isTinyDecorativeSvg(svg) || index >= MAX_SHOP_PHOTOS) return svg;
     return shopPhotoTag(index++);
   });
+  let cardCount = 0;
   out = out.replace(
     productCardRe(),
     (full, tag, attrs, inner) => {
+      cardCount += 1;
+      if (cardCount > MAX_SHOP_PHOTOS) return '';
       if (/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
       if (index >= MAX_SHOP_PHOTOS) return full;
       return `<${tag}${attrs}>${shopPhotoTag(index++)}${inner}</${tag}>`;
@@ -292,7 +308,7 @@ export function injectMissingShopPhotos(html = '', options = {}) {
     out = out.replace(/<\/body>/i, `${shopPhotoTag(index++, 'Collection photo')}</body>`);
   }
   const diversified = diversifyDuplicateShopPhotos(out);
-  return { html: diversified, injected: diversified !== cleaned };
+  return { html: diversified, injected: diversified !== cleaned && diversified !== source };
 }
 
 export function injectProductCatalogImages(raw = '', options = {}) {

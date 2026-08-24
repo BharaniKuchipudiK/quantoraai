@@ -43,7 +43,8 @@ export function summarizeCatalog(raw = '') {
 
 const SHOP_DOM_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card|merchandise|kids?\s+collection|shop\s+(?:website|site|page)|online\s+store|data-quantora-shop-(?:photo|card|catalog))\b/i;
 const SHOP_PRODUCTS_RE = /"priceCents"\s*:|"currency"\s*:\s*"(?:inr|usd|sgd|aud|aed)"/i;
-const MERCH_SHELL_RE = /\b(collection|merchandise|boutique|storefront|kids?\s+(?:wear|shop)|fox\s*&\s*wolf)\b/i;
+/** Branded merchandise chrome — not a generic “poetry collection” page. */
+const MERCH_SHELL_RE = /\b(merchandise|boutique|storefront|kids?\s+(?:wear|shop|collection)|fox\s*&\s*wolf|online\s+shop|product\s+catalog)\b/i;
 
 /** Job cards from another product must not force shop probes onto this Preview. */
 export function jobClearlyNotShop(job = null) {
@@ -63,12 +64,14 @@ export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
   const liveShop = SHOP_DOM_RE.test(hay)
     || Boolean(products && (SHOP_PRODUCTS_RE.test(products) || namedProducts));
   if (liveShop) return true;
-  // Branded collection chrome (header/nav/footer) with empty/gold body is still a shop.
+  // Branded merchandise chrome (header/nav/footer) with empty/gold body is still a shop
+  // when the job says so, or when the page itself uses merchandise/shop language —
+  // not every page that merely says “collection”.
   if (
     MERCH_SHELL_RE.test(entry)
     && /<(header|nav)\b/i.test(entry)
     && /<footer\b/i.test(entry)
-    && jobNeedsProductPhotos(job)
+    && (jobNeedsProductPhotos(job) || /\b(shop|cart|merchandise|storefront)\b/i.test(entry))
   ) {
     return true;
   }
@@ -76,6 +79,7 @@ export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
     MERCH_SHELL_RE.test(entry)
     && /<(header|nav|footer)\b/i.test(entry)
     && !previewHtmlHasRealPhotos(entry)
+    && (jobNeedsProductPhotos(job) || /\b(shop|cart|bag|merchandise|priceCents|add to cart)\b/i.test(entry))
   ) {
     return true;
   }

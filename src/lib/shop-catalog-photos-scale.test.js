@@ -104,3 +104,39 @@ test('complaint follow-up alone does not become the mission build ask', () => {
   assert.match(mission.goal, /Fox\s*&\s*Wolf/i);
   assert.doesNotMatch(mission.goal, /^Why/i);
 });
+
+test('a poetry collection page is not treated as a shop desk', () => {
+  const html = `<!DOCTYPE html><html><body>
+<header><h1>Autumn Poetry Collection</h1></header>
+<main><p>Verse one.</p></main>
+<footer>© 2026</footer>
+</body></html>`;
+  assert.equal(looksLikeShopDesk({ html }), false);
+  assert.equal(vfsLooksLikeShop({ 'index.html': { content: html, language: 'html' } }), false);
+});
+
+test('injected catalog survives an unrelated follow-up brief', () => {
+  const job = buildStudioJobCard({ brief: FOX_BRIEF });
+  const first = ensureShopDeskInVfs(
+    { 'index.html': { content: FOX_SHELL, language: 'html' } },
+    job,
+    { brief: FOX_BRIEF },
+  );
+  const cardsBefore = (first.vfs['index.html'].content.match(/data-quantora-shop-card="true"/g) || []).length;
+  assert.ok(cardsBefore >= 6);
+  const second = ensureShopDeskInVfs(first.vfs, job, { brief: 'Change the heading color to navy' });
+  const cardsAfter = (second.vfs['index.html'].content.match(/data-quantora-shop-card="true"/g) || []).length;
+  assert.equal(cardsAfter, cardsBefore);
+  assert.equal(second.changed, false);
+});
+
+test('HTML product cards above the platform cap are trimmed', () => {
+  const cards = Array.from({ length: 40 }, (_, i) => (
+    `<div class="product-card"><p>Item ${i + 1}</p></div>`
+  )).join('');
+  const html = `<!DOCTYPE html><html><body><main>${cards}</main></body></html>`;
+  const result = injectMissingShopPhotos(html, { brief: FOX_BRIEF });
+  const kept = (result.html.match(/class="product-card"/g) || []).length;
+  assert.ok(kept <= 24, `expected ≤24 cards, got ${kept}`);
+  assert.ok(countRealPreviewPhotos(result.html) >= 6);
+});
