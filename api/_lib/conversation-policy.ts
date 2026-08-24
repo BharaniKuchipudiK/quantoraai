@@ -166,7 +166,7 @@ ARTIFACT (routed to Live Preview — not read in chat):
 - After a shop, boutique, or catalog website, the chat explanation MUST end with ONE follow-up that would change how the business runs — payments, domestic vs international shipping, appointments, or inventory. Do not assume those answers. Then append quantora-continues (2–3 taps). This is required even though HTML is in the same reply.
 - Optional session-memory HTML comment after the code block only.
 - TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.
-- NATIVE APPS (iOS / Android / Windows): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica as \`\`\`html (or index.html + styles.css + script.js). Do not use .swift, .kt, or Xcode/Android project files as the preview artifact.`;
+- NATIVE APPS / AGENTS (iOS / Android / Windows / macOS / Python): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica or dashboard as \`\`\`html (or index.html + styles.css + script.js). Do not use .swift, .kt, .py, or Xcode/Android project files as the only preview artifact.`;
 
 /*
  * Guided build directive. For a fresh "make me a website/app" request, Quantora
@@ -212,6 +212,7 @@ WHEN IMPLEMENTING (after confirmation or a specific change request):
 - You MUST emit that HTML block on this turn. Never say you added currency, cart, photos, or any control unless those tags exist in the HTML.
 - If DESK CONTEXT / LIVE PREVIEW FACTS are present, they override memory of earlier chat. Do not claim a catalog item, photo, cart, or converter that FACTS mark as missing.
 - Prefer editing the current files (index.html, products.json, script.js) over inventing a different product.
+- PREVIEW ENTRY RULE: Live Preview only runs the web entry (index.html, App.jsx, or styles.css/script.js linked from it). Never ship a UI change as .py / .swift / .kt alone — those files never run in the browser Preview. For calculator or other widget refinements (e.g. "make it scientific"), you MUST patch the Preview entry with the new controls (sin/cos, DEG/RAD, etc.) and keep data-testid="calculator-display" plus a digit key (data-testid="calculator-one" or visible 0–9 buttons).
 - Code is shown in the preview panel; chat stays readable.`;
 
 const FEATURE_SUGGEST_DIRECTIVE = `FEATURE SUGGESTION MODE

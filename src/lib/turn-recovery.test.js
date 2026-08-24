@@ -35,6 +35,16 @@ test('a half-written answer is never restarted under the reader', () => {
   assert.equal(decision.reason, 'partial-answer');
 });
 
+test('a chat-only build plan still rebuilds even after partial prose rendered', () => {
+  const decision = resolveTurnRecovery({
+    attempt: 1,
+    code: 'BUILD_ARTIFACT_CONTRACT',
+    hasPartialText: true,
+  });
+  assert.equal(decision.retry, true);
+  assert.equal(decision.reason, 'build-contract');
+});
+
 test('stopping and timing out stay the user\'s decision and the turn budget', () => {
   assert.equal(resolveTurnRecovery({ attempt: 1, retryable: true, stoppedByUser: true }).retry, false);
   assert.equal(resolveTurnRecovery({ attempt: 1, networkError: true, timedOut: true }).retry, false);
@@ -44,4 +54,11 @@ test('a dropped connection retries once', () => {
   const decision = resolveTurnRecovery({ attempt: 1, networkError: true });
   assert.equal(decision.retry, true);
   assert.equal(decision.reason, 'network');
+});
+
+test('travel flight provider failures auto-retry with a flight-specific notice', () => {
+  const decision = resolveTurnRecovery({ attempt: 1, code: 'TRAVEL_FLIGHT_PROVIDER', retryable: true });
+  assert.equal(decision.retry, true);
+  assert.equal(decision.reason, 'travel-flight');
+  assert.match(decision.notice, /flight/i);
 });

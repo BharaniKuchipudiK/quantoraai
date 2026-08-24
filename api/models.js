@@ -3,9 +3,9 @@
  *
  * OpenRouter's live catalogue answers "is it listed right now?". Supabase
  * history answers "is it new, changed, restored, or retired?". Neither signal
- * automatically approves a model for routing: discovery and qualification are
- * deliberately separate so a free but incompatible model cannot receive user
- * traffic just because it appeared upstream.
+ * automatically approves a model for routing by itself: the scheduled scan may
+ * auto-promote only after a bounded discovery canary passes. Paid catalogue
+ * entries stay labeled and never become free-Studio selectable.
  */
 import {
   CURATED_MODELS,

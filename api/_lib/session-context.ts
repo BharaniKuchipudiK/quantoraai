@@ -18,7 +18,7 @@ export function normalizeSessionContext(value: unknown): SessionContext {
     ? v.facts
         .filter((f): f is string => typeof f === "string" && f.trim().length > 0)
         .map((f) => f.trim().slice(0, MAX_FIELD_LEN))
-        .slice(0, MAX_FACTS)
+        .slice(-MAX_FACTS)
     : undefined;
   const goal = typeof v.goal === "string" ? v.goal.trim().slice(0, MAX_FIELD_LEN) : undefined;
   const understanding =

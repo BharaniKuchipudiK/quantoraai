@@ -108,7 +108,7 @@ try {
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await prompt.waitFor({ state: 'visible', timeout: 10_000 });
-  await prompt.fill('Design an agent that cleans up my Google Drive');
+  await prompt.fill('Explain two tradeoffs when choosing a database for a small team app');
   await prompt.press('Enter');
 
   await page.waitForFunction(

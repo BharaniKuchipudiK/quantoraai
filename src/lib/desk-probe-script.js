@@ -19,6 +19,7 @@ export const DESK_PAGE_FACT_KEYS = Object.freeze([
   'hasCurrency',
   'hasCalculatorDisplay',
   'hasCalculatorKey',
+  'hasScientificKeys',
   'bagIncremented',
 ]);
 
@@ -144,6 +145,31 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
     }
     return false;
   }
+  function hasCalculatorDisplay(){
+    if (document.querySelector('[data-testid="calculator-display"]')) return true;
+    if (document.querySelector('output')) return true;
+    if (document.querySelector('#display, .display, [data-display], [data-calc-display]')) return true;
+    var live = document.querySelector('[role="status"], [aria-live="polite"], [aria-live="assertive"]');
+    if (live && !live.querySelector('button, [role="button"]')) {
+      var liveText = ((live.textContent || live.value || '') + '').replace(/\\s+/g, ' ').trim();
+      if (liveText && liveText.length <= 64) return true;
+    }
+    if (document.querySelector('input[readonly], input[aria-readonly="true"]')) return true;
+    return false;
+  }
+  function hasScientificKeys(){
+    var labels = [];
+    var keys = document.querySelectorAll('button, [role="button"]');
+    for (var s = 0; s < keys.length; s++) {
+      var label = ((keys[s].textContent || '') + '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      if (label) labels.push(label);
+    }
+    function has(name){
+      for (var i = 0; i < labels.length; i++) { if (labels[i] === name) return true; }
+      return false;
+    }
+    return (has('sin') && has('cos')) || (has('deg') && has('rad'));
+  }
 
   var facts = {};
   facts.pageRendered = Boolean(document.body && (visibleText().length > 0 || document.body.querySelectorAll('*').length > 3));
@@ -154,8 +180,9 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
   facts.uniquePhotoCount = photos.uniquePhotoCount;
   facts.hasCurrency = hasCurrency();
   facts.catalogCount = catalogCount();
-  facts.hasCalculatorDisplay = Boolean(document.querySelector('[data-testid="calculator-display"], output'));
+  facts.hasCalculatorDisplay = hasCalculatorDisplay();
   facts.hasCalculatorKey = hasDigitKey();
+  facts.hasScientificKeys = hasScientificKeys();
   var cartBtn = findCart();
   facts.hasCart = Boolean(cartBtn);
   var bagBefore = readBag();

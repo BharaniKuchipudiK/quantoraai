@@ -9,32 +9,32 @@ import {
   studyScheduleAsk,
 } from './study-practice-desk.js';
 
-test('mini-practice for Newton is the crate problem with answers not included', () => {
-  const practice = miniPracticeFor('physics.mechanics.newton-laws');
-  assert.match(practice.title, /crate/i);
-  assert.match(practice.setup, /15 kg/);
+test('mini-practice is generated from the session topic, not a canned problem pack', () => {
+  const practice = miniPracticeFor('session.thermal-properties', 'thermal properties');
+  assert.match(practice.title, /thermal properties/i);
+  assert.match(practice.setup, /thermal properties/i);
   const packed = JSON.stringify(practice);
-  assert.doesNotMatch(packed, /3 m\/s/);
-  assert.doesNotMatch(packed, /12 m\/s/);
+  assert.doesNotMatch(packed, /15 kg/);
+  assert.doesNotMatch(packed, /crate/i);
 });
 
 test('real-world ask wants a table and then waits', () => {
-  assert.match(studyRealWorldAsk("Newton's laws"), /two-column Markdown table/i);
-  assert.match(studyRealWorldAsk("Newton's laws"), /STOP/i);
+  assert.match(studyRealWorldAsk('thermal properties'), /two-column Markdown table/i);
+  assert.match(studyRealWorldAsk('thermal properties'), /STOP/i);
 });
 
 test('mini-practice ask hides the solution and waits', () => {
-  const ask = studyMiniPracticeAsk("Newton's laws", miniPracticeFor('physics.mechanics.newton-laws'));
+  const ask = studyMiniPracticeAsk('thermal properties', miniPracticeFor('session.thermal-properties', 'thermal properties'));
   assert.match(ask, /Do NOT show the numerical answers/i);
   assert.match(ask, /I will wait/i);
 });
 
 test('debrief is a calm professor, not a rank', () => {
   const ask = studyAnswerDebriefAsk({
-    topic: "Newton's laws",
-    setup: '15 kg crate, 45 N',
-    questions: ['acceleration?'],
-    studentAnswer: 'a = 3',
+    topic: 'thermal properties',
+    setup: 'A short numerical on expansion',
+    questions: ['what changes?'],
+    studentAnswer: 'length increases',
   });
   assert.match(ask, /encouragement/i);
   assert.match(ask, /shortest clean method/i);
@@ -50,11 +50,11 @@ test('schedule asks for real hours and protects sleep', () => {
 
 test('downloaded notes are a file the student can keep, not a fake score', () => {
   const notes = buildStudyNotesFile({
-    topic: "Newton's laws",
-    foundation: 'Net force',
-    lessonText: 'F = ma on one object.',
+    topic: 'thermal properties',
+    foundation: 'Temperature and expansion',
+    lessonText: 'Heat changes size when the idea applies.',
   });
-  assert.match(notes, /Newton's laws/);
+  assert.match(notes, /thermal properties/);
   assert.match(notes, /not an official IIT/i);
-  assert.match(notes, /F = ma/);
+  assert.match(notes, /Heat changes size/);
 });

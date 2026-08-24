@@ -6,6 +6,17 @@ const MAX_FILE_CHARS = 24_000;
 const MAX_CONTEXT_CHARS = 120_000;
 const GITHUB_TIMEOUT_MS = 8_000;
 
+/** Default task when Studio Import Repository only sends a repo URL (context load, not a change plan). */
+export const DEFAULT_REPOSITORY_IMPORT_TASK =
+  "Load key source files as coding context for AI Studio. Prefer README, package manifests, and primary application entrypoints.";
+
+export function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const token = env.GITHUB_TOKEN || env.GITHUB_PAT || env.GH_TOKEN;
+  if (!token || typeof token !== "string") return undefined;
+  const trimmed = token.trim();
+  return trimmed || undefined;
+}
+
 const STOP_WORDS = new Set([
   "about", "after", "again", "also", "and", "been", "before", "build", "can", "change",
   "could", "does", "file", "for", "from", "have", "into", "just", "keep", "make", "need", "only",
@@ -144,13 +155,13 @@ function encodedPath(path: string): string {
 
 export async function buildRepositoryPreview(
   repoUrl: string,
-  task: string,
-  githubToken?: string,
+  task: string = DEFAULT_REPOSITORY_IMPORT_TASK,
+  githubToken: string | undefined = resolveGithubToken(),
 ): Promise<RepositoryPreview> {
-  if (!task || typeof task !== "string" || !task.trim()) {
-    throw new Error("Describe the change you want Quantora to review.");
-  }
-  if (task.length > 2_000) throw new Error("The change request is too long. Keep it under 2,000 characters.");
+  const effectiveTask = typeof task === "string" && task.trim()
+    ? task.trim()
+    : DEFAULT_REPOSITORY_IMPORT_TASK;
+  if (effectiveTask.length > 2_000) throw new Error("The change request is too long. Keep it under 2,000 characters.");
 
   const { owner, repo } = parseGithubRepositoryUrl(repoUrl);
   const headers = githubHeaders(githubToken);
@@ -170,7 +181,7 @@ export async function buildRepositoryPreview(
   if (!treeResponse.ok) throw new Error("GitHub could not read the repository file list.");
 
   const treeData = await treeResponse.json();
-  const candidates = selectCandidateFiles(Array.isArray(treeData.tree) ? treeData.tree : [], task);
+  const candidates = selectCandidateFiles(Array.isArray(treeData.tree) ? treeData.tree : [], effectiveTask);
   if (candidates.length === 0) throw new Error("No readable source files were found in this repository.");
 
   const rankedFiles = (await Promise.all(candidates.map(async file => {
@@ -180,7 +191,7 @@ export async function buildRepositoryPreview(
     });
     if (!response.ok) return null;
     const content = (await response.text()).slice(0, MAX_FILE_CHARS);
-    return { path: file.path, content, score: contentScore(file.path, content, task) };
+    return { path: file.path, content, score: contentScore(file.path, content, effectiveTask) };
   })))
     .filter((file): file is { path: string; content: string; score: number } => Boolean(file))
     .sort((a, b) => b.score - a.score);
@@ -195,19 +206,19 @@ export async function buildRepositoryPreview(
   if (files.length === 0) throw new Error("GitHub returned the file list, but the relevant source files could not be read.");
 
   const relevantFiles = files.map(file => file.path);
-  const risk = assessChangeRisk(relevantFiles, task);
+  const risk = assessChangeRisk(relevantFiles, effectiveTask);
   const fileContext = files.map(file => `\n--- ${file.path} ---\n${file.content}`).join("\n");
-  const content = `[QUANTORA SAFE CHANGE PREVIEW — READ ONLY]
+  const content = `[QUANTORA REPOSITORY CONTEXT — READ ONLY]
 Repository: ${owner}/${repo}
 Default branch: ${branch}
-User request: ${task.trim()}
+User request: ${effectiveTask}
 Initial risk level: ${risk}
 Likely relevant files: ${relevantFiles.join(", ")}
 
-First explain what you understand in plain language. Then give a concise proposed change plan, list the files likely to change, and explain the risk. Ask one question and pause only if a missing answer would materially change the implementation. Do not claim that files were edited, and do not produce a full code dump. This preview is read-only.
+This attachment is read-only GitHub context for AI Studio (not a full clone and not a write-back). Use it to answer questions and propose changes. Do not claim that files were edited on GitHub.
 
 RELEVANT REPOSITORY CONTEXT
 ${fileContext}`.slice(0, MAX_CONTEXT_CHARS);
 
-  return { name: `${owner}/${repo}`, branch, request: task.trim(), risk, relevantFiles, content };
+  return { name: `${owner}/${repo}`, branch, request: effectiveTask, risk, relevantFiles, content };
 }

@@ -13,7 +13,7 @@ export function normalizeSessionContext(value) {
     ? value.facts
         .filter((f) => typeof f === 'string' && f.trim().length > 0)
         .map((f) => f.trim().slice(0, MAX_FIELD_LEN))
-        .slice(0, MAX_FACTS)
+        .slice(-MAX_FACTS)
     : undefined;
   const goal = typeof value.goal === 'string' ? value.goal.trim().slice(0, MAX_FIELD_LEN) : undefined;
   const understanding = typeof value.understanding === 'string'

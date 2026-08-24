@@ -10,8 +10,40 @@ import {
 import { injectShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
 
+const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
+const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
+
 function isHtmlDocument(source = '') {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
+}
+
+function vfsFileContent(vfs, path) {
+  const entry = vfs?.[path];
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry.content === 'string') return entry.content;
+  return '';
+}
+
+/** Fingerprint of files the browser Preview actually runs (not Python/native sidecars). */
+export function previewAssemblyFingerprint(vfs = {}) {
+  const paths = Object.keys(vfs || {})
+    .filter((path) => path && PREVIEW_ASSEMBLY_RE.test(path) && !NATIVE_SIDECAR_RE.test(path))
+    .sort();
+  return paths.map((path) => `${path}\n${vfsFileContent(vfs, path)}`).join('\n--\n');
+}
+
+export function isNativeSidecarPath(path = '') {
+  return NATIVE_SIDECAR_RE.test(String(path || ''));
+}
+
+function changedVfsPaths(before = {}, after = {}) {
+  const paths = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  const changed = [];
+  for (const path of paths) {
+    if (!path) continue;
+    if (vfsFileContent(before, path) !== vfsFileContent(after, path)) changed.push(path);
+  }
+  return changed;
 }
 
 function extractUnfencedHtml(rawText) {
@@ -44,6 +76,10 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
 /**
  * Apply a chat turn onto the desk. A follow-up that only sends one file
  * keeps the rest of the project. A first build does not force the desk open.
+ *
+ * Native sidecars (.py, .swift, …) may land in FILES, but Preview only runs the
+ * web assembly. A refine that only touches sidecars while a browser entry
+ * already exists is marked needsWebEntry so chat cannot claim a UI update.
  */
 export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
   const assembled = assembleStudioPreview(rawText, currentVfs);
@@ -54,7 +90,12 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
   const vfs = ensured.vfs;
   const code = pickPreviewEntry(vfs) || assembled.code;
   const didUpdate = Object.keys(vfs).length > 0 && Boolean(code);
-  if (hadProject && didUpdate) {
+  const changedPaths = hadProject ? changedVfsPaths(currentVfs, vfs) : Object.keys(vfs);
+  const previewChanged = previewAssemblyFingerprint(currentVfs) !== previewAssemblyFingerprint(vfs);
+  const onlyNativeSidecars = changedPaths.length > 0
+    && changedPaths.every((path) => isNativeSidecarPath(path));
+  const needsWebEntry = Boolean(hadProject && didUpdate && onlyNativeSidecars && !previewChanged);
+  if (hadProject && didUpdate && previewChanged) {
     const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job });
     const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job });
     if (deskChecksRegressed(before.checks, after.checks)) {
@@ -64,6 +105,8 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
         didUpdate: false,
         reopenDesk: false,
         rejected: true,
+        needsWebEntry: false,
+        previewChanged: false,
       };
     }
   }
@@ -73,13 +116,17 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
     didUpdate,
     reopenDesk: hadProject && didUpdate,
     rejected: false,
+    needsWebEntry,
+    previewChanged: !hadProject || previewChanged,
   };
 }
 
 export function vfsLooksLikeShop(vfs = {}) {
+  // products.json is the shop scaffold contract — keep injecting photos/cart for it.
+  // Bare "catalog" in HTML is not enough (Drive Cleaner file lists false-positive).
   if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
   const html = pickPreviewEntry(vfs);
-  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|kanjeevaram|catalog|atelier|priceCents)\b/i.test(html);
+  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i.test(html);
 }
 
 export function userAskedForPreviewPhotos(text = '') {

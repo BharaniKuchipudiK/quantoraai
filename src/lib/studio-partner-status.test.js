@@ -66,6 +66,17 @@ test('an open desk still says when currency and cart never reached Preview', () 
   assert.match(status.now, /Add to Cart/i);
 });
 
+test('photosMissing partner copy is only for shop desks that pass the flag', () => {
+  // Non-shop desks must keep photosMissing false at the call site; the status
+  // helper still only speaks when that flag is true.
+  assert.equal(resolveStudioPartnerStatus({
+    hasPreview: true,
+    codingDeskOpen: true,
+    photosMissing: false,
+    shopUiMissing: false,
+  }), null);
+});
+
 test('errors stay honest and offer a retry, not fake success', () => {
   const status = resolveStudioPartnerStatus({
     lastAiIsError: true,
@@ -92,6 +103,19 @@ test('after a real chat reply with no preview, the strip explains the gap', () =
     hasUserTurn: true,
   });
   assert.match(status.now, /no runnable preview/i);
+});
+
+test('an open Coding Desk with empty FILES does not sound finished as chat-only', () => {
+  const status = resolveStudioPartnerStatus({
+    lastAiText: 'Here is a plan for your Drive agent.',
+    hasUserTurn: true,
+    codingDeskOpen: true,
+    hasPreview: false,
+    hasDeskFiles: false,
+  });
+  assert.match(status.now, /no files/i);
+  assert.doesNotMatch(status.now, /Answered in chat/i);
+  assert.match(status.next, /write files|build again/i);
 });
 
 test('Travel never asks for a website preview', () => {

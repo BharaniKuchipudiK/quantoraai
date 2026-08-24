@@ -16,6 +16,8 @@ import {
   userAskedForDeskReview,
   userAskedForPreviewPhotos,
   userAskedForShopDeskFix,
+  previewAssemblyFingerprint,
+  isNativeSidecarPath,
 } from './studio-preview-helpers.js';
 import { deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
 
@@ -273,4 +275,47 @@ test('a calculator is not given a clothing catalog', () => {
   assert.equal(next.changed, false);
   assert.doesNotMatch(next.vfs['index.html'].content, /unsplash/);
   assert.doesNotMatch(next.vfs['index.html'].content, /Add to Cart/);
+});
+
+
+test('python-only refine keeps Preview entry and flags needsWebEntry', () => {
+  const html = '<!DOCTYPE html><html><body><div class="display">0</div><button>1</button></body></html>';
+  const current = { 'index.html': { content: html, language: 'html' } };
+  const follow = applyWorkspaceFromChat(
+    'Updated to a scientific calculator.\n\n```python filepath="calculator.py"\nprint("sin")\n```\n```python filepath="gui_calculator.py"\nprint("DEG")\n```',
+    current,
+    { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
+  );
+  assert.equal(follow.didUpdate, true);
+  assert.equal(follow.needsWebEntry, true);
+  assert.equal(follow.previewChanged, false);
+  assert.match(follow.vfs['index.html'].content, /class="display"/);
+  assert.match(follow.vfs['calculator.py'].content, /sin/);
+  assert.equal(isNativeSidecarPath('calculator.py'), true);
+  assert.equal(previewAssemblyFingerprint(current), previewAssemblyFingerprint(follow.vfs));
+});
+
+test('scientific HTML refine updates the Preview assembly fingerprint', () => {
+  const html = '<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></body></html>';
+  const current = { 'index.html': { content: html, language: 'html' } };
+  const follow = applyWorkspaceFromChat(
+    '```html filepath="index.html"\n<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button><button>sin</button><button>cos</button></body></html>\n```',
+    current,
+    { purpose: 'A scientific calculator', mustWork: ['Scientific keys (sin/cos) appear on Preview'] },
+  );
+  assert.equal(follow.needsWebEntry, false);
+  assert.equal(follow.previewChanged, true);
+  assert.match(follow.vfs['index.html'].content, />sin</);
+});
+
+test('preview assembly fingerprint includes products.json catalog changes', () => {
+  const before = {
+    'index.html': { content: '<!DOCTYPE html><html><body>shop</body></html>', language: 'html' },
+    'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+  };
+  const after = {
+    ...before,
+    'products.json': { content: '[{"id":"a","name":"Silk"},{"id":"b","name":"Cotton"}]', language: 'json' },
+  };
+  assert.notEqual(previewAssemblyFingerprint(before), previewAssemblyFingerprint(after));
 });

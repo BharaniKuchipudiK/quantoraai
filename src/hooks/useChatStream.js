@@ -18,7 +18,10 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
+import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
+import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
+import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
@@ -233,10 +236,12 @@ export function useChatStream({
       console.error('Moderation API failed, failing open...', e);
     }
 
-    const targetModel = targetModelOverride
+    const pinnedOrOverride = targetModelOverride
       || selectedModel
       || (availableModels || []).find((model) => model?.available !== false)
       || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
+    const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
+    let targetModel = pinnedOrOverride;
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
@@ -388,8 +393,33 @@ export function useChatStream({
       studioDomain,
       live: liveDeskProbe,
     });
-    const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
+    const isCodingRequest = resolveIsCodingRequest(text, {
+      codingDeskOpen: Boolean(codingDeskOpen),
+      refineDesk,
+    });
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
+    // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
+    let autoResolvedLabel = null;
+    if (autoMode && isCodingRequest) {
+      const openRouterApiKeyHint = typeof localStorage !== 'undefined' ? localStorage.getItem('openRouterApiKey') : null;
+      const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+      const resolved = resolveCodingDeskModel({
+        task: 'coding',
+        message: text,
+        hasVFS: vfsFileCount > 0,
+        refineMode: refineDesk,
+        availableModels: availableModels || [],
+        qualityHints: { fileCount: vfsFileCount },
+        allowPaid: Boolean(openRouterApiKeyHint),
+      });
+      autoResolvedLabel = resolved.model?.name || resolved.modelId;
+      targetModel = {
+        id: 'auto',
+        name: 'Auto',
+        resolvedModelId: resolved.modelId,
+        resolvedModelName: autoResolvedLabel,
+      };
+    }
     const turnDomain = resolveTurnStudioDomain({
       explicit: studioDomain,
       message: visibleUserText,
@@ -425,6 +455,7 @@ export function useChatStream({
       });
     }
 
+    const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
     const requestBodyFor = (model) => ({
       message: text,
       modelId: model.id,
@@ -440,6 +471,13 @@ export function useChatStream({
       buildMode: isCodingRequest,
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
+      hasVFS: vfsFileCountForHints > 0,
+      ...(isCodingRequest ? {
+        qualityHints: {
+          fileCount: vfsFileCountForHints,
+          repair: refineDesk,
+        },
+      } : {}),
       ...codingTurnRequestFields({
         isCodingRequest,
         refineDesk,
@@ -551,7 +589,8 @@ export function useChatStream({
     updateActiveMessages(prev => [...prev, {
       id: aiMsgId,
       sender: 'ai',
-      modelUsed: targetModel.name,
+      modelUsed: autoMode ? (autoResolvedLabel || 'Auto') : targetModel.name,
+      autoRouted: autoMode,
       text: '',
       componentType: 'formatted_text',
       latencyMs: 0,
@@ -598,6 +637,7 @@ export function useChatStream({
             body: JSON.stringify({
               ...requestBodyFor(targetModel),
               message: messageForModel,
+              turnAttempt: attempt,
             })
           });
           const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
@@ -667,7 +707,7 @@ export function useChatStream({
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   text: sanitizeAssistantStream(currentText),
-                  modelUsed: targetModel.name,
+                  modelUsed: m.resolvedModelId || m.modelUsed || (autoMode ? (autoResolvedLabel || 'Auto') : targetModel.name),
                 } : m));
               }
               if (parsed.provider) {
@@ -679,6 +719,7 @@ export function useChatStream({
                   provider: parsed.provider,
                   latencyMs: parsed.latencyMs || 0,
                   executionStatus: null,
+                  ...(parsed.modelId ? { modelUsed: parsed.modelId, resolvedModelId: parsed.modelId } : {}),
                   ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
@@ -703,6 +744,17 @@ export function useChatStream({
 
           if (streamedError) {
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
+            if (artifactFailed && isCodingRequest && codingDeskOpen && !advisorBlocksPreviewBuild(turnDomain)) {
+              const scaffolded = buildCodingDeskScaffoldReply(visibleUserText);
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: scaffolded,
+                isError: false,
+                executionStatus: null,
+                deskScaffolded: true,
+              } : m));
+              return;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: artifactFailed
@@ -721,6 +773,44 @@ export function useChatStream({
               text: currentText
                 ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ The response stream ended unexpectedly.`
                 : '⚠️ **Connection Error:** The response stream ended unexpectedly.',
+              isError: true,
+              executionStatus: null,
+            } : m));
+            return;
+          }
+
+          // Coding Desk build turns must land files. A chat-only plan is not success.
+          // Advisor domains (Study flashcards, Travel, etc.) intentionally stay chat.
+          if (
+            isCodingRequest
+            && !advisorBlocksPreviewBuild(turnDomain)
+            && !assembleStudioPreview(currentText).code
+          ) {
+            const recovery = resolveTurnRecovery({
+              attempt,
+              code: 'BUILD_ARTIFACT_CONTRACT',
+              hasPartialText: Boolean(currentText),
+            });
+            if (recovery.retry) {
+              announceRecovery(recovery.notice);
+              continue;
+            }
+            const scaffolded = codingDeskOpen
+              ? buildCodingDeskScaffoldReply(visibleUserText)
+              : null;
+            if (scaffolded) {
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: scaffolded,
+                isError: false,
+                executionStatus: null,
+                deskScaffolded: true,
+              } : m));
+              return;
+            }
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: '⚠️ **Preview could not run:** Quantora generated a chat plan with no runnable files. Retry and I will rebuild a complete page.',
               isError: true,
               executionStatus: null,
             } : m));

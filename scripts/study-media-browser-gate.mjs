@@ -174,21 +174,35 @@ try {
     'Tutor board did not name the concept the student asked about.',
   );
   await visible(
+    board.locator('[data-quantora-study-encouragement="true"]').first(),
+    'Tutor board has no encouragement chrome from session signals.',
+  );
+  await visible(
+    board.locator('[data-quantora-study-gaps="true"]').first(),
+    'Tutor board has no gap list chrome.',
+  );
+  await visible(
+    board.locator('[data-quantora-study-competencies="true"]').first(),
+    'Tutor board has no exam-competency vocabulary chrome.',
+  );
+  await visible(
     board.getByText('No fake score. A filled bar only after a real check.', { exact: true }),
     'Tutor board implied progress before the student passed any check.',
   );
-
-  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
-  const rightAnswer = board.getByRole('button', { name: 'The wall pushes back on you with an equal force', exact: true });
-  await visible(rightAnswer, 'Tutor board offered no real check to answer.');
-  await rightAnswer.click();
   await visible(
-    board.getByText('Third law is holding.', { exact: false }),
-    'Tutor board did not grade the check the student answered.',
+    board.locator('[data-quantora-study-competency-active="false"]').first(),
+    'Tutor board claimed exam competencies before this session tagged any.',
   );
-  await hidden(
-    board.getByText('No fake score. A filled bar only after a real check.', { exact: true }),
-    'Tutor board still claimed no check had happened after grading one.',
+  if (await board.getByRole('button', { name: 'The wall pushes back on you with an equal force', exact: true }).count()) {
+    throw new Error('Tutor board still ships a hardcoded lesson check.');
+  }
+  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
+  const honesty = board.getByRole('button', { name: /I can explain Newton's laws without looking/i }).first();
+  await visible(honesty, 'Tutor board offered no session honesty check after Test me on this.');
+  await honesty.click();
+  await visible(
+    board.getByText(/Marked checked for this session/i).first(),
+    'Tutor board did not grade the session honesty check.',
   );
 
   console.log('Study media browser gate passed.');

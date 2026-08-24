@@ -1,35 +1,15 @@
 /**
  * Mini-practice that waits for the student. Answers stay hidden on the board.
- * Not an IIT/NEET rank. Not a lecture dump.
+ * Setup comes from the session topic, never from a canned chapter pack.
  */
-const PRACTICES = {
-  'physics.mechanics.newton-laws': {
-    title: 'Mini-practice: push the crate',
-    setup: 'A 15 kg crate sits on a frictionless floor. You push with a constant 45 N horizontally. The crate starts from rest.',
-    questions: [
-      'What is the crate’s acceleration?',
-      'How fast is it moving after 4 seconds?',
-    ],
-  },
-  'physics.kinematics.projectile-motion': {
-    title: 'Mini-practice: sideways throw',
-    setup: 'A ball is thrown sideways from a cliff at 8 m/s. Ignore air. Take g = 10 m/s².',
-    questions: [
-      'What is the sideways speed 2 seconds later?',
-      'What is the downward speed 2 seconds later?',
-    ],
-  },
-};
-
-export function miniPracticeFor(conceptId, label = '') {
-  if (PRACTICES[conceptId]) return PRACTICES[conceptId];
-  const topic = String(label || 'this idea').trim();
+export function miniPracticeFor(_conceptId, label = '') {
+  const topic = String(label || 'this idea').trim() || 'this idea';
   return {
     title: `Mini-practice: ${topic}`,
     setup: `One short problem on ${topic}. Work it on paper if you can. Do not look up the answer first.`,
     questions: [
-      `State the idea in one sentence.`,
-      `Apply it to one number or one everyday situation.`,
+      'State the idea in one sentence.',
+      'Apply it to one number or one everyday situation.',
     ],
   };
 }
@@ -73,7 +53,7 @@ export function studyAnswerDebriefAsk({
     'Now do all of this, in this order, in short sections:',
     '1) One line of encouragement that is specific to what I tried — not empty praise.',
     '2) Mark: what is right, what is incomplete, what is a misconception. Do not invent a percentile or IIT/NEET rank.',
-    '3) Intent: what the question was testing vs what I actually answered.',
+    '3) Intent: what the question was testing vs what I actually answered — recall, apply, multi-concept, numerical, or assertion-reason if this session named that competency.',
     '4) Another valid way to think it, if there is one.',
     '5) The shortest clean method, step by step, with units.',
     '6) One foundation to repair if I slipped, then one similar check — questions only, wait again.',

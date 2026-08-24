@@ -106,6 +106,32 @@ test("repository preview refuses anonymous access", async () => {
   assert.equal(state.status, 401);
 });
 
+test("github create-pr refuses anonymous access", async () => {
+  const { state, res } = responseHarness();
+  await pipeline({
+    method: "POST", headers: {}, socket: {},
+    body: {
+      targetStage: "github-create-pr",
+      repoUrl: "https://github.com/example/repo",
+      title: "Desk",
+      head: "quantora-desk",
+    },
+  }, res);
+  assert.equal(state.status, 401);
+});
+
+test("github preview query alias injects repository-preview without body targetStage", async () => {
+  const { state, res } = responseHarness();
+  await pipeline({
+    method: "POST",
+    headers: {},
+    socket: {},
+    query: { github: "preview" },
+    body: { repoUrl: "https://github.com/example/repo" },
+  }, res);
+  assert.equal(state.status, 401);
+});
+
 for (const [name, handler] of Object.entries({ autocomplete, deploy, domains, enhance })) {
   test(`${name} refuses an anonymous cost-bearing request`, async () => {
     const { state, res } = responseHarness();

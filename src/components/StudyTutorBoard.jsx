@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
-import { gradeStudyCheck } from '../lib/study-tutor-brief.js';
+import { gradeStudyCheck, studyCheckOutcomeFact } from '../lib/study-tutor-brief.js';
 import {
   studyFlashcardAsk,
   studyLessonAsk,
@@ -8,6 +8,9 @@ import {
   studyQuizAsk,
   studyResourceLinks,
 } from '../lib/study-learning-resources.js';
+import {
+  STUDY_COMPETENCY_TAGS,
+} from '../lib/study-syllabus-overlay.js';
 import {
   buildStudyNotesFile,
   downloadTextFile,
@@ -18,9 +21,25 @@ import {
   studyScheduleAsk,
 } from '../lib/study-practice-desk.js';
 
+function statusTone(status, isLight) {
+  if (status === 'missing') return isLight ? '#9f1239' : '#fb7185';
+  if (status === 'checked') return isLight ? '#047857' : '#6ee7b7';
+  return isLight ? '#c2410c' : '#fdba74';
+}
+
+function ProgressMark({ ratio, isLight }) {
+  const filled = Math.max(0, Math.min(1, Number(ratio) || 0));
+  return (
+    <svg viewBox="0 0 120 12" width="100%" height="12" aria-hidden="true" data-quantora-study-progress="true">
+      <rect x="0" y="2" width="120" height="8" rx="4" fill={isLight ? '#e2e8f0' : 'rgba(148,163,184,0.25)'} />
+      <rect x="0" y="2" width={Math.max(4, filled * 120)} height="8" rx="4" fill={filled >= 0.3 ? '#10b981' : '#f97316'} />
+    </svg>
+  );
+}
+
 /**
- * Personal tutor board: one concept, real checks, flashcards, and honest
- * links to Khan / SWAYAM / PW / YouTube search. Not homework chat. Not an IDE.
+ * Personal tutor board: session chrome, syllabus nodes the learner named,
+ * and honest checks. Not homework chat. Not an IDE.
  */
 export default function StudyTutorBoard({
   brief,
@@ -29,6 +48,7 @@ export default function StudyTutorBoard({
   subtextColor,
   onAsk,
   onSend,
+  onCheckOutcome,
   lessonText = '',
 }) {
   const [showCheck, setShowCheck] = useState(false);
@@ -43,6 +63,20 @@ export default function StudyTutorBoard({
   const resources = studyResourceLinks(topic);
   const cards = brief?.flashcards || [];
   const practice = miniPracticeFor(brief?.conceptId, topic);
+  const encouragement = brief?.encouragement || { glyph: '📗', text: 'One idea. Then one check.' };
+  const nodeStates = brief?.nodeStates || (brief?.nodes || []).map((node) => ({ node, status: 'unverified' }));
+  const gaps = brief?.gaps || [];
+  const competencies = brief?.competencies || [];
+  const tagged = new Set(competencies.map((row) => row.tag));
+  const overlayLabel = brief?.overlay?.label || '';
+  const subjects = brief?.subjects || [];
+  const progress = brief?.progress || { ratio: 0, caption: 'No fake score. A filled bar only after a real check.' };
+  const barRatio = result?.correct ? Math.max(progress.ratio, 0.4) : result ? Math.max(progress.ratio, 0.12) : progress.ratio;
+  const barCaption = result?.correct
+    ? 'Check passed — not an exam rank.'
+    : result
+      ? 'Gap found — repair the foundation this session named.'
+      : progress.caption;
 
   const askOrSend = (text) => {
     if (onSend) onSend(text);
@@ -68,6 +102,23 @@ export default function StudyTutorBoard({
     >
       {label}
     </button>
+  );
+
+  const pill = (text, tone) => (
+    <span
+      key={text}
+      style={{
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        borderRadius: '999px',
+        padding: '4px 9px',
+        color: tone,
+        border: `1px solid ${tone}`,
+        background: isLight ? '#fff' : 'rgba(15,23,42,0.45)',
+      }}
+    >
+      {text}
+    </span>
   );
 
   return (
@@ -116,31 +167,96 @@ export default function StudyTutorBoard({
           Download
         </button>
       </div>
-      <div style={{ marginTop: '8px', fontSize: '0.92rem', fontWeight: 700, color: textColor }}>
+      <div
+        data-quantora-study-encouragement="true"
+        style={{
+          marginTop: '10px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '10px',
+          padding: '10px 12px',
+          borderRadius: '12px',
+          background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)',
+        }}
+      >
+        <span aria-hidden="true" style={{ fontSize: '1.25rem', lineHeight: 1 }}>{encouragement.glyph}</span>
+        <div style={{ fontSize: '0.82rem', fontWeight: 650, color: textColor, lineHeight: 1.45 }}>
+          {encouragement.text}
+        </div>
+      </div>
+      <div style={{ marginTop: '10px', fontSize: '0.92rem', fontWeight: 700, color: textColor }}>
         {brief.label || 'What are we strengthening?'}
       </div>
+      {overlayLabel || subjects.length ? (
+        <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {overlayLabel ? pill(overlayLabel, isLight ? '#c2410c' : '#fdba74') : null}
+          {subjects.map((subject) => pill(subject, isLight ? '#0369a1' : '#7dd3fc'))}
+        </div>
+      ) : null}
       {brief.foundation ? (
         <div style={{ marginTop: '4px', fontSize: '0.8rem', color: subtextColor }}>
           Foundation under this: {brief.foundation}
         </div>
       ) : null}
-      <div style={{
-        marginTop: '10px',
-        height: '8px',
-        borderRadius: '999px',
-        background: isLight ? '#e2e8f0' : 'rgba(148,163,184,0.25)',
-        overflow: 'hidden',
-      }}
-      >
-        <div style={{
-          width: result?.correct ? '40%' : result ? '12%' : brief.label ? '20%' : '6%',
-          height: '100%',
-          background: result?.correct ? '#10b981' : '#f97316',
-        }}
-        />
+      {brief.figureUrl ? (
+        <figure data-quantora-study-figure="true" style={{ margin: '12px 0 0' }}>
+          <img
+            src={brief.figureUrl}
+            alt={brief.label ? `Figure for ${brief.label}` : 'Session figure'}
+            style={{
+              width: '100%',
+              maxHeight: '220px',
+              objectFit: 'contain',
+              borderRadius: '12px',
+              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.25)',
+              background: isLight ? '#f8fafc' : 'rgba(15,23,42,0.55)',
+            }}
+          />
+        </figure>
+      ) : null}
+      <div style={{ marginTop: '12px' }}>
+        <ProgressMark ratio={barRatio} isLight={isLight} />
       </div>
       <div style={{ marginTop: '6px', fontSize: '0.72rem', color: subtextColor }}>
-        {result?.correct ? 'Check passed — not an exam rank.' : result ? 'Gap found — repair the foundation.' : 'No fake score. A filled bar only after a real check.'}
+        {barCaption}
+      </div>
+      {nodeStates.length ? (
+        <div data-quantora-study-nodes="true" style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {nodeStates.map((row) => {
+            const status = row.status || 'unverified';
+            return pill(status === 'missing' ? `${row.node} · missing` : `${row.node} · ${status}`, statusTone(status, isLight));
+          })}
+        </div>
+      ) : null}
+      <div data-quantora-study-competencies="true" style={{ marginTop: '10px' }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: subtextColor }}>
+          How this idea is tested
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+          {STUDY_COMPETENCY_TAGS.map((tag) => (
+            <span
+              key={tag}
+              data-quantora-study-competency={tag}
+              data-quantora-study-competency-active={tagged.has(tag) ? 'true' : 'false'}
+              style={{
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                borderRadius: '999px',
+                padding: '4px 8px',
+                opacity: tagged.has(tag) ? 1 : 0.45,
+                color: textColor,
+                border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.3)',
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div data-quantora-study-gaps="true" style={{ marginTop: '10px', fontSize: '0.78rem', color: subtextColor, lineHeight: 1.45 }}>
+        {gaps.length
+          ? `Unverified or missing: ${gaps.map((row) => row.node).join(', ')}.`
+          : (brief.label ? 'No gap list yet — a check this session is how a node leaves unverified.' : 'Name a topic or paste chapters to build a gap list.')}
       </div>
       <div style={{ marginTop: '8px', fontSize: '0.8rem', fontWeight: 600, color: isLight ? '#c2410c' : '#fdba74' }}>
         Next: {brief.next}
@@ -159,7 +275,14 @@ export default function StudyTutorBoard({
         {chip('Flashcards', () => { setShowCards(true); setCardIndex(0); setCardBack(false); askOrSend(studyFlashcardAsk(topic)); })}
         {chip('Notes', () => askOrSend(studyNotesAsk(topic)))}
         {chip('I got this wrong…', () => onAsk?.('I got this question wrong: '))}
-        {chip('Test me on this', () => { setResult(null); setShowCheck(true); }, Boolean(check))}
+        {chip('Test me on this', () => {
+          if (check) {
+            setResult(null);
+            setShowCheck(true);
+            return;
+          }
+          askOrSend(studyQuizAsk(topic));
+        })}
       </div>
       <div style={{ marginTop: '14px' }}>
         <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: subtextColor }}>
@@ -284,7 +407,13 @@ export default function StudyTutorBoard({
               <button
                 key={option.id}
                 type="button"
-                onClick={() => setResult(gradeStudyCheck(check, option.id))}
+                onClick={() => {
+                  const graded = gradeStudyCheck(check, option.id);
+                  setResult(graded);
+                  if (graded && onCheckOutcome) {
+                    onCheckOutcome(studyCheckOutcomeFact(topic, graded.correct));
+                  }
+                }}
                 style={{
                   textAlign: 'left',
                   padding: '8px 12px',
