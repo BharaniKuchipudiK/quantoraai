@@ -151,6 +151,7 @@ export function studioPreviewRunLabel(status) {
     : (status && typeof status === 'object' && status.kind === 'quality'
       ? (status.passed ? 'clean' : 'degraded')
       : '');
+  if (value === 'warming') return 'Preview is starting…';
   if (value === 'running') return 'Preview is starting…';
   if (value === 'healing') return 'Preview is fixing a crash…';
   if (value === 'clean') return 'Preview is running';

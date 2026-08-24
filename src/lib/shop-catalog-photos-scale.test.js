@@ -60,7 +60,7 @@ test('typed start with 10 expands to the intake chip brief using the prior Fox a
   assert.equal(expanded.userAsked, 100);
   assert.match(expanded.text, /about 10 working catalog photos/i);
   assert.match(expanded.text, /not 100 unique/i);
-  assert.match(expanded.text, /preview-image/i);
+  assert.match(expanded.text, /data:image|VFS|\.svg/i);
   assert.equal(shopCatalogTargetSize(expanded.text), SHOP_INTAKE_CATALOG_SIZE);
 });
 
