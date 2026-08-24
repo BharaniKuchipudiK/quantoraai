@@ -41,6 +41,9 @@ jobs:
       - name: Run all tests
         run: npm run test:all
 
+      - name: Shop catalog photos scale gate
+        run: node scripts/shop-catalog-photos-scale-gate.mjs
+
       - name: Build production artifacts
         run: npm run build
 

@@ -6,11 +6,14 @@ import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
   injectMissingShopPhotos,
   injectProductCatalogImages,
+  scaffoldShopCatalogJson,
+  countRealPreviewPhotos,
   stripInjectedShopPhotos,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
-import { looksLikeShopDesk, deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
+import { deskChecksRegressed, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
 import { buildStudioJobCard } from './studio-job-card.js';
+import { shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
 const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
@@ -84,7 +87,8 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
  * already exists is marked needsWebEntry so chat cannot claim a UI update.
  *
  * `brief` is the latest user ask so a calculator / Drive cleaner turn can
- * retire a leftover boutique job before shop photos are considered.
+ * retire a leftover boutique job before shop photos are considered, and so
+ * merchandise shells still get photos+cart when the model left a blank body.
  */
 export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, options = {}) {
   const brief = typeof options === 'string' ? options : String(options?.brief || '');
@@ -100,7 +104,7 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
   // VFS merge keeps products.json from a prior boutique. Drop that bleed before
   // ensureShopDeskInVfs would paint silk stock photos onto a calculator.
   const purged = purgeStaleShopArtifacts(assembled.vfs, nextJob);
-  const ensured = ensureShopDeskInVfs(purged.vfs, nextJob);
+  const ensured = ensureShopDeskInVfs(purged.vfs, nextJob, { brief });
   const vfs = ensured.vfs;
   const code = pickPreviewEntry(vfs) || assembled.code;
   const didUpdate = Object.keys(vfs).length > 0 && Boolean(code);
@@ -109,8 +113,7 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
   const onlyNativeSidecars = changedPaths.length > 0
     && changedPaths.every((path) => isNativeSidecarPath(path));
   const needsWebEntry = Boolean(hadProject && didUpdate && onlyNativeSidecars && !previewChanged);
-  // Dropping a leftover boutique catalog is an intentional product switch — do not
-  // treat that as a desk regression that keeps the silk Preview around.
+  // Dropping a leftover boutique catalog is an intentional product switch.
   if (hadProject && didUpdate && previewChanged && !purged.changed) {
     const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job: nextJob });
     const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job: nextJob });
@@ -136,12 +139,14 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
     needsWebEntry,
     previewChanged: !hadProject || previewChanged,
     job: nextJob,
+    scaleNote: ensured.scaleNote || '',
   };
 }
 
 export function vfsLooksLikeShop(vfs = {}, job = null) {
   return looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job });
 }
+
 
 /** Live boutique markup on the Preview entry — not a leftover products.json alone. */
 const LIVE_SHOP_ENTRY_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i;
@@ -176,14 +181,15 @@ export function purgeStaleShopArtifacts(vfs = {}, job = null) {
   return { vfs: next, changed };
 }
 
+
 export function userAskedForPreviewPhotos(text = '') {
   return /\b(no images|images?|photos?|pictures?|visuals?)\b/i.test(String(text || ''));
 }
 
 export function userAskedForShopDeskFix(text = '') {
-  const srcText = String(text || '');
-  return userAskedForPreviewPhotos(srcText)
-    || /\b(currency|converter|usd|sgd|aud|aed|add to cart|add to bag|shopping bag)\b/i.test(srcText);
+  const src = String(text || '');
+  return userAskedForPreviewPhotos(src)
+    || /\b(currency|converter|usd|sgd|aud|aed|add to cart|add to bag|shopping bag)\b/i.test(src);
 }
 
 export function userAskedForDeskReview(text = '') {
@@ -195,10 +201,11 @@ export function userAskedForDeskReview(text = '') {
  * Review applies a surgical desk patch before any LLM rewrite.
  * Shop photos/cart/currency are deterministic. Reject if a passing probe would regress.
  */
-export function applyDeskReviewPatch(vfs = {}, job = null) {
+export function applyDeskReviewPatch(vfs = {}, job = null, options = {}) {
+  const brief = String(options?.brief || '');
   const before = probeRunningDesk({ html: pickPreviewEntry(vfs), vfs, job });
   const purged = purgeStaleShopArtifacts(vfs, job);
-  const ensured = ensureShopDeskInVfs(purged.vfs, job);
+  const ensured = ensureShopDeskInVfs(purged.vfs, job, { brief });
   const after = probeRunningDesk({ html: pickPreviewEntry(ensured.vfs), vfs: ensured.vfs, job });
   if (deskChecksRegressed(before.checks, after.checks)) {
     return {
@@ -218,46 +225,66 @@ export function applyDeskReviewPatch(vfs = {}, job = null) {
   };
 }
 
-export function ensureShopPhotosInVfs(vfs = {}, job = null) {
-  if (!looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job })) {
-    return { vfs, changed: false };
-  }
+export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
+  if (!vfsLooksLikeShop(vfs, job)) return { vfs, changed: false };
+  const brief = String(options?.brief || '');
   const next = { ...vfs };
   let changed = false;
   const htmlPath = pickPreviewEntryPath(next);
   if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
-    const result = injectMissingShopPhotos(next[htmlPath].content);
+    const result = injectMissingShopPhotos(next[htmlPath].content, { brief });
     if (result.html !== next[htmlPath].content) {
       next[htmlPath] = { ...next[htmlPath], content: result.html };
       changed = true;
     }
   }
   if (next['products.json'] && typeof next['products.json'].content === 'string') {
-    const catalog = injectProductCatalogImages(next['products.json'].content);
+    const catalog = injectProductCatalogImages(next['products.json'].content, { brief });
     if (catalog.changed) {
       next['products.json'] = { ...next['products.json'], content: catalog.text };
       changed = true;
     }
+  } else if (htmlPath && next[htmlPath]?.content) {
+    const brand = String(next[htmlPath].content).match(/<title>([^<]{2,80})<\/title>/i)?.[1]
+      || String(next[htmlPath].content).match(/<h1[^>]*>([^<]{2,80})<\/h1>/i)?.[1]
+      || 'Collection';
+    next['products.json'] = {
+      content: scaffoldShopCatalogJson({ brief, brand }),
+      language: 'json',
+    };
+    changed = true;
   }
   return { vfs: next, changed };
 }
 
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
-export function ensureShopDeskInVfs(vfs = {}, job = null) {
-  if (!looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job })) {
-    return purgeStaleShopArtifacts(vfs, job);
-  }
-  const withPhotos = ensureShopPhotosInVfs(vfs, job);
-  if (!looksLikeShopDesk({ html: pickPreviewEntry(withPhotos.vfs), vfs: withPhotos.vfs, job })) {
-    return withPhotos;
-  }
+export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
+  if (!vfsLooksLikeShop(vfs, job)) return purgeStaleShopArtifacts(vfs, job);
+  const brief = String(options?.brief || '');
+  const withPhotos = ensureShopPhotosInVfs(vfs, job, { brief });
+  if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;
   const next = { ...withPhotos.vfs };
   const htmlPath = pickPreviewEntryPath(next);
-  if (!htmlPath || !next[htmlPath] || typeof next[htmlPath].content !== 'string') return withPhotos;
+  if (!htmlPath || !next[htmlPath] || typeof next[htmlPath].content !== 'string') {
+    return { ...withPhotos, scaleNote: shopCatalogScaleNote(brief) };
+  }
   const ui = injectShopCommerceUi(next[htmlPath].content);
-  if (!ui.changed) return withPhotos;
+  const scaleNote = shopCatalogScaleNote(brief);
+  if (!ui.changed) {
+    return {
+      vfs: next,
+      changed: withPhotos.changed,
+      scaleNote,
+      photoCount: countRealPreviewPhotos(next[htmlPath].content),
+    };
+  }
   next[htmlPath] = { ...next[htmlPath], content: ui.html };
-  return { vfs: next, changed: true };
+  return {
+    vfs: next,
+    changed: true,
+    scaleNote,
+    photoCount: countRealPreviewPhotos(ui.html),
+  };
 }
 
 /** Preview runs the project, not the file currently open in the editor. */

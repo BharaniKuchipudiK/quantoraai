@@ -567,13 +567,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   useEffect(() => {
     if (!vfsLooksLikeShop(vfs, deskJob)) return;
-    const next = ensureShopDeskInVfs(vfs, deskJob);
+    const brief = [...messages].reverse().find((m) => m?.sender === 'user' && m.text)?.text || '';
+    const next = ensureShopDeskInVfs(vfs, deskJob, { brief });
     if (!next.changed) return;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
     const code = pickPreviewEntry(next.vfs);
     if (code) setWorkspaceCode(code);
-  }, [vfs, deskJob]);
+  }, [vfs, deskJob, messages]);
 
   useEffect(() => {
     const onResize = () => setSplitMobile(isStudioSplitMobile(window.innerWidth));
@@ -1565,7 +1566,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="true"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no product photos. The gold frames on the desk are not images. Ask again, or tap Add real product photos.
+                          Preview still has no product photos. Empty gold frames are not images — tap Add real product photos so the desk injects catalog photos.
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && shopUiMissing && (assistantClaimsShopUiReady(msg.text) || userAskedForShopDeskFix(lastUserMessage?.text || '')) ? (
@@ -2056,7 +2057,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         if (!previewable) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
           if (vfsLooksLikeShop(vfs, deskJob)) {
-            const ensured = ensureShopDeskInVfs(vfs, deskJob);
+            const ensured = ensureShopDeskInVfs(vfs, deskJob, { brief: userBrief || userPrompt });
             if (ensured.changed) {
               setDeskReview(diffVfsReview(vfs, ensured.vfs));
               setVfs(ensured.vfs);
@@ -2080,7 +2081,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           const shopVfs = ensureShopDeskInVfs(parsedVfs, assembled.job || deskJob).vfs;
+           const shopVfs = ensureShopDeskInVfs(parsedVfs, assembled.job || deskJob, { brief: userBrief }).vfs;
            setDeskReview(diffVfsReview(vfs, shopVfs));
            setVfs(shopVfs);
            setDeskJob((prev) => {
@@ -2121,7 +2122,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 vfs: seedVfs,
                 existing: deskJob,
               });
-              const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob).vfs;
+              const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob, { brief: userBrief }).vfs;
               setDeskReview(diffVfsReview(vfs, nextVfs));
               setVfs(nextVfs);
               setDeskJob(nextJob);
