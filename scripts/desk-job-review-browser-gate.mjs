@@ -229,6 +229,42 @@ try {
 
   const prompt = page.locator('.app-shell--studio textarea').first();
   await visible(prompt, 'Studio prompt input is missing.');
+
+  // --- Drive Cleaner hygiene first (clean session, before todo pollutes the desk) ---
+  await prompt.fill('build a Drive Cleaner Agent web dashboard for my Google Drive');
+  await prompt.press('Enter');
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click();
+  await visible(page.locator('[data-quantora-real-project-preview="true"]').first(), 'Drive Cleaner never entered Preview.', 25_000);
+  if (!(await frameShowing('h1', 'Drive Cleaner'))) {
+    throw new Error('Preview never rendered the Drive Cleaner dashboard.');
+  }
+  const driveMission = page.locator('[data-quantora-mission="true"]').first();
+  await visible(driveMission, 'Mission card missing for Drive Cleaner desk.', 12_000);
+  const driveMissionText = (await driveMission.innerText()).trim();
+  if (!/Drive|cleaner/i.test(driveMissionText)) {
+    throw new Error(`Mission card did not name Drive Cleaner. Saw: ${driveMissionText}`);
+  }
+  if (/newton/i.test(driveMissionText)) {
+    throw new Error(`Mission card showed Study Newton on a Drive Cleaner desk. Saw: ${driveMissionText}`);
+  }
+  await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Drive Cleaner desk has no Preview checks panel.', 15_000);
+  const driveRows = await probeRows();
+  const shopLabels = driveRows.filter((row) => /Add to Cart|Product photos|Currency|catalog item/i.test(row.label));
+  if (shopLabels.length) {
+    throw new Error(`Drive Cleaner Review fired shop checks: ${JSON.stringify(shopLabels)}`);
+  }
+  if (driveRows.some((row) => ['photos', 'cart', 'currency', 'catalog', 'cart-click'].includes(row.id))) {
+    throw new Error(`Drive Cleaner Review has shop probe ids: ${JSON.stringify(driveRows)}`);
+  }
+  const partner = (await page.locator('[data-quantora-partner-status="true"]').innerText().catch(() => '')).trim();
+  if (/Product photos are still missing/i.test(partner)) {
+    throw new Error(`Partner status claimed missing product photos on a non-shop desk: ${partner}`);
+  }
+
+  // Fresh chat for the to-do review phases (title avoids matching a session named New Chat).
+  await page.locator('button[title="New Chat"]').first().click();
+  await page.waitForTimeout(600);
+  await visible(prompt, 'Studio prompt missing after New Chat.');
   await prompt.fill('build me a to-do list app for my week');
   await prompt.press('Enter');
   await page.locator('[data-quantora-coding-desk-nav="true"]').click();
@@ -324,50 +360,9 @@ try {
   await fixedFrame.locator('button').filter({ hasText: /^Add$/ }).first().click();
   await fixedFrame.waitForFunction((count) => document.querySelectorAll('li').length > count, beforeFix, { timeout: 8_000 });
 
-  // --- Drive Cleaner hygiene: shop probes must not attach to a non-shop desk ---
-  // Fresh chat clears the todo VFS (in-place product swaps can be rejected as regressions).
-  // Sticky Study/Newton mission bleed is covered by unit tests on pickSessionMissionGoal.
-  await page.locator('button').filter({ hasText: /^New Chat$/ }).first().click();
-  await page.waitForTimeout(800);
-  const drivePrompt = page.locator('.app-shell--studio textarea').first();
-  await visible(drivePrompt, 'Studio prompt input missing for Drive cleaner hygiene.');
-  await drivePrompt.fill('build a Drive Cleaner Agent web dashboard for my Google Drive');
-  await drivePrompt.press('Enter');
-  await page.locator('[data-quantora-coding-desk-nav="true"]').click({ timeout: 15_000 });
-
-  await visible(page.locator('[data-quantora-real-project-preview="true"]').first(), 'Drive Cleaner never entered Preview.', 25_000);
-  if (!(await frameShowing('h1', 'Drive Cleaner'))) {
-    throw new Error('Preview never rendered the Drive Cleaner dashboard.');
-  }
-
-  const missionCard = page.locator('[data-quantora-mission="true"]').first();
-  await visible(missionCard, 'Mission card missing for Drive Cleaner desk.', 12_000);
-  const missionText = (await missionCard.innerText()).trim();
-  if (!/Drive|cleaner/i.test(missionText)) {
-    throw new Error(`Mission card did not name Drive Cleaner. Saw: ${missionText}`);
-  }
-  if (/newton/i.test(missionText)) {
-    throw new Error(`Mission card showed Study Newton on a Drive Cleaner desk. Saw: ${missionText}`);
-  }
-
-  await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Drive Cleaner desk has no Preview checks panel.', 15_000);
-  const driveRows = await probeRows();
-  const shopLabels = driveRows.filter((row) => /Add to Cart|Product photos|Currency|catalog item/i.test(row.label));
-  if (shopLabels.length) {
-    throw new Error(`Drive Cleaner Review fired shop checks: ${JSON.stringify(shopLabels)}`);
-  }
-  if (driveRows.some((row) => ['photos', 'cart', 'currency', 'catalog', 'cart-click'].includes(row.id))) {
-    throw new Error(`Drive Cleaner Review has shop probe ids: ${JSON.stringify(driveRows)}`);
-  }
-
-  const partner = (await page.locator('[data-quantora-partner-status="true"]').innerText().catch(() => '')).trim();
-  if (/Product photos are still missing/i.test(partner)) {
-    throw new Error(`Partner status claimed missing product photos on a non-shop desk: ${partner}`);
-  }
-
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review.png', fullPage: true });
-  console.log('Desk job review browser gate passed. A generic desk derives its criteria from the job card and probes them on the running page. Drive Cleaner stays free of shop probes.');
+  console.log('Desk job review browser gate passed. Generic desks derive criteria from the job card; Drive Cleaner never gets shop probes.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review-failure.png', fullPage: true }).catch(() => {});
