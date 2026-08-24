@@ -22,7 +22,7 @@ import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
-import { resolveTurnStudioDomain } from '../../api/_lib/studio-domain-inference.js';
+import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
@@ -32,6 +32,13 @@ import {
   normalizeClientCorrelationId,
   recordClientBoundary,
 } from '../lib/transaction-trace.js';
+import { byokRequestHeaders, getClientSecret } from '../lib/client-secrets.js';
+import {
+  createGenerationToken,
+  createMessageId,
+  isActiveGeneration,
+  withTravelDegradedNotice,
+} from '../lib/chat-turn-safety.js';
 
 const MIN_ATTEMPT_BUDGET_MS = 20_000;
 const CHAT_TURN_DEADLINE_MS = 90_000;
@@ -144,11 +151,17 @@ export function useChatStream({
   updateActiveSession,
 }) {
   const abortControllerRef = useRef(null);
+  const generationTokenRef = useRef(null);
   const { getLearnedBehaviors } = useModelExperienceMemory();
 
   const cancelStream = () => {
-    if (!abortControllerRef.current) return;
-    abortControllerRef.current.abort('user');
+    generationTokenRef.current = null;
+    const controller = abortControllerRef.current;
+    if (controller) {
+      controller.abort('user');
+      abortControllerRef.current = null;
+    }
+    // Always clear generating — Stop may fire during moderation/Office before a stream controller exists.
     setIsGenerating(false);
     updateActiveMessages(prev => {
       const last = prev[prev.length - 1];
@@ -166,6 +179,10 @@ export function useChatStream({
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
+
+    const generationToken = createGenerationToken();
+    generationTokenRef.current = generationToken;
+    const stillCurrent = () => isActiveGeneration(generationTokenRef.current, generationToken);
 
     const visibleUserText = text.trim();
     const turnCorrelationId = createCorrelationId('studio');
@@ -204,7 +221,7 @@ export function useChatStream({
 
     setLastPrompt(text.trim());
     const userMsg = {
-      id: Date.now(),
+      id: createMessageId('user'),
       sender: 'user',
       text: text.trim(),
       attachments: [...attachments]
@@ -221,19 +238,40 @@ export function useChatStream({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: text.trim() })
       });
-      const modData = await modRes.json();
+      if (!stillCurrent()) return;
+      if (!modRes.ok) {
+        updateActiveMessages(prev => [...prev, {
+          id: createMessageId('ai'),
+          sender: 'ai',
+          text: '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
+          isError: true
+        }]);
+        setIsGenerating(false);
+        return;
+      }
+      const modData = await modRes.json().catch(() => ({}));
+      if (!stillCurrent()) return;
       if (modData.flagged) {
         updateActiveMessages(prev => [...prev, {
-          id: Date.now() + 1,
+          id: createMessageId('ai'),
           sender: 'ai',
-          text: `🚨 **Policy Violation Detected**\n\n${modData.reason}`,
+          text: `🚨 **Policy Violation Detected**\n\n${modData.reason || 'This request was blocked by Quantora safety policy.'}`,
           isError: true
         }]);
         setIsGenerating(false);
         return;
       }
     } catch (e) {
-      console.error('Moderation API failed, failing open...', e);
+      console.error('Moderation API failed, failing closed...', e);
+      if (!stillCurrent()) return;
+      updateActiveMessages(prev => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
+        isError: true
+      }]);
+      setIsGenerating(false);
+      return;
     }
 
     const pinnedOrOverride = targetModelOverride
@@ -243,8 +281,6 @@ export function useChatStream({
     const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
     let targetModel = pinnedOrOverride;
 
-    const geminiApiKey = localStorage.getItem('geminiApiKey');
-    const openRouterApiKey = localStorage.getItem('openRouterApiKey');
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
@@ -271,7 +307,7 @@ export function useChatStream({
         });
       }
       updateActiveMessages(prev => [...prev, {
-        id: Date.now() + 1,
+        id: createMessageId('ai'),
         sender: 'ai',
         text: `The ${currentOfficeArtifact.kind || 'Office'} file is in Preview. Use **Download** on the card below, or the file button in the preview header.`,
         officeAttachment: {
@@ -292,7 +328,8 @@ export function useChatStream({
 
     if (officeKind) {
       const operation = currentOfficeArtifact ? 'refine' : 'create';
-      const aiMsgId = Date.now() + 1;
+      const aiMsgId = createMessageId('ai');
+      if (!stillCurrent()) return;
       updateActiveMessages(prev => [...prev, {
         id: aiMsgId,
         sender: 'ai',
@@ -311,7 +348,7 @@ export function useChatStream({
           res = await fetch('/api/generate-office', {
           method: 'POST',
           signal: officeAbort.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: byokRequestHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             prompt: buildApprovedOfficeGenerationPrompt(text, sessionContext, currentOfficeArtifact),
             format: officeKind,
@@ -319,8 +356,6 @@ export function useChatStream({
             baseSpec: currentOfficeArtifact?.spec || null,
             baseFingerprint: currentOfficeArtifact?.verification?.previewFingerprint || null,
             history: cleanMessages,
-            userKey: geminiApiKey,
-            openRouterKey: openRouterApiKey,
             sessionContext,
             imageAttachments: attachments
               .filter((attachment) => attachment.type === 'image' && attachment.dataUrl)
@@ -349,6 +384,7 @@ export function useChatStream({
         if (!cacheOfficeArtifact(data)) {
           throw new Error('The generated Office artifact failed client envelope verification.');
         }
+        if (!stillCurrent()) return;
         if (typeof updateActiveSession === 'function') {
           updateActiveSession({
             conversationContext: mergeSessionContext(conversationContext, officePclMemory(officeKind, data.spec)),
@@ -363,6 +399,7 @@ export function useChatStream({
           officeBriefing: false
         } : m));
       } catch (err) {
+        if (!stillCurrent()) return;
         updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
           ...m,
           text: `❌ **Failed to generate document:** ${err.message}`,
@@ -370,7 +407,7 @@ export function useChatStream({
           isError: true
         } : m));
       } finally {
-        setIsGenerating(false);
+        if (stillCurrent()) setIsGenerating(false);
       }
       return;
     }
@@ -401,7 +438,7 @@ export function useChatStream({
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
     if (autoMode && isCodingRequest) {
-      const openRouterApiKeyHint = typeof localStorage !== 'undefined' ? localStorage.getItem('openRouterApiKey') : null;
+      const openRouterApiKeyHint = getClientSecret('openrouter');
       const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
       const resolved = resolveCodingDeskModel({
         task: 'coding',
@@ -461,8 +498,6 @@ export function useChatStream({
       modelId: model.id,
       modelName: model.name,
       history: cleanMessages,
-      userKey: geminiApiKey,
-      openRouterKey: openRouterApiKey,
       cognitiveLevel,
       webSearch: false,
       sessionContext: turnContext,
@@ -488,12 +523,16 @@ export function useChatStream({
       ...(goldenTransaction ? { goldenTransaction } : {}),
     });
 
+    const chatRequestHeaders = () => byokRequestHeaders(
+      correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+    );
+
     if (effectiveArenaMode) {
       const modelA = targetModel;
       const modelB = secondModel || (availableModels || []).find((model) => model?.id !== modelA?.id && model?.available !== false);
       if (!modelB) {
         updateActiveMessages(prev => [...prev, {
-          id: Date.now() + 1,
+          id: createMessageId('ai'),
           sender: 'ai',
           text: 'Dual Arena needs a second available model. Please choose another model and try again.',
           isError: true,
@@ -502,7 +541,8 @@ export function useChatStream({
         return;
       }
 
-      const dualMsgId = Date.now() + 1;
+      const dualMsgId = createMessageId('arena');
+      if (!stillCurrent()) return;
       updateActiveMessages(prev => [...prev, {
         id: dualMsgId,
         sender: 'ai',
@@ -525,9 +565,10 @@ export function useChatStream({
           const res = await fetch('/api/chat', {
             signal: controller.signal,
             method: 'POST',
-            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+            headers: chatRequestHeaders(),
             body: JSON.stringify(requestBodyFor(model)),
           });
+          if (!stillCurrent()) return;
           if (!res.ok) {
             const data = await res.json().catch(() => ({}));
             throw new Error(responseErrorMessage(res.status, data, model.name));
@@ -542,6 +583,7 @@ export function useChatStream({
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (!stillCurrent()) return;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
@@ -557,6 +599,7 @@ export function useChatStream({
                 provider = parsed.provider;
                 latencyMs = parsed.latencyMs || 0;
               }
+              if (!stillCurrent()) return;
               updateActiveMessages(prev => prev.map(m => {
                 if (m.id !== dualMsgId) return m;
                 const modelInfo = {
@@ -570,6 +613,7 @@ export function useChatStream({
             }
           }
         } catch (error) {
+          if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => {
             if (m.id !== dualMsgId) return m;
             const key = isModelA ? 'modelA' : 'modelB';
@@ -581,11 +625,12 @@ export function useChatStream({
       };
 
       await Promise.all([streamSingleModel(modelA, true), streamSingleModel(modelB, false)]);
-      setIsGenerating(false);
+      if (stillCurrent()) setIsGenerating(false);
       return;
     }
 
-    const aiMsgId = Date.now() + 1;
+    const aiMsgId = createMessageId('ai');
+    if (!stillCurrent()) return;
     updateActiveMessages(prev => [...prev, {
       id: aiMsgId,
       sender: 'ai',
@@ -610,15 +655,19 @@ export function useChatStream({
     const messageForModel = extraContext ? `${text}\n\n${extraContext}` : text;
 
     const turnStartedAt = Date.now();
-    const announceRecovery = (notice) => updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-      ...m,
-      text: '',
-      isError: false,
-      executionStatus: { label: notice },
-    } : m));
+    const announceRecovery = (notice) => {
+      if (!stillCurrent()) return;
+      updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+        ...m,
+        text: '',
+        isError: false,
+        executionStatus: { label: notice },
+      } : m));
+    };
 
     try {
       for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
+        if (!stillCurrent()) return;
         const controller = new AbortController();
         abortControllerRef.current = controller;
         // The deadline covers the whole turn, so a second attempt inherits what
@@ -633,13 +682,14 @@ export function useChatStream({
           const res = await fetch('/api/chat', {
             signal: controller.signal,
             method: 'POST',
-            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+            headers: chatRequestHeaders(),
             body: JSON.stringify({
               ...requestBodyFor(targetModel),
               message: messageForModel,
               turnAttempt: attempt,
             })
           });
+          if (!stillCurrent()) return;
           const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
 
           if (!res.ok) {
@@ -674,10 +724,12 @@ export function useChatStream({
           let receivedDone = false;
           let streamedError = null;
           let travelPlaces = null;
+          let travelDegraded = false;
 
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (!stillCurrent()) return;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
@@ -696,7 +748,9 @@ export function useChatStream({
                 streamedError = parsed.error;
                 continue;
               }
+              if (parsed.travelDegraded === true) travelDegraded = true;
               if (parsed.status) {
+                if (!stillCurrent()) return;
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   executionStatus: parsed.status,
@@ -704,6 +758,7 @@ export function useChatStream({
               }
               if (parsed.text) {
                 currentText += parsed.text;
+                if (!stillCurrent()) return;
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   text: sanitizeAssistantStream(currentText),
@@ -714,6 +769,7 @@ export function useChatStream({
                 if (Array.isArray(parsed.travelPlaces) && parsed.travelPlaces.length) {
                   travelPlaces = parsed.travelPlaces;
                 }
+                if (!stillCurrent()) return;
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   provider: parsed.provider,
@@ -724,11 +780,13 @@ export function useChatStream({
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
                   ...(travelPlaces ? { travelPlaces } : {}),
+                  ...(travelDegraded || parsed.travelDegraded ? { travelDegraded: true } : {}),
                 } : m));
               }
             }
           }
 
+          if (!stillCurrent()) return;
           if (streamedError || !receivedDone) {
             const recovery = resolveTurnRecovery({
               attempt,
@@ -822,15 +880,17 @@ export function useChatStream({
             transaction: goldenTransaction,
             detailCode: normalized.displayText ? 'assistant-response-valid' : 'assistant-response-empty',
           });
+          if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: normalized.displayText,
+            text: withTravelDegradedNotice(normalized.displayText, travelDegraded),
             executionStatus: null,
             ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
             ...(normalized.continueSet ? { continueSet: normalized.continueSet } : {}),
             ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
             correlationId: responseCorrelationId,
             ...(travelPlaces ? { travelPlaces } : {}),
+            ...(travelDegraded ? { travelDegraded: true } : {}),
           } : m));
           if (normalized.contextUpdate && typeof updateActiveSession === 'function') {
             updateActiveSession({
@@ -846,6 +906,7 @@ export function useChatStream({
           });
           return;
         } catch (error) {
+          if (!stillCurrent()) return;
           const timedOut = controller.signal.aborted && controller.signal.reason === 'timeout';
           const stopped = controller.signal.aborted && controller.signal.reason === 'user';
           const recovery = resolveTurnRecovery({
@@ -874,8 +935,10 @@ export function useChatStream({
         }
       }
     } finally {
-      abortControllerRef.current = null;
-      setIsGenerating(false);
+      if (stillCurrent()) {
+        abortControllerRef.current = null;
+        setIsGenerating(false);
+      }
     }
   };
 

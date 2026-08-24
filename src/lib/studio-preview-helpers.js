@@ -186,6 +186,21 @@ export function userAskedForPreviewPhotos(text = '') {
   return /\b(no images|images?|photos?|pictures?|visuals?)\b/i.test(String(text || ''));
 }
 
+/** Broken / missing Preview photos — not “replace with blue dresses”. */
+export function userAskedForBrokenPreviewPhotos(text = '') {
+  const src = String(text || '');
+  return /\b(broken|missing|not\s+(?:loading|showing|working|there)|empty\s+frames?|gold\s+frames?|blank\s+(?:white\s+)?(?:body|images?|photos?)|images?\s+(?:are\s+)?(?:still\s+)?broken|no\s+(?:product\s+)?(?:photos?|images?))\b/i.test(src)
+    || /\b(?:why|how come).{0,48}\b(?:images?|photos?)\b/i.test(src);
+}
+
+/** Semantic catalog edits must reach the model, not the deterministic inject shortcut. */
+export function userAskedForSemanticPhotoEdit(text = '') {
+  const src = String(text || '');
+  if (userAskedForBrokenPreviewPhotos(src)) return false;
+  return /\b(replace|swap|change|use|make|remove|delete|redesign)\b[\s\S]{0,80}\b(photos?|images?|pictures?|dresses?|shirts?|hoodies?)\b/i.test(src)
+    || /\b(photos?|images?|pictures?)\b[\s\S]{0,80}\b(with|to|into)\b[\s\S]{0,40}\b(blue|red|green|different|new)\b/i.test(src);
+}
+
 export function userAskedForShopDeskFix(text = '') {
   const src = String(text || '');
   return userAskedForPreviewPhotos(src)

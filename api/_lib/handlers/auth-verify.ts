@@ -1,8 +1,8 @@
 import { OAuth2Client } from 'google-auth-library';
-import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
-import { createSessionToken, setSessionCookie, isSessionConfigured } from '../_lib/session.js';
-import { isAdminUser, recordSignIn } from '../_lib/store.js';
-import { getRequestGeo } from '../_lib/geo.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { createSessionToken, setSessionCookie, isSessionConfigured } from '../session.js';
+import { isAdminUser, recordSignIn } from '../store.js';
+import { getRequestGeo } from '../geo.js';
 
 /*
  * The client ID is read strictly from the environment, with no placeholder

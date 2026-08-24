@@ -1,6 +1,6 @@
-import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
-import { summarizeInferenceReadiness } from './_lib/inference-control-plane.js';
-import { providerCircuitStore } from './_lib/provider-circuit-store.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { summarizeInferenceReadiness } from '../inference-control-plane.js';
+import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'GET,OPTIONS');
@@ -17,6 +17,7 @@ export default async function handler(req: any, res: any) {
     openRouterAvailable: openRouterConfigured,
     circuitStore: providerCircuitStore,
   });
+  const circuitStore = getProviderCircuitStoreHealth();
 
   return res.status(summary.ready ? 200 : 503).json({
     ready: summary.ready,
@@ -25,5 +26,6 @@ export default async function handler(req: any, res: any) {
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     routeCount: summary.routeCount,
     usedLastResort: summary.usedLastResort,
+    circuitStore,
   });
 }

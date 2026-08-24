@@ -15,7 +15,7 @@ import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
-import { getClientSecret } from '../lib/client-secrets.js';
+import { byokRequestHeaders } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';
 import { OFFICE_KIND } from '../lib/office-intent.js';
@@ -225,11 +225,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   }, [currentCode, embedReady, pushHtmlToEmbed, assemblyKey]);
 
   const requestRepair = useCallback(async (brokenCode, message) => {
-    const openRouterApiKey = getClientSecret('openrouter');
-    const geminiApiKey = getClientSecret('gemini');
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: byokRequestHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         task: 'repair',
         code: prepareCodeForPreview(brokenCode, vfsRef.current),
@@ -237,8 +235,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         framework: 'html',
         job: jobCardRef.current,
         modelId,
-        ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
-        ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
       })
     });
     const data = await res.json().catch(() => ({}));
@@ -252,11 +248,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const assembled = prepareCodeForPreview(codeToCheck, vfsRef.current);
     setVerifyingQuality(true);
     try {
-      const openRouterApiKey = getClientSecret('openrouter');
-      const geminiApiKey = getClientSecret('gemini');
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: byokRequestHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           task: 'verify-build',
           code: assembled,
@@ -264,8 +258,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           brief: verifyBrief,
           job: jobCardRef.current,
           modelId,
-          ...(openRouterApiKey ? { openRouterKey: openRouterApiKey } : {}),
-          ...(geminiApiKey ? { userKey: geminiApiKey } : {}),
         })
       });
       const data = await res.json().catch(() => ({}));

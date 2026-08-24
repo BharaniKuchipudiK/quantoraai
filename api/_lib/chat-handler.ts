@@ -1,25 +1,30 @@
 import { GoogleGenAI } from "@google/genai";
 import { createHash, randomUUID } from "node:crypto";
-import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
-import { getSessionUser } from "./_lib/session.js";
-import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./_lib/store.js";
-import { isProjectStoreConfigured, readProjectContext } from "./_lib/project-store.js";
-import { requireActiveSession } from "./_lib/authz.js";
-import { getRequestGeo } from "./_lib/geo.js";
-import { fetchApiGatewayKey } from "./autocomplete.js";
-import { buildConversationSystemPrompt } from "./_lib/conversation-policy.js";
-import { normalizeSessionContext } from "./_lib/session-context.js";
-import { normalizeOutcomeSessionId } from "./_lib/outcome-state.js";
-import { repairArtifact } from "./_lib/repair.js";
-import { verifyBuild } from "./_lib/verify-build.js";
-import { evaluateSafetyText } from "./_lib/safety-policy.js";
-import { readModelRegistryCached } from "./_lib/model-store.js";
-import { DIRECT_MODELS, CURATED_MODELS } from "./_lib/model-catalog.js";
-import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
-import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../src/lib/travel-flight-resilience.js';
-import { formatTravelPlaceShortlist } from '../src/lib/travel-place-shortlist.js';
-import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
-import { shouldFallbackBeforeStreaming } from './_lib/model-execution-policy.js';
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./rate-limit.js";
+import { getSessionUser } from "./session.js";
+import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./store.js";
+import { isProjectStoreConfigured, readProjectContext } from "./project-store.js";
+import { requireActiveSession } from "./authz.js";
+import { getRequestGeo } from "./geo.js";
+import { fetchApiGatewayKey } from "../autocomplete.js";
+import { readByokCredentials } from "./byok-credentials.js";
+import { buildConversationSystemPrompt } from "./conversation-policy.js";
+import { normalizeSessionContext } from "./session-context.js";
+import { normalizeOutcomeSessionId } from "./outcome-state.js";
+import { repairArtifact } from "./repair.js";
+import { verifyBuild } from "./verify-build.js";
+import { evaluateSafetyText } from "./safety-policy.js";
+import { readModelRegistryCached } from "./model-store.js";
+import { DIRECT_MODELS, CURATED_MODELS } from "./model-catalog.js";
+import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
+import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
+import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
+import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
+import { shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import {
+  isTravelToolExecutionDeferred,
+  TRAVEL_DEGRADED_DIRECTIVE,
+} from './travel-model-routing.js';
 import {
   canonicalizeModelId,
   inferenceAttemptBudgetMs,
@@ -27,31 +32,31 @@ import {
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
   type InferenceRoute,
-} from './_lib/inference-control-plane.js';
-import { providerCircuitStore } from './_lib/provider-circuit-store.js';
+} from './inference-control-plane.js';
+import { providerCircuitStore } from './provider-circuit-store.js';
 import {
   attachCorrelationId,
   correlationIdForRequest,
   isGoldenCanaryRequest,
   traceBoundary,
-} from './_lib/transaction-trace.js';
-import { SseWriter, assertBudget, readWithIdleTimeout, remainingBudgetMs } from './_lib/sse-writer.js';
+} from './transaction-trace.js';
+import { SseWriter, assertBudget, readWithIdleTimeout, remainingBudgetMs } from './sse-writer.js';
 import {
   buildConversationSnapshot,
   chooseNextConversationMove,
   formatConversationDecisionForPrompt,
   publicConversationMetadata,
   verifyConversationResponse,
-} from "./_lib/conversation-engine.js";
-import { normalizeCommunicationRequest } from "./_lib/communication/request-normalizer.js";
-import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
-import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
-import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
-import { activeModelsForRouting } from "../src/lib/coding-desk-auto-model.js";
-import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../src/lib/build-intent.js";
-import { shouldRefineRunningDesk } from "../src/lib/workspace-intent.js";
-import { formatDeskContextForPrompt, sanitizeDeskContext } from "../src/lib/studio-desk-context.js";
-import { buildArtifactContractError, validateBuildArtifactResponse } from './_lib/build-artifact-contract.js';
+} from "./conversation-engine.js";
+import { normalizeCommunicationRequest } from "./communication/request-normalizer.js";
+import { buildResponseContract } from "../../src/lib/communication/policy/conversation-policy.js";
+import { evaluationFromVerification } from "../../src/lib/communication/evaluation/from-verification.js";
+import { selectModelsForTurn } from "../../src/lib/communication/routing/select-models.js";
+import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
+import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
+import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
+import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
+import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
 
 const PREVIEW_HTML_RECOVERY = `
 
@@ -359,11 +364,13 @@ export default async function handler(req: any, res: any) {
   }
 
   const durable = await isRateLimitedDurable(limitKey, RATE_LIMIT_PER_MINUTE, 60);
-  if (durable.limited) {
-    if (durable.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durable.resetsAt).getTime() - Date.now()) / 1000)));
+  const durableGuard = applyDurableCostBearingGuard(limitKey, RATE_LIMIT_PER_MINUTE, durable);
+  if (durableGuard.limited) {
+    if (durableGuard.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durableGuard.resetsAt).getTime() - Date.now()) / 1000)));
     return res.status(429).json({
       error: 'Too many requests. Please wait a minute and try again.',
-      resetsAt: durable.resetsAt,
+      resetsAt: durableGuard.resetsAt,
+      ...(durableGuard.degraded ? { degraded: true } : {}),
     });
   }
 
@@ -373,7 +380,10 @@ export default async function handler(req: any, res: any) {
   const sse = new SseWriter(res);
 
   try {
-    const { modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, task, fallbackFrom } = req.body || {};
+    const { modelId, modelName, history, cognitiveLevel, task, fallbackFrom } = req.body || {};
+    const byok = readByokCredentials(req);
+    const userKey = byok.gemini;
+    const openRouterKey = byok.openRouter;
     const communicationRequest = normalizeCommunicationRequest(req.body);
     const {
       message,
@@ -629,7 +639,7 @@ export default async function handler(req: any, res: any) {
           facts: conversationSnapshot.confirmedFacts,
         }
       : normalizedSessionContext;
-    const finalSystemPrompt = buildConversationSystemPrompt({
+    const finalSystemPromptBase = buildConversationSystemPrompt({
       cognitiveLevel,
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
@@ -646,6 +656,7 @@ export default async function handler(req: any, res: any) {
     }) + navigatorDirective + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
+    let finalSystemPrompt = finalSystemPromptBase;
 
     const conversationMetadata = (response: string) => {
       const verification = verifyConversationResponse({ snapshot: conversationSnapshot, decision: conversationDecision, response });
@@ -671,14 +682,25 @@ export default async function handler(req: any, res: any) {
       );
     };
 
-    const travelToolsEnabled = shouldEnableTravelTools(normalizedStudioDomain);
-    const attempts = await planInferenceRoutes({
+    const wantTravelTools = shouldEnableTravelTools(normalizedStudioDomain);
+    const travelToolsDeferred = isTravelToolExecutionDeferred(req.body);
+    // Live Gemini tools only when Travel wants them, the turn did not defer them,
+    // and a Gemini credential exists. Otherwise fall through to text routes.
+    let travelToolsEnabled = wantTravelTools && !travelToolsDeferred && Boolean(effectiveGeminiKey);
+    let travelDegraded = wantTravelTools && !travelToolsEnabled;
+    const textCapabilities = visionImages.length
+      ? (['text', 'vision'] as const)
+      : effectiveBuildMode
+        ? (['text', 'code'] as const)
+        : (['text'] as const);
+
+    let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       models: registryModels,
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
-        : visionImages.length ? ['text', 'vision'] : effectiveBuildMode ? ['text', 'code'] : ['text'],
+        : [...textCapabilities],
       geminiAvailable: Boolean(effectiveGeminiKey),
       openRouterAvailable: Boolean(effectiveOpenRouterKey),
       geminiCredentialScope: userKey ? 'user' : 'server',
@@ -688,9 +710,36 @@ export default async function handler(req: any, res: any) {
       requestPartition: correlationId,
       circuitStore: providerCircuitStore,
     });
+
+    if (wantTravelTools && travelToolsEnabled && !attempts.length) {
+      travelToolsEnabled = false;
+      travelDegraded = true;
+      attempts = await planInferenceRoutes({
+        primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
+        fallbackModelIds: modelRouting?.fallbackModelIds || [],
+        models: registryModels,
+        requiredCapabilities: [...textCapabilities],
+        geminiAvailable: Boolean(effectiveGeminiKey),
+        openRouterAvailable: Boolean(effectiveOpenRouterKey),
+        geminiCredentialScope: userKey ? 'user' : 'server',
+        openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+        geminiCredentialPartition: credentialCircuitPartition(userKey),
+        openRouterCredentialPartition: credentialCircuitPartition(openRouterKey),
+        requestPartition: correlationId,
+        circuitStore: providerCircuitStore,
+      });
+    }
+
+    if (travelDegraded) {
+      finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
+    }
+
     if (!attempts.length) {
       return res.status(503).json({
-        error: 'Quantora could not reach a healthy AI route for this turn. Please retry in a moment.',
+        error: wantTravelTools
+          ? 'Live travel lookup needs Gemini, and no conversational backup route is available. Please retry shortly.'
+          : 'Quantora could not reach a healthy AI route for this turn. Please retry in a moment.',
+        ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
     traceBoundary({
@@ -1020,6 +1069,7 @@ export default async function handler(req: any, res: any) {
           circuit: usedRoute.circuit,
         },
         conversation: conversationMetadata(fullReply),
+        ...(travelDegraded ? { travelDegraded: true } : {}),
       });
       traceBoundary({
         correlationId,
@@ -1238,6 +1288,7 @@ export default async function handler(req: any, res: any) {
         fallbackUsed: modelFallbackUsed,
         conversation: conversationMetadata(fullReply),
         ...(travelPlaces.length ? { travelPlaces: travelPlaces.slice(0, 8) } : {}),
+        ...(travelDegraded ? { travelDegraded: true } : {}),
       });
       return;
     }
@@ -1340,6 +1391,7 @@ export default async function handler(req: any, res: any) {
       liveConnected: true,
       fallbackUsed: modelFallbackUsed,
       conversation: conversationMetadata(fullReply),
+      ...(travelDegraded ? { travelDegraded: true } : {}),
     });
     return;
   } catch (err: any) {

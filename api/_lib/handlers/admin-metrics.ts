@@ -1,8 +1,8 @@
-import { applyCors, clientIp, isRateLimited } from "../_lib/rate-limit.js";
-import { authenticateAdminRequest } from "../_lib/admin-auth.js";
-import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured } from "../_lib/store.js";
-import { getProductInsights } from "../_lib/product-analytics.js";
-import { getTechnicalInsights } from "../_lib/technical-analytics.js";
+import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
+import { authenticateAdminRequest } from "../admin-auth.js";
+import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured } from "../store.js";
+import { getProductInsights } from "../product-analytics.js";
+import { getTechnicalInsights } from "../technical-analytics.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");

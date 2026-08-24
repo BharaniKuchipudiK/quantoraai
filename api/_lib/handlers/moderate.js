@@ -1,5 +1,5 @@
-import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
-import { evaluateSafetyText } from './_lib/safety-policy.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { evaluateSafetyText } from '../safety-policy.js';
 
 const MAX_PROMPT_CHARS = 50_000;
 

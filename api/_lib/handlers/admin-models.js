@@ -1,17 +1,17 @@
-import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
-import { authenticateAdminRequest } from '../_lib/admin-auth.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { authenticateAdminRequest } from '../admin-auth.js';
 import {
   CURATED_MODELS,
   DIRECT_MODELS,
   buildInternetCatalogEntries,
   fetchGeminiCatalog,
   fetchOpenRouterCatalog,
-} from '../_lib/model-catalog.js';
-import { runAndStoreModelSmokeTest, updateModelApproval } from '../_lib/model-qualification.js';
-import { buildAdminModelLists } from '../_lib/model-lifecycle.js';
-import { scanModelCatalog } from '../_lib/model-scanner.js';
-import { readModelRegistry } from '../_lib/model-store.js';
-import { getSessionUser } from '../_lib/session.js';
+} from '../model-catalog.js';
+import { runAndStoreModelSmokeTest, updateModelApproval } from '../model-qualification.js';
+import { buildAdminModelLists } from '../model-lifecycle.js';
+import { scanModelCatalog } from '../model-scanner.js';
+import { readModelRegistry } from '../model-store.js';
+import { getSessionUser } from '../session.js';
 
 function mapSmokeTest(row) {
   const smoke = row?.smoke_test;

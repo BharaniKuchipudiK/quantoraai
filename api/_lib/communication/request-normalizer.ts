@@ -3,7 +3,7 @@ import { normalizeProjectId } from "../project-state.js";
 import { type StudioDomain } from "../studio-domains.js";
 import { inferStudioDomain } from "../studio-domain-inference.js";
 import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
-import { detectBuildIntent } from "../../../src/lib/build-intent.js";
+import { detectBuildIntent } from "../../../shared/build-intent.js";
 
 export type CommunicationRequest = {
   message: string;

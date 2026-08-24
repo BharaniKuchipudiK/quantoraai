@@ -12,10 +12,11 @@ import {
   sanitizeDeskContext,
 } from './studio-desk-context.js';
 
+const shopPhoto = (n) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#333"/><text>quantora-photo-${n}</text></svg>`);
 const shopHtml = `<!DOCTYPE html><html><body>
 <header>Aaranya</header>
-<img src="https://images.unsplash.com/photo-silk" alt="Dharmavaram">
-<div class="product-card"><img src="https://images.unsplash.com/photo-1610030469983-98e550d6193c" alt="Uppada"><button>Add to Cart</button><span class="price">INR 18000</span></div>
+<img src="${shopPhoto(1)}" alt="Dharmavaram">
+<div class="product-card"><img src="${shopPhoto(2)}" alt="Uppada"><button>Add to Cart</button><span class="price">INR 18000</span></div>
 <select id="quantora-currency"><option>INR</option><option>USD</option></select>
 <script data-quantora-shop-ui="script"></script>
 </body></html>`;
@@ -214,7 +215,7 @@ test('catalog and cart-click only pass from the live page', () => {
 });
 
 test('a catalog that repeats one photo fails the photos check', () => {
-  const clone = 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80';
+  const clone = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#333"/><text>quantora-photo-1</text></svg>');
   const html = `<!DOCTYPE html><html><body>
     <div class="product-card"><img src="${clone}" alt="Uppada"><button>Add to Cart</button></div>
     <div class="product-card"><img src="${clone}" alt="Mangalagiri"><button>Add to Cart</button></div>

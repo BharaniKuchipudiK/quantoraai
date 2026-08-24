@@ -94,8 +94,9 @@ test("a shop build must emit real product photos, not placeholder frames", () =>
     guided: false,
     lastMessage: "build a website for an Indian ethnic saree boutique",
   });
-  assert.match(prompt, /images\.unsplash\.com/);
+  assert.match(prompt, /data:image\//);
   assert.match(prompt, /Never SVG empty frames/);
+  assert.match(prompt, /Unsplash/);
   assert.doesNotMatch(prompt, /tasteful placeholder imagery/);
 });
 
@@ -114,7 +115,8 @@ test("guided build requires intake before HTML on first turn", () => {
   assert.match(prompt, /FIRST-TURN RULE/);
   assert.match(prompt, /MUST NOT output HTML/);
   assert.match(prompt, /Never invent a business name/);
-  assert.match(prompt, /images\.unsplash\.com/);
+  assert.match(prompt, /data:image\//);
+  assert.match(prompt, /Unsplash/);
   assert.doesNotMatch(prompt, /tasteful placeholder imagery/);
 });
 
