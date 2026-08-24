@@ -13,6 +13,7 @@ import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normaliz
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
 import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
+import { handleMarketDataLookup } from "./_lib/market-data-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
 import {
@@ -76,6 +77,7 @@ export default async function handler(req: any, res: any) {
   // live travel-tool turns remain on the tool-capable path.
   if (req.query?.route === "chat") {
     if (await handleAffordabilityDecision(req, res)) return;
+    if (await handleMarketDataLookup(req, res)) return;
 
     if (shouldPreferTravelConversationProvider(req.body)) {
       const signedIn = Boolean(getSessionUser(req));
