@@ -8,20 +8,22 @@ import { countRealPreviewPhotos } from './preview-images.js';
 import { previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
 import { SHOP_INTAKE_CATALOG_SIZE } from './shop-catalog-scale.js';
 
-test('does not pick SVG assets as the Preview entry', () => {
-  assert.equal(pickPreviewEntryPath({
-    'foxwolf_explorer_backpack.svg': { content: '<svg></svg>', language: 'svg' },
-    'foxwolf_girls_dress.svg': { content: '<svg></svg>', language: 'svg' },
-  }), null);
-});
-
-test('sanitize replaces Building 100 unique… after intake accept', () => {
+test('sanitize replaces Building 75 unique… after intake accept', () => {
   const next = sanitizePartnerBuildStatus(
-    { label: 'Building: Diverse collection of at least 100 unique, high-quality merchandise des...' },
-    { catalogTarget: 10, intakeAccepted: true },
+    { label: 'Building 75 unique merchandise images…' },
+    { catalogTarget: 10, intakeAccepted: true, userAsked: 75 },
   );
   assert.match(next.label, /about 10 working catalog photos/i);
-  assert.doesNotMatch(next.label, /100/);
+  assert.doesNotMatch(next.label, /75/);
+});
+
+test('pickPreviewEntryPath keeps App.tsx and rejects SVG-only trees', () => {
+  assert.equal(pickPreviewEntryPath({
+    'src/App.tsx': { content: 'export default function App(){return null}', language: 'tsx' },
+  }), 'src/App.tsx');
+  assert.equal(pickPreviewEntryPath({
+    'foxwolf_explorer_backpack.svg': { content: '<svg></svg>', language: 'svg' },
+  }), null);
 });
 
 test('SVG-only shop job seeds HTML with real photos and cart', () => {

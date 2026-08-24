@@ -280,11 +280,20 @@ export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
   // SVG-only merchandise dumps are not a shop. Seed a real HTML desk when the job
   // requires product photos and there is no runnable HTML page yet.
   if (jobNeedsProductPhotos(job) && !pickPreviewEntryPath(seed)) {
-    const titleMatch = String(brief || job?.purpose || 'Shop').match(
-      /\b([A-Za-z][\w']*(?:\s*&\s*[A-Za-z][\w']*)?)(?:\s+Kids)?\b/i,
-    );
-    const brand = titleMatch ? titleMatch[0].replace(/\s+/g, ' ').trim() : 'Shop';
-    const title = /shop|store|collection/i.test(brand) ? brand : `${brand} Shop`;
+    const purpose = String(job?.purpose || '').trim();
+    const hay = `${brief}\n${purpose}\n${Object.keys(seed).join('\n')}`;
+    const ampBrand = hay.match(/\b([A-Za-z][\w']*\s*&\s*[A-Za-z][\w']*)(?:\s+Kids)?\b/i);
+    const gluedBrand = hay.match(/fox\s*[_&-]?\s*wolf/i);
+    let title = '';
+    if (ampBrand) {
+      title = `${ampBrand[1].replace(/\s+/g, ' ').trim()}${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
+    } else if (gluedBrand) {
+      title = `Fox & Wolf${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
+    } else if (purpose && !/^a\s+shop\b/i.test(purpose)) {
+      title = purpose;
+    } else {
+      title = 'Shop';
+    }
     seed = {
       ...seed,
       'index.html': {

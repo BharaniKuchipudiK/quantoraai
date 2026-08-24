@@ -303,14 +303,27 @@ export function inlineVfsAssets(html, vfs = {}) {
 }
 
 export function pickPreviewEntryPath(vfs = {}) {
-  const preferred = ['index.html', 'presentation.html', 'src/main.jsx', 'App.jsx', 'src/App.jsx'];
+  const preferred = [
+    'index.html',
+    'presentation.html',
+    'src/main.jsx',
+    'src/main.tsx',
+    'App.jsx',
+    'App.tsx',
+    'src/App.jsx',
+    'src/App.tsx',
+  ];
   for (const key of preferred) {
     if (vfsText(vfs, key)) return key;
   }
   const htmlKey = Object.keys(vfs || {}).find((key) => /\.html$/i.test(key));
   if (htmlKey) return htmlKey;
-  // Never treat .svg / images / json as the runnable Preview page (that produced
-  // SVG-only "shops" with a dead shell while Review showed foxwolf_*.svg).
+  // Runnable JS/TS/React entries — never fall through to .svg / images / json.
+  const browserKey = Object.keys(vfs || {}).find((key) => (
+    /\.(jsx|tsx|js|ts)$/i.test(key)
+    && !/(^|\/)(vite\.config|tailwind\.config|postcss\.config|eslint)/i.test(key)
+  ));
+  if (browserKey && vfsText(vfs, browserKey)) return browserKey;
   return null;
 }
 

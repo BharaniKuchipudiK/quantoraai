@@ -822,6 +822,7 @@ export function useChatStream({
                 const nextStatus = sanitizePartnerBuildStatus(parsed.status, {
                   catalogTarget: intakeAccept.catalogTarget || shopIntakeAsk.catalogTarget || 10,
                   intakeAccepted: Boolean(intakeAccept.expanded || shopIntakeAsk.oversize),
+                  userAsked: intakeAccept.userAsked || shopIntakeAsk.userAsked || shopIntakeAsk.imageAskCount || 0,
                 });
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,

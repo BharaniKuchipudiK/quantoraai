@@ -285,11 +285,19 @@ function injectCatalogGrid(html = '', count = SHOP_PHOTO_FLOOR) {
   if (/<section[^>]*data-quantora-shop-catalog="true"/i.test(out)) {
     return out.replace(/<section[^>]*data-quantora-shop-catalog="true"[^>]*>[\s\S]*?<\/section>/i, grid);
   }
-  // Empty <main data-quantora-shop-catalog> shells must get a real grid, not a no-op return.
+  // Empty <main data-quantora-shop-catalog> shells must get a real grid.
+  // Nonempty mains keep their copy/filters and receive the grid inserted, not replaced.
   if (/<main\b[^>]*data-quantora-shop-catalog="true"[^>]*>/i.test(out)) {
     return out.replace(
-      /<main\b[^>]*data-quantora-shop-catalog="true"[^>]*>[\s\S]*?<\/main>/i,
-      (full) => full.replace(/>[\s\S]*<\/main>/i, `>${grid}</main>`),
+      /<main\b([^>]*data-quantora-shop-catalog="true"[^>]*)>([\s\S]*?)<\/main>/i,
+      (full, attrs, inner) => {
+        const body = String(inner || '').trim();
+        if (!body) return `<main${attrs}>${grid}</main>`;
+        if (/data-quantora-shop-card=/i.test(body) || /class=["'][^"']*\bproduct-card\b/i.test(body)) {
+          return full;
+        }
+        return `<main${attrs}>${inner}${grid}</main>`;
+      },
     );
   }
   if (/<main\b[^>]*>/i.test(out)) {
