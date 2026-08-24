@@ -320,3 +320,68 @@ test('preview assembly fingerprint includes products.json catalog changes', () =
   };
   assert.notEqual(previewAssemblyFingerprint(before), previewAssemblyFingerprint(after));
 });
+
+test('non-shop desk after boutique VFS merge has no saree stock image URLs', () => {
+  const boutique = {
+    'index.html': {
+      content: `<!DOCTYPE html><html><body><div class="product-card"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg><p>Kanjeevaram</p></div></body></html>`,
+      language: 'html',
+    },
+    'products.json': { content: '[{"id":"a","name":"Silk Saree"}]', language: 'json' },
+  };
+  const shopJob = { purpose: 'A shop website', mustWork: ['Catalog and bag still work', 'Keep this a shop, not a different app'] };
+  const next = applyWorkspaceFromChat(
+    '```html filepath="index.html"\n<!DOCTYPE html><html><body><main><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></main></body></html>\n```',
+    boutique,
+    shopJob,
+    { brief: 'Build me a simple calculator' },
+  );
+  assert.equal(next.rejected, false);
+  assert.equal(Boolean(next.vfs['products.json']), false);
+  const html = next.vfs['index.html'].content;
+  assert.match(html, /calculator-display/);
+  assert.doesNotMatch(html, /photo-1610030469983|kanjeevaram|data-quantora-shop-photo|images\.unsplash\.com/i);
+  assert.match(next.job?.purpose || '', /calculator/i);
+});
+
+test('leftover boutique products.json does not paint silk onto a Drive cleaner', () => {
+  const sticky = {
+    'index.html': {
+      content: '<!DOCTYPE html><html><body><main><h1>Drive Cleaner</h1><ul class="catalog"><li>report.pdf</li></ul></main></body></html>',
+      language: 'html',
+    },
+    'products.json': { content: '[{"id":"silk","name":"Kanjeevaram Silk"}]', language: 'json' },
+  };
+  const job = { purpose: 'A Drive cleaner agent', mustWork: ['Keep this a Drive cleaner'] };
+  const next = ensureShopDeskInVfs(sticky, job);
+  assert.equal(Boolean(next.vfs['products.json']), false);
+  assert.doesNotMatch(next.vfs['index.html'].content, /images\.unsplash\.com|data-quantora-shop-photo|kanjeevaram/i);
+});
+
+
+test('shipping calculator on a boutique does not strip shop catalog', () => {
+  const boutique = {
+    'index.html': {
+      content: '<!DOCTYPE html><html><body><div class="product-card"><p>Kanjeevaram boutique</p><button>Add to Cart</button></div></body></html>',
+      language: 'html',
+    },
+    'products.json': { content: '[{"id":"a","name":"Silk Saree","priceCents":4999}]', language: 'json' },
+  };
+  const shopJob = { purpose: 'A shop website', mustWork: ['Catalog and bag still work', 'Keep this a shop, not a different app'] };
+  const next = applyWorkspaceFromChat(
+    [
+      'Added a shipping calculator widget near checkout.',
+      '',
+      '```html filepath="index.html"',
+      '<!DOCTYPE html><html><body><div class="product-card"><p>Kanjeevaram boutique</p><button>Add to Cart</button><label>Shipping calculator<input/></label></div></body></html>',
+      '```',
+    ].join('\n'),
+    boutique,
+    shopJob,
+    { brief: 'Add a shipping calculator to the boutique' },
+  );
+  assert.equal(next.rejected, false);
+  assert.equal(Boolean(next.vfs['products.json']), true);
+  assert.match(next.vfs['index.html'].content, /product-card|boutique|Add to Cart/i);
+  assert.match(next.job?.purpose || '', /shop/i);
+});
