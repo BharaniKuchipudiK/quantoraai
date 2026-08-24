@@ -365,9 +365,8 @@ export default async function handler(req: any, res: any) {
      * Legacy /api/github/fetch-repo is an alias for the same stage.
      */
     if (targetStage === 'repository-preview') {
-      if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to import a GitHub repository.' });
-      }
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
       try {
         const preview = await buildRepositoryPreview(repoUrl, task);
         return res.status(200).json(preview);
@@ -381,9 +380,8 @@ export default async function handler(req: any, res: any) {
      * already lives on GitHub. Desk git does not push; merge requires the same token.
      */
     if (targetStage === 'github-create-pr') {
-      if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to create a GitHub pull request.' });
-      }
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
       if (!resolveGithubToken()) {
         return res.status(503).json({
           error: githubWriteAuthMessage(),
@@ -420,9 +418,8 @@ export default async function handler(req: any, res: any) {
     }
 
     if (targetStage === 'github-merge-pr') {
-      if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to merge a GitHub pull request.' });
-      }
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
       if (!resolveGithubToken()) {
         return res.status(503).json({
           error: githubWriteAuthMessage(),

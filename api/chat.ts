@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { createHash, randomUUID } from "node:crypto";
-import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./_lib/store.js";
 import { isProjectStoreConfigured, readProjectContext } from "./_lib/project-store.js";
@@ -359,11 +359,13 @@ export default async function handler(req: any, res: any) {
   }
 
   const durable = await isRateLimitedDurable(limitKey, RATE_LIMIT_PER_MINUTE, 60);
-  if (durable.limited) {
-    if (durable.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durable.resetsAt).getTime() - Date.now()) / 1000)));
+  const durableGuard = applyDurableCostBearingGuard(limitKey, RATE_LIMIT_PER_MINUTE, durable);
+  if (durableGuard.limited) {
+    if (durableGuard.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durableGuard.resetsAt).getTime() - Date.now()) / 1000)));
     return res.status(429).json({
       error: 'Too many requests. Please wait a minute and try again.',
-      resetsAt: durable.resetsAt,
+      resetsAt: durableGuard.resetsAt,
+      ...(durableGuard.degraded ? { degraded: true } : {}),
     });
   }
 
