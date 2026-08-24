@@ -324,37 +324,16 @@ try {
   await fixedFrame.locator('button').filter({ hasText: /^Add$/ }).first().click();
   await fixedFrame.waitForFunction((count) => document.querySelectorAll('li').length > count, beforeFix, { timeout: 8_000 });
 
-  // --- Drive Cleaner hygiene: shop probes and Study goals must not bleed in ---
-  // New chat clears the todo VFS (a product switch was rejected as check regression).
+  // --- Drive Cleaner hygiene: shop probes must not attach to a non-shop desk ---
+  // Fresh chat clears the todo VFS (in-place product swaps can be rejected as regressions).
+  // Sticky Study/Newton mission bleed is covered by unit tests on pickSessionMissionGoal.
   await page.locator('button').filter({ hasText: /^New Chat$/ }).first().click();
-  await page.waitForTimeout(500);
-  // Seed sticky Study goal into this chat's conversationContext without opening Study desk.
-  await page.evaluate(() => {
-    const key = 'quantora_chat_sessions';
-    const sessions = JSON.parse(localStorage.getItem(key) || '[]');
-    const projectId = sessions[0]?.projectId || 'default';
-    localStorage.setItem(key, JSON.stringify([{
-      id: 'session-drive-gate',
-      title: 'Drive Cleaner',
-      createdAt: Date.now(),
-      projectId,
-      messages: [{ id: Date.now(), sender: 'ai', type: 'greeting', text: 'Ready when you are.' }],
-      studioMode: 'ask',
-      studioDomain: null,
-      conversationContext: {
-        goal: 'I want to study newton laws of motion. prepare me',
-        understanding: 'Drive Cleaner Agent dashboard is in Preview.',
-      },
-    }]));
-  });
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await enterSignedInStudio(page);
-
+  await page.waitForTimeout(800);
   const drivePrompt = page.locator('.app-shell--studio textarea').first();
   await visible(drivePrompt, 'Studio prompt input missing for Drive cleaner hygiene.');
   await drivePrompt.fill('build a Drive Cleaner Agent web dashboard for my Google Drive');
   await drivePrompt.press('Enter');
-  await page.locator('[data-quantora-coding-desk-nav="true"]').click({ timeout: 15_000 }).catch(() => {});
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click({ timeout: 15_000 });
 
   await visible(page.locator('[data-quantora-real-project-preview="true"]').first(), 'Drive Cleaner never entered Preview.', 25_000);
   if (!(await frameShowing('h1', 'Drive Cleaner'))) {
@@ -368,7 +347,7 @@ try {
     throw new Error(`Mission card did not name Drive Cleaner. Saw: ${missionText}`);
   }
   if (/newton/i.test(missionText)) {
-    throw new Error(`Mission card kept the Study Newton goal on a Coding desk. Saw: ${missionText}`);
+    throw new Error(`Mission card showed Study Newton on a Drive Cleaner desk. Saw: ${missionText}`);
   }
 
   await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Drive Cleaner desk has no Preview checks panel.', 15_000);
@@ -388,7 +367,7 @@ try {
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review.png', fullPage: true });
-  console.log('Desk job review browser gate passed. A generic desk derives its criteria from the job card and probes them on the running page. Drive Cleaner stays free of shop probes and Study mission bleed.');
+  console.log('Desk job review browser gate passed. A generic desk derives its criteria from the job card and probes them on the running page. Drive Cleaner stays free of shop probes.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review-failure.png', fullPage: true }).catch(() => {});
