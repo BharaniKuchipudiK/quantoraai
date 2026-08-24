@@ -151,6 +151,29 @@ test("a coding preview follow-up about cart and budget stays coding, not Finance
   assert.equal(request.hasPreviewCode, true);
 });
 
+test("a chat-only deskContext packet keeps Study/Travel/Research follow-ups on coding", () => {
+  const history = [
+    { sender: "user", text: "Build me a simple calculator" },
+    { sender: "ai", text: "Done — here is a working calculator." },
+  ];
+  for (const message of [
+    "also help me study for the JEE exam",
+    "also help me plan a trip with hotels",
+    "research the literature while I investigate this",
+    "keep this under budget for my taxes",
+  ]) {
+    const request = normalizeCommunicationRequest({
+      message,
+      history,
+      buildMode: false,
+      taskCategory: "coding",
+      deskContext: { files: ["src/App.jsx", "index.html"] },
+    });
+    assert.equal(request.studioDomain, null, `desk packet must stay coding: ${message}`);
+    assert.equal(request.buildMode, false);
+  }
+});
+
 test("a cold tax and portfolio question from empty chat can still open Finance", () => {
   const request = normalizeCommunicationRequest({
     message: "help me with my taxes and portfolio",

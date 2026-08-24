@@ -94,7 +94,7 @@ test('build timeout and deployed canary credentials honor the release contract',
   assert.match(stream, /buildMode: isCodingRequest/);
   assert.match(stream, /resolveIsCodingRequest/);
   assert.match(stream, /advisorBlocksPreviewBuild\(turnDomain\)/);
-  assert.match(fs.readFileSync(new URL('../../api/chat.ts', import.meta.url), 'utf8'), /error\?\.code !== 'BUILD_ARTIFACT_CONTRACT'/);
+  assert.match(fs.readFileSync(new URL('../../api/_lib/chat-handler.ts', import.meta.url), 'utf8'), /error\?\.code !== 'BUILD_ARTIFACT_CONTRACT'/);
   assert.doesNotMatch(canary, /extraHTTPHeaders/);
   assert.match(canary, /new URL\(request\.url\(\)\)\.origin !== BASE_ORIGIN/);
   assert.match(canary, /\/api\/inference-health/);

@@ -8,7 +8,16 @@ const NAMED_JOBS = [
   { re: /\btodo(?:s| list)?|\bto-do list\b/i, purpose: 'A to-do list', mustWork: ['Items can still be added', 'Keep this a to-do list'] },
   { re: /\btimer\b|\bstopwatch\b|\bpomodoro\b/i, purpose: 'A timer', mustWork: ['Start and time still work', 'Keep this a timer'] },
   { re: /\bquiz\b|\bflash ?cards?\b/i, purpose: 'A quiz', mustWork: ['Questions can still be answered', 'Keep this a quiz'] },
-  { re: /\b(boutique|saree|sari|e-?commerce|storefront|online shop)\b/i, purpose: 'A shop website', mustWork: ['Catalog and bag still work', 'Product images are real photos, not empty frames', 'Keep this a shop, not a different app'] },
+  {
+    re: /\b(boutique|saree|sari|e-?commerce|storefront|online shop|\bshop\b|merchandise|product catalog|kids?\s+(?:wear|apparel|collection)|clothing\s+(?:store|shop)|apparel)\b/i,
+    purpose: 'A shop website',
+    mustWork: [
+      'Catalog and bag still work',
+      'Product images are real photos, not empty frames',
+      'Currency and Add to Cart are on Preview',
+      'Keep this a shop, not a different app',
+    ],
+  },
 ];
 
 export function normalizeStudioJobCard(job) {
@@ -37,8 +46,14 @@ function looksLikeNewJob(brief, existing) {
   if (!existing?.purpose) return true;
   const text = String(brief || '').trim();
   if (!text) return false;
+  const existingIsShop = /\b(shop|boutique|storefront|e-?commerce|saree|sari)\b/i.test(existing.purpose || '');
+  const briefKeepsShop = /\b(shop|boutique|storefront|store|saree|sari|catalog|cart|bag)\b/i.test(text);
   for (const named of NAMED_JOBS) {
-    if (named.re.test(text) && named.purpose !== existing.purpose) return true;
+    if (named.re.test(text) && named.purpose !== existing.purpose) {
+      // “Add a shipping calculator to the boutique” is still a shop job.
+      if (existingIsShop && briefKeepsShop) continue;
+      return true;
+    }
   }
   // Drive cleaner / agent dashboards must not keep a leftover shop job card —
   // that card alone is enough for looksLikeShopDesk to attach cart/photo probes.
@@ -95,7 +110,7 @@ export function jobNeedsProductPhotos(job) {
   if (!card) return false;
   const hay = [card.purpose, ...card.mustWork].join(' ');
   // Bare "photo" matches screenshots on non-shop desks; require shop intent.
-  return /\b(shop|boutique|storefront|e-?commerce|saree|sari)\b/i.test(hay)
+  return /\b(shop|boutique|storefront|e-?commerce|saree|sari|merchandise|apparel|collection)\b/i.test(hay)
     || /\b(product (?:images?|photos?)|catalog (?:and|cards?|images?|photos?))\b/i.test(hay);
 }
 

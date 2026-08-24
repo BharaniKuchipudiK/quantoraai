@@ -4,6 +4,20 @@ import type {
 } from './provider-resilience.js';
 
 const STORE_TIMEOUT_MS = 1_500;
+/** After a remote miss, treat the control plane as degraded for this window. */
+const DEGRADED_TTL_MS = 30_000;
+
+export type CircuitStoreMode = 'unconfigured' | 'shared' | 'local-degraded';
+
+export type CircuitStoreHealth = {
+  mode: CircuitStoreMode;
+  /** True when callers should use the local-degraded failure threshold. */
+  degraded: boolean;
+  lastRemoteOkAt: number | null;
+  lastRemoteErrorAt: number | null;
+};
+
+type StoreRequest = (path: string, init: RequestInit) => Promise<Response | null>;
 
 function config() {
   const url = process.env.SUPABASE_URL;
@@ -27,29 +41,13 @@ function toState(row: any): ProviderCircuitState | null {
   };
 }
 
-async function request(path: string, init: RequestInit) {
-  const cfg = config();
-  if (!cfg) return null;
-  try {
-    const response = await fetch(`${cfg.url}/rest/v1/${path}`, {
-      ...init,
-      headers: {
-        apikey: cfg.key,
-        Authorization: `Bearer ${cfg.key}`,
-        'Content-Type': 'application/json',
-        ...(init.headers || {}),
-      },
-      signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      console.warn(`Provider circuit store ${init.method || 'GET'} ${path} -> ${response.status}`);
-      return null;
-    }
-    return response;
-  } catch (error: any) {
-    console.warn('Provider circuit store unavailable:', error?.message || error);
-    return null;
-  }
+/**
+ * When the shared circuit table is unreachable, open circuits after fewer local
+ * failures so a cold fleet does not keep hammering a broken provider.
+ */
+export function degradedCircuitFailureThreshold(normalThreshold: number): number {
+  const n = Math.max(1, Math.floor(Number(normalThreshold) || 1));
+  return Math.max(1, Math.ceil(n / 2));
 }
 
 class LocalAtomicCircuitStore implements AtomicProviderCircuitStore {
@@ -82,21 +80,112 @@ class LocalAtomicCircuitStore implements AtomicProviderCircuitStore {
     this.states.set(key, state);
     return state;
   }
+
+  clear() {
+    this.states.clear();
+  }
+}
+
+async function defaultRequest(path: string, init: RequestInit): Promise<Response | null> {
+  const cfg = config();
+  if (!cfg) return null;
+  try {
+    const response = await fetch(`${cfg.url}/rest/v1/${path}`, {
+      ...init,
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        'Content-Type': 'application/json',
+        ...(init.headers || {}),
+      },
+      signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      console.warn(`Provider circuit store ${init.method || 'GET'} ${path} -> ${response.status}`);
+      return null;
+    }
+    return response;
+  } catch (error: any) {
+    console.warn('Provider circuit store unavailable:', error?.message || error);
+    return null;
+  }
 }
 
 /**
- * Shared-first, fail-soft circuit storage.
+ * Shared-first circuit storage with an explicit local-degraded mode.
  *
- * Supabase is authoritative when configured, so every Vercel instance sees the
- * same provider health. If that control-plane store is temporarily unreachable,
- * the local atomic store keeps the request path functional rather than making a
- * database outage take down Travel as well.
+ * Supabase is authoritative when reachable. When it is not, each instance still
+ * records failures locally — but with a tighter open threshold so serverless
+ * cold starts cannot under-count forever and keep paying a broken upstream.
  */
-class SharedProviderCircuitStore implements AtomicProviderCircuitStore {
+export class SharedProviderCircuitStore implements AtomicProviderCircuitStore {
   private readonly local = new LocalAtomicCircuitStore();
+  private lastRemoteOkAt: number | null = null;
+  private lastRemoteErrorAt: number | null = null;
+
+  constructor(
+    private readonly requestFn: StoreRequest = defaultRequest,
+    private readonly nowFn: () => number = Date.now,
+  ) {}
+
+  health(): CircuitStoreHealth {
+    const cfg = config();
+    if (!cfg) {
+      return {
+        mode: 'unconfigured',
+        degraded: true,
+        lastRemoteOkAt: this.lastRemoteOkAt,
+        lastRemoteErrorAt: this.lastRemoteErrorAt,
+      };
+    }
+    const degraded = this.isDegraded();
+    return {
+      mode: degraded ? 'local-degraded' : 'shared',
+      degraded,
+      lastRemoteOkAt: this.lastRemoteOkAt,
+      lastRemoteErrorAt: this.lastRemoteErrorAt,
+    };
+  }
+
+  isDegraded(): boolean {
+    if (!config()) return true;
+    if (this.lastRemoteErrorAt == null) return false;
+    if (this.lastRemoteOkAt != null && this.lastRemoteOkAt >= this.lastRemoteErrorAt) return false;
+    return this.nowFn() - this.lastRemoteErrorAt < DEGRADED_TTL_MS;
+  }
+
+  /** Test hook: clear local circuits and remote health timestamps. */
+  resetForTests() {
+    this.local.clear();
+    this.lastRemoteOkAt = null;
+    this.lastRemoteErrorAt = null;
+  }
+
+  private markRemoteOk() {
+    this.lastRemoteOkAt = this.nowFn();
+  }
+
+  private markRemoteFail() {
+    this.lastRemoteErrorAt = this.nowFn();
+  }
+
+  private async remote(path: string, init: RequestInit): Promise<Response | null> {
+    if (!config()) {
+      this.markRemoteFail();
+      return null;
+    }
+    const response = await this.requestFn(path, init);
+    if (response) this.markRemoteOk();
+    else this.markRemoteFail();
+    return response;
+  }
+
+  private effectiveFailureThreshold(normal: number): number {
+    return this.isDegraded() ? degradedCircuitFailureThreshold(normal) : Math.max(1, normal);
+  }
 
   async get(key: string): Promise<ProviderCircuitState | null> {
-    const response = await request(
+    const response = await this.remote(
       `provider_circuits?select=failures,opened_until,last_failure_at,last_success_at&circuit_key=eq.${encodeURIComponent(key)}&limit=1`,
       { method: 'GET' },
     );
@@ -113,7 +202,7 @@ class SharedProviderCircuitStore implements AtomicProviderCircuitStore {
 
   async set(key: string, state: ProviderCircuitState): Promise<void> {
     await this.local.set(key, state);
-    await request('provider_circuits?on_conflict=circuit_key', {
+    await this.remote('provider_circuits?on_conflict=circuit_key', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify([{
@@ -129,14 +218,14 @@ class SharedProviderCircuitStore implements AtomicProviderCircuitStore {
 
   async delete(key: string): Promise<void> {
     await this.local.delete(key);
-    await request(`provider_circuits?circuit_key=eq.${encodeURIComponent(key)}`, { method: 'DELETE' });
+    await this.remote(`provider_circuits?circuit_key=eq.${encodeURIComponent(key)}`, { method: 'DELETE' });
   }
 
   async recordFailure(
     key: string,
     input: { now: number; failureThreshold: number; resetMs: number },
   ): Promise<ProviderCircuitState> {
-    const response = await request('rpc/provider_circuit_failure', {
+    const response = await this.remote('rpc/provider_circuit_failure', {
       method: 'POST',
       body: JSON.stringify({
         p_key: key,
@@ -154,11 +243,14 @@ class SharedProviderCircuitStore implements AtomicProviderCircuitStore {
         }
       } catch { /* local fallback below */ }
     }
-    return this.local.recordFailure(key, input);
+    return this.local.recordFailure(key, {
+      ...input,
+      failureThreshold: this.effectiveFailureThreshold(input.failureThreshold),
+    });
   }
 
   async recordSuccess(key: string, now: number): Promise<ProviderCircuitState> {
-    const response = await request('rpc/provider_circuit_success', {
+    const response = await this.remote('rpc/provider_circuit_success', {
       method: 'POST',
       body: JSON.stringify({ p_key: key }),
     });
@@ -176,4 +268,8 @@ class SharedProviderCircuitStore implements AtomicProviderCircuitStore {
   }
 }
 
-export const providerCircuitStore: AtomicProviderCircuitStore = new SharedProviderCircuitStore();
+export const providerCircuitStore = new SharedProviderCircuitStore();
+
+export function getProviderCircuitStoreHealth(): CircuitStoreHealth {
+  return providerCircuitStore.health();
+}

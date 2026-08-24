@@ -3,7 +3,7 @@ import { normalizeProjectId } from "../project-state.js";
 import { type StudioDomain } from "../studio-domains.js";
 import { inferStudioDomain } from "../studio-domain-inference.js";
 import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
-import { detectBuildIntent } from "../../../src/lib/build-intent.js";
+import { detectBuildIntent } from "../../../shared/build-intent.js";
 
 export type CommunicationRequest = {
   message: string;
@@ -26,6 +26,12 @@ export type CommunicationRequest = {
   featureSuggest: boolean;
 };
 
+function hasLiveCodingDeskPacket(deskContext: unknown): boolean {
+  if (!deskContext || typeof deskContext !== "object") return false;
+  const files = (deskContext as { files?: unknown }).files;
+  return Array.isArray(files) && files.some((path) => typeof path === "string" && path.trim());
+}
+
 export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const studioMode = normalizeStudioMode(body?.studioMode);
   const studioModeExplicit = body?.studioMode === "ask" || body?.studioMode === "build" || body?.studioMode === "plan";
@@ -40,7 +46,9 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     codingWorkspace: buildMode
       || body?.refineMode === true
       || hasPreviewCode
-      || body?.taskCategory === "coding",
+      || body?.taskCategory === "coding"
+      // Chat-only refine turns still attach deskContext.files — treat that as a live coding desk.
+      || hasLiveCodingDeskPacket(body?.deskContext),
   });
   const attachedImages = Array.isArray(body?.attachedImages)
     ? body.attachedImages.filter((value: unknown): value is string => typeof value === "string" && value.startsWith("data:image/")).slice(0, 4)

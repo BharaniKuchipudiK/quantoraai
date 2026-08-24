@@ -3,7 +3,7 @@ import type { ListeningSignal, SessionContext } from "./session-context.js";
 import { mergeCognitiveLedgers, type CognitiveLedgerEntry } from "./cognitive-ledger.js";
 import type { ProjectContextPack } from "./project-state.js";
 import { evaluateSafetyText } from "./safety-policy.js";
-import { shouldHonorGuidedBuild } from "../../src/lib/build-intent.js";
+import { shouldHonorGuidedBuild } from "../../shared/build-intent.js";
 import { formatPclNavigatorDirective, publicPclNavigatorMetadata } from "./pcl-navigator-adapter.js";
 import { evaluateProofOfDone } from "./outcome-contract.js";
 

@@ -115,7 +115,7 @@ export function restoreStudioDeskSnapshot(session) {
   }
   let workspaceCode = typeof snap.workspaceCode === 'string' ? snap.workspaceCode : '';
   if (!Object.keys(vfs).length && !workspaceCode.trim()) return null;
-  const withPhotos = ensureShopDeskInVfs(vfs);
+  const withPhotos = ensureShopDeskInVfs(vfs, normalizeStudioJobCard(snap.job));
   if (withPhotos.changed) {
     workspaceCode = pickPreviewEntry(withPhotos.vfs) || workspaceCode;
   }

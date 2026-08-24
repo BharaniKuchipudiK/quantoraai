@@ -28,8 +28,10 @@ import {
 } from './_lib/office-artifact.js';
 import { fetchPublicHttpsImage } from './_lib/safe-image-fetch.js';
 import { PRESENTATION_CANVAS } from './_lib/presentation-layout.js';
-import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
+import { requireActiveSession } from './_lib/authz.js';
+import { readByokCredentials } from './_lib/byok-credentials.js';
 import {
   officeGenerationMaxAttempts,
   officeModelCallBudgetMs,
@@ -95,14 +97,15 @@ export default async function handler(req, res) {
     operation = 'create',
     baseSpec = null,
     baseFingerprint = null,
-    userKey,
-    openRouterKey,
-    anthropicKey: anthropicUserKey,
     sessionContext = null,
     imageAttachments = [],
     spec: suppliedSpec = null,
     compileOnly = false,
   } = req.body || {};
+  const byok = readByokCredentials(req);
+  const userKey = byok.gemini;
+  const openRouterKey = byok.openRouter;
+  const anthropicUserKey = byok.anthropic;
 
   if (!['powerpoint', 'word', 'excel'].includes(format)) {
     return res.status(400).json({ error: 'Invalid format requested' });
@@ -138,19 +141,39 @@ export default async function handler(req, res) {
     canonicalBaseSpec = baseValidation.spec;
   }
 
-  const modelKeys = {
-    anthropic: anthropicUserKey || process.env.ANTHROPIC_API_KEY || null,
-    gemini: userKey || process.env.GEMINI_API_KEY || null,
-    openRouter: openRouterKey || process.env.OPENROUTER_API_KEY || null,
-  };
-  const hasAnyModelKey = Boolean(modelKeys.anthropic || modelKeys.gemini || modelKeys.openRouter);
   const isCompileRequest = Boolean(compileOnly || suppliedSpec);
   const legacyPowerPointCompile = format === 'powerpoint' && isCompileRequest && isLegacyPowerPointSpec(suppliedSpec);
+
+  /*
+   * Server-owned model keys require an active (non-blocked) session — same bar
+   * as /api/chat. Anonymous callers may still generate with BYOK, or compile a
+   * supplied spec without burning LLM quota.
+   */
+  let sessionUser = getSessionUser(req);
+  let mayUseServerKeys = false;
+  if (sessionUser) {
+    const auth = await requireActiveSession(req, res);
+    if (!auth.ok) return;
+    sessionUser = auth.value.sessionUser;
+    mayUseServerKeys = true;
+  }
+
+  const modelKeys = {
+    anthropic: anthropicUserKey || (mayUseServerKeys ? process.env.ANTHROPIC_API_KEY || null : null),
+    gemini: userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || null : null),
+    openRouter: openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY || null : null),
+  };
+  const hasAnyModelKey = Boolean(modelKeys.anthropic || modelKeys.gemini || modelKeys.openRouter);
   if (!isCompileRequest && !hasAnyModelKey) {
+    if (!sessionUser) {
+      return res.status(401).json({
+        error: "Please sign in to use Quantora's built-in Office AI, or add your own API key.",
+        requiresAuth: true,
+      });
+    }
     return res.status(401).json({ error: 'No model API key configured. Add an Anthropic, Gemini, or OpenRouter key.' });
   }
 
-  const sessionUser = getSessionUser(req);
   const rateLimit = isCompileRequest ? OFFICE_COMPILE_RATE_PER_MINUTE : OFFICE_GENERATE_RATE_PER_MINUTE;
   const rateKind = isCompileRequest ? 'compile' : 'generate';
   const identity = sessionUser ? `user:${sessionUser.sub}` : `ip:${clientIp(req)}`;
@@ -160,13 +183,15 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Too many Office requests. Please wait a minute and try again.' });
   }
   const durable = await isRateLimitedDurable(rateKey, rateLimit, 60);
-  if (durable.limited) {
-    if (durable.resetsAt) {
-      res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durable.resetsAt).getTime() - Date.now()) / 1000)));
+  const durableGuard = applyDurableCostBearingGuard(rateKey, rateLimit, durable);
+  if (durableGuard.limited) {
+    if (durableGuard.resetsAt) {
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durableGuard.resetsAt).getTime() - Date.now()) / 1000)));
     }
     return res.status(429).json({
       error: 'Too many Office requests. Please wait a minute and try again.',
-      resetsAt: durable.resetsAt,
+      resetsAt: durableGuard.resetsAt,
+      ...(durableGuard.degraded ? { degraded: true } : {}),
     });
   }
 

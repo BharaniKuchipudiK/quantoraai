@@ -6,9 +6,14 @@ import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
   injectMissingShopPhotos,
   injectProductCatalogImages,
+  scaffoldShopCatalogJson,
+  countRealPreviewPhotos,
+  stripInjectedShopPhotos,
 } from './preview-images.js';
-import { injectShopCommerceUi } from './shop-preview-ui.js';
-import { deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
+import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
+import { deskChecksRegressed, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
+import { buildStudioJobCard } from './studio-job-card.js';
+import { shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
 const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
@@ -80,13 +85,26 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
  * Native sidecars (.py, .swift, …) may land in FILES, but Preview only runs the
  * web assembly. A refine that only touches sidecars while a browser entry
  * already exists is marked needsWebEntry so chat cannot claim a UI update.
+ *
+ * `brief` is the latest user ask so a calculator / Drive cleaner turn can
+ * retire a leftover boutique job before shop photos are considered, and so
+ * merchandise shells still get photos+cart when the model left a blank body.
  */
-export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
+export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, options = {}) {
+  const brief = typeof options === 'string' ? options : String(options?.brief || '');
   const assembled = assembleStudioPreview(rawText, currentVfs);
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
   );
-  const ensured = ensureShopDeskInVfs(assembled.vfs);
+  const nextJob = buildStudioJobCard({
+    brief,
+    vfs: assembled.vfs,
+    existing: job,
+  });
+  // VFS merge keeps products.json from a prior boutique. Drop that bleed before
+  // ensureShopDeskInVfs would paint silk stock photos onto a calculator.
+  const purged = purgeStaleShopArtifacts(assembled.vfs, nextJob);
+  const ensured = ensureShopDeskInVfs(purged.vfs, nextJob, { brief });
   const vfs = ensured.vfs;
   const code = pickPreviewEntry(vfs) || assembled.code;
   const didUpdate = Object.keys(vfs).length > 0 && Boolean(code);
@@ -95,9 +113,10 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
   const onlyNativeSidecars = changedPaths.length > 0
     && changedPaths.every((path) => isNativeSidecarPath(path));
   const needsWebEntry = Boolean(hadProject && didUpdate && onlyNativeSidecars && !previewChanged);
-  if (hadProject && didUpdate && previewChanged) {
-    const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job });
-    const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job });
+  // Dropping a leftover boutique catalog is an intentional product switch.
+  if (hadProject && didUpdate && previewChanged && !purged.changed) {
+    const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job: nextJob });
+    const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job: nextJob });
     if (deskChecksRegressed(before.checks, after.checks)) {
       return {
         vfs: currentVfs,
@@ -107,6 +126,7 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
         rejected: true,
         needsWebEntry: false,
         previewChanged: false,
+        job: nextJob,
       };
     }
   }
@@ -118,19 +138,67 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
     rejected: false,
     needsWebEntry,
     previewChanged: !hadProject || previewChanged,
+    job: nextJob,
+    scaleNote: ensured.scaleNote || '',
   };
 }
 
-export function vfsLooksLikeShop(vfs = {}) {
-  // products.json is the shop scaffold contract — keep injecting photos/cart for it.
-  // Bare "catalog" in HTML is not enough (Drive Cleaner file lists false-positive).
-  if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
-  const html = pickPreviewEntry(vfs);
-  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i.test(html);
+export function vfsLooksLikeShop(vfs = {}, job = null) {
+  return looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job });
 }
+
+
+/** Live boutique markup on the Preview entry — not a leftover products.json alone. */
+const LIVE_SHOP_ENTRY_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i;
+
+/**
+ * Boutique catalog + injected Unsplash silk must not survive into a non-shop
+ * desk. Sticky products.json alone used to keep looking like a shop forever.
+ *
+ * A mismatched job card (e.g. “shipping calculator” on a boutique) must not
+ * strip real shop HTML — only purge when the Preview entry itself is non-shop.
+ */
+export function purgeStaleShopArtifacts(vfs = {}, job = null) {
+  if (!vfs || typeof vfs !== 'object') return { vfs: {}, changed: false };
+  const html = pickPreviewEntry(vfs) || '';
+  if (LIVE_SHOP_ENTRY_RE.test(html) || looksLikeShopDesk({ html, vfs, job })) {
+    return { vfs, changed: false };
+  }
+  let changed = false;
+  const next = { ...vfs };
+  if (next['products.json']) {
+    delete next['products.json'];
+    changed = true;
+  }
+  const htmlPath = pickPreviewEntryPath(next);
+  if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
+    const cleaned = stripShopCommerceUi(stripInjectedShopPhotos(next[htmlPath].content));
+    if (cleaned !== next[htmlPath].content) {
+      next[htmlPath] = { ...next[htmlPath], content: cleaned };
+      changed = true;
+    }
+  }
+  return { vfs: next, changed };
+}
+
 
 export function userAskedForPreviewPhotos(text = '') {
   return /\b(no images|images?|photos?|pictures?|visuals?)\b/i.test(String(text || ''));
+}
+
+/** Broken / missing Preview photos — not “replace with blue dresses”. */
+export function userAskedForBrokenPreviewPhotos(text = '') {
+  const src = String(text || '');
+  return /\b(broken|missing|not\s+(?:loading|showing|working|there)|empty\s+frames?|gold\s+frames?|blank\s+(?:white\s+)?(?:body|images?|photos?)|images?\s+(?:are\s+)?(?:still\s+)?broken|no\s+(?:product\s+)?(?:photos?|images?))\b/i.test(src)
+    || /\b(?:why|how come).{0,48}\b(?:images?|photos?)\b/i.test(src);
+}
+
+/** Semantic catalog edits must reach the model, not the deterministic inject shortcut. */
+export function userAskedForSemanticPhotoEdit(text = '') {
+  const src = String(text || '');
+  if (userAskedForBrokenPreviewPhotos(src)) return false;
+  return /\b(replace|swap|change|use|make|remove|delete|redesign)\b[\s\S]{0,80}\b(photos?|images?|pictures?|dresses?|shirts?|hoodies?)\b/i.test(src)
+    || /\b(photos?|images?|pictures?)\b[\s\S]{0,80}\b(with|to|into)\b[\s\S]{0,40}\b(blue|red|green|different|new)\b/i.test(src);
 }
 
 export function userAskedForShopDeskFix(text = '') {
@@ -148,9 +216,11 @@ export function userAskedForDeskReview(text = '') {
  * Review applies a surgical desk patch before any LLM rewrite.
  * Shop photos/cart/currency are deterministic. Reject if a passing probe would regress.
  */
-export function applyDeskReviewPatch(vfs = {}, job = null) {
+export function applyDeskReviewPatch(vfs = {}, job = null, options = {}) {
+  const brief = String(options?.brief || '');
   const before = probeRunningDesk({ html: pickPreviewEntry(vfs), vfs, job });
-  const ensured = ensureShopDeskInVfs(vfs);
+  const purged = purgeStaleShopArtifacts(vfs, job);
+  const ensured = ensureShopDeskInVfs(purged.vfs, job, { brief });
   const after = probeRunningDesk({ html: pickPreviewEntry(ensured.vfs), vfs: ensured.vfs, job });
   if (deskChecksRegressed(before.checks, after.checks)) {
     return {
@@ -163,46 +233,73 @@ export function applyDeskReviewPatch(vfs = {}, job = null) {
   }
   return {
     vfs: ensured.vfs,
-    changed: ensured.changed,
+    changed: purged.changed || ensured.changed,
     rejected: false,
     checks: after.checks,
     nextBeat: after.nextBeat,
   };
 }
 
-export function ensureShopPhotosInVfs(vfs = {}) {
-  if (!vfsLooksLikeShop(vfs)) return { vfs, changed: false };
+export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
+  if (!vfsLooksLikeShop(vfs, job)) return { vfs, changed: false };
+  const brief = String(options?.brief || '');
   const next = { ...vfs };
   let changed = false;
   const htmlPath = pickPreviewEntryPath(next);
   if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
-    const result = injectMissingShopPhotos(next[htmlPath].content);
+    const result = injectMissingShopPhotos(next[htmlPath].content, { brief });
     if (result.html !== next[htmlPath].content) {
       next[htmlPath] = { ...next[htmlPath], content: result.html };
       changed = true;
     }
   }
   if (next['products.json'] && typeof next['products.json'].content === 'string') {
-    const catalog = injectProductCatalogImages(next['products.json'].content);
+    const catalog = injectProductCatalogImages(next['products.json'].content, { brief });
     if (catalog.changed) {
       next['products.json'] = { ...next['products.json'], content: catalog.text };
       changed = true;
     }
+  } else if (htmlPath && next[htmlPath]?.content) {
+    const brand = String(next[htmlPath].content).match(/<title>([^<]{2,80})<\/title>/i)?.[1]
+      || String(next[htmlPath].content).match(/<h1[^>]*>([^<]{2,80})<\/h1>/i)?.[1]
+      || 'Collection';
+    next['products.json'] = {
+      content: scaffoldShopCatalogJson({ brief, brand }),
+      language: 'json',
+    };
+    changed = true;
   }
   return { vfs: next, changed };
 }
 
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
-export function ensureShopDeskInVfs(vfs = {}) {
-  const withPhotos = ensureShopPhotosInVfs(vfs);
-  if (!vfsLooksLikeShop(withPhotos.vfs)) return withPhotos;
+export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
+  if (!vfsLooksLikeShop(vfs, job)) return purgeStaleShopArtifacts(vfs, job);
+  const brief = String(options?.brief || '');
+  const withPhotos = ensureShopPhotosInVfs(vfs, job, { brief });
+  if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;
   const next = { ...withPhotos.vfs };
   const htmlPath = pickPreviewEntryPath(next);
-  if (!htmlPath || !next[htmlPath] || typeof next[htmlPath].content !== 'string') return withPhotos;
+  if (!htmlPath || !next[htmlPath] || typeof next[htmlPath].content !== 'string') {
+    return { ...withPhotos, scaleNote: shopCatalogScaleNote(brief) };
+  }
   const ui = injectShopCommerceUi(next[htmlPath].content);
-  if (!ui.changed) return withPhotos;
+  const scaleNote = shopCatalogScaleNote(brief);
+  if (!ui.changed) {
+    return {
+      vfs: next,
+      changed: withPhotos.changed,
+      scaleNote,
+      photoCount: countRealPreviewPhotos(next[htmlPath].content),
+    };
+  }
   next[htmlPath] = { ...next[htmlPath], content: ui.html };
-  return { vfs: next, changed: true };
+  return {
+    vfs: next,
+    changed: true,
+    scaleNote,
+    photoCount: countRealPreviewPhotos(ui.html),
+  };
 }
 
 /** Preview runs the project, not the file currently open in the editor. */
@@ -227,7 +324,7 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
     content: html,
     language: asHtml || /\.html$/i.test(path) ? 'html' : (next[path]?.language || ''),
   };
-  const withDesk = ensureShopDeskInVfs(next);
+  const withDesk = ensureShopDeskInVfs(next, job);
   const before = probeRunningDesk({ html: pickPreviewEntry(vfs), vfs, job });
   const after = probeRunningDesk({ html: pickPreviewEntry(withDesk.vfs), vfs: withDesk.vfs, job });
   if (deskChecksRegressed(before.checks, after.checks)) {

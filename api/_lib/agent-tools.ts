@@ -18,14 +18,14 @@ import * as core from './agent-tools-core.js';
 import {
   formatTravelPlaceShortlist,
   resolveTravelToolInvocation,
-} from '../../src/lib/travel-place-shortlist.js';
-import { hotelCityAsk, hotelEmptyResultsAsk, hotelLocationNeedsCity, hotelProviderFailureAsk, resolveHotelSearchLocation } from '../../src/lib/travel-hotel-location.js';
+} from '../../shared/travel/place-shortlist.js';
+import { hotelCityAsk, hotelEmptyResultsAsk, hotelLocationNeedsCity, hotelProviderFailureAsk, resolveHotelSearchLocation } from '../../shared/travel/hotel-location.js';
 import {
   flightIncompleteAsk,
   flightInvalidArgsAsk,
   flightProviderFailureAsk,
   resolveFlightToolRecovery,
-} from '../../src/lib/travel-flight-resilience.js';
+} from '../../shared/travel/flight-resilience.js';
 
 export const TRANSACTIONAL_TRAVEL_TOOL_NAMES = core.TRANSACTIONAL_TRAVEL_TOOL_NAMES;
 export const travelFunctionDeclarations = core.travelFunctionDeclarations;

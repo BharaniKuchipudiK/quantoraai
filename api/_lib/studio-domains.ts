@@ -1,11 +1,6 @@
-export type StudioDomain = "travel" | "education" | "finance" | "research";
-
-export function normalizeStudioDomain(value: unknown): StudioDomain | null {
-  if (value === "travel" || value === "education" || value === "finance" || value === "research") {
-    return value;
-  }
-  return null;
-}
+export type { StudioDomain } from "../../shared/studio/domains.js";
+export { normalizeStudioDomain, STUDIO_DOMAINS } from "../../shared/studio/domains.js";
+import type { StudioDomain } from "../../shared/studio/domains.js";
 
 const DOMAIN_DIRECTIVES: Record<StudioDomain, string> = {
   travel: `DOMAIN FOCUS: TRAVEL ADVISOR

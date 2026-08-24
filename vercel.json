@@ -42,7 +42,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' blob: https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.codesandbox.io https://*.webcontainer-api.io https://*.local-coep.webcontainer-api.io wss://*.webcontainer-api.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io https://*.webcontainer.io https://*.webcontainer-api.io; object-src 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' blob: https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' blob: https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.codesandbox.io https://*.webcontainer-api.io https://*.local-coep.webcontainer-api.io wss://*.webcontainer-api.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io https://*.webcontainer.io https://*.webcontainer-api.io; object-src 'none'; base-uri 'self'; form-action 'self';"
         },
         {
           "key": "Strict-Transport-Security",
@@ -79,7 +79,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.codesandbox.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io; object-src 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.codesandbox.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io; object-src 'none'; base-uri 'self'; form-action 'self';"
         },
         {
           "key": "Strict-Transport-Security",
@@ -144,6 +144,70 @@
     {
       "source": "/api/trace",
       "destination": "/api/pipeline?route=trace"
+    },
+    {
+      "source": "/api/moderate",
+      "destination": "/api/pipeline?route=moderate"
+    },
+    {
+      "source": "/api/product-event",
+      "destination": "/api/pipeline?route=product-event"
+    },
+    {
+      "source": "/api/travel-search",
+      "destination": "/api/pipeline?route=travel-search"
+    },
+    {
+      "source": "/api/inference-health",
+      "destination": "/api/pipeline?route=inference-health"
+    },
+    {
+      "source": "/api/youtube-validate",
+      "destination": "/api/pipeline?route=youtube-validate"
+    },
+    {
+      "source": "/api/preview-image",
+      "destination": "/api/pipeline?route=preview-image"
+    },
+    {
+      "source": "/api/account",
+      "destination": "/api/pipeline?route=account"
+    },
+    {
+      "source": "/api/classify-intent",
+      "destination": "/api/pipeline?route=classify-intent"
+    },
+    {
+      "source": "/api/model-route-canary",
+      "destination": "/api/pipeline?route=model-route-canary"
+    },
+    {
+      "source": "/api/deploy-status",
+      "destination": "/api/deploy-gcp?action=status"
+    },
+    {
+      "source": "/api/auth/verify",
+      "destination": "/api/auth?route=verify"
+    },
+    {
+      "source": "/api/auth/session",
+      "destination": "/api/auth?route=session"
+    },
+    {
+      "source": "/api/auth/logout",
+      "destination": "/api/auth?route=logout"
+    },
+    {
+      "source": "/api/admin/feedback",
+      "destination": "/api/admin?route=feedback"
+    },
+    {
+      "source": "/api/admin/metrics",
+      "destination": "/api/admin?route=metrics"
+    },
+    {
+      "source": "/api/admin/models",
+      "destination": "/api/admin?route=models"
     },
     {
       "source": "/((?!api/.*|preview/.*|monaco/.*).*)",

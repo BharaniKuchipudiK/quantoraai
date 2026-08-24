@@ -90,7 +90,7 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
   if (/\b(shop|store|cart|checkout|buy|sell|product|boutique|ecommerce|e-commerce)\b/.test(b)) {
     const hasCart = has(/add[\s-]?to[\s-]?cart|data-quantora-checkout|quantoraCheckout|\bcart\b/i, src);
     checks.push({ id: "feat-cart", label: "Shopping cart / checkout present", ok: hasCart, weight: 3, detail: hasCart ? undefined : "Brief asks to sell, but no cart/checkout was built" });
-    const hasPhoto = imgTags.some((tag) => /\bsrc\s*=\s*["'](https?:\/\/|\/api\/preview-image)/i.test(tag));
+    const hasPhoto = imgTags.some((tag) => /\bsrc\s*=\s*["'](data:image\/|https?:\/\/|\/api\/preview-image)/i.test(tag));
     checks.push({
       id: "feat-photos",
       label: "Product photos are real images",

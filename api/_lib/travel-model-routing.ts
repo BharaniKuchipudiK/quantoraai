@@ -35,8 +35,13 @@ export function isLiveTravelToolTurn(body: any): boolean {
  * credentials and the turn is Travel, route it through the independent Travel
  * conversation provider. BYOK remains the one explicit opt-out.
  */
-export function shouldPreferTravelConversationProvider(body: any): boolean {
-  if (!hasTravelConversationContext(body) || body?.userKey) return false;
+export function shouldPreferTravelConversationProvider(
+  body: any,
+  options?: { hasGeminiByok?: boolean },
+): boolean {
+  // Explicit BYOK (header-resolved or legacy body flag in tests) opts out of
+  // server-owned Travel conversation routing.
+  if (!hasTravelConversationContext(body) || body?.userKey || options?.hasGeminiByok) return false;
   return body?.modelId !== TRAVEL_CONVERSATION_MODEL_ID;
 }
 
@@ -55,3 +60,18 @@ export function routeTravelConversationBody(body: any) {
     travelToolExecutionDeferred: isLiveTravelToolTurn(body),
   };
 }
+
+/** True when the request body asks chat to skip live Gemini travel tools. */
+export function isTravelToolExecutionDeferred(body: any): boolean {
+  return body?.travelToolExecutionDeferred === true;
+}
+
+export const TRAVEL_DEGRADED_DIRECTIVE = `
+
+TRAVEL DEGRADED MODE
+Live travel tools (flights/hotels via Gemini function calling) are unavailable for this turn.
+- Do not invent live fares, seat maps, PNRs, hotel nightly rates, or availability.
+- Give high-level trip advice, itinerary structure, and clarifying questions only.
+- Tell the traveller plainly that live lookup is temporarily unavailable and they can retry shortly.
+`;
+

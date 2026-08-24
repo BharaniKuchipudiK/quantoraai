@@ -41,6 +41,9 @@ jobs:
       - name: Run all tests
         run: npm run test:all
 
+      - name: Shop catalog photos scale gate
+        run: node scripts/shop-catalog-photos-scale-gate.mjs
+
       - name: Build production artifacts
         run: npm run build
 
@@ -137,6 +140,13 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/studio-regression-browser-gate.mjs
 
+      - name: Execute Coding desk sticky journey
+        id: coding_desk_sticky_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/coding-desk-sticky-browser-gate.mjs
+
       - name: Execute code payload journey
         id: code_payload_gate
         continue-on-error: true
@@ -186,6 +196,13 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/coding-desk-must-write-files-browser-gate.mjs
 
+      - name: Execute Coding Desk chrome journey
+        id: coding_desk_chrome_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/coding-desk-chrome-browser-gate.mjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -204,6 +221,7 @@ jobs:
           STUDY_OUTCOME: ${{ steps.study_gate.outcome }}
           MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
           STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
+          CODING_DESK_STICKY_OUTCOME: ${{ steps.coding_desk_sticky_gate.outcome }}
           CODE_PAYLOAD_OUTCOME: ${{ steps.code_payload_gate.outcome }}
           SELF_HEAL_OUTCOME: ${{ steps.self_heal_gate.outcome }}
           DESK_DIFF_OUTCOME: ${{ steps.desk_diff_gate.outcome }}
@@ -211,10 +229,12 @@ jobs:
           DESK_REVIEW_PATCH_OUTCOME: ${{ steps.desk_review_patch_gate.outcome }}
           DESK_CHAT_CLAIM_OUTCOME: ${{ steps.desk_chat_claim_gate.outcome }}
           CODING_DESK_FILES_OUTCOME: ${{ steps.coding_desk_files_gate.outcome }}
+          CODING_DESK_CHROME_OUTCOME: ${{ steps.coding_desk_chrome_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME CODING_DESK_CHROME_OUTCOME; do
             outcome="${!gate}"
+            echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then
               echo "::error::$gate finished with outcome: $outcome"
               failed=1

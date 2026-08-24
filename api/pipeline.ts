@@ -1,5 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
-import chat from "./chat.js";
+import chat from "./_lib/chat-handler.js";
+import moderate from "./_lib/handlers/moderate.js";
+import productEvent from "./_lib/handlers/product-event.js";
+import travelSearch from "./_lib/handlers/travel-search.js";
+import inferenceHealth from "./_lib/handlers/inference-health.js";
+import youtubeValidate from "./_lib/handlers/youtube-validate.js";
+import previewImage from "./_lib/handlers/preview-image.js";
+import account from "./_lib/handlers/account.js";
+import classifyIntent from "./_lib/handlers/classify-intent.js";
+import modelRouteCanary from "./_lib/handlers/model-route-canary.js";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
 import { requireActiveSession } from "./_lib/authz.js";
@@ -17,6 +26,7 @@ import { handleMarketDataLookup } from "./_lib/market-data-gateway.js";
 import { handleDebtPlan } from "./_lib/debt-gateway.js";
 import { handleSavingsGoal } from "./_lib/savings-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
+import { readByokCredentials } from "./_lib/byok-credentials.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
 import {
   attachCorrelationId,
@@ -77,15 +87,18 @@ export default async function handler(req: any, res: any) {
   // Deterministic decisions still get first refusal. Ordinary Travel dialogue
   // may use a provider-neutral conversational model when one is configured;
   // live travel-tool turns remain on the tool-capable path.
-  if (req.query?.route === "chat") {
+  const routed = typeof req.query?.route === "string" ? req.query.route : "";
+  if (routed === "chat") {
     if (await handleAffordabilityDecision(req, res)) return;
     if (await handleMarketDataLookup(req, res)) return;
     if (await handleDebtPlan(req, res)) return;
     if (await handleSavingsGoal(req, res)) return;
 
-    if (shouldPreferTravelConversationProvider(req.body)) {
+    if (shouldPreferTravelConversationProvider(req.body, {
+      hasGeminiByok: Boolean(readByokCredentials(req).gemini),
+    })) {
       const signedIn = Boolean(getSessionUser(req));
-      let openRouterAvailable = Boolean(req.body?.openRouterKey || (signedIn && process.env.OPENROUTER_API_KEY));
+      let openRouterAvailable = Boolean(readByokCredentials(req).openRouter || (signedIn && process.env.OPENROUTER_API_KEY));
 
       if (!openRouterAvailable && signedIn) {
         try {
@@ -103,7 +116,18 @@ export default async function handler(req: any, res: any) {
     return chat(req, res);
   }
 
-  if (req.query?.route === 'trace') {
+  // Thin handlers folded into pipeline so Hobby stays under the function limit.
+  if (routed === "moderate") return moderate(req, res);
+  if (routed === "product-event") return productEvent(req, res);
+  if (routed === "travel-search") return travelSearch(req, res);
+  if (routed === "inference-health") return inferenceHealth(req, res);
+  if (routed === "youtube-validate") return youtubeValidate(req, res);
+  if (routed === "preview-image") return previewImage(req, res);
+  if (routed === "account") return account(req, res);
+  if (routed === "classify-intent") return classifyIntent(req, res);
+  if (routed === "model-route-canary") return modelRouteCanary(req, res);
+
+  if (routed === 'trace') {
     applyCors(req, res, 'POST,OPTIONS');
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -371,9 +395,8 @@ export default async function handler(req: any, res: any) {
      * Legacy /api/github/fetch-repo is an alias for the same stage.
      */
     if (targetStage === 'repository-preview') {
-      if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to import a GitHub repository.' });
-      }
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
       try {
         const preview = await buildRepositoryPreview(repoUrl, task);
         return res.status(200).json(preview);
@@ -387,9 +410,8 @@ export default async function handler(req: any, res: any) {
      * already lives on GitHub. Desk git does not push; merge requires the same token.
      */
     if (targetStage === 'github-create-pr') {
-      if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to create a GitHub pull request.' });
-      }
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
       if (!resolveGithubToken()) {
         return res.status(503).json({
           error: githubWriteAuthMessage(),
@@ -426,9 +448,8 @@ export default async function handler(req: any, res: any) {
     }
 
     if (targetStage === 'github-merge-pr') {
-      if (!sessionUser) {
-        return res.status(401).json({ error: 'Sign in to merge a GitHub pull request.' });
-      }
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
       if (!resolveGithubToken()) {
         return res.status(503).json({
           error: githubWriteAuthMessage(),
