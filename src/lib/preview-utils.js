@@ -191,10 +191,9 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
           hasCurrency: hasCurrency,
           photoCount: photoCount,
           uniquePhotoCount: uniquePhotoCount,
-          catalogCount: catalogCount,
-          hasCalculatorDisplay: Boolean(document.querySelector('[data-testid="calculator-display"]')),
-          hasCalculatorKey: Boolean(document.querySelector('[data-testid="calculator-one"]'))
+          catalogCount: catalogCount
         });
+        // Calculator display/keys come only from __quantoraDeskProbe.
       } catch (probeErr) {}
       try {
         __quantoraDeskProbe(function(facts){ report(Object.assign({ kind:'desk-probe' }, facts)); });

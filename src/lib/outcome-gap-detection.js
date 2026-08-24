@@ -35,6 +35,7 @@ function chipsFromDeskChecks(checks = []) {
     'cart-click': beat('gap-cart-click', 'Fix Add to Cart', 'Add to Cart is on the page but the bag does not increment. Fix the running Preview.', 107),
     'calc-display': beat('gap-calc', 'Fix the calculator display', 'The calculator Preview is missing a working display. Fix the running page.', 108),
     'calc-key': beat('gap-calc-key', 'Fix the calculator keys', 'The calculator Preview is missing working keys. Fix the running page.', 107),
+    'calc-scientific': beat('gap-calc-scientific', 'Add scientific keys on Preview', 'Patch the web Preview entry (index.html / App.jsx) with sin/cos (or DEG/RAD). Python-only files never run in Preview.', 109),
     'job-add-item': beat('gap-add-item', 'Make adding an item work', 'The running Preview has an add control that does not add anything. Fix it on the page.', 108),
     'job-controls': beat('gap-controls', 'Make the controls respond', 'Clicking a control on the running Preview changes nothing. Fix it on the page.', 107),
     'job-runs': beat('gap-page-runs', 'Make the page render', 'The running Preview renders nothing. Fix the page before anything else.', 109),

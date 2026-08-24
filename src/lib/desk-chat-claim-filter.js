@@ -51,6 +51,14 @@ const RULES = [
     unverified: 'Preview has not confirmed calculator keys yet.',
   },
   {
+    ids: ['calc-scientific'],
+    factMissing: (facts) => facts?.hasScientificKeys === false,
+    topic: /\b(scientific|sin\b|cos\b|tan\b|DEG|RAD)\b/i,
+    ready: /\b(ready|working|added|updated|done|is on|are on|you can|now (has|have)|live|scientific)\b/i,
+    honest: 'Preview does not show scientific keys yet — update the web entry (index.html), not only Python files.',
+    unverified: 'Preview has not confirmed scientific keys yet.',
+  },
+  {
     ids: ['job-add-item'],
     topic: /\b(items? can be added|adding an item|add control|add button)\b/i,
     ready: /\b(ready|working|can be added|works|done|is on|are on)\b/i,

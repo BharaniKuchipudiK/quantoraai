@@ -39,6 +39,7 @@ test('shop and calculator facts are read from the live document, not source text
   assert.match(DESK_PROBE_FN_SOURCE, /quantora-currency/);
   assert.match(DESK_PROBE_FN_SOURCE, /catalogCount/);
   assert.match(DESK_PROBE_FN_SOURCE, /calculator-display/);
+  assert.match(DESK_PROBE_FN_SOURCE, /hasScientificKeys/);
   assert.match(DESK_PROBE_FN_SOURCE, /bagIncremented/);
   assert.match(DESK_PROBE_FN_SOURCE, /(?:Bag\|Cart)/);
   for (const key of [...DESK_PAGE_FACT_KEYS, ...DESK_PAGE_COUNT_KEYS]) {
