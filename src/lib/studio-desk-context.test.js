@@ -327,6 +327,9 @@ test('a first coding turn with a VFS sends deskContext and capped previewCode', 
   assert.ok(body.deskContext.facts);
   assert.ok(Array.isArray(body.deskContext.checks));
   assert.match(formatDeskContextForPrompt(body.deskContext), /PREVIEW SOURCE: attached/);
+  const chatOnly = codingTurnRequestFields({ isCodingRequest: false, refineDesk: false, packet });
+  assert.equal('previewCode' in chatOnly, false);
+  assert.equal('previewCode' in chatOnly.deskContext, false);
 });
 
 test('Travel, Study, Finance, and Research never receive a coding packet', () => {

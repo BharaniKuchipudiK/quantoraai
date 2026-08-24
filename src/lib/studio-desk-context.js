@@ -320,12 +320,16 @@ export function codingTurnRequestFields({
   packet = null,
 } = {}) {
   if (!packet) return refineDesk ? { refineMode: true } : {};
-  const fields = { deskContext: packet };
   if (isCodingRequest || refineDesk) {
-    fields.previewCode = capPreviewCode(packet.previewCode);
+    const fields = {
+      deskContext: packet,
+      previewCode: capPreviewCode(packet.previewCode),
+    };
+    if (refineDesk) fields.refineMode = true;
+    return fields;
   }
-  if (refineDesk) fields.refineMode = true;
-  return fields;
+  const { previewCode: _previewCode, ...desk } = packet;
+  return { deskContext: desk };
 }
 
 export function sanitizeDeskContext(raw) {
