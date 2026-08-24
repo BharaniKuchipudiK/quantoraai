@@ -77,9 +77,13 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
 }
 
 export function vfsLooksLikeShop(vfs = {}) {
-  if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
+  if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') {
+    const raw = vfs['products.json'].content;
+    if (/"priceCents"\s*:|"currency"\s*:\s*"(?:inr|usd|sgd|aud|aed)"/i.test(raw)) return true;
+  }
   const html = pickPreviewEntry(vfs);
-  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|kanjeevaram|catalog|atelier|priceCents)\b/i.test(html);
+  // Match desk shop classification — bare "catalog" is not enough.
+  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce)\b/i.test(html);
 }
 
 export function userAskedForPreviewPhotos(text = '') {

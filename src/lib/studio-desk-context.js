@@ -41,11 +41,28 @@ export function summarizeCatalog(raw = '') {
   }
 }
 
+const SHOP_DOM_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce)\b/i;
+const SHOP_PRODUCTS_RE = /"priceCents"\s*:|"currency"\s*:\s*"(?:inr|usd|sgd|aud|aed)"/i;
+
+/** Job cards from another product must not force shop probes onto this Preview. */
+export function jobClearlyNotShop(job = null) {
+  const card = normalizeStudioJobCard(job);
+  if (!card) return false;
+  const hay = [card.purpose, ...card.mustWork].join(' ');
+  if (/\b(shop|boutique|storefront|e-?commerce|saree|sari|catalog|cart|bag)\b/i.test(hay)) return false;
+  return /\b(drive|cleaner|calculator|to-?do|timer|quiz|dashboard|agent|todo)\b/i.test(hay);
+}
+
 export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
-  if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
+  if (jobClearlyNotShop(job)) return false;
+  const products = vfsText(vfs, 'products.json');
   const hay = `${html || ''}\n${pickPreviewEntry(vfs) || ''}`;
-  if (/\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|kanjeevaram|catalog|atelier|priceCents)\b/i.test(hay)) return true;
-  return jobNeedsProductPhotos(job);
+  const liveShop = SHOP_DOM_RE.test(hay) || Boolean(products && SHOP_PRODUCTS_RE.test(products));
+  if (liveShop) return true;
+  // A leftover boutique job must not invent cart/photo failures on a non-shop Preview.
+  // Do not match bare "catalog" — file catalogs and agent dashboards false-positive.
+  if (!jobNeedsProductPhotos(job)) return false;
+  return !String(hay || '').trim();
 }
 
 export function looksLikeCalculatorDesk({ html = '', job = null } = {}) {

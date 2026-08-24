@@ -80,6 +80,24 @@ function projectReply(app) {
   ].join('\n');
 }
 
+function driveCleanerReply() {
+  const html = `<!DOCTYPE html><html><head><title>Drive Cleaner Agent</title></head><body>
+<main>
+  <h1>Drive Cleaner</h1>
+  <p>Scan and remove duplicate files from Google Drive.</p>
+  <button type="button">Scan Drive</button>
+  <ul class="file-list"><li>Report Q3.pdf</li><li>Vacation.jpg</li></ul>
+</main>
+</body></html>`;
+  return [
+    'Here is a Drive Cleaner Agent dashboard.',
+    '',
+    '```html filepath="index.html"',
+    html,
+    '```',
+  ].join('\n');
+}
+
 function patchReply(app) {
   return ['Updated the list.', '', '```jsx filepath="src/App.jsx"', app, '```'].join('\n');
 }
@@ -135,11 +153,15 @@ await page.route('**/api/**', async (route) => {
   }
   if (path === '/api/chat') {
     const message = String(request.postDataJSON?.()?.message || '');
-    const reply = /footer/i.test(message)
-      ? patchReply(todoApp({ working: false, footer: true }))
-      : /add button|fix/i.test(message)
-        ? patchReply(todoApp({ working: true, footer: true }))
-        : projectReply(todoApp({ working: false, footer: false }));
+    const reply = /drive\s*cleaner|google drive/i.test(message)
+      ? driveCleanerReply()
+      : /newton|study/i.test(message)
+        ? 'Sure — we can study Newton\'s laws. Tell me which chapter to open first.<!-- quantora-ctx: {"goal":"I want to study newton laws of motion. prepare me","understanding":"Study session for Newton\'s laws."} -->'
+        : /footer/i.test(message)
+          ? patchReply(todoApp({ working: false, footer: true }))
+          : /add button|fix/i.test(message)
+            ? patchReply(todoApp({ working: true, footer: true }))
+            : projectReply(todoApp({ working: false, footer: false }));
     return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' }, body: sseBody(reply) });
   }
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [], ok: true }) });
@@ -302,9 +324,50 @@ try {
   await fixedFrame.locator('button').filter({ hasText: /^Add$/ }).first().click();
   await fixedFrame.waitForFunction((count) => document.querySelectorAll('li').length > count, beforeFix, { timeout: 8_000 });
 
+  // --- Drive Cleaner hygiene: shop probes and Study goals must not bleed in ---
+  const drivePrompt = page.locator('.app-shell--studio textarea').first();
+  await visible(drivePrompt, 'Studio prompt input missing for Drive cleaner hygiene.');
+  // Stick a Study goal into this session's conversationContext, then build Drive.
+  await drivePrompt.fill('I want to study newton laws of motion. prepare me');
+  await drivePrompt.press('Enter');
+  await page.waitForTimeout(900);
+  await drivePrompt.fill('build a Drive Cleaner Agent web dashboard for my Google Drive');
+  await drivePrompt.press('Enter');
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click({ timeout: 15_000 }).catch(() => {});
+
+  await visible(page.locator('[data-quantora-real-project-preview="true"]').first(), 'Drive Cleaner never entered Preview.', 25_000);
+  if (!(await frameShowing('h1', 'Drive Cleaner'))) {
+    throw new Error('Preview never rendered the Drive Cleaner dashboard.');
+  }
+
+  const missionCard = page.locator('[data-quantora-mission="true"]').first();
+  await visible(missionCard, 'Mission card missing for Drive Cleaner desk.', 12_000);
+  const missionText = (await missionCard.innerText()).trim();
+  if (!/Drive|cleaner/i.test(missionText)) {
+    throw new Error(`Mission card did not name Drive Cleaner. Saw: ${missionText}`);
+  }
+  if (/newton/i.test(missionText)) {
+    throw new Error(`Mission card kept the Study Newton goal on a Coding desk. Saw: ${missionText}`);
+  }
+
+  await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Drive Cleaner desk has no Preview checks panel.', 15_000);
+  const driveRows = await probeRows();
+  const shopLabels = driveRows.filter((row) => /Add to Cart|Product photos|Currency|catalog item/i.test(row.label));
+  if (shopLabels.length) {
+    throw new Error(`Drive Cleaner Review fired shop checks: ${JSON.stringify(shopLabels)}`);
+  }
+  if (driveRows.some((row) => ['photos', 'cart', 'currency', 'catalog', 'cart-click'].includes(row.id))) {
+    throw new Error(`Drive Cleaner Review has shop probe ids: ${JSON.stringify(driveRows)}`);
+  }
+
+  const partner = (await page.locator('[data-quantora-partner-status="true"]').innerText().catch(() => '')).trim();
+  if (/Product photos are still missing/i.test(partner)) {
+    throw new Error(`Partner status claimed missing product photos on a non-shop desk: ${partner}`);
+  }
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review.png', fullPage: true });
-  console.log('Desk job review browser gate passed. A generic desk derives its criteria from the job card and probes them on the running page.');
+  console.log('Desk job review browser gate passed. A generic desk derives its criteria from the job card and probes them on the running page. Drive Cleaner stays free of shop probes and Study mission bleed.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-job-review-failure.png', fullPage: true }).catch(() => {});
