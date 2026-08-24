@@ -24,6 +24,7 @@ import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
@@ -907,10 +908,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [keyInputValue, setKeyInputValue] = useState('');
   const [lastPrompt, setLastPrompt] = useState('');
 
-  // Intelligent Router Logic
+  // Intelligent Router Logic — Auto Mode switches silently; never interrupt with a Switch pill.
   useEffect(() => {
     const text = inputText.toLowerCase();
-    if (!text.trim()) {
+    if (!text.trim() || isCodingDeskAutoSelection(selectedModel)) {
       setSuggestedModel(null);
       return;
     }
@@ -1569,6 +1570,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             )));
                           }}
                         />
+                      )}
+
+                      {msg.sender === 'ai' && msg.autoRouted && msg.modelUsed && !isActiveGenerating && (
+                        <div style={{
+                          marginTop: '6px',
+                          fontSize: '0.68rem',
+                          color: subtextColor,
+                          fontWeight: 500,
+                          opacity: 0.85,
+                        }}>
+                          using {String(msg.modelUsed).replace(/^.*\(([^)]+)\).*$/, '$1')}
+                        </div>
                       )}
 
                       {/* Minimalist Message Footer */}
@@ -3455,7 +3468,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   }}
                 >
                   <Cpu size={15} color={showInBarModelDropdown ? "#f97316" : subtextColor} />
-                  <span>{selectedModel ? formatModelName(selectedModel.name).split(' ')[0] : 'Engine'}</span>
+                  <span>{isCodingDeskAutoSelection(selectedModel) ? 'Auto' : (selectedModel ? formatModelName(selectedModel.name).split(' ')[0] : 'Engine')}</span>
                 </button>
 
                 {showInBarModelDropdown && (
@@ -3512,7 +3525,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         AI Model
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {availableModels && availableModels.filter(m => m.available !== false).map(model => (
+                        {[CODING_DESK_AUTO_MODEL, ...((availableModels || []).filter(m => m.available !== false && m.id !== CODING_DESK_AUTO_MODEL.id))].map(model => {
+                          const isActive = isCodingDeskAutoSelection(selectedModel)
+                            ? model.id === CODING_DESK_AUTO_MODEL.id
+                            : selectedModel?.id === model.id;
+                          return (
                           <div
                             key={model.id}
                             onClick={() => {
@@ -3523,33 +3540,34 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                               padding: '8px 10px',
                               borderRadius: '8px',
                               cursor: 'pointer',
-                              background: selectedModel?.id === model.id ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
+                              background: isActive ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               fontSize: '0.8rem',
-                              color: selectedModel?.id === model.id ? '#f97316' : textColor,
-                              fontWeight: selectedModel?.id === model.id ? '700' : '500',
+                              color: isActive ? '#f97316' : textColor,
+                              fontWeight: isActive ? '700' : '500',
                               transition: 'all 0.2s ease'
                             }}
                             onMouseEnter={(e) => {
-                              if (selectedModel?.id !== model.id) {
+                              if (!isActive) {
                                 e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
                               }
                             }}
                             onMouseLeave={(e) => {
-                              if (selectedModel?.id !== model.id) e.currentTarget.style.background = 'transparent';
+                              if (!isActive) e.currentTarget.style.background = 'transparent';
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
                               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatModelName(model.name)}</span>
-                              <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter')}</span>
+                              <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '400' }}>{model.id === 'auto' ? 'Silent routing for Coding Desk' : (model.provider || (model.id.startsWith('gemini') ? 'Google' : 'OpenRouter'))}</span>
                             </div>
-                            {selectedModel?.id === model.id && (
+                            {isActive && (
                               <span style={{ fontSize: '0.65rem', background: '#f97316', color: '#fff', padding: '2px 6px', borderRadius: '10px', flexShrink: 0 }}>Active</span>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

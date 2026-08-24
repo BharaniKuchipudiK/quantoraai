@@ -19,6 +19,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
+import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
@@ -233,10 +234,12 @@ export function useChatStream({
       console.error('Moderation API failed, failing open...', e);
     }
 
-    const targetModel = targetModelOverride
+    const pinnedOrOverride = targetModelOverride
       || selectedModel
       || (availableModels || []).find((model) => model?.available !== false)
       || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
+    const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
+    let targetModel = pinnedOrOverride;
 
     const geminiApiKey = localStorage.getItem('geminiApiKey');
     const openRouterApiKey = localStorage.getItem('openRouterApiKey');
@@ -386,6 +389,28 @@ export function useChatStream({
     });
     const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
+    // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
+    let autoResolvedLabel = null;
+    if (autoMode && isCodingRequest) {
+      const openRouterApiKeyHint = typeof localStorage !== 'undefined' ? localStorage.getItem('openRouterApiKey') : null;
+      const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+      const resolved = resolveCodingDeskModel({
+        task: 'coding',
+        message: text,
+        hasVFS: vfsFileCount > 0,
+        refineMode: refineDesk,
+        availableModels: availableModels || [],
+        qualityHints: { fileCount: vfsFileCount },
+        allowPaid: Boolean(openRouterApiKeyHint),
+      });
+      autoResolvedLabel = resolved.model?.name || resolved.modelId;
+      targetModel = {
+        id: 'auto',
+        name: 'Auto',
+        resolvedModelId: resolved.modelId,
+        resolvedModelName: autoResolvedLabel,
+      };
+    }
     const turnDomain = resolveTurnStudioDomain({
       explicit: studioDomain,
       message: visibleUserText,
@@ -424,6 +449,7 @@ export function useChatStream({
       });
     }
 
+    const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
     const requestBodyFor = (model) => ({
       message: text,
       modelId: model.id,
@@ -438,6 +464,13 @@ export function useChatStream({
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
       taskCategory: isCodingRequest ? 'coding' : 'general',
+      hasVFS: vfsFileCountForHints > 0,
+      ...(isCodingRequest ? {
+        qualityHints: {
+          fileCount: vfsFileCountForHints,
+          repair: refineDesk,
+        },
+      } : {}),
       ...codingTurnRequestFields({
         isCodingRequest,
         refineDesk,
@@ -549,7 +582,8 @@ export function useChatStream({
     updateActiveMessages(prev => [...prev, {
       id: aiMsgId,
       sender: 'ai',
-      modelUsed: targetModel.name,
+      modelUsed: autoMode ? (autoResolvedLabel || 'Auto') : targetModel.name,
+      autoRouted: autoMode,
       text: '',
       componentType: 'formatted_text',
       latencyMs: 0,
@@ -665,7 +699,7 @@ export function useChatStream({
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   text: sanitizeAssistantStream(currentText),
-                  modelUsed: targetModel.name,
+                  modelUsed: m.resolvedModelId || m.modelUsed || (autoMode ? (autoResolvedLabel || 'Auto') : targetModel.name),
                 } : m));
               }
               if (parsed.provider) {
@@ -677,6 +711,7 @@ export function useChatStream({
                   provider: parsed.provider,
                   latencyMs: parsed.latencyMs || 0,
                   executionStatus: null,
+                  ...(parsed.modelId ? { modelUsed: parsed.modelId, resolvedModelId: parsed.modelId } : {}),
                   ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
