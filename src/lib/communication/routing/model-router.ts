@@ -12,5 +12,5 @@ export type RoutingDecision = {
   reason: RoutingReason;
   provider: 'gemini' | 'openrouter';
   hasVisionSupport: boolean;
-  selectionSource: 'explicit' | 'vision_default' | 'ranked_free' | 'fallback_default';
+  selectionSource: 'explicit' | 'vision_default' | 'ranked_free' | 'fallback_default' | 'coding_desk_auto';
 };

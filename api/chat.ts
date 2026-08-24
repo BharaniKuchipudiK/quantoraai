@@ -14,6 +14,7 @@ import { repairArtifact } from "./_lib/repair.js";
 import { verifyBuild } from "./_lib/verify-build.js";
 import { evaluateSafetyText } from "./_lib/safety-policy.js";
 import { readModelRegistryCached } from "./_lib/model-store.js";
+import { DIRECT_MODELS, CURATED_MODELS } from "./_lib/model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './_lib/agent-tools.js';
 import { formatTravelPlaceShortlist } from '../src/lib/travel-place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './_lib/gemini-tool-turn.js';
@@ -45,6 +46,7 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
+import { activeModelsForRouting } from "../src/lib/coding-desk-auto-model.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../src/lib/build-intent.js";
 import { shouldRefineRunningDesk } from "../src/lib/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../src/lib/studio-desk-context.js";
@@ -494,7 +496,9 @@ export default async function handler(req: any, res: any) {
     const effectiveGeminiKey = userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
 
     const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;
-    if (usingServerOwnedModelAccess) {
+    const autoModelRequest = !modelId || modelId === 'auto';
+    // Auto resolves after registry load; approval applies to the chosen route, not the sentinel.
+    if (usingServerOwnedModelAccess && !autoModelRequest) {
       const approved = await isApprovedServerModel(modelId);
       if (!approved) {
         return res.status(403).json({
@@ -555,15 +559,52 @@ export default async function handler(req: any, res: any) {
         : Promise.resolve(null),
     ]);
     const registryModels = await readModelRegistryCached();
+    const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
+      ? {
+          probeFailure: req.body.qualityHints.probeFailure === true,
+          repair: req.body.qualityHints.repair === true || req.body?.task === "repair",
+          fileCount: Number(req.body.qualityHints.fileCount) || 0,
+        }
+      : {
+          probeFailure: req.body?.probeFailure === true,
+          repair: req.body?.task === "repair",
+          fileCount: 0,
+        };
+    const routingModels = activeModelsForRouting({
+      registryRows: registryModels,
+      featuredModels: [
+        ...DIRECT_MODELS,
+        ...CURATED_MODELS.map((model) => ({
+          ...model,
+          available: true,
+          pricingKind: model.id.endsWith(':free') || String(model.id).startsWith('gemini') ? 'free' : 'paid',
+        })),
+      ],
+    });
     const modelRouting = selectModelsForTurn({
-      models: registryModels.length ? registryModels : [],
+      models: routingModels,
       message,
       explicitModelId: typeof modelId === "string" ? modelId : null,
       hasImages: visionImages.length > 0,
       studioMode: mode,
       guidedBuild: honorGuided,
       refineMode: isRefine,
+      buildMode: effectiveBuildMode,
+      taskCategory,
+      hasVFS: Boolean(hasPreviewCode) || Boolean(req.body?.hasVFS),
+      // Free Studio without BYOK must not Auto-pick paid-only OpenRouter routes.
+      allowPaid: Boolean(openRouterKey),
+      qualityHints,
     });
+    if (usingServerOwnedModelAccess && autoModelRequest) {
+      const approved = await isApprovedServerModel(modelRouting.primaryModelId);
+      if (!approved) {
+        return res.status(403).json({
+          error: `The model "${modelRouting.primaryModelId}" is not approved for Quantora-managed usage yet.`,
+          requiresApprovedModel: true,
+        });
+      }
+    }
     const conversationSnapshot = buildConversationSnapshot({
       outcomeRecord: authoritativeOutcome,
       projectContext: authoritativeProjectContext,

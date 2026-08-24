@@ -63,6 +63,7 @@ const WelcomeHub = lazyWithReload(() => import('./components/WelcomeHub'));
 import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from './lib/coding-desk-auto-model.js';
 // import { Analytics } from '@vercel/analytics/react';
 // import { SpeedInsights } from '@vercel/speed-insights/react';
 class ErrorBoundary extends React.Component {
@@ -279,7 +280,7 @@ export default function App() {
   ];
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);
-  const [selectedModel, setSelectedModel] = useState(fallbackModels[0]);
+  const [selectedModel, setSelectedModel] = useState(CODING_DESK_AUTO_MODEL);
   const [modelDashboard, setModelDashboard] = useState(null);
 
   const applyModelRegistry = useCallback((data) => {
@@ -301,9 +302,10 @@ export default function App() {
     setAvailableModels(dynamicModels);
     if (data.dashboard) setModelDashboard(data.dashboard);
     setSelectedModel((current) => {
+      if (isCodingDeskAutoSelection(current)) return CODING_DESK_AUTO_MODEL;
       const stillExists = dynamicModels.find((d) => d.id === current?.id);
       if (stillExists) return stillExists;
-      return dynamicModels.find((d) => d.available) || dynamicModels[0];
+      return CODING_DESK_AUTO_MODEL;
     });
   }, []);
 
