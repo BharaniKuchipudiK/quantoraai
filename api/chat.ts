@@ -46,6 +46,7 @@ import { normalizeCommunicationRequest } from "./_lib/communication/request-norm
 import { buildResponseContract } from "../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../src/lib/communication/routing/select-models.js";
+import { activeModelsForRouting } from "../src/lib/coding-desk-auto-model.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../src/lib/build-intent.js";
 import { shouldRefineRunningDesk } from "../src/lib/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../src/lib/studio-desk-context.js";
@@ -569,14 +570,19 @@ export default async function handler(req: any, res: any) {
           repair: req.body?.task === "repair",
           fileCount: 0,
         };
+    const routingModels = activeModelsForRouting({
+      registryRows: registryModels,
+      featuredModels: [
+        ...DIRECT_MODELS,
+        ...CURATED_MODELS.map((model) => ({
+          ...model,
+          available: true,
+          pricingKind: model.id.endsWith(':free') || String(model.id).startsWith('gemini') ? 'free' : 'paid',
+        })),
+      ],
+    });
     const modelRouting = selectModelsForTurn({
-      models: registryModels.length
-        ? registryModels
-        : [...DIRECT_MODELS, ...CURATED_MODELS.map((model) => ({
-            ...model,
-            available: true,
-            pricingKind: model.id.endsWith(':free') || String(model.id).startsWith('gemini') ? 'free' : 'paid',
-          }))],
+      models: routingModels,
       message,
       explicitModelId: typeof modelId === "string" ? modelId : null,
       hasImages: visionImages.length > 0,

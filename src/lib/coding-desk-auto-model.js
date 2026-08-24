@@ -16,6 +16,46 @@ export const CODING_DESK_AUTO_MODEL = {
   pricingKind: 'free-tier',
 };
 
+
+/**
+ * Active catalog for Auto / turn routing: featured Direct+Curated models plus
+ * only registry rows that are approved and lifecycle=available. Raw discovery
+ * history must never enter Auto selection.
+ */
+export function activeModelsForRouting({
+  registryRows = [],
+  featuredModels = [],
+} = {}) {
+  const byId = new Map();
+  for (const model of Array.isArray(featuredModels) ? featuredModels : []) {
+    if (!model?.id) continue;
+    byId.set(model.id, {
+      ...model,
+      available: model.available !== false,
+      pricingKind: model.pricingKind
+        || (String(model.id).startsWith('gemini') ? 'free-tier'
+          : String(model.id).endsWith(':free') ? 'free'
+            : 'paid'),
+    });
+  }
+  for (const row of Array.isArray(registryRows) ? registryRows : []) {
+    if (!row?.id) continue;
+    if (row.approved !== true || row.lifecycle !== 'available') continue;
+    if (byId.has(row.id)) continue;
+    byId.set(row.id, {
+      id: row.id,
+      name: row.name || row.id,
+      available: true,
+      pricingKind: row.is_free === true || String(row.id).endsWith(':free')
+        ? 'free'
+        : (row.pricing_kind || row.pricingKind || 'paid'),
+      specialty: row.description || row.specialty,
+      quality: row.quality || null,
+    });
+  }
+  return [...byId.values()];
+}
+
 const FREE_KINDS = new Set(['free', 'free-tier']);
 
 const COMPLEX_ASK = /\b(architect(?:ure|ural)?|system\s+design|complex|multi-?file|refactor\s+(?:the\s+)?entire|migrate|large[\s-]?scale|production[\s-]?ready|enterprise|codebase)\b/i;

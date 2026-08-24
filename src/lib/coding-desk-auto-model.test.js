@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CODING_DESK_AUTO_MODEL_ID,
+  activeModelsForRouting,
   isCodingDeskAutoSelection,
   resolveCodingDeskModel,
   shouldEscalateCodingDeskModel,
@@ -110,4 +111,29 @@ test('large VFS multi-file signal escalates', () => {
     hasVFS: true,
     qualityHints: { fileCount: 8 },
   }), true);
+});
+
+test('activeModelsForRouting keeps featured models and drops unapproved registry rows', () => {
+  const models = activeModelsForRouting({
+    featuredModels: [
+      { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
+    ],
+    registryRows: [
+      { id: 'evil/coder-unapproved', name: 'Evil Coder', approved: false, lifecycle: 'discovered', is_free: true },
+      { id: 'good/coder-approved', name: 'Good Coder', approved: true, lifecycle: 'available', is_free: true },
+      { id: 'gone/coder', name: 'Retired', approved: true, lifecycle: 'retired', is_free: true },
+    ],
+  });
+  const ids = models.map((m) => m.id);
+  assert.ok(ids.includes('gemini-flash-latest'));
+  assert.ok(ids.includes('good/coder-approved'));
+  assert.equal(ids.includes('evil/coder-unapproved'), false);
+  assert.equal(ids.includes('gone/coder'), false);
+  const escalate = resolveCodingDeskModel({
+    task: 'coding',
+    refineMode: true,
+    availableModels: models,
+    allowPaid: false,
+  });
+  assert.equal(escalate.modelId, 'good/coder-approved');
 });
