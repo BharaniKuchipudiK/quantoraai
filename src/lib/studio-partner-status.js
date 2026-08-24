@@ -15,6 +15,7 @@ export function resolveStudioPartnerStatus({
   officeKind = null,
   studioDomain = null,
   codingDeskOpen = false,
+  hasDeskFiles = false,
   photosMissing = false,
   shopUiMissing = false,
 } = {}) {
@@ -101,6 +102,16 @@ export function resolveStudioPartnerStatus({
   }
 
   if (lastAiText && hasUserTurn) {
+    if (codingDeskOpen && !hasPreview) {
+      return {
+        now: hasDeskFiles
+          ? 'Files are on the desk, but Preview is not running yet.'
+          : 'Coding desk still has no files — chat alone is not enough.',
+        next: continueLabel || (hasDeskFiles
+          ? 'Open Preview, or ask me to fix the page so it runs.'
+          : 'Ask me to build again — I should write files into this desk, not only plan in chat.'),
+      };
+    }
     return {
       now: 'Answered in chat. There is no runnable preview yet.',
       next: continueLabel || 'Ask me to build a working page if that is the outcome you want.',

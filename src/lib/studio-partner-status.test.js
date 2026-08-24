@@ -105,6 +105,19 @@ test('after a real chat reply with no preview, the strip explains the gap', () =
   assert.match(status.now, /no runnable preview/i);
 });
 
+test('an open Coding Desk with empty FILES does not sound finished as chat-only', () => {
+  const status = resolveStudioPartnerStatus({
+    lastAiText: 'Here is a plan for your Drive agent.',
+    hasUserTurn: true,
+    codingDeskOpen: true,
+    hasPreview: false,
+    hasDeskFiles: false,
+  });
+  assert.match(status.now, /no files/i);
+  assert.doesNotMatch(status.now, /Answered in chat/i);
+  assert.match(status.next, /write files|build again/i);
+});
+
 test('Travel never asks for a website preview', () => {
   const status = resolveStudioPartnerStatus({
     lastAiText: 'I could not retrieve live hotel results.',

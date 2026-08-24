@@ -115,7 +115,19 @@
   "rewrites": [
     {
       "source": "/api/github/preview",
-      "destination": "/api/pipeline"
+      "destination": "/api/pipeline?github=preview"
+    },
+    {
+      "source": "/api/github/fetch-repo",
+      "destination": "/api/pipeline?github=preview"
+    },
+    {
+      "source": "/api/github/create-pr",
+      "destination": "/api/pipeline?github=create-pr"
+    },
+    {
+      "source": "/api/github/merge-pr",
+      "destination": "/api/pipeline?github=merge-pr"
     },
     {
       "source": "/api/outcomes",

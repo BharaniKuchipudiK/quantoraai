@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assessChangeRisk, parseGithubRepositoryUrl, selectCandidateFiles } from "./repository-preview.js";
+import {
+  assessChangeRisk,
+  DEFAULT_REPOSITORY_IMPORT_TASK,
+  parseGithubRepositoryUrl,
+  resolveGithubToken,
+  selectCandidateFiles,
+} from "./repository-preview.js";
 
 test("accepts repository roots and rejects deeper GitHub paths", () => {
   assert.deepEqual(parseGithubRepositoryUrl("https://github.com/acme/widget.git"), { owner: "acme", repo: "widget" });
   assert.throws(() => parseGithubRepositoryUrl("https://github.com/acme/widget/blob/main/App.jsx"), /repository URL only/);
   assert.throws(() => parseGithubRepositoryUrl("https://example.com/acme/widget"), /github\.com/);
+});
+
+test("import default task is stable and token resolves from env aliases", () => {
+  assert.match(DEFAULT_REPOSITORY_IMPORT_TASK, /coding context/i);
+  assert.equal(resolveGithubToken({} as NodeJS.ProcessEnv), undefined);
+  assert.equal(resolveGithubToken({ GITHUB_TOKEN: " ghp_x " } as NodeJS.ProcessEnv), "ghp_x");
 });
 
 test("ranks filenames related to the requested change first", () => {
