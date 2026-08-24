@@ -158,11 +158,17 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
     return false;
   }
   function hasScientificKeys(){
+    var labels = [];
     var keys = document.querySelectorAll('button, [role="button"]');
     for (var s = 0; s < keys.length; s++) {
-      if (/^\\s*(sin|cos|tan|log|ln|deg|rad)\\s*$/i.test(keys[s].textContent || '')) return true;
+      var label = ((keys[s].textContent || '') + '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      if (label) labels.push(label);
     }
-    return false;
+    function has(name){
+      for (var i = 0; i < labels.length; i++) { if (labels[i] === name) return true; }
+      return false;
+    }
+    return (has('sin') && has('cos')) || (has('deg') && has('rad'));
   }
 
   var facts = {};

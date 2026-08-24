@@ -73,9 +73,11 @@ export function looksLikeCalculatorDesk({ html = '', job = null } = {}) {
   const purpose = normalizeStudioJobCard(job)?.purpose || '';
   if (/\bcalculator\b/i.test(purpose)) return true;
   const src = String(html || '');
+  // Require calculator-specific markers — bare <output> or class*=display matches too much.
   return /data-testid\s*=\s*["']calculator-display["']/i.test(src)
-    || /<(?:output)\b/i.test(src)
-    || /\b(?:id|class|data-display|data-calc-display)\s*=\s*["'][^"']*display/i.test(src);
+    || /\bid\s*=\s*["']display["']/i.test(src)
+    || /\bclass\s*=\s*["'](?:[^"']*\s)?display(?:\s[^"']*)?["']/i.test(src)
+    || /data-(?:calc-)?display\b/i.test(src);
 }
 
 function htmlHasCalculatorDisplay(haystack = '') {
@@ -83,12 +85,14 @@ function htmlHasCalculatorDisplay(haystack = '') {
   return /data-testid\s*=\s*["']calculator-display["']/i.test(src)
     || /<(?:output)\b/i.test(src)
     || /\bid\s*=\s*["']display["']/i.test(src)
-    || /\bclass\s*=\s*["'][^"']*\bdisplay\b[^"']*["']/i.test(src)
+    || /\bclass\s*=\s*["'](?:[^"']*\s)?display(?:\s[^"']*)?["']/i.test(src)
     || /data-(?:calc-)?display\b/i.test(src);
 }
 
 function htmlHasScientificKeys(haystack = '') {
-  return />\s*(sin|cos|tan|log|ln|DEG|RAD)\s*</i.test(String(haystack || ''));
+  const src = String(haystack || '');
+  const has = (name) => new RegExp(`>\\s*${name}\\s*<`, 'i').test(src);
+  return (has('sin') && has('cos')) || (has('DEG') && has('RAD')) || (has('deg') && has('rad'));
 }
 
 function jobWantsScientific(job = null) {

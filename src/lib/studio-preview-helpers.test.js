@@ -307,3 +307,15 @@ test('scientific HTML refine updates the Preview assembly fingerprint', () => {
   assert.equal(follow.previewChanged, true);
   assert.match(follow.vfs['index.html'].content, />sin</);
 });
+
+test('preview assembly fingerprint includes products.json catalog changes', () => {
+  const before = {
+    'index.html': { content: '<!DOCTYPE html><html><body>shop</body></html>', language: 'html' },
+    'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
+  };
+  const after = {
+    ...before,
+    'products.json': { content: '[{"id":"a","name":"Silk"},{"id":"b","name":"Cotton"}]', language: 'json' },
+  };
+  assert.notEqual(previewAssemblyFingerprint(before), previewAssemblyFingerprint(after));
+});

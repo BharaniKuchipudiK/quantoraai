@@ -11,7 +11,7 @@ import { injectShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
-const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx)$/i;
+const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
 
 function isHtmlDocument(source = '') {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
