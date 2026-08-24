@@ -79,47 +79,117 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   return { facts, checks, failed, nextBeat, catalog };
 }
 
+function observedBool(live, key) {
+  return Boolean(live && typeof live[key] === 'boolean');
+}
+
+function observedCount(live, key) {
+  return Boolean(live && typeof live[key] === 'number' && Number.isFinite(live[key]));
+}
+
+/**
+ * Source can fail a row. Only the running page can pass one.
+ * A partial live payload must not wipe a photo pass the older probe never re-asked.
+ */
+function sourceOrLiveCheck({ sourceOk, observed, livePresent, preserveSourcePass = false }) {
+  const heldInSource = sourceOk === true;
+  if (observed) return { ok: heldInSource, state: heldInSource ? 'ok' : 'fix', sourceOk: heldInSource };
+  if (!livePresent) {
+    return heldInSource
+      ? { ok: false, state: 'unverified', sourceOk: true }
+      : { ok: false, state: 'fix', sourceOk: false };
+  }
+  if (preserveSourcePass && heldInSource) return { ok: true, state: 'ok', sourceOk: true };
+  return heldInSource
+    ? { ok: false, state: 'unverified', sourceOk: true }
+    : { ok: false, state: 'fix', sourceOk: false };
+}
+
 /** Review labels come from these facts — live Preview may overwrite HTML regex later. */
 export function buildDeskChecks(facts = {}, { includeCatalog = false, job = null, live = null } = {}) {
   const checks = [];
+  const livePresent = Boolean(live && typeof live === 'object');
   if (facts.shop) {
+    const photos = sourceOrLiveCheck({
+      sourceOk: facts.hasPhotos === true && facts.hasDistinctPhotos === true,
+      observed: observedCount(live, 'photoCount') || observedCount(live, 'uniquePhotoCount') || observedBool(live, 'hasPhotos'),
+      livePresent,
+      preserveSourcePass: true,
+    });
     checks.push({
       id: 'photos',
-      ok: facts.hasPhotos === true && facts.hasDistinctPhotos === true,
+      ok: photos.ok,
+      state: photos.state,
+      sourceOk: photos.sourceOk,
       label: !facts.hasPhotos
         ? 'Product photos missing from Preview'
         : (facts.hasDistinctPhotos
           ? `${facts.uniquePhotoCount || facts.photoCount} distinct product photo${(facts.uniquePhotoCount || facts.photoCount) === 1 ? '' : 's'} on Preview`
           : 'Catalog cards share one photo — each product needs its own'),
     });
+    const cart = sourceOrLiveCheck({
+      sourceOk: facts.hasCart === true,
+      observed: observedBool(live, 'hasCart'),
+      livePresent,
+    });
     checks.push({
       id: 'cart',
-      ok: facts.hasCart === true,
+      ok: cart.ok,
+      state: cart.state,
+      sourceOk: cart.sourceOk,
       label: facts.hasCart ? 'Add to Cart is on Preview' : 'Add to Cart missing from Preview',
+    });
+    const currency = sourceOrLiveCheck({
+      sourceOk: facts.hasCurrency === true,
+      observed: observedBool(live, 'hasCurrency'),
+      livePresent,
     });
     checks.push({
       id: 'currency',
-      ok: facts.hasCurrency === true,
+      ok: currency.ok,
+      state: currency.state,
+      sourceOk: currency.sourceOk,
       label: facts.hasCurrency ? 'Currency switcher is on Preview' : 'Currency switcher missing from Preview',
     });
     if (includeCatalog) {
       const catalogCount = Number(facts.catalogCount) || 0;
+      const catalog = sourceOrLiveCheck({
+        sourceOk: catalogCount > 0,
+        observed: observedCount(live, 'catalogCount'),
+        livePresent,
+      });
       checks.push({
         id: 'catalog',
-        ok: catalogCount > 0,
+        ok: catalog.ok,
+        state: catalog.state,
+        sourceOk: catalog.sourceOk,
         label: catalogCount ? `${catalogCount} catalog item${catalogCount === 1 ? '' : 's'}` : 'products.json has no named items',
       });
     }
   }
   if (facts.calculator) {
+    const display = sourceOrLiveCheck({
+      sourceOk: facts.hasCalculatorDisplay === true,
+      observed: observedBool(live, 'hasCalculatorDisplay'),
+      livePresent,
+    });
     checks.push({
       id: 'calc-display',
-      ok: facts.hasCalculatorDisplay === true,
+      ok: display.ok,
+      state: display.state,
+      sourceOk: display.sourceOk,
       label: facts.hasCalculatorDisplay ? 'Calculator display is on Preview' : 'Calculator display missing',
+    });
+    const key = sourceOrLiveCheck({
+      sourceOk: facts.hasCalculatorKey === true,
+      observed: observedBool(live, 'hasCalculatorKey'),
+      livePresent,
     });
     checks.push({
       id: 'calc-key',
-      ok: facts.hasCalculatorKey === true,
+      ok: key.ok,
+      state: key.state,
+      sourceOk: key.sourceOk,
       label: facts.hasCalculatorKey ? 'Calculator keys are on Preview' : 'Calculator keys missing',
     });
   }
@@ -129,9 +199,13 @@ export function buildDeskChecks(facts = {}, { includeCatalog = false, job = null
   return checks;
 }
 
+function checkHeld(check) {
+  return Boolean(check && (check.ok === true || check.sourceOk === true));
+}
+
 export function deskChecksRegressed(beforeChecks = [], afterChecks = []) {
-  const after = new Map((afterChecks || []).map((check) => [check.id, check.ok === true]));
-  return (beforeChecks || []).some((check) => check && check.ok === true && after.get(check.id) !== true);
+  const after = new Map((afterChecks || []).map((check) => [check.id, check]));
+  return (beforeChecks || []).some((check) => checkHeld(check) && !checkHeld(after.get(check.id)));
 }
 
 function applyLiveBool(facts, live, key) {
@@ -156,6 +230,7 @@ export function mergeLiveDeskProbe(packet, live = null) {
   applyLiveBool(facts, live, 'hasCalculatorKey');
   applyLiveCount(facts, live, 'photoCount');
   applyLiveCount(facts, live, 'uniquePhotoCount');
+  applyLiveCount(facts, live, 'catalogCount');
   if (typeof live.photoCount === 'number' && Number.isFinite(live.photoCount)) {
     facts.hasPhotos = live.photoCount > 0;
   }
@@ -171,7 +246,7 @@ export function mergeLiveDeskProbe(packet, live = null) {
   }
 
   const includeCatalog = (packet.checks || []).some((check) => check.id === 'catalog');
-  const checks = buildDeskChecks(facts, { includeCatalog, job: packet.job, live: facts });
+  const checks = buildDeskChecks(facts, { includeCatalog, job: packet.job, live });
   if (facts.shop) {
     checks.push({
       id: 'cart-click',

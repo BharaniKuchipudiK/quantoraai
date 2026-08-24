@@ -12,6 +12,21 @@ export function normalizeClientCorrelationId(value) {
   return CORRELATION_ID_PATTERN.test(candidate) ? candidate : null;
 }
 
+/**
+ * The desk drops iframe messages whose correlation id does not match the
+ * compile it asked for. Production can mint a new id when the request
+ * arrives without one — believe the id the compiler baked into the page.
+ * A mock that compiles without that id produces a null event id and must
+ * not be treated as proof of the running page.
+ */
+export function previewMessageMatchesCompile({ requestId = null, compiledId = null, eventId = null } = {}) {
+  const expected = normalizeClientCorrelationId(compiledId) || normalizeClientCorrelationId(requestId);
+  const incoming = normalizeClientCorrelationId(eventId);
+  if (!expected) return true;
+  if (!incoming) return false;
+  return incoming === expected;
+}
+
 export function correlationHeaders(correlationId, extra = {}) {
   const normalized = normalizeClientCorrelationId(correlationId);
   return {

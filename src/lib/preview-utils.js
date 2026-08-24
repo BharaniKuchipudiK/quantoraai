@@ -182,6 +182,8 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
           }
           bagIncremented = bagAfter > bagBefore;
         }
+        var catalogCount = document.querySelectorAll('.product-card, [data-product], [data-catalog-item], [data-testid*="product"]').length;
+        if (!catalogCount) catalogCount = document.querySelectorAll('[data-quantora-price], .price, [class*="price"]').length;
         report({
           kind:'shop-probe',
           hasCart: Boolean(cartBtn),
@@ -189,6 +191,7 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
           hasCurrency: hasCurrency,
           photoCount: photoCount,
           uniquePhotoCount: uniquePhotoCount,
+          catalogCount: catalogCount,
           hasCalculatorDisplay: Boolean(document.querySelector('[data-testid="calculator-display"]')),
           hasCalculatorKey: Boolean(document.querySelector('[data-testid="calculator-one"]'))
         });

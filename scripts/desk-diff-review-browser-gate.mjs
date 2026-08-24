@@ -111,7 +111,9 @@ await page.route('**/api/**', async (route) => {
   if (path === '/api/preview-compile') {
     const body = request.postDataJSON?.() || {};
     try {
-      const compiled = await compilePreviewVfs(body.vfs || {});
+      // Production bakes this id into the iframe. Dropping it here makes the
+      // desk discard every desk-probe message, so Review would pass on source.
+      const compiled = await compilePreviewVfs(body.vfs || {}, { correlationId: body.correlationId });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(compiled) });
     } catch (error) {
       return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: error?.message || 'Preview compilation failed.' }) });

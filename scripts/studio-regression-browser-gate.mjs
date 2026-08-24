@@ -108,7 +108,10 @@ await page.route('**/api/**', async (route) => {
   if (path === '/api/preview-compile') {
     const body = request.postDataJSON?.() || {};
     try {
-      const compiled = await compilePreviewVfs(body.vfs || {});
+      // The desk drops iframe messages whose correlation id does not match the
+      // one it asked to compile with, so a mock that omits it proves nothing
+      // about the running page.
+      const compiled = await compilePreviewVfs(body.vfs || {}, { correlationId: body.correlationId });
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(compiled) });
     } catch (error) {
       return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: error?.errors?.[0]?.text || error?.message || 'Preview compilation failed.' }) });
@@ -273,8 +276,18 @@ try {
   await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Coding desk did not show Preview checks against the running job.');
   const calcProbe = page.locator('[data-quantora-desk-probe="calc-display"]').first();
   await visible(calcProbe, 'Calculator display probe was missing.');
+  await page.waitForFunction(() => {
+    const display = document.querySelector('[data-quantora-desk-probe="calc-display"]');
+    const key = document.querySelector('[data-quantora-desk-probe="calc-key"]');
+    return display?.getAttribute('data-quantora-desk-probe-ok') === 'true'
+      && key?.getAttribute('data-quantora-desk-probe-ok') === 'true';
+  }, null, { timeout: 12_000 }).catch(() => {});
   if ((await calcProbe.getAttribute('data-quantora-desk-probe-ok')) !== 'true') {
     throw new Error('Calculator display probe failed while the calculator was running.');
+  }
+  const calcKeyProbe = page.locator('[data-quantora-desk-probe="calc-key"]').first();
+  if ((await calcKeyProbe.getAttribute('data-quantora-desk-probe-ok')) !== 'true') {
+    throw new Error('Calculator key probe passed from source instead of the running page.');
   }
   await visible(page.locator('[data-quantora-publish="true"]').first(), 'A running website desk did not offer Publish.');
   const partner = page.locator('[data-quantora-partner-status="true"]').first();
@@ -404,6 +417,10 @@ try {
     'Boutique did not confirm a live Add to Cart probe.',
     15_000,
   );
+  for (const id of ['catalog', 'photos', 'currency', 'cart']) {
+    const row = page.locator(`[data-quantora-desk-probe="${id}"][data-quantora-desk-probe-ok="true"]`).first();
+    await visible(row, `Boutique ${id} probe did not pass from the running page.`, 12_000);
+  }
 
   await proveDeskFilesMatchPreview('boutique');
 

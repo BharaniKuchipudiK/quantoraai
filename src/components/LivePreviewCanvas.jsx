@@ -11,7 +11,7 @@ import {
   revokePreviewEmbedObjectUrl,
   buildPreviewSandbox,
 } from '../lib/preview-utils.js';
-import { DESK_PROBE_FACT_KEYS } from '../lib/desk-probe-script.js';
+import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
 import { vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
@@ -446,24 +446,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         return;
       }
       if (d.kind === 'shop-probe') {
-        const live = {
-          hasCart: d.hasCart === true,
-          bagIncremented: d.bagIncremented === true,
-        };
-        if (typeof d.hasCurrency === 'boolean') live.hasCurrency = d.hasCurrency;
-        if (typeof d.photoCount === 'number') live.photoCount = d.photoCount;
-        if (typeof d.uniquePhotoCount === 'number') live.uniquePhotoCount = d.uniquePhotoCount;
-        if (typeof d.hasCalculatorDisplay === 'boolean') live.hasCalculatorDisplay = d.hasCalculatorDisplay;
-        if (typeof d.hasCalculatorKey === 'boolean') live.hasCalculatorKey = d.hasCalculatorKey;
-        publishLiveDeskProbe(live);
+        publishLiveDeskProbe(collectLiveDeskFacts(d));
         return;
       }
       if (d.kind === 'desk-probe') {
-        const live = {};
-        for (const key of DESK_PROBE_FACT_KEYS) {
-          if (typeof d[key] === 'boolean') live[key] = d[key];
-        }
-        publishLiveDeskProbe(live);
+        publishLiveDeskProbe(collectLiveDeskFacts(d));
         return;
       }
       if (d.kind === 'loaded') {
