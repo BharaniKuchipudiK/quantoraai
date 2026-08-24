@@ -60,11 +60,11 @@ export function resolveStudioPartnerStatus({
     if (photosMissing) {
       return {
         now: codingDeskOpen
-          ? 'Preview is running. Product photos are still missing.'
+          ? 'Preview is running. Product photos are still missing — empty frames are not done.'
           : 'The app is ready, but product photos are still missing.',
         next: continueLabel && !/publish this site/i.test(continueLabel)
           ? `Next: ${continueLabel}.`
-          : 'Ask me to put real photos on the catalog — not empty frames.',
+          : 'Tap Add real product photos — the desk injects catalog images; do not wait on chat-only claims.',
       };
     }
     if (shopUiMissing) {
@@ -74,7 +74,7 @@ export function resolveStudioPartnerStatus({
           : 'The app is ready, but currency and Add to Cart are still missing.',
         next: continueLabel && !/publish this site/i.test(continueLabel)
           ? `Next: ${continueLabel}.`
-          : 'Ask again — those controls have to appear in Preview, not only in chat.',
+          : 'Tap Add to Cart on Preview — those controls must appear on the desk, not only in chat.',
       };
     }
     if (codingDeskOpen) return null;

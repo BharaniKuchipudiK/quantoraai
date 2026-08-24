@@ -11,7 +11,9 @@ const CAN_YOU = /^(?:(?:can|could|would|will)\s+you\s+)/i;
 const I_WANT = /^(?:i\s+(?:want|need|would\s+like)\s+to\s+|i'?d\s+like\s+to\s+|i'?m\s+(?:trying|looking)\s+to\s+)/i;
 const BUILD_LEAD = /^(?:build|create|make|develop|design|implement|code|write)\s+(?:me\s+)?(?:an?\s+|the\s+)?/i;
 // Explicit Drive product names only — bare "drive" is often the verb ("drive sales").
-const DOMAIN_RE = /\b(google\s+drive|g\s*drive|my\s+drive|gmail|slack|notion|github|weather|sarees?|boutique|ios|android|mauritius|newton(?:'?s)?(?:\s+laws?)?|ham\s+sam)\b/i;
+const DOMAIN_RE = /\b(google\s+drive|g\s*drive|my\s+drive|gmail|slack|notion|github|weather|sarees?|boutique|ios|android|mauritius|newton(?:'?s)?(?:\s+laws?)?|ham\s+sam|fox\s*&\s*wolf)\b/i;
+const BUILD_VERB = /\b(build|create|make|develop|implement|code|write)\b/i;
+const DESK_COMPLAINT = /^(?:why|how come)\b|\b(?:still\s+(?:has\s+)?no|missing|not\s+(?:there|showing|working)|gold\s+frames?|blank\s+(?:white\s+)?body|no\s+(?:product\s+)?(?:photos?|images?)|fucked|broken)\b/i;
 
 export function isCannedProjectDescription(text) {
   return String(text || '').trim() === CANNED_PROJECT_DESCRIPTION;
@@ -94,6 +96,17 @@ export function toShortMissionGoal(text, max = GOAL_MAX) {
   value = firstClause(value);
   value = stripLeadIns(value);
 
+  // Brand + product: "Fox & Wolf kids merchandise…" → "Fox & Wolf Kids Shop"
+  // Prefer Name & Name so "full Fox" / "website for" never become the brand.
+  const ampBrand = value.match(
+    /\b([A-Za-z][\w']*\s*&\s*[A-Za-z][\w']*)(?:\s+Kids)?\b[\s\S]{0,120}?\b(shop|store|merchandise|collection|boutique|catalog)\b/i,
+  );
+  if (ampBrand) {
+    const brand = titleCaseWords(ampBrand[1].replace(/\s+/g, ' ').trim());
+    const kids = /\bkids?\b/i.test(value) && !/\bkids?\b/i.test(brand) ? ' Kids' : '';
+    return clip(`${brand}${kids} Shop`, max);
+  }
+
   const built = value.match(BUILD_LEAD);
   if (built) {
     value = value.slice(built[0].length).trim();
@@ -149,12 +162,36 @@ function goalTokens(text) {
 /**
  * Sticky Study/other-chat memory must not own this thread's mission card.
  * Prefer this session's build request when it describes a different job.
+ * Complaint follow-ups ("why are the images not there") must not replace the brand job.
  */
+export function isDeskComplaintFollowUp(text = '') {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  if (!DESK_COMPLAINT.test(value)) return false;
+  // A clear new product ask still counts as a build even if it mentions what's missing.
+  if (BUILD_VERB.test(value) && /\b(new|another|different)\b.{0,24}\b(shop|site|app|website|boutique)/i.test(value)) {
+    return false;
+  }
+  if (BUILD_VERB.test(value) && value.length > 120 && /\b(shop|boutique|merchandise|website)\b/i.test(value)) {
+    return false;
+  }
+  return true;
+}
+
+export function isMissionBuildAsk(text = '') {
+  const value = String(text || '').trim();
+  if (!value || !BUILDISH.test(value)) return false;
+  if (isDeskComplaintFollowUp(value)) return false;
+  return true;
+}
+
 export function pickSessionMissionGoal(stickyGoal = '', buildRequest = '') {
   const fromMessages = toShortMissionGoal(buildRequest);
   const sticky = toShortMissionGoal(stickyGoal);
+  if (sticky && isDeskComplaintFollowUp(stickyGoal) && fromMessages) return fromMessages;
   if (!fromMessages) return sticky;
   if (!sticky) return fromMessages;
+  if (isDeskComplaintFollowUp(stickyGoal)) return fromMessages;
   const left = goalTokens(sticky);
   const right = goalTokens(fromMessages);
   let overlap = 0;
@@ -245,9 +282,12 @@ export function deriveStudioMission({
     .filter((message) => message?.sender === 'user' && message.text)
     .map((message) => String(message.text).trim())
     .filter(Boolean);
-  const buildRequest = [...users].reverse().find((text) => BUILDISH.test(text)) || users[0] || '';
+  const buildRequest = [...users].reverse().find((text) => isMissionBuildAsk(text))
+    || users.find((text) => isMissionBuildAsk(text))
+    || '';
   // conversationContext.goal is sticky across turns (and can bleed from Study in
   // a shared Personal Workspace). This chat's build request wins when they diverge.
+  // Complaint follow-ups must not become "Building: Why the images are not there…".
   const goal = pickSessionMissionGoal(ctx.goal, buildRequest);
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'

@@ -52,6 +52,8 @@ test('an open desk still says when Preview has no product photos', () => {
   });
   assert.match(status.now, /Preview is running/);
   assert.match(status.now, /photos are still missing/i);
+  assert.match(status.next, /inject|Add real product photos/i);
+  assert.doesNotMatch(status.next, /Ask again/i);
   assert.doesNotMatch(status.now, /no runnable preview/i);
 });
 
