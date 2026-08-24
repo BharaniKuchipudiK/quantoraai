@@ -2254,6 +2254,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     shopUiMissing,
     shopIntake,
     shopTurnFailureCopy,
+    previewRunStatus,
   });
   const studioMission = deriveStudioMission({
     conversationContext,
@@ -4053,7 +4054,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       isGenerating ? (
                       <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
                         <Clock size={26} color="#f97316" />
-                        <div style={{ fontWeight: 800, color: textColor }}>Preview is getting ready — hang tight</div>
+                        <div style={{ fontWeight: 800, color: textColor }}>Preview is starting…</div>
                         <div style={{ fontSize: '0.82rem' }}>Your app will appear here as soon as it is ready to run.</div>
                       </div>
                       ) : (

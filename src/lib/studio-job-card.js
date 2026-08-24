@@ -3,6 +3,15 @@
  * Purpose + must-work is stored with the files. Chat is not the source of truth.
  */
 
+import { isShopIntakeAcceptShorthand } from './shop-catalog-scale.js';
+
+const SHOP_MUST_WORK = [
+  'Catalog and bag still work',
+  'Product images are real photos, not empty frames',
+  'Currency and Add to Cart are on Preview',
+  'Keep this a shop, not a different app',
+];
+
 const NAMED_JOBS = [
   { re: /\bcalculator|\bcalc\b/i, purpose: 'A working calculator', mustWork: ['Number buttons still change the display', 'Keep this a calculator, not a different app'] },
   { re: /\btodo(?:s| list)?|\bto-do list\b/i, purpose: 'A to-do list', mustWork: ['Items can still be added', 'Keep this a to-do list'] },
@@ -11,14 +20,22 @@ const NAMED_JOBS = [
   {
     re: /\b(boutique|saree|sari|e-?commerce|storefront|online shop|\bshop\b|merchandise|product catalog|kids?\s+(?:wear|apparel|collection)|clothing\s+(?:store|shop)|apparel)\b/i,
     purpose: 'A shop website',
-    mustWork: [
-      'Catalog and bag still work',
-      'Product images are real photos, not empty frames',
-      'Currency and Add to Cart are on Preview',
-      'Keep this a shop, not a different app',
-    ],
+    mustWork: SHOP_MUST_WORK,
   },
 ];
+
+function vfsLooksLikeShopFiles(vfs = {}) {
+  const files = Object.values(vfs || {});
+  for (const file of files) {
+    const html = typeof file?.content === 'string' ? file.content : '';
+    if (/\b(fox\s*&\s*wolf|merchandise|boutique|add[\s-]?to[\s-]?(?:bag|cart)|product-card|storefront)\b/i.test(html)) {
+      return true;
+    }
+  }
+  if (vfs?.['products.json']) return true;
+  const names = Object.keys(vfs || {}).join(' ');
+  return /\bfoxwolf_|\.svg\b/i.test(names) && /\b(shop|product|merch|collection)\b/i.test(names);
+}
 
 export function normalizeStudioJobCard(job) {
   if (!job || typeof job !== 'object') return null;
@@ -73,6 +90,20 @@ function namedPurposeMatch(text, purpose) {
 export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {}) {
   const prev = normalizeStudioJobCard(existing);
   const text = String(brief || '').trim();
+
+  // “Start with 10” is an intake accept, not a new product. Never replace the
+  // shop job with purpose “Start with 10” / mustWork “The page still runs”.
+  if (isShopIntakeAcceptShorthand(text)) {
+    if (prev && (jobNeedsProductPhotos(prev) || /shop|boutique|merchandise|catalog/i.test(prev.purpose || ''))) {
+      return prev;
+    }
+    if (vfsLooksLikeShopFiles(vfs) || (prev && vfsLooksLikeShopFiles(vfs))) {
+      return { purpose: 'A shop website', mustWork: SHOP_MUST_WORK };
+    }
+    if (prev) return prev;
+    return { purpose: 'A shop website', mustWork: SHOP_MUST_WORK };
+  }
+
   const switchingProduct = Boolean(prev && looksLikeNewJob(text, prev));
   if (prev && !switchingProduct) return prev;
 
@@ -82,6 +113,9 @@ export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {
 
   const fromFiles = purposeFromVfs(vfs);
   if (fromFiles) {
+    if (vfsLooksLikeShopFiles(vfs) || /\b(fox\s*&\s*wolf|merchandise|boutique|shop)\b/i.test(fromFiles)) {
+      return { purpose: 'A shop website', mustWork: SHOP_MUST_WORK };
+    }
     return {
       purpose: fromFiles.slice(0, 120),
       mustWork: ['Interactive controls still work', 'Do not replace this with a different product'],
@@ -93,11 +127,15 @@ export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {
   if (prev && !switchingProduct) return prev;
   if (!text) return prev;
 
+  if (vfsLooksLikeShopFiles(vfs)) {
+    return { purpose: 'A shop website', mustWork: SHOP_MUST_WORK };
+  }
+
   const clipped = text.replace(/^(please |can you |could you )/i, '').slice(0, 80).trim();
   const purpose = clipped.charAt(0).toUpperCase() + clipped.slice(1);
   return {
     purpose,
-    mustWork: ['The page still runs', 'Do not replace this with a different product'],
+    mustWork: ['Do not replace this with a different product'],
   };
 }
 

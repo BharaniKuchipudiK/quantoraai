@@ -43,6 +43,19 @@ test('an open coding desk does not repeat that the preview exists', () => {
   }), null);
 });
 
+test('open desk with files still warming does not look finished', () => {
+  const status = resolveStudioPartnerStatus({
+    hasPreview: true,
+    lastAiText: 'Built Fox & Wolf with 10 photos',
+    codingDeskOpen: true,
+    hasDeskFiles: true,
+    previewRunStatus: 'warming',
+  });
+  assert.match(status.now, /Preview is starting/i);
+  assert.match(status.next, /live page|Retry/i);
+  assert.doesNotMatch(status.now, /ready|done|running\. Product/i);
+});
+
 test('an open desk still says when Preview has no product photos', () => {
   const status = resolveStudioPartnerStatus({
     hasPreview: true,
@@ -153,6 +166,7 @@ test('Study never asks for a website preview', () => {
 });
 
 test('Preview run label is honest about start, run, and fail', () => {
+  assert.equal(studioPreviewRunLabel('warming'), 'Preview is starting…');
   assert.equal(studioPreviewRunLabel('running'), 'Preview is starting…');
   assert.equal(studioPreviewRunLabel('clean'), 'Preview is running');
   assert.match(studioPreviewRunLabel('failed'), /running with errors/i);

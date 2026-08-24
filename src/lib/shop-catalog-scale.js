@@ -205,8 +205,9 @@ export function expandShopIntakeAccept(message = '', priorUserMessages = []) {
   const text = (
     `Build the shop now with about ${catalogTarget} working catalog photos `
     + `(not ${askedLabel} unique AI mockups). Every product needs a real loadable <img> `
-    + 'photo (use /api/preview-image URLs), price, and Add to Cart. '
-    + 'Do not invent empty picture boxes. Do not substitute SVG drawings or emoji for product photos.'
+    + 'photo — prefer data:image/... URIs or wire existing VFS .svg/.png assets into '
+    + 'products.json / the page (Preview cannot fetch relative files). '
+    + 'Include price and Add to Cart. Do not invent empty picture boxes.'
   );
 
   return {

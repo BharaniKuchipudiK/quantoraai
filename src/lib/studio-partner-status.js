@@ -3,6 +3,15 @@
  * This is the Cursor-style "human progress" line — not a chatbot spinner.
  */
 
+function previewShellIsWarming(previewRunStatus = '') {
+  const value = typeof previewRunStatus === 'string'
+    ? previewRunStatus
+    : (previewRunStatus && typeof previewRunStatus === 'object' && previewRunStatus.kind === 'quality'
+      ? ''
+      : '');
+  return value === 'warming' || value === 'running' || value === 'healing';
+}
+
 export function resolveStudioPartnerStatus({
   isGenerating = false,
   generatingLabel = '',
@@ -20,6 +29,7 @@ export function resolveStudioPartnerStatus({
   shopUiMissing = false,
   shopIntake = null,
   shopTurnFailureCopy = '',
+  previewRunStatus = '',
 } = {}) {
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
@@ -28,6 +38,7 @@ export function resolveStudioPartnerStatus({
     || studioDomain === 'research';
   const intakeCopy = typeof shopIntake?.userCopy === 'string' ? shopIntake.userCopy.trim() : '';
   const intakeOversize = Boolean(shopIntake?.oversize && intakeCopy);
+  const shellWarming = previewShellIsWarming(previewRunStatus);
 
   if (isGenerating) {
     if (lifeDomain) {
@@ -60,6 +71,16 @@ export function resolveStudioPartnerStatus({
     return {
       now: 'That turn did not finish.',
       next: 'Retry, or tell me what to try instead.',
+    };
+  }
+
+  // Files on the desk are not "done" while the Preview shell is still warming.
+  if ((hasPreview || (codingDeskOpen && hasDeskFiles)) && shellWarming && !officeKind) {
+    return {
+      now: 'Preview is starting…',
+      next: intakeOversize
+        ? `About ${shopIntake.proposedCatalogSize || 10} catalog photos — wait for the live page, or Retry if it stalls. ${clock}`
+        : `Files are on the desk — wait for the live page, or Retry if it stalls. ${clock}`,
     };
   }
 
@@ -151,6 +172,7 @@ export function studioPreviewRunLabel(status) {
     : (status && typeof status === 'object' && status.kind === 'quality'
       ? (status.passed ? 'clean' : 'degraded')
       : '');
+  if (value === 'warming') return 'Preview is starting…';
   if (value === 'running') return 'Preview is starting…';
   if (value === 'healing') return 'Preview is fixing a crash…';
   if (value === 'clean') return 'Preview is running';

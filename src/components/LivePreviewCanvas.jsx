@@ -44,9 +44,9 @@ const OFFICE_LABEL = {
 
 const MAX_HEAL_ATTEMPTS = 3;
 /** Remount the blob embed once if the shell never posts embed-ready. */
-const PREVIEW_WARMING_RETRY_MS = 12_000;
+const PREVIEW_WARMING_RETRY_MS = 8_000;
 /** Stop saying "hang tight" — surface a real failure with Retry. */
-const PREVIEW_WARMING_FAIL_MS = 25_000;
+const PREVIEW_WARMING_FAIL_MS = 18_000;
 
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
@@ -149,8 +149,14 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   onVerificationStatusChangeRef.current = onVerificationStatusChange;
 
   useEffect(() => {
-    onVerificationStatusChangeRef.current?.(status);
-  }, [status, headless, verifyOnly]);
+    // Project-runtime / WebContainer shells are ready without embed-ready.
+    const shellReady = Boolean(wcUrl)
+      || embedReady
+      || isProjectRuntimeVfs(vfs)
+      || Boolean(createInlineReactRuntimeVfs(currentCode, vfs));
+    const reported = !shellReady && status === 'running' ? 'warming' : status;
+    onVerificationStatusChangeRef.current?.(reported);
+  }, [status, embedReady, wcUrl, vfs, currentCode, headless, verifyOnly]);
 
   useEffect(() => {
     setEmbedReady(false);
@@ -227,13 +233,26 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
 
   useEffect(() => {
     setCurrentCode(code || '');
-    setStatus(code ? 'running' : 'clean');
+    if (!code) {
+      setStatus('clean');
+      setAttempt(0);
+      setLastError(null);
+      setWarmingFailed(false);
+      warmingRetriedRef.current = false;
+      warmingStartedAtRef.current = null;
+      healingRef.current = false;
+      errorSeenRef.current = false;
+      stylingFailedRef.current = false;
+      autoJobHealRef.current = false;
+      verifiedCodeRef.current = null;
+      return;
+    }
+    // Assembly churn (shop inject / streaming / SVG wiring) must NOT reset the
+    // hang-tight deadline or remount the shell — that left Preview stuck on
+    // “getting ready” forever while Review already showed files.
+    setStatus('running');
     setAttempt(0);
-    setRemountNonce(0);
     setLastError(null);
-    setWarmingFailed(false);
-    warmingRetriedRef.current = false;
-    warmingStartedAtRef.current = null;
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
@@ -513,11 +532,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           return;
         }
         if (!errorSeenRef.current && !headless && !verifyOnly) {
+          // Preview is proven by the iframe load — do not stay on “Verifying”
+          // while verify-build chats with the model.
+          setStatus(stylingFailedRef.current ? 'degraded' : 'clean');
           if (verifiedCodeRef.current !== currentCodeRef.current) {
             verifiedCodeRef.current = currentCodeRef.current;
             void runQualityCheck(prepared);
-          } else {
-            setStatus(stylingFailedRef.current ? 'degraded' : 'clean');
           }
         }
       }
@@ -726,14 +746,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setRemountNonce((value) => value + 1);
   };
 
-  const statusUI = {
-    running: { icon: <Loader size={14} className="animate-spin" />, label: 'Verifying — running the preview…', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
-    healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
-    degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
-  }[status] || null;
-
   const projectRuntimeVfs = useMemo(
     () => (isProjectRuntimeVfs(vfs) ? vfs : createInlineReactRuntimeVfs(currentCode, vfs)),
     [currentCode, vfs],
@@ -743,6 +755,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     ? 'Generated files did not satisfy the React/VFS project runtime contract.'
     : null;
   const previewShellReady = projectRuntimeActive || Boolean(wcUrl) || embedReady;
+
+  // Never say “Verifying — running” while the shell overlay still says getting ready.
+  const statusUI = {
+    warming: { icon: <Loader size={14} className="animate-spin" />, label: 'Preview is starting…', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+    running: { icon: <Loader size={14} className="animate-spin" />, label: 'Verifying — running the preview…', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+    healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+    degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+    failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
+  }[!previewShellReady && (status === 'running' || status === 'healing') ? 'warming' : status] || null;
 
   useEffect(() => {
     if (headless || previewShellReady) {
@@ -831,11 +853,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>
             {readyElapsedSec >= Math.floor(PREVIEW_WARMING_RETRY_MS / 1000)
               ? 'Still starting Preview — retrying the shell…'
-              : 'Preview is getting ready — hang tight'}
+              : 'Preview is starting…'}
           </div>
           <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
             {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
-            {readyElapsedSec >= 15 ? ' · if this passes 25s we will stop and let you retry' : ''}
+            {readyElapsedSec >= 10 ? ` · if this passes ${Math.floor(PREVIEW_WARMING_FAIL_MS / 1000)}s we will stop and let you retry` : ''}
           </div>
         </>
       )}
@@ -881,7 +903,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     </div>
   ) : (
     <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b', position: 'relative', minHeight: '240px' }}>
-      {previewWarmingOverlay || 'Preview is getting ready — hang tight'}
+      {previewWarmingOverlay || 'Preview is starting…'}
     </div>
   ));
 

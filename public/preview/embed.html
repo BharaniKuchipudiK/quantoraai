@@ -29,9 +29,16 @@
         }
       });
       bindEscape();
-      try {
-        parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
-      } catch (err) { /* cross-origin guard */ }
+      function signalReady() {
+        try {
+          parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
+        } catch (err) { /* cross-origin guard */ }
+      }
+      // Parent listener can attach after first paint (Strict Mode / assembly churn).
+      signalReady();
+      setTimeout(signalReady, 0);
+      setTimeout(signalReady, 250);
+      setTimeout(signalReady, 1000);
     })();
   </script>
 </head>
