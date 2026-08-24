@@ -880,40 +880,64 @@ export function useChatStream({
               } : m));
               return;
             }
-            const providerOutcome = resolveCodingTurnOutcome({
-              kind: 'provider-dead',
-              errorMessage: artifactFailed
-                ? streamedError.message
-                : (currentText
-                  ? 'provider handoff failed after a partial reply'
-                  : 'no healthy AI route'),
-              shopIntakeAsk,
-            });
+            if (isCodingRequest) {
+              const providerOutcome = resolveCodingTurnOutcome({
+                kind: 'provider-dead',
+                errorMessage: artifactFailed
+                  ? streamedError.message
+                  : (currentText
+                    ? 'provider handoff failed after a partial reply'
+                    : 'no healthy AI route'),
+                shopIntakeAsk,
+              });
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: currentText && !artifactFailed
+                  ? `${sanitizeAssistantStream(currentText)}\n\n${providerOutcome.text}`
+                  : providerOutcome.text,
+                isError: providerOutcome.isError,
+                executionStatus: null,
+                ...(providerOutcome.continueSet ? { continueSet: providerOutcome.continueSet } : {}),
+              } : m));
+              return;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
-              text: currentText && !artifactFailed
-                ? `${sanitizeAssistantStream(currentText)}\n\n${providerOutcome.text}`
-                : providerOutcome.text,
-              isError: providerOutcome.isError,
+              text: artifactFailed
+                ? `⚠️ **Could not finish:** ${streamedError.message}`
+                : currentText
+                  ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
+                  : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
+              isError: true,
               executionStatus: null,
-              ...(providerOutcome.continueSet ? { continueSet: providerOutcome.continueSet } : {}),
             } : m));
             return;
           }
           if (!receivedDone) {
-            const streamOutcome = resolveCodingTurnOutcome({
-              kind: 'stream-ended',
-              errorMessage: 'the response stream ended unexpectedly',
-              shopIntakeAsk,
-            });
+            if (isCodingRequest) {
+              const streamOutcome = resolveCodingTurnOutcome({
+                kind: 'stream-ended',
+                errorMessage: 'the response stream ended unexpectedly',
+                shopIntakeAsk,
+              });
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: currentText
+                  ? `${sanitizeAssistantStream(currentText)}\n\n${streamOutcome.text}`
+                  : streamOutcome.text,
+                isError: streamOutcome.isError,
+                executionStatus: null,
+                ...(streamOutcome.continueSet ? { continueSet: streamOutcome.continueSet } : {}),
+              } : m));
+              return;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: currentText
-                ? `${sanitizeAssistantStream(currentText)}\n\n${streamOutcome.text}`
-                : streamOutcome.text,
-              isError: streamOutcome.isError,
+                ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ The response stream ended unexpectedly.`
+                : '⚠️ **Connection Error:** The response stream ended unexpectedly.',
+              isError: true,
               executionStatus: null,
-              ...(streamOutcome.continueSet ? { continueSet: streamOutcome.continueSet } : {}),
             } : m));
             return;
           }
@@ -1041,22 +1065,35 @@ export function useChatStream({
             announceRecovery(recovery.notice);
             continue;
           }
-          const outcome = resolveCodingTurnOutcome({
-            kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
-            turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
-            errorMessage: error.message || 'Unable to reach the AI gateway.',
-            shopIntakeAsk,
-            isShopPhotoTurn: Boolean(
-              shopIntakeAsk.oversize
-              || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
-            ),
-          });
+          if (isCodingRequest) {
+            const outcome = resolveCodingTurnOutcome({
+              kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
+              turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
+              errorMessage: error.message || 'Unable to reach the AI gateway.',
+              shopIntakeAsk,
+              isShopPhotoTurn: Boolean(
+                shopIntakeAsk.oversize
+                || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
+              ),
+            });
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: outcome.text,
+              isError: outcome.isError,
+              executionStatus: null,
+              ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
+            } : m));
+            return;
+          }
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: outcome.text,
-            isError: outcome.isError,
+            text: stopped
+              ? '⚠️ **Generation Stopped**'
+              : timedOut
+                ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
+                : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
+            isError: true,
             executionStatus: null,
-            ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
           } : m));
           return;
         } finally {
