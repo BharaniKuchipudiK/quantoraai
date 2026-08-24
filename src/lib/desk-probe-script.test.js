@@ -35,6 +35,8 @@ test('the probe leaves destructive controls alone', () => {
 
 test('shop and calculator facts are read from the live document, not source text', () => {
   assert.match(DESK_PROBE_FN_SOURCE, /document\.querySelectorAll\('img'\)/);
+  assert.match(DESK_PROBE_FN_SOURCE, /naturalWidth/);
+  assert.match(DESK_PROBE_FN_SOURCE, /data:image/);
   assert.match(DESK_PROBE_FN_SOURCE, /add to \(bag\|cart\)/);
   assert.match(DESK_PROBE_FN_SOURCE, /quantora-currency/);
   assert.match(DESK_PROBE_FN_SOURCE, /catalogCount/);

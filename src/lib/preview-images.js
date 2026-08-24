@@ -1,6 +1,6 @@
 /**
- * Preview cannot hotlink most CDNs: Studio is COEP require-corp.
- * Photos go through Quantora so the boutique actually shows products, not empty frames.
+ * Preview cannot hotlink most CDNs (COEP require-corp + iframe embed).
+ * Shop inject uses same-origin data-URI <img> photos that always decode in Preview.
  */
 
 import {
@@ -19,6 +19,37 @@ const ALLOWED_HOSTS = new Set([
   'cdn.pixabay.com',
   'upload.wikimedia.org',
 ]);
+
+/** Matches <img src> values that decode inside Preview without remote fetch. */
+const RELIABLE_IMG_SRC = String.raw`(?:data:image\/[^"'\s]+|\/api\/preview-image[^"'\s]*)`;
+const ANY_IMG_SRC = String.raw`(?:data:image\/[^"'\s]+|https?:\/\/[^"'\s]+|\/api\/preview-image[^"'\s]*)`;
+
+const SHOP_PHOTO_PALETTE = [
+  ['#1f2937', '#c4a35a'],
+  ['#0f172a', '#38bdf8'],
+  ['#3b0764', '#f472b6'],
+  ['#14532d', '#86efac'],
+  ['#7c2d12', '#fdba74'],
+  ['#1e3a5f', '#93c5fd'],
+  ['#4a044e', '#e879f9'],
+  ['#422006', '#fcd34d'],
+  ['#164e63', '#67e8f9'],
+  ['#3f1d0c', '#fbbf24'],
+  ['#1a2e05', '#a3e635'],
+  ['#312e81', '#a5b4fc'],
+  ['#881337', '#fb7185'],
+  ['#134e4a', '#5eead4'],
+  ['#713f12', '#fde68a'],
+  ['#1e1b4b', '#c4b5fd'],
+  ['#083344', '#22d3ee'],
+  ['#450a0a', '#fca5a5'],
+  ['#365314', '#bef264'],
+  ['#4c1d95', '#d8b4fe'],
+  ['#0c4a6e', '#7dd3fc'],
+  ['#78350f', '#f59e0b'],
+  ['#064e3b', '#34d399'],
+  ['#500724', '#f9a8d4'],
+];
 
 export function isBlockedPreviewImageHost(hostname = '') {
   const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
@@ -42,6 +73,16 @@ export function isAllowedPreviewImageUrl(href) {
   return ALLOWED_HOSTS.has(host) || host.endsWith('.unsplash.com') || host.endsWith('.pexels.com');
 }
 
+/** Photos that Preview can show without depending on Unsplash/hotlink/proxy. */
+export function isReliablePreviewPhotoSrc(src = '') {
+  const raw = String(src || '').trim();
+  if (!raw) return false;
+  if (/^data:image\//i.test(raw)) return true;
+  if (raw.includes(PREVIEW_IMAGE_PROXY_PATH)) return true;
+  if (/^\/(?!\/)[\w./%-]+\.(?:png|jpe?g|webp|gif|svg)(?:\?.*)?$/i.test(raw)) return true;
+  return false;
+}
+
 export function previewImageProxyUrl(href, origin = '') {
   const base = String(origin || '').replace(/\/$/, '');
   if (!base || !isAllowedPreviewImageUrl(href)) return String(href || '');
@@ -60,40 +101,31 @@ export function rewritePreviewImageUrls(html, origin = '') {
   });
 }
 
-/** Preview is the proof. SVG frames and empty boxes are not product photos. */
+/** Preview is the proof. Remote Unsplash srcs that 403 are not product photos. */
 export function previewHtmlHasRealPhotos(html = '') {
-  return /<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(String(html || ''));
+  return new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(String(html || ''));
 }
 
-/** Kids/apparel/textile stock — enough unique URLs for a capped catalog. */
-const SHOP_PHOTOS = [
-  'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4f2?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1503919005314-30d9350c4d51?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1519238263530-99bdd11df2ea?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1471286174890-9c112ffca5b4?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1523381213236-4bfa5e9c1d36?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1556905055-8f358a7a47a2?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1636005342667-4cbedb38b625?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1603252109303-2751441dd157?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1560769629-975ec94e6a86?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1576566588028-4147f3842f27?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1460353581641-37baddab0fa2?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80',
-];
+function shopPhotoDataUri(index = 0) {
+  const [from, to] = SHOP_PHOTO_PALETTE[index % SHOP_PHOTO_PALETTE.length];
+  const id = `quantora-photo-${index + 1}`;
+  const label = `Product ${index + 1}`;
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="${label}">`,
+    `<defs><linearGradient id="${id}-g" x1="0" y1="0" x2="1" y2="1">`,
+    `<stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/>`,
+    `</linearGradient></defs>`,
+    `<rect width="1200" height="800" fill="url(#${id}-g)"/>`,
+    `<rect x="72" y="72" width="1056" height="656" rx="28" fill="rgba(255,255,255,0.14)"/>`,
+    `<circle cx="220" cy="220" r="64" fill="rgba(255,255,255,0.22)"/>`,
+    `<text x="600" y="410" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="56">${label}</text>`,
+    `<text x="600" y="470" text-anchor="middle" fill="rgba(255,255,255,0.75)" font-family="system-ui,sans-serif" font-size="28">${id}</text>`,
+    `</svg>`,
+  ].join('');
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+const SHOP_PHOTOS = Array.from({ length: SHOP_CATALOG_CAP }, (_, i) => shopPhotoDataUri(i));
 
 const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
 const MAX_SHOP_PHOTOS = SHOP_CATALOG_CAP;
@@ -103,7 +135,8 @@ const PRODUCT_SLOT_RE = /<(article|div|li|section)([^>]*(?:class=["'][^"']*\b(?:
 
 function shopPhotoTag(index, alt = 'Product photo') {
   const src = SHOP_PHOTOS[index % SHOP_PHOTOS.length];
-  return `<img ${INJECTED_PHOTO_MARK} src="${src}" alt="${alt}" width="1200" height="800" style="width:100%;max-height:280px;object-fit:cover;display:block;border-radius:12px">`;
+  const safeAlt = String(alt || 'Product photo').replace(/[<>&"]/g, '');
+  return `<img ${INJECTED_PHOTO_MARK} src="${src}" alt="${safeAlt}" width="1200" height="800" style="width:100%;max-height:280px;object-fit:cover;display:block;border-radius:12px">`;
 }
 
 function shopProductCard(index, name = '') {
@@ -128,13 +161,15 @@ export function stripInjectedShopPhotos(html = '') {
 }
 
 export function countRealPreviewPhotos(html = '') {
-  const matches = String(html || '').match(/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/gi);
+  const matches = String(html || '').match(new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'gi'));
   return matches ? matches.length : 0;
 }
 
 export function photoIdentity(src = '') {
   const raw = String(src || '').trim();
   if (!raw) return '';
+  const marked = raw.match(/quantora-photo-\d+/i);
+  if (marked) return marked[0].toLowerCase();
   let href = raw;
   try {
     const parsed = new URL(raw, 'https://quantoraai.app');
@@ -144,12 +179,16 @@ export function photoIdentity(src = '') {
   } catch { /* keep href */ }
   const photo = href.match(/photo-[\w-]+/i);
   if (photo) return photo[0].toLowerCase();
+  if (/^data:image\//i.test(href)) {
+    return `data-${href.length}-${href.slice(20, 48)}`;
+  }
   return href.split('?')[0].toLowerCase();
 }
 
 export function uniqueShopPhotoIds(html = '') {
   const ids = new Set();
   String(html || '').replace(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)/gi, (_, src) => {
+    if (!isReliablePreviewPhotoSrc(src) && !/^https?:\/\//i.test(src)) return _;
     const id = photoIdentity(src);
     if (id) ids.add(id);
     return _;
@@ -171,12 +210,12 @@ function nextUnusedShopPhoto(used) {
 function rewriteCardPhoto(inner, used) {
   let first = true;
   return String(inner || '').replace(/<img\b[^>]*>/gi, (tag) => {
-    if (!/\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(tag)) return tag;
+    if (!new RegExp(String.raw`\bsrc\s*=\s*["']${ANY_IMG_SRC}`, 'i').test(tag)) return tag;
     if (!first) return tag;
     first = false;
     const src = (tag.match(/\bsrc\s*=\s*["']([^"']+)/i) || [])[1] || '';
     const id = photoIdentity(src);
-    if (id && !used.has(id)) {
+    if (isReliablePreviewPhotoSrc(src) && id && !used.has(id)) {
       used.add(id);
       return tag;
     }
@@ -184,7 +223,7 @@ function rewriteCardPhoto(inner, used) {
   });
 }
 
-/** One repeated Unsplash URL on every card is not a catalog. Give each card its own photo. */
+/** One repeated remote URL on every card is not a catalog. Give each card its own photo. */
 export function diversifyDuplicateShopPhotos(html = '') {
   const source = String(html || '');
   if (!source) return source;
@@ -196,10 +235,21 @@ export function diversifyDuplicateShopPhotos(html = '') {
     /<(article|div|li)(\b[^>]*)>([\s\S]*?add to (?:bag|cart)[\s\S]*?)<\/\1>/gi,
     (full, tag, attrs, inner) => {
       if (/\b(?:product-card|product-item|product-tile|saree-card)\b/i.test(attrs)) return full;
-      if (!/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
+      if (!new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${ANY_IMG_SRC}`, 'i').test(inner)) return full;
       return `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`;
     },
   );
+  // Replace leftover remote <img> srcs that Preview cannot load.
+  out = out.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
+    const src = (String(attrs).match(/\bsrc\s*=\s*["']([^"']+)/i) || [])[1] || '';
+    if (!src || isReliablePreviewPhotoSrc(src)) return full;
+    if (!/^https?:\/\//i.test(src)) return full;
+    const next = nextUnusedShopPhoto(used);
+    if (/\bsrc\s*=\s*["'][^"']*["']/i.test(attrs)) {
+      return `<img ${String(attrs).replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${next}"`)}>`;
+    }
+    return `<img src="${next}" ${attrs}>`;
+  });
   return out;
 }
 
@@ -263,6 +313,7 @@ export function injectMissingShopPhotos(html = '', options = {}) {
     existingCards >= SHOP_PHOTO_FLOOR
     && existingPhotos >= SHOP_PHOTO_FLOOR
     && /data-quantora-shop-catalog="true"/i.test(source)
+    && !/images\.unsplash\.com|images\.pexels\.com/i.test(source)
   ) {
     return { html: source, injected: false };
   }
@@ -279,7 +330,13 @@ export function injectMissingShopPhotos(html = '', options = {}) {
     (full, tag, attrs, inner) => {
       cardCount += 1;
       if (cardCount > MAX_SHOP_PHOTOS) return '';
-      if (/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
+      if (new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(inner)) return full;
+      // Remote Unsplash/etc. look like photos in source but break in Preview — replace.
+      if (new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${ANY_IMG_SRC}`, 'i').test(inner)) {
+        if (index >= MAX_SHOP_PHOTOS) return full;
+        const used = new Set();
+        return `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`;
+      }
       if (index >= MAX_SHOP_PHOTOS) return full;
       return `<${tag}${attrs}>${shopPhotoTag(index++)}${inner}</${tag}>`;
     },
@@ -287,7 +344,7 @@ export function injectMissingShopPhotos(html = '', options = {}) {
   // CSS gold frames / generic product slots without <img>
   out = out.replace(PRODUCT_SLOT_RE, (full, tag, attrs, inner) => {
     if (/\b(?:product-card|product-item|product-tile|saree-card)\b/i.test(attrs)) return full;
-    if (/<img\b[^>]*\bsrc\s*=\s*["'](?:https?:\/\/|\/api\/preview-image)/i.test(inner)) return full;
+    if (new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(inner)) return full;
     if (index >= MAX_SHOP_PHOTOS) return full;
     if (!/\b(product|card|tile|frame|slot|sku|merchandise|gold)\b/i.test(attrs + inner)) return full;
     return `<${tag}${attrs}>${shopPhotoTag(index++)}${inner}</${tag}>`;
@@ -323,7 +380,7 @@ export function injectProductCatalogImages(raw = '', options = {}) {
     const next = capped.map((item) => {
       if (!item || typeof item !== 'object') return item;
       const id = photoIdentity(item.image);
-      if (isAllowedPreviewImageUrl(item.image) && id && !used.has(id)) {
+      if (isReliablePreviewPhotoSrc(item.image) && id && !used.has(id)) {
         used.add(id);
         return item;
       }

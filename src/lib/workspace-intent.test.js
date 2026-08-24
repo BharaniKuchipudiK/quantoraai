@@ -16,6 +16,11 @@ test('currency and cart asks keep the boutique on the desk', () => {
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Please include a currency converter' }), true);
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Please give an option to Add to Cart' }), true);
   assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'What is a shopping cart?' }), false);
+  assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt: 'Images are still broken' }), true);
+  assert.equal(shouldRefineRunningDesk({
+    prompt: 'Images are still broken',
+    hasDeskFiles: true,
+  }), true);
 });
 
 test('a running desk follow-up is a refine, not a new product', () => {

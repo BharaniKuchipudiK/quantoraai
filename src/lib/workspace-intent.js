@@ -6,7 +6,7 @@ const EDIT_INTENT = /\b(fix|change|update|edit|refine|modify|add|include|put|rem
 const UI_TARGET = /\b(button|layout|header|footer|form|screen|navigation|navbar|sidebar|color|font|spacing|chart|table|roadmap|slide|section)\b/i;
 const EXPLICIT_REFERENCE = /\b(this|that|the|current|same|existing|above)\s+(app|application|website|site|page|code|component|preview|workspace|canvas|presentation|deck|slide|document|spreadsheet|workbook)\b/i;
 const ARTIFACT_ITERATION = /\b(it|this|that|them|those|the preview|the page|the site|the ui|look|feel|theme|style|layout|design|dark mode|light mode|mobile|desktop)\b/i;
-const DESK_FEATURE = /\b(currency|converter|cart|checkout|payment|photo|image|usd|inr|price)\b/i;
+const DESK_FEATURE = /\b(currency|converter|cart|checkout|payment|photos?|images?|pictures?|visuals?|usd|inr|price|broken)\b/i;
 const QUESTION_ONLY = /^(how|what|why|when|where|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)\b/i;
 
 export function shouldKeepWorkspaceForPrompt({ prompt = '', hasWorkspace = false, officeKind = null } = {}) {

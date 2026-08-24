@@ -1,4 +1,5 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
@@ -1228,13 +1229,46 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasOpen(false);
     }
 
-    if (userAskedForDeskReview(textToSend) && Object.keys(vfs || {}).length) {
-      const patched = applyDeskReviewPatch(vfs, deskJob);
+    const deskFileCount = Object.keys(vfs || {}).length;
+    if ((userAskedForShopDeskFix(textToSend) || userAskedForDeskReview(textToSend)) && deskFileCount) {
+      const patched = applyDeskReviewPatch(vfs, deskJob, { brief: textToSend });
       if (patched.changed && !patched.rejected) {
         setDeskReview(diffVfsReview(vfs, patched.vfs));
         setVfs(patched.vfs);
         const code = pickPreviewEntry(patched.vfs);
         if (code) setWorkspaceCode(code);
+        setWorkspaceActiveTab('preview');
+        setIsWorkspaceMode(true);
+        setCodingDeskOpen(true);
+      }
+      // Deterministic repair only for cart/currency or broken-photo intents.
+      // Semantic asks (“replace photos with blue dresses”) must reach the model.
+      if (
+        userAskedForShopDeskFix(textToSend)
+        && !patched.rejected
+        && !userAskedForSemanticPhotoEdit(textToSend)
+      ) {
+        const html = pickPreviewEntry(patched.vfs) || '';
+        const photoCount = countRealPreviewPhotos(html);
+        const brokenPhotoAsk = userAskedForBrokenPreviewPhotos(textToSend);
+        const canShortCircuit = patched.changed || (brokenPhotoAsk && photoCount > 0);
+        if (canShortCircuit) {
+          const trimmed = String(textToSend || '').trim();
+          if (!overrideText) setInputText('');
+          updateActiveMessages((prev) => [
+            ...prev,
+            { id: Date.now(), sender: 'user', text: trimmed, attachments: [...attachments] },
+            {
+              id: Date.now() + 1,
+              sender: 'ai',
+              text: patched.changed
+                ? 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.'
+                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old Unsplash URLs are still cached in the iframe.',
+            },
+          ]);
+          setAttachments([]);
+          return;
+        }
       }
     }
 

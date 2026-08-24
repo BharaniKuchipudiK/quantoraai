@@ -15,6 +15,8 @@ import {
   ensureShopDeskInVfs,
   userAskedForDeskReview,
   userAskedForPreviewPhotos,
+  userAskedForBrokenPreviewPhotos,
+  userAskedForSemanticPhotoEdit,
   userAskedForShopDeskFix,
   previewAssemblyFingerprint,
   isNativeSidecarPath,
@@ -183,7 +185,14 @@ test('healing a boutique writes real photos, not gold frames', () => {
   };
   const healed = '<!DOCTYPE html><html><body><main><div class="hero">Kanjeevaram</div></main></body></html>';
   const next = writeHealedPreviewToVfs(vfs, healed);
-  assert.match(next.vfs['index.html'].content, /images\.unsplash\.com/);
+  assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
+});
+
+test('broken-photo asks are not treated as semantic catalog edits', () => {
+  assert.equal(userAskedForBrokenPreviewPhotos('Why are the images broken?'), true);
+  assert.equal(userAskedForSemanticPhotoEdit('Why are the images broken?'), false);
+  assert.equal(userAskedForSemanticPhotoEdit('replace photos with blue dresses'), true);
+  assert.equal(userAskedForBrokenPreviewPhotos('replace photos with blue dresses'), false);
 });
 
 test('a chat that only talks still gets shop photos when the desk already has a boutique', () => {
@@ -197,8 +206,8 @@ test('a chat that only talks still gets shop photos when the desk already has a 
   };
   const next = ensureShopPhotosInVfs(before);
   assert.equal(next.changed, true);
-  assert.match(next.vfs['index.html'].content, /images\.unsplash\.com/);
-  assert.match(next.vfs['products.json'].content, /images\.unsplash\.com/);
+  assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
+  assert.match(next.vfs['products.json'].content, /data:image\/svg\+xml/);
 });
 
 test('currency and Add to Cart land on the boutique desk, not only in chat', () => {
@@ -246,14 +255,15 @@ test('Review this is a desk review ask', () => {
 });
 
 test('Review this wires a dead Add to Cart without dropping photos', () => {
+  const photo = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#333"/><text>quantora-photo-1</text></svg>');
   const html = `<!DOCTYPE html><html><body>
     <header>Aaranya</header>
     <label>Currency <select id="quantora-currency"><option>INR</option><option>USD</option></select></label>
-    <div class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="Silk"><button type="button">Add to Cart</button></div>
+    <div class="product-card"><img src="${photo}" alt="Silk"><button type="button">Add to Cart</button></div>
   </body></html>`;
   const vfs = {
     'index.html': { content: html, language: 'html' },
-    'products.json': { content: '[{"id":"silk","name":"Kanjeevaram Silk"}]', language: 'json' },
+    'products.json': { content: `[{"id":"silk","name":"Kanjeevaram Silk","image":"${photo}"}]`, language: 'json' },
   };
   const job = { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] };
   const before = probeRunningDesk({ html, vfs, job });
