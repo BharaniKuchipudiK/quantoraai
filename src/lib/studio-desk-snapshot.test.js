@@ -20,7 +20,13 @@ test('files and preview round-trip with the session', () => {
     workspaceCode: '<!DOCTYPE html><html><body>Hi</body></html>',
     codingDeskOpen: true,
     lastProcessedMessageId: 42,
-    review: [{ path: 'index.html', added: 3, removed: 0, exact: true }],
+    review: [{
+      path: 'index.html',
+      added: 3,
+      removed: 0,
+      exact: true,
+      hunks: [{ header: '@@ -0,0 +1,3 @@', lines: ['+<!DOCTYPE html>'] }],
+    }],
     job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
   });
   assert.equal(built.ok, true);
@@ -29,7 +35,14 @@ test('files and preview round-trip with the session', () => {
   assert.equal(restored.lastProcessedMessageId, 42);
   assert.match(restored.vfs['index.html'].content, /Hi/);
   assert.match(restored.workspaceCode, /Hi/);
-  assert.deepEqual(restored.review, [{ path: 'index.html', added: 3, removed: 0, exact: true }]);
+  assert.deepEqual(restored.review, [{
+    path: 'index.html',
+    added: 3,
+    removed: 0,
+    exact: true,
+    hunks: [{ header: '@@ -0,0 +1,3 @@', lines: ['+<!DOCTYPE html>'] }],
+    note: '',
+  }]);
   assert.equal(restored.job.purpose, 'A working calculator');
 });
 
@@ -50,6 +63,24 @@ test('a saved boutique without photos gets them back on restore', () => {
   assert.match(restored.workspaceCode, /images\.unsplash\.com/);
   assert.match(restored.vfs['index.html'].content, /Add to Cart/);
   assert.match(restored.vfs['index.html'].content, /USD/);
+});
+
+test('a saved hunk that does not fit is marked cut off, not still exact', () => {
+  const built = buildStudioDeskSnapshot({
+    vfs: { 'index.html': { content: '<html></html>', language: 'html' } },
+    workspaceCode: '<html></html>',
+    review: [{
+      path: 'index.html',
+      added: 1,
+      removed: 0,
+      exact: true,
+      hunks: [{ header: '@@ -1,1 +1,1 @@', lines: [`+${'x'.repeat(300)}`] }],
+    }],
+  });
+  const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
+  assert.equal(restored.review[0].exact, false);
+  assert.match(restored.review[0].note, /cut off/i);
+  assert.equal(restored.review[0].hunks[0].lines[0].length, 240);
 });
 
 test('a snapshot that is too large is refused instead of faking persistence', () => {

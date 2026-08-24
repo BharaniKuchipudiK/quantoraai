@@ -10,7 +10,8 @@
  *
  * This gate commits a baseline, proves a clean tree reports nothing, then
  * patches one line through chat and demands the exact removed and added lines
- * back out of the Git pane — scoped to a hunk, on the one file that changed.
+ * back out of the Review rail AND the Git pane — scoped to a hunk, on the one
+ * file that changed. A +/− count next to the filename is not a review.
  */
 import process from 'node:process';
 import { mkdirSync } from 'node:fs';
@@ -239,6 +240,27 @@ try {
     throw new Error('The follow-up never reached Preview, so there is no patch to review.');
   }
 
+  await visible(page.locator('[data-quantora-desk-review="true"]').first(), 'Review rail never appeared after the patch.');
+  await page.waitForFunction(() => document.querySelectorAll('[data-quantora-desk-review-line]').length > 0, null, { timeout: 10_000 }).catch(() => {});
+  const reviewLines = await page.evaluate(() => Array.from(document.querySelectorAll(
+    '[data-quantora-desk-review] [data-quantora-desk-review-line]',
+  )).map((node) => ({ kind: node.getAttribute('data-quantora-desk-review-line'), text: node.textContent || '' })));
+  const reviewText = reviewLines.map((line) => line.text).join('\n');
+  if (!reviewLines.some((line) => line.kind === 'del' && line.text === `-${OLD_HEADING}`)) {
+    throw new Error(`Review rail did not show the removed heading line. Saw: ${reviewText.slice(0, 400)}`);
+  }
+  if (!reviewLines.some((line) => line.kind === 'add' && line.text === `+${NEW_HEADING}`)) {
+    throw new Error(`Review rail did not show the added heading line. Saw: ${reviewText.slice(0, 400)}`);
+  }
+  if (!reviewLines.some((line) => line.kind === 'hunk' && /^@@ -\d+,\d+ \+\d+,\d+ @@$/.test(line.text.trim()))) {
+    throw new Error(`Review rail printed changed lines without a hunk header. Saw: ${reviewText.slice(0, 400)}`);
+  }
+  for (const stranger of OUT_OF_HUNK) {
+    if (reviewText.includes(stranger)) {
+      throw new Error(`Review rail dumped the whole file instead of a hunk: it printed "${stranger}".`);
+    }
+  }
+
   await page.locator('[data-quantora-studio-git-nav="true"]').click();
   await visible(page.locator('[data-quantora-studio-git="true"]').first(), 'Git pane did not reopen after the patch.');
   const patched = await runGit('[data-quantora-studio-git-diff="true"]', 'diff');
@@ -283,7 +305,7 @@ try {
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-diff-review.png', fullPage: true });
-  console.log('Desk diff review browser gate passed. Git diff shows the real removed and added lines for the patched file only.');
+  console.log('Desk diff review browser gate passed. Review rail and Git diff show the real removed and added lines for the patched file only.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-diff-review-failure.png', fullPage: true }).catch(() => {});

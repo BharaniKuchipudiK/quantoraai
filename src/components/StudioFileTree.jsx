@@ -4,6 +4,15 @@ import { listStudioFiles, studioFileLabel } from '../lib/studio-file-tree.js';
 import { checkState } from '../lib/studio-desk-criteria.js';
 
 const PROBE_MARK = { ok: 'ok', fix: 'fix', unverified: '?' };
+const REVIEW_LINE_COLOR = { hunk: '#38bdf8', add: '#22c55e', del: '#f87171' };
+
+function reviewLineKind(line = '') {
+  const text = String(line || '');
+  if (text.startsWith('@@')) return 'hunk';
+  if (text.startsWith('+')) return 'add';
+  if (text.startsWith('-')) return 'del';
+  return 'ctx';
+}
 
 export default function StudioFileTree({
   vfs,
@@ -116,28 +125,82 @@ export default function StudioFileTree({
             Review
           </div>
           {review.map((row) => (
-            <button
-              key={`review-${row.path}`}
-              type="button"
-              data-quantora-desk-review-file={row.path}
-              onClick={() => onSelect(row.path)}
-              title={row.path}
-              style={rowStyle(activePath === row.path, isLight, textColor, subtextColor)}
-            >
-              <FileCode size={12} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                {studioFileLabel(row.path)}
-              </span>
-              {row.exact === false ? (
-                <span style={{ fontSize: '0.62rem', color: subtextColor, flexShrink: 0 }}>changed</span>
-              ) : (
-                <span style={{ fontSize: '0.62rem', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                  {row.added ? <span style={{ color: '#22c55e' }}>+{row.added}</span> : null}
-                  {row.added && row.removed ? ' ' : null}
-                  {row.removed ? <span style={{ color: '#f87171' }}>−{row.removed}</span> : null}
+            <div key={`review-${row.path}`}>
+              <button
+                type="button"
+                data-quantora-desk-review-file={row.path}
+                onClick={() => onSelect(row.path)}
+                title={row.path}
+                style={rowStyle(activePath === row.path, isLight, textColor, subtextColor)}
+              >
+                <FileCode size={12} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {studioFileLabel(row.path)}
                 </span>
-              )}
-            </button>
+                {row.exact === false ? (
+                  <span style={{ fontSize: '0.62rem', color: subtextColor, flexShrink: 0 }}>changed</span>
+                ) : (
+                  <span style={{ fontSize: '0.62rem', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                    {row.added ? <span style={{ color: '#22c55e' }}>+{row.added}</span> : null}
+                    {row.added && row.removed ? ' ' : null}
+                    {row.removed ? <span style={{ color: '#f87171' }}>−{row.removed}</span> : null}
+                  </span>
+                )}
+              </button>
+              {Array.isArray(row.hunks) && row.hunks.length > 0 ? (
+                <div
+                  data-quantora-desk-review-hunks="true"
+                  style={{
+                    margin: '0 4px 8px',
+                    padding: '6px 6px 4px',
+                    borderRadius: '6px',
+                    background: isLight ? '#fff' : 'rgba(15,23,42,0.65)',
+                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
+                    overflowX: 'auto',
+                  }}
+                >
+                  {row.hunks.map((hunk, hunkIndex) => (
+                    <pre
+                      key={`${row.path}-hunk-${hunkIndex}`}
+                      data-quantora-desk-review-hunk="true"
+                      style={{
+                        margin: hunkIndex ? '8px 0 0' : 0,
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                        fontSize: '0.58rem',
+                        lineHeight: 1.4,
+                        whiteSpace: 'pre',
+                      }}
+                    >
+                      {hunk.header ? (
+                        <div data-quantora-desk-review-line="hunk" style={{ color: '#38bdf8' }}>
+                          {hunk.header}
+                        </div>
+                      ) : null}
+                      {(hunk.lines || []).map((line, lineIndex) => {
+                        const kind = reviewLineKind(line);
+                        return (
+                          <div
+                            key={`${row.path}-hunk-${hunkIndex}-${lineIndex}`}
+                            data-quantora-desk-review-line={kind}
+                            style={{ color: REVIEW_LINE_COLOR[kind] || subtextColor }}
+                          >
+                            {line}
+                          </div>
+                        );
+                      })}
+                    </pre>
+                  ))}
+                </div>
+              ) : null}
+              {row.note ? (
+                <div
+                  data-quantora-desk-review-note="true"
+                  style={{ padding: '0 8px 8px', fontSize: '0.62rem', color: subtextColor, lineHeight: 1.35 }}
+                >
+                  {row.note}
+                </div>
+              ) : null}
+            </div>
           ))}
         </div>
       ) : null}
