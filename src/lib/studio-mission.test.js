@@ -38,6 +38,22 @@ test('a failed turn does not keep claiming the build is under way', () => {
   assert.equal(deriveStudioMission({ ...args, lastTurnFailed: true }), null);
 });
 
+test('sticky Study goal does not own a Coding desk Drive cleaner mission', () => {
+  const mission = deriveStudioMission({
+    conversationContext: {
+      goal: 'I want to study newton laws of motion. prepare me',
+      understanding: 'Drive Cleaner Agent dashboard is in Preview.',
+    },
+    messages: [
+      { sender: 'user', text: 'I want to study newton laws of motion. prepare me' },
+      { sender: 'user', text: 'build a Drive Cleaner Agent web dashboard for my Google Drive' },
+    ],
+    hasPreview: true,
+  });
+  assert.match(mission.goal, /Drive|cleaner/i);
+  assert.doesNotMatch(mission.goal, /newton/i);
+});
+
 test('project resume uses the latest chat, not the first empty one', () => {
   const resume = deriveProjectResume([
     { id: 'empty', createdAt: 9, title: 'New Chat', messages: [], conversationContext: {} },

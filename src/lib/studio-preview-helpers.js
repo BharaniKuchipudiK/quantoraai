@@ -77,9 +77,11 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null) {
 }
 
 export function vfsLooksLikeShop(vfs = {}) {
+  // products.json is the shop scaffold contract — keep injecting photos/cart for it.
+  // Bare "catalog" in HTML is not enough (Drive Cleaner file lists false-positive).
   if (vfs['products.json'] && typeof vfs['products.json'].content === 'string') return true;
   const html = pickPreviewEntry(vfs);
-  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|kanjeevaram|catalog|atelier|priceCents)\b/i.test(html);
+  return /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i.test(html);
 }
 
 export function userAskedForPreviewPhotos(text = '') {

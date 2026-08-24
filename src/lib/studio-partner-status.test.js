@@ -66,6 +66,17 @@ test('an open desk still says when currency and cart never reached Preview', () 
   assert.match(status.now, /Add to Cart/i);
 });
 
+test('photosMissing partner copy is only for shop desks that pass the flag', () => {
+  // Non-shop desks must keep photosMissing false at the call site; the status
+  // helper still only speaks when that flag is true.
+  assert.equal(resolveStudioPartnerStatus({
+    hasPreview: true,
+    codingDeskOpen: true,
+    photosMissing: false,
+    shopUiMissing: false,
+  }), null);
+});
+
 test('errors stay honest and offer a retry, not fake success', () => {
   const status = resolveStudioPartnerStatus({
     lastAiIsError: true,

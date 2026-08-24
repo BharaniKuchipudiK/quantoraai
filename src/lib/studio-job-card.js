@@ -40,7 +40,12 @@ function looksLikeNewJob(brief, existing) {
   for (const named of NAMED_JOBS) {
     if (named.re.test(text) && named.purpose !== existing.purpose) return true;
   }
-  if (/\b(build|create|make)\b/i.test(text) && /\b(app|page|site|tool|game)\b/i.test(text) && text.length > 40) {
+  // Drive cleaner / agent dashboards must not keep a leftover shop job card —
+  // that card alone is enough for looksLikeShopDesk to attach cart/photo probes.
+  const inventsProduct = /\b(build|create|make|develop)\b/i.test(text)
+    && /\b(app|page|site|tool|game|agent|dashboard|cleaner)\b/i.test(text)
+    && text.length > 40;
+  if (inventsProduct) {
     return !namedPurposeMatch(text, existing.purpose);
   }
   return false;
@@ -53,7 +58,8 @@ function namedPurposeMatch(text, purpose) {
 export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {}) {
   const prev = normalizeStudioJobCard(existing);
   const text = String(brief || '').trim();
-  if (prev && !looksLikeNewJob(text, prev)) return prev;
+  const switchingProduct = Boolean(prev && looksLikeNewJob(text, prev));
+  if (prev && !switchingProduct) return prev;
 
   for (const named of NAMED_JOBS) {
     if (named.re.test(text)) return { purpose: named.purpose, mustWork: named.mustWork };
@@ -67,8 +73,10 @@ export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {
     };
   }
 
-  if (prev) return prev;
-  if (!text) return null;
+  // A confirmed product switch must not keep the old card when the brief is empty of
+  // named markers — otherwise a leftover shop job keeps owning Drive cleaner probes.
+  if (prev && !switchingProduct) return prev;
+  if (!text) return prev;
 
   const clipped = text.replace(/^(please |can you |could you )/i, '').slice(0, 80).trim();
   const purpose = clipped.charAt(0).toUpperCase() + clipped.slice(1);
@@ -85,7 +93,10 @@ export function studioJobCardLabel(job) {
 export function jobNeedsProductPhotos(job) {
   const card = normalizeStudioJobCard(job);
   if (!card) return false;
-  return /\b(shop|boutique|catalog|photo)/i.test([card.purpose, ...card.mustWork].join(' '));
+  const hay = [card.purpose, ...card.mustWork].join(' ');
+  // Bare "photo" matches screenshots on non-shop desks; require shop intent.
+  return /\b(shop|boutique|storefront|e-?commerce|saree|sari)\b/i.test(hay)
+    || /\b(product (?:images?|photos?)|catalog (?:and|cards?|images?|photos?))\b/i.test(hay);
 }
 
 export function formatJobCardForRepair(job) {

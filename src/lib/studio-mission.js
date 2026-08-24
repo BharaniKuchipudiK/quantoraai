@@ -2,7 +2,7 @@ import { normalizeSessionContext } from './session-context.js';
 
 export const CANNED_PROJECT_DESCRIPTION = 'A flexible space for everyday questions and ideas.';
 
-const BUILDISH = /\b(build|create|make|develop|design|website|web site|calculator|app|shop|boutique|store|landing)\b/i;
+const BUILDISH = /\b(build|create|make|develop|design|website|web site|calculator|app|shop|boutique|store|landing|agent|dashboard|cleaner)\b/i;
 
 export function isCannedProjectDescription(text) {
   return String(text || '').trim() === CANNED_PROJECT_DESCRIPTION;
@@ -13,6 +13,35 @@ function clip(text, max = 140) {
   if (!value) return '';
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1)}…`;
+}
+
+function goalTokens(text) {
+  return new Set(
+    String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length > 3),
+  );
+}
+
+/**
+ * Sticky Study/other-chat memory must not own this thread's mission card.
+ * Prefer this session's build request when it describes a different job.
+ */
+export function pickSessionMissionGoal(stickyGoal = '', buildRequest = '') {
+  const fromMessages = clip(buildRequest);
+  const sticky = clip(stickyGoal);
+  if (!fromMessages) return sticky;
+  if (!sticky) return fromMessages;
+  const left = goalTokens(sticky);
+  const right = goalTokens(fromMessages);
+  let overlap = 0;
+  for (const token of left) {
+    if (right.has(token)) overlap += 1;
+  }
+  if (overlap >= 2) return sticky;
+  return fromMessages;
 }
 
 function officeKindFromFacts(facts = []) {
@@ -96,7 +125,9 @@ export function deriveStudioMission({
     .map((message) => String(message.text).trim())
     .filter(Boolean);
   const buildRequest = [...users].reverse().find((text) => BUILDISH.test(text)) || users[0] || '';
-  const goal = ctx.goal || clip(buildRequest);
+  // conversationContext.goal is sticky across turns (and can bleed from Study in
+  // a shared Personal Workspace). This chat's build request wins when they diverge.
+  const goal = pickSessionMissionGoal(ctx.goal, buildRequest);
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'
     || studioDomain === 'finance'
