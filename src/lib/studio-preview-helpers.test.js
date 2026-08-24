@@ -10,11 +10,14 @@ import {
   preparePreviewHtml,
   runningPreviewCode,
   writeHealedPreviewToVfs,
+  applyDeskReviewPatch,
   ensureShopPhotosInVfs,
   ensureShopDeskInVfs,
+  userAskedForDeskReview,
   userAskedForPreviewPhotos,
   userAskedForShopDeskFix,
 } from './studio-preview-helpers.js';
+import { deskChecksRegressed, probeRunningDesk } from './studio-desk-context.js';
 
 const splitApp = `Here is the app.
 
@@ -232,6 +235,34 @@ test('healing must not replace a working calculator with a dead page', () => {
   assert.equal(next.wrote, false);
   assert.equal(next.rejected, true);
   assert.match(next.vfs['index.html'].content, /calculator-display/);
+});
+
+test('Review this is a desk review ask', () => {
+  assert.equal(userAskedForDeskReview('Review this'), true);
+  assert.equal(userAskedForDeskReview('review the preview'), true);
+  assert.equal(userAskedForDeskReview('build a calculator'), false);
+});
+
+test('Review this wires a dead Add to Cart without dropping photos', () => {
+  const html = `<!DOCTYPE html><html><body>
+    <header>Aaranya</header>
+    <label>Currency <select id="quantora-currency"><option>INR</option><option>USD</option></select></label>
+    <div class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="Silk"><button type="button">Add to Cart</button></div>
+  </body></html>`;
+  const vfs = {
+    'index.html': { content: html, language: 'html' },
+    'products.json': { content: '[{"id":"silk","name":"Kanjeevaram Silk"}]', language: 'json' },
+  };
+  const job = { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] };
+  const before = probeRunningDesk({ html, vfs, job });
+  assert.equal(before.facts.hasPhotos, true);
+  const patched = applyDeskReviewPatch(vfs, job);
+  assert.equal(patched.rejected, false);
+  assert.equal(patched.changed, true);
+  assert.match(patched.vfs['index.html'].content, /addEventListener\('click'/);
+  const after = probeRunningDesk({ html: patched.vfs['index.html'].content, vfs: patched.vfs, job });
+  assert.equal(after.facts.hasPhotos, true);
+  assert.equal(deskChecksRegressed(before.checks, after.checks), false);
 });
 
 test('a calculator is not given a clothing catalog', () => {

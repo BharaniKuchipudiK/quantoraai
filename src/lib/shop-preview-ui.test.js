@@ -21,9 +21,18 @@ test('a boutique page without cart or currency gets both in Preview HTML', () =>
   assert.match(result.html, /addEventListener\('click'/);
 });
 
-test('a shop that already has currency and cart is left alone', () => {
-  const html = '<select id="currency"><option>INR</option><option>USD</option></select><button>Add to Cart</button>';
+test('a shop that already has the injected commerce UI is left alone', () => {
+  const html = `<div data-quantora-shop-ui="bar"><select id="quantora-currency"><option>INR</option><option>USD</option></select></div><button>Add to Cart</button>`;
   const result = injectShopCommerceUi(html);
   assert.equal(result.changed, false);
   assert.equal(result.html, html);
+});
+
+test('a dead Add to Cart button still gets a working click', () => {
+  const html = '<!DOCTYPE html><html><body><header>Aaranya</header><label>Currency <select id="quantora-currency"><option>INR</option><option>USD</option></select></label><div class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="Silk"><button type="button">Add to Cart</button></div></body></html>';
+  const result = injectShopCommerceUi(html);
+  assert.equal(result.changed, true);
+  assert.doesNotMatch(result.html, /onclick=/);
+  assert.match(result.html, /addEventListener\('click'/);
+  assert.match(result.html, /data-quantora-shop-ui/);
 });
