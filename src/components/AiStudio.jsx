@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
@@ -1211,6 +1211,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
+  const previewAssemblyKey = previewAssemblyFingerprint(vfs);
   const shellVfs = deskShellVfs(vfs, previewRunCode);
   const deskPacket = mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,
@@ -1975,11 +1976,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
+        const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
         const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob);
         if (assembled.rejected) return;
         const parsedVfs = assembled.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
-          || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '');
+          || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '')
+          || assembled.needsWebEntry === true;
 
         if (!previewable) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
@@ -2011,11 +2014,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
            const shopVfs = ensureShopDeskInVfs(parsedVfs).vfs;
            setDeskReview(diffVfsReview(vfs, shopVfs));
            setVfs(shopVfs);
-           setDeskJob((prev) => buildStudioJobCard({
-             brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-             vfs: shopVfs,
-             existing: prev,
-           }));
+           setDeskJob((prev) => {
+             const base = buildStudioJobCard({
+               brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+               vfs: shopVfs,
+               existing: prev,
+             });
+             if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
+               return {
+                 ...base,
+                 purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
+                 mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
+               };
+             }
+             return base;
+           });
            setWorkspaceCorrelationId(lastMsg.correlationId || null);
            setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
            void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
@@ -3870,6 +3883,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     <LivePreviewCanvas
                       ref={previewCanvasRef}
                       code={previewRunCode}
+                      assemblyKey={previewAssemblyKey}
                       isLight={isLight}
                       onClose={closeStudioWorkspace}
                       hideHeader

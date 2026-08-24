@@ -72,7 +72,34 @@ export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
 export function looksLikeCalculatorDesk({ html = '', job = null } = {}) {
   const purpose = normalizeStudioJobCard(job)?.purpose || '';
   if (/\bcalculator\b/i.test(purpose)) return true;
-  return /data-testid\s*=\s*["']calculator-display["']/i.test(String(html || ''));
+  const src = String(html || '');
+  // Require calculator-specific markers — bare <output> or class*=display matches too much.
+  return /data-testid\s*=\s*["']calculator-display["']/i.test(src)
+    || /\bid\s*=\s*["']display["']/i.test(src)
+    || /\bclass\s*=\s*["'](?:[^"']*\s)?display(?:\s[^"']*)?["']/i.test(src)
+    || /data-(?:calc-)?display\b/i.test(src);
+}
+
+function htmlHasCalculatorDisplay(haystack = '') {
+  const src = String(haystack || '');
+  return /data-testid\s*=\s*["']calculator-display["']/i.test(src)
+    || /<(?:output)\b/i.test(src)
+    || /\bid\s*=\s*["']display["']/i.test(src)
+    || /\bclass\s*=\s*["'](?:[^"']*\s)?display(?:\s[^"']*)?["']/i.test(src)
+    || /data-(?:calc-)?display\b/i.test(src);
+}
+
+function htmlHasScientificKeys(haystack = '') {
+  const src = String(haystack || '');
+  const has = (name) => new RegExp(`>\\s*${name}\\s*<`, 'i').test(src);
+  return (has('sin') && has('cos')) || (has('DEG') && has('RAD')) || (has('deg') && has('rad'));
+}
+
+function jobWantsScientific(job = null) {
+  const card = normalizeStudioJobCard(job);
+  if (!card) return false;
+  const hay = [card.purpose, ...(card.mustWork || [])].join(' ');
+  return /\bscientific\b/i.test(hay);
 }
 
 export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
@@ -92,8 +119,11 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
     hasCurrency: previewHtmlHasCurrencySwitcher(source) || previewHtmlHasCurrencySwitcher(haystack),
     catalogCount: catalog.length,
     catalogNames: catalog.map((item) => item.name),
-    hasCalculatorDisplay: /data-testid\s*=\s*["']calculator-display["']/i.test(haystack),
-    hasCalculatorKey: /data-testid\s*=\s*["']calculator-one["']/i.test(haystack),
+    hasCalculatorDisplay: htmlHasCalculatorDisplay(haystack),
+    hasCalculatorKey: /data-testid\s*=\s*["']calculator-one["']/i.test(haystack)
+      || />\s*[0-9]\s*</.test(haystack),
+    hasScientificKeys: htmlHasScientificKeys(haystack),
+    wantsScientific: jobWantsScientific(job) || /\bscientific\b/i.test(haystack),
     shop: looksLikeShopDesk({ html: source, vfs, job }),
     calculator: looksLikeCalculatorDesk({ html: haystack, job }),
   };
@@ -218,6 +248,22 @@ export function buildDeskChecks(facts = {}, { includeCatalog = false, job = null
       sourceOk: key.sourceOk,
       label: facts.hasCalculatorKey ? 'Calculator keys are on Preview' : 'Calculator keys missing',
     });
+    if (facts.wantsScientific) {
+      const scientific = sourceOrLiveCheck({
+        sourceOk: facts.hasScientificKeys === true,
+        observed: observedBool(live, 'hasScientificKeys'),
+        livePresent,
+      });
+      checks.push({
+        id: 'calc-scientific',
+        ok: scientific.ok,
+        state: scientific.state,
+        sourceOk: scientific.sourceOk,
+        label: facts.hasScientificKeys
+          ? 'Scientific keys are on Preview'
+          : 'Scientific keys (sin/cos) missing from Preview',
+      });
+    }
   }
   // Shop and calculator desks already probe the running page for their own
   // must-work lines. The job card fills the gap only where nothing else does.
@@ -254,6 +300,7 @@ export function mergeLiveDeskProbe(packet, live = null) {
   applyLiveBool(facts, live, 'hasCurrency');
   applyLiveBool(facts, live, 'hasCalculatorDisplay');
   applyLiveBool(facts, live, 'hasCalculatorKey');
+  applyLiveBool(facts, live, 'hasScientificKeys');
   applyLiveCount(facts, live, 'photoCount');
   applyLiveCount(facts, live, 'uniquePhotoCount');
   applyLiveCount(facts, live, 'catalogCount');
@@ -377,6 +424,8 @@ export function sanitizeDeskContext(raw) {
       : catalog.map((item) => item.name),
     hasCalculatorDisplay: raw.facts.hasCalculatorDisplay === true,
     hasCalculatorKey: raw.facts.hasCalculatorKey === true,
+    hasScientificKeys: raw.facts.hasScientificKeys === true,
+    wantsScientific: raw.facts.wantsScientific === true,
     bagIncremented: raw.facts.bagIncremented === true,
     shop: raw.facts.shop === true,
     calculator: raw.facts.calculator === true,
@@ -485,6 +534,12 @@ export function chipsFromDeskProbes(checks = []) {
       label: 'Fix the calculator keys',
       value: 'The calculator Preview is missing working keys. Fix the running page.',
       priority: 107,
+    },
+    'calc-scientific': {
+      id: 'gap-calc-scientific',
+      label: 'Add scientific keys on Preview',
+      value: 'Patch the web Preview entry (index.html / App.jsx) with sin/cos (or DEG/RAD). Python-only files never run in Preview.',
+      priority: 109,
     },
     'job-add-item': {
       id: 'gap-add-item',
