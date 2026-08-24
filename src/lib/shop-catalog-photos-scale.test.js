@@ -63,7 +63,7 @@ test('Fox & Wolf empty shell gets real photos, cart, currency — not gold-frame
   const catalog = JSON.parse(next.vfs['products.json'].content);
   assert.ok(catalog.length <= SHOP_CATALOG_CAP);
   assert.ok(catalog.length >= 6);
-  assert.match(catalog[0].image, /^data:image\//);
+  assert.match(catalog[0].image, /\/api\/preview-image\?u=/);
   assert.match(next.scaleNote || '', /24|100/);
 
   const probed = probeRunningDesk({ html, vfs: next.vfs, job });

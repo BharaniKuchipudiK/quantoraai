@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
@@ -1241,11 +1241,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         setIsWorkspaceMode(true);
         setCodingDeskOpen(true);
       }
-      // Photo/cart repair is deterministic. Inject first — do not burn Auto on a 90s chat timeout.
-      if (userAskedForShopDeskFix(textToSend) && !patched.rejected) {
+      // Deterministic repair only for cart/currency or broken-photo intents.
+      // Semantic asks (“replace photos with blue dresses”) must reach the model.
+      if (
+        userAskedForShopDeskFix(textToSend)
+        && !patched.rejected
+        && !userAskedForSemanticPhotoEdit(textToSend)
+      ) {
         const html = pickPreviewEntry(patched.vfs) || '';
         const photoCount = countRealPreviewPhotos(html);
-        if (patched.changed || photoCount > 0) {
+        const brokenPhotoAsk = userAskedForBrokenPreviewPhotos(textToSend);
+        const canShortCircuit = patched.changed || (brokenPhotoAsk && photoCount > 0);
+        if (canShortCircuit) {
           const trimmed = String(textToSend || '').trim();
           if (!overrideText) setInputText('');
           updateActiveMessages((prev) => [
@@ -1255,8 +1262,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               id: Date.now() + 1,
               sender: 'ai',
               text: patched.changed
-                ? 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.'
-                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old Unsplash URLs are still cached in the iframe.',
+                ? 'Patched Preview with loadable product photos (via /api/preview-image), cart, and currency. Hard-refresh Preview if the iframe still shows a cached blank.'
+                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old broken remote images are still cached in the iframe.',
             },
           ]);
           setAttachments([]);

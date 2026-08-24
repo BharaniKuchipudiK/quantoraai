@@ -17,8 +17,9 @@ test('only known photo hosts are allowed through the Preview proxy', () => {
   assert.equal(isAllowedPreviewImageUrl('https://evil.example/photo.jpg'), false);
 });
 
-test('data-URI shop photos are reliable without a remote host', () => {
+test('proxy and data-URI shop photos are reliable without bare remote hosts', () => {
   assert.equal(isReliablePreviewPhotoSrc('data:image/svg+xml;charset=utf-8,%3Csvg'), true);
+  assert.equal(isReliablePreviewPhotoSrc('/api/preview-image?u=https%3A%2F%2Fimages.unsplash.com%2Fphoto-1'), true);
   assert.equal(isReliablePreviewPhotoSrc('https://images.unsplash.com/photo-123'), false);
 });
 
@@ -30,18 +31,18 @@ test('Preview rewrites Unsplash photos to the Quantora proxy so they can load', 
   assert.equal(rewritePreviewImageUrls(html, ''), html);
 });
 
-test('a boutique card with a large SVG gets a real data-URI photo', () => {
+test('a boutique card with a large SVG gets a proxied merchandise photo', () => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg>`;
   const html = `<!DOCTYPE html><html><body><div class="product-card">${svg}<p>Pure Gold Zari Kanjeevaram</p></div></body></html>`;
   const result = injectMissingShopPhotos(html);
   assert.equal(result.injected, true);
   assert.equal(previewHtmlHasRealPhotos(result.html), true);
-  assert.match(result.html, /data:image\/svg\+xml/);
-  assert.doesNotMatch(result.html, /images\.unsplash\.com/);
+  assert.match(result.html, /\/api\/preview-image\?u=/);
+  assert.doesNotMatch(result.html, /<img\b[^>]*\bsrc\s*=\s*["']https?:\/\/images\.unsplash\.com/i);
 });
 
 test('a shop that already has reliable photos is not rewritten into a different catalog', () => {
-  const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#111"/><text>quantora-photo-99</text></svg>');
+  const src = '/api/preview-image?u=https%3A%2F%2Fimages.unsplash.com%2Fphoto-99&qp=99';
   const html = `<article class="product-card"><img src="${src}" alt="saree"></article>`;
   const result = injectMissingShopPhotos(html);
   assert.equal(result.injected, false);
@@ -50,7 +51,7 @@ test('a shop that already has reliable photos is not rewritten into a different 
 
 test('gold frames still get photos when the hero already has one', () => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg>`;
-  const hero = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"><text>quantora-photo-1</text></svg>');
+  const hero = '/api/preview-image?u=https%3A%2F%2Fimages.unsplash.com%2Fphoto-1&qp=1';
   const html = `<!DOCTYPE html><html><body>
     <img src="${hero}" alt="hero">
     <div class="product-card">${svg}<p>Pure Silk</p></div>
@@ -66,7 +67,7 @@ test('a CSS-only boutique still gets a collection photo', () => {
   const html = '<!DOCTYPE html><html><body><main><div class="hero">Aaranya gold frame</div></main></body></html>';
   const result = injectMissingShopPhotos(html);
   assert.equal(result.injected, true);
-  assert.match(result.html, /data:image\/svg\+xml/);
+  assert.match(result.html, /\/api\/preview-image\?u=/);
 });
 
 test('nested catalog and stat cards do not get a repeating photo stack', () => {
@@ -85,8 +86,8 @@ test('nested catalog and stat cards do not get a repeating photo stack', () => {
 test('products.json without image URLs gets catalog photos', () => {
   const catalog = injectProductCatalogImages('[{"id":"a","name":"Kanjeevaram","priceCents":38000}]');
   assert.equal(catalog.changed, true);
-  assert.match(catalog.text, /data:image\/svg\+xml/);
-  assert.doesNotMatch(catalog.text, /images\.unsplash\.com/);
+  assert.match(catalog.text, /\/api\/preview-image\?u=/);
+  assert.doesNotMatch(catalog.text, /"image":\s*"https:\/\/images\.unsplash\.com/);
 });
 
 test('cloned Unsplash URLs on every card become distinct reliable photos', () => {
@@ -98,8 +99,8 @@ test('cloned Unsplash URLs on every card become distinct reliable photos', () =>
   </body></html>`;
   const result = injectMissingShopPhotos(html);
   assert.equal(result.injected, true);
-  assert.doesNotMatch(result.html, /images\.unsplash\.com/);
-  const ids = [...new Set([...result.html.matchAll(/quantora-photo-\d+/gi)].map((match) => match[0]))];
+  assert.doesNotMatch(result.html, /<img\b[^>]*\bsrc\s*=\s*["']https?:\/\/images\.unsplash\.com/i);
+  const ids = [...new Set([...result.html.matchAll(/[?&]qp=(\d+)/gi)].map((match) => match[1]))];
   assert.ok(ids.length >= 3, `expected 3 distinct photos, got ${ids.join(',')}`);
   assert.ok(countRealPreviewPhotos(result.html) >= 3);
 });
@@ -113,6 +114,6 @@ test('products.json that repeats one Unsplash URL gets a unique reliable photo p
   assert.equal(catalog.changed, true);
   const parsed = JSON.parse(catalog.text);
   assert.notEqual(parsed[0].image, parsed[1].image);
-  assert.match(parsed[0].image, /^data:image\//);
-  assert.match(parsed[1].image, /^data:image\//);
+  assert.match(parsed[0].image, /\/api\/preview-image\?u=/);
+  assert.match(parsed[1].image, /\/api\/preview-image\?u=/);
 });
