@@ -18,7 +18,7 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { resolveIsCodingRequest } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -741,7 +741,7 @@ export function useChatStream({
 
           if (streamedError) {
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
-            if (artifactFailed && isCodingRequest && codingDeskOpen) {
+            if (artifactFailed && isCodingRequest && codingDeskOpen && !advisorBlocksPreviewBuild(turnDomain)) {
               const scaffolded = buildCodingDeskScaffoldReply(visibleUserText);
               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                 ...m,
@@ -777,7 +777,12 @@ export function useChatStream({
           }
 
           // Coding Desk build turns must land files. A chat-only plan is not success.
-          if (isCodingRequest && !assembleStudioPreview(currentText).code) {
+          // Advisor domains (Study flashcards, Travel, etc.) intentionally stay chat.
+          if (
+            isCodingRequest
+            && !advisorBlocksPreviewBuild(turnDomain)
+            && !assembleStudioPreview(currentText).code
+          ) {
             const recovery = resolveTurnRecovery({
               attempt,
               code: 'BUILD_ARTIFACT_CONTRACT',
