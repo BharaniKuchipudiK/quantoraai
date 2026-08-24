@@ -1221,7 +1221,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
       
       const displayText = getChatDisplayText(msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '');
-      let cleanText = filterDeskChatClaims(displayText, deskPacket, studioDomain);
+      let cleanText = msg.sender === 'ai'
+        ? filterDeskChatClaims(displayText, deskPacket, studioDomain)
+        : displayText;
       const claimFiltered = msg.sender === 'ai' && deskChatClaimWasFiltered(displayText, cleanText);
       let modalData = null;
       if (cleanText) {

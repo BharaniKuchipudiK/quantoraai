@@ -42,13 +42,31 @@ test('Travel never gets the coding-desk filter', () => {
   assert.equal(filterDeskChatClaims(original, failedAdd, 'research'), original);
 });
 
+test('an unverified check uses uncertainty, not a fake failure', () => {
+  const filtered = filterDeskChatClaims(
+    'Items can be added on Preview.',
+    { checks: [{ id: 'job-add-item', ok: false, state: 'unverified' }], facts: {} },
+    'studio',
+  );
+  assert.equal(filtered, 'Preview has not confirmed that an item can be added yet.');
+});
+
+test('a contrast clause still cannot claim a failed control now works', () => {
+  const filtered = filterDeskChatClaims(
+    'The add button was broken before, but it now works.',
+    failedAdd,
+    'studio',
+  );
+  assert.equal(filtered, 'Preview cannot add an item yet.');
+});
+
 test('a job card without a live check still blocks the add-item lie', () => {
   const filtered = filterDeskChatClaims(
     'Items can be added on Preview.',
     { job: { purpose: 'A to-do list', mustWork: ['Items can still be added'] }, checks: [], facts: {} },
     'studio',
   );
-  assert.equal(filtered, 'Preview cannot add an item yet.');
+  assert.equal(filtered, 'Preview has not confirmed that an item can be added yet.');
 });
 
 test('no packet means the reply is left alone', () => {

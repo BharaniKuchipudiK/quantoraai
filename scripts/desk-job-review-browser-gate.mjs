@@ -245,7 +245,8 @@ try {
   if (transcript.includes(CHAT_CLAIM)) {
     throw new Error('Chat presented the injected lie as fact. Preview is the source of truth.');
   }
-  if (!/Preview cannot add an item yet/i.test(transcript)) {
+  if (!/Preview has not confirmed that an item can be added yet/i.test(transcript)
+    && !/Preview cannot add an item yet/i.test(transcript)) {
     throw new Error('Chat never received the injected add-item claim, so this gate cannot prove the beat ignores chat.');
   }
 
