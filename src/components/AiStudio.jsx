@@ -46,6 +46,7 @@ import {
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
+import { setClientSecret } from '../lib/client-secrets.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import {
@@ -1020,9 +1021,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const saveKeyAndRetry = (keyType) => {
     if (!keyInputValue.trim()) return;
     if (keyType === 'gemini') {
-      localStorage.setItem('geminiApiKey', keyInputValue.trim());
+      const value = keyInputValue.trim();
+      localStorage.setItem('geminiApiKey', value);
+      setClientSecret('gemini', value);
     } else {
-      localStorage.setItem('openRouterApiKey', keyInputValue.trim());
+      const value = keyInputValue.trim();
+      localStorage.setItem('openRouterApiKey', value);
+      setClientSecret('openrouter', value);
     }
     setKeyInputValue('');
     updateActiveMessages(prev => prev.filter(m => !m.isKeyPrompt));

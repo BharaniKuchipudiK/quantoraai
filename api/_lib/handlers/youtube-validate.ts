@@ -1,6 +1,6 @@
-import { applyCors } from './_lib/rate-limit.js';
-import { requireActiveSession } from './_lib/authz.js';
-import { normalizeYoutubeVideoId, verifyYoutubeResource } from './_lib/youtube-resource.js';
+import { applyCors } from '../rate-limit.js';
+import { requireActiveSession } from '../authz.js';
+import { normalizeYoutubeVideoId, verifyYoutubeResource } from '../youtube-resource.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 500;

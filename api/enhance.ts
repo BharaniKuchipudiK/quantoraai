@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { applyCors, isRateLimited, isRateLimitedDurable } from "./_lib/rate-limit.js";
+import { applyCors, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./_lib/rate-limit.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { requireActiveSession } from "./_lib/authz.js";
 import { buildPromptEnhancementInput, resolvePromptEnhancerModel } from "./_lib/prompt-enhancement.js";
@@ -53,7 +53,8 @@ export default async function handler(req: any, res: any) {
   const limitKey = `enhance:user:${sessionUser.sub}`;
   if (isRateLimited(limitKey, 30, 60_000)) return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
   const durable = await isRateLimitedDurable(limitKey, 30, 60);
-  if (durable.limited) return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+  const durableGuard = applyDurableCostBearingGuard(limitKey, 30, durable);
+  if (durableGuard.limited) return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
 
   try {
     const { prompt, depth = 'auto', history = [], sessionContext = null } = req.body || {};

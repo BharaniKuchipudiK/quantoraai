@@ -1,8 +1,8 @@
-import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
-import { requireActiveSession } from "./_lib/authz.js";
-import { clearSessionCookie } from "./_lib/session.js";
-import { deleteUserData, exportUserData, isStoreConfigured } from "./_lib/store.js";
-import { exportProjectData } from "./_lib/project-store.js";
+import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
+import { requireActiveSession } from "../authz.js";
+import { clearSessionCookie } from "../session.js";
+import { deleteUserData, exportUserData, isStoreConfigured } from "../store.js";
+import { exportProjectData } from "../project-store.js";
 
 /*
  * Account privacy controls (Roadmap 0.2 — "a user can erase their footprint").

@@ -58,8 +58,23 @@ export function applyCors(
   }
 
   res.setHeader("Access-Control-Allow-Methods", methods);
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-Quantora-Correlation-Id, X-Quantora-Golden-Canary, X-Quantora-Gemini-Key, X-Quantora-OpenRouter-Key, X-Quantora-Anthropic-Key",
+  );
 }
+
+export type DurableRateResult = {
+  limited: boolean;
+  hits: number | null;
+  resetsAt: string | null;
+  /**
+   * True when the shared store was missing or unreachable. Cost-bearing callers
+   * should tighten the local limit via applyDurableCostBearingGuard rather than
+   * treating this as a full pass.
+   */
+  unavailable: boolean;
+};
 
 /*
  * Durable rate limiting, backed by Postgres.
@@ -75,20 +90,20 @@ export function applyCors(
  * together cannot both read the same count and both conclude they are under
  * the limit.
  *
- * Fails OPEN, deliberately. If the database is unreachable this returns
- * `false` — not rate limited — and the caller proceeds. The in-memory limiter
- * still applies underneath, so there is never no limit at all. The judgement:
- * a brief window of weaker limits during an outage is a smaller harm than
- * locking out every legitimate user because a counter table was unreachable.
+ * When the database is unreachable this returns limited:false with
+ * unavailable:true. Non-cost routes may still proceed under the in-memory
+ * limiter. Cost-bearing routes (chat, Office, enhance, …) must call
+ * applyDurableCostBearingGuard so a Supabase outage collapses to a stricter
+ * per-instance burst instead of an open door.
  */
 export async function isRateLimitedDurable(
   key: string,
   limit: number,
   windowSeconds: number,
-): Promise<{ limited: boolean; hits: number | null; resetsAt: string | null }> {
+): Promise<DurableRateResult> {
   const url = process.env.SUPABASE_URL;
   const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !secret) return { limited: false, hits: null, resetsAt: null };
+  if (!url || !secret) return { limited: false, hits: null, resetsAt: null, unavailable: true };
 
   try {
     const response = await fetch(`${url.replace(/\/+$/, "")}/rest/v1/rpc/hit_rate_limit`, {
@@ -105,20 +120,48 @@ export async function isRateLimitedDurable(
 
     if (!response.ok) {
       console.warn("Durable rate limit unavailable:", response.status, await response.text());
-      return { limited: false, hits: null, resetsAt: null };
+      return { limited: false, hits: null, resetsAt: null, unavailable: true };
     }
 
     const rows = await response.json();
     const row = Array.isArray(rows) ? rows[0] : rows;
-    if (!row) return { limited: false, hits: null, resetsAt: null };
+    if (!row) return { limited: false, hits: null, resetsAt: null, unavailable: true };
 
     return {
       limited: row.allowed === false,
       hits: typeof row.hits === "number" ? row.hits : null,
       resetsAt: row.resets_at ?? null,
+      unavailable: false,
     };
   } catch (err: any) {
     console.warn("Durable rate limit check failed:", err?.message || err);
-    return { limited: false, hits: null, resetsAt: null };
+    return { limited: false, hits: null, resetsAt: null, unavailable: true };
   }
+}
+
+/** In-memory ceiling while the durable store is down: ~1/3 of the normal budget. */
+export function degradedRateLimit(normalLimit: number): number {
+  return Math.max(1, Math.ceil(normalLimit / 3));
+}
+
+/**
+ * After isRateLimitedDurable, apply this on cost-bearing routes so an outage
+ * does not reopen full quota on every warm instance.
+ */
+export function applyDurableCostBearingGuard(
+  key: string,
+  normalLimit: number,
+  durable: DurableRateResult,
+  windowMs = 60_000,
+): { limited: boolean; resetsAt: string | null; degraded: boolean } {
+  if (durable.limited) {
+    return { limited: true, resetsAt: durable.resetsAt, degraded: false };
+  }
+  if (
+    durable.unavailable &&
+    isRateLimited(`${key}:degraded`, degradedRateLimit(normalLimit), windowMs)
+  ) {
+    return { limited: true, resetsAt: null, degraded: true };
+  }
+  return { limited: false, resetsAt: null, degraded: false };
 }

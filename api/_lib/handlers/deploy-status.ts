@@ -1,5 +1,5 @@
-import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
-import { requireActiveSession } from "./_lib/authz.js";
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { requireActiveSession } from "../authz.js";
 import { GoogleAuth } from 'google-auth-library';
 
 export default async function handler(req: any, res: any) {

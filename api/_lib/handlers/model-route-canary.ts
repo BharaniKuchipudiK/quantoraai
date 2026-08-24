@@ -1,5 +1,5 @@
-import { clientIp, isRateLimited } from './_lib/rate-limit.js';
-import { isGoldenCanaryRequest } from './_lib/transaction-trace.js';
+import { clientIp, isRateLimited } from '../rate-limit.js';
+import { isGoldenCanaryRequest } from '../transaction-trace.js';
 
 const CANARY_MODEL = 'deepseek/deepseek-chat';
 

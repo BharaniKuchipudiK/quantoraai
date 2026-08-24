@@ -1,6 +1,6 @@
-import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
-import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
-import { isAllowedPreviewImageUrl } from "../src/lib/preview-images.js";
+import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
+import { fetchWithTimeout } from "../fetch-timeout.js";
+import { isAllowedPreviewImageUrl } from "../../../src/lib/preview-images.js";
 
 const MAX_BYTES = 1_500_000;
 

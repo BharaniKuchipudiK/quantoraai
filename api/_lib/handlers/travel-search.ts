@@ -1,7 +1,7 @@
-import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
-import { requireActiveSession } from './_lib/authz.js';
-import { executeToolCall } from './_lib/agent-tools.js';
-import { parseTravelSearchRequest } from './_lib/travel-search-request.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { requireActiveSession } from '../authz.js';
+import { executeToolCall } from '../agent-tools.js';
+import { parseTravelSearchRequest } from '../travel-search-request.js';
 
 /**
  * Live Travel search for the trip board. Search only — never book.

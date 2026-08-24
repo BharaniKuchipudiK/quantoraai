@@ -31,10 +31,11 @@ There are **two** ways the server code runs, and they are not the same:
   works in dev but **not on serverless prod**. Treat it as dev-only until it has
   a persistent host.
 - **Serverless function budget.** Every top-level `api/*.ts|js` is a function
-  (currently **12**). Do **not** add a new top-level file for a new capability —
-  **fold it into an existing handler via task routing.** `/api/chat` already
-  multiplexes `chat`, `repair`, `verify-build`, and `feedback` this way. Shared
-  logic goes in `api/_lib/**`, which are modules, not functions.
+  (target **≤12** on Hobby; thin routes fold into `pipeline` / `auth` / `admin`
+  via `vercel.json` rewrites). Do **not** add a new top-level file for a new
+  capability — **fold it into an existing handler via task routing.** `/api/chat`
+  already multiplexes `chat`, `repair`, `verify-build`, and `feedback` this way.
+  Shared logic goes in `api/_lib/**`, which are modules, not functions.
 
 ---
 
@@ -44,26 +45,22 @@ There are **two** ways the server code runs, and they are not the same:
 src/                      FRONTEND (bundled into dist/)
   components/             React UI (AiStudio, LivePreviewCanvas, LandingPage, …)
   hooks/                  useChatStream (the chat send loop), useStudioSession, usePCLMemory
-  lib/                    Frontend logic
+  lib/                    Frontend logic (+ shims re-exporting shared/)
     communication/        intent / routing / policy / evaluation (typed)
     intelligence/         blueprint · executor · memory · orchestrator
-    (misc)                studio-domains, studio-choices, session-context, outcome-state, …
+    (misc)                studio-domains catalog, studio-choices, session-context, …
+
+shared/                   PURE FE+BE modules (no DOM, no Node secrets/DB)
+  build-intent, workspace-intent, coding-desk-auto-model
+  travel/*, studio/domains, studio/domain-inference
 
 api/                      BACKEND (each *.ts|js = a serverless function)
-  chat.ts                 THE hot path — chat + repair + verify-build + feedback
-  deploy.ts               Static publish to Vercel + Stripe checkout bridge
-  deploy-gcp.ts           One-click GCP Cloud Run deploy
-  models.js               Live model registry (cron-refreshed)
-  classify-intent.ts, enhance.ts, moderate.js, domains.ts, autocomplete.ts,
-  pipeline.ts, product-event.ts, deploy-status.ts
+  pipeline.ts / auth.ts / admin.ts   hubs (thin routes fold here via rewrites)
   _lib/                   Shared BACKEND modules (NOT functions)
+    chat-handler          THE hot path — chat + repair + verify-build + feedback
     conversation-policy   builds the SYSTEM PROMPT
     conversation-engine   snapshot → next-move decision → response verification
-    communication/        request normalizer
-    verify-build          the build Verifier (quality score + issues)
-    repair                self-heal
-    store / session / rate-limit / safety-policy / model-store / …
-  auth/, admin/           sub-route functions
+    …
 ```
 
 ### The `/api/chat` pipeline (the most important flow)
@@ -84,25 +81,26 @@ Task branches short-circuit this: `task:"repair"`, `task:"verify-build"`,
 
 ---
 
-## 3. Known duplication — the #1 drift risk
+## 3. Shared modules + remaining duplication
 
-Several concerns exist as **two copies**: a **frontend** one in `src/lib/**` and a
-**backend** one in `api/_lib/**`. Each side imports its own via relative paths, so
-both are **live** — this is duplication, **not** dead code (do not "clean it up"
-by deleting one; that breaks the side that imports it).
+Cross-boundary **pure** logic now lives under **`shared/`** (Vite alias
+`@shared/*`; API uses relative `../../shared/...`):
 
-Duplicated concerns today: `session-context`, `studio-domains`, `studio-choices`,
-`studio-continues`, `conversation-policy`, `conversation-engine`, `outcome-state`,
-`repository-preview`.
+- `shared/build-intent.js`, `shared/workspace-intent.js`
+- `shared/coding-desk-auto-model.js`
+- `shared/travel/{flight-resilience,place-shortlist,hotel-location}.js`
+- `shared/studio/{domains,domain-inference}.ts`
 
-**Rule until these are unified:** if you change the logic on one side, change the
-other in the same PR. The end-state we want is a single **`shared/`** module per
-concern that both sides import (see §5).
+`src/lib/*` and `api/_lib/studio-domain-inference.ts` keep thin **re-export
+shims** so existing imports keep working.
 
-> Note: `api/chat.ts` currently imports a few `src/lib/communication/*` modules
-> directly (backend importing frontend source). That works only because those
-> modules are browser-free. **Keep anything `api/` imports free of `window`/DOM
-> and heavy client deps**, or the serverless bundle breaks.
+**Still duplicated (do not delete one side):** `session-context`,
+`studio-choices`, `studio-continues`, full `studio-domains` UI catalog vs server
+directives, `conversation-policy` / `conversation-engine` (different modules,
+same names), `outcome-state`, `repository-preview`.
+
+**Rule for remaining forks:** change both sides in the same PR until each lands
+in `shared/`. Keep anything `api/` or `shared/` imports free of `window`/DOM.
 
 ---
 
@@ -132,8 +130,9 @@ response contract. Don't add a third.)
 2. **TypeScript** for new shared logic; colocate tests as `*.test.ts`.
 3. **No duplicate basenames** for different concerns; **no new top-level `api/`
    function** for a capability that can be a task branch.
-4. **`api/` never depends on browser-only code.** Prefer putting cross-boundary
-   logic in `api/_lib` (or a future `shared/`) rather than importing `src/`.
+4. **`api/` never depends on browser-only code.** Cross-boundary logic goes in
+   `shared/` (preferred) or stays browser-free under temporary `src/lib` shims.
+   Do not put `localStorage` / DOM helpers in `shared/`.
 5. **Model IDs**: don't hardcode a specific speculative version as a default.
    Default to the registry-backed safe slug (`gemini-flash-latest`) and let the
    live registry upgrade it.
@@ -146,11 +145,19 @@ response contract. Don't add a third.)
 
 - **Keys**: signed-in users may use deployment keys (resolved server-side from
   the Supabase API Gateway); everyone can bring their own key (BYOK), stored
-  client-side only. Server secrets never reach the client.
-- **Headers**: CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, referrer &
-  permissions policy in `vercel.json`.
-- **Abuse**: two-layer rate limiting (in-memory + durable) on `/api/chat`;
-  moderation pass on prompts; safety-policy checks.
+  client-side only and sent as `x-quantora-*-key` headers (never JSON body
+  fields). Server secrets never reach the client. Dev Live WS authenticates to
+  Gemini with `x-goog-api-key`, not a query-string key.
+- **Headers**: CSP (app/`desk` `script-src` without `unsafe-inline`; `/preview/`
+  keeps inline scripts for user artifacts), HSTS, `X-Frame-Options: DENY`,
+  `nosniff`, referrer & permissions policy in `vercel.json`.
+- **Abuse / control plane**: two-layer rate limiting (in-memory + durable) on
+  cost-bearing routes; when Supabase RL is unreachable, those routes collapse
+  to ~1/3 in-memory burst (`applyDurableCostBearingGuard`). Provider circuits
+  are shared via Supabase when healthy; on outage they run `local-degraded`
+  (open after ~half the normal failures) so cold instances do not keep hammering
+  a broken upstream. `/api/inference-health` reports `circuitStore` mode.
+  Moderation pass on prompts; safety-policy checks.
 - **Published sites**: `/api/deploy` allows `*` CORS *only* so a published shop
   can call the Stripe checkout bridge; the Vercel/Stripe secrets stay server-side.
 

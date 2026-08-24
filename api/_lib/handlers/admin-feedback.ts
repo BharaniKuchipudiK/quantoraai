@@ -1,6 +1,6 @@
-import { applyCors, clientIp, isRateLimited } from '../_lib/rate-limit.js';
-import { authenticateAdminRequest } from '../_lib/admin-auth.js';
-import { FEEDBACK_STATUSES, isFeedbackStatus, listUserFeedback, updateUserFeedbackStatus } from '../_lib/feedback-store.js';
+import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { authenticateAdminRequest } from '../admin-auth.js';
+import { FEEDBACK_STATUSES, isFeedbackStatus, listUserFeedback, updateUserFeedbackStatus } from '../feedback-store.js';
 
 function parseBody(req: any) {
   if (!req?.body) return {};

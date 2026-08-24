@@ -1,8 +1,8 @@
-import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
-import { requireActiveSession } from "./_lib/authz.js";
-import { getSessionUser } from "./_lib/session.js";
-import { recordProductEvent, recordSuggestionEvent } from "./_lib/store.js";
-import { getRequestGeo } from "./_lib/geo.js";
+import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
+import { requireActiveSession } from "../authz.js";
+import { getSessionUser } from "../session.js";
+import { recordProductEvent, recordSuggestionEvent } from "../store.js";
+import { getRequestGeo } from "../geo.js";
 
 const ALLOWED_EVENTS = new Set(["preview_opened", "publish_completed"]);
 const SUGGESTION_ACTIONS = new Set(["shown", "accepted", "dismissed"]);

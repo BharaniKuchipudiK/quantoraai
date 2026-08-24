@@ -1,7 +1,7 @@
-import { applyCors } from "../_lib/rate-limit.js";
-import { getSessionUser } from "../_lib/session.js";
-import { isAdminUser } from "../_lib/store.js";
-import { requireActiveSession } from "../_lib/authz.js";
+import { applyCors } from "../rate-limit.js";
+import { getSessionUser } from "../session.js";
+import { isAdminUser } from "../store.js";
+import { requireActiveSession } from "../authz.js";
 
 /*
  * Who is signed in on this request.

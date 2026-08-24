@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { fetchApiGatewayKey } from './autocomplete';
-import { applyCors, clientIp, isRateLimited, isRateLimitedDurable } from './_lib/rate-limit.js';
+import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
 import { isPublishedSiteOwner } from './_lib/store.js';
@@ -26,7 +26,8 @@ export default async function handler(req: any, res: any) {
     return res.status(429).json({ error: 'Too many domain requests. Please wait a minute.' });
   }
   const durable = await isRateLimitedDurable(limitKey, REQUESTS_PER_MINUTE, 60);
-  if (durable.limited) return res.status(429).json({ error: 'Too many domain requests. Please wait a minute.' });
+  const durableGuard = applyDurableCostBearingGuard(limitKey, REQUESTS_PER_MINUTE, durable);
+  if (durableGuard.limited) return res.status(429).json({ error: 'Too many domain requests. Please wait a minute.' });
 
   try {
     const { context, task, domain, projectName, sessionId } = req.body;
