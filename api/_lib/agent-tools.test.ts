@@ -61,6 +61,10 @@ test('unconnected read-only travel providers stop the agent instead of returning
   assert.equal(flight.status, 'unavailable');
   assert.equal(flight.executed, false);
   assert.equal(flight.action, 'PAUSE_AND_ASK');
+  assert.equal(flight.reason, 'NOT_CONFIGURED');
+  assert.equal(flight.retryable, false);
+  assert.match(flight.message, /DUFFEL_API_KEY|not connected/i);
+  assert.doesNotMatch(flight.message, /provider answers/i);
   assert.equal('flights' in flight, false, 'must not substitute mock flight results');
 
   const hotel = await executeToolCall('search_hotels', {
@@ -364,3 +368,117 @@ test('clarification remains a non-transactional human-in-loop action', async () 
   assert.equal(result.action, 'PAUSE_AND_ASK');
   assert.equal(result.message, 'What is your travel budget?');
 });
+
+test('incomplete flight args ask for airports and dates instead of calling a provider', async () => {
+  const incomplete = await executeToolCall('search_flights', {
+    origin: 'SIN',
+  }, {
+    duffelClient: {
+      offerRequests: {
+        create: async () => {
+          throw new Error('Duffel must not be called for incomplete flight args');
+        },
+      },
+    } as any,
+  });
+  assert.equal(incomplete.action, 'PAUSE_AND_ASK');
+  assert.equal(incomplete.reason, 'INVALID_ARGUMENT');
+  assert.equal(incomplete.retryable, false);
+  assert.match(incomplete.message, /destination/i);
+  assert.match(incomplete.message, /departure date/i);
+  assert.equal('flights' in incomplete, false);
+});
+
+test('flight provider failure retries on an alternate Duffel client when configured', async () => {
+  let primaryCalls = 0;
+  let fallbackCalls = 0;
+  const primary = {
+    offerRequests: {
+      create: async () => {
+        primaryCalls += 1;
+        throw new Error('primary duffel down');
+      },
+    },
+  };
+  const fallback = {
+    offerRequests: {
+      create: async () => {
+        fallbackCalls += 1;
+        return {
+          data: {
+            offers: [{
+              id: 'off_fallback',
+              total_amount: '210.00',
+              total_currency: 'USD',
+              slices: [{
+                duration: 'PT2H30M',
+                segments: [{
+                  departing_at: '2026-09-12T08:00:00Z',
+                  arriving_at: '2026-09-12T10:30:00Z',
+                  operating_carrier: { name: 'Fallback Air', iata_code: 'FA' },
+                  operating_carrier_flight_number: '12',
+                  marketing_carrier: { name: 'Fallback Air' },
+                }],
+              }],
+            }],
+          },
+        };
+      },
+    },
+  };
+
+  const result = await executeToolCall('search_flights', {
+    origin: 'SIN',
+    destination: 'DPS',
+    departureDate: '2026-09-12',
+  }, {
+    duffelClient: primary as any,
+    duffelFallbackClient: fallback as any,
+    providerPolicy: { maxAttempts: 1, timeoutMs: 2_000, baseDelayMs: 0 },
+  });
+
+  assert.equal(primaryCalls, 1);
+  assert.equal(fallbackCalls, 1);
+  assert.equal(result.status, 'success');
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.flights?.[0]?.id, 'off_fallback');
+});
+
+test('complete flight query provider errors stay retryable for turn self-heal', async () => {
+  const failing = {
+    offerRequests: {
+      create: async () => {
+        throw new Error('duffel timeout');
+      },
+    },
+  };
+  const first = await executeToolCall('search_flights', {
+    origin: 'SIN',
+    destination: 'DPS',
+    departureDate: '2026-09-12',
+  }, {
+    duffelClient: failing as any,
+    providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
+    turnAttempt: 1,
+  });
+  assert.equal(first.action, 'PAUSE_AND_ASK');
+  assert.equal(first.reason, 'PROVIDER_ERROR');
+  assert.equal(first.retryable, true);
+  assert.equal(first.autoRetryTurn, true);
+  assert.doesNotMatch(first.message, /Retry flight search/);
+
+  const second = await executeToolCall('search_flights', {
+    origin: 'SIN',
+    destination: 'DPS',
+    departureDate: '2026-09-12',
+  }, {
+    duffelClient: failing as any,
+    providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
+    turnAttempt: 2,
+  });
+  assert.equal(second.retryable, true);
+  assert.equal(second.autoRetryTurn, false);
+  assert.match(second.message, /Retry flight search/);
+  assert.match(second.message, /quantora-modal/);
+});
+

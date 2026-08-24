@@ -44,6 +44,14 @@ export function resolveTurnRecovery({
     };
   }
 
+  if (code === 'TRAVEL_FLIGHT_PROVIDER') {
+    return {
+      retry: true,
+      notice: 'Live flight lookup failed. Trying once more…',
+      reason: 'travel-flight',
+    };
+  }
+
   // A half-written answer is worse to restart than to keep: the person already
   // read the first paragraph.
   if (hasPartialText) return no('partial-answer');

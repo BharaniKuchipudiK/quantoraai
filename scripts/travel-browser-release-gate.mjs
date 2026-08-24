@@ -14,6 +14,7 @@ const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 let chatTurn = 0;
+let flightHealCalls = 0;
 
 function sseBody(text) {
   return [
@@ -65,6 +66,14 @@ await page.route('**/api/**', async (route) => {
 
   if (path === '/api/chat') {
     chatTurn += 1;
+    let post = {};
+    try {
+      post = request.postDataJSON() || {};
+    } catch {
+      post = {};
+    }
+    const message = String(post.message || '');
+    const turnAttempt = Number(post.turnAttempt) || 1;
     const firstReply = [
       'Let us start with your departure city.',
       '',
@@ -81,6 +90,43 @@ await page.route('**/api/**', async (route) => {
       '<html><body><h1>This must never auto-open in Travel</h1></body></html>',
       '```',
     ].join('\n');
+    const flightHealReply = 'Fallback path recovered. SIN to DPS on 2026-09-12: sample fare $210 on Fallback Air. I will not invent extra options.';
+
+    // After the first three Travel fixtures, the next chat turn is the mocked
+    // flight provider failure. A retryable tool error must self-heal once.
+    if (chatTurn >= 4 || /SIN to DPS on 2026-09-12/i.test(message)) {
+      flightHealCalls += 1;
+      if (flightHealCalls < 2) {
+        return route.fulfill({
+          status: 200,
+          headers: {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache',
+          },
+          body: [
+            `data: ${JSON.stringify({ status: { phase: 'tool', state: 'cleared', tool: 'search_flights' } })}`,
+            `data: ${JSON.stringify({
+              error: {
+                message: 'Live flight lookup failed. Trying once more…',
+                code: 'TRAVEL_FLIGHT_PROVIDER',
+                retryable: true,
+              },
+            })}`,
+            'data: [DONE]',
+            '',
+          ].join('\n\n'),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache',
+        },
+        body: sseBody(flightHealReply),
+      });
+    }
+
     const reply = chatTurn === 1 ? firstReply : chatTurn === 2 ? secondReply : codeAttemptReply;
     return route.fulfill({
       status: 200,
@@ -222,8 +268,20 @@ try {
     throw new Error('A Preview/code panel remained visible in Travel.');
   }
 
+  // Mocked provider failure must self-heal once on Travel, then land a real answer.
+  await textarea.fill('Flights SIN to DPS on 2026-09-12');
+  await textarea.press('Enter');
+  await page.waitForFunction(
+    () => /Fallback path recovered\. SIN to DPS on 2026-09-12/i.test(document.body?.innerText || ''),
+    null,
+    { timeout: 20_000 },
+  );
+  if (flightHealCalls < 2) {
+    throw new Error(`Travel flight self-heal never retried the tool turn (calls=${flightHealCalls}).`);
+  }
+
   await screenshot('travel-release-gate-pass');
-  console.log(`Travel browser release gate passed in ${elapsed}ms for first turn; generic code Canvas remained closed.`);
+  console.log(`Travel browser release gate passed in ${elapsed}ms for first turn; generic code Canvas remained closed; flight provider self-heal recovered.`);
 } catch (error) {
   await screenshot('travel-release-gate-failure').catch(() => {});
   console.error('Travel browser release gate FAILED:', error?.stack || error);
