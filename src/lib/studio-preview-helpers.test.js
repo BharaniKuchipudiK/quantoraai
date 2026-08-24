@@ -15,6 +15,8 @@ import {
   ensureShopDeskInVfs,
   userAskedForDeskReview,
   userAskedForPreviewPhotos,
+  userAskedForBrokenPreviewPhotos,
+  userAskedForSemanticPhotoEdit,
   userAskedForShopDeskFix,
   previewAssemblyFingerprint,
   isNativeSidecarPath,
@@ -184,6 +186,13 @@ test('healing a boutique writes real photos, not gold frames', () => {
   const healed = '<!DOCTYPE html><html><body><main><div class="hero">Kanjeevaram</div></main></body></html>';
   const next = writeHealedPreviewToVfs(vfs, healed);
   assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
+});
+
+test('broken-photo asks are not treated as semantic catalog edits', () => {
+  assert.equal(userAskedForBrokenPreviewPhotos('Why are the images broken?'), true);
+  assert.equal(userAskedForSemanticPhotoEdit('Why are the images broken?'), false);
+  assert.equal(userAskedForSemanticPhotoEdit('replace photos with blue dresses'), true);
+  assert.equal(userAskedForBrokenPreviewPhotos('replace photos with blue dresses'), false);
 });
 
 test('a chat that only talks still gets shop photos when the desk already has a boutique', () => {

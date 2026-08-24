@@ -24,35 +24,31 @@ const ALLOWED_HOSTS = new Set([
 const RELIABLE_IMG_SRC = String.raw`(?:data:image\/[^"'\s]+|\/api\/preview-image[^"'\s]*)`;
 const ANY_IMG_SRC = String.raw`(?:data:image\/[^"'\s]+|https?:\/\/[^"'\s]+|\/api\/preview-image[^"'\s]*)`;
 
-/**
- * Curated remote merchandise photos. Preview loads them via the same-origin
- * `/api/preview-image` proxy so COEP/hotlink does not blank the catalog.
- */
-const SHOP_PHOTO_REMOTES = [
-  'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1503919545889-aef636e10ad3?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1519238263530-99bdd11df2ea?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1471286174890-9c112ffca5b4?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1523381216712-3a41b00b0ce4?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1556906781-9a412961c28c?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1576566588028-4147f3842f27?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1618354691373-d851c5c3a990?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1460353581641-37baddab0fa2?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80',
+const SHOP_PHOTO_PALETTE = [
+  ['#1f2937', '#c4a35a'],
+  ['#0f172a', '#38bdf8'],
+  ['#3b0764', '#f472b6'],
+  ['#14532d', '#86efac'],
+  ['#7c2d12', '#fdba74'],
+  ['#1e3a5f', '#93c5fd'],
+  ['#4a044e', '#e879f9'],
+  ['#422006', '#fcd34d'],
+  ['#164e63', '#67e8f9'],
+  ['#3f1d0c', '#fbbf24'],
+  ['#1a2e05', '#a3e635'],
+  ['#312e81', '#a5b4fc'],
+  ['#881337', '#fb7185'],
+  ['#134e4a', '#5eead4'],
+  ['#713f12', '#fde68a'],
+  ['#1e1b4b', '#c4b5fd'],
+  ['#083344', '#22d3ee'],
+  ['#450a0a', '#fca5a5'],
+  ['#365314', '#bef264'],
+  ['#4c1d95', '#d8b4fe'],
+  ['#0c4a6e', '#7dd3fc'],
+  ['#78350f', '#f59e0b'],
+  ['#064e3b', '#34d399'],
+  ['#500724', '#f9a8d4'],
 ];
 
 export function isBlockedPreviewImageHost(hostname = '') {
@@ -110,12 +106,26 @@ export function previewHtmlHasRealPhotos(html = '') {
   return new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(String(html || ''));
 }
 
-function shopPhotoSrc(index = 0) {
-  const remote = SHOP_PHOTO_REMOTES[index % SHOP_PHOTO_REMOTES.length];
-  return `${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(remote)}&qp=${index + 1}`;
+function shopPhotoDataUri(index = 0) {
+  const [from, to] = SHOP_PHOTO_PALETTE[index % SHOP_PHOTO_PALETTE.length];
+  const id = `quantora-photo-${index + 1}`;
+  const label = `Product ${index + 1}`;
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="${label}">`,
+    `<defs><linearGradient id="${id}-g" x1="0" y1="0" x2="1" y2="1">`,
+    `<stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/>`,
+    `</linearGradient></defs>`,
+    `<rect width="1200" height="800" fill="url(#${id}-g)"/>`,
+    `<rect x="72" y="72" width="1056" height="656" rx="28" fill="rgba(255,255,255,0.14)"/>`,
+    `<circle cx="220" cy="220" r="64" fill="rgba(255,255,255,0.22)"/>`,
+    `<text x="600" y="410" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="56">${label}</text>`,
+    `<text x="600" y="470" text-anchor="middle" fill="rgba(255,255,255,0.75)" font-family="system-ui,sans-serif" font-size="28">${id}</text>`,
+    `</svg>`,
+  ].join('');
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-const SHOP_PHOTOS = Array.from({ length: SHOP_CATALOG_CAP }, (_, i) => shopPhotoSrc(i));
+const SHOP_PHOTOS = Array.from({ length: SHOP_CATALOG_CAP }, (_, i) => shopPhotoDataUri(i));
 
 const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
 const MAX_SHOP_PHOTOS = SHOP_CATALOG_CAP;
@@ -303,7 +313,7 @@ export function injectMissingShopPhotos(html = '', options = {}) {
     existingCards >= SHOP_PHOTO_FLOOR
     && existingPhotos >= SHOP_PHOTO_FLOOR
     && /data-quantora-shop-catalog="true"/i.test(source)
-    && !/<img\b[^>]*\bsrc\s*=\s*["']https?:\/\/images\.(?:unsplash|pexels)\.com/i.test(source)
+    && !/images\.unsplash\.com|images\.pexels\.com/i.test(source)
   ) {
     return { html: source, injected: false };
   }

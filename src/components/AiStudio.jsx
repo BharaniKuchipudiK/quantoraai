@@ -1262,8 +1262,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               id: Date.now() + 1,
               sender: 'ai',
               text: patched.changed
-                ? 'Patched Preview with loadable product photos (via /api/preview-image), cart, and currency. Hard-refresh Preview if the iframe still shows a cached blank.'
-                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old broken remote images are still cached in the iframe.',
+                ? 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.'
+                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old Unsplash URLs are still cached in the iframe.',
             },
           ]);
           setAttachments([]);
