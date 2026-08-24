@@ -156,8 +156,12 @@ export function useChatStream({
 
   const cancelStream = () => {
     generationTokenRef.current = null;
-    if (!abortControllerRef.current) return;
-    abortControllerRef.current.abort('user');
+    const controller = abortControllerRef.current;
+    if (controller) {
+      controller.abort('user');
+      abortControllerRef.current = null;
+    }
+    // Always clear generating — Stop may fire during moderation/Office before a stream controller exists.
     setIsGenerating(false);
     updateActiveMessages(prev => {
       const last = prev[prev.length - 1];
