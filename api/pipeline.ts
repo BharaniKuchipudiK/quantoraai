@@ -22,6 +22,9 @@ import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normaliz
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
 import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
+import { handleMarketDataLookup } from "./_lib/market-data-gateway.js";
+import { handleDebtPlan } from "./_lib/debt-gateway.js";
+import { handleSavingsGoal } from "./_lib/savings-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
 import { readByokCredentials } from "./_lib/byok-credentials.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
@@ -87,6 +90,9 @@ export default async function handler(req: any, res: any) {
   const routed = typeof req.query?.route === "string" ? req.query.route : "";
   if (routed === "chat") {
     if (await handleAffordabilityDecision(req, res)) return;
+    if (await handleMarketDataLookup(req, res)) return;
+    if (await handleDebtPlan(req, res)) return;
+    if (await handleSavingsGoal(req, res)) return;
 
     if (shouldPreferTravelConversationProvider(req.body, {
       hasGeminiByok: Boolean(readByokCredentials(req).gemini),
