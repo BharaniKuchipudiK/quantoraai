@@ -41,8 +41,9 @@ export function summarizeCatalog(raw = '') {
   }
 }
 
-const SHOP_DOM_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i;
+const SHOP_DOM_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card|merchandise|kids?\s+collection|shop\s+(?:website|site|page)|online\s+store|data-quantora-shop-(?:photo|card|catalog))\b/i;
 const SHOP_PRODUCTS_RE = /"priceCents"\s*:|"currency"\s*:\s*"(?:inr|usd|sgd|aud|aed)"/i;
+const MERCH_SHELL_RE = /\b(collection|merchandise|boutique|storefront|kids?\s+(?:wear|shop)|fox\s*&\s*wolf)\b/i;
 
 /** Job cards from another product must not force shop probes onto this Preview. */
 export function jobClearlyNotShop(job = null) {
@@ -56,11 +57,28 @@ export function jobClearlyNotShop(job = null) {
 export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {
   if (jobClearlyNotShop(job)) return false;
   const products = vfsText(vfs, 'products.json');
+  const entry = String(html || pickPreviewEntry(vfs) || '');
   const hay = `${html || ''}\n${pickPreviewEntry(vfs) || ''}`;
   const namedProducts = summarizeCatalog(products).length > 0;
   const liveShop = SHOP_DOM_RE.test(hay)
     || Boolean(products && (SHOP_PRODUCTS_RE.test(products) || namedProducts));
   if (liveShop) return true;
+  // Branded collection chrome (header/nav/footer) with empty/gold body is still a shop.
+  if (
+    MERCH_SHELL_RE.test(entry)
+    && /<(header|nav)\b/i.test(entry)
+    && /<footer\b/i.test(entry)
+    && jobNeedsProductPhotos(job)
+  ) {
+    return true;
+  }
+  if (
+    MERCH_SHELL_RE.test(entry)
+    && /<(header|nav|footer)\b/i.test(entry)
+    && !previewHtmlHasRealPhotos(entry)
+  ) {
+    return true;
+  }
   // Empty products.json still marks an intentional shop scaffold.
   if (products !== '' && jobNeedsProductPhotos(job)) return true;
   // A leftover boutique job must not invent cart/photo failures on a non-shop Preview.

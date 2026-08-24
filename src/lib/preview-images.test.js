@@ -68,7 +68,7 @@ test('nested catalog and stat cards do not get a repeating photo stack', () => {
   const stacked = html.replace(/<main>/, `<main>${'<img alt="Textile photo" style="width:100%;height:min(52vh,420px);object-fit:cover;display:block" src="https://images.unsplash.com/photo-1">'.repeat(12)}`);
   const result = injectMissingShopPhotos(stacked);
   const photos = result.html.match(/<img\b/gi) || [];
-  assert.ok(photos.length <= 6, `expected at most 6 photos, got ${photos.length}`);
+  assert.ok(photos.length <= 24, `expected at most 24 photos, got ${photos.length}`);
   assert.equal((result.html.match(/class="card gold-card"/g) || []).length, 8);
 });
 

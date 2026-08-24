@@ -549,14 +549,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [vfs, deskJob]);
 
   useEffect(() => {
-    if (!vfsLooksLikeShop(vfs)) return;
-    const next = ensureShopDeskInVfs(vfs);
+    if (!vfsLooksLikeShop(vfs, deskJob)) return;
+    const brief = [...messages].reverse().find((m) => m?.sender === 'user' && m.text)?.text || '';
+    const next = ensureShopDeskInVfs(vfs, deskJob, { brief });
     if (!next.changed) return;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
     const code = pickPreviewEntry(next.vfs);
     if (code) setWorkspaceCode(code);
-  }, [vfs]);
+  }, [vfs, deskJob, messages]);
 
   const startNewChat = useCallback(() => {
     setCodingDeskOpen(false);
@@ -1496,7 +1497,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="true"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no product photos. The gold frames on the desk are not images. Ask again, or tap Add real product photos.
+                          Preview still has no product photos. Empty gold frames are not images — tap Add real product photos so the desk injects catalog photos.
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && shopUiMissing && (assistantClaimsShopUiReady(msg.text) || userAskedForShopDeskFix(lastUserMessage?.text || '')) ? (
@@ -1977,7 +1978,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
-        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob);
+        const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob, { brief: userBrief });
         if (assembled.rejected) return;
         const parsedVfs = assembled.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
@@ -1986,8 +1987,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (!previewable) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
-          if (vfsLooksLikeShop(vfs)) {
-            const ensured = ensureShopDeskInVfs(vfs);
+          if (vfsLooksLikeShop(vfs, deskJob)) {
+            const ensured = ensureShopDeskInVfs(vfs, deskJob, { brief: userBrief || userPrompt });
             if (ensured.changed) {
               setDeskReview(diffVfsReview(vfs, ensured.vfs));
               setVfs(ensured.vfs);
@@ -2011,11 +2012,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           const shopVfs = ensureShopDeskInVfs(parsedVfs).vfs;
+           const shopVfs = ensureShopDeskInVfs(parsedVfs, assembled.job || deskJob, { brief: userBrief }).vfs;
            setDeskReview(diffVfsReview(vfs, shopVfs));
            setVfs(shopVfs);
            setDeskJob((prev) => {
-             const base = buildStudioJobCard({
+             const base = assembled.job || buildStudioJobCard({
                brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
                vfs: shopVfs,
                existing: prev,
@@ -2045,11 +2046,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               if (code) {
               setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
-              const nextVfs = ensureShopDeskInVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } }).vfs;
+              const nextVfs = ensureShopDeskInVfs({ [detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx')]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } }, deskJob, { brief: userBrief }).vfs;
               setDeskReview(diffVfsReview(vfs, nextVfs));
               setVfs(nextVfs);
               setDeskJob((prev) => buildStudioJobCard({
-                brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+                brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
                 vfs: nextVfs,
                 existing: prev,
               }));
