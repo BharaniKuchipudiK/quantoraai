@@ -23,6 +23,7 @@ import { deleteProject, isProjectStoreConfigured, listProjects, readProjectConte
 import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
 import { handleMarketDataLookup } from "./_lib/market-data-gateway.js";
+import { handleFxAnalytics } from "./_lib/fx-analytics-gateway.js";
 import { handleDebtPlan } from "./_lib/debt-gateway.js";
 import { handleSavingsGoal } from "./_lib/savings-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
@@ -90,6 +91,7 @@ export default async function handler(req: any, res: any) {
   const routed = typeof req.query?.route === "string" ? req.query.route : "";
   if (routed === "chat") {
     if (await handleAffordabilityDecision(req, res)) return;
+    if (await handleFxAnalytics(req, res)) return;
     if (await handleMarketDataLookup(req, res)) return;
     if (await handleDebtPlan(req, res)) return;
     if (await handleSavingsGoal(req, res)) return;

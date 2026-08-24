@@ -7,6 +7,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
 const {
   readLatestPriceCached,
   readLatestPrice,
+  readFxHistory,
   clearMarketDataCache,
   isBarStale,
   isMarketDataStoreConfigured,
@@ -116,6 +117,23 @@ test("isBarStale refuses missing, unparseable, or old data; accepts fresh", () =
     true,
     "3h old against a 1h tolerance -> stale",
   );
+});
+
+test("readFxHistory returns the stored series, or [] when args are missing", async () => {
+  const ROWS = [
+    { base_currency: "USD", quote_currency: "SGD", rate_date: "2026-01-01", rate: 1.34, source: "ecb", as_of: "2026-01-01T16:00:00Z" },
+    { base_currency: "USD", quote_currency: "SGD", rate_date: "2026-01-02", rate: 1.35, source: "ecb", as_of: "2026-01-02T16:00:00Z" },
+  ];
+  const fetchMock = mockFetch(ROWS);
+  try {
+    const rows = await readFxHistory("USD", "SGD", "2026-01-01", "2026-01-31");
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].rate_date, "2026-01-01");
+    assert.equal(await (async () => (await readFxHistory("", "SGD", "a", "b")).length)(), 0);
+    assert.equal(fetchMock.count(), 1, "missing base -> no network call");
+  } finally {
+    fetchMock.restore();
+  }
 });
 
 test("the store reports configured when Supabase env is present", () => {
