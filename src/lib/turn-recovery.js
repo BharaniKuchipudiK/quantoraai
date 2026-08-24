@@ -39,7 +39,7 @@ export function resolveTurnRecovery({
   if (code === 'BUILD_ARTIFACT_CONTRACT') {
     return {
       retry: true,
-      notice: 'Those files could not run in Preview. Rebuilding once…',
+      notice: 'Those files could not run in Preview. Rebuilding once into a real page…',
       reason: 'build-contract',
     };
   }
@@ -47,7 +47,7 @@ export function resolveTurnRecovery({
   if (code === 'TRAVEL_FLIGHT_PROVIDER') {
     return {
       retry: true,
-      notice: 'Live flight lookup failed. Trying once more…',
+      notice: 'Live flight lookup failed. Trying the next source once…',
       reason: 'travel-flight',
     };
   }
@@ -59,7 +59,7 @@ export function resolveTurnRecovery({
   if (retryable === true || RETRYABLE_STATUS.has(Number(status))) {
     return {
       retry: true,
-      notice: 'That model route failed. Trying once more…',
+      notice: 'That model route failed. Switching engines once — same job, not a silent loop…',
       reason: 'route',
     };
   }
@@ -67,7 +67,7 @@ export function resolveTurnRecovery({
   if (networkError) {
     return {
       retry: true,
-      notice: 'The connection dropped. Retrying once…',
+      notice: 'The connection dropped. Retrying once before we stop and tell you what failed…',
       reason: 'network',
     };
   }
