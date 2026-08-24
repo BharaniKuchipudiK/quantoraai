@@ -56,15 +56,28 @@ export function flightProviderFailureAsk(args = {}, { configured = true, include
   ].join('\n');
 }
 
+export function flightInvalidArgsAsk(args = {}, issues = []) {
+  if (!flightArgsComplete(args)) return flightIncompleteAsk(args);
+  const detail = Array.isArray(issues) && issues.length
+    ? ` (${issues.slice(0, 3).join(', ')})`
+    : '';
+  return `I could not run that flight search${detail}. Check passengers (1–9) and that any return date is on or after departure. I will not invent fares.`;
+}
+
 export function resolveFlightToolRecovery({
   reason = '',
   configured = true,
-  turnAttempt = 1,
+  turnAttempt = null,
 } = {}) {
   if (reason === 'INVALID_ARGUMENT' || reason === 'NOT_CONFIGURED') {
     return { retryable: false, autoRetryTurn: false, includeRetry: false };
   }
   if (reason === 'PROVIDER_ERROR' && configured) {
+    // Only clients that send turnAttempt (the main Travel chat path) get an
+    // automatic tool-turn retry. Dual Arena and older callers get a clickable retry.
+    if (turnAttempt == null || !Number.isFinite(Number(turnAttempt))) {
+      return { retryable: true, autoRetryTurn: false, includeRetry: true };
+    }
     const attempt = Math.max(1, Number(turnAttempt) || 1);
     return {
       retryable: true,

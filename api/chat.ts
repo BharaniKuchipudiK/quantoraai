@@ -1151,10 +1151,11 @@ export default async function handler(req: any, res: any) {
             throw new Error(`Blocked unexpected travel tool call outside travel domain: ${signedFunctionTurn.call.name || 'unknown'}`);
           }
           sse.status({ phase: 'tool', state: 'running', tool: signedFunctionTurn.call.name });
-          const turnAttempt = Math.max(1, Number(req.body?.turnAttempt) || 1);
+          const hasTurnAttempt = Object.prototype.hasOwnProperty.call(req.body || {}, 'turnAttempt');
+          const turnAttempt = hasTurnAttempt ? Math.max(1, Number(req.body?.turnAttempt) || 1) : null;
           const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args, {
             recentUserTexts: recentUserTextsFromChat(boundedHistory, message),
-            turnAttempt,
+            ...(hasTurnAttempt ? { turnAttempt } : {}),
           });
           if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) {
             travelPlaces = toolResult.hotels;

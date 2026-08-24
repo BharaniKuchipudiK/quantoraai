@@ -22,6 +22,7 @@ import {
 import { hotelCityAsk, hotelEmptyResultsAsk, hotelLocationNeedsCity, hotelProviderFailureAsk, resolveHotelSearchLocation } from '../../src/lib/travel-hotel-location.js';
 import {
   flightIncompleteAsk,
+  flightInvalidArgsAsk,
   flightProviderFailureAsk,
   resolveFlightToolRecovery,
 } from '../../src/lib/travel-flight-resilience.js';
@@ -226,8 +227,9 @@ async function executeFlightSearch(
   const rawFetch = dependencies.fetchFn || fetch;
   const { primary, fallback } = resolveFlightClients(dependencies);
   const flightPolicy = {
+    ...INTERACTIVE_TRAVEL_POLICY,
     ...INTERACTIVE_FLIGHT_POLICY,
-    ...providerPolicy,
+    ...(dependencies.providerPolicy || {}),
   };
 
   if (!primary && !fallback) {
@@ -306,7 +308,10 @@ export async function executeToolCall(
         executed: false,
         reason: 'INVALID_ARGUMENT',
         action: 'PAUSE_AND_ASK',
-        message: flightIncompleteAsk(toolArgs && typeof toolArgs === 'object' ? toolArgs : {}),
+        message: flightInvalidArgsAsk(
+          toolArgs && typeof toolArgs === 'object' ? toolArgs : {},
+          validation.issues,
+        ),
         retryable: false,
       };
     }

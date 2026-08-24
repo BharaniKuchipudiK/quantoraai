@@ -5,6 +5,7 @@ import {
   flightArgsComplete,
   flightIncompleteAsk,
   flightProviderFailureAsk,
+  flightInvalidArgsAsk,
   resolveFlightToolRecovery,
 } from './travel-flight-resilience.js';
 
@@ -64,6 +65,15 @@ test('flight tool recovery auto-retries once, then surfaces a clickable retry', 
   assert.deepEqual(resolveFlightToolRecovery({
     reason: 'PROVIDER_ERROR',
     configured: true,
+    turnAttempt: null,
+  }), {
+    retryable: true,
+    autoRetryTurn: false,
+    includeRetry: true,
+  });
+  assert.deepEqual(resolveFlightToolRecovery({
+    reason: 'PROVIDER_ERROR',
+    configured: true,
     turnAttempt: 1,
   }), {
     retryable: true,
@@ -79,4 +89,15 @@ test('flight tool recovery auto-retries once, then surfaces a clickable retry', 
     autoRetryTurn: false,
     includeRetry: true,
   });
+});
+
+test('complete but invalid flight args name the real problem', () => {
+  const ask = flightInvalidArgsAsk({
+    origin: 'SIN',
+    destination: 'DPS',
+    departureDate: '2026-09-12',
+    passengers: 10,
+  }, ['passengers:too_big']);
+  assert.match(ask, /passengers/i);
+  assert.doesNotMatch(ask, /origin airport/i);
 });
