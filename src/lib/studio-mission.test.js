@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deriveProjectResume, deriveStudioMission, isResumeSession, pickResumeSessionId } from './studio-mission.js';
+import {
+  deriveProjectResume,
+  deriveStudioMission,
+  isResumeSession,
+  pickResumeSessionId,
+  toShortMissionGoal,
+} from './studio-mission.js';
+
+test('mission goal is a short title, not a Help-me prompt dump', () => {
+  const raw = 'Help me build an AI agent that help me to go through my google drive and analyse the files so I can clean up duplicates and organise folders by project';
+  const goal = toShortMissionGoal(raw);
+  assert.ok(goal.length <= 80, `goal too long: ${goal}`);
+  assert.doesNotMatch(goal, /^Help me/i);
+  assert.doesNotMatch(goal, /analyse the files so I can/i);
+  assert.match(goal, /Drive|agent/i);
+  const mission = deriveStudioMission({
+    messages: [{ sender: 'user', text: raw }],
+    hasPreview: false,
+  });
+  assert.equal(mission.lead, 'Building');
+  assert.equal(mission.goal, goal);
+  assert.ok(mission.goal.length < raw.length / 2);
+});
 
 test('keeps the boutique goal after a short follow-up in the same chat', () => {
   const mission = deriveStudioMission({

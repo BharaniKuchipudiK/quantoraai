@@ -3,6 +3,12 @@ import { normalizeSessionContext } from './session-context.js';
 export const CANNED_PROJECT_DESCRIPTION = 'A flexible space for everyday questions and ideas.';
 
 const BUILDISH = /\b(build|create|make|develop|design|website|web site|calculator|app|shop|boutique|store|landing|agent|dashboard|cleaner)\b/i;
+const GOAL_MAX = 72;
+const LEAD_IN = /^(?:(?:please|pls|hey|hi|hello)[,!]?\s+)+/i;
+const HELP_ME = /^(?:(?:can|could|would|will)\s+you\s+)?(?:(?:help|assist)\s+me(?:\s+to|\s+with)?\s+)/i;
+const I_WANT = /^(?:i\s+(?:want|need|would\s+like)\s+to\s+|i'?d\s+like\s+to\s+|i'?m\s+(?:trying|looking)\s+to\s+)/i;
+const BUILD_LEAD = /^(?:build|create|make|develop|design|implement|code|write)\s+(?:me\s+)?(?:an?\s+|the\s+)?/i;
+const DOMAIN_RE = /\b(google\s+drive|g\s*drive|drive|gmail|slack|notion|github|weather|sarees?|boutique|ios|android|mauritius|newton(?:'?s)?(?:\s+laws?)?|ham\s+sam)\b/i;
 
 export function isCannedProjectDescription(text) {
   return String(text || '').trim() === CANNED_PROJECT_DESCRIPTION;
@@ -13,6 +19,111 @@ function clip(text, max = 140) {
   if (!value) return '';
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1)}…`;
+}
+
+function firstClause(text) {
+  return String(text || '')
+    .split(/[.!?]+\s+/)[0]
+    .split(/\s+and also\s+/i)[0]
+    .split(/\s+and then\s+/i)[0]
+    .trim();
+}
+
+function stripLeadIns(text) {
+  let value = String(text || '').trim();
+  let previous = '';
+  while (value && value !== previous) {
+    previous = value;
+    value = value.replace(LEAD_IN, '').replace(HELP_ME, '').replace(I_WANT, '').trim();
+  }
+  return value;
+}
+
+function titleCaseWords(text) {
+  return String(text || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (/^[A-Z0-9]{2,}$/.test(word)) return word;
+      if (/^(ai|api|ios|ham|sam)$/i.test(word)) return word.toUpperCase();
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+function extractDomain(text) {
+  const match = String(text || '').match(DOMAIN_RE);
+  if (!match) return '';
+  const raw = match[0].replace(/\s+/g, ' ').trim();
+  if (/google\s*drive|g\s*drive/i.test(raw)) return 'Google Drive';
+  if (/^drive$/i.test(raw)) return 'Google Drive';
+  return titleCaseWords(raw);
+}
+
+function composeProductDomain(product, domain) {
+  const head = String(product || '').replace(/\s+/g, ' ').trim();
+  const place = String(domain || '').replace(/\s+/g, ' ').trim();
+  if (!head) return place;
+  if (!place) return head;
+  const headLower = head.toLowerCase();
+  const placeLower = place.toLowerCase();
+  if (headLower.includes(placeLower)) return head;
+  // "Drive Cleaner…" already names Drive — don't prefix "Google Drive".
+  const placeCore = placeLower.replace(/^google\s+/, '');
+  if (placeCore && headLower.includes(placeCore)) return head;
+  return `${place} ${head}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Mission cards show Cursor-like brevity: a short product title, never the
+ * raw multi-sentence build prompt under "Building:".
+ */
+export function toShortMissionGoal(text, max = GOAL_MAX) {
+  let value = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!value) return '';
+
+  value = firstClause(value);
+  value = stripLeadIns(value);
+
+  const built = value.match(BUILD_LEAD);
+  if (built) {
+    value = value.slice(built[0].length).trim();
+  }
+
+  const forMatch = value.match(/^(.+?)\s+for\s+(?:my\s+|our\s+|a\s+|the\s+)?(.+)$/i);
+  if (forMatch) {
+    const product = forMatch[1].trim();
+    const rest = forMatch[2].trim();
+    const domain = extractDomain(rest)
+      || (rest.length <= 28 && !/\s+(?:that|which|who)\s+/i.test(rest) ? rest : '');
+    if (domain) {
+      const composed = composeProductDomain(product, domain);
+      // Product already names the domain — drop redundant "for my Google Drive".
+      if (composed === product) {
+        value = product;
+      } else if (value.length > max || /\s+(?:that|which|who)\s+/i.test(rest)) {
+        value = composed;
+      }
+    }
+  }
+
+  // "AI agent that help me to go through my google drive…" → "Google Drive AI agent"
+  // Skip when a "for …" phrase owns the relative clause (handled above).
+  const thatIdx = value.search(/\s+that\s+/i);
+  if (thatIdx >= 4 && !/\s+for\s+/i.test(value.slice(0, thatIdx))) {
+    const head = value.slice(0, thatIdx).trim();
+    const domain = extractDomain(value.slice(thatIdx)) || extractDomain(value);
+    const composed = composeProductDomain(head, domain);
+    if (composed && (value.length > max || domain || /\bthat\s+(?:help|helps|will|can|should|would|cleans?|goes?|analyses?|analyzes?)\b/i.test(value))) {
+      value = composed;
+    }
+  }
+
+  if (value) {
+    value = value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  return clip(value, max);
 }
 
 function goalTokens(text) {
@@ -30,8 +141,8 @@ function goalTokens(text) {
  * Prefer this session's build request when it describes a different job.
  */
 export function pickSessionMissionGoal(stickyGoal = '', buildRequest = '') {
-  const fromMessages = clip(buildRequest);
-  const sticky = clip(stickyGoal);
+  const fromMessages = toShortMissionGoal(buildRequest);
+  const sticky = toShortMissionGoal(stickyGoal);
   if (!fromMessages) return sticky;
   if (!sticky) return fromMessages;
   const left = goalTokens(sticky);
