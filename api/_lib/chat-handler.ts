@@ -17,8 +17,8 @@ import { evaluateSafetyText } from "./safety-policy.js";
 import { readModelRegistryCached } from "./model-store.js";
 import { DIRECT_MODELS, CURATED_MODELS } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
-import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../src/lib/travel-flight-resilience.js';
-import { formatTravelPlaceShortlist } from '../../src/lib/travel-place-shortlist.js';
+import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
+import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
 import { shouldFallbackBeforeStreaming } from './model-execution-policy.js';
 import {
@@ -52,9 +52,9 @@ import { normalizeCommunicationRequest } from "./communication/request-normalize
 import { buildResponseContract } from "../../src/lib/communication/policy/conversation-policy.js";
 import { evaluationFromVerification } from "../../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../../src/lib/communication/routing/select-models.js";
-import { activeModelsForRouting } from "../../src/lib/coding-desk-auto-model.js";
-import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../src/lib/build-intent.js";
-import { shouldRefineRunningDesk } from "../../src/lib/workspace-intent.js";
+import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
+import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
+import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
 

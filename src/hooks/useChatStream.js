@@ -22,7 +22,7 @@ import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
-import { resolveTurnStudioDomain } from '../../api/_lib/studio-domain-inference.js';
+import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
