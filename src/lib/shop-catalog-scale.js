@@ -180,24 +180,25 @@ export function expandShopIntakeAccept(message = '', priorUserMessages = []) {
   if (!match) {
     return { expanded: false, text: raw, catalogTarget: null, userAsked: 0 };
   }
+
+  const priorOversize = [...(priorUserMessages || [])]
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean)
+    .reverse()
+    .find((entry) => assessShopBuildAsk(entry).oversize)
+    || '';
+
+  // Never turn a bare "only 10" in a cold chat into a shop build.
+  if (!priorOversize) {
+    return { expanded: false, text: raw, catalogTarget: null, userAsked: 0 };
+  }
+
   const n = Number(match[1]);
   const catalogTarget = Number.isFinite(n) && n > 0
     ? Math.min(SHOP_CATALOG_CAP, Math.max(SHOP_PHOTO_FLOOR, n))
     : SHOP_INTAKE_CATALOG_SIZE;
 
-  const prior = [...(priorUserMessages || [])]
-    .map((entry) => String(entry || '').trim())
-    .filter(Boolean)
-    .reverse()
-    .find((entry) => assessShopBuildAsk(entry).oversize)
-    || [...(priorUserMessages || [])]
-      .map((entry) => String(entry || '').trim())
-      .filter(Boolean)
-      .reverse()
-      .find((entry) => messageLooksLikeShopBuild(entry))
-    || '';
-
-  const priorAsk = assessShopBuildAsk(prior);
+  const priorAsk = assessShopBuildAsk(priorOversize);
   const userAsked = priorAsk.userAsked || priorAsk.imageAskCount || 0;
   const askedLabel = userAsked >= SHOP_OVERSIZE_IMAGE_ASK ? String(userAsked) : 'dozens of';
 

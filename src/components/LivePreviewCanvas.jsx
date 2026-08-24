@@ -107,7 +107,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const [embedSrc, setEmbedSrc] = useState('');
   const [readyElapsedSec, setReadyElapsedSec] = useState(0);
   const [warmingFailed, setWarmingFailed] = useState(false);
+  /** Shell remounts only — must not burn MAX_HEAL_ATTEMPTS. */
+  const [remountNonce, setRemountNonce] = useState(0);
   const warmingRetriedRef = useRef(false);
+  const warmingStartedAtRef = useRef(null);
   const embedModeRef = useRef('blob');
 
   const iframeRef = useRef(null);
@@ -163,7 +166,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       return blobUrl;
     });
     return () => revokePreviewEmbedObjectUrl(blobUrl);
-  }, [attempt]);
+  }, [attempt, remountNonce]);
 
   useEffect(() => {
     if (!embedSrc || embedReady) return undefined;
@@ -178,7 +181,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       }
     }, 4000);
     return () => clearTimeout(timer);
-  }, [embedSrc, embedReady, attempt]);
+  }, [embedSrc, embedReady, attempt, remountNonce]);
 
   const handleEmbedFrameError = useCallback(() => {
     if (embedModeRef.current === 'blob') return;
@@ -209,9 +212,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setCurrentCode(code || '');
     setStatus(code ? 'running' : 'clean');
     setAttempt(0);
+    setRemountNonce(0);
     setLastError(null);
     setWarmingFailed(false);
     warmingRetriedRef.current = false;
+    warmingStartedAtRef.current = null;
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
@@ -696,11 +701,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setLastError(null);
     setWarmingFailed(false);
     warmingRetriedRef.current = false;
+    warmingStartedAtRef.current = null;
     errorSeenRef.current = false;
     healingRef.current = false;
     stylingFailedRef.current = false;
     setStatus('running');
-    setAttempt((value) => value + 1);
+    setRemountNonce((value) => value + 1);
   };
 
   const statusUI = {
@@ -725,30 +731,37 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     if (headless || previewShellReady) {
       setReadyElapsedSec(0);
       setWarmingFailed(false);
+      warmingStartedAtRef.current = null;
       return undefined;
     }
-    const startedAt = Date.now();
-    setReadyElapsedSec(0);
-    const timer = setInterval(() => {
+    if (!warmingStartedAtRef.current) {
+      warmingStartedAtRef.current = Date.now();
+    }
+    const startedAt = warmingStartedAtRef.current;
+    const tick = () => {
       setReadyElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
-    }, 250);
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    const retryDelay = Math.max(0, PREVIEW_WARMING_RETRY_MS - (Date.now() - startedAt));
+    const failDelay = Math.max(0, PREVIEW_WARMING_FAIL_MS - (Date.now() - startedAt));
     const retryTimer = setTimeout(() => {
       if (embedReadyRef.current || warmingRetriedRef.current) return;
       warmingRetriedRef.current = true;
-      setAttempt((value) => value + 1);
-    }, PREVIEW_WARMING_RETRY_MS);
+      setRemountNonce((value) => value + 1);
+    }, retryDelay);
     const failTimer = setTimeout(() => {
       if (embedReadyRef.current) return;
       setWarmingFailed(true);
       setStatus('failed');
       setLastError('Preview shell did not start in time. Tap Retry Preview, or open the HTML from Files.');
-    }, PREVIEW_WARMING_FAIL_MS);
+    }, failDelay);
     return () => {
       clearInterval(timer);
       clearTimeout(retryTimer);
       clearTimeout(failTimer);
     };
-  }, [headless, previewShellReady, attempt, currentCode]);
+  }, [headless, previewShellReady, currentCode, assemblyKey]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div

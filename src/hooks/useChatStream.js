@@ -33,6 +33,7 @@ import {
   shopIntakeSessionFacts,
   shopPhotoTurnFailureCopy,
 } from '../lib/shop-catalog-scale.js';
+import { assessPartnerInterrupt } from '../lib/studio-partner-interrupt.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -245,6 +246,39 @@ export function useChatStream({
     updateActiveMessages(prev => [...prev, userMsg]);
     if (!textToSend) setInputText('');
     setAttachments([]);
+
+    // Senior Partner Control: refuse the insane ask before burning a model turn.
+    // Agree chips / "start with 10" expand above and skip this gate.
+    if (!intakeAccept.expanded) {
+      const partnerInterrupt = assessPartnerInterrupt({
+        message: visibleUserText,
+        priorUserMessages: priorUserTexts,
+      });
+      if (partnerInterrupt?.blockModel) {
+        updateActiveMessages((prev) => [...prev, {
+          id: createMessageId('ai'),
+          sender: 'ai',
+          text: partnerInterrupt.reply,
+          componentType: 'formatted_text',
+          partnerInterrupt: {
+            kind: partnerInterrupt.kind,
+            catalogTarget: partnerInterrupt.assessment?.catalogTarget || null,
+            userAsked: partnerInterrupt.assessment?.userAsked || null,
+          },
+          continueSet: {
+            prompt: 'Agree on the next move',
+            items: (partnerInterrupt.chips || []).map((chip) => ({
+              id: chip.id,
+              label: chip.label,
+              value: chip.value,
+              priority: chip.priority,
+            })),
+          },
+        }]);
+        return;
+      }
+    }
+
     setIsGenerating(true);
 
     try {

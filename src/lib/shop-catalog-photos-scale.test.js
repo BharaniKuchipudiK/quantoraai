@@ -64,6 +64,29 @@ test('typed start with 10 expands to the intake chip brief using the prior Fox a
   assert.equal(shopCatalogTargetSize(expanded.text), SHOP_INTAKE_CATALOG_SIZE);
 });
 
+test('cold only 10 without a prior oversize shop does not expand into a shop build', async () => {
+  const { expandShopIntakeAccept } = await import('./shop-catalog-scale.js');
+  const cold = expandShopIntakeAccept('only 10', []);
+  assert.equal(cold.expanded, false);
+  assert.equal(cold.text, 'only 10');
+});
+
+test('senior partner interrupts oversize shop asks before the model burns a turn', async () => {
+  const { assessPartnerInterrupt } = await import('./studio-partner-interrupt.js');
+  const interrupt = assessPartnerInterrupt({ message: FOX_BRIEF, priorUserMessages: [] });
+  assert.ok(interrupt);
+  assert.equal(interrupt.blockModel, true);
+  assert.equal(interrupt.kind, 'shop-catalog-oversize');
+  assert.match(interrupt.reply, /Hold on/i);
+  assert.match(interrupt.reply, /Proposal/i);
+  assert.match(interrupt.reply, /Agree/i);
+  assert.ok(interrupt.chips.some((chip) => /Agree|Start with 10/i.test(chip.label)));
+  assert.equal(
+    assessPartnerInterrupt({ message: 'start with 10', priorUserMessages: [FOX_BRIEF] }),
+    null,
+  );
+});
+
 test('ordinary shop briefs are not oversize intake', () => {
   const ask = assessShopBuildAsk('Build a small boutique with 8 sarees and checkout');
   assert.equal(ask.oversize, false);
