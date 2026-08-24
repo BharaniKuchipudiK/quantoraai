@@ -38,10 +38,15 @@ export function defaultProviders(): MarketDataProvider[] {
   return [frankfurterProvider(), secInstrumentsProvider()];
 }
 
-async function writeChunked<T>(rows: T[], write: (batch: T[]) => Promise<boolean>): Promise<void> {
+/** Returns true only if every chunk was accepted by the store. A rejected write
+ *  (store down / non-2xx) must not be mistaken for a successful ingestion. */
+async function writeChunked<T>(rows: T[], write: (batch: T[]) => Promise<boolean>): Promise<boolean> {
+  let allWritten = true;
   for (let i = 0; i < rows.length; i += WRITE_CHUNK) {
-    await write(rows.slice(i, i + WRITE_CHUNK));
+    const wrote = await write(rows.slice(i, i + WRITE_CHUNK));
+    if (!wrote) allWritten = false;
   }
+  return allWritten;
 }
 
 export async function runIngestion(
@@ -57,19 +62,35 @@ export async function runIngestion(
     };
     try {
       const data = await provider.fetch();
+      const rejected: string[] = [];
       if (data.instruments?.length) {
-        await writeChunked(data.instruments, writers.writeInstruments);
-        outcome.wrote.instruments = data.instruments.length;
+        if (await writeChunked(data.instruments, writers.writeInstruments)) {
+          outcome.wrote.instruments = data.instruments.length;
+        } else {
+          rejected.push("instruments");
+        }
       }
       if (data.fxRates?.length) {
-        await writeChunked(data.fxRates, writers.writeFxRates);
-        outcome.wrote.fxRates = data.fxRates.length;
+        if (await writeChunked(data.fxRates, writers.writeFxRates)) {
+          outcome.wrote.fxRates = data.fxRates.length;
+        } else {
+          rejected.push("fxRates");
+        }
       }
       if (data.fundamentals?.length) {
-        await writeChunked(data.fundamentals, writers.writeFundamentals);
-        outcome.wrote.fundamentals = data.fundamentals.length;
+        if (await writeChunked(data.fundamentals, writers.writeFundamentals)) {
+          outcome.wrote.fundamentals = data.fundamentals.length;
+        } else {
+          rejected.push("fundamentals");
+        }
       }
-      outcome.ok = true;
+      // A rejected write is an ingestion failure, not a silent success — otherwise
+      // the workflow goes green while nothing was persisted.
+      if (rejected.length) {
+        outcome.error = `store rejected writes: ${rejected.join(", ")}`;
+      } else {
+        outcome.ok = true;
+      }
     } catch (err: any) {
       outcome.error = err?.message || String(err);
     }

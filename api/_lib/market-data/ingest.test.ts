@@ -50,3 +50,16 @@ test("large row sets are chunked into multiple writes", async () => {
   assert.equal(calls.fx.length, 3, "2500 rows -> 3 chunks of <=1000");
   assert.equal(calls.fx.flat().length, 2500);
 });
+
+test("a rejected write is a failure, not a silent success", async () => {
+  const provider: MarketDataProvider = { id: "p", label: "p", fetch: async () => ({ fxRates: fx(2) }) };
+  const writers = {
+    writeInstruments: async () => true,
+    writeFxRates: async () => false, // store rejected the write (e.g. Supabase down)
+    writeFundamentals: async () => true,
+  };
+  const outcomes = await runIngestion([provider], writers);
+  assert.equal(outcomes[0].ok, false, "provider is not reported successful");
+  assert.equal(outcomes[0].wrote.fxRates, 0, "nothing counted as written");
+  assert.match(outcomes[0].error || "", /rejected writes: fxRates/);
+});

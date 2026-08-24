@@ -68,3 +68,13 @@ test("throws only when every base fails", async () => {
     restore();
   }
 });
+
+test("an HTTP-200 response with no usable rates is treated as a failure, not empty success", async () => {
+  const restore = mockFetch(() => ({ base: "USD", date: "2026-08-21", rates: {} }));
+  try {
+    // single base, unusable response -> every base failed -> provider throws
+    await assert.rejects(() => frankfurterProvider(["USD"], ["EUR"]).fetch(), /no usable rates/);
+  } finally {
+    restore();
+  }
+});

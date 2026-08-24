@@ -37,7 +37,12 @@ async function fetchBase(base: string, quotes: string[]): Promise<FxRate[]> {
   const data = (await response.json()) as FrankfurterResponse;
   const date = data.date;
   const rates = data.rates || {};
-  if (!date || !Object.keys(rates).length) return [];
+  // We asked for symbols; an HTTP 200 with no date or no rates is an unusable
+  // response (e.g. an upstream format change). Fail loudly so stored FX does not
+  // silently stop advancing and go stale while the run still reports success.
+  if (!date || !Object.keys(rates).length) {
+    throw new Error(`Frankfurter ${base}: response had no usable rates`);
+  }
   const asOf = asOfFor(date);
   return Object.entries(rates)
     .filter(([, rate]) => typeof rate === "number" && Number.isFinite(rate))
