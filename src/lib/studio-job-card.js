@@ -46,8 +46,14 @@ function looksLikeNewJob(brief, existing) {
   if (!existing?.purpose) return true;
   const text = String(brief || '').trim();
   if (!text) return false;
+  const existingIsShop = /\b(shop|boutique|storefront|e-?commerce|saree|sari)\b/i.test(existing.purpose || '');
+  const briefKeepsShop = /\b(shop|boutique|storefront|store|saree|sari|catalog|cart|bag)\b/i.test(text);
   for (const named of NAMED_JOBS) {
-    if (named.re.test(text) && named.purpose !== existing.purpose) return true;
+    if (named.re.test(text) && named.purpose !== existing.purpose) {
+      // “Add a shipping calculator to the boutique” is still a shop job.
+      if (existingIsShop && briefKeepsShop) continue;
+      return true;
+    }
   }
   // Drive cleaner / agent dashboards must not keep a leftover shop job card —
   // that card alone is enough for looksLikeShopDesk to attach cart/photo probes.
