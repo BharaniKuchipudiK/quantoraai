@@ -48,6 +48,8 @@ test('class plus subjects and a chapter list become stored facts, not a canned T
   );
   assert.match(merged.facts.join(' '), /Class 11–12|Class 11-12/);
   assert.match(merged.facts.join(' '), /Study subject: Physics/i);
+  assert.match(merged.facts.join(' '), /Study subject: Chemistry/i);
+  assert.equal(merged.facts.some((fact) => /Study subject:.*Chapters/i.test(fact)), false);
   assert.match(merged.facts.join(' '), /Syllabus node: Units and measurement/);
   assert.match(merged.facts.join(' '), /Syllabus node: Thermal properties/);
 });

@@ -196,9 +196,13 @@ try {
   if (await board.getByRole('button', { name: 'The wall pushes back on you with an equal force', exact: true }).count()) {
     throw new Error('Tutor board still ships a hardcoded lesson check.');
   }
+  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
+  const honesty = board.getByRole('button', { name: /I can explain Newton's laws without looking/i }).first();
+  await visible(honesty, 'Tutor board offered no session honesty check after Test me on this.');
+  await honesty.click();
   await visible(
-    board.getByRole('button', { name: 'Test me on this', exact: true }),
-    'Tutor board is missing Test me on this.',
+    board.getByText(/Marked checked for this session/i).first(),
+    'Tutor board did not grade the session honesty check.',
   );
 
   console.log('Study media browser gate passed.');

@@ -25,10 +25,13 @@ test('the board names the idea the student asked to learn, without a canned chec
     messages: [{ sender: 'user', text: 'Teach me circuit theorems and give me one useful video lesson' }],
   });
   assert.equal(brief.label, 'circuit theorems');
-  assert.equal(brief.check, null);
   assert.equal(brief.active, true);
   assert.equal(brief.flashcards.length, 0);
   assert.match(brief.encouragement.text, /One idea/i);
+  assert.ok(brief.check);
+  assert.match(brief.check.prompt, /circuit theorems/i);
+  assert.doesNotMatch(JSON.stringify(brief.check), /wall pushes back/i);
+  assert.doesNotMatch(JSON.stringify(brief.check), /Newton/i);
 });
 
 test('struggle in this thread changes encouragement, not the chapter menu', () => {
@@ -42,7 +45,7 @@ test('struggle in this thread changes encouragement, not the chapter menu', () =
   assert.equal(brief.label, 'organic reaction mechanisms');
   assert.equal(brief.signals.struggle, true);
   assert.match(brief.encouragement.text, /Tough beat/i);
-  assert.equal(brief.check, null);
+  assert.ok(brief.check);
 });
 
 test('a named exam plus Algebra does not invent a physics probe', () => {
@@ -52,10 +55,25 @@ test('a named exam plus Algebra does not invent a physics probe', () => {
     messages: [{ sender: 'user', text: 'What is Algebra? I am doing JEE.' }],
   });
   assert.equal(brief.label, 'Algebra');
-  assert.equal(brief.check, null);
+  assert.match(brief.check.prompt, /Algebra/i);
+  assert.doesNotMatch(JSON.stringify(brief.check), /projectile|Newton|wall pushes/i);
   assert.match(brief.overlay?.label || '', /JEE/i);
   assert.equal(brief.competencies.length, 0);
   assert.ok(brief.gaps.some((row) => row.status === 'unverified' && /algebra/i.test(row.node)));
+});
+
+test('session flashcards become the board check before the honesty probe', () => {
+  const brief = deriveStudyTutorBrief({
+    conversationContext: {
+      facts: [
+        `${STUDY_NODE_FACT_PREFIX} Wave optics`,
+        `${STUDY_FLASHCARD_PREFIX} What is superposition? | Overlap of waves at a point`,
+      ],
+    },
+    messages: [{ sender: 'user', text: 'Teach me wave optics' }],
+  });
+  assert.match(brief.check.prompt, /superposition/i);
+  assert.equal(brief.check.options[0].text, 'Overlap of waves at a point');
 });
 
 test('syllabus nodes the learner pasted become the gap list, never fake mastery', () => {

@@ -260,7 +260,15 @@ export function parseStudyCheckOutcomes(facts = []) {
 function listAfterLabel(text, pattern) {
   const match = String(text || '').match(pattern);
   if (!match) return [];
-  return uniqueLabels(String(match[1]).split(/[,;/•]+/));
+  let rest = String(match[1]);
+  // Stop before the next structured field on the same line
+  // (e.g. Subjects: A, B. Chapters: …).
+  rest = rest.replace(
+    /[.;]?\s*(?:Chapters?|Topics?|Units?|Subjects?|Competenc(?:y|ies))\s*:[\s\S]*$/i,
+    '',
+  );
+  rest = rest.replace(/\.\s*$/, '');
+  return uniqueLabels(rest.split(/[,;/•]+/));
 }
 
 function extractSubjects(text = '') {

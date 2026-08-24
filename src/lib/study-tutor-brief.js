@@ -105,6 +105,46 @@ function nextBeat({ label, overlay, gaps, signals }) {
   return 'One next action from this thread — not a canned sequence.';
 }
 
+/**
+ * Board-native check from this session only — flashcards if present, else an
+ * honesty probe on the named node. Never a canned famous-chapter bank.
+ */
+export function deriveSessionCheck({ label = '', foundation = '', flashcards = [] } = {}) {
+  const topic = String(label || '').trim();
+  if (Array.isArray(flashcards) && flashcards.length) {
+    const card = flashcards[0];
+    return {
+      prompt: card.front,
+      options: [
+        { id: 'a', text: card.back, correct: true },
+        { id: 'b', text: 'I need to repair the foundation first', correct: false },
+        {
+          id: 'c',
+          text: foundation ? `Only about: ${foundation}` : 'A different idea than this node',
+          correct: false,
+        },
+      ],
+      ifRight: 'That check held. Next beat from the gap list — not a rank.',
+      ifWrong: 'Gap found. Repair the foundation this session already named.',
+    };
+  }
+  if (!topic) return null;
+  return {
+    prompt: `Quick honesty check on ${topic}:`,
+    options: [
+      { id: 'hold', text: `I can explain ${topic} without looking`, correct: true },
+      { id: 'gap', text: `I am stuck on ${topic}`, correct: false },
+      {
+        id: 'foundation',
+        text: foundation ? `I need ${foundation} repaired first` : 'I need a foundation repaired first',
+        correct: false,
+      },
+    ],
+    ifRight: 'Marked checked for this session — not an exam rank. Prove it with one chat attempt when ready.',
+    ifWrong: 'Marked as a gap. Next beat is repair, then one check.',
+  };
+}
+
 export function deriveStudyTutorBrief(input = {}) {
   const conversationContext = input.conversationContext || {};
   const messages = input.messages || [];
@@ -129,13 +169,14 @@ export function deriveStudyTutorBrief(input = {}) {
   const passedCount = outcomes.passed.length;
   const denom = Math.max(graphNodes.length, label ? 1 : 0);
   const progressRatio = denom ? Math.min(0.9, passedCount / denom) : 0;
+  const check = input.check || deriveSessionCheck({ label, foundation, flashcards });
 
   return {
     conceptId: label ? `session.${slugFromLabel(label)}` : '',
     label,
     foundation,
     next: nextBeat({ label, overlay, gaps, signals }),
-    check: input.check || null,
+    check,
     flashcards,
     overlay,
     subjects,
