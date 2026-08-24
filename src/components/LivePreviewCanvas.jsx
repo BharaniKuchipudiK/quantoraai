@@ -43,6 +43,10 @@ const OFFICE_LABEL = {
  */
 
 const MAX_HEAL_ATTEMPTS = 3;
+/** Remount the blob embed once if the shell never posts embed-ready. */
+const PREVIEW_WARMING_RETRY_MS = 12_000;
+/** Stop saying "hang tight" — surface a real failure with Retry. */
+const PREVIEW_WARMING_FAIL_MS = 25_000;
 
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
@@ -102,6 +106,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const [embedReady, setEmbedReady] = useState(false);
   const [embedSrc, setEmbedSrc] = useState('');
   const [readyElapsedSec, setReadyElapsedSec] = useState(0);
+  const [warmingFailed, setWarmingFailed] = useState(false);
+  /** Shell remounts only — must not burn MAX_HEAL_ATTEMPTS. */
+  const [remountNonce, setRemountNonce] = useState(0);
+  const warmingRetriedRef = useRef(false);
+  const warmingStartedAtRef = useRef(null);
   const embedModeRef = useRef('blob');
 
   const iframeRef = useRef(null);
@@ -157,7 +166,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       return blobUrl;
     });
     return () => revokePreviewEmbedObjectUrl(blobUrl);
-  }, [attempt]);
+  }, [attempt, remountNonce]);
 
   useEffect(() => {
     if (!embedSrc || embedReady) return undefined;
@@ -172,7 +181,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       }
     }, 4000);
     return () => clearTimeout(timer);
-  }, [embedSrc, embedReady, attempt]);
+  }, [embedSrc, embedReady, attempt, remountNonce]);
 
   const handleEmbedFrameError = useCallback(() => {
     if (embedModeRef.current === 'blob') return;
@@ -203,7 +212,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setCurrentCode(code || '');
     setStatus(code ? 'running' : 'clean');
     setAttempt(0);
+    setRemountNonce(0);
     setLastError(null);
+    setWarmingFailed(false);
+    warmingRetriedRef.current = false;
+    warmingStartedAtRef.current = null;
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
@@ -685,13 +698,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   }), [handlePublishClick, handleSharePreview]);
 
   const retryVerification = () => {
-    setAttempt(0);
     setLastError(null);
+    setWarmingFailed(false);
+    warmingRetriedRef.current = false;
+    warmingStartedAtRef.current = null;
     errorSeenRef.current = false;
     healingRef.current = false;
     stylingFailedRef.current = false;
     setStatus('running');
-    pushHtmlToEmbed(currentCodeRef.current + '\n<!-- retry -->');
+    setRemountNonce((value) => value + 1);
   };
 
   const statusUI = {
@@ -715,21 +730,45 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   useEffect(() => {
     if (headless || previewShellReady) {
       setReadyElapsedSec(0);
+      setWarmingFailed(false);
+      warmingStartedAtRef.current = null;
       return undefined;
     }
-    const startedAt = Date.now();
-    setReadyElapsedSec(0);
-    const timer = setInterval(() => {
+    if (!warmingStartedAtRef.current) {
+      warmingStartedAtRef.current = Date.now();
+    }
+    const startedAt = warmingStartedAtRef.current;
+    const tick = () => {
       setReadyElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
-    }, 250);
-    return () => clearInterval(timer);
-  }, [headless, previewShellReady, attempt, currentCode]);
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    const retryDelay = Math.max(0, PREVIEW_WARMING_RETRY_MS - (Date.now() - startedAt));
+    const failDelay = Math.max(0, PREVIEW_WARMING_FAIL_MS - (Date.now() - startedAt));
+    const retryTimer = setTimeout(() => {
+      if (embedReadyRef.current || warmingRetriedRef.current) return;
+      warmingRetriedRef.current = true;
+      setRemountNonce((value) => value + 1);
+    }, retryDelay);
+    const failTimer = setTimeout(() => {
+      if (embedReadyRef.current) return;
+      setWarmingFailed(true);
+      setStatus('failed');
+      setLastError('Preview shell did not start in time. Tap Retry Preview, or open the HTML from Files.');
+    }, failDelay);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(retryTimer);
+      clearTimeout(failTimer);
+    };
+  }, [headless, previewShellReady, currentCode, assemblyKey]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
       role="status"
       aria-live="polite"
       data-quantora-preview-warming="true"
+      data-quantora-preview-warming-failed={warmingFailed ? 'true' : 'false'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -741,13 +780,48 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         gap: '10px',
         background: isLight ? '#f8fafc' : '#0f172a',
         color: isLight ? '#334155' : '#cbd5e1',
+        padding: '24px',
+        textAlign: 'center',
       }}
     >
-      <Clock size={28} color="#f97316" />
-      <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview is getting ready — hang tight</div>
-      <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-        {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
-      </div>
+      {warmingFailed || readyElapsedSec >= Math.floor(PREVIEW_WARMING_FAIL_MS / 1000) ? (
+        <>
+          <AlertTriangle size={28} color="#ef4444" />
+          <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview shell did not start</div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.85, maxWidth: '320px' }}>
+            This is a desk problem, not your brief. We stopped waiting after {Math.floor(PREVIEW_WARMING_FAIL_MS / 1000)}s.
+          </div>
+          <button
+            type="button"
+            onClick={retryVerification}
+            style={{
+              marginTop: '6px',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid rgba(239,68,68,0.45)',
+              background: 'rgba(239,68,68,0.12)',
+              color: '#ef4444',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Retry Preview
+          </button>
+        </>
+      ) : (
+        <>
+          <Clock size={28} color="#f97316" />
+          <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>
+            {readyElapsedSec >= Math.floor(PREVIEW_WARMING_RETRY_MS / 1000)
+              ? 'Still starting Preview — retrying the shell…'
+              : 'Preview is getting ready — hang tight'}
+          </div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+            {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
+            {readyElapsedSec >= 15 ? ' · if this passes 25s we will stop and let you retry' : ''}
+          </div>
+        </>
+      )}
     </div>
   ) : null;
 

@@ -25,6 +25,7 @@ export function messageLooksLikeShopBuild(message = '') {
 export function requestedShopCatalogSize(text = '') {
   const raw = String(text || '');
   const patterns = [
+    /\b(?:about\s+)?(\d{1,3})\s+(?:working\s+)?(?:catalog\s+)?(?:photos?|images?)\b/i,
     /\b(\d{2,3})\s*(?:unique\s+)?(?:design(?:s|ed)?|products?|items?|skus?|photos?|images?|mockups?|pieces?)\b/i,
     /\b(?:generate|create|make|build)\s+(\d{2,3})\s+(?:unique\s+)?(?:design(?:s|ed)?|products?|items?|skus?|photos?|images?|mockups?|pieces?)\b/i,
     /\b(?:unique|merchandise|product)\s+(?:design\s+)?(?:images?|photos?|mockups?)\s*[:=]?\s*(\d{2,3})\b/i,
@@ -152,6 +153,67 @@ export function expandCatalogChip() {
     label: 'Expand catalog',
     value: `Add more named products to this shop catalog (keep under ${SHOP_CATALOG_CAP} total for now), each with its own real <img> photo, price, and Add to Cart. Do not promise unique AI-generated mockups at scale.`,
     priority: 94,
+  };
+}
+
+/** Free-typed accept of the intake chip — e.g. "start with 10" / "start with 10 photos". */
+const SHOP_INTAKE_ACCEPT_RE = /^\s*(?:start\s+with|just|only)\s+(\d{1,2})\s*(?:working\s+)?(?:catalog\s+)?(?:photos?|images?|items?|products?)?\s*[.!]*\s*$/i;
+
+export function isShopIntakeAcceptShorthand(message = '') {
+  return SHOP_INTAKE_ACCEPT_RE.test(String(message || '').trim());
+}
+
+/**
+ * Expand a short "start with N" reply into the same model instruction as the
+ * intake chip, using the prior oversize shop brief when available.
+ *
+ * @returns {{
+ *   expanded: boolean,
+ *   text: string,
+ *   catalogTarget: number | null,
+ *   userAsked: number,
+ * }}
+ */
+export function expandShopIntakeAccept(message = '', priorUserMessages = []) {
+  const raw = String(message || '').trim();
+  const match = raw.match(SHOP_INTAKE_ACCEPT_RE);
+  if (!match) {
+    return { expanded: false, text: raw, catalogTarget: null, userAsked: 0 };
+  }
+
+  const priorOversize = [...(priorUserMessages || [])]
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean)
+    .reverse()
+    .find((entry) => assessShopBuildAsk(entry).oversize)
+    || '';
+
+  // Never turn a bare "only 10" in a cold chat into a shop build.
+  if (!priorOversize) {
+    return { expanded: false, text: raw, catalogTarget: null, userAsked: 0 };
+  }
+
+  const n = Number(match[1]);
+  const catalogTarget = Number.isFinite(n) && n > 0
+    ? Math.min(SHOP_CATALOG_CAP, Math.max(SHOP_PHOTO_FLOOR, n))
+    : SHOP_INTAKE_CATALOG_SIZE;
+
+  const priorAsk = assessShopBuildAsk(priorOversize);
+  const userAsked = priorAsk.userAsked || priorAsk.imageAskCount || 0;
+  const askedLabel = userAsked >= SHOP_OVERSIZE_IMAGE_ASK ? String(userAsked) : 'dozens of';
+
+  const text = (
+    `Build the shop now with about ${catalogTarget} working catalog photos `
+    + `(not ${askedLabel} unique AI mockups). Every product needs a real loadable <img> `
+    + 'photo (use /api/preview-image URLs), price, and Add to Cart. '
+    + 'Do not invent empty picture boxes. Do not substitute SVG drawings or emoji for product photos.'
+  );
+
+  return {
+    expanded: true,
+    text,
+    catalogTarget,
+    userAsked,
   };
 }
 

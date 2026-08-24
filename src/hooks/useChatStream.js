@@ -28,10 +28,12 @@ import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-de
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
 import {
   assessShopBuildAsk,
+  expandShopIntakeAccept,
   messageLooksLikeShopBuild,
   shopIntakeSessionFacts,
   shopPhotoTurnFailureCopy,
 } from '../lib/shop-catalog-scale.js';
+import { assessPartnerInterrupt } from '../lib/studio-partner-interrupt.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -191,6 +193,13 @@ export function useChatStream({
     const stillCurrent = () => isActiveGeneration(generationTokenRef.current, generationToken);
 
     const visibleUserText = text.trim();
+    const priorUserTexts = (messages || [])
+      .filter((message) => message?.sender === 'user' && message.text)
+      .map((message) => String(message.text));
+    const intakeAccept = expandShopIntakeAccept(visibleUserText, priorUserTexts);
+    if (intakeAccept.expanded) {
+      text = intakeAccept.text;
+    }
     const turnCorrelationId = createCorrelationId('studio');
     const goldenTransaction = (() => {
       try { return sessionStorage.getItem('quantora_golden_transaction') || null; } catch { return null; }
@@ -229,13 +238,47 @@ export function useChatStream({
     const userMsg = {
       id: createMessageId('user'),
       sender: 'user',
-      text: text.trim(),
+      // Keep the short typed accept in the transcript; the model still gets the expanded brief.
+      text: intakeAccept.expanded ? visibleUserText : text.trim(),
       attachments: [...attachments]
     };
 
     updateActiveMessages(prev => [...prev, userMsg]);
     if (!textToSend) setInputText('');
     setAttachments([]);
+
+    // Senior Partner Control: refuse the insane ask before burning a model turn.
+    // Agree chips / "start with 10" expand above and skip this gate.
+    if (!intakeAccept.expanded) {
+      const partnerInterrupt = assessPartnerInterrupt({
+        message: visibleUserText,
+        priorUserMessages: priorUserTexts,
+      });
+      if (partnerInterrupt?.blockModel) {
+        updateActiveMessages((prev) => [...prev, {
+          id: createMessageId('ai'),
+          sender: 'ai',
+          text: partnerInterrupt.reply,
+          componentType: 'formatted_text',
+          partnerInterrupt: {
+            kind: partnerInterrupt.kind,
+            catalogTarget: partnerInterrupt.assessment?.catalogTarget || null,
+            userAsked: partnerInterrupt.assessment?.userAsked || null,
+          },
+          continueSet: {
+            prompt: 'Agree on the next move',
+            items: (partnerInterrupt.chips || []).map((chip) => ({
+              id: chip.id,
+              label: chip.label,
+              value: chip.value,
+              priority: chip.priority,
+            })),
+          },
+        }]);
+        return;
+      }
+    }
+
     setIsGenerating(true);
 
     try {
@@ -443,7 +486,7 @@ export function useChatStream({
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
-    const shopIntakeAsk = assessShopBuildAsk(visibleUserText || text);
+    const shopIntakeAsk = assessShopBuildAsk(intakeAccept.expanded ? text : (visibleUserText || text));
     if (autoMode && isCodingRequest) {
       const openRouterApiKeyHint = getClientSecret('openrouter');
       const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
@@ -483,7 +526,15 @@ export function useChatStream({
       hasPreview: Boolean(isWorkspaceMode && (canvasCode || (vfs && Object.keys(vfs).length))),
       officeKind: briefingKind || activeOfficeArtifactKind(messages),
     });
-    const intakeFacts = shopIntakeSessionFacts(shopIntakeAsk);
+    const intakeFacts = [
+      ...shopIntakeSessionFacts(shopIntakeAsk),
+      ...(intakeAccept.expanded && intakeAccept.catalogTarget
+        ? [
+          `shopCatalogTarget:${intakeAccept.catalogTarget}`,
+          `Catalog photos this turn: about ${intakeAccept.catalogTarget} working images (user accepted the smaller catalog; do not generate dozens of unique AI mockups).`,
+        ]
+        : []),
+    ];
     const turnContext = mergeStudySyllabusFromText(
       mergeSessionContext(
         conversationContext,
@@ -655,7 +706,9 @@ export function useChatStream({
       latencyMs: 0,
       provider: targetModel.name,
       liveConnected: false,
-      executionStatus: null,
+      executionStatus: intakeAccept.expanded && intakeAccept.catalogTarget
+        ? { label: `Building about ${intakeAccept.catalogTarget} working catalog photos — not the full unique-image ask` }
+        : null,
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),
       ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
