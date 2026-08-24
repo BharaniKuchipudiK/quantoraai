@@ -92,6 +92,8 @@ test('build timeout and deployed canary credentials honor the release contract',
   // A self-healing retry must spend what is left of the turn deadline, never a fresh one.
   assert.match(stream, /turnDeadlineMs - \(Date\.now\(\) - turnStartedAt\)/);
   assert.match(stream, /buildMode: isCodingRequest/);
+  assert.match(stream, /resolveIsCodingRequest/);
+  assert.match(stream, /advisorBlocksPreviewBuild\(turnDomain\)/);
   assert.match(fs.readFileSync(new URL('../../api/chat.ts', import.meta.url), 'utf8'), /error\?\.code !== 'BUILD_ARTIFACT_CONTRACT'/);
   assert.doesNotMatch(canary, /extraHTTPHeaders/);
   assert.match(canary, /new URL\(request\.url\(\)\)\.origin !== BASE_ORIGIN/);

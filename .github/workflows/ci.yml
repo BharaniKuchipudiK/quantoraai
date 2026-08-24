@@ -179,6 +179,13 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/desk-chat-claim-browser-gate.mjs
 
+      - name: Execute Coding Desk must-write-files journey
+        id: coding_desk_files_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/coding-desk-must-write-files-browser-gate.mjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -203,9 +210,10 @@ jobs:
           DESK_JOB_OUTCOME: ${{ steps.desk_job_gate.outcome }}
           DESK_REVIEW_PATCH_OUTCOME: ${{ steps.desk_review_patch_gate.outcome }}
           DESK_CHAT_CLAIM_OUTCOME: ${{ steps.desk_chat_claim_gate.outcome }}
+          CODING_DESK_FILES_OUTCOME: ${{ steps.coding_desk_files_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME; do
             outcome="${!gate}"
             if [ "$outcome" != "success" ]; then
               echo "::error::$gate finished with outcome: $outcome"

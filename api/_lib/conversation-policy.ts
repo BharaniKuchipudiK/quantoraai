@@ -166,7 +166,7 @@ ARTIFACT (routed to Live Preview — not read in chat):
 - After a shop, boutique, or catalog website, the chat explanation MUST end with ONE follow-up that would change how the business runs — payments, domestic vs international shipping, appointments, or inventory. Do not assume those answers. Then append quantora-continues (2–3 taps). This is required even though HTML is in the same reply.
 - Optional session-memory HTML comment after the code block only.
 - TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.
-- NATIVE APPS (iOS / Android / Windows): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica as \`\`\`html (or index.html + styles.css + script.js). Do not use .swift, .kt, or Xcode/Android project files as the preview artifact.`;
+- NATIVE APPS / AGENTS (iOS / Android / Windows / macOS / Python): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica or dashboard as \`\`\`html (or index.html + styles.css + script.js). Do not use .swift, .kt, .py, or Xcode/Android project files as the only preview artifact.`;
 
 /*
  * Guided build directive. For a fresh "make me a website/app" request, Quantora

@@ -28,15 +28,14 @@ export function resolveTurnRecovery({
   if (stoppedByUser) return no('stopped');
   if (Number(attempt) >= MAX_TURN_ATTEMPTS) return no('attempts-exhausted');
 
-  // A half-written answer is worse to restart than to keep: the person already
-  // read the first paragraph.
-  if (hasPartialText) return no('partial-answer');
-
   // The deadline is the budget for the whole turn, not per attempt.
   if (timedOut) return no('timed-out');
 
   if (FATAL_STATUS.has(Number(status))) return no('credentials');
 
+  // Chat-only "plans" on Coding Desk often arrive as a full paragraph before
+  // we notice there were no fences. Rebuild anyway — Preview/files are the
+  // product, not the prose that already rendered.
   if (code === 'BUILD_ARTIFACT_CONTRACT') {
     return {
       retry: true,
@@ -44,6 +43,10 @@ export function resolveTurnRecovery({
       reason: 'build-contract',
     };
   }
+
+  // A half-written answer is worse to restart than to keep: the person already
+  // read the first paragraph.
+  if (hasPartialText) return no('partial-answer');
 
   if (retryable === true || RETRYABLE_STATUS.has(Number(status))) {
     return {

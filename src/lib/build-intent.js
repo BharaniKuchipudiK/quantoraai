@@ -8,18 +8,36 @@
 const QUESTION_PREFIX = /^(how|what|why|when|where|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)/i;
 
 const BUILD_VERB = /\b(build|create|make|generate|design|develop|code|prototype|clone|scaffold)\b/i;
-const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone)\b/i;
+const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone|agent|bot|crawler|automation|organizer|script|service|workflow|extension|plugin|macos|ios|desktop)\b/i;
 
 const SPECIFIED_TOOL = /\b(calculator|calc\b|todo(?:s| list)?|to-do list|timer|stopwatch|pomodoro|counter|unit converter|tip calculator|bmi(?: calculator)?|quiz|flash ?cards?|notepad|markdown editor|tic-?tac-?toe|snake(?: game)?|pong|weather (?:app|widget)|password generator|color picker|habit tracker|kanban|clock|alarm|notes app|drawing (?:app|pad)|whiteboard|kanban board)\b/i;
 
 const WEBSITE_INTAKE = /\b(website|web ?site|landing page|online shop|storefront|e-?commerce|brochure|web ?page for|site for)\b/i;
 const BUSINESS_INTAKE = /\b(coffee shop|caf[eé]|bakery|restaurant|salon|clinic|boutique|real estate|tuition|agency|my business|our company)\b/i;
+const DESK_OPEN_BUILD_HINT = /\b(macos|ios|android|windows|native|python|swift|google drive|drive|filesystem|file system|folder|crawl)\b/i;
 
 export function detectBuildIntent(text) {
   if (!text || typeof text !== 'string') return false;
   const t = text.trim();
   if (QUESTION_PREFIX.test(t)) return false;
   return BUILD_VERB.test(t) && BUILD_NOUN.test(t);
+}
+
+/**
+ * Coding Desk + a product-build ask must produce VFS files.
+ * Broadens slightly when the desk is already open so niche nouns lag less.
+ */
+export function resolveIsCodingRequest(text, {
+  codingDeskOpen = false,
+  refineDesk = false,
+} = {}) {
+  if (refineDesk) return true;
+  if (isSpecifiedRunnableTool(text)) return true;
+  if (detectBuildIntent(text)) return true;
+  if (!codingDeskOpen || !text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (QUESTION_PREFIX.test(t)) return false;
+  return BUILD_VERB.test(t) && (BUILD_NOUN.test(t) || DESK_OPEN_BUILD_HINT.test(t));
 }
 
 /** The user already named a self-contained tool. Intake would only delay the outcome. */

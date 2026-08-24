@@ -55,7 +55,7 @@ import { buildArtifactContractError, validateBuildArtifactResponse } from './_li
 const PREVIEW_HTML_RECOVERY = `
 
 PREVIEW RECOVERY
-The previous attempt emitted native iOS/Android source (Swift, Kotlin, or similar). Quantora Live Preview cannot run those files. Output EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that looks like the requested platform. Do not emit .swift, .kt, or Xcode/Android project files.`;
+The previous attempt did not emit a runnable web page — either a chat-only plan or native iOS/Android/Python source. Quantora Live Preview can only run HTML/CSS/JS (or a React VFS). Output a short explanation, then EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that demonstrates the product in the browser. For macOS/native/agent asks, ship a glossy web dashboard mock of the workflow. Do not emit .swift, .kt, .py, or Xcode/Android project files as the only artifact.`;
 
 const PREVIEW_REFINE_RECOVERY = `
 
@@ -928,6 +928,7 @@ export default async function handler(req: any, res: any) {
         } catch (error: any) {
           lastRouteError = error;
           const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
+            || error?.detailCode === 'code-fences-missing'
             || (isRefine && error?.detailCode === 'code-fences-missing');
           if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
@@ -1344,9 +1345,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
-    const publicError = err?.code === 'BUILD_ARTIFACT_CONTRACT'
+    const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
+    const publicError = artifactContractFailure
       ? (err?.detailCode === 'browser-preview-missing'
         ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
+        : err?.detailCode === 'code-fences-missing'
+          ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
         : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
@@ -1356,7 +1360,7 @@ export default async function handler(req: any, res: any) {
       sse.fail({
         message: publicError,
         code: err?.code || 'CHAT_STREAM_FAILURE',
-        retryable: retryableProviderFailure,
+        retryable: retryableProviderFailure || artifactContractFailure,
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,
         correlationId,

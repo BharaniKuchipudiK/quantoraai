@@ -5,6 +5,7 @@ import {
   isSpecifiedRunnableTool,
   needsGuidedWebsiteIntake,
   resolveEffectiveBuildMode,
+  resolveIsCodingRequest,
   shouldHonorGuidedBuild,
   shouldStartGuidedBuild,
 } from './build-intent.js';
@@ -28,6 +29,16 @@ test('Study flashcards are a tutor move, not an iOS app to preview', () => {
 test('a calculator is a build, not a question', () => {
   assert.equal(detectBuildIntent('Make me a simple calculator app'), true);
   assert.equal(detectBuildIntent('How do I build an app?'), false);
+});
+
+test('a Drive organize agent is a Coding Desk build, not a chat plan', () => {
+  assert.equal(detectBuildIntent('build a Google Drive crawling / organize agent for macOS'), true);
+  assert.equal(resolveIsCodingRequest('build a Google Drive crawling / organize agent for macOS', {
+    codingDeskOpen: true,
+  }), true);
+  assert.equal(resolveIsCodingRequest('Build a crawler for Google Drive on macOS', {
+    codingDeskOpen: true,
+  }), true);
 });
 
 test('a named tool skips coffee-shop intake', () => {
