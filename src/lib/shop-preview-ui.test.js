@@ -32,7 +32,7 @@ test('a dead Add to Cart button still gets a working click', () => {
   const html = '<!DOCTYPE html><html><body><header>Aaranya</header><label>Currency <select id="quantora-currency"><option>INR</option><option>USD</option></select></label><div class="product-card"><img src="https://images.unsplash.com/photo-silk" alt="Silk"><button type="button">Add to Cart</button></div></body></html>';
   const result = injectShopCommerceUi(html);
   assert.equal(result.changed, true);
-  assert.match(result.html, /onclick=/);
+  assert.doesNotMatch(result.html, /onclick=/);
   assert.match(result.html, /addEventListener\('click'/);
   assert.match(result.html, /data-quantora-shop-ui/);
 });

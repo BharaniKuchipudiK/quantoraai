@@ -66,6 +66,10 @@ function shopUiScript() {
   }
   function ensureBar(){
     if (document.querySelector('[data-quantora-shop-ui="bar"]')) return;
+    if (document.getElementById('quantora-currency')) {
+      bagLabel();
+      return;
+    }
     var bar = document.createElement('div');
     bar.setAttribute('data-quantora-shop-ui', 'bar');
     bar.style.cssText = 'display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:10px 16px;background:#111;color:#f8f4e8;font-family:system-ui,sans-serif;font-size:14px';
@@ -150,7 +154,9 @@ export function injectShopCommerceUi(html = '') {
   if (!source) return { html: source, changed: false };
   if (source.includes(SHOP_UI_MARK)) return { html: source, changed: false };
 
-  let next = withWorkingCartClicks(source);
+  // The injected script owns the click. Do not also add inline onclick or
+  // one tap becomes Bag 2.
+  let next = source;
   const hasCurrency = previewHtmlHasCurrencySwitcher(next);
   if (!hasCurrency) {
     if (/<body[^>]*>/i.test(next)) {

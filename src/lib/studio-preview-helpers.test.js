@@ -259,7 +259,7 @@ test('Review this wires a dead Add to Cart without dropping photos', () => {
   const patched = applyDeskReviewPatch(vfs, job);
   assert.equal(patched.rejected, false);
   assert.equal(patched.changed, true);
-  assert.match(patched.vfs['index.html'].content, /onclick=/);
+  assert.match(patched.vfs['index.html'].content, /addEventListener\('click'/);
   const after = probeRunningDesk({ html: patched.vfs['index.html'].content, vfs: patched.vfs, job });
   assert.equal(after.facts.hasPhotos, true);
   assert.equal(deskChecksRegressed(before.checks, after.checks), false);
