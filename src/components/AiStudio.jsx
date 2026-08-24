@@ -77,6 +77,7 @@ import {
   isStudioSplitMobile,
   loadChatWidthPct,
   loadFilesWidthPx,
+  maxChatWidthPctForShell,
   saveChatWidthPct,
   saveFilesWidthPx,
 } from '../lib/studio-split-layout.js';
@@ -601,7 +602,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       const width = parent?.getBoundingClientRect().width || window.innerWidth;
       if (!width) return;
       const deltaPct = ((moveEvent.clientX - startX) / width) * 100;
-      setChatWidthPct(saveChatWidthPct(startPct + deltaPct));
+      const capped = Math.min(startPct + deltaPct, maxChatWidthPctForShell(width));
+      setChatWidthPct(saveChatWidthPct(capped));
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);

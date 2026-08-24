@@ -357,3 +357,30 @@ test('leftover boutique products.json does not paint silk onto a Drive cleaner',
   assert.doesNotMatch(next.vfs['index.html'].content, /images\.unsplash\.com|data-quantora-shop-photo|kanjeevaram/i);
 });
 
+
+test('shipping calculator on a boutique does not strip shop catalog', () => {
+  const boutique = {
+    'index.html': {
+      content: '<!DOCTYPE html><html><body><div class="product-card"><p>Kanjeevaram boutique</p><button>Add to Cart</button></div></body></html>',
+      language: 'html',
+    },
+    'products.json': { content: '[{"id":"a","name":"Silk Saree","priceCents":4999}]', language: 'json' },
+  };
+  const shopJob = { purpose: 'A shop website', mustWork: ['Catalog and bag still work', 'Keep this a shop, not a different app'] };
+  const next = applyWorkspaceFromChat(
+    [
+      'Added a shipping calculator widget near checkout.',
+      '',
+      '```html filepath="index.html"',
+      '<!DOCTYPE html><html><body><div class="product-card"><p>Kanjeevaram boutique</p><button>Add to Cart</button><label>Shipping calculator<input/></label></div></body></html>',
+      '```',
+    ].join('\n'),
+    boutique,
+    shopJob,
+    { brief: 'Add a shipping calculator to the boutique' },
+  );
+  assert.equal(next.rejected, false);
+  assert.equal(Boolean(next.vfs['products.json']), true);
+  assert.match(next.vfs['index.html'].content, /product-card|boutique|Add to Cart/i);
+  assert.match(next.job?.purpose || '', /shop/i);
+});

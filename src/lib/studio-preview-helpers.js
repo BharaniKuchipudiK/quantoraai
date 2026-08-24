@@ -143,13 +143,20 @@ export function vfsLooksLikeShop(vfs = {}, job = null) {
   return looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job });
 }
 
+/** Live boutique markup on the Preview entry — not a leftover products.json alone. */
+const LIVE_SHOP_ENTRY_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i;
+
 /**
  * Boutique catalog + injected Unsplash silk must not survive into a non-shop
  * desk. Sticky products.json alone used to keep looking like a shop forever.
+ *
+ * A mismatched job card (e.g. “shipping calculator” on a boutique) must not
+ * strip real shop HTML — only purge when the Preview entry itself is non-shop.
  */
 export function purgeStaleShopArtifacts(vfs = {}, job = null) {
   if (!vfs || typeof vfs !== 'object') return { vfs: {}, changed: false };
-  if (looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job })) {
+  const html = pickPreviewEntry(vfs) || '';
+  if (LIVE_SHOP_ENTRY_RE.test(html) || looksLikeShopDesk({ html, vfs, job })) {
     return { vfs, changed: false };
   }
   let changed = false;

@@ -6,6 +6,8 @@ import {
   DEFAULT_CHAT_WIDTH_PCT,
   DEFAULT_FILES_WIDTH_PX,
   isStudioSplitMobile,
+  maxChatWidthPctForShell,
+  MIN_DESK_WIDTH_PX,
 } from './studio-split-layout.js';
 
 test('chat width clamps to studio density bounds', () => {
@@ -23,4 +25,11 @@ test('files width clamps to studio density bounds', () => {
 test('split drag is desktop-only', () => {
   assert.equal(isStudioSplitMobile(500), true);
   assert.equal(isStudioSplitMobile(1200), false);
+});
+
+test('chat max width reserves desk space on narrow shells', () => {
+  const max = maxChatWidthPctForShell(720);
+  assert.ok(max < 55);
+  assert.ok((720 * max) / 100 <= 720 - MIN_DESK_WIDTH_PX + 1);
+  assert.equal(maxChatWidthPctForShell(1600), 55);
 });

@@ -11,7 +11,17 @@ export const MIN_CHAT_WIDTH_PCT = 22;
 export const MAX_CHAT_WIDTH_PCT = 55;
 export const MIN_FILES_WIDTH_PX = 140;
 export const MAX_FILES_WIDTH_PX = 420;
+/** Keep Preview usable when chat is dragged wide on narrow desktop shells. */
+export const MIN_DESK_WIDTH_PX = 360;
 export const SPLIT_MOBILE_MAX_PX = 768;
+
+/** Max chat % so the desk (Files + Preview) keeps at least MIN_DESK_WIDTH_PX. */
+export function maxChatWidthPctForShell(shellWidthPx) {
+  const width = Number(shellWidthPx);
+  if (!Number.isFinite(width) || width <= 0) return MAX_CHAT_WIDTH_PCT;
+  const maxFromDesk = Math.floor(((width - MIN_DESK_WIDTH_PX) / width) * 100);
+  return Math.min(MAX_CHAT_WIDTH_PCT, Math.max(MIN_CHAT_WIDTH_PCT, maxFromDesk));
+}
 
 function readNumber(key, fallback) {
   if (typeof localStorage === 'undefined') return fallback;
