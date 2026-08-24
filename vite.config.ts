@@ -18,6 +18,9 @@ function copyMonacoAssets() {
 function isolatedDeskHeaders() {
   const apply = (req, res, next) => {
     const url = String(req.url || '').split('?')[0];
+    if (url.startsWith('/preview/')) {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
     const isolated = isIsolatedStudioPath(url);
     const original = res.setHeader.bind(res);
     res.setHeader = (name, value) => {

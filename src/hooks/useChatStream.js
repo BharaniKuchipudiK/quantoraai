@@ -34,6 +34,7 @@ import {
 } from '../lib/shop-catalog-scale.js';
 import { assessPartnerInterrupt } from '../lib/studio-partner-interrupt.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
+import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -818,9 +819,14 @@ export function useChatStream({
               if (parsed.travelDegraded === true) travelDegraded = true;
               if (parsed.status) {
                 if (!stillCurrent()) return;
+                const nextStatus = sanitizePartnerBuildStatus(parsed.status, {
+                  catalogTarget: intakeAccept.catalogTarget || shopIntakeAsk.catalogTarget || 10,
+                  intakeAccepted: Boolean(intakeAccept.expanded || shopIntakeAsk.oversize),
+                  userAsked: intakeAccept.userAsked || shopIntakeAsk.userAsked || shopIntakeAsk.imageAskCount || 0,
+                });
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
-                  executionStatus: parsed.status,
+                  executionStatus: nextStatus,
                 } : m));
               }
               if (parsed.text) {
