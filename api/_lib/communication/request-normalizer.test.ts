@@ -137,3 +137,24 @@ test("competing domain cues fail closed instead of guessing a workspace", () => 
 
   assert.equal(request.studioDomain, null);
 });
+
+test("a coding preview follow-up about cart and budget stays coding, not Finance", () => {
+  const request = normalizeCommunicationRequest({
+    message: "Keep the boutique cart under budget and show prices in INR",
+    previewCode: "<!DOCTYPE html><html><body>shop</body></html>",
+    refineMode: true,
+    buildMode: false,
+  });
+
+  assert.equal(request.studioDomain, null);
+  assert.equal(request.buildMode, true);
+  assert.equal(request.hasPreviewCode, true);
+});
+
+test("a cold tax and portfolio question from empty chat can still open Finance", () => {
+  const request = normalizeCommunicationRequest({
+    message: "help me with my taxes and portfolio",
+  });
+
+  assert.equal(request.studioDomain, "finance");
+});

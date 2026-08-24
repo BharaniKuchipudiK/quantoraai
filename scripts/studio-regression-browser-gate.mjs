@@ -424,6 +424,19 @@ try {
 
   await proveDeskFilesMatchPreview('boutique');
 
+  await prompt.fill('Keep the boutique cart under budget and show prices in INR');
+  await prompt.press('Enter');
+  await page.getByText(/Keep the boutique cart under budget/i).first().waitFor({ state: 'visible', timeout: 8_000 });
+  await page.waitForTimeout(800);
+  const domainAfterShopFollowUp = await page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
+  if (['finance', 'travel', 'education', 'research'].includes(domainAfterShopFollowUp)) {
+    throw new Error(`Coding desk jumped to ${domainAfterShopFollowUp} after a boutique cart/budget follow-up.`);
+  }
+  await visible(page.locator('[data-quantora-code-workspace="true"]').first(), 'Coding desk vanished after a boutique budget follow-up.');
+  if (await page.locator('[data-quantora-active-specialist="finance"]').count()) {
+    throw new Error('Finance Advisor stole the coding session after a shop follow-up.');
+  }
+
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
   await arena.click();

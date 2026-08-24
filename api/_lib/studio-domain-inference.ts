@@ -12,6 +12,10 @@ const CURRENT_TURN_WEIGHT = 2;
 const HISTORY_WEIGHT = 2;
 const MINIMUM_CONFIDENCE_SCORE = 2;
 
+/** Shop / preview follow-ups mention money without being Finance Advisor work. */
+const CODING_DESK_CONTEXT = /\b(boutique|storefront|e-?commerce|saree|kanjeevaram|online shop|add[\s-]?to[\s-]?(?:bag|cart)|shopping cart|currency converter)\b/i;
+const CODING_SHOP_FOLLOWUP = /\b(cart|checkout|catalog|currency|prices?|costs?)\b/i;
+
 /** Declarative domain semantics; provider/model routing must not own this knowledge. */
 const DOMAIN_SIGNAL_REGISTRY: DomainSignalProfile[] = [
   {
@@ -33,7 +37,7 @@ const DOMAIN_SIGNAL_REGISTRY: DomainSignalProfile[] = [
     domain: "finance",
     patterns: [
       /\bfinance\b/i, /\bbudgets?\b/i, /\bportfolios?\b/i, /\binvest(?:ing|ment|ments)?\b/i,
-      /\bsavings?\b/i, /\bdebt\b/i, /\bcash flow\b/i,
+      /\bsavings?\b/i, /\bdebt\b/i, /\bcash flow\b/i, /\btaxes?\b/i,
     ],
   },
   {
@@ -64,15 +68,24 @@ function signalScore(profile: DomainSignalProfile, current: string, prior: strin
   return score;
 }
 
+function hasCodingDeskContext(current: string, prior: string): boolean {
+  const hay = `${current}\n${prior}`;
+  if (CODING_DESK_CONTEXT.test(hay)) return true;
+  return CODING_SHOP_FOLLOWUP.test(hay) && /\b(shop|product|website|boutique|html|preview)\b/i.test(hay);
+}
+
 /**
  * Fail-safe domain continuity for clients that omit studioDomain.
- * Explicit domain always wins. A clear current or recent domain cue is enough
- * to preserve continuity; ties remain ambiguous and fail closed to general chat.
+ * Explicit domain always wins. A live coding workspace stays coding: later
+ * money / cart / price talk must not promote Finance (or Travel/Study).
+ * A clear current or recent domain cue is enough to preserve continuity;
+ * ties remain ambiguous and fail closed to general chat.
  */
 export function inferStudioDomain(input: {
   explicit?: unknown;
   message?: unknown;
   history?: unknown;
+  codingWorkspace?: boolean;
 }): StudioDomain | null {
   const explicit = normalizeStudioDomain(input.explicit);
   // Session desk wins: a Study thread about "force" must not become Travel
@@ -82,6 +95,9 @@ export function inferStudioDomain(input: {
   const current = typeof input.message === "string" ? input.message : "";
   const prior = historyText(input.history);
   if (!current.trim() && !prior.trim()) return null;
+  // Coding desk is represented as a null domain. Once that desk (or its
+  // preview/VFS) is live, keyword inference must not swap the whole studio.
+  if (input.codingWorkspace || hasCodingDeskContext(current, prior)) return null;
 
   const ranked = DOMAIN_SIGNAL_REGISTRY
     .map((profile) => ({ domain: profile.domain, score: signalScore(profile, current, prior) }))
@@ -92,4 +108,23 @@ export function inferStudioDomain(input: {
   if (!best || best.score < MINIMUM_CONFIDENCE_SCORE) return null;
   if (runnerUp && runnerUp.score === best.score) return null;
   return best.domain;
+}
+
+/**
+ * Client turn routing: an advisor desk stays put, and an active coding
+ * workspace stays coding even when this turn is not classified as a build.
+ */
+export function resolveTurnStudioDomain(input: {
+  explicit?: unknown;
+  message?: unknown;
+  history?: unknown;
+  isCodingRequest?: boolean;
+  hasCodingWorkspace?: boolean;
+} = {}): StudioDomain | null {
+  return inferStudioDomain({
+    explicit: input.explicit,
+    message: input.message,
+    history: input.history,
+    codingWorkspace: Boolean(input.isCodingRequest || input.hasCodingWorkspace),
+  });
 }

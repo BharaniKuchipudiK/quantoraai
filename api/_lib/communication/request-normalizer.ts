@@ -31,10 +31,16 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const studioModeExplicit = body?.studioMode === "ask" || body?.studioMode === "build" || body?.studioMode === "plan";
   const message = typeof body?.message === "string" ? body.message : "";
   const inferredBuildMode = detectBuildIntent(message);
+  const hasPreviewCode = typeof body?.previewCode === "string" && body.previewCode.trim().length > 0;
+  const buildMode = body?.buildMode === true || inferredBuildMode || body?.refineMode === true;
   const studioDomain = inferStudioDomain({
     explicit: body?.studioDomain,
     message,
     history: body?.history,
+    codingWorkspace: buildMode
+      || body?.refineMode === true
+      || hasPreviewCode
+      || body?.taskCategory === "coding",
   });
   const attachedImages = Array.isArray(body?.attachedImages)
     ? body.attachedImages.filter((value: unknown): value is string => typeof value === "string" && value.startsWith("data:image/")).slice(0, 4)
@@ -58,10 +64,10 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     memoryConsented: body?.memoryConsented === true,
     sessionContext: normalizeSessionContext(body?.sessionContext),
     listeningSignals: Array.isArray(body?.listeningSignals) ? body.listeningSignals.slice(0, 8) : [],
-    hasPreviewCode: typeof body?.previewCode === "string" && body.previewCode.trim().length > 0,
+    hasPreviewCode,
     isRefine: body?.refineMode === true,
     explicitModelId: typeof body?.modelId === "string" && body.modelId.trim() ? body.modelId.trim() : null,
-    buildMode: body?.buildMode === true || inferredBuildMode || body?.refineMode === true,
+    buildMode,
     guidedBuild: body?.guidedBuild === true,
     featureSuggest: body?.featureSuggest === true,
   };
