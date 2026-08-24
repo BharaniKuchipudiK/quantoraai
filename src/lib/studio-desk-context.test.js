@@ -34,6 +34,9 @@ test('a running boutique packet names files, catalog, and live Preview facts', (
   assert.deepEqual(packet.catalog.map((item) => item.name), ['Dharmavaram Silk', 'Uppada Jamdani']);
   assert.ok(packet.files.includes('index.html'));
   assert.equal(packet.failed.length, 0);
+  assert.equal(packet.checks.find((check) => check.id === 'catalog').state, 'unverified');
+  assert.equal(packet.checks.find((check) => check.id === 'cart').state, 'unverified');
+  assert.equal(packet.checks.find((check) => check.id === 'currency').state, 'unverified');
   const prompt = formatDeskContextForPrompt(packet);
   assert.match(prompt, /LIVE PREVIEW FACTS/);
   assert.match(prompt, /photos=/);
@@ -74,6 +77,24 @@ test('a calculator packet probes display and keys', () => {
   });
   assert.equal(packet.facts.calculator, true);
   assert.equal(packet.failed.length, 0);
+  assert.equal(packet.checks.find((check) => check.id === 'calc-display').state, 'unverified');
+  assert.equal(packet.checks.find((check) => check.id === 'calc-key').state, 'unverified');
+});
+
+test('a data-testid in source is not a passing calculator check', () => {
+  const html = '<!DOCTYPE html><html><body><output data-testid="calculator-display">0</output><button data-testid="calculator-one">1</button></body></html>';
+  const packet = buildDeskContextPacket({
+    html,
+    job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display'] },
+    vfs: { 'App.jsx': { content: html } },
+  });
+  assert.equal(packet.checks.find((check) => check.id === 'calc-display').ok, false);
+  const missing = mergeLiveDeskProbe(packet, { hasCalculatorDisplay: false, hasCalculatorKey: false });
+  assert.equal(missing.checks.find((check) => check.id === 'calc-display').ok, false);
+  assert.equal(missing.checks.find((check) => check.id === 'calc-display').state, 'fix');
+  const live = mergeLiveDeskProbe(packet, { hasCalculatorDisplay: true, hasCalculatorKey: true });
+  assert.equal(live.checks.find((check) => check.id === 'calc-display').ok, true);
+  assert.equal(live.checks.find((check) => check.id === 'calc-key').ok, true);
 });
 
 test('sanitize drops oversized untrusted fields', () => {
@@ -111,6 +132,14 @@ test('probes regress only when a passing check starts failing', () => {
   assert.equal(deskChecksRegressed(before, after), true);
   assert.equal(deskChecksRegressed(before, [{ id: 'photos', ok: true }, { id: 'cart', ok: true }]), false);
   assert.equal(deskChecksRegressed(before, [{ id: 'currency', ok: false }]), true);
+  assert.equal(deskChecksRegressed(
+    [{ id: 'calc-display', ok: false, state: 'unverified', sourceOk: true }],
+    [{ id: 'calc-display', ok: false, state: 'fix', sourceOk: false }],
+  ), true);
+  assert.equal(deskChecksRegressed(
+    [{ id: 'job-add-item', ok: false, state: 'unverified' }],
+    [{ id: 'job-add-item', ok: false, state: 'fix' }],
+  ), false);
 });
 
 test('live Preview cart and currency win over a failed HTML regex check', () => {
@@ -157,6 +186,29 @@ test('an older live probe without photo counts does not wipe HTML photo facts', 
   const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: true });
   assert.equal(merged.facts.hasPhotos, true);
   assert.ok(merged.checks.some((check) => check.id === 'photos' && check.ok === true));
+});
+
+test('catalog and cart-click only pass from the live page', () => {
+  const packet = buildDeskContextPacket({
+    html: shopHtml,
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
+    vfs: {
+      'index.html': { content: shopHtml, language: 'html' },
+      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
+    },
+  });
+  assert.equal(packet.checks.find((check) => check.id === 'catalog').ok, false);
+  const live = mergeLiveDeskProbe(packet, {
+    hasCart: true,
+    hasCurrency: true,
+    photoCount: 2,
+    uniquePhotoCount: 2,
+    catalogCount: 2,
+    bagIncremented: true,
+  });
+  assert.equal(live.facts.catalogCount, 2);
+  assert.ok(live.checks.some((check) => check.id === 'catalog' && check.ok === true));
+  assert.ok(live.checks.some((check) => check.id === 'cart-click' && check.ok === true));
 });
 
 test('a catalog that repeats one photo fails the photos check', () => {

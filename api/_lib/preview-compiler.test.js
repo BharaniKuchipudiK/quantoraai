@@ -29,6 +29,18 @@ test('self-hosted preview compiler bundles React, package imports and local CSS 
   assert.match(result.html, /rendered no content/);
 });
 
+test('the compiler bakes the correlation id and live-page probe into the iframe', async () => {
+  const result = await compilePreviewVfs(calculatorVfs, { correlationId: 'browser-desk-probe-1' });
+  assert.equal(result.correlationId, 'browser-desk-probe-1');
+  assert.match(result.html, /browser-desk-probe-1/);
+  assert.match(result.html, /hasCalculatorDisplay/);
+  assert.match(result.html, /catalogCount/);
+  assert.match(result.html, /bagIncremented/);
+  const dropped = await compilePreviewVfs(calculatorVfs);
+  assert.equal(dropped.correlationId, null);
+  assert.match(dropped.html, /__quantoraCorrelationId=null/);
+});
+
 test('Vercel traces the browser packages resolved dynamically by the deployed compiler', () => {
   const config = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
   const includeFiles = config.functions?.['api/preview-compile.js']?.includeFiles || '';

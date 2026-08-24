@@ -30,6 +30,7 @@ test('injects harness into head', () => {
   assert.match(out, /hasCurrency: hasCurrency/);
   assert.match(out, /hasCalculatorDisplay/);
   assert.match(out, /hasCalculatorKey/);
+  assert.match(out, /catalogCount: catalogCount/);
   assert.match(out, new RegExp(`id="${PREVIEW_TAILWIND_PROBE_ID}"`));
   assert.match(out, new RegExp(`getElementById\\('${PREVIEW_TAILWIND_PROBE_ID}'\\)`));
 });

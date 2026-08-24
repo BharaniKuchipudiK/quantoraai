@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildPreviewSandbox } from '../lib/preview-utils.js';
-import { correlationHeaders, normalizeClientCorrelationId, recordClientBoundary } from '../lib/transaction-trace.js';
+import { correlationHeaders, normalizeClientCorrelationId, previewMessageMatchesCompile, recordClientBoundary } from '../lib/transaction-trace.js';
 
 export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransaction = null, onDeskProbe }) {
   const frameRef = useRef(null);
   const renderedRef = useRef(false);
+  const compiledIdRef = useRef(normalizeClientCorrelationId(correlationId));
   const onDeskProbeRef = useRef(onDeskProbe);
   onDeskProbeRef.current = onDeskProbe;
   const [html, setHtml] = useState('');
@@ -19,6 +20,7 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
     setError('');
     setHtml('');
     renderedRef.current = false;
+    compiledIdRef.current = normalizeClientCorrelationId(correlationId);
     // Facts observed on the previous build must not vouch for this one.
     onDeskProbeRef.current?.(null);
 
@@ -39,6 +41,8 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
           throw new Error(payload?.error || `Preview compilation failed (${response.status}).`);
         }
         if (!active) return;
+        compiledIdRef.current = normalizeClientCorrelationId(payload.correlationId)
+          || normalizeClientCorrelationId(correlationId);
         setHtml(payload.html);
         void recordClientBoundary(correlationId, 'browser.preview-response', 'compiled', {
           transaction: goldenTransaction,
@@ -66,8 +70,11 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
     const onMessage = (event) => {
       if (event.source !== frameRef.current?.contentWindow) return;
       if (!event.data?.__quantoraProjectPreview) return;
-      const eventCorrelationId = normalizeClientCorrelationId(event.data.correlationId);
-      if (normalizeClientCorrelationId(correlationId) && eventCorrelationId !== correlationId) return;
+      if (!previewMessageMatchesCompile({
+        requestId: correlationId,
+        compiledId: compiledIdRef.current,
+        eventId: event.data.correlationId,
+      })) return;
       if (event.data.kind === 'error') {
         const runtimeMessage = String(event.data.message || 'Preview runtime error.');
         setError(runtimeMessage);
