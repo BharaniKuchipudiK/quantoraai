@@ -66,12 +66,55 @@ test('shop cart and price talk does not promote Finance even if the client omits
   }), null);
 });
 
-test('a live coding workspace does not jump to Travel, Study, or Research on a later turn', () => {
-  assert.equal(inferStudioDomain({
-    message: 'also help me plan a trip and study for the exam while you research hotels',
-    history: [{ sender: 'user', text: 'Build me a simple calculator' }],
-    codingWorkspace: true,
-  }), null);
+const CODING_HISTORY = [
+  { sender: 'user', text: 'Build me a simple calculator' },
+  { sender: 'ai', text: 'Done — here is a working calculator preview.' },
+];
+
+const ADVISOR_HIJACK_FOLLOWUPS = [
+  { message: 'also help me study for the JEE exam and quiz me on homework', domain: 'education' },
+  { message: 'can you tutor me for NEET while I learn this curriculum', domain: 'education' },
+  { message: 'also help me plan a trip with hotels and flights', domain: 'travel' },
+  { message: 'research the literature and investigate market scan evidence', domain: 'research' },
+  { message: 'keep this under budget for my investment portfolio and taxes', domain: 'finance' },
+];
+
+test('a live coding workspace does not jump to Travel, Study, Finance, or Research on a later turn', () => {
+  for (const { message, domain } of ADVISOR_HIJACK_FOLLOWUPS) {
+    assert.equal(
+      resolveTurnStudioDomain({
+        explicit: null,
+        message,
+        history: CODING_HISTORY,
+        isCodingRequest: false,
+        hasCodingWorkspace: true,
+      }),
+      null,
+      `live desk must stay coding vs ${domain}: ${message}`,
+    );
+    assert.equal(
+      inferStudioDomain({
+        message,
+        history: CODING_HISTORY,
+        codingWorkspace: true,
+      }),
+      null,
+      `workspace flag must stay coding vs ${domain}: ${message}`,
+    );
+  }
+});
+
+test('coding-thread history alone suppresses advisor hijacks when the client omits the workspace flag', () => {
+  for (const { message, domain } of ADVISOR_HIJACK_FOLLOWUPS) {
+    assert.equal(
+      inferStudioDomain({
+        message,
+        history: CODING_HISTORY,
+      }),
+      null,
+      `history lock must stay coding vs ${domain}: ${message}`,
+    );
+  }
 });
 
 test('a cold money question from empty chat can still open Finance', () => {
@@ -88,4 +131,47 @@ test('a cold money question from empty chat can still open Finance', () => {
   assert.equal(inferStudioDomain({
     message: 'help with taxes and cash flow for my boutique',
   }), 'finance');
+});
+
+test('cold Study, Travel, and Research opens still work without a coding desk', () => {
+  assert.equal(inferStudioDomain({
+    message: 'I need a tutor for my JEE exam and homework quiz',
+  }), 'education');
+  assert.equal(inferStudioDomain({
+    message: 'help me plan a trip with hotels and flights',
+  }), 'travel');
+  assert.equal(inferStudioDomain({
+    message: 'research the literature and investigate the evidence',
+  }), 'research');
+});
+
+test('a Finance create-portfolio question does not lock later turns as coding', () => {
+  assert.equal(inferStudioDomain({
+    message: 'Can you create an investment portfolio?',
+  }), 'finance');
+  assert.equal(inferStudioDomain({
+    message: 'what allocation should I use for taxes and savings?',
+    history: [
+      { sender: 'user', text: 'Can you create an investment portfolio?' },
+      { sender: 'ai', text: 'Here is a starter allocation framework.' },
+    ],
+  }), 'finance');
+});
+
+test('mutation: without codingWorkspace lock, advisor cues would steal the turn', () => {
+  // Proves the sticky assertion is load-bearing: if codingWorkspace / history
+  // lock regresses to plain keyword inference, Study wins and this test fails.
+  const unlocked = inferStudioDomain({
+    message: 'also help me study for the JEE exam and quiz me on homework',
+    history: [],
+  });
+  assert.equal(unlocked, 'education');
+  assert.equal(
+    inferStudioDomain({
+      message: 'also help me study for the JEE exam and quiz me on homework',
+      history: CODING_HISTORY,
+      codingWorkspace: true,
+    }),
+    null,
+  );
 });

@@ -3,7 +3,7 @@
  * Powers proactive continue chips so users don't have to say "that's missing."
  */
 
-import { expandCatalogChip, shopCatalogWasCapped } from './shop-catalog-scale.js';
+import { assessShopBuildAsk, expandCatalogChip, shopCatalogWasCapped } from './shop-catalog-scale.js';
 
 function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
@@ -143,6 +143,12 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     || studioDomain === 'finance'
     || studioDomain === 'research';
     if (wantsShop && !lifeAdvisor) {
+    const intake = assessShopBuildAsk(userPrompt);
+    if (intake.oversize) {
+      for (const chip of intake.chips) {
+        gaps.push(beat(chip.id, chip.label, chip.value, chip.priority || 112));
+      }
+    }
     const hasPhotos = photosPresent({ deskFacts, ai });
     if (!hasPhotos && !probeGaps.some((gap) => gap.id === 'gap-photos')) {
       gaps.push(beat(

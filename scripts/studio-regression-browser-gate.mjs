@@ -481,6 +481,23 @@ try {
     throw new Error('Finance Advisor stole the coding session after a shop follow-up.');
   }
 
+  // Broader sticky check: Study / Travel / Research cues must not steal either.
+  for (const followUp of [
+    'also help me study for the JEE exam',
+    'also help me plan a trip with hotels',
+    'research the literature for this boutique',
+  ]) {
+    await prompt.fill(followUp);
+    await prompt.press('Enter');
+    await page.getByText(followUp.slice(0, 24), { exact: false }).first().waitFor({ state: 'visible', timeout: 8_000 });
+    await page.waitForTimeout(600);
+    const domain = await page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
+    if (['finance', 'travel', 'education', 'research'].includes(domain)) {
+      throw new Error(`Coding desk jumped to ${domain} after: ${followUp}`);
+    }
+    await visible(page.locator('[data-quantora-code-workspace="true"]').first(), `Coding desk vanished after: ${followUp}`);
+  }
+
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
   await arena.click();

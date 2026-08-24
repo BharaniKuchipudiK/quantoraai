@@ -14,6 +14,7 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
+import { assessShopBuildAsk, shopPhotoTurnFailureCopy } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
@@ -66,6 +67,8 @@ import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
 import StudyTutorBoard from './StudyTutorBoard.jsx';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import FinanceBoard from './FinanceBoard.jsx';
+import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -1092,6 +1095,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     () => (studioDomain === 'education' ? deriveStudyTutorBrief({ conversationContext, messages }) : null),
     [studioDomain, conversationContext, messages],
   );
+  const financeBrief = React.useMemo(
+    () => (studioDomain === 'finance' ? deriveFinanceBrief({ messages }) : null),
+    [studioDomain, messages],
+  );
 
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
@@ -1605,7 +1612,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="true"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no product photos. Empty gold frames are not images — tap Add real product photos so the desk injects catalog photos.
+                          Preview still has no product photos. Empty picture boxes are not images — tap Add real product photos so the desk injects catalog photos.
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && shopUiMissing && (assistantClaimsShopUiReady(msg.text) || userAskedForShopDeskFix(lastUserMessage?.text || '')) ? (
@@ -1882,6 +1889,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             }}
                           />
                         ) : null}
+                        {studioDomain === 'finance' && msg.id === latestAiId && financeBrief?.active ? (
+                          <FinanceBoard
+                            brief={financeBrief}
+                            isLight={isLight}
+                            textColor={textColor}
+                            subtextColor={subtextColor}
+                            onAsk={(text) => setInputText(text)}
+                            onSend={(text) => handleSendMessage(text)}
+                          />
+                        ) : null}
                         </>
                         );
                       })()}
@@ -2002,7 +2019,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket]);
 
   
   useEffect(() => {
@@ -2211,6 +2228,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
   const hasDeskFiles = Boolean(vfs && Object.keys(vfs).some((path) => path && vfs[path]?.content));
+  const shopIntake = assessShopBuildAsk(lastUserMessage?.text || '');
+  const shopTurnFailureCopy = lastAiMessage?.isError
+    && (shopIntake.oversize || userAskedForPreviewPhotos(lastUserMessage?.text || '') || userAskedForShopDeskFix(lastUserMessage?.text || ''))
+    ? shopPhotoTurnFailureCopy({
+      timedOut: /timed out|90s limit|hit the \d+s limit/i.test(lastAiMessage?.text || ''),
+      seconds: 90,
+      assessment: shopIntake,
+    })
+    : '';
   const partnerStatus = resolveStudioPartnerStatus({
     isGenerating,
     generatingLabel: generatingStatus,
@@ -2226,6 +2252,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     hasDeskFiles,
     photosMissing,
     shopUiMissing,
+    shopIntake,
+    shopTurnFailureCopy,
   });
   const studioMission = deriveStudioMission({
     conversationContext,
