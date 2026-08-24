@@ -155,17 +155,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   useEffect(() => {
     setEmbedReady(false);
     embedReadyRef.current = false;
-    // Blob-first: the Studio document sends COEP require-corp. Framing
-    // /preview/embed.html without CORP makes Chrome report
-    // "quantoraai.app refused to connect". The blob shell is opaque-origin
-    // and receives HTML over postMessage.
-    embedModeRef.current = 'blob';
-    const blobUrl = createPreviewEmbedObjectUrl();
+    // Path-first under COEP require-corp: sandboxed blob: iframes cannot send
+    // CORP headers, so Chrome never loads them and embed-ready never fires.
+    // /preview/embed.html is served with Cross-Origin-Resource-Policy: cross-origin.
+    embedModeRef.current = 'path';
     setEmbedSrc((previous) => {
       revokePreviewEmbedObjectUrl(previous);
-      return blobUrl;
+      return getPreviewEmbedPathUrl();
     });
-    return () => revokePreviewEmbedObjectUrl(blobUrl);
+    return () => revokePreviewEmbedObjectUrl(undefined);
   }, [attempt, remountNonce]);
 
   useEffect(() => {
@@ -173,24 +171,43 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const timer = setTimeout(() => {
       if (embedReadyRef.current) return;
       if (embedModeRef.current === 'path') {
+        // Last resort if the static shell 404s in some host — blob may still fail under COEP.
         try {
           embedModeRef.current = 'blob';
           setEmbedSrc(createPreviewEmbedObjectUrl());
         } catch { /* keep path */ }
         return;
       }
+      if (embedModeRef.current === 'blob') {
+        try {
+          embedModeRef.current = 'path';
+          setEmbedSrc((previous) => {
+            revokePreviewEmbedObjectUrl(previous);
+            return getPreviewEmbedPathUrl();
+          });
+        } catch { /* keep blob */ }
+      }
     }, 4000);
     return () => clearTimeout(timer);
   }, [embedSrc, embedReady, attempt, remountNonce]);
 
   const handleEmbedFrameError = useCallback(() => {
-    if (embedModeRef.current === 'blob') return;
+    if (embedModeRef.current === 'path') {
+      try {
+        embedModeRef.current = 'blob';
+        setEmbedSrc(createPreviewEmbedObjectUrl());
+      } catch { /* keep path */ }
+      return;
+    }
     try {
+      embedModeRef.current = 'path';
+      setEmbedSrc((previous) => {
+        revokePreviewEmbedObjectUrl(previous);
+        return getPreviewEmbedPathUrl();
+      });
+    } catch {
       embedModeRef.current = 'blob';
       setEmbedSrc(createPreviewEmbedObjectUrl());
-    } catch {
-      embedModeRef.current = 'path';
-      setEmbedSrc(getPreviewEmbedPathUrl());
     }
   }, []);
 
