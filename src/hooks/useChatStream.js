@@ -372,6 +372,10 @@ export function useChatStream({
 
     let effectiveArenaMode = arenaMode;
     const deskFiles = Boolean(isWorkspaceMode && vfs && Object.keys(vfs).length > 0);
+    const hasCodingWorkspace = deskFiles
+      || Boolean(isWorkspaceMode)
+      || Boolean(codingDeskOpen)
+      || Boolean(typeof canvasCode === 'string' && canvasCode.trim());
     const refineDesk = shouldRefineRunningDesk({
       prompt: visibleUserText,
       hasDeskFiles: deskFiles,
@@ -391,10 +395,7 @@ export function useChatStream({
       message: visibleUserText,
       history: messages,
       isCodingRequest,
-      hasCodingWorkspace: deskFiles
-        || Boolean(isWorkspaceMode)
-        || Boolean(codingDeskOpen)
-        || Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+      hasCodingWorkspace,
     }) || studioDomain;
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
@@ -437,7 +438,8 @@ export function useChatStream({
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
-      taskCategory: isCodingRequest ? 'coding' : 'general',
+      // Keep server inference sticky even when this turn is chat-only on a live desk.
+      taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       ...codingTurnRequestFields({
         isCodingRequest,
         refineDesk,
