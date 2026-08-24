@@ -1,4 +1,5 @@
 import { normalizeStudioDomain, type StudioDomain } from "./domains.js";
+import { detectBuildIntent, isSpecifiedRunnableTool } from "../build-intent.js";
 
 type HistoryItem = { sender?: unknown; text?: unknown };
 
@@ -16,6 +17,8 @@ const MINIMUM_CONFIDENCE_SCORE = 2;
 const CODING_DESK_CONTEXT = /\b(boutique|storefront|e-?commerce|saree|kanjeevaram|online shop|add[\s-]?to[\s-]?(?:bag|cart)|shopping cart|currency converter)\b/i;
 const CODING_SHOP_FOLLOWUP = /\b(cart|checkout|catalog|currency|prices?|costs?)\b/i;
 const CODING_BUILD_CUE = /\b(build|create|develop|design|website|html|preview|css|add[\s-]?to[\s-]?(?:bag|cart))\b/i;
+/** Preview / VFS markers that prove a coding desk already ran in this thread. */
+const CODING_PREVIEW_ARTIFACT = /\b(filepath=["'][^"']+\.(?:html|jsx|tsx|css|js)|```(?:html|jsx|tsx)|index\.html|vite|src\/app)\b/i;
 
 /** Declarative domain semantics; provider/model routing must not own this knowledge. */
 const DOMAIN_SIGNAL_REGISTRY: DomainSignalProfile[] = [
@@ -69,21 +72,46 @@ function signalScore(profile: DomainSignalProfile, current: string, prior: strin
   return score;
 }
 
+/** Strong coding nouns — excludes advisor-ambiguous words like portfolio. */
+const STRONG_CODING_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|html|preview|calculator|dashboard|component|widget|todo(?:s| list)?|timer|stopwatch|game|storefront|boutique|shop)\b/i;
+
+function lineLooksLikeCodingBuild(line: string): boolean {
+  if (!line.trim()) return false;
+  // Reuse build-intent semantics, then require a coding-strong noun so
+  // “create an investment portfolio?” cannot lock the thread as a desk.
+  if (isSpecifiedRunnableTool(line)) return true;
+  return detectBuildIntent(line) && STRONG_CODING_NOUN.test(line);
+}
+
+/** True when earlier turns already started a coding build / preview desk. */
+function historyHasCodingBuild(prior: string): boolean {
+  if (!prior.trim()) return false;
+  for (const chunk of prior.split("\n")) {
+    if (lineLooksLikeCodingBuild(chunk)) return true;
+  }
+  // Artifact / shop-desk evidence is stronger than ambiguous verb+noun pairs.
+  if (CODING_PREVIEW_ARTIFACT.test(prior)) return true;
+  if (CODING_DESK_CONTEXT.test(prior) && CODING_BUILD_CUE.test(prior)) return true;
+  return false;
+}
+
 function hasCodingDeskContext(current: string, prior: string): boolean {
   const hay = `${current}\n${prior}`;
   const shopFollowUp = CODING_DESK_CONTEXT.test(hay)
     || (CODING_SHOP_FOLLOWUP.test(hay) && /\b(shop|product|website|boutique|html|preview)\b/i.test(hay));
   // A boutique in a tax question is still Finance. Only suppress advisor
   // inference when the thread already looks like a site being built.
-  return shopFollowUp && CODING_BUILD_CUE.test(hay);
+  if (shopFollowUp && CODING_BUILD_CUE.test(hay)) return true;
+  // Same sticky rule for Study / Travel / Research cues after any coding build.
+  return historyHasCodingBuild(prior);
 }
 
 /**
  * Fail-safe domain continuity for clients that omit studioDomain.
  * Explicit domain always wins. A live coding workspace stays coding: later
- * money / cart / price talk must not promote Finance (or Travel/Study).
- * A clear current or recent domain cue is enough to preserve continuity;
- * ties remain ambiguous and fail closed to general chat.
+ * money / cart / price / exam / trip / research talk must not promote an
+ * advisor. A clear current or recent domain cue is enough to preserve
+ * continuity; ties remain ambiguous and fail closed to general chat.
  */
 export function inferStudioDomain(input: {
   explicit?: unknown;
