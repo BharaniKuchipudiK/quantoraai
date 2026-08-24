@@ -15,7 +15,6 @@ import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
-import { vfsLooksLikeShop } from '../lib/studio-preview-helpers.js';
 import { byokRequestHeaders } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
 import { exportOffice } from '../lib/office-export.js';

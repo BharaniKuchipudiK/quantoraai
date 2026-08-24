@@ -22,3 +22,4 @@ coverage/
 /patch_*.js
 /test_production.cjs
 /test_simulation.cjs
+.worktrees/
