@@ -309,7 +309,9 @@ export function pickPreviewEntryPath(vfs = {}) {
   }
   const htmlKey = Object.keys(vfs || {}).find((key) => /\.html$/i.test(key));
   if (htmlKey) return htmlKey;
-  return Object.keys(vfs || {})[0] || null;
+  // Never treat .svg / images / json as the runnable Preview page (that produced
+  // SVG-only "shops" with a dead shell while Review showed foxwolf_*.svg).
+  return null;
 }
 
 export function pickPreviewEntry(vfs = {}) {

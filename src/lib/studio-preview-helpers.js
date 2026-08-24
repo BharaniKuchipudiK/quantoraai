@@ -12,7 +12,7 @@ import {
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
-import { buildStudioJobCard } from './studio-job-card.js';
+import { buildStudioJobCard, jobNeedsProductPhotos } from './studio-job-card.js';
 import { shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
@@ -274,9 +274,34 @@ export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
 
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
 export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
-  if (!vfsLooksLikeShop(vfs, job)) return purgeStaleShopArtifacts(vfs, job);
   const brief = String(options?.brief || '');
-  const withPhotos = ensureShopPhotosInVfs(vfs, job, { brief });
+  let seed = { ...(vfs || {}) };
+  let seededHtml = false;
+  // SVG-only merchandise dumps are not a shop. Seed a real HTML desk when the job
+  // requires product photos and there is no runnable HTML page yet.
+  if (jobNeedsProductPhotos(job) && !pickPreviewEntryPath(seed)) {
+    const titleMatch = String(brief || job?.purpose || 'Shop').match(
+      /\b([A-Za-z][\w']*(?:\s*&\s*[A-Za-z][\w']*)?)(?:\s+Kids)?\b/i,
+    );
+    const brand = titleMatch ? titleMatch[0].replace(/\s+/g, ' ').trim() : 'Shop';
+    const title = /shop|store|collection/i.test(brand) ? brand : `${brand} Shop`;
+    seed = {
+      ...seed,
+      'index.html': {
+        content: (
+          `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
+          + `<title>${title}</title></head><body>`
+          + `<header><nav>Shop</nav><h1>${title}</h1></header>`
+          + `<main class="product-catalog" data-quantora-shop-catalog="true" style="min-height:60vh;background:#fff;padding:24px"></main>`
+          + `<footer>${title}</footer></body></html>`
+        ),
+        language: 'html',
+      },
+    };
+    seededHtml = true;
+  }
+  if (!vfsLooksLikeShop(seed, job)) return purgeStaleShopArtifacts(seed, job);
+  const withPhotos = ensureShopPhotosInVfs(seed, job, { brief });
   if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;
   const next = { ...withPhotos.vfs };
   const htmlPath = pickPreviewEntryPath(next);
@@ -288,7 +313,7 @@ export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
   if (!ui.changed) {
     return {
       vfs: next,
-      changed: withPhotos.changed,
+      changed: withPhotos.changed || seededHtml,
       scaleNote,
       photoCount: countRealPreviewPhotos(next[htmlPath].content),
     };

@@ -282,9 +282,15 @@ function injectCatalogGrid(html = '', count = SHOP_PHOTO_FLOOR) {
     + `${cards}</section>`
   );
   let out = String(html || '');
-  if (/data-quantora-shop-catalog="true"/i.test(out)) {
-    out = out.replace(/<section[^>]*data-quantora-shop-catalog="true"[^>]*>[\s\S]*?<\/section>/i, grid);
-    return out;
+  if (/<section[^>]*data-quantora-shop-catalog="true"/i.test(out)) {
+    return out.replace(/<section[^>]*data-quantora-shop-catalog="true"[^>]*>[\s\S]*?<\/section>/i, grid);
+  }
+  // Empty <main data-quantora-shop-catalog> shells must get a real grid, not a no-op return.
+  if (/<main\b[^>]*data-quantora-shop-catalog="true"[^>]*>/i.test(out)) {
+    return out.replace(
+      /<main\b[^>]*data-quantora-shop-catalog="true"[^>]*>[\s\S]*?<\/main>/i,
+      (full) => full.replace(/>[\s\S]*<\/main>/i, `>${grid}</main>`),
+    );
   }
   if (/<main\b[^>]*>/i.test(out)) {
     return out.replace(/<main\b[^>]*>/i, (open) => `${open}${grid}`);
