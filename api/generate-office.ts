@@ -31,6 +31,7 @@ import { PRESENTATION_CANVAS } from './_lib/presentation-layout.js';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
 import { requireActiveSession } from './_lib/authz.js';
+import { readByokCredentials } from './_lib/byok-credentials.js';
 import {
   officeGenerationMaxAttempts,
   officeModelCallBudgetMs,
@@ -96,14 +97,15 @@ export default async function handler(req, res) {
     operation = 'create',
     baseSpec = null,
     baseFingerprint = null,
-    userKey,
-    openRouterKey,
-    anthropicKey: anthropicUserKey,
     sessionContext = null,
     imageAttachments = [],
     spec: suppliedSpec = null,
     compileOnly = false,
   } = req.body || {};
+  const byok = readByokCredentials(req);
+  const userKey = byok.gemini;
+  const openRouterKey = byok.openRouter;
+  const anthropicUserKey = byok.anthropic;
 
   if (!['powerpoint', 'word', 'excel'].includes(format)) {
     return res.status(400).json({ error: 'Invalid format requested' });

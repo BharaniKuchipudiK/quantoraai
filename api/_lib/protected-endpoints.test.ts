@@ -230,6 +230,23 @@ test("Office generation revokes blocked signed-in sessions before using server k
   assert.equal(state.body?.sessionRevoked, true);
 });
 
+test("chat ignores BYOK keys placed in the JSON body", async () => {
+  const { state, res } = responseHarness();
+  await chat({
+    method: "POST",
+    headers: {},
+    socket: {},
+    body: {
+      message: "Hello with a body key that must be ignored",
+      modelId: "gemini-test",
+      userKey: "sk-body-gemini",
+      openRouterKey: "sk-body-openrouter",
+    },
+  }, res);
+  assert.equal(state.status, 401);
+  assert.equal(state.body?.requiresAuth, true);
+});
+
 for (const [name, handler] of Object.entries({ autocomplete, deploy, domains, enhance })) {
   test(`${name} refuses an anonymous cost-bearing request`, async () => {
     const { state, res } = responseHarness();

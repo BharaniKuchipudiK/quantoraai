@@ -32,6 +32,7 @@ import {
   normalizeClientCorrelationId,
   recordClientBoundary,
 } from '../lib/transaction-trace.js';
+import { byokRequestHeaders, getClientSecret } from '../lib/client-secrets.js';
 
 const MIN_ATTEMPT_BUDGET_MS = 20_000;
 const CHAT_TURN_DEADLINE_MS = 90_000;
@@ -243,8 +244,6 @@ export function useChatStream({
     const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
     let targetModel = pinnedOrOverride;
 
-    const geminiApiKey = localStorage.getItem('geminiApiKey');
-    const openRouterApiKey = localStorage.getItem('openRouterApiKey');
     const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
@@ -311,7 +310,7 @@ export function useChatStream({
           res = await fetch('/api/generate-office', {
           method: 'POST',
           signal: officeAbort.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: byokRequestHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             prompt: buildApprovedOfficeGenerationPrompt(text, sessionContext, currentOfficeArtifact),
             format: officeKind,
@@ -319,8 +318,6 @@ export function useChatStream({
             baseSpec: currentOfficeArtifact?.spec || null,
             baseFingerprint: currentOfficeArtifact?.verification?.previewFingerprint || null,
             history: cleanMessages,
-            userKey: geminiApiKey,
-            openRouterKey: openRouterApiKey,
             sessionContext,
             imageAttachments: attachments
               .filter((attachment) => attachment.type === 'image' && attachment.dataUrl)
@@ -397,7 +394,7 @@ export function useChatStream({
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
     if (autoMode && isCodingRequest) {
-      const openRouterApiKeyHint = typeof localStorage !== 'undefined' ? localStorage.getItem('openRouterApiKey') : null;
+      const openRouterApiKeyHint = getClientSecret('openrouter');
       const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
       const resolved = resolveCodingDeskModel({
         task: 'coding',
@@ -460,8 +457,6 @@ export function useChatStream({
       modelId: model.id,
       modelName: model.name,
       history: cleanMessages,
-      userKey: geminiApiKey,
-      openRouterKey: openRouterApiKey,
       cognitiveLevel,
       webSearch: false,
       sessionContext: turnContext,
@@ -485,6 +480,10 @@ export function useChatStream({
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),
     });
+
+    const chatRequestHeaders = () => byokRequestHeaders(
+      correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+    );
 
     if (effectiveArenaMode) {
       const modelA = targetModel;
@@ -523,7 +522,7 @@ export function useChatStream({
           const res = await fetch('/api/chat', {
             signal: controller.signal,
             method: 'POST',
-            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+            headers: chatRequestHeaders(),
             body: JSON.stringify(requestBodyFor(model)),
           });
           if (!res.ok) {
@@ -631,7 +630,7 @@ export function useChatStream({
           const res = await fetch('/api/chat', {
             signal: controller.signal,
             method: 'POST',
-            headers: correlationHeaders(turnCorrelationId, { 'Content-Type': 'application/json' }),
+            headers: chatRequestHeaders(),
             body: JSON.stringify({
               ...requestBodyFor(targetModel),
               message: messageForModel,

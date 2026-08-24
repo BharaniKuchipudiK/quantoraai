@@ -23,6 +23,7 @@ import { deleteProject, isProjectStoreConfigured, listProjects, readProjectConte
 import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
+import { readByokCredentials } from "./_lib/byok-credentials.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
 import {
   attachCorrelationId,
@@ -87,9 +88,11 @@ export default async function handler(req: any, res: any) {
   if (routed === "chat") {
     if (await handleAffordabilityDecision(req, res)) return;
 
-    if (shouldPreferTravelConversationProvider(req.body)) {
+    if (shouldPreferTravelConversationProvider(req.body, {
+      hasGeminiByok: Boolean(readByokCredentials(req).gemini),
+    })) {
       const signedIn = Boolean(getSessionUser(req));
-      let openRouterAvailable = Boolean(req.body?.openRouterKey || (signedIn && process.env.OPENROUTER_API_KEY));
+      let openRouterAvailable = Boolean(readByokCredentials(req).openRouter || (signedIn && process.env.OPENROUTER_API_KEY));
 
       if (!openRouterAvailable && signedIn) {
         try {

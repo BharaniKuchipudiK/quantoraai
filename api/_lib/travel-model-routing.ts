@@ -35,8 +35,13 @@ export function isLiveTravelToolTurn(body: any): boolean {
  * credentials and the turn is Travel, route it through the independent Travel
  * conversation provider. BYOK remains the one explicit opt-out.
  */
-export function shouldPreferTravelConversationProvider(body: any): boolean {
-  if (!hasTravelConversationContext(body) || body?.userKey) return false;
+export function shouldPreferTravelConversationProvider(
+  body: any,
+  options?: { hasGeminiByok?: boolean },
+): boolean {
+  // Explicit BYOK (header-resolved or legacy body flag in tests) opts out of
+  // server-owned Travel conversation routing.
+  if (!hasTravelConversationContext(body) || body?.userKey || options?.hasGeminiByok) return false;
   return body?.modelId !== TRAVEL_CONVERSATION_MODEL_ID;
 }
 

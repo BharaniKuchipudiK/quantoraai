@@ -15,6 +15,7 @@ import {
   routeTravelConversationBody,
   shouldPreferTravelConversationProvider,
 } from "./api/_lib/travel-model-routing.js";
+import { readByokCredentials } from "./api/_lib/byok-credentials.js";
 import deploy from "./api/deploy.js";
 import domains from "./api/domains.js";
 import enhance from "./api/enhance.js";
@@ -50,8 +51,13 @@ async function startServer() {
        return;
     }
     
-    // Connect to Google Gemini Multimodal Live API
-    const geminiWs = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiKey}`);
+    // Auth via header — never put the API key in the WebSocket URL (logs/proxies).
+    const liveUrl = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+    const geminiWs = new WebSocket(liveUrl, {
+      headers: {
+        "x-goog-api-key": geminiKey,
+      },
+    });
     
     ws.on('message', (message) => {
        if (geminiWs.readyState === WebSocket.OPEN) {
@@ -63,6 +69,11 @@ async function startServer() {
        if (ws.readyState === WebSocket.OPEN) {
           ws.send(message);
        }
+    });
+
+    geminiWs.on('error', (error) => {
+      console.error("Gemini Live upstream WebSocket error:", error?.message || error);
+      try { ws.close(); } catch { /* ignore */ }
     });
 
     ws.on('close', () => geminiWs.close());
@@ -95,9 +106,12 @@ async function startServer() {
     if (await handleAffordabilityDecision(req, res)) return;
 
     // Mirror pipeline?route=chat Travel preamble so local Express matches Vercel.
-    if (shouldPreferTravelConversationProvider(req.body)) {
+    if (shouldPreferTravelConversationProvider(req.body, {
+      hasGeminiByok: Boolean(readByokCredentials(req).gemini),
+    })) {
       const signedIn = Boolean(getSessionUser(req));
-      let openRouterAvailable = Boolean(req.body?.openRouterKey || (signedIn && process.env.OPENROUTER_API_KEY));
+      const byok = readByokCredentials(req);
+      let openRouterAvailable = Boolean(byok.openRouter || (signedIn && process.env.OPENROUTER_API_KEY));
       if (!openRouterAvailable && signedIn) {
         try {
           openRouterAvailable = Boolean(await fetchApiGatewayKey("OPENROUTER"));

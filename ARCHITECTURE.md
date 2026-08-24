@@ -147,9 +147,12 @@ response contract. Don't add a third.)
 
 - **Keys**: signed-in users may use deployment keys (resolved server-side from
   the Supabase API Gateway); everyone can bring their own key (BYOK), stored
-  client-side only. Server secrets never reach the client.
-- **Headers**: CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, referrer &
-  permissions policy in `vercel.json`.
+  client-side only and sent as `x-quantora-*-key` headers (never JSON body
+  fields). Server secrets never reach the client. Dev Live WS authenticates to
+  Gemini with `x-goog-api-key`, not a query-string key.
+- **Headers**: CSP (app/`desk` `script-src` without `unsafe-inline`; `/preview/`
+  keeps inline scripts for user artifacts), HSTS, `X-Frame-Options: DENY`,
+  `nosniff`, referrer & permissions policy in `vercel.json`.
 - **Abuse**: two-layer rate limiting (in-memory + durable) on `/api/chat`;
   moderation pass on prompts; safety-policy checks.
 - **Published sites**: `/api/deploy` allows `*` CORS *only* so a published shop

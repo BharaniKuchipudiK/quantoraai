@@ -7,6 +7,7 @@ import { isProjectStoreConfigured, readProjectContext } from "./project-store.js
 import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
 import { fetchApiGatewayKey } from "../autocomplete.js";
+import { readByokCredentials } from "./byok-credentials.js";
 import { buildConversationSystemPrompt } from "./conversation-policy.js";
 import { normalizeSessionContext } from "./session-context.js";
 import { normalizeOutcomeSessionId } from "./outcome-state.js";
@@ -379,7 +380,10 @@ export default async function handler(req: any, res: any) {
   const sse = new SseWriter(res);
 
   try {
-    const { modelId, modelName, history, userKey, openRouterKey, cognitiveLevel, task, fallbackFrom } = req.body || {};
+    const { modelId, modelName, history, cognitiveLevel, task, fallbackFrom } = req.body || {};
+    const byok = readByokCredentials(req);
+    const userKey = byok.gemini;
+    const openRouterKey = byok.openRouter;
     const communicationRequest = normalizeCommunicationRequest(req.body);
     const {
       message,

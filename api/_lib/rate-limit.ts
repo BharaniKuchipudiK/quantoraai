@@ -58,7 +58,10 @@ export function applyCors(
   }
 
   res.setHeader("Access-Control-Allow-Methods", methods);
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-Quantora-Correlation-Id, X-Quantora-Golden-Canary, X-Quantora-Gemini-Key, X-Quantora-OpenRouter-Key, X-Quantora-Anthropic-Key",
+  );
 }
 
 export type DurableRateResult = {
