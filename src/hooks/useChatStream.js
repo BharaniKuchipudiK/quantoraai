@@ -19,7 +19,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { detectBuildIntent, isSpecifiedRunnableTool } from '../lib/build-intent.js';
-import { inferStudioDomain } from '../../api/_lib/studio-domain-inference.js';
+import { resolveTurnStudioDomain } from '../../api/_lib/studio-domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
@@ -131,6 +131,7 @@ export function useChatStream({
   canvasCode,
   vfs,
   isWorkspaceMode,
+  codingDeskOpen = false,
   deskJob = null,
   liveDeskProbe = null,
   messages,
@@ -385,13 +386,16 @@ export function useChatStream({
     });
     const isCodingRequest = detectBuildIntent(text) || isSpecifiedRunnableTool(text) || refineDesk;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
-    const turnDomain = isCodingRequest
-      ? studioDomain
-      : (inferStudioDomain({
-        explicit: studioDomain,
-        message: visibleUserText,
-        history: messages,
-      }) || studioDomain);
+    const turnDomain = resolveTurnStudioDomain({
+      explicit: studioDomain,
+      message: visibleUserText,
+      history: messages,
+      isCodingRequest,
+      hasCodingWorkspace: deskFiles
+        || Boolean(isWorkspaceMode)
+        || Boolean(codingDeskOpen)
+        || Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+    }) || studioDomain;
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
