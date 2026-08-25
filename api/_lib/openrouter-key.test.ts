@@ -35,6 +35,11 @@ test('public hint never returns the full key', () => {
   const stripe = openRouterEnvPublicHint({ OPENROUTER_API_KEY: 'sk_live_a12secret' });
   assert.equal(stripe.shape, 'stripe-like');
   assert.match(String(stripe.hint), /not OpenRouter/);
+
+  const other = openRouterEnvPublicHint({ OPENROUTER_API_KEY: 'AIzaSySecretLeak' });
+  assert.equal(other.shape, 'other');
+  assert.equal(other.hint, '(unexpected — not OpenRouter)');
+  assert.ok(other.hint && !other.hint.includes('AIzaSy'));
 });
 
 test('isOpenRouterApiKey is strict', () => {

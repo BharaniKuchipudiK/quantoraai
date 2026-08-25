@@ -40,6 +40,7 @@ export function openRouterEnvPublicHint(env: NodeJS.ProcessEnv = process.env): {
   if (shape === 'openrouter' && raw.length >= 10) {
     return { shape, hint: `sk-or-v1-...${raw.slice(-3)}` };
   }
-  if (shape === 'stripe-like') return { shape, hint: 'sk_live_… (not OpenRouter)' };
-  return { shape, hint: `${raw.slice(0, Math.min(6, raw.length))}… (unexpected)` };
+  if (shape === 'stripe-like') return { shape, hint: 'sk_live_... (not OpenRouter)' };
+  // Never echo characters from an unknown secret on the public health endpoint.
+  return { shape, hint: '(unexpected — not OpenRouter)' };
 }

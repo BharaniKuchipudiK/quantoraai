@@ -507,8 +507,10 @@ export default async function handler(req: any, res: any) {
     const mayUseServerKeys = Boolean(activeSessionUser) || goldenCanary;
     // Ignore impostor OPENROUTER_API_KEY values (e.g. Stripe sk_live_…) so a bad
     // Vercel paste cannot block gateway fallback and leave OR "Last Used: Never".
-    const serverOpenRouterKey = resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || undefined;
-    const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys ? serverOpenRouterKey : undefined);
+    // Keep gateway lookup behind mayUseServerKeys and after BYOK short-circuit.
+    const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys
+      ? (resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || undefined)
+      : undefined);
     const effectiveGeminiKey = userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
 
     const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;

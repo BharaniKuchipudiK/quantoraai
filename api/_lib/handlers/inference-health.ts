@@ -2,6 +2,7 @@ import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
 import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
+import { fetchApiGatewayKey } from '../../autocomplete.js';
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'GET,OPTIONS');
@@ -12,12 +13,21 @@ export default async function handler(req: any, res: any) {
   }
 
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
-  const openRouterEnv = resolveOpenRouterEnvKey();
   const openRouterHint = openRouterEnvPublicHint();
-  const openRouterConfigured = Boolean(openRouterEnv);
+  const openRouterEnv = resolveOpenRouterEnvKey();
+  let openRouterViaGateway = false;
+  let openRouterAvailable = Boolean(openRouterEnv);
+  if (!openRouterAvailable) {
+    try {
+      openRouterViaGateway = Boolean(await fetchApiGatewayKey('OPENROUTER'));
+      openRouterAvailable = openRouterViaGateway;
+    } catch {
+      openRouterViaGateway = false;
+    }
+  }
   const summary = await summarizeInferenceReadiness({
     geminiAvailable: geminiConfigured,
-    openRouterAvailable: openRouterConfigured,
+    openRouterAvailable,
     circuitStore: providerCircuitStore,
   });
   const circuitStore = getProviderCircuitStoreHealth();
@@ -28,6 +38,7 @@ export default async function handler(req: any, res: any) {
     openRouterConfigured: summary.openRouterConfigured,
     openRouterEnvShape: openRouterHint.shape,
     openRouterEnvHint: openRouterHint.hint,
+    openRouterViaGateway,
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     routeCount: summary.routeCount,
     usedLastResort: summary.usedLastResort,
