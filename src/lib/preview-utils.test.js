@@ -181,7 +181,7 @@ test('path embed URL can cache-bust remounts', async () => {
 });
 
 test('harness strips base/refresh that yank the iframe onto the SPA', async () => {
-  const { injectPreviewHarness } = await import('./preview-utils.js');
+  const { injectPreviewHarness, buildPreviewSrcDoc, isHtmlPreviewDocument } = await import('./preview-utils.js');
   const out = injectPreviewHarness(`<!DOCTYPE html><html><head>
 <base href="https://quantoraai.app/">
 <meta http-equiv="refresh" content="0;url=/">
@@ -192,6 +192,11 @@ test('harness strips base/refresh that yank the iframe onto the SPA', async () =
   assert.doesNotMatch(out, /<script>location\.href\s*=\s*['"]\/['"]/i);
   assert.match(out, /Preview blocked navigation/);
   assert.match(out, /Object\.defineProperty\(window\.location, 'href'/);
+  assert.equal(isHtmlPreviewDocument('<!DOCTYPE html><html><body>x</body></html>'), true);
+  assert.equal(isHtmlPreviewDocument('export default function App(){return 1}'), false);
+  const srcDoc = buildPreviewSrcDoc('<!DOCTYPE html><html><head></head><body><h1>Hi</h1></body></html>');
+  assert.match(srcDoc, /Content-Security-Policy/);
+  assert.match(srcDoc, /<h1>Hi<\/h1>/);
 });
 
 test('still ignores opaque script errors', () => {
