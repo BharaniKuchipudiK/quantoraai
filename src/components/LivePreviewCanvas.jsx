@@ -12,6 +12,7 @@ import {
   isCriticalResourceError,
   revokePreviewEmbedObjectUrl,
   buildPreviewSandbox,
+  previewVerdict,
 } from '../lib/preview-utils.js';
 import { shouldShowPreviewShellTombstone } from '../lib/preview-shell-warming.js';
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
@@ -301,6 +302,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       stylingFailedRef.current = false;
       autoJobHealRef.current = false;
       verifiedCodeRef.current = null;
+      // The score belongs to the build that produced it. Leaving it behind
+      // showed a stale "· 65/100" against a completely different product.
+      setQualityReport(null);
       return;
     }
     // Assembly churn (shop inject / streaming / SVG wiring) must NOT reset the
@@ -314,6 +318,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     stylingFailedRef.current = false;
     autoJobHealRef.current = false;
     verifiedCodeRef.current = null;
+    // Drop the previous build's score until this one is actually verified.
+    setQualityReport(null);
   }, [code, assemblyKey]);
 
   useEffect(() => {
@@ -818,7 +824,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     warming: { icon: <Loader size={14} className="animate-spin" />, label: 'Preview is starting…', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
     running: { icon: <Loader size={14} className="animate-spin" />, label: 'Verifying — running the preview…', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
     healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+    clean: {
+      'needs-work': { icon: <AlertTriangle size={14} />, label: 'Runs, but quality checks did not pass', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+      'ran-clean': { icon: <ShieldCheck size={14} />, label: 'Runs without errors — checking quality…', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+      'verified-autofixed': { icon: <ShieldCheck size={14} />, label: 'Verified — auto-fixed and running clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+      verified: { icon: <ShieldCheck size={14} />, label: 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+    }[previewVerdict({ qualityReport, attempt })],
     degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
     failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[!previewShellReady && (status === 'running' || status === 'healing') ? 'warming' : status] || null;
