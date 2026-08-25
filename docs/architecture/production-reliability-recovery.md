@@ -67,9 +67,11 @@ The `Deployed Golden Transactions` workflow waits for the exact Vercel Preview S
 
 Shop scorecard proof uses a separate deployed gate (`scripts/deployed-shop-preview-gate.mjs`) against the path-first `/preview/embed.html` shell: Start-with-10 catalog photos must paint (`naturalWidth > 0`) and Add to Cart must increment Bag. Full `/desk` chat remains SSO-protected (403 without bypass). See `docs/SHOP_PREVIEW_PROD_CHECKLIST.md`. Calculator/website LLM goldens stay non-blocking when flaky; the shop embed act is the shop release proof.
 
+Coding Desk Terminal/Git scorecard proof uses `scripts/desk-terminal-git-gate.mjs` (CI) and `scripts/deployed-desk-terminal-git-gate.mjs` (deployed, with bypass): after a deterministic multi-file VFS lands on COEP `/desk`, Terminal `ls` must list Preview project files and desk `git commit` must record a message against the same tree. Live signed-in LLM on production `/desk` stays a manual checklist — see `docs/DESK_TERMINAL_GIT_PROD_CHECKLIST.md`.
+
 A production fix may be declared only when:
 
 1. typecheck, frontend lint, all tests, production build, and dependency audit pass;
-2. deterministic browser gates pass (including Start-with-10 shop act);
+2. deterministic browser gates pass (including Start-with-10 shop act and desk Terminal/Git);
 3. the exact production commit is Vercel `READY`; and
-4. deployed shop preview act (and ideally both calculator/website goldens) pass against that deployment with evidence.
+4. deployed shop preview act and deployed desk Terminal/Git (and ideally both calculator/website goldens) pass against that deployment with evidence.

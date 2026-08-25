@@ -95,6 +95,15 @@ jobs:
           QUANTORA_DEPLOYMENT_SHA: ${{ steps.deployment.outputs.sha }}
         run: node scripts/deployed-shop-preview-gate.mjs
 
+      - name: Prove deployed desk Terminal ls + Git commit on Preview tree
+        id: desk_terminal_git
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          QUANTORA_DEPLOYMENT_SHA: ${{ steps.deployment.outputs.sha }}
+        run: node scripts/deployed-desk-terminal-git-gate.mjs
+
       - name: Upload deployed transaction evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -111,5 +120,5 @@ jobs:
         run: |
           echo "deployed calculator/website golden outcome=$GOLDEN_CHAT_OUTCOME"
           if [ "$GOLDEN_CHAT_OUTCOME" != "success" ]; then
-            echo "::warning::Deployed calculator/website goldens failed (historically flaky; shop act above is the shop scorecard gate)."
+            echo "::warning::Deployed calculator/website goldens failed (historically flaky; shop act + desk Terminal/Git above are the scorecard gates)."
           fi

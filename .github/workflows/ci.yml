@@ -210,6 +210,13 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/preview-ready-not-stuck-gate.mjs
 
+      - name: Execute Coding Desk Terminal ls + Git commit
+        id: desk_terminal_git_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/desk-terminal-git-gate.mjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -238,9 +245,10 @@ jobs:
           CODING_DESK_FILES_OUTCOME: ${{ steps.coding_desk_files_gate.outcome }}
           CODING_DESK_CHROME_OUTCOME: ${{ steps.coding_desk_chrome_gate.outcome }}
           PREVIEW_READY_OUTCOME: ${{ steps.preview_ready_gate.outcome }}
+          DESK_TERMINAL_GIT_OUTCOME: ${{ steps.desk_terminal_git_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME CODING_DESK_CHROME_OUTCOME PREVIEW_READY_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME CODING_DESK_CHROME_OUTCOME PREVIEW_READY_OUTCOME DESK_TERMINAL_GIT_OUTCOME; do
             outcome="${!gate}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then
