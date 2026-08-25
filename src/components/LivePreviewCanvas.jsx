@@ -222,6 +222,18 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   }, []);
 
+  /** Don't wait for postMessage — if the iframe loaded, the shell is up. */
+  const handleEmbedFrameLoad = useCallback(() => {
+    if (!embedReadyRef.current) {
+      embedReadyRef.current = true;
+      setEmbedReady(true);
+    }
+    setWarmingFailed(false);
+    setStatus((prev) => (prev === 'failed' ? 'running' : prev));
+    const html = currentCodeRef.current;
+    if (html) pushHtmlToEmbedRef.current?.(html);
+  }, []);
+
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
@@ -784,6 +796,19 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       warmingRetriedRef.current = false;
       return undefined;
     }
+    // Files landed after a premature fail: clear the tombstone and keep remounting.
+    // Without this, overlay stays "shell did not start" forever while index.html
+    // sits in Review (exact boutique screenshot).
+    // Files already on the desk: never keep the sticky fail overlay.
+    if (deskHasHtml && warmingFailed) {
+      setWarmingFailed(false);
+      setStatus('running');
+      warmingStartedAtRef.current = null;
+      warmingRetriedRef.current = false;
+      setRemountNonce((value) => value + 1);
+      setShellKick((value) => value + 1);
+      return undefined;
+    }
     // Boutique / long coding turns keep the main thread busy for 30–90s. Failing
     // the shell at 12s mid-stream is the "Preview shell did not start" screenshot.
     // Hold the fail clock until the turn is idle, then remount once and wait again.
@@ -796,18 +821,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         setReadyElapsedSec((sec) => sec + 1);
       }, 1000);
       return () => clearInterval(busyTick);
-    }
-    // Files landed after a premature fail: clear the tombstone and keep remounting.
-    // Without this, overlay stays "shell did not start" forever while index.html
-    // sits in Review (exact boutique screenshot).
-    if (warmingFailed && deskHasHtml) {
-      warmingStartedAtRef.current = null;
-      warmingRetriedRef.current = false;
-      setWarmingFailed(false);
-      setStatus('running');
-      setRemountNonce((value) => value + 1);
-      setShellKick((value) => value + 1);
-      return undefined;
     }
     if (warmingFailed && !deskHasHtml) {
       return undefined;
@@ -869,6 +882,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       data-quantora-preview-warming-failed={showShellTombstone ? 'true' : 'false'}
       data-quantora-preview-turn-busy={turnBusy ? 'true' : 'false'}
       data-quantora-preview-desk-html={deskHasHtml ? 'true' : 'false'}
+      data-quantora-preview-has-html={deskHasHtml ? 'true' : 'false'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -951,6 +965,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         key={`${attempt}-${remountNonce}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
+        onLoad={handleEmbedFrameLoad}
         onError={handleEmbedFrameError}
         sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
         style={{

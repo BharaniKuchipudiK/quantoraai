@@ -5,6 +5,7 @@ import {
   shouldFailPreviewShell,
   shouldHoldPreviewShellFailClock,
   shouldShowPreviewShellTombstone,
+  shouldShowPreviewShellFailOverlay,
 } from './preview-shell-warming.js';
 
 test('hold shell fail clock while the coding turn is busy', () => {
@@ -32,6 +33,17 @@ test('never hard-fail the shell when desk already has HTML', () => {
     hasDeskHtml: true,
     idleElapsedMs: PREVIEW_SHELL_FAIL_MS * 4,
   }), false);
+});
+
+test('never show fail overlay when desk has HTML even if warmingFailed', () => {
+  assert.equal(shouldShowPreviewShellFailOverlay({
+    warmingFailed: true,
+    hasDeskHtml: true,
+  }), false);
+  assert.equal(shouldShowPreviewShellFailOverlay({
+    warmingFailed: true,
+    hasDeskHtml: false,
+  }), true);
 });
 
 test('never fail when embed is already ready', () => {

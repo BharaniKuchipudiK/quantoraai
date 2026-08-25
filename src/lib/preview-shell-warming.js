@@ -1,6 +1,7 @@
 /**
  * Preview shell fail clock — pure policy.
- * Never declare "shell did not start" while the coding turn is still streaming.
+ * Never declare "shell did not start" while the coding turn is still streaming,
+ * or when the desk already has a preview page to show.
  */
 
 export const PREVIEW_SHELL_FAIL_MS = 12_000;
@@ -50,4 +51,9 @@ export function shouldShowPreviewShellTombstone({
   if (embedReady) return false;
   if (hasDeskHtml) return false;
   return Boolean(warmingFailed);
+}
+
+/** Alias kept for callers/tests from main (#315). */
+export function shouldShowPreviewShellFailOverlay(state = {}) {
+  return shouldShowPreviewShellTombstone(state);
 }
