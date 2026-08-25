@@ -185,13 +185,22 @@ test('harness strips base/refresh that yank the iframe onto the SPA', async () =
   const out = injectPreviewHarness(`<!DOCTYPE html><html><head>
 <base href="https://quantoraai.app/">
 <meta http-equiv="refresh" content="0;url=/">
-</head><body><h1>Shop</h1><a href="/">Home</a><script>location.href='/'</script></body></html>`);
+</head><body><h1>Shop</h1><a href="/">Home</a><a href=/>Root</a>
+<form action="/"><button type="submit">Go</button></form>
+<form action=/><button type="submit">Bare</button></form>
+<script>location.href='/'</script></body></html>`);
   assert.doesNotMatch(out, /<base\s+href=/i);
   assert.doesNotMatch(out, /http-equiv=["']?refresh/i);
   assert.doesNotMatch(out, /<a\s+href=["']\/["']/i);
+  assert.doesNotMatch(out, /href=\/(?=[\s>])/i);
+  assert.doesNotMatch(out, /action=["']\/["']/i);
+  assert.doesNotMatch(out, /action=\/(?=[\s>])/i);
   assert.doesNotMatch(out, /<script>location\.href\s*=\s*['"]\/['"]/i);
   assert.match(out, /Preview blocked navigation/);
   assert.match(out, /Object\.defineProperty\(window\.location, 'href'/);
+  assert.match(out, /preview-alive/);
+  assert.match(out, /preview-escape/);
+  assert.match(out, /Preview blocked form navigation/);
   assert.equal(isHtmlPreviewDocument('<!DOCTYPE html><html><body>x</body></html>'), true);
   assert.equal(isHtmlPreviewDocument('export default function App(){return 1}'), false);
   const srcDoc = buildPreviewSrcDoc('<!DOCTYPE html><html><head></head><body><h1>Hi</h1></body></html>');

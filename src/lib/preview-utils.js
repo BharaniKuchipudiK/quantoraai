@@ -183,6 +183,25 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
       e.stopPropagation();
     }
   }, true);
+  document.addEventListener('submit', function(e) {
+    var f = e.target;
+    if (!f || f.tagName !== 'FORM') return;
+    var action = f.getAttribute('action');
+    // Missing action posts to the current embed URL (safe). Root/app actions escape.
+    if (action == null || action === '' || action === '#') return;
+    if (!allowNav(action)) {
+      e.preventDefault();
+      e.stopPropagation();
+      report({ kind:'error', message:'Preview blocked form navigation: ' + action });
+    }
+  }, true);
+  // Parent cannot trust iframe.src after in-frame nav (attribute stays on embed).
+  // Heartbeat + escape ping let Coding Desk remount before XFO DENY sticks.
+  try {
+    setInterval(function(){ report({ kind:'preview-alive' }); }, 700);
+    window.addEventListener('pagehide', function(){ report({ kind:'preview-escape' }); });
+    window.addEventListener('beforeunload', function(){ report({ kind:'preview-escape' }); });
+  } catch (aliveErr) {}
   window.addEventListener('error', function(e){
     var t = e && e.target;
     if (t && t !== window && (t.tagName || t.nodeType === 1)) {
@@ -302,6 +321,12 @@ export function injectPreviewHarness(html) {
   safe = safe.replace(/\bhref\s*=\s*(["'])\/\1/gi, 'href="#"');
   safe = safe.replace(/\bhref\s*=\s*(["'])\/desk\/?\1/gi, 'href="#"');
   safe = safe.replace(/\bhref\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'href="#"');
+  // Unquoted href=/ (common in model HTML) — do not touch href=/styles.css.
+  safe = safe.replace(/\bhref\s*=\s*\/(?=[\s>])/gi, 'href="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])\/\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])\/desk\/?\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*\/(?=[\s>])/gi, 'action="#"');
   safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/\1/gi, '/* preview nav blocked */ void 0');
   safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/desk\/?\1/gi, '/* preview nav blocked */ void 0');
   safe = safe.replace(/\b(?:window\s*\.\s*|document\s*\.\s*)?location\s*\.\s*href\s*=\s*[^;]+;?/gi, 'void 0;');

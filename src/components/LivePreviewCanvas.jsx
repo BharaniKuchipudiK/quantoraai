@@ -127,6 +127,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const warmingStartedAtRef = useRef(null);
   const lastWarmingCodeRef = useRef('');
   const embedModeRef = useRef('blob');
+  /** Last preview-alive from harness — iframe.src does not update after SPA escape. */
+  const lastPreviewAliveAtRef = useRef(0);
+  const previewHtmlPushedAtRef = useRef(0);
 
   const iframeRef = useRef(null);
   const currentCodeRef = useRef(currentCode);
@@ -231,16 +234,24 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   }, []);
 
+  const remountPreviewShell = useCallback((reason = 'escape') => {
+    embedReadyRef.current = false;
+    setEmbedReady(false);
+    setStatus('running');
+    setWarmingFailed(false);
+    setLastError(null);
+    previewHtmlPushedAtRef.current = 0;
+    lastPreviewAliveAtRef.current = 0;
+    setRemountNonce((value) => value + 1);
+    void reason;
+  }, []);
+
   /** Shell ready only if the iframe is still on /preview/embed.html (or blob). */
   const handleEmbedFrameLoad = useCallback(() => {
     const src = iframeRef.current?.src || embedSrc || '';
     if (!isPreviewEmbedFrameSrc(src)) {
       // Navigated onto the SPA → X-Frame-Options: DENY → "quantoraai.app refused to connect".
-      embedReadyRef.current = false;
-      setEmbedReady(false);
-      setStatus('running');
-      setLastError(null);
-      setRemountNonce((value) => value + 1);
+      remountPreviewShell('onload-src-left');
       return;
     }
     if (!embedReadyRef.current) {
@@ -251,7 +262,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setStatus((prev) => (prev === 'failed' ? 'running' : prev));
     const html = currentCodeRef.current;
     if (html) pushHtmlToEmbedRef.current?.(html);
-  }, [embedSrc]);
+  }, [embedSrc, remountPreviewShell]);
 
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
@@ -263,28 +274,37 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       preparedHtml = injectShopCommerceUi(preparedHtml).html;
     }
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
+    previewHtmlPushedAtRef.current = Date.now();
+    lastPreviewAliveAtRef.current = Date.now();
   }, []);
   const pushHtmlToEmbedRef = useRef(pushHtmlToEmbed);
   pushHtmlToEmbedRef.current = pushHtmlToEmbed;
 
   // If generated HTML escapes onto the SPA, XFO DENY shows "refused to connect"
-  // and onLoad may never fire — poll and remount the shell.
+  // and onLoad may never fire — poll src *and* harness heartbeat, then remount.
   useEffect(() => {
     if (headless || wcUrl || !embedReady) return undefined;
     const tick = () => {
       const frame = iframeRef.current;
       const src = frame?.src || '';
-      if (!src || isPreviewEmbedFrameSrc(src)) return;
-      embedReadyRef.current = false;
-      setEmbedReady(false);
-      setStatus('running');
-      setWarmingFailed(false);
-      setRemountNonce((value) => value + 1);
+      if (src && !isPreviewEmbedFrameSrc(src)) {
+        remountPreviewShell('src-left-embed');
+        return;
+      }
+      // iframe.src stays on /preview/embed.html after location.href='/' — detect via heartbeat.
+      const pushedAt = previewHtmlPushedAtRef.current;
+      if (!pushedAt || !currentCodeRef.current) return;
+      const graceMs = 1600;
+      if (Date.now() - pushedAt < graceMs) return;
+      const lastAlive = lastPreviewAliveAtRef.current;
+      if (lastAlive && Date.now() - lastAlive > 2000) {
+        remountPreviewShell('heartbeat-lost');
+      }
     };
     const id = setInterval(tick, 400);
     tick();
     return () => clearInterval(id);
-  }, [embedReady, headless, wcUrl]);
+  }, [embedReady, headless, wcUrl, remountPreviewShell]);
 
   useEffect(() => {
     setCurrentCode(code || '');
@@ -536,7 +556,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       if (d.kind === 'embed-ready') {
         embedReadyRef.current = true;
         setEmbedReady(true);
+        lastPreviewAliveAtRef.current = Date.now();
         if (currentCodeRef.current) pushHtmlToEmbedRef.current?.(currentCodeRef.current);
+        return;
+      }
+      if (d.kind === 'preview-alive') {
+        lastPreviewAliveAtRef.current = Date.now();
+        return;
+      }
+      if (d.kind === 'preview-escape') {
+        remountPreviewShell('harness-escape');
         return;
       }
       if (d.kind === 'preview-close-request') {
@@ -600,7 +629,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRuntimeError, onClose, runQualityCheck, headless, verifyOnly, publishLiveDeskProbe]);
+  }, [handleRuntimeError, onClose, runQualityCheck, headless, verifyOnly, publishLiveDeskProbe, remountPreviewShell]);
 
   const handleConnectDomain = async () => {
     const domain = domainInput.trim();
