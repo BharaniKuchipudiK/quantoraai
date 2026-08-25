@@ -17,6 +17,7 @@ import {
   FolderTree,
   Sparkles,
   Play,
+  Atom,
 } from 'lucide-react';
 import './LandingPage.css';
 
@@ -271,6 +272,35 @@ function AdvisorMock({ isLight, type }) {
   );
 }
 
+function QuantumLabMock({ isLight }) {
+  const { surface, panel, border, muted, ink } = mockTokens(isLight);
+  return (
+    <div className="workspace-mock workspace-mock--quantum" style={{ background: surface, borderColor: border }}>
+      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
+        <Atom size={14} color={ORANGE} />
+        <span className="workspace-mock__title">Quantum lab</span>
+      </div>
+      <div className="workspace-mock__quantum-body">
+        <div className="workspace-mock__quantum-circuit" style={{ borderColor: border, background: panel }}>
+          {['H', 'X', 'CNOT', 'M'].map((gate, i) => (
+            <span
+              key={gate}
+              className={`workspace-mock__gate${i === 2 ? ' is-active' : ''}`}
+              style={{ borderColor: i === 2 ? ORANGE : border, color: i === 2 ? ORANGE : ink }}
+            >
+              {gate}
+            </span>
+          ))}
+        </div>
+        <div className="workspace-mock__quantum-readout" style={{ color: muted }}>
+          <span style={{ color: ORANGE }}>|ψ⟩</span>
+          {' '}superposition · measure
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const WORKSPACES = [
   {
     id: 'study',
@@ -381,12 +411,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <header className="landing-header" style={{ background: navBg, borderBottom: cardBorder }}>
         <div className="landing-header__inner">
           <button type="button" className="landing-header__brand" aria-label="Open Quantora AI Studio" onClick={openStudio}>
-            <QuantoraFullLogoSvg height={38} isDark={!isLight} tagline="PROMPT TO ACTION" />
+            <QuantoraFullLogoSvg height={44} isDark={!isLight} />
           </button>
 
           <nav className="landing-header__nav" aria-label="Primary navigation">
-            <button type="button" className="landing-header__link" onClick={() => document.getElementById('desk')?.scrollIntoView({ behavior: 'smooth' })}>Desk</button>
+            <button type="button" className="landing-header__link" onClick={() => document.getElementById('studio')?.scrollIntoView({ behavior: 'smooth' })}>AI Studio</button>
             <button type="button" className="landing-header__link" onClick={() => document.getElementById('workspaces')?.scrollIntoView({ behavior: 'smooth' })}>Workspaces</button>
+            <button type="button" className="landing-header__link" onClick={() => document.getElementById('canvas')?.scrollIntoView({ behavior: 'smooth' })}>Dream to Action</button>
+            <button type="button" className="landing-header__link" onClick={() => document.getElementById('quantum')?.scrollIntoView({ behavior: 'smooth' })}>Quantum</button>
           </nav>
 
           <div className="landing-header__actions">
@@ -420,13 +452,13 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <div className="landing-hero__inner">
             <div className="landing-hero__eyebrow">
               <span className="landing-hero__eyebrow-dot" />
-              An AI studio for builders
+              Sovereign vibe coding
             </div>
             <h1 className="landing-hero__title" style={{ color: textColor }}>
               From idea to <span className="landing-accent">outcome.</span>
             </h1>
             <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-              Describe what you want. Quantora writes the code, finds the faults, and opens a live preview on Coding Desk.
+              Describe what you want. Quantora writes the files, heals the faults, and leaves you a running preview — not a chat you have to babysit.
             </p>
 
             <div
@@ -458,12 +490,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       </section>
 
       {/* Desk — the product, once */}
-      <section id="desk" className="landing-section landing-agentic">
+      <section id="studio" className="landing-section landing-agentic">
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Coding Desk</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>Editor, preview, and agent console — one surface.</h2>
+              <span className="landing-section__eyebrow">AI Studio</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>The desk where the work actually runs.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
                 The build lands in a real workspace. The console reads those files, flags the fault, and patches it in place.
               </p>
@@ -552,14 +584,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       </section>
 
       {/* Capabilities */}
-      <section id="why" className="landing-section">
+      <section id="canvas" className="landing-section">
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Capabilities</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>Finish the work you start.</h2>
+              <span className="landing-section__eyebrow">Dream to Action</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>The prompt does not die in chat.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                A running workspace, an agent that repairs its own output, and model choice handled for you.
+                Plan, preview, and ship on one board. The studio writes. The canvas keeps the thread until something runs.
               </p>
             </div>
           </Reveal>
@@ -582,13 +614,47 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </section>
 
+      <section id="quantum" className="landing-section">
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header is-center">
+              <span className="landing-section__eyebrow">Quantum</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>A lab for circuits, not a footnote.</h2>
+              <p className="landing-section__lead" style={{ color: subtextColor }}>
+                Same prompt box. Pointed at a circuit you can inspect and measure.
+              </p>
+            </div>
+          </Reveal>
+          <Reveal>
+            <div className="desk-split">
+              <QuantumLabMock isLight={isLight} />
+              <aside className="desk-points" style={{ border: cardBorder, background: cardBg }}>
+                <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>Playground</span>
+                <h3 style={{ color: textColor, margin: '8px 0 6px', fontSize: '1.15rem' }}>Build, then look</h3>
+                <p style={{ color: subtextColor, margin: '0 0 16px', fontSize: '0.88rem', lineHeight: 1.55 }}>
+                  Gates on a canvas. A readout you can trust. The same prompt box, pointed at quantum.
+                </p>
+                <ul className="desk-points__list">
+                  {['Compose a circuit from a sentence', 'See superposition before you measure', 'Keep the experiment next to the code'].map((point) => (
+                    <li key={point} style={{ color: textColor }}>
+                      <CheckCircle2 size={16} color={ORANGE} strokeWidth={2} />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       {/* Final CTA */}
       <section className="landing-section landing-final-cta">
         <div className="landing-container">
           <Reveal>
             <div className="landing-final-cta__inner">
               <h2 style={{ color: textColor }}>Start with a prompt.</h2>
-              <p style={{ color: subtextColor }}>For students, independent builders, and teams who need a working result — not an unfinished chat.</p>
+              <p style={{ color: subtextColor }}>Vibe coding with a desk you keep — files, preview, and the patch.</p>
               <TryCta large />
             </div>
           </Reveal>
