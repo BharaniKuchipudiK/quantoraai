@@ -4,6 +4,7 @@ import {
   PREVIEW_SHELL_FAIL_MS,
   shouldFailPreviewShell,
   shouldHoldPreviewShellFailClock,
+  shouldShowPreviewShellTombstone,
 } from './preview-shell-warming.js';
 
 test('hold shell fail clock while the coding turn is busy', () => {
@@ -40,4 +41,20 @@ test('never fail when embed is already ready', () => {
     idleElapsedMs: 99_000,
   }), false);
   assert.equal(shouldHoldPreviewShellFailClock({ turnBusy: true, embedReady: true }), false);
+});
+
+test('tombstone never shows when desk has HTML — boutique screenshot class', () => {
+  assert.equal(shouldShowPreviewShellTombstone({
+    warmingFailed: true,
+    hasDeskHtml: true,
+  }), false);
+  assert.equal(shouldShowPreviewShellTombstone({
+    warmingFailed: true,
+    hasDeskHtml: false,
+  }), true);
+  assert.equal(shouldShowPreviewShellTombstone({
+    warmingFailed: true,
+    hasDeskHtml: true,
+    embedReady: true,
+  }), false);
 });
