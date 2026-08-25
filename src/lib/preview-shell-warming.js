@@ -36,3 +36,18 @@ export function shouldFailPreviewShell({
   if (hasDeskHtml) return false;
   return Number(idleElapsedMs) >= Number(failMs);
 }
+
+/**
+ * Red "Preview shell did not start" tombstone — only when the desk has NOTHING
+ * runnable. If index.html / preview code exists, keep trying; never leave the
+ * boutique screenshot (Files full + red shell fail) as the product.
+ */
+export function shouldShowPreviewShellTombstone({
+  warmingFailed = false,
+  hasDeskHtml = false,
+  embedReady = false,
+} = {}) {
+  if (embedReady) return false;
+  if (hasDeskHtml) return false;
+  return Boolean(warmingFailed);
+}

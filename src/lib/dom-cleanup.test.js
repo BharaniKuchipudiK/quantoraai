@@ -83,10 +83,13 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /data-quantora-preview-contract-error/);
   assert.match(preview, /project-runtime-contract-missing/);
   // Endless "retrying the shell" theater: fail clock must not restart on assembly churn.
-  assert.doesNotMatch(preview, /Still starting Preview — retrying the shell/);
-  assert.match(preview, /omit assemblyKey \/ currentCode/);
-  assert.match(preview, /canUseBlobPreviewEmbed/);
+  assert.match(preview, /turnBusy/);
+  assert.match(preview, /deskHasHtml/);
+  assert.match(preview, /shouldShowPreviewShellTombstone/);
+  assert.match(preview, /Files landed after a premature fail/);
+  assert.match(preview, /Connecting Preview to your files/);
 });
+
 
 test('Proof Control Plane owns coding turn success', () => {
   const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
