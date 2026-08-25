@@ -6,8 +6,8 @@ test('the first attempt keeps its generous slice', () => {
   // The chosen model is the most likely to succeed; squeezing it to make room
   // for fallbacks trades a working build for a faster failure.
   assert.equal(inferenceAttemptBudgetMs(120_000, 2), 65_000);
-  assert.equal(inferenceAttemptBudgetMs(120_000, 4), 65_000);
-  assert.equal(inferenceAttemptBudgetMs(90_000, 2), 45_000);
+  assert.equal(inferenceAttemptBudgetMs(120_000, 4), 60_000);
+  assert.equal(inferenceAttemptBudgetMs(90_000, 2), 65_000);
   assert.equal(inferenceAttemptBudgetMs(55_000, 1), 55_000);
 });
 
@@ -18,7 +18,8 @@ test('a longer ladder never starves a rung and never overruns the turn', () => {
     let remaining = 120_000;
     for (let left = planned; left >= 1; left -= 1) {
       const slice = inferenceAttemptBudgetMs(remaining, left);
-      assert.ok(slice > 0, `attempt with ${left} left got ${slice}ms - dead on arrival`);
+      // Every rung, including the final paid rescue, gets a viable slice when funded.
+      assert.ok(slice >= 20_000, `attempt with ${left} left got only ${slice}ms - below viable`);
       remaining -= slice;
     }
     assert.ok(remaining >= 0, `ladder of ${planned} overran the turn budget`);

@@ -115,7 +115,12 @@ export async function readMonthlySpend(now = new Date()): Promise<SpendSnapshot>
 export async function recordModelSpend(costUsd: number, now = new Date()): Promise<SpendSnapshot> {
   const monthKey = spendMonthKey(now);
   const ceilingUsd = configuredCeilingUsd();
-  const cost = Number.isFinite(Number(costUsd)) ? Math.max(0, Number(costUsd)) : 0;
+  const cost = Number(costUsd);
+  // A non-finite or negative cost means the call could not be priced. This is
+  // the fail-closed boundary: booking it as $0 would mark the ledger known and
+  // leave paid routing enabled against spend we never accounted for. Refuse to
+  // write, and return unknown so the next paid decision closes the tap.
+  if (!Number.isFinite(cost) || cost < 0) return unknown(monthKey, ceilingUsd);
   if (!config()) return unknown(monthKey, ceilingUsd);
 
   const res = await request('/rest/v1/rpc/record_model_spend', {

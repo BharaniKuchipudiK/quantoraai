@@ -66,7 +66,6 @@ const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
  */
 const MAX_INFERENCE_ATTEMPTS = 4;
 const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
-const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
 /* An attempt below this has no realistic chance of producing a build. */
 const MIN_VIABLE_ATTEMPT_MS = 20_000;
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
@@ -93,18 +92,15 @@ export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemai
   const remaining = Math.max(0, Math.floor(totalRemainingMs));
   if (attemptsRemaining <= 1) return remaining;
   /*
-   * The first attempt keeps a generous slice: it uses the model actually chosen
-   * for the task and is the most likely to succeed, so squeezing it to make room
-   * for fallbacks trades a working build for a faster failure.
-   *
-   * What the reserve alone could not do is keep a LONGER ladder viable - it held
-   * back enough for exactly one more attempt, so the third rung of four received
-   * 0 ms and was dead on arrival. Flooring each slice at a viable minimum keeps
-   * every planned rung a real attempt; the wall clock still bounds the total.
+   * Reserve a viable minimum for EACH remaining attempt, not a fixed amount for
+   * one. The old fixed reserve left the tail of a four-rung ladder with 15s and
+   * then 5s - and the last rung is the reserved PAID rescue, so a naive reserve
+   * set the paid last-resort up to fail. This attempt takes a generous slice but
+   * never eats into the minimum the rungs behind it need.
    */
-  const afterReserve = remaining - RESERVED_INDEPENDENT_FALLBACK_MS;
-  const slice = Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, Math.max(afterReserve, MIN_VIABLE_ATTEMPT_MS));
-  return Math.max(0, Math.min(slice, remaining));
+  const reserveForRest = (attemptsRemaining - 1) * MIN_VIABLE_ATTEMPT_MS;
+  const slice = Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - reserveForRest);
+  return Math.max(0, Math.min(remaining, Math.max(slice, MIN_VIABLE_ATTEMPT_MS)));
 }
 
 function safeLabel(value: string, fallback: string) {

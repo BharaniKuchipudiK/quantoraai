@@ -110,3 +110,18 @@ test('no configured ceiling means no paid budget', async () => {
   assert.equal(configuredCeilingUsd(), 50);
   restore();
 });
+
+test('a non-finite or negative cost is refused, never booked as $0', async () => {
+  // Codex P2: NaN/Infinity used to convert to 0 and mark the ledger known, so
+  // paid stayed enabled against unmetered spend. The fail-closed boundary must
+  // refuse to write and report unknown.
+  configure();
+  let called = false;
+  globalThis.fetch = (async () => { called = true; return { ok: true, json: async () => [{ month_key: '2026-08', spent_usd: 0, calls: 1 }] }; }) as any;
+  for (const bad of [Number.NaN, Infinity, -1]) {
+    const snap = await recordModelSpend(bad as number);
+    assert.equal(snap.known, false, `cost ${bad} must return unknown`);
+  }
+  assert.equal(called, false, 'the store must not write an unpriceable cost');
+  restore();
+});

@@ -21,6 +21,16 @@ alter table public.model_spend_ledger enable row level security;
 
 -- Atomic accumulate-and-read. Returns the running total AFTER this call, so a
 -- caller never has to re-read (and race) to learn where it now stands.
+--
+-- SCOPE: this records spend that has ALREADY happened - it is accurate
+-- accounting, not an admission gate. An atomic increment is not an atomic
+-- ceiling: N paid calls admitted concurrently near the limit each read the same
+-- headroom and all book, so the total can exceed the ceiling by their aggregate.
+-- Enforcing the ceiling under concurrency requires a pre-call RESERVATION
+-- (reserve estimated headroom, make the call, settle the actual cost). That
+-- reservation lives in the chat-handler wire that will actually spend; until it
+-- exists, no caller passes a paid model, so nothing spends. Do not read this RPC
+-- as a concurrency-safe cap - it is the ledger the reservation will build on.
 create or replace function public.record_model_spend(
   p_month_key text,
   p_cost_usd numeric
