@@ -955,13 +955,17 @@ export function useChatStream({
               return;
             }
             if (isCodingRequest) {
+              const providerDetail = artifactFailed
+                ? streamedError.message
+                : (currentText
+                  ? 'provider handoff failed after a partial reply'
+                  : (streamedError.message
+                    || (streamedError.code === 'NO_HEALTHY_ROUTE'
+                      ? 'no healthy AI route'
+                      : 'the selected model failed before a fallback could finish')));
               const providerOutcome = resolveCodingTurnOutcome({
                 kind: 'provider-dead',
-                errorMessage: artifactFailed
-                  ? streamedError.message
-                  : (currentText
-                    ? 'provider handoff failed after a partial reply'
-                    : 'no healthy AI route'),
+                errorMessage: providerDetail,
                 shopIntakeAsk,
               });
               recordTurnLesson('provider-dead', {

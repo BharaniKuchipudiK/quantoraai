@@ -740,6 +740,7 @@ export default async function handler(req: any, res: any) {
         error: wantTravelTools
           ? 'Live travel lookup needs Gemini, and no conversational backup route is available. Please retry shortly.'
           : 'Quantora could not reach a healthy AI route for this turn. Please retry in a moment.',
+        code: 'NO_HEALTHY_ROUTE',
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }

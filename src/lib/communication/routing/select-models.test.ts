@@ -29,6 +29,7 @@ test('Auto coding turns default to Gemini', () => {
   assert.equal(decision.primaryModelId, 'gemini-flash-latest');
   assert.equal(decision.selectionSource, 'coding_desk_auto');
   assert.equal(decision.reason, 'build');
+  assert.ok(decision.fallbackModelIds.includes('deepseek/deepseek-chat'));
 });
 
 test('Auto coding refine escalates without picking paid when allowPaid is false', () => {
@@ -56,6 +57,7 @@ test('Auto escalate with empty Active list still keeps Gemini last-resort fallba
   });
   assert.equal(decision.primaryModelId, 'gemini-flash-latest');
   assert.equal(decision.selectionSource, 'coding_desk_auto');
+  assert.ok(decision.fallbackModelIds.includes('deepseek/deepseek-chat'));
 });
 
 test('null modelId on a coding turn uses Coding Desk Auto', () => {

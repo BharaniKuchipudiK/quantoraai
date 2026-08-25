@@ -102,6 +102,16 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
     if (resolved.modelId !== 'gemini-flash-latest' && !fallbackModelIds.includes('gemini-flash-latest')) {
       fallbackModelIds.push('gemini-flash-latest');
     }
+    // When Auto stays on Gemini Flash, pin an independent OpenRouter low-cost
+    // route so Flash overload still has a second gateway (planInferenceRoutes
+    // also injects this, but client/server selection must agree on intent).
+    const OPENROUTER_CODING_FALLBACK = 'deepseek/deepseek-chat';
+    if (
+      resolved.modelId.startsWith('gemini')
+      && !fallbackModelIds.includes(OPENROUTER_CODING_FALLBACK)
+    ) {
+      fallbackModelIds.push(OPENROUTER_CODING_FALLBACK);
+    }
     return {
       primaryModelId: resolved.modelId,
       fallbackModelIds,

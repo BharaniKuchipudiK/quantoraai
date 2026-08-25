@@ -169,6 +169,29 @@ async function describeRoute(
 }
 
 /**
+ * Ignore a stale/offline Active list for known stable routes when that gateway
+ * still has credentials. Empty registry → health "unknown", not offline.
+ */
+async function injectCredentialLastResorts(
+  pool: InferenceRoute[],
+  input: InferencePlanInput,
+): Promise<InferenceRoute[]> {
+  const next = [...pool];
+  const emptyRegistry = new Map<string, InferenceModelLike>();
+  const hasGateway = (gateway: InferenceGateway) => next.some((route) => route.gateway === gateway);
+
+  if (input.geminiAvailable && !hasGateway('gemini')) {
+    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, emptyRegistry);
+    if (lastResort && lastResort.health !== 'offline') next.push(lastResort);
+  }
+  if (input.openRouterAvailable && !hasGateway('openrouter')) {
+    const lastResort = await describeRoute(OPENROUTER_LOW_COST, 'fallback', input, emptyRegistry);
+    if (lastResort && lastResort.health !== 'offline') next.push(lastResort);
+  }
+  return next;
+}
+
+/**
  * Produces a bounded, capability-qualified route plan. The selected model stays
  * first when it is executable; fallbacks prefer a genuinely different gateway
  * and credential/quota domain before another model inside the same account.
@@ -186,15 +209,11 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     .filter((route) => route.health !== 'offline');
 
   // Active list empty/unhealthy can mark every catalog row offline — including
-  // gemini-flash-latest. Coding Desk Auto must still get one last-resort Gemini
-  // attempt when credentials exist (otherwise "no healthy AI route" spine).
+  // gemini-flash-latest and deepseek. Coding Desk Auto must still get a
+  // last-resort attempt on every gateway that has credentials. Otherwise Flash
+  // dies alone and the client paints "no healthy AI route" with no failover.
   let poolDescribed = described;
-  if (!poolDescribed.length && input.geminiAvailable) {
-    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, new Map());
-    if (lastResort && lastResort.health !== 'offline') {
-      poolDescribed = [lastResort];
-    }
-  }
+  poolDescribed = await injectCredentialLastResorts(poolDescribed, input);
   if (!poolDescribed.length) return [];
 
   const live = poolDescribed.filter((route) => route.circuit !== 'open');

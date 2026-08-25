@@ -128,9 +128,41 @@ test('empty/unhealthy Active list still yields a Gemini last-resort when credent
       { id: 'deepseek/deepseek-chat', available: false, health: 'offline' },
     ],
   });
-  assert.ok(routes.length >= 1);
+  assert.ok(routes.length >= 2);
   assert.equal(routes[0].id, 'gemini-flash-latest');
   assert.equal(routes[0].gateway, 'gemini');
+  assert.equal(routes[1].gateway, 'openrouter');
+  assert.equal(routes[1].id, 'deepseek/deepseek-chat');
+});
+
+test('Gemini-primary coding turn still plans OpenRouter when Active marks DeepSeek offline', async () => {
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'gemini-flash-latest',
+    fallbackModelIds: ['deepseek/deepseek-chat'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    models: [
+      { id: 'gemini-flash-latest', available: true },
+      { id: 'deepseek/deepseek-chat', available: false, lifecycle: 'offline' },
+    ],
+  });
+  assert.equal(routes[0].id, 'gemini-flash-latest');
+  assert.equal(routes.length, 2);
+  assert.equal(routes[1].id, 'deepseek/deepseek-chat');
+  assert.equal(routes[1].gateway, 'openrouter');
+});
+
+test('OpenRouter-only credentials still get a DeepSeek last-resort when catalog is all offline', async () => {
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'gemini-flash-latest',
+    geminiAvailable: false,
+    openRouterAvailable: true,
+    models: [
+      { id: 'gemini-flash-latest', available: false },
+      { id: 'deepseek/deepseek-chat', available: false, health: 'offline' },
+    ],
+  });
+  assert.deepEqual(routes.map((route) => route.id), ['deepseek/deepseek-chat']);
 });
 
 test('Studio stays executable whenever any inference gateway has credentials', async () => {
