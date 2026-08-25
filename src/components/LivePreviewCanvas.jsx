@@ -812,12 +812,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     () => (isProjectRuntimeVfs(vfs) ? vfs : createInlineReactRuntimeVfs(currentCode, vfs)),
     [currentCode, vfs],
   );
-  const projectRuntimeActive = Boolean(projectRuntimeVfs);
-  const useHtmlSrcDoc = Boolean(
-    !wcUrl
-    && !projectRuntimeActive
-    && isHtmlPreviewDocument(currentCode),
-  );
+  // Durable contract: HTML on the desk paints via srcDoc. Never let a leftover
+  // React project VFS steal Preview and leave shops on "refused to connect".
+  const htmlDocActive = Boolean(!wcUrl && isHtmlPreviewDocument(currentCode));
+  const projectRuntimeActive = Boolean(projectRuntimeVfs) && !htmlDocActive;
+  const useHtmlSrcDoc = htmlDocActive;
   const previewSrcDoc = useMemo(() => {
     if (!useHtmlSrcDoc || !currentCode) return '';
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
