@@ -3979,6 +3979,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onClose={() => setCanvasOpen(false)}
                 user={user}
                 onRequireAuth={onOpenAuth}
+                turnBusy={isGenerating}
                 isPresentationIntent={detectSlideDeck(messages)}
                 officeKind={detectOfficeIntent({ messages })}
                 allowPublish={canOfferVercelPublish({
