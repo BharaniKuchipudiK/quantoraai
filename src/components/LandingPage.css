@@ -37,7 +37,7 @@
   width: 100%;
   margin-inline: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px 20px;
   padding: 12px clamp(16px, 3vw, 36px);
@@ -241,6 +241,12 @@
   line-height: 1.72;
   margin: 0 0 36px;
   max-width: 34em;
+}
+
+.landing-hero__free {
+  margin: 18px 0 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
 }
 
 .landing-hero__prompt {
@@ -1379,16 +1385,318 @@
   font-size: 0.78rem;
   font-weight: 600;
   text-align: center;
+  z-index: 1;
 }
 
-.workspace-mock__quantum-readout {
+.landing-workspaces .desk-split {
+  margin-bottom: clamp(20px, 3vw, 28px);
+}
+
+.workspace-mock--rich {
+  min-height: 420px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.study-desk {
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.study-plus {
+  border-right: 1px solid;
+  padding: 12px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.study-plus__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 6px 10px;
+}
+
+.study-plus__head strong {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 650;
+  margin-top: 2px;
+}
+
+.study-plus__mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ea580c;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.study-plus__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.study-plus__item span {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.study-plus__item small {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.study-desk__stage {
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.study-beat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  min-height: 180px;
+}
+
+.study-beat__frame,
+.study-flash {
+  border: 1px solid;
+  border-radius: 12px;
+  padding: 18px 16px;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.study-beat__frame {
+  align-items: center;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.study-flash strong,
+.study-desk__card strong {
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.study-flash em {
+  font-style: normal;
+  font-size: 0.68rem;
+}
+
+.study-beat__wait {
+  margin: 0;
   font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.study-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  margin-top: auto;
+}
+
+.study-plus__mark.is-composer {
+  width: 22px;
+  height: 22px;
+}
+
+.quantum-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(180px, 0.85fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.quantum-desk__circuit {
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  border-right: 1px solid;
+}
+
+.quantum-wire {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+}
+
+.quantum-wire__label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.quantum-wire__line {
+  height: 1px;
+  border-radius: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  position: relative;
+}
+
+.quantum-wire__node {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.quantum-wire__spacer {
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.quantum-wire__link {
+  width: 2px;
+  height: 28px;
+  margin-left: calc(28px + 10px + 52% - 1px);
+  border-radius: 1px;
+}
+
+.quantum-desk__readout {
+  padding: 16px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quantum-amp {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.quantum-amp__state {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.quantum-amp__track {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.quantum-amp__track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.quantum-amp__pct {
+  font-size: 0.68rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.quantum-desk__psi {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
   letter-spacing: 0.02em;
 }
 
+@media (max-width: 720px) {
+  .study-desk,
+  .quantum-desk {
+    grid-template-columns: 1fr;
+  }
+
+  .study-plus {
+    border-right: none;
+    border-bottom: 1px solid;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .study-plus__head {
+    grid-column: 1 / -1;
+  }
+
+  .study-plus__item small {
+    display: none;
+  }
+
+  .quantum-desk__circuit {
+    border-right: none;
+    border-bottom: 1px solid;
+  }
+
+  .quantum-wire__link {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quantum-amp__track span {
+    transition: none;
+  }
+}
+
 /* ── Agentic pipeline ── */
-.landing-agentic {
-  border-block: 1px solid;
+.landing-proof + .landing-proof {
+  border-top: 1px solid;
+}
+
+.landing-page.is-light .landing-proof + .landing-proof {
+  border-color: #e5e5e5;
+}
+
+.landing-page.is-dark .landing-proof + .landing-proof {
+  border-color: #262626;
+}
+
+.landing-proof .heal-console,
+.landing-proof .workspace-mock--rich {
+  width: 100%;
+}
+
+.landing-proof .landing-workspaces__grid {
+  margin-top: clamp(20px, 3vw, 32px);
 }
 
 .landing-page.is-light .landing-agentic {

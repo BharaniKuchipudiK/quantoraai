@@ -4,25 +4,21 @@ import {
   ArrowRight,
   Sun,
   Moon,
-  Code2,
-  Layers,
   Terminal,
   Lightbulb,
   BookOpen,
-  PieChart,
-  Globe,
-  RefreshCw,
-  CheckCircle2,
-  FileCode2,
-  FolderTree,
   Sparkles,
-  Play,
-  Atom,
+  Plus,
+  CreditCard,
+  HelpCircle,
+  Layers,
+  Globe,
+  PieChart,
+  CheckCircle2,
 } from 'lucide-react';
 import './LandingPage.css';
 
 const ORANGE = '#ea580c';
-const ORANGE_BRIGHT = '#f97316';
 
 function mockTokens(isLight) {
   return {
@@ -58,181 +54,62 @@ function Reveal({ children, delay = 0, style, className }) {
   );
 }
 
-function CodingDeskMock({ isLight }) {
-  const { surface, panel, border, muted, ink } = mockTokens(isLight);
-  return (
-    <div className="workspace-mock workspace-mock--ide" style={{ background: surface, borderColor: border }}>
-      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
-        <span className="workspace-mock__dot" style={{ background: ORANGE_BRIGHT }} />
-        <span className="workspace-mock__dot" style={{ background: muted }} />
-        <span className="workspace-mock__dot" style={{ background: muted }} />
-        <span className="workspace-mock__title">Coding desk</span>
-        <div className="workspace-mock__tabs">
-          {['Preview', 'Code', 'Terminal', 'Git'].map((tab, i) => (
-            <span key={tab} className={`workspace-mock__tab${i === 0 ? ' is-active' : ''}`} style={{ borderColor: border, color: i === 0 ? ORANGE : muted }}>{tab}</span>
-          ))}
-        </div>
-      </div>
-      <div className="workspace-mock__ide-body">
-        <div className="workspace-mock__sidebar" style={{ borderColor: border, background: panel }}>
-          <div className="workspace-mock__sidebar-head"><FolderTree size={12} /> Files</div>
-          {['index.html', 'styles.css', 'app.js'].map((f, i) => (
-            <div key={f} className={`workspace-mock__file${i === 0 ? ' is-active' : ''}`} style={{ color: i === 0 ? ORANGE : muted }}>
-              <FileCode2 size={11} /> {f}
-            </div>
-          ))}
-        </div>
-        <div className="workspace-mock__editor" style={{ borderColor: border, background: panel }}>
-          <div className="workspace-mock__line"><span style={{ color: muted }}>1</span><span style={{ color: ORANGE }}>async function</span><span> processCheckout(cart) {'{'}</span></div>
-          <div className="workspace-mock__line"><span style={{ color: muted }}>2</span><span>  let subtotal = 0;</span></div>
-          <div className="workspace-mock__line"><span style={{ color: muted }}>3</span><span>  const total = subtotal;</span></div>
-          <div className="workspace-mock__line"><span style={{ color: muted }}>4</span><span style={{ color: ORANGE_BRIGHT }}>  // heal: apply tax</span></div>
-          <div className="workspace-mock__line"><span style={{ color: muted }}>5</span><span style={{ color: ORANGE }}>{'}'}</span></div>
-          <div className="workspace-mock__cursor" />
-        </div>
-        <div className="workspace-mock__preview" style={{ borderColor: border, background: panel }}>
-          <div className="workspace-mock__preview-frame">
-            <div className="workspace-mock__preview-bar" style={{ background: isLight ? '#e5e5e5' : '#262626' }} />
-            <div className="workspace-mock__preview-block" style={{ background: isLight ? '#f5f5f5' : '#141414', borderColor: border }} />
-            <Play size={20} color={ORANGE} className="workspace-mock__play" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StudyTutorMock({ isLight }) {
-  const { surface, panel, border, muted } = mockTokens(isLight);
-  return (
-    <div className="workspace-mock workspace-mock--study" style={{ background: surface, borderColor: border }}>
-      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
-        <Lightbulb size={14} color={ORANGE} />
-        <span className="workspace-mock__title">Study Tutor</span>
-      </div>
-      <div className="workspace-mock__study-body">
-        <div className="workspace-mock__chat-bubble is-ai" style={{ background: panel, borderColor: border }}>
-          Let&apos;s break this into three concepts you can practise.
-        </div>
-        <div className="workspace-mock__lab" style={{ borderColor: border, background: panel }}>
-          <span className="workspace-mock__lab-label">Study lab</span>
-          <div className="workspace-mock__flashcards">
-            {['Photosynthesis', 'Krebs cycle', 'Review'].map((c, i) => (
-              <div key={c} className="workspace-mock__flashcard" style={{ borderColor: i === 1 ? ORANGE : border, background: 'transparent' }}>{c}</div>
-            ))}
-          </div>
-          <div className="workspace-mock__progress" style={{ background: border }}>
-            <span style={{ width: '68%', background: ORANGE }} />
-          </div>
-        </div>
-        <div className="workspace-mock__chat-bubble is-user" style={{ background: panel, color: muted, borderColor: border }}>
-          Quiz me on chapter 4
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SelfHealConsole({ isLight }) {
   const { surface, panel, border, muted, ink } = mockTokens(isLight);
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => setPhase((p) => (p + 1) % 5), 2200);
-    return () => clearInterval(id);
-  }, []);
-
-  const status = [
-    'Writing checkout.js…',
-    'Bug found — tax never applied',
-    'Self-heal writing patch…',
-    'Patch applied. Running tests…',
-    'Fixed. Tests passed.',
-  ][phase];
-
-  const lines = [
-    { n: 1, text: 'async function processCheckout(cart) {' },
-    { n: 2, text: '  const session = await getSession();' },
-    { n: 3, text: '  if (!session) throw new Error(\'Unauthorized\');' },
-    { n: 4, text: '' },
-    { n: 5, text: '  let subtotal = 0;' },
-    { n: 6, text: '  for (const item of cart.items) {' },
-    { n: 7, text: '    subtotal += item.price * item.quantity;' },
-    { n: 8, text: '  }' },
-    { n: 9, text: '' },
+  const tools = [
+    { id: 'ice', icon: Sparkles, title: 'Icebreaker', subtitle: 'One true hook. Then we wait.' },
+    { id: 'explain', icon: BookOpen, title: 'Explain', subtitle: 'One idea. Then a picture.' },
+    { id: 'cards', icon: CreditCard, title: 'Flashcards', subtitle: 'Front. Flip. Recall.' },
+    { id: 'quiz', icon: HelpCircle, title: 'Quiz', subtitle: 'A check. Then we wait.' },
   ];
 
   return (
-    <div className="heal-console" style={{ background: surface, borderColor: border }}>
-      <div className="heal-console__bar" style={{ borderColor: border }}>
-        <Terminal size={14} color={ORANGE} />
-        <span>Coding Desk · checkout.js</span>
-        <span className="heal-console__status" style={{ color: ORANGE }}>{status}</span>
+    <div className="workspace-mock workspace-mock--study workspace-mock--rich" style={{ background: surface, borderColor: border }}>
+      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
+        <Lightbulb size={14} color={ORANGE} />
+        <span className="workspace-mock__title">Study Tutor · Photosynthesis</span>
       </div>
-      <div className="heal-console__body">
-        <div className="heal-console__code" style={{ color: ink, background: panel }}>
-          {lines.map((line) => (
-            <div key={line.n} className="heal-console__line">
-              <span className="heal-console__ln" style={{ color: muted }}>{line.n}</span>
-              <span>{line.text}</span>
+      <div className="study-desk">
+        <aside className="study-plus" style={{ borderColor: border, background: panel }}>
+          <div className="study-plus__head">
+            <span className="study-plus__mark" aria-hidden="true"><Plus size={14} color="#ffffff" strokeWidth={3} /></span>
+            <div>
+              <span className="workspace-mock__lab-label">This topic</span>
+              <strong style={{ color: ink }}>The next beat</strong>
             </div>
-          ))}
-          {phase < 3 ? (
-            <div className={`heal-console__line${phase >= 1 ? ' is-bug' : ''}`}>
-              <span className="heal-console__ln" style={{ color: muted }}>10</span>
-              <span>  const total = subtotal; // BUG: tax never applied</span>
+          </div>
+          {tools.map((tool) => {
+            const Icon = tool.icon;
+            const on = tool.id === 'ice';
+            return (
+              <div
+                key={tool.id}
+                className={`study-plus__item${on ? ' is-active' : ''}`}
+                style={{ borderColor: on ? ORANGE : 'transparent', color: on ? ORANGE : muted }}
+              >
+                <Icon size={14} color={on ? ORANGE : muted} />
+                <div>
+                  <span>{tool.title}</span>
+                  <small style={{ color: on ? ink : muted }}>{tool.subtitle}</small>
+                </div>
+              </div>
+            );
+          })}
+        </aside>
+        <div className="study-desk__stage">
+          <div className="study-beat">
+            <div className="study-beat__frame" style={{ borderColor: ORANGE, background: panel }}>
+              <span style={{ color: ORANGE }}>light → sugar</span>
             </div>
-          ) : (
-            <>
-              <div className="heal-console__line is-del">
-                <span className="heal-console__ln" style={{ color: muted }}>—</span>
-                <span>  const total = subtotal; // BUG: tax never applied</span>
-              </div>
-              <div className="heal-console__line is-add">
-                <span className="heal-console__ln" style={{ color: muted }}>+</span>
-                <span>  const tax = await calculateTax(cart.address);</span>
-              </div>
-              <div className="heal-console__line is-add">
-                <span className="heal-console__ln" style={{ color: muted }}>+</span>
-                <span>  const total = Math.round(subtotal * (1 + tax));</span>
-              </div>
-            </>
-          )}
-          {[
-            { n: 15, text: '' },
-            { n: 16, text: '  const charge = await stripe.charges.create({' },
-            { n: 17, text: '    amount: total,' },
-            { n: 18, text: '    currency: \'usd\',' },
-            { n: 19, text: '    source: cart.token,' },
-            { n: 20, text: '  });' },
-            { n: 21, text: '' },
-            { n: 22, text: '  return new Response(JSON.stringify(charge));' },
-            { n: 23, text: '}' },
-          ].map((line) => (
-            <div key={line.n} className="heal-console__line">
-              <span className="heal-console__ln" style={{ color: muted }}>{line.n}</span>
-              <span>{line.text}</span>
-            </div>
-          ))}
-        </div>
-        <div className="heal-console__term" style={{ borderColor: border, color: muted }}>
-          <p>$ quantora heal checkout.js</p>
-          {phase >= 1 && <p>[agent] Scanning 23 lines · Bug at L10 — total ignores tax</p>}
-          {phase >= 2 && <p>[agent] Writing patch…</p>}
-          {phase >= 3 && (
-            <>
-              <p className="heal-console__del-line">− const total = subtotal;</p>
-              <p className="heal-console__add-line">+ const tax = await calculateTax(cart.address);</p>
-              <p className="heal-console__add-line">+ const total = Math.round(subtotal * (1 + tax));</p>
-            </>
-          )}
-          {phase >= 4 && (
-            <>
-              <p>$ vitest run checkout.test.js</p>
-              <p style={{ color: ORANGE }}>✓ tax is applied  ·  ✓ integer rounding</p>
-            </>
-          )}
-          <span className="heal-console__caret" aria-hidden="true" />
+            <p className="workspace-mock__chat-bubble is-ai" style={{ background: panel, borderColor: border, color: ink }}>
+              Every green leaf is a quiet factory. Light goes in. Sugar comes out.
+            </p>
+            <p className="study-beat__wait" style={{ color: ORANGE }}>Say I’m with you — then we begin.</p>
+          </div>
+          <div className="study-composer" style={{ borderColor: border, background: panel }}>
+            <span className="study-plus__mark is-composer" aria-hidden="true"><Plus size={14} color="#ffffff" strokeWidth={3} /></span>
+            <span style={{ color: muted }}>Message Study Tutor…</span>
+          </div>
         </div>
       </div>
     </div>
@@ -272,51 +149,12 @@ function AdvisorMock({ isLight, type }) {
   );
 }
 
-function QuantumLabMock({ isLight }) {
-  const { surface, panel, border, muted, ink } = mockTokens(isLight);
-  return (
-    <div className="workspace-mock workspace-mock--quantum" style={{ background: surface, borderColor: border }}>
-      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
-        <Atom size={14} color={ORANGE} />
-        <span className="workspace-mock__title">Quantum lab</span>
-      </div>
-      <div className="workspace-mock__quantum-body">
-        <div className="workspace-mock__quantum-circuit" style={{ borderColor: border, background: panel }}>
-          {['H', 'X', 'CNOT', 'M'].map((gate, i) => (
-            <span
-              key={gate}
-              className={`workspace-mock__gate${i === 2 ? ' is-active' : ''}`}
-              style={{ borderColor: i === 2 ? ORANGE : border, color: i === 2 ? ORANGE : ink }}
-            >
-              {gate}
-            </span>
-          ))}
-        </div>
-        <div className="workspace-mock__quantum-readout" style={{ color: muted }}>
-          <span style={{ color: ORANGE }}>|ψ⟩</span>
-          {' '}superposition · measure
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const WORKSPACES = [
-  {
-    id: 'study',
-    tag: 'Learning',
-    title: 'Study Tutor',
-    body: 'The lesson stays beside the work you are building. Explanation, practice, review — one thread.',
-    color: ORANGE,
-    icon: Lightbulb,
-    mock: 'study',
-  },
+const ROOMS = [
   {
     id: 'research',
     tag: 'Research',
     title: 'Research Analyst',
     body: 'The question, the sources, the conclusion — held in the same place you left them.',
-    color: ORANGE,
     icon: BookOpen,
     mock: 'research',
   },
@@ -325,7 +163,6 @@ const WORKSPACES = [
     tag: 'Travel',
     title: 'Travel Advisor',
     body: 'Destination, dates, the itinerary you can still open next week.',
-    color: ORANGE,
     icon: Globe,
     mock: 'travel',
   },
@@ -333,27 +170,119 @@ const WORKSPACES = [
     id: 'finance',
     tag: 'Finance',
     title: 'Finance Advisor',
-    body: 'The numbers, the trade-off, the decision you have not yet taken.',
-    color: ORANGE,
+    body: 'The numbers, the trade-off, the decision taking shape.',
     icon: PieChart,
     mock: 'finance',
   },
 ];
 
-const DESK_POINTS = [
-  'A live preview of what you built',
-  'The files, open beside it',
-  'Terminal and git, on the same desk',
-  'The agent reads those files — not a paste',
-  'It finds the failing line and writes the patch',
-  'Tests run before the work is called done',
-];
+function SelfHealConsole({ isLight }) {
+  const { surface, panel, border, muted, ink } = mockTokens(isLight);
+  const [phase, setPhase] = useState(0);
 
-const CAPABILITIES = [
-  { icon: Code2, title: 'A desk you keep', body: 'Preview, editor, terminal, and git sit with the conversation. What remains is a running app — not a transcript.' },
-  { icon: RefreshCw, title: 'The fault, repaired in place', body: 'When a run fails, the console finds the line, writes the patch, and proves it. You remain in the prompt.' },
-  { icon: Sparkles, title: 'You name the outcome', body: 'Each turn is sent where it should go. You stay with the work. Quantora finds the path.' },
-];
+  useEffect(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return undefined;
+    const id = setInterval(() => setPhase((p) => (p + 1) % 5), 2200);
+    return () => clearInterval(id);
+  }, []);
+
+  const status = [
+    'Writing checkout.js…',
+    'Reviewing the total…',
+    'Writing the tax patch…',
+    'Patch applied. Running tests…',
+    'Ready. Tests passed.',
+  ][phase];
+
+  const lines = [
+    { n: 1, text: 'async function processCheckout(cart) {' },
+    { n: 2, text: '  const session = await getSession();' },
+    { n: 3, text: '  if (!session) throw new Error(\'Unauthorized\');' },
+    { n: 4, text: '' },
+    { n: 5, text: '  let subtotal = 0;' },
+    { n: 6, text: '  for (const item of cart.items) {' },
+    { n: 7, text: '    subtotal += item.price * item.quantity;' },
+    { n: 8, text: '  }' },
+    { n: 9, text: '' },
+  ];
+
+  return (
+    <div className="heal-console" style={{ background: surface, borderColor: border }}>
+      <div className="heal-console__bar" style={{ borderColor: border }}>
+        <Terminal size={14} color={ORANGE} />
+        <span>Coding Desk · checkout.js</span>
+        <span className="heal-console__status" style={{ color: ORANGE }}>{status}</span>
+      </div>
+      <div className="heal-console__body">
+        <div className="heal-console__code" style={{ color: ink, background: panel }}>
+          {lines.map((line) => (
+            <div key={line.n} className="heal-console__line">
+              <span className="heal-console__ln" style={{ color: muted }}>{line.n}</span>
+              <span>{line.text}</span>
+            </div>
+          ))}
+          {phase < 3 ? (
+            <div className={`heal-console__line${phase >= 1 ? ' is-bug' : ''}`}>
+              <span className="heal-console__ln" style={{ color: muted }}>10</span>
+              <span>  const total = subtotal;</span>
+            </div>
+          ) : (
+            <>
+              <div className="heal-console__line is-del">
+                <span className="heal-console__ln" style={{ color: muted }}>—</span>
+                <span>  const total = subtotal;</span>
+              </div>
+              <div className="heal-console__line is-add">
+                <span className="heal-console__ln" style={{ color: muted }}>+</span>
+                <span>  const tax = await calculateTax(cart.address);</span>
+              </div>
+              <div className="heal-console__line is-add">
+                <span className="heal-console__ln" style={{ color: muted }}>+</span>
+                <span>  const total = Math.round(subtotal * (1 + tax));</span>
+              </div>
+            </>
+          )}
+          {[
+            { n: 15, text: '' },
+            { n: 16, text: '  const charge = await stripe.charges.create({' },
+            { n: 17, text: '    amount: total,' },
+            { n: 18, text: '    currency: \'usd\',' },
+            { n: 19, text: '    source: cart.token,' },
+            { n: 20, text: '  });' },
+            { n: 21, text: '' },
+            { n: 22, text: '  return new Response(JSON.stringify(charge));' },
+            { n: 23, text: '}' },
+          ].map((line) => (
+            <div key={line.n} className="heal-console__line">
+              <span className="heal-console__ln" style={{ color: muted }}>{line.n}</span>
+              <span>{line.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="heal-console__term" style={{ borderColor: border, color: muted }}>
+          <p>$ quantora heal checkout.js</p>
+          {phase >= 1 && <p>[agent] Reading 23 lines · refining the total</p>}
+          {phase >= 2 && <p>[agent] Writing patch…</p>}
+          {phase >= 3 && (
+            <>
+              <p className="heal-console__del-line">− const total = subtotal;</p>
+              <p className="heal-console__add-line">+ const tax = await calculateTax(cart.address);</p>
+              <p className="heal-console__add-line">+ const total = Math.round(subtotal * (1 + tax));</p>
+            </>
+          )}
+          {phase >= 4 && (
+            <>
+              <p>$ vitest run checkout.test.js</p>
+              <p style={{ color: ORANGE }}>✓ tax is applied  ·  ✓ integer rounding</p>
+            </>
+          )}
+          <span className="heal-console__caret" aria-hidden="true" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, themeMode, setThemeMode, isLight: isLightProp }) {
   const [heroPrompt, setHeroPrompt] = useState('');
@@ -362,7 +291,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
 
   const heroExamples = [
     'The study planner I started last night…',
-    'The dashboard I left unfinished…',
+    'The dashboard I started last night…',
     'Flashcards from last night’s notes…',
     'A checkout flow with tax…',
   ];
@@ -389,12 +318,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
 
   const openStudio = () => (user ? onLaunchStudio() : onOpenAuth());
 
-  const renderWorkspaceMock = (mock) => {
-    if (mock === 'coding') return <CodingDeskMock isLight={isLight} />;
-    if (mock === 'study') return <StudyTutorMock isLight={isLight} />;
-    return <AdvisorMock isLight={isLight} type={mock} />;
-  };
-
   const TryCta = ({ className = 'landing-cta landing-cta--primary', large }) => (
     <button
       type="button"
@@ -413,14 +336,6 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <button type="button" className="landing-header__brand" aria-label="Open Quantora AI Studio" onClick={openStudio}>
             <QuantoraFullLogoSvg height={44} isDark={!isLight} />
           </button>
-
-          <nav className="landing-header__nav" aria-label="Primary navigation">
-            <button type="button" className="landing-header__link" onClick={() => document.getElementById('studio')?.scrollIntoView({ behavior: 'smooth' })}>AI Studio</button>
-            <button type="button" className="landing-header__link" onClick={() => document.getElementById('workspaces')?.scrollIntoView({ behavior: 'smooth' })}>Workspaces</button>
-            <button type="button" className="landing-header__link" onClick={() => document.getElementById('canvas')?.scrollIntoView({ behavior: 'smooth' })}>Dream to Action</button>
-            <button type="button" className="landing-header__link" onClick={() => document.getElementById('quantum')?.scrollIntoView({ behavior: 'smooth' })}>Quantum</button>
-          </nav>
-
           <div className="landing-header__actions">
             <button
               type="button"
@@ -446,21 +361,15 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </header>
 
-      {/* Hero */}
       <section className="landing-hero">
         <div className="landing-container">
           <div className="landing-hero__inner">
-            <div className="landing-hero__eyebrow">
-              <span className="landing-hero__eyebrow-dot" />
-              Sovereign vibe coding
-            </div>
             <h1 className="landing-hero__title" style={{ color: textColor }}>
               It already knows<br />your <span className="landing-accent">world.</span>
             </h1>
             <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-              Close one screen. Open another. The files, the preview, and the last prompt are waiting. You do not begin again.
+              Close one screen. Open another. The files, the preview, and the last prompt are waiting. You pick up where you left it.
             </p>
-
             <div
               className={`landing-hero__prompt${isLight ? ' is-light' : ' is-dark'}`}
               onClick={() => promptRef.current?.focus()}
@@ -485,93 +394,52 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               </div>
               <TryCta className="landing-hero__submit" />
             </div>
+            <p className="landing-hero__free" style={{ color: subtextColor }}>Try Quantora for free.</p>
           </div>
         </div>
       </section>
 
-      {/* Desk — the product, once */}
-      <section id="studio" className="landing-section landing-agentic">
+      <section className="landing-section landing-proof">
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">AI Studio</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>The desk does not vanish when you go.</h2>
+              <h2 className="landing-section__title" style={{ color: textColor }}>The work stays on the desk.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                The build lands in a workspace you can leave and return to. The console reads those files, finds the fault, and writes the repair in place.
+                Files. Preview. The patch. Leave. Come back. They are still yours.
               </p>
             </div>
           </Reveal>
           <Reveal>
-            <div className="desk-split">
-              <SelfHealConsole isLight={isLight} />
-              <aside className="desk-points" style={{ border: cardBorder, background: cardBg }}>
-                <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>Built in</span>
-                <h3 style={{ color: textColor, margin: '8px 0 6px', fontSize: '1.15rem' }}>The IDE console</h3>
-                <p style={{ color: subtextColor, margin: '0 0 16px', fontSize: '0.88rem', lineHeight: 1.55 }}>
-                  Not a transcript poured into an editor. Terminal, preview, and repair run against the files still on the desk.
-                </p>
-                <ul className="desk-points__list">
-                  {DESK_POINTS.map((point) => (
-                    <li key={point} style={{ color: textColor }}>
-                      <CheckCircle2 size={16} color={ORANGE} strokeWidth={2} />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </aside>
-            </div>
+            <SelfHealConsole isLight={isLight} />
           </Reveal>
         </div>
       </section>
 
-      {/* Workspaces — other desks, no Coding Desk repeat */}
-      <section id="workspaces" className="landing-section landing-workspaces">
+      <section className="landing-section landing-proof">
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Workspaces</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>One world. Several rooms.</h2>
+              <h2 className="landing-section__title" style={{ color: textColor }}>Same assistant. Another room.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Study, research, travel, finance — the same assistant, the same thread. You do not leave the room to change the subject.
+                Study opens from +. Icebreaker first — one true hook. Flashcards and a quiz wait until you are ready.
               </p>
             </div>
           </Reveal>
-
-          <div className="landing-workspaces__featured">
-            {WORKSPACES.filter((w) => w.id === 'study').map((ws) => {
-              const Icon = ws.icon;
-              return (
-                <Reveal key={ws.id} className="landing-workspace-showcase">
-                  <article className={`landing-workspace-card is-featured${isLight ? ' is-light' : ' is-dark'}`} style={{ border: cardBorder, background: cardBg }}>
-                    <div className="landing-workspace-card__visual">
-                      {renderWorkspaceMock(ws.mock)}
-                    </div>
-                    <div className="landing-workspace-card__copy">
-                      <span className="landing-workspace-card__tag" style={{ color: ws.color }}>{ws.tag}</span>
-                      <div className="landing-workspace-card__title-row">
-                        <Icon size={20} color={ws.color} />
-                        <h3 style={{ color: textColor }}>{ws.title}</h3>
-                      </div>
-                      <p style={{ color: subtextColor }}>{ws.body}</p>
-                    </div>
-                  </article>
-                </Reveal>
-              );
-            })}
-          </div>
-
+          <Reveal>
+            <StudyTutorMock isLight={isLight} />
+          </Reveal>
           <div className="landing-workspaces__grid">
-            {WORKSPACES.filter((w) => w.id !== 'study').map((ws, i) => {
+            {ROOMS.map((ws, i) => {
               const Icon = ws.icon;
               return (
                 <Reveal key={ws.id} delay={i * 60}>
                   <article className={`landing-workspace-card${isLight ? ' is-light' : ' is-dark'}`} style={{ border: cardBorder, background: cardBg }}>
                     <div className="landing-workspace-card__visual landing-workspace-card__visual--compact">
-                      {renderWorkspaceMock(ws.mock)}
+                      <AdvisorMock isLight={isLight} type={ws.mock} />
                     </div>
-                    <span className="landing-workspace-card__tag" style={{ color: ws.color }}>{ws.tag}</span>
+                    <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>{ws.tag}</span>
                     <div className="landing-workspace-card__title-row">
-                      <Icon size={16} color={ws.color} />
+                      <Icon size={16} color={ORANGE} />
                       <h3 style={{ color: textColor }}>{ws.title}</h3>
                     </div>
                     <p style={{ color: subtextColor }}>{ws.body}</p>
@@ -583,78 +451,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </section>
 
-      {/* Capabilities */}
-      <section id="canvas" className="landing-section">
-        <div className="landing-container">
-          <Reveal>
-            <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Dream to Action</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>The prompt does not die in chat.</h2>
-              <p className="landing-section__lead" style={{ color: subtextColor }}>
-                It becomes a board you can walk around. The studio writes. The canvas holds the thread until something runs.
-              </p>
-            </div>
-          </Reveal>
-          <div className="landing-card-grid landing-why-grid">
-            {CAPABILITIES.map((p, i) => {
-              const Icon = p.icon;
-              return (
-                <Reveal key={p.title} delay={i * 70}>
-                  <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
-                    <div className="landing-card__icon" style={{ background: isLight ? '#ffffff' : '#141414', border: `1px solid ${ORANGE}` }}>
-                      <Icon size={22} color={ORANGE} />
-                    </div>
-                    <h3 style={{ color: textColor }}>{p.title}</h3>
-                    <p style={{ color: subtextColor }}>{p.body}</p>
-                  </div>
-                </Reveal>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section id="quantum" className="landing-section">
-        <div className="landing-container">
-          <Reveal>
-            <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Quantum</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>A lab for circuits, not a footnote.</h2>
-              <p className="landing-section__lead" style={{ color: subtextColor }}>
-                The same prompt. Aimed at a circuit you can see, and measure.
-              </p>
-            </div>
-          </Reveal>
-          <Reveal>
-            <div className="desk-split">
-              <QuantumLabMock isLight={isLight} />
-              <aside className="desk-points" style={{ border: cardBorder, background: cardBg }}>
-                <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>Playground</span>
-                <h3 style={{ color: textColor, margin: '8px 0 6px', fontSize: '1.15rem' }}>Build, then look</h3>
-                <p style={{ color: subtextColor, margin: '0 0 16px', fontSize: '0.88rem', lineHeight: 1.55 }}>
-                  Gates on a canvas. A readout you can trust. The experiment stays next to the code.
-                </p>
-                <ul className="desk-points__list">
-                  {['Compose a circuit from a sentence', 'See superposition before you measure', 'Keep the experiment next to the code'].map((point) => (
-                    <li key={point} style={{ color: textColor }}>
-                      <CheckCircle2 size={16} color={ORANGE} strokeWidth={2} />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </aside>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* Final CTA */}
       <section className="landing-section landing-final-cta">
         <div className="landing-container">
           <Reveal>
             <div className="landing-final-cta__inner">
               <h2 style={{ color: textColor }}>The desk is waiting.</h2>
-              <p style={{ color: subtextColor }}>Your world does not reset when you change screens.</p>
+              <p style={{ color: subtextColor }}>Try Quantora for free. Your world travels with every screen.</p>
               <TryCta large />
             </div>
           </Reveal>
