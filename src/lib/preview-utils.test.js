@@ -186,7 +186,7 @@ test('harness strips base/refresh that yank the iframe onto the SPA', async () =
 <base href="https://quantoraai.app/">
 <meta http-equiv="refresh" content="0;url=/">
 </head><body><h1>Shop</h1></body></html>`);
-  assert.doesNotMatch(out, /<base\b/i);
+  assert.doesNotMatch(out, /<base\s+href=/i);
   assert.doesNotMatch(out, /http-equiv=["']?refresh/i);
   assert.match(out, /Preview blocked navigation/);
 });

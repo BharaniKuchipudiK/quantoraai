@@ -134,8 +134,8 @@ export const PREVIEW_TAILWIND_PROBE =
 // Harness injected into generated HTML inside the preview iframe document.
 export const PREVIEW_ERROR_HARNESS = `<script>(function(){
   function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
-  // Model HTML often does location.href='/' or <base href=app>. That navigates the
-  // iframe to the SPA, which sends X-Frame-Options: DENY → "refused to connect".
+  // Model HTML often does location.href='/' or a document base pointing at the app.
+  // That navigates the iframe to the SPA, which sends X-Frame-Options: DENY → refused to connect.
   try {
     var _assign = window.location.assign.bind(window.location);
     var _replace = window.location.replace.bind(window.location);
