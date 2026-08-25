@@ -199,7 +199,7 @@ test('harness strips base/refresh that yank the iframe onto the SPA', async () =
   assert.match(out, /Preview blocked navigation/);
   assert.match(out, /Object\.defineProperty\(window\.location, 'href'/);
   assert.match(out, /preview-alive/);
-  assert.match(out, /preview-escape/);
+  assert.doesNotMatch(out, /kind:'preview-escape'/);
   assert.match(out, /Preview blocked form navigation/);
   assert.equal(isHtmlPreviewDocument('<!DOCTYPE html><html><body>x</body></html>'), true);
   assert.equal(isHtmlPreviewDocument('export default function App(){return 1}'), false);

@@ -196,11 +196,10 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
     }
   }, true);
   // Parent cannot trust iframe.src after in-frame nav (attribute stays on embed).
-  // Heartbeat + escape ping let Coding Desk remount before XFO DENY sticks.
+  // Heartbeat alone detects a dead/escaped frame — do not ping the parent on
+  // pagehide/beforeunload (those also fire for allowNav-permitted navigations).
   try {
     setInterval(function(){ report({ kind:'preview-alive' }); }, 700);
-    window.addEventListener('pagehide', function(){ report({ kind:'preview-escape' }); });
-    window.addEventListener('beforeunload', function(){ report({ kind:'preview-escape' }); });
   } catch (aliveErr) {}
   window.addEventListener('error', function(e){
     var t = e && e.target;
