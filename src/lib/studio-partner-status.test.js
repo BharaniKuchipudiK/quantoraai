@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveStudioPartnerStatus, studioPreviewRunLabel } from './studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel, previewShellIsWarming } from './studio-partner-status.js';
 
 test('while generating, names the work and the wait instead of a silent spinner', () => {
   const status = resolveStudioPartnerStatus({
@@ -173,4 +173,12 @@ test('Preview run label is honest about start, run, and fail', () => {
   assert.equal(studioPreviewRunLabel(null), '');
   assert.equal(studioPreviewRunLabel({ kind: 'quality', passed: true }), 'Preview is running');
   assert.match(studioPreviewRunLabel({ kind: 'quality', passed: false }), /incomplete/i);
+});
+
+test('previewShellIsWarming matches partner strip gate including running', () => {
+  assert.equal(previewShellIsWarming('warming'), true);
+  assert.equal(previewShellIsWarming('running'), true);
+  assert.equal(previewShellIsWarming('healing'), true);
+  assert.equal(previewShellIsWarming('clean'), false);
+  assert.equal(previewShellIsWarming({ kind: 'quality', passed: true }), false);
 });

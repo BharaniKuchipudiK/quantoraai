@@ -80,7 +80,9 @@ function jobImplies(job, id) {
 }
 
 /** `fix` is a negative fact. `unverified` is absence of evidence, not a denial. */
-function ruleBlock(packet, rule) {
+function ruleBlock(packet, rule, { previewWarming = false } = {}) {
+  // Missing desk packet = no live proof. Control claims must not pass through.
+  if (!packet || typeof packet !== 'object') return 'unverified';
   let failed = rule.factMissing?.(packet.facts) === true;
   let unverified = false;
   for (const id of rule.ids) {
@@ -98,6 +100,8 @@ function ruleBlock(packet, rule) {
   }
   if (failed) return 'fix';
   if (unverified) return 'unverified';
+  // Shell still warming: even a green check is not enough to leave ready/done claims intact.
+  if (previewWarming) return 'unverified';
   return '';
 }
 
@@ -121,13 +125,19 @@ function wording(rule, level) {
   return level === 'unverified' ? (rule.unverified || rule.honest) : rule.honest;
 }
 
-export function filterDeskChatClaims(text = '', packet = null, studioDomain = null) {
+/**
+ * @param {string} text
+ * @param {object|null} packet desk context; null denies control claims (not pass-through)
+ * @param {string|null} studioDomain
+ * @param {{ previewWarming?: boolean }} [options] when Preview shell is not past embedReady
+ */
+export function filterDeskChatClaims(text = '', packet = null, studioDomain = null, options = {}) {
   const source = String(text || '');
   if (!source) return '';
   if (advisorBlocksPreviewBuild(studioDomain)) return source;
-  if (!packet || typeof packet !== 'object') return source;
+  const previewWarming = options?.previewWarming === true;
   const active = RULES
-    .map((rule) => ({ rule, level: ruleBlock(packet, rule) }))
+    .map((rule) => ({ rule, level: ruleBlock(packet, rule, { previewWarming }) }))
     .filter((row) => row.level);
   if (!active.length) return source;
 
