@@ -221,6 +221,18 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   }, []);
 
+  /** Don't wait for postMessage — if the iframe loaded, the shell is up. */
+  const handleEmbedFrameLoad = useCallback(() => {
+    if (!embedReadyRef.current) {
+      embedReadyRef.current = true;
+      setEmbedReady(true);
+    }
+    setWarmingFailed(false);
+    setStatus((prev) => (prev === 'failed' ? 'running' : prev));
+    const html = currentCodeRef.current;
+    if (html) pushHtmlToEmbedRef.current?.(html);
+  }, []);
+
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
@@ -783,6 +795,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       warmingRetriedRef.current = false;
       return undefined;
     }
+    // Files already on the desk: never keep the sticky fail overlay.
+    if (deskHasHtml && warmingFailed) {
+      setWarmingFailed(false);
+      setStatus('running');
+      warmingStartedAtRef.current = null;
+      warmingRetriedRef.current = false;
+      setRemountNonce((value) => value + 1);
+      setShellKick((value) => value + 1);
+      return undefined;
+    }
     // Boutique / long coding turns keep the main thread busy for 30–90s. Failing
     // the shell at 12s mid-stream is the "Preview shell did not start" screenshot.
     // Hold the fail clock until the turn is idle, then remount once and wait again.
@@ -842,13 +864,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     // reset the fail clock (that caused eternal "retrying the shell" theater).
   }, [headless, previewShellReady, turnBusy, warmingFailed, deskHasHtml, shellKick]);
 
+  const showShellFailOverlay = warmingFailed && !deskHasHtml;
+
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
       role="status"
       aria-live="polite"
       data-quantora-preview-warming="true"
-      data-quantora-preview-warming-failed={warmingFailed ? 'true' : 'false'}
+      data-quantora-preview-warming-failed={showShellFailOverlay ? 'true' : 'false'}
       data-quantora-preview-turn-busy={turnBusy ? 'true' : 'false'}
+      data-quantora-preview-has-html={deskHasHtml ? 'true' : 'false'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -864,7 +889,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         textAlign: 'center',
       }}
     >
-      {warmingFailed ? (
+      {showShellFailOverlay ? (
         <>
           <AlertTriangle size={28} color="#ef4444" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview shell did not start</div>
@@ -897,6 +922,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
             {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
             {turnBusy ? ' · shell fail clock paused' : ''}
+            {deskHasHtml && !turnBusy ? ' · page is on the desk' : ''}
           </div>
         </>
       )}
@@ -927,6 +953,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         key={`${attempt}-${remountNonce}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
+        onLoad={handleEmbedFrameLoad}
         onError={handleEmbedFrameError}
         sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
         style={{
