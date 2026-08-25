@@ -19,6 +19,7 @@ import {
   shouldHoldPreviewShellFailClock,
   shouldAutoRemountFailedPreviewShell,
 } from '../src/lib/preview-shell-warming.js';
+import { resolveHeadersForPath } from '../src/lib/vercel-headers.js';
 
 assert.equal(shouldHoldPreviewShellFailClock({ turnBusy: true }), true);
 assert.equal(shouldFailPreviewShell({ turnBusy: true, idleElapsedMs: 60_000 }), false);
@@ -56,27 +57,35 @@ const hostHtml = `<!DOCTYPE html><html><body style="margin:0">
 <iframe id="f" title="preview" sandbox="${sandbox}" src="${PREVIEW_EMBED_PATH}"></iframe>
 </body></html>`;
 
+// Serve the headers vercel.json actually ships. Hand-rolling them here is what
+// let the COEP gap hide: this gate used to send itself a
+// `Cross-Origin-Embedder-Policy: require-corp` on /preview/* that production
+// never sent, so the gate proved a config that did not exist. Read the real file.
+const vercelConfig = JSON.parse(
+  fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'),
+);
+
 function startCoepPreviewServer() {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       const path = String(req.url || '/').split('?')[0];
-      // Match Vite preview: COEP on the whole origin + CORP on /preview/*
-      // (sandboxed iframes are opaque-origin; CORP alone is not enough).
-      const baseHeaders = {
+      // Only headers vercel.json declares for this path — no invented ones.
+      const headers = {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cross-Origin-Embedder-Policy': 'require-corp',
-        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+        ...Object.fromEntries(
+          Object.entries(resolveHeadersForPath(vercelConfig, path))
+            // CSP is asserted by its own tests; serving it here would block the
+            // gate's inline bootstrap script without testing anything new.
+            .filter(([key]) => key !== 'content-security-policy'),
+        ),
       };
       if (path === PREVIEW_EMBED_PATH) {
-        res.writeHead(200, {
-          ...baseHeaders,
-          'Cross-Origin-Resource-Policy': 'cross-origin',
-        });
+        res.writeHead(200, headers);
         res.end(PATH_EMBED_HTML);
         return;
       }
       if (path === '/' || path === '/desk') {
-        res.writeHead(200, baseHeaders);
+        res.writeHead(200, headers);
         res.end(hostHtml);
         return;
       }
