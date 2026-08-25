@@ -112,7 +112,7 @@ export default async function handler(req: any, res: any) {
       authProvider: "GitHub",
       geo: getRequestGeo(req),
     });
-    if (!session.ok) {
+    if (session.ok === false) {
       return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent(session.error)}`);
     }
 

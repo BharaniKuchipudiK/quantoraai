@@ -53,7 +53,7 @@ export default async function handler(req: any, res: any) {
       authProvider: "Email & password",
       geo: getRequestGeo(req),
     });
-    if (!session.ok) return res.status(session.status).json({ error: session.error });
+    if (session.ok === false) return res.status(session.status).json({ error: session.error });
     return res.status(201).json(session.body);
   } catch (err: any) {
     console.error("Signup failed:", err?.message || err);

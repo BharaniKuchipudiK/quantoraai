@@ -43,6 +43,6 @@ export default async function handler(req: any, res: any) {
     authProvider: user.auth_provider === "email" ? "Email & password" : (user.auth_provider || "Email & password"),
     geo: getRequestGeo(req),
   });
-  if (!session.ok) return res.status(session.status).json({ error: session.error });
+  if (session.ok === false) return res.status(session.status).json({ error: session.error });
   return res.status(200).json(session.body);
 }
