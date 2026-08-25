@@ -955,6 +955,49 @@ export function useChatStream({
               return;
             }
             if (isCodingRequest) {
+              // Model route died mid-stream — still prove skills-seeded desk.
+              if (turnPlan?.isCodingTurn) {
+                const deskProof = proveCodingTurn({
+                  plan: turnPlan,
+                  vfs: vfs || {},
+                  job: deskJob,
+                  brief: turnPlan.messageForModel || visibleUserText,
+                  allowRepair: true,
+                  sessionId: activeSessionId,
+                });
+                const thisTurnOwnedDesk = Boolean(
+                  turnPlan.runSkillsFirst
+                  || deskProof.repaired
+                  || (Array.isArray(deskProof.ran) && deskProof.ran.length > 0),
+                );
+                if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
+                  if (typeof onCodingTurnProved === 'function') {
+                    try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                  }
+                  const why = artifactFailed
+                    ? (streamedError.message || 'Build artifact failed')
+                    : (streamedError?.message || 'no healthy AI route');
+                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
+                    text: (
+                      `${why}, but Preview is already proved on the desk `
+                      + `(${deskProof.evidence.photos || 0} catalog photos`
+                      + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                      + 'Open Coding desk — the page is there.'
+                    ),
+                    isError: false,
+                    executionStatus: null,
+                    codingProof: {
+                      ok: true,
+                      gaps: [],
+                      evidence: deskProof.evidence,
+                      status: 'pass',
+                      repaired: deskProof.repaired,
+                    },
+                  } : m));
+                  return;
+                }
+              }
               const providerOutcome = resolveCodingTurnOutcome({
                 kind: 'provider-dead',
                 errorMessage: artifactFailed
