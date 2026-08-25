@@ -28,12 +28,13 @@ import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-de
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
 import {
   assessShopBuildAsk,
-  expandShopIntakeAccept,
   messageLooksLikeShopBuild,
   shopIntakeSessionFacts,
 } from '../lib/shop-catalog-scale.js';
-import { assessPartnerInterrupt } from '../lib/studio-partner-interrupt.js';
+import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
+import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
+import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
   correlationHeaders,
@@ -158,10 +159,23 @@ export function useChatStream({
   sessionContext,
   conversationContext,
   updateActiveSession,
+  onCodingTurnExecute = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
   const { getLearnedBehaviors } = useModelExperienceMemory();
+
+  const recordTurnLesson = (outcomeKind, extras = {}) => {
+    rememberCodingTurnLesson(activeSessionId, {
+      kind: lessonKindFromOutcome({
+        outcomeKind,
+        shopIntakeAsk: extras.shopIntakeAsk,
+        isShopPhotoTurn: extras.isShopPhotoTurn,
+      }),
+      detail: String(extras.detail || outcomeKind || '').slice(0, 240),
+      intentKind: extras.intentKind,
+    });
+  };
 
   const cancelStream = () => {
     generationTokenRef.current = null;
@@ -197,9 +211,40 @@ export function useChatStream({
     const priorUserTexts = (messages || [])
       .filter((message) => message?.sender === 'user' && message.text)
       .map((message) => String(message.text));
-    const intakeAccept = expandShopIntakeAccept(visibleUserText, priorUserTexts);
-    if (intakeAccept.expanded) {
-      text = intakeAccept.text;
+    const studioDomainEarly = activeStudioDomain(chatSessions, activeSessionId);
+    const refineDeskEarly = shouldRefineRunningDesk({
+      prompt: visibleUserText,
+      hasDeskFiles: Boolean(canvasCode || (vfs && Object.keys(vfs).length)),
+      studioDomain: studioDomainEarly,
+    });
+    const pinnedEarly = targetModelOverride
+      || selectedModel
+      || (availableModels || []).find((model) => model?.available !== false)
+      || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
+    const autoModeEarly = !targetModelOverride && isCodingDeskAutoSelection(pinnedEarly);
+    const vfsFileCountEarly = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+    const openRouterApiKeyHint = getClientSecret('openrouter');
+    const turnPlan = planCodingTurn({
+      message: visibleUserText,
+      priorUserMessages: priorUserTexts,
+      codingDeskOpen: Boolean(codingDeskOpen),
+      refineDesk: Boolean(refineDeskEarly),
+      studioDomain: studioDomainEarly,
+      history: messages,
+      autoMode: autoModeEarly,
+      availableModels: availableModels || [],
+      vfsFileCount: vfsFileCountEarly,
+      lessons: readCodingTurnLessons(activeSessionId),
+      allowPaid: Boolean(openRouterApiKeyHint),
+    });
+    const intakeAccept = turnPlan.intakeAccept || { expanded: false, catalogTarget: null, userAsked: 0 };
+    if (turnPlan.mode === 'execute' || turnPlan.mode === 'interrupt') {
+      text = turnPlan.messageForModel || text;
+    }
+    if (turnPlan.mode === 'execute' && turnPlan.runSkillsFirst && typeof onCodingTurnExecute === 'function') {
+      try {
+        onCodingTurnExecute(turnPlan);
+      } catch { /* desk seed is best-effort; model still runs */ }
     }
     const turnCorrelationId = createCorrelationId('studio');
     const goldenTransaction = (() => {
@@ -248,36 +293,35 @@ export function useChatStream({
     if (!textToSend) setInputText('');
     setAttachments([]);
 
-    // Senior Partner Control: refuse the insane ask before burning a model turn.
-    // Agree chips / "start with 10" expand above and skip this gate.
-    if (!intakeAccept.expanded) {
-      const partnerInterrupt = assessPartnerInterrupt({
-        message: visibleUserText,
-        priorUserMessages: priorUserTexts,
-      });
-      if (partnerInterrupt?.blockModel) {
-        updateActiveMessages((prev) => [...prev, {
-          id: createMessageId('ai'),
-          sender: 'ai',
-          text: partnerInterrupt.reply,
-          componentType: 'formatted_text',
-          partnerInterrupt: {
-            kind: partnerInterrupt.kind,
-            catalogTarget: partnerInterrupt.assessment?.catalogTarget || null,
-            userAsked: partnerInterrupt.assessment?.userAsked || null,
-          },
-          continueSet: {
-            prompt: 'Agree on the next move',
-            items: (partnerInterrupt.chips || []).map((chip) => ({
-              id: chip.id,
-              label: chip.label,
-              value: chip.value,
-              priority: chip.priority,
-            })),
-          },
-        }]);
-        return;
-      }
+    // Coding Turn Planner owns the turn: analyse → skills → interrupt | execute.
+    if (turnPlan.mode === 'interrupt' && turnPlan.interrupt) {
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: turnPlan.interrupt.reply,
+        componentType: 'formatted_text',
+        codingTurnPlan: {
+          intent: turnPlan.intent,
+          skillsRequired: turnPlan.skillsRequired.map((s) => s.id),
+          skillsMissing: turnPlan.skillsMissing.map((s) => s.id),
+          proof: turnPlan.proof,
+        },
+        partnerInterrupt: {
+          kind: turnPlan.interrupt.kind,
+          catalogTarget: turnPlan.interrupt.assessment?.catalogTarget || null,
+          userAsked: turnPlan.interrupt.assessment?.userAsked || null,
+        },
+        continueSet: {
+          prompt: 'Agree on the next move',
+          items: (turnPlan.interrupt.chips || []).map((chip) => ({
+            id: chip.id,
+            label: chip.label,
+            value: chip.value,
+            priority: chip.priority,
+          })),
+        },
+      }]);
+      return;
     }
 
     setIsGenerating(true);
@@ -487,29 +531,39 @@ export function useChatStream({
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
-    const shopIntakeAsk = assessShopBuildAsk(intakeAccept.expanded ? text : (visibleUserText || text));
+    const shopIntakeAsk = turnPlan.shop || assessShopBuildAsk(intakeAccept.expanded ? text : (visibleUserText || text));
     if (autoMode && isCodingRequest) {
-      const openRouterApiKeyHint = getClientSecret('openrouter');
-      const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
-      const resolved = resolveCodingDeskModel({
-        task: 'coding',
-        message: text,
-        hasVFS: vfsFileCount > 0,
-        refineMode: refineDesk,
-        availableModels: availableModels || [],
-        qualityHints: {
-          fileCount: vfsFileCount,
-          shopImageOversize: shopIntakeAsk.oversize,
-        },
-        allowPaid: Boolean(openRouterApiKeyHint),
-      });
-      autoResolvedLabel = resolved.model?.name || resolved.modelId;
-      targetModel = {
-        id: 'auto',
-        name: 'Auto',
-        resolvedModelId: resolved.modelId,
-        resolvedModelName: autoResolvedLabel,
-      };
+      if (turnPlan.modelPlan?.modelId) {
+        autoResolvedLabel = turnPlan.modelPlan.modelName || turnPlan.modelPlan.modelId;
+        targetModel = {
+          id: 'auto',
+          name: 'Auto',
+          resolvedModelId: turnPlan.modelPlan.modelId,
+          resolvedModelName: autoResolvedLabel,
+        };
+      } else {
+        const openRouterApiKeyHint = getClientSecret('openrouter');
+        const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+        const resolved = resolveCodingDeskModel({
+          task: 'coding',
+          message: text,
+          hasVFS: vfsFileCount > 0,
+          refineMode: refineDesk,
+          availableModels: availableModels || [],
+          qualityHints: {
+            fileCount: vfsFileCount,
+            shopImageOversize: shopIntakeAsk.oversize,
+          },
+          allowPaid: Boolean(openRouterApiKeyHint),
+        });
+        autoResolvedLabel = resolved.model?.name || resolved.modelId;
+        targetModel = {
+          id: 'auto',
+          name: 'Auto',
+          resolvedModelId: resolved.modelId,
+          resolvedModelName: autoResolvedLabel,
+        };
+      }
     }
     const turnDomain = resolveTurnStudioDomain({
       explicit: studioDomain,
@@ -707,9 +761,17 @@ export function useChatStream({
       latencyMs: 0,
       provider: targetModel.name,
       liveConnected: false,
-      executionStatus: intakeAccept.expanded && intakeAccept.catalogTarget
-        ? { label: `Building about ${intakeAccept.catalogTarget} working catalog photos — not the full unique-image ask` }
+      executionStatus: turnPlan.statusLabel
+        ? { label: turnPlan.statusLabel }
         : null,
+      ...(turnPlan.isCodingTurn ? {
+        codingTurnPlan: {
+          intent: turnPlan.intent,
+          skillsRequired: turnPlan.skillsRequired.map((s) => s.id),
+          proof: turnPlan.proof,
+          runSkillsFirst: Boolean(turnPlan.runSkillsFirst),
+        },
+      } : {}),
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),
       ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
@@ -896,6 +958,11 @@ export function useChatStream({
                     : 'no healthy AI route'),
                 shopIntakeAsk,
               });
+              recordTurnLesson('provider-dead', {
+                shopIntakeAsk,
+                detail: streamedError?.message || 'provider-dead',
+                intentKind: turnPlan.intent?.kind,
+              });
               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                 ...m,
                 text: currentText && !artifactFailed
@@ -925,6 +992,11 @@ export function useChatStream({
                 kind: 'stream-ended',
                 errorMessage: 'the response stream ended unexpectedly',
                 shopIntakeAsk,
+              });
+              recordTurnLesson('stream-ended', {
+                shopIntakeAsk,
+                detail: 'stream-ended',
+                intentKind: turnPlan.intent?.kind,
               });
               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                 ...m,
@@ -981,6 +1053,11 @@ export function useChatStream({
               ...m,
               ...(() => {
                 const outcome = resolveCodingTurnOutcome({ kind: 'no-preview', shopIntakeAsk });
+                recordTurnLesson('no-preview', {
+                  shopIntakeAsk,
+                  detail: 'no-preview',
+                  intentKind: turnPlan.intent?.kind,
+                });
                 return {
                   text: outcome.text,
                   isError: outcome.isError,
@@ -1072,16 +1149,33 @@ export function useChatStream({
             continue;
           }
           if (isCodingRequest) {
+            const isShopPhotoTurn = Boolean(
+              shopIntakeAsk.oversize
+              || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
+            );
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
               turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
               errorMessage: error.message || 'Unable to reach the AI gateway.',
               shopIntakeAsk,
-              isShopPhotoTurn: Boolean(
-                shopIntakeAsk.oversize
-                || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
-              ),
+              isShopPhotoTurn,
             });
+            if (!stopped) {
+              recordTurnLesson(timedOut ? 'timeout' : 'provider-dead', {
+                shopIntakeAsk,
+                isShopPhotoTurn,
+                detail: error.message || (timedOut ? 'timeout' : 'provider-dead'),
+                intentKind: turnPlan.intent?.kind,
+              });
+              if (timedOut && shopIntakeAsk?.oversize && !intakeAccept.expanded) {
+                recordTurnLesson('oversize_burn', {
+                  shopIntakeAsk,
+                  isShopPhotoTurn: true,
+                  detail: 'oversize timed out without agree',
+                  intentKind: turnPlan.intent?.kind,
+                });
+              }
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: outcome.text,
