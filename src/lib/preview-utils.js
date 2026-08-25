@@ -102,6 +102,23 @@ export function getPreviewEmbedPathUrl(cacheBust = '') {
   return `${PREVIEW_EMBED_PATH}${bust}`;
 }
 
+/**
+ * True when the iframe is still on the Preview shell (path or blob), not the
+ * main app. Loading quantoraai.app in an iframe hits X-Frame-Options: DENY →
+ * Chrome "refused to connect" while status says Verifying.
+ */
+export function isPreviewEmbedFrameSrc(src = '') {
+  const value = String(src || '').trim();
+  if (!value) return false;
+  if (value.startsWith('blob:')) return true;
+  try {
+    const url = new URL(value, typeof window !== 'undefined' ? window.location?.origin : 'https://quantoraai.app');
+    return url.pathname === PREVIEW_EMBED_PATH || url.pathname.endsWith('/preview/embed.html');
+  } catch {
+    return /\/preview\/embed\.html(?:\?|#|$)/i.test(value);
+  }
+}
+
 /** Blob embeds cannot set CORP — under COEP (Coding Desk) they never load. */
 export function canUseBlobPreviewEmbed() {
   if (typeof window === 'undefined') return true;
@@ -117,6 +134,27 @@ export const PREVIEW_TAILWIND_PROBE =
 // Harness injected into generated HTML inside the preview iframe document.
 export const PREVIEW_ERROR_HARNESS = `<script>(function(){
   function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
+  // Model HTML often does location.href='/' or <base href=app>. That navigates the
+  // iframe to the SPA, which sends X-Frame-Options: DENY → "refused to connect".
+  try {
+    var _assign = window.location.assign.bind(window.location);
+    var _replace = window.location.replace.bind(window.location);
+    function allowNav(u) {
+      var s = String(u || '');
+      return s.indexOf('/preview/embed.html') !== -1 || s.indexOf('blob:') === 0 || s.indexOf('#') === 0;
+    }
+    window.location.assign = function(u){ if (allowNav(u)) return _assign(u); report({ kind:'error', message:'Preview blocked navigation: ' + u }); };
+    window.location.replace = function(u){ if (allowNav(u)) return _replace(u); report({ kind:'error', message:'Preview blocked navigation: ' + u }); };
+  } catch (navErr) {}
+  document.addEventListener('click', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (href === '/' || href === '' || /^https?:\\/\\/[^/]*quantoraai\\.app\\/?$/i.test(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
   window.addEventListener('error', function(e){
     var t = e && e.target;
     if (t && t !== window && (t.tagName || t.nodeType === 1)) {
@@ -228,7 +266,10 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
 })();<\/script>`;
 
 export function injectPreviewHarness(html) {
-  const safe = html || '';
+  let safe = String(html || '');
+  // Drop escapes that yank the iframe onto the main app (XFO DENY → refused to connect).
+  safe = safe.replace(/<base\b[^>]*>/gi, '');
+  safe = safe.replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, '');
   const bundle = PREVIEW_ERROR_HARNESS + PREVIEW_TAILWIND_PROBE;
   if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + bundle);
   if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + bundle + '</head>');
