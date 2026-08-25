@@ -127,9 +127,11 @@ try {
     throw new Error('A failure the desk recovered from is still being reported to the reader.');
   }
 
-  // The card must be alive here, otherwise its absence later proves nothing.
-  if (!(await page.locator('[data-quantora-mission="true"]').count())) {
-    throw new Error('No mission card after a healthy turn, so this gate cannot prove it disappears on failure.');
+  // Healthy idle coding turns do not keep a sticky "Building:" mission card.
+  // Progress lives in the generating row; failure must still avoid a phantom build card.
+  if (await page.locator('[data-quantora-mission="true"]').count()) {
+    const card = await page.locator('[data-quantora-mission="true"]').first().innerText();
+    throw new Error(`Idle coding desk still shows sticky mission chrome after a healthy turn: ${card.replace(/\s+/g, ' ').trim()}`);
   }
 
   recoveryAllowed = false;
