@@ -4220,7 +4220,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       jobCard={deskJob}
                       onHealedPreview={handleHealedPreview}
                       onLiveDeskProbe={setLiveDeskProbe}
-                      turnBusy={isGenerating}
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}
                       officeKind={detectOfficeIntent({ messages })}
