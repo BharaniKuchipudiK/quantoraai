@@ -8,6 +8,7 @@ import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
 import { fetchApiGatewayKey } from "../autocomplete.js";
 import { readByokCredentials } from "./byok-credentials.js";
+import { resolveOpenRouterEnvKey } from "./openrouter-key.js";
 import { buildConversationSystemPrompt } from "./conversation-policy.js";
 import { normalizeSessionContext } from "./session-context.js";
 import { normalizeOutcomeSessionId } from "./outcome-state.js";
@@ -504,7 +505,12 @@ export default async function handler(req: any, res: any) {
     if (auth && !auth.ok) return;
     const activeSessionUser = auth?.ok ? auth.value.sessionUser : sessionUser;
     const mayUseServerKeys = Boolean(activeSessionUser) || goldenCanary;
-    const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY || await fetchApiGatewayKey('OPENROUTER') : undefined);
+    // Ignore impostor OPENROUTER_API_KEY values (e.g. Stripe sk_live_…) so a bad
+    // Vercel paste cannot block gateway fallback and leave OR "Last Used: Never".
+    // Keep gateway lookup behind mayUseServerKeys and after BYOK short-circuit.
+    const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys
+      ? (resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || undefined)
+      : undefined);
     const effectiveGeminiKey = userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
 
     const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;
