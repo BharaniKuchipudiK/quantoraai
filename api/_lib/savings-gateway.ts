@@ -15,6 +15,7 @@ import { parseSavingsIntent } from "./savings-goal-intent.js";
 import { projectSavings, formatSavingsPlan } from "./savings-goal.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
+import { guardFinanceGateway } from "./finance-gateway-guard.js";
 
 const SAVINGS_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -36,7 +37,11 @@ function sendStream(res: any, requestId: string, text: string): void {
   res.end();
 }
 
-export async function handleSavingsGoal(req: any, res: any): Promise<boolean> {
+export function handleSavingsGoal(req: any, res: any): Promise<boolean> {
+  return guardFinanceGateway("savings-goal", res, () => runSavingsGoal(req, res));
+}
+
+async function runSavingsGoal(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;
   const intent = parseSavingsIntent(req.body?.message);

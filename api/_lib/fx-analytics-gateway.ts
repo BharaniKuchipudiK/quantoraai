@@ -17,6 +17,7 @@ import { fxAnalyticsResult } from "./fx-analytics.js";
 import { isMarketDataStoreConfigured, readFxHistory, type FxRate } from "./market-data-store.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
+import { guardFinanceGateway } from "./finance-gateway-guard.js";
 
 const FX_ANALYTICS_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -56,7 +57,11 @@ function invertSeries(rows: FxRate[], base: string, quote: string): FxRate[] {
     }));
 }
 
-export async function handleFxAnalytics(req: any, res: any): Promise<boolean> {
+export function handleFxAnalytics(req: any, res: any): Promise<boolean> {
+  return guardFinanceGateway("fx-analytics", res, () => runFxAnalytics(req, res));
+}
+
+async function runFxAnalytics(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   // Isolation gate: Finance workspace only.
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;

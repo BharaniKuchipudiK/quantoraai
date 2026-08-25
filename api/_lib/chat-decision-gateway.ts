@@ -6,6 +6,7 @@ import { endOfUtcDay, parseFinancialContextCommand, type FinancialContextCommand
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 import { isUserContextStoreConfigured, readUserContextGraph, saveUserContextNode } from "./user-context-store.js";
+import { guardFinanceGateway } from "./finance-gateway-guard.js";
 
 const DECISION_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -154,7 +155,11 @@ function contextConfirmation(command: FinancialContextCommand): string {
  * 2) explicit affordability questions.
  * Everything else returns false and continues through the existing chat runtime.
  */
-export async function handleAffordabilityDecision(req: any, res: any): Promise<boolean> {
+export function handleAffordabilityDecision(req: any, res: any): Promise<boolean> {
+  return guardFinanceGateway("affordability-decision", res, () => runAffordabilityDecision(req, res));
+}
+
+async function runAffordabilityDecision(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   const command = parseFinancialContextCommand(req.body?.message);
   const intent = parseAffordabilityIntent(req.body?.message);

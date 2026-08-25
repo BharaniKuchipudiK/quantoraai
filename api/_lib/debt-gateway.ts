@@ -16,6 +16,7 @@ import { parseDebtIntent } from "./debt-intent.js";
 import { comparePayoff, formatDebtPlan } from "./debt-payoff.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
+import { guardFinanceGateway } from "./finance-gateway-guard.js";
 
 const DEBT_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -37,7 +38,11 @@ function sendStream(res: any, requestId: string, text: string): void {
   res.end();
 }
 
-export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
+export function handleDebtPlan(req: any, res: any): Promise<boolean> {
+  return guardFinanceGateway("debt-plan", res, () => runDebtPlan(req, res));
+}
+
+async function runDebtPlan(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;
   const intent = parseDebtIntent(req.body?.message);
