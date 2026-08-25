@@ -20,6 +20,13 @@ import {
   missingProfileFields,
   PROFILE_SET_HINTS,
 } from "./financial-profile.js";
+import type { BalanceSheet } from "./financial-balance-sheet.js";
+
+// A liability at or above this APR is worth clearing before investing — a
+// guaranteed saved rate almost always beats an assumed market return.
+const HIGH_INTEREST_APR = 8;
+// Below this many months of expenses, the emergency fund comes first.
+const MIN_EMERGENCY_MONTHS = 3;
 
 // LABELED planning assumptions — long-run nominal figures used only to test
 // feasibility. They are assumptions the user can change, not forecasts.
@@ -44,15 +51,45 @@ export type AdvisoryPlan = {
   assumedReturnPct: number | null;
   allocation: { growth: number; defensive: number } | null;
   projection: SavingsProjection | null;
+  notes: string[]; // balance-sheet-derived cautions, grounded in stored figures
 };
+
+/**
+ * Balance-sheet cautions a real planner would raise before recommending a
+ * contribution: thin emergency fund, high-interest debt, and a contribution the
+ * monthly surplus can't sustain. Each is grounded in a stored figure.
+ */
+function balanceSheetNotes(profile: FinancialProfile, bs?: BalanceSheet): string[] {
+  const notes: string[] = [];
+  if (!bs) return notes;
+
+  if (bs.emergencyMonths !== null && bs.emergencyMonths < MIN_EMERGENCY_MONTHS) {
+    notes.push(`Your emergency fund covers ~${bs.emergencyMonths.toFixed(1)} months of expenses — build it toward ${MIN_EMERGENCY_MONTHS}–6 months before investing aggressively; it's the buffer that keeps the plan intact in a shock.`);
+  }
+
+  const highInterest = bs.liabilities.filter((l) => l.aprPct != null && l.aprPct >= HIGH_INTEREST_APR);
+  for (const l of highInterest) {
+    notes.push(`**${l.label}** at ${l.aprPct}% is high-interest — clearing it is a guaranteed ${l.aprPct}% return, which beats the ${ASSUMED_RETURN_PCT[profile.riskTolerance!]}% this plan assumes. Prioritize it over extra investing.`);
+  }
+
+  if (
+    bs.monthlySurplus !== null &&
+    profile.monthlyInvestable !== null &&
+    profile.monthlyInvestable > bs.monthlySurplus
+  ) {
+    notes.push(`Your planned ${profile.monthlyCurrency || ""} ${profile.monthlyInvestable.toLocaleString("en-US", { maximumFractionDigits: 0 })}/month is more than your monthly surplus of ${bs.currency || ""} ${bs.monthlySurplus.toLocaleString("en-US", { maximumFractionDigits: 0 })} — the contribution may not be sustainable without trimming expenses.`.trim());
+  }
+
+  return notes;
+}
 
 export function buildAdvisoryPlan(
   profile: FinancialProfile,
-  options: { current?: number } = {},
+  options: { current?: number; balanceSheet?: BalanceSheet } = {},
 ): AdvisoryPlan {
   const missing = missingProfileFields(profile);
   if (missing.length || !profile.riskTolerance) {
-    return { complete: false, missing, profile, assumedReturnPct: null, allocation: null, projection: null };
+    return { complete: false, missing, profile, assumedReturnPct: null, allocation: null, projection: null, notes: [] };
   }
 
   const assumedReturnPct = ASSUMED_RETURN_PCT[profile.riskTolerance];
@@ -65,7 +102,15 @@ export function buildAdvisoryPlan(
     months: profile.horizonYears! * 12,
   });
 
-  return { complete: true, missing: [], profile, assumedReturnPct, allocation, projection };
+  return {
+    complete: true,
+    missing: [],
+    profile,
+    assumedReturnPct,
+    allocation,
+    projection,
+    notes: balanceSheetNotes(profile, options.balanceSheet),
+  };
 }
 
 function money(amount: number, currency: string | null): string {
@@ -115,6 +160,9 @@ export function formatAdvisoryPlan(plan: AdvisoryPlan): string {
     "**3. Sequence that usually pays first**",
     "- Clear any high-interest debt before investing — a guaranteed saved interest rate beats an assumed market return.",
     "- Automate the monthly contribution so the plan runs without willpower.",
+    ...(plan.notes.length
+      ? ["", "**4. From your balance sheet, I'd flag first**", ...plan.notes.map((n) => `- ${n}`)]
+      : []),
     "",
     DISCLAIMER,
   ].join("\n");

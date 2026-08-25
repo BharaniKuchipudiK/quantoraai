@@ -44,6 +44,28 @@ test("the plan states a required monthly when the pace falls short", () => {
   assert.match(text, /would take about/i);
 });
 
+test("raises balance-sheet cautions: thin emergency fund, high-interest debt, unsustainable contribution", () => {
+  const bs = {
+    incomeMonthly: 5000, expensesMonthly: 4500, emergencyFund: 4500, liquidCash: 2000,
+    assets: [], liabilities: [{ label: "credit card", amount: 8000, currency: "SGD", aprPct: 24 }],
+    currency: "SGD", mixedCurrency: false,
+    totalAssets: 6500, totalLiabilities: 8000, netWorth: -1500,
+    monthlySurplus: 500, savingsRatePct: 10, emergencyMonths: 1,
+  };
+  const plan = buildAdvisoryPlan(COMPLETE, { current: 0, balanceSheet: bs });
+  const text = formatAdvisoryPlan(plan);
+  assert.match(text, /emergency fund covers ~1\.0 months/i);
+  assert.match(text, /credit card.*at 24%.*high-interest/i);
+  assert.match(text, /more than your monthly surplus/i, "SGD 2,000 planned vs 500 surplus");
+  assert.match(text, /From your balance sheet/);
+});
+
+test("no balance sheet -> no cautions section", () => {
+  const plan = buildAdvisoryPlan(COMPLETE, { current: 0 });
+  assert.deepEqual(plan.notes, []);
+  assert.doesNotMatch(formatAdvisoryPlan(plan), /From your balance sheet/);
+});
+
 test("risk tolerance drives the assumption and the framework", () => {
   const aggressive = buildAdvisoryPlan({ ...COMPLETE, riskTolerance: "aggressive" });
   assert.equal(aggressive.assumedReturnPct, 7);

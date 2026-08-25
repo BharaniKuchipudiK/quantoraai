@@ -24,6 +24,13 @@ import {
   formatProfile,
   type FinancialProfileCommand,
 } from "./financial-profile.js";
+import {
+  parseBalanceSheetCommand,
+  balanceNode,
+  readBalanceSheet,
+  formatBalanceSheet,
+  type BalanceSheetCommand,
+} from "./financial-balance-sheet.js";
 import { isProfileShowQuery } from "./finance-advisor-intent.js";
 
 const PROFILE_RATE_LIMIT_PER_MINUTE = 60;
@@ -56,6 +63,16 @@ function confirmation(command: FinancialProfileCommand): string {
   return `Saved: **monthly investable = ${command.currency} ${command.amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}**.`;
 }
 
+function balanceConfirmation(command: BalanceSheetCommand): string {
+  const money = (amount: number, currency: string) => `${currency} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  if (command.kind === "set_income") return `Saved: **monthly income = ${money(command.amount, command.currency)}**.`;
+  if (command.kind === "set_expenses") return `Saved: **monthly expenses = ${money(command.amount, command.currency)}**.`;
+  if (command.kind === "set_emergency_fund") return `Saved: **emergency fund = ${money(command.amount, command.currency)}**.`;
+  if (command.kind === "add_asset") return `Saved asset: **${command.label} — ${money(command.amount, command.currency)}**.`;
+  const apr = command.aprPct !== null ? ` at ${command.aprPct}%` : "";
+  return `Saved liability: **${command.label} — ${money(command.amount, command.currency)}${apr}**.`;
+}
+
 export function handleFinancialProfile(req: any, res: any): Promise<boolean> {
   return guardFinanceGateway("financial-profile", res, () => runFinancialProfile(req, res));
 }
@@ -65,8 +82,9 @@ async function runFinancialProfile(req: any, res: any): Promise<boolean> {
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;
 
   const command = parseFinancialProfileCommand(req.body?.message);
-  const showQuery = command ? false : isProfileShowQuery(req.body?.message);
-  if (!command && !showQuery) return false;
+  const balanceCommand = command ? null : parseBalanceSheetCommand(req.body?.message);
+  const showQuery = command || balanceCommand ? false : isProfileShowQuery(req.body?.message);
+  if (!command && !balanceCommand && !showQuery) return false;
 
   applyCors(req, res, "POST,OPTIONS");
   const requestId = randomUUID();
@@ -97,8 +115,19 @@ async function runFinancialProfile(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  // Read-back.
-  const profile = readFinancialProfile(await readUserContextGraph(sub));
-  sendStream(res, requestId, formatProfile(profile));
+  if (balanceCommand) {
+    const saved = await saveUserContextNode(sub, balanceNode(balanceCommand, requestId));
+    if (!saved) {
+      res.status(503).json({ error: "Quantora could not save your balance sheet right now.", requestId });
+      return true;
+    }
+    const bs = readBalanceSheet(await readUserContextGraph(sub));
+    sendStream(res, requestId, `${balanceConfirmation(balanceCommand)}\n\n${formatBalanceSheet(bs)}`);
+    return true;
+  }
+
+  // Read-back: profile + balance sheet.
+  const graph = await readUserContextGraph(sub);
+  sendStream(res, requestId, `${formatProfile(readFinancialProfile(graph))}\n\n${formatBalanceSheet(readBalanceSheet(graph))}`);
   return true;
 }

@@ -20,6 +20,7 @@ import { userContextNodesForKey } from "./user-context-graph.js";
 import { guardFinanceGateway } from "./finance-gateway-guard.js";
 import { parseAdviceIntent } from "./finance-advisor-intent.js";
 import { readFinancialProfile } from "./financial-profile.js";
+import { readBalanceSheet } from "./financial-balance-sheet.js";
 import { buildAdvisoryPlan, formatAdvisoryPlan } from "./finance-advisor-synthesis.js";
 
 const ADVISOR_RATE_LIMIT_PER_MINUTE = 60;
@@ -77,7 +78,8 @@ async function runFinanceAdvisor(req: any, res: any): Promise<boolean> {
 
   const graph = await readUserContextGraph(sub);
   const profile = readFinancialProfile(graph);
-  const plan = buildAdvisoryPlan(profile, { current: currentLiquidCash(graph) });
+  const balanceSheet = readBalanceSheet(graph);
+  const plan = buildAdvisoryPlan(profile, { current: currentLiquidCash(graph), balanceSheet });
   sendStream(res, requestId, formatAdvisoryPlan(plan));
   return true;
 }
