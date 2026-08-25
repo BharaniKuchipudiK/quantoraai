@@ -5,6 +5,7 @@
  * and cheaper than the admin three-prompt smoke suite.
  */
 import { fetchApiGatewayKey } from '../autocomplete.js';
+import { resolveOpenRouterEnvKey } from './openrouter-key.js';
 import {
   canaryPromptsForModel,
   evaluateCanaryResults,
@@ -22,7 +23,7 @@ export const CANARY_PROMPT_TIMEOUT_MS = 28_000;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export async function resolveOpenRouterKey() {
-  return process.env.OPENROUTER_API_KEY || await fetchApiGatewayKey('OPENROUTER') || null;
+  return resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || null;
 }
 
 async function callOpenRouter(apiKey, modelId, prompt) {

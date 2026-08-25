@@ -1,6 +1,7 @@
 import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
+import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'GET,OPTIONS');
@@ -11,7 +12,9 @@ export default async function handler(req: any, res: any) {
   }
 
   const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
-  const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
+  const openRouterEnv = resolveOpenRouterEnvKey();
+  const openRouterHint = openRouterEnvPublicHint();
+  const openRouterConfigured = Boolean(openRouterEnv);
   const summary = await summarizeInferenceReadiness({
     geminiAvailable: geminiConfigured,
     openRouterAvailable: openRouterConfigured,
@@ -23,6 +26,8 @@ export default async function handler(req: any, res: any) {
     ready: summary.ready,
     geminiConfigured: summary.geminiConfigured,
     openRouterConfigured: summary.openRouterConfigured,
+    openRouterEnvShape: openRouterHint.shape,
+    openRouterEnvHint: openRouterHint.hint,
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     routeCount: summary.routeCount,
     usedLastResort: summary.usedLastResort,
