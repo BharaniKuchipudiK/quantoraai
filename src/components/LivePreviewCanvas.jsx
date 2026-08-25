@@ -3,6 +3,7 @@ import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, 
 import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
+  canUseBlobPreviewEmbed,
   injectPreviewHarness,
   prepareCodeForPreview,
   decidePreviewTrustStatus,
@@ -43,10 +44,10 @@ const OFFICE_LABEL = {
  */
 
 const MAX_HEAL_ATTEMPTS = 3;
-/** Remount the blob embed once if the shell never posts embed-ready. */
-const PREVIEW_WARMING_RETRY_MS = 8_000;
-/** Stop saying "hang tight" — surface a real failure with Retry. */
-const PREVIEW_WARMING_FAIL_MS = 18_000;
+/** One real remount (new iframe URL) if embed-ready never arrives. */
+const PREVIEW_WARMING_RETRY_MS = 6_000;
+/** Hard stop — no endless theater while assemblyKey churns. */
+const PREVIEW_WARMING_FAIL_MS = 12_000;
 
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
@@ -164,40 +165,39 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     // Path-first under COEP require-corp: sandboxed blob: iframes cannot send
     // CORP headers, so Chrome never loads them and embed-ready never fires.
     // /preview/embed.html is served with Cross-Origin-Resource-Policy: cross-origin.
+    // Always cache-bust on remount — same path URL otherwise leaves a dead iframe
+    // after we clear embedReady (theatrical "retrying" with no actual remount).
     embedModeRef.current = 'path';
+    const bust = `${remountNonce}-${attempt}`;
     setEmbedSrc((previous) => {
       revokePreviewEmbedObjectUrl(previous);
-      return getPreviewEmbedPathUrl();
+      return getPreviewEmbedPathUrl(bust);
     });
     return () => revokePreviewEmbedObjectUrl(undefined);
   }, [attempt, remountNonce]);
 
   useEffect(() => {
     if (!embedSrc || embedReady) return undefined;
+    // Never fall back to blob under COEP — it cannot load and only burns the clock.
+    if (!canUseBlobPreviewEmbed()) return undefined;
     const timer = setTimeout(() => {
       if (embedReadyRef.current) return;
       if (embedModeRef.current === 'path') {
-        // Last resort if the static shell 404s in some host — blob may still fail under COEP.
         try {
           embedModeRef.current = 'blob';
           setEmbedSrc(createPreviewEmbedObjectUrl());
         } catch { /* keep path */ }
-        return;
-      }
-      if (embedModeRef.current === 'blob') {
-        try {
-          embedModeRef.current = 'path';
-          setEmbedSrc((previous) => {
-            revokePreviewEmbedObjectUrl(previous);
-            return getPreviewEmbedPathUrl();
-          });
-        } catch { /* keep blob */ }
       }
     }, 4000);
     return () => clearTimeout(timer);
   }, [embedSrc, embedReady, attempt, remountNonce]);
 
   const handleEmbedFrameError = useCallback(() => {
+    if (!canUseBlobPreviewEmbed()) {
+      // Under COEP, only path remounts work.
+      setRemountNonce((value) => value + 1);
+      return;
+    }
     if (embedModeRef.current === 'path') {
       try {
         embedModeRef.current = 'blob';
@@ -209,7 +209,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       embedModeRef.current = 'path';
       setEmbedSrc((previous) => {
         revokePreviewEmbedObjectUrl(previous);
-        return getPreviewEmbedPathUrl();
+        return getPreviewEmbedPathUrl(`err-${Date.now()}`);
       });
     } catch {
       embedModeRef.current = 'blob';
@@ -800,7 +800,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       clearTimeout(retryTimer);
       clearTimeout(failTimer);
     };
-  }, [headless, previewShellReady, currentCode, assemblyKey]);
+    // Intentionally omit assemblyKey / currentCode — shop inject churn must not
+    // reset the fail clock (that caused eternal "retrying the shell" theater).
+  }, [headless, previewShellReady]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
@@ -851,13 +853,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         <>
           <Clock size={28} color="#f97316" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>
-            {readyElapsedSec >= Math.floor(PREVIEW_WARMING_RETRY_MS / 1000)
-              ? 'Still starting Preview — retrying the shell…'
-              : 'Preview is starting…'}
+            Preview is starting…
           </div>
           <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
             {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
-            {readyElapsedSec >= 10 ? ` · if this passes ${Math.floor(PREVIEW_WARMING_FAIL_MS / 1000)}s we will stop and let you retry` : ''}
           </div>
         </>
       )}
@@ -885,7 +884,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       {previewWarmingOverlay}
       <iframe
         ref={iframeRef}
-        key={`${attempt}-${embedSrc}`}
+        key={`${attempt}-${remountNonce}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
         onError={handleEmbedFrameError}
