@@ -780,6 +780,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[!previewShellReady && (status === 'running' || status === 'healing') ? 'warming' : status] || null;
 
+  const deskHasHtml = Boolean(
+    (typeof currentCode === 'string' && currentCode.trim())
+    || Object.keys(vfs || {}).some((path) => /\.html?$/i.test(path) && String(vfs[path]?.content || '').trim()),
+  );
+
   useEffect(() => {
     if (headless || previewShellReady) {
       setReadyElapsedSec(0);
@@ -818,7 +823,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     tick();
     const timer = setInterval(tick, 250);
-    const hasRunnablePreview = Boolean(String(currentCodeRef.current || '').trim());
+    const hasRunnablePreview = deskHasHtml
+      || Boolean(String(currentCodeRef.current || '').trim());
     const scheduleIdleRemount = (delayMs) => setTimeout(() => {
       if (embedReadyRef.current) return;
       if (warmingIdleRemountsRef.current >= PREVIEW_SHELL_IDLE_REMOUNT_MAX) return;
@@ -849,15 +855,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     // Intentionally omit assemblyKey / currentCode — shop inject churn must not
     // reset the fail clock (that caused eternal "retrying the shell" theater).
-  }, [headless, previewShellReady, turnBusy, warmingFailed]);
+  }, [headless, previewShellReady, turnBusy, warmingFailed, deskHasHtml]);
 
   // Sticky fail with Files present: quiet auto-remount (~3s) up to 2×, or clear when code changes.
   useEffect(() => {
     if (headless || previewShellReady || !warmingFailed) return undefined;
     const code = String(currentCode || '').trim();
-    if (!code) return undefined;
+    const hasRunnable = deskHasHtml || Boolean(code);
+    if (!hasRunnable) return undefined;
 
-    if (lastWarmingCodeRef.current && lastWarmingCodeRef.current !== code) {
+    if (lastWarmingCodeRef.current && lastWarmingCodeRef.current !== code && code) {
       lastWarmingCodeRef.current = code;
       warmingAutoRemountsRef.current = 0;
       setWarmingFailed(false);
@@ -867,7 +874,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setRemountNonce((value) => value + 1);
       return undefined;
     }
-    lastWarmingCodeRef.current = code;
+    if (code) lastWarmingCodeRef.current = code;
 
     if (!shouldAutoRemountFailedPreviewShell({
       warmingFailed: true,
@@ -889,8 +896,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setRemountNonce((value) => value + 1);
     }, PREVIEW_SHELL_AUTO_REMOUNT_MS);
     return () => clearTimeout(autoTimer);
-  }, [headless, previewShellReady, warmingFailed, currentCode]);
-
+  }, [headless, previewShellReady, warmingFailed, currentCode, deskHasHtml]);
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
       role="status"
