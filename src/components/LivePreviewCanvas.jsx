@@ -4,6 +4,7 @@ import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
   canUseBlobPreviewEmbed,
+  isPreviewEmbedFrameSrc,
   injectPreviewHarness,
   prepareCodeForPreview,
   decidePreviewTrustStatus,
@@ -228,6 +229,28 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setEmbedSrc(createPreviewEmbedObjectUrl());
     }
   }, []);
+
+  /** Shell ready only if the iframe is still on /preview/embed.html (or blob). */
+  const handleEmbedFrameLoad = useCallback(() => {
+    const src = iframeRef.current?.src || embedSrc || '';
+    if (!isPreviewEmbedFrameSrc(src)) {
+      // Navigated onto the SPA → X-Frame-Options: DENY → "quantoraai.app refused to connect".
+      embedReadyRef.current = false;
+      setEmbedReady(false);
+      setStatus('running');
+      setLastError(null);
+      setRemountNonce((value) => value + 1);
+      return;
+    }
+    if (!embedReadyRef.current) {
+      embedReadyRef.current = true;
+      setEmbedReady(true);
+    }
+    setWarmingFailed(false);
+    setStatus((prev) => (prev === 'failed' ? 'running' : prev));
+    const html = currentCodeRef.current;
+    if (html) pushHtmlToEmbedRef.current?.(html);
+  }, [embedSrc]);
 
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
@@ -794,6 +817,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       warmingAutoRemountsRef.current = 0;
       return undefined;
     }
+    // Files already on the desk: never keep the sticky fail overlay.
+    if (deskHasHtml && warmingFailed) {
+      setWarmingFailed(false);
+      setStatus('running');
+      warmingStartedAtRef.current = null;
+      warmingIdleRemountsRef.current = 0;
+      setRemountNonce((value) => value + 1);
+      return undefined;
+    }
     // Boutique / long coding turns keep the main thread busy for 30–90s. Failing
     // the shell at 12s mid-stream is the "Preview shell did not start" screenshot.
     // Hold the fail clock until the turn is idle, then remount (up to 2) and wait again.
@@ -843,6 +875,14 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       : null;
     const failTimer = setTimeout(() => {
       if (embedReadyRef.current) return;
+      // HTML already on the desk: keep remounting — never sticky "shell did not start".
+      if (deskHasHtml) {
+        warmingStartedAtRef.current = null;
+        setWarmingFailed(false);
+        setStatus('running');
+        setRemountNonce((value) => value + 1);
+        return;
+      }
       setWarmingFailed(true);
       setStatus('failed');
       setLastError('Preview shell did not start in time. Tap Retry Preview, or open the HTML from Files.');
@@ -897,13 +937,17 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }, PREVIEW_SHELL_AUTO_REMOUNT_MS);
     return () => clearTimeout(autoTimer);
   }, [headless, previewShellReady, warmingFailed, currentCode, deskHasHtml]);
+
+  const showShellFailOverlay = warmingFailed && !deskHasHtml;
+
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
       role="status"
       aria-live="polite"
       data-quantora-preview-warming="true"
-      data-quantora-preview-warming-failed={warmingFailed ? 'true' : 'false'}
+      data-quantora-preview-warming-failed={showShellFailOverlay ? 'true' : 'false'}
       data-quantora-preview-turn-busy={turnBusy ? 'true' : 'false'}
+      data-quantora-preview-has-html={deskHasHtml ? 'true' : 'false'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -919,7 +963,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         textAlign: 'center',
       }}
     >
-      {warmingFailed ? (
+      {showShellFailOverlay ? (
         <>
           <AlertTriangle size={28} color="#ef4444" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview shell did not start</div>
@@ -952,6 +996,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
             {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
             {turnBusy ? ' · shell fail clock paused' : ''}
+            {deskHasHtml && !turnBusy ? ' · page is on the desk' : ''}
           </div>
         </>
       )}
@@ -982,6 +1027,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         key={`${attempt}-${remountNonce}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
+        onLoad={handleEmbedFrameLoad}
         onError={handleEmbedFrameError}
         sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
         style={{

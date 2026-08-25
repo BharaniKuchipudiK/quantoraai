@@ -1,6 +1,7 @@
 /**
  * Preview shell fail clock — pure policy.
- * Never declare "shell did not start" while the coding turn is still streaming.
+ * Never declare "shell did not start" while the coding turn is still streaming,
+ * or when the desk already has a preview page to show.
  * When Files already have runnable preview HTML, auto-remount before sticky fail.
  */
 
@@ -26,7 +27,7 @@ export function shouldHoldPreviewShellFailClock({
 }
 
 /**
- * @param {{ turnBusy?: boolean, embedReady?: boolean, idleElapsedMs?: number, failMs?: number }} state
+ * @param {{ turnBusy?: boolean, embedReady?: boolean, idleElapsedMs?: number, failMs?: number, hasDeskHtml?: boolean }} state
  * @returns {boolean}
  */
 export function shouldFailPreviewShell({
@@ -34,10 +35,21 @@ export function shouldFailPreviewShell({
   embedReady = false,
   idleElapsedMs = 0,
   failMs = PREVIEW_SHELL_FAIL_MS,
+  hasDeskHtml = false,
 } = {}) {
   if (embedReady) return false;
   if (turnBusy) return false;
+  // Files already on the desk — remount quietly; never hard-fail the shell overlay.
+  if (hasDeskHtml) return false;
   return Number(idleElapsedMs) >= Number(failMs);
+}
+
+/** Sticky fail overlay is only honest when the desk has nothing to show. */
+export function shouldShowPreviewShellFailOverlay({
+  warmingFailed = false,
+  hasDeskHtml = false,
+} = {}) {
+  return Boolean(warmingFailed) && !hasDeskHtml;
 }
 
 /**
