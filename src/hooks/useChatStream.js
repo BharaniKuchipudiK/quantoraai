@@ -223,6 +223,7 @@ export function useChatStream({
       || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
     const autoModeEarly = !targetModelOverride && isCodingDeskAutoSelection(pinnedEarly);
     const vfsFileCountEarly = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+    const openRouterApiKeyHint = getClientSecret('openrouter');
     const turnPlan = planCodingTurn({
       message: visibleUserText,
       priorUserMessages: priorUserTexts,
@@ -234,6 +235,7 @@ export function useChatStream({
       availableModels: availableModels || [],
       vfsFileCount: vfsFileCountEarly,
       lessons: readCodingTurnLessons(activeSessionId),
+      allowPaid: Boolean(openRouterApiKeyHint),
     });
     const intakeAccept = turnPlan.intakeAccept || { expanded: false, catalogTarget: null, userAsked: 0 };
     if (turnPlan.mode === 'execute' || turnPlan.mode === 'interrupt') {

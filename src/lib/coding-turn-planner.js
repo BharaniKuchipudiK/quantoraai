@@ -172,6 +172,7 @@ export function planCodingTurn({
   availableModels = [],
   vfsFileCount = 0,
   lessons = [],
+  allowPaid = false,
 } = {}) {
   const raw = String(message || '').trim();
   const prior = Array.isArray(priorUserMessages) ? priorUserMessages : [];
@@ -180,10 +181,22 @@ export function planCodingTurn({
   const messageForModel = intakeAccept.expanded ? intakeAccept.text : raw;
   const hints = lessonsToPlannerHints(lessons);
 
-  const isCodingTurn = resolveIsCodingRequest(messageForModel, {
-    codingDeskOpen: Boolean(codingDeskOpen),
-    refineDesk: Boolean(refineDesk),
-  }) && !advisorBlocksPreviewBuild(studioDomain);
+  // Feasibility gate must see oversize / partner interrupts even when the ask
+  // is declarative ("I need a shop with 100 unique images") without a build verb.
+  const shopAsk = assessShopBuildAsk(intakeAccept.expanded ? messageForModel : raw);
+  const interrupt = assessPartnerInterrupt({
+    message: raw,
+    priorUserMessages: prior,
+  });
+
+  const isCodingTurn = (
+    resolveIsCodingRequest(messageForModel, {
+      codingDeskOpen: Boolean(codingDeskOpen),
+      refineDesk: Boolean(refineDesk),
+    })
+    || Boolean(shopAsk?.oversize)
+    || Boolean(interrupt?.blockModel)
+  ) && !advisorBlocksPreviewBuild(studioDomain);
 
   if (!isCodingTurn) {
     return {
@@ -206,11 +219,6 @@ export function planCodingTurn({
     };
   }
 
-  const shopAsk = assessShopBuildAsk(intakeAccept.expanded ? messageForModel : raw);
-  const interrupt = assessPartnerInterrupt({
-    message: raw,
-    priorUserMessages: prior,
-  });
   const intent = summarizeIntent({
     message: messageForModel,
     isCodingTurn: true,
@@ -285,6 +293,7 @@ export function planCodingTurn({
         shopImageOversize: Boolean(shopAsk?.oversize),
         repair: Boolean(refineDesk) || hints.escalateModel,
       },
+      allowPaid: Boolean(allowPaid),
     });
     modelPlan = {
       modelId: resolved.modelId || null,

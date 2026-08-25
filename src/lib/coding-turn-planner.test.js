@@ -4,6 +4,18 @@ import { planCodingTurn, CODING_SKILLS } from './coding-turn-planner.js';
 
 const FOX = 'Build a full Fox & Wolf kids merchandise shop website with 100 unique design images, product pages, and checkout.';
 
+test('declarative oversize shop ask still interrupts without a build verb', () => {
+  const plan = planCodingTurn({
+    message: 'I need an online shop with 100 unique product images and checkout',
+    codingDeskOpen: false,
+    autoMode: true,
+    availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+  });
+  assert.equal(plan.mode, 'interrupt');
+  assert.equal(plan.feasible, false);
+  assert.ok(plan.skillsMissing.some((s) => s.id === 'unique_ai_mockups_at_scale'));
+});
+
 test('oversize shop ask interrupts with missing skill named — no execute', () => {
   const plan = planCodingTurn({
     message: FOX,
