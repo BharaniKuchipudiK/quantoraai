@@ -20,7 +20,8 @@ The deployed gate:
 2. Optionally sends `X-Quantora-Golden-Canary`
 3. Fulfills `/api/auth/session` with a synthetic identity
 4. Mocks `/api/chat` with a fixed multi-file project so the VFS is deterministic (no live LLM flake)
-5. Lets deployed `/api/preview-compile` continue on HTTPS so compilation matches the deployment
+5. Compiles that VFS in-process (deterministic) and waits until Preview’s iframe shows the fixture app — rejecting compile/runtime error banners before Terminal/Git run
+6. Asserts Terminal `ls` and Git status/commit list **all** fixture paths (`index.html`, `package.json`, `src/App.jsx`, `src/main.jsx`, `src/index.css`)
 
 It does **not** drive a full signed-in live Coding Desk chat on production (LLM latency / flake). Shop Preview has the same split: automate the shell path, manual for the full partner loop.
 

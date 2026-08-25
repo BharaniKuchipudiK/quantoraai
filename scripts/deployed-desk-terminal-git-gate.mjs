@@ -6,9 +6,10 @@
  *   QUANTORA_E2E_BASE_URL, VERCEL_AUTOMATION_BYPASS_SECRET
  * Optional: QUANTORA_GOLDEN_CANARY_TOKEN, QUANTORA_DEPLOYMENT_SHA
  *
- * Hits `${BASE}/desk` (COEP). Chat is mocked for a deterministic VFS; Preview-compile
- * is the live deployment API. Full signed-in live LLM on /desk remains a manual
- * checklist — see docs/DESK_TERMINAL_GIT_PROD_CHECKLIST.md.
+ * Hits `${BASE}/desk` (COEP). Auth/chat/preview-compile are deterministic so the
+ * gate proves Terminal ls + desk git commit on the Preview tree without live LLM
+ * flake. Full signed-in live LLM on /desk remains a manual checklist — see
+ * docs/DESK_TERMINAL_GIT_PROD_CHECKLIST.md.
  */
 import { runDeskTerminalGitGate } from './desk-terminal-git-gate.mjs';
 

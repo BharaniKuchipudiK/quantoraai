@@ -4,10 +4,11 @@
  * operate on the same VFS Preview is running (deskShellVfs / proveDeskFilesMatchPreview).
  *
  * Modes:
- * - Local / CI (default): Vite preview at /desk, mocked chat + real preview-compile.
+ * - Local / CI (default): Vite preview at /desk, mocked chat + in-process preview-compile.
  * - Deployed: QUANTORA_E2E_BASE_URL=https://… + VERCEL_AUTOMATION_BYPASS_SECRET
- *   hits production-shaped `/desk` (COEP). Auth is synthetic; chat is mocked so
- *   the VFS is deterministic. Full signed-in live LLM on /desk stays a manual
+ *   hits production-shaped `/desk` (COEP). Auth + chat + preview-compile are
+ *   deterministic (synthetic VFS); the deployed proof is COEP /desk + Terminal/Git
+ *   UI against that tree. Full signed-in live LLM on /desk stays a manual
  *   checklist — see docs/DESK_TERMINAL_GIT_PROD_CHECKLIST.md.
  */
 import assert from 'node:assert/strict';
@@ -21,6 +22,14 @@ import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
 const COMMIT_MESSAGE = 'Save the Preview tree from Terminal/Git gate';
+/** Fixture paths the chat reply writes — Terminal ls + Git must list all of them. */
+const EXPECTED_PROJECT_PATHS = Object.freeze([
+  'index.html',
+  'package.json',
+  'src/App.jsx',
+  'src/main.jsx',
+  'src/index.css',
+]);
 
 const PROJECT_REPLY = [
   'Done — here is a small desk project for Terminal and Git.',
@@ -96,7 +105,7 @@ function resolveTarget() {
     baseUrl,
     deskUrl: `${baseUrl}/desk`,
     note: canHitDeployed
-      ? `Hitting deployed COEP /desk at ${baseUrl}/desk (bypass + synthetic auth; mocked chat for deterministic VFS).`
+      ? `Hitting deployed COEP /desk at ${baseUrl}/desk (bypass + synthetic auth/chat/compile for deterministic VFS).`
       : `Hitting local /desk at ${baseUrl}/desk (mocked APIs).`,
     bypass,
     canary,
@@ -117,6 +126,51 @@ async function hidden(locator, message, timeout = 5_000) {
   if (await locator.isVisible().catch(() => false)) throw new Error(message);
 }
 
+function listingMissingExpectedPaths(listing = '', expected = EXPECTED_PROJECT_PATHS) {
+  const text = String(listing || '');
+  return expected.filter((path) => !text.includes(path));
+}
+
+function assertListingHasFixtureTree(listing, label) {
+  const missing = listingMissingExpectedPaths(listing);
+  if (missing.length) {
+    throw new Error(`${label} missing fixture paths [${missing.join(', ')}]. Saw: ${String(listing).slice(0, 400)}`);
+  }
+  if (!listingShowsGeneratedProjectFile(listing)) {
+    throw new Error(`${label} did not list generated project files. Saw: ${String(listing).slice(0, 400)}`);
+  }
+}
+
+/** Preview wrapper can be visible while compiling or errored — wait for a live iframe. */
+async function waitForRunningPreview(page, timeout = 25_000) {
+  const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
+  await visible(preview, 'Multi-file project never reached real Preview.', timeout);
+
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const previewError = await preview.getAttribute('data-quantora-preview-error').catch(() => null);
+    if (previewError) {
+      throw new Error(`Preview failed before Terminal/Git proof: ${previewError}`);
+    }
+    if (await page.locator('[data-quantora-preview-error="true"]').first().isVisible().catch(() => false)) {
+      const text = await page.locator('[data-quantora-preview-error="true"]').first().innerText().catch(() => '');
+      throw new Error(`Preview error banner before Terminal/Git proof: ${text.slice(0, 240)}`);
+    }
+    const loading = await page.locator('[data-quantora-preview-loading="true"]').first().isVisible().catch(() => false);
+    const correlationId = await preview.getAttribute('data-quantora-correlation-id').catch(() => null);
+    let appVisible = false;
+    for (const frame of page.frames()) {
+      if (await frame.locator('[data-testid="desk-git-app"]').first().isVisible().catch(() => false)) {
+        appVisible = true;
+        break;
+      }
+    }
+    if (!loading && correlationId && appVisible) return { correlationId };
+    await page.waitForTimeout(200);
+  }
+  throw new Error('Preview never finished rendering the fixture app (iframe / desk-git-app).');
+}
+
 /** Terminal ls and Git status/commit must list the same files Preview is running. */
 export async function proveDeskFilesMatchPreview(page, job = 'desk') {
   await page.locator('[data-quantora-studio-terminal-nav="true"]').click();
@@ -133,15 +187,13 @@ export async function proveDeskFilesMatchPreview(page, job = 'desk') {
   await visible(terminalInput, `${job}: Terminal input is missing after Preview.`);
   await terminalInput.fill('ls');
   await terminalInput.press('Enter');
-  await page.waitForFunction(() => {
+  await page.waitForFunction((paths) => {
     const panel = document.querySelector('[data-quantora-studio-terminal="true"]')?.innerText || '';
     const text = document.querySelector('[data-quantora-studio-terminal-log="true"]')?.innerText || '';
-    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text) && !/running…/.test(panel);
-  }, null, { timeout: 8_000 }).catch(() => {});
+    return paths.every((path) => text.includes(path)) && !/running…/.test(panel);
+  }, EXPECTED_PROJECT_PATHS, { timeout: 8_000 }).catch(() => {});
   const lsText = await page.locator('[data-quantora-studio-terminal-log="true"]').first().innerText().catch(() => '');
-  if (!listingShowsGeneratedProjectFile(lsText)) {
-    throw new Error(`${job}: Terminal ls did not list the Preview project files. Saw: ${String(lsText || terminalText).slice(0, 400)}`);
-  }
+  assertListingHasFixtureTree(lsText || terminalText, `${job}: Terminal ls`);
 
   await page.locator('[data-quantora-studio-git-nav="true"]').click();
   await visible(page.locator('[data-quantora-studio-git="true"]').first(), `${job}: Git panel did not open.`);
@@ -151,35 +203,36 @@ export async function proveDeskFilesMatchPreview(page, job = 'desk') {
   if (/No files in this desk yet|cannot start on this page/i.test(await gitPanel.innerText())) {
     throw new Error(`${job}: Preview is running but Git said it cannot use those files.`);
   }
-  await page.waitForFunction(() => {
+  await page.waitForFunction((paths) => {
     const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
-    return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
-  }, null, { timeout: 8_000 }).catch(() => {});
-  if (!listingShowsGeneratedProjectFile(await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => ''))) {
+    return paths.every((path) => text.includes(path));
+  }, EXPECTED_PROJECT_PATHS, { timeout: 8_000 }).catch(() => {});
+  if (listingMissingExpectedPaths(await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '')).length) {
     await page.locator('[data-quantora-studio-git-status="true"]').first().click();
-    await page.waitForFunction(() => {
+    await page.waitForFunction((paths) => {
       const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
-      return /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text);
-    }, null, { timeout: 8_000 }).catch(() => {});
+      return paths.every((path) => text.includes(path));
+    }, EXPECTED_PROJECT_PATHS, { timeout: 8_000 }).catch(() => {});
   }
   const gitLog = await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '');
-  if (!listingShowsGeneratedProjectFile(gitLog)) {
-    throw new Error(`${job}: Git status did not operate on the Preview tree. Saw: ${String(gitLog).slice(0, 400)}`);
-  }
+  assertListingHasFixtureTree(gitLog, `${job}: Git status`);
 
   const message = page.locator('[data-quantora-studio-git-message="true"]').first();
   await visible(message, `${job}: Git commit message input is missing.`);
   await message.fill(COMMIT_MESSAGE);
   await page.locator('[data-quantora-studio-git-commit="true"]').first().click();
-  await page.waitForFunction((expected) => {
+  await page.waitForFunction((payload) => {
     const panel = document.querySelector('[data-quantora-studio-git="true"]')?.innerText || '';
     const text = document.querySelector('[data-quantora-studio-git-log="true"]')?.innerText || '';
-    return text.includes(expected) && /index\.html|src\/App\.jsx|src\/main\.jsx/.test(text) && !/running…/.test(panel);
-  }, COMMIT_MESSAGE, { timeout: 8_000 }).catch(() => {});
+    return text.includes(payload.message)
+      && payload.paths.every((path) => text.includes(path))
+      && !/running…/.test(panel);
+  }, { message: COMMIT_MESSAGE, paths: EXPECTED_PROJECT_PATHS }, { timeout: 8_000 }).catch(() => {});
   const commitLog = await page.locator('[data-quantora-studio-git-log="true"]').first().innerText().catch(() => '');
-  if (!commitLog.includes(COMMIT_MESSAGE) || !listingShowsGeneratedProjectFile(commitLog)) {
-    throw new Error(`${job}: Git commit did not record the Preview tree. Saw: ${String(commitLog).slice(0, 400)}`);
+  if (!commitLog.includes(COMMIT_MESSAGE)) {
+    throw new Error(`${job}: Git commit did not record the message. Saw: ${String(commitLog).slice(0, 400)}`);
   }
+  assertListingHasFixtureTree(commitLog, `${job}: Git commit`);
 
   return { lsText, gitLog, commitLog };
 }
@@ -275,10 +328,8 @@ export async function runDeskTerminalGitGate({ requireDeployed = false } = {}) {
         });
       }
       if (path === '/api/preview-compile') {
-        // Local CI: compile in-process. Deployed: let the real API run when present.
-        if (target.mode === 'deployed-desk') {
-          return route.continue();
-        }
+        // Deterministic compile in both modes so the gate proves Terminal/Git on
+        // COEP /desk without depending on live preview-compile auth/quota.
         const body = request.postDataJSON?.() || {};
         try {
           const compiled = await compilePreviewVfs(body.vfs || {}, { correlationId: body.correlationId });
@@ -323,11 +374,17 @@ export async function runDeskTerminalGitGate({ requireDeployed = false } = {}) {
     await prompt.fill('build a small mission control interface so Terminal and Git can see the files');
     await prompt.press('Enter');
 
-    const preview = page.locator('[data-quantora-real-project-preview="true"]').first();
-    await visible(preview, 'Multi-file project never reached real Preview.', 25_000);
+    const running = await waitForRunningPreview(page, 25_000);
 
     const fileHit = page.locator('[data-quantora-file-tree="true"]').getByText(/index\.html|App\.jsx|main\.jsx/i).first();
     await visible(fileHit, 'FILES pane did not list Preview project files.', 20_000);
+    for (const path of EXPECTED_PROJECT_PATHS) {
+      await visible(
+        page.locator('[data-quantora-file-tree="true"]').getByText(path, { exact: false }).first(),
+        `FILES pane missing fixture path ${path}.`,
+        8_000,
+      );
+    }
 
     const proof = await proveDeskFilesMatchPreview(page, 'terminal-git');
 
@@ -337,6 +394,8 @@ export async function runDeskTerminalGitGate({ requireDeployed = false } = {}) {
     evidence.durationMs = durationMs;
     evidence.isolated = isolation.isolated;
     evidence.path = isolation.path;
+    evidence.correlationId = running.correlationId;
+    evidence.expectedPaths = EXPECTED_PROJECT_PATHS;
     evidence.lsSnippet = String(proof.lsText || '').slice(0, 240);
     evidence.commitSnippet = String(proof.commitLog || '').slice(0, 240);
     writeFileSync(`${ARTIFACT_DIR}/desk-terminal-git-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);
