@@ -8,6 +8,7 @@ import {
   analyzeConsolidation,
   buildCrisisPlan,
   formatCrisisPlan,
+  sanitizeDebts,
 } from "./debt-crisis.js";
 import type { Debt } from "./debt-payoff.js";
 
@@ -74,6 +75,37 @@ test("the plan leads with a verdict, lays out options, and ends in the human's d
   assert.match(text, /\*\*Your move\*\*/);
   assert.match(text, /I won't pick for you/i, "human-in-the-loop");
   assert.match(text, /not licensed debt advice/i);
+});
+
+test("survives adversarial and heavy input without throwing or leaking NaN/Infinity", () => {
+  const garbage: any = {
+    incomeMonthly: NaN,
+    essentialExpenses: -50,
+    currency: "SGD",
+    debts: [
+      { name: "", balance: Infinity, apr: 99999, minPayment: NaN },
+      { name: "ok", balance: -100, apr: -5, minPayment: "x" },
+      ...Array.from({ length: 500 }, (_, i) => ({ name: `d${i}`, balance: 1000, apr: 20, minPayment: 20 })),
+    ],
+  };
+  let text = "";
+  assert.doesNotThrow(() => {
+    const plan = buildCrisisPlan(garbage, { offer: { ratePct: Infinity, termMonths: 999999 } as any });
+    text = formatCrisisPlan(plan, { assumedMinimums: true });
+  });
+  assert.doesNotMatch(text, /NaN|Infinity|undefined/);
+  assert.match(text, /Your move/, "still produces a full plan");
+});
+
+test("sanitizeDebts caps count, drops non-positive balances, and clamps absurd APR", () => {
+  const cleaned = sanitizeDebts([
+    { name: "a", balance: 1000, apr: 500, minPayment: 10 },
+    { name: "b", balance: 0, apr: 10, minPayment: 5 },
+    ...Array.from({ length: 400 }, () => ({ name: "x", balance: 1, apr: 5, minPayment: 1 })),
+  ] as any);
+  assert.ok(cleaned.length <= 200, "count capped");
+  assert.equal(cleaned[0].apr, 200, "APR clamped to 200");
+  assert.ok(cleaned.every((d) => d.balance > 0), "zero balances dropped");
 });
 
 test("a comfortable case tells you to redirect the surplus, not that it's a crisis", () => {

@@ -14,6 +14,11 @@
  */
 
 import { type Debt, comparePayoff, type PayoffComparison } from "./debt-payoff.js";
+import { finiteNonNeg, safeMoney } from "./finance-safe.js";
+
+// Hard ceiling on how many liabilities the simulator will chew through, so an
+// absurdly large upload can never turn into an unbounded computation.
+const MAX_DEBTS = 200;
 
 export type CrisisInputs = {
   incomeMonthly: number;
@@ -65,14 +70,29 @@ export function maxRateForPayment(principal: number, payment: number, months: nu
   return Number(lo.toFixed(2));
 }
 
+/** Coerce arbitrary inputs to sane, bounded, finite debts — defense in depth. */
+export function sanitizeDebts(debts: Debt[]): Debt[] {
+  return (Array.isArray(debts) ? debts : [])
+    .slice(0, MAX_DEBTS)
+    .map((d) => ({
+      name: typeof d?.name === "string" && d.name.trim() ? d.name.slice(0, 80) : "debt",
+      balance: finiteNonNeg(d?.balance),
+      apr: Math.min(finiteNonNeg(d?.apr), 200),
+      minPayment: finiteNonNeg(d?.minPayment),
+    }))
+    .filter((d) => d.balance > 0);
+}
+
 export function assessCrisis(inputs: CrisisInputs): CrisisAssessment {
-  const debts = inputs.debts.filter((d) => d.balance > 0);
+  const debts = sanitizeDebts(inputs.debts);
+  const income = finiteNonNeg(inputs.incomeMonthly);
+  const essentials = finiteNonNeg(inputs.essentialExpenses);
   const totalBalance = Number(debts.reduce((s, d) => s + d.balance, 0).toFixed(2));
   const totalMinPayments = Number(debts.reduce((s, d) => s + Math.max(0, d.minPayment), 0).toFixed(2));
   const blendedAprPct = totalBalance > 0
     ? Number((debts.reduce((s, d) => s + d.balance * d.apr, 0) / totalBalance).toFixed(2))
     : 0;
-  const availableForDebt = Number((inputs.incomeMonthly - inputs.essentialExpenses).toFixed(2));
+  const availableForDebt = Number((income - essentials).toFixed(2));
   const gap = Number((totalMinPayments - availableForDebt).toFixed(2));
 
   let severity: CrisisSeverity;
@@ -82,7 +102,7 @@ export function assessCrisis(inputs: CrisisInputs): CrisisAssessment {
   else severity = "manageable";
 
   const highestApr = debts.length ? debts.reduce((a, b) => (b.apr > a.apr ? b : a)) : null;
-  return { incomeMonthly: inputs.incomeMonthly, essentialExpenses: inputs.essentialExpenses, availableForDebt, totalBalance, totalMinPayments, blendedAprPct, gap, severity, highestApr };
+  return { incomeMonthly: income, essentialExpenses: essentials, availableForDebt, totalBalance, totalMinPayments, blendedAprPct, gap, severity, highestApr };
 }
 
 export type ConsolidationScenario = {
@@ -99,15 +119,17 @@ export function analyzeConsolidation(assessment: CrisisAssessment, offer?: Conso
   const { totalBalance, availableForDebt } = assessment;
   if (totalBalance <= 0) return { kind: "infeasible", termMonths: 0, ratePct: null, payment: null, fitsBudget: false, note: "No balances to consolidate." };
 
-  if (offer) {
-    const payment = amortizedPayment(totalBalance, offer.ratePct, offer.termMonths);
+  const ratePct = Math.min(finiteNonNeg(offer?.ratePct), 200);
+  const termMonths = Math.min(Math.max(Math.round(finiteNonNeg(offer?.termMonths)), 0), 600);
+  if (offer && termMonths > 0) {
+    const payment = amortizedPayment(totalBalance, ratePct, termMonths);
     return {
       kind: "offer",
-      termMonths: offer.termMonths,
-      ratePct: offer.ratePct,
+      termMonths,
+      ratePct,
       payment,
       fitsBudget: availableForDebt > 0 && payment <= availableForDebt,
-      note: `A single loan of the full balance at ${offer.ratePct}% over ${offer.termMonths} months is one payment of about {payment}.`,
+      note: `A single loan of the full balance at ${ratePct}% over ${termMonths} months is one payment of about {payment}.`,
     };
   }
 
@@ -146,14 +168,15 @@ export type CrisisPlan = {
 
 export function buildCrisisPlan(inputs: CrisisInputs, options: { offer?: ConsolidationOffer } = {}): CrisisPlan {
   const assessment = assessCrisis(inputs);
+  const debts = sanitizeDebts(inputs.debts);
   const extra = Math.max(0, assessment.availableForDebt - assessment.totalMinPayments);
-  const payoff = inputs.debts.length ? comparePayoff(inputs.debts, extra) : null;
+  const payoff = debts.length ? comparePayoff(debts, extra) : null;
   const consolidation = analyzeConsolidation(assessment, options.offer);
   return { assessment, payoff, consolidation, currency: inputs.currency };
 }
 
 function m(amount: number, currency: string): string {
-  return `${currency} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return safeMoney(amount, currency);
 }
 
 /** Decisive, human-in-the-loop write-up: verdict, picture, options with numbers, your move. */
