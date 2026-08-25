@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applyWorkspaceFromChat,
+  messageHasExtractableWorkspaceCode,
   assembleStudioPreview,
   canOpenStudioPreviewPane,
   extractHtmlFromResponse,
@@ -156,6 +157,24 @@ test('plain chat does not revive or reopen a project', () => {
   assert.equal(follow.didUpdate, false);
   assert.equal(follow.reopenDesk, false);
   assert.deepEqual(follow.vfs, {});
+});
+
+test('error-path provider death still exposes extractable fences for workspace apply', () => {
+  const partial = [
+    'Building the boutique…',
+    '',
+    '```html filepath="index.html"',
+    '<!DOCTYPE html><html><body><h1>Saree Boutique</h1>',
+    '<button type="button">Add to Cart</button></body></html>',
+    '```',
+    '',
+    'The connection to the model died before Preview was ready.',
+  ].join('\n');
+  assert.equal(messageHasExtractableWorkspaceCode(partial), true);
+  assert.equal(messageHasExtractableWorkspaceCode('⚠️ no healthy AI route'), false);
+  const assembled = applyWorkspaceFromChat(partial, {});
+  assert.equal(assembled.didUpdate, true);
+  assert.match(assembled.vfs['index.html'].content, /Saree Boutique/);
 });
 
 test('Preview runs the project entry, not the file open in the editor', () => {

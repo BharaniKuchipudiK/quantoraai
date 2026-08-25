@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
@@ -2162,9 +2162,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        // Model died / timed out — still prove the desk. Skills may already have
-        // a runnable shop; never leave sticky failure with index.html on Files.
-        if (lastMsg.isError) {
+        // Provider-dead / stream errors: apply extractable fences when present.
+        // Otherwise prove existing desk Files (shop/coding) so Preview can still land.
+        const errorHasExtractableCode = lastMsg.isError
+          && messageHasExtractableWorkspaceCode(lastMsg.text, vfs);
+        if (lastMsg.isError && !errorHasExtractableCode) {
           const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
           const skillPlan = planFromMessageSnapshot(lastMsg.codingTurnPlan, {
             messageForModel: userBrief,
@@ -2208,7 +2210,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         // Proof Control Plane already rejected this turn — do not open as success.
-        if (lastMsg.codingProof && lastMsg.codingProof.ok === false) {
+        // Exception: error turns with extractable fences still land the partial workspace.
+        if (lastMsg.codingProof && lastMsg.codingProof.ok === false && !errorHasExtractableCode) {
           return;
         }
 
@@ -4029,6 +4032,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onClose={() => setCanvasOpen(false)}
                 user={user}
                 onRequireAuth={onOpenAuth}
+                turnBusy={isGenerating}
                 isPresentationIntent={detectSlideDeck(messages)}
                 officeKind={detectOfficeIntent({ messages })}
                 allowPublish={canOfferVercelPublish({

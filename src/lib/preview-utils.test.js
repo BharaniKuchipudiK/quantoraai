@@ -170,10 +170,33 @@ test('embed shell posts embed-ready more than once', () => {
 });
 
 test('path embed URL can cache-bust remounts', async () => {
-  const { getPreviewEmbedPathUrl, canUseBlobPreviewEmbed } = await import('./preview-utils.js');
+  const { getPreviewEmbedPathUrl, canUseBlobPreviewEmbed, isPreviewEmbedFrameSrc } = await import('./preview-utils.js');
   assert.equal(getPreviewEmbedPathUrl(), '/preview/embed.html');
   assert.match(getPreviewEmbedPathUrl('3-0'), /\?r=3-0$/);
   assert.equal(typeof canUseBlobPreviewEmbed(), 'boolean');
+  assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/preview/embed.html?r=1'), true);
+  assert.equal(isPreviewEmbedFrameSrc('blob:https://quantoraai.app/abc'), true);
+  assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/'), false);
+  assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/desk'), false);
+});
+
+test('harness strips base/refresh that yank the iframe onto the SPA', async () => {
+  const { injectPreviewHarness, buildPreviewSrcDoc, isHtmlPreviewDocument } = await import('./preview-utils.js');
+  const out = injectPreviewHarness(`<!DOCTYPE html><html><head>
+<base href="https://quantoraai.app/">
+<meta http-equiv="refresh" content="0;url=/">
+</head><body><h1>Shop</h1><a href="/">Home</a><script>location.href='/'</script></body></html>`);
+  assert.doesNotMatch(out, /<base\s+href=/i);
+  assert.doesNotMatch(out, /http-equiv=["']?refresh/i);
+  assert.doesNotMatch(out, /<a\s+href=["']\/["']/i);
+  assert.doesNotMatch(out, /<script>location\.href\s*=\s*['"]\/['"]/i);
+  assert.match(out, /Preview blocked navigation/);
+  assert.match(out, /Object\.defineProperty\(window\.location, 'href'/);
+  assert.equal(isHtmlPreviewDocument('<!DOCTYPE html><html><body>x</body></html>'), true);
+  assert.equal(isHtmlPreviewDocument('export default function App(){return 1}'), false);
+  const srcDoc = buildPreviewSrcDoc('<!DOCTYPE html><html><head></head><body><h1>Hi</h1></body></html>');
+  assert.match(srcDoc, /Content-Security-Policy/);
+  assert.match(srcDoc, /<h1>Hi<\/h1>/);
 });
 
 test('still ignores opaque script errors', () => {

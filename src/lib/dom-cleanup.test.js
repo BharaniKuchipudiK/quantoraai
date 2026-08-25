@@ -83,11 +83,19 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /data-quantora-preview-contract-error/);
   assert.match(preview, /project-runtime-contract-missing/);
   // Endless "retrying the shell" theater: fail clock must not restart on assembly churn.
+  assert.doesNotMatch(preview, /Still starting Preview — retrying the shell/);
+  assert.match(preview, /omit assemblyKey \/ currentCode/);
+  assert.match(preview, /canUseBlobPreviewEmbed/);
   assert.match(preview, /turnBusy/);
+  assert.match(preview, /shell fail clock paused|Building — Preview waits/);
   assert.match(preview, /deskHasHtml/);
   assert.match(preview, /shouldShowPreviewShellTombstone/);
   assert.match(preview, /Files landed after a premature fail/);
   assert.match(preview, /Connecting Preview to your files/);
+  assert.match(
+    fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8'),
+    /turnBusy=\{isGenerating\}/,
+  );
 });
 
 

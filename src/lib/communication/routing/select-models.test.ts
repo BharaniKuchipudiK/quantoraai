@@ -42,6 +42,20 @@ test('Auto coding refine escalates without picking paid when allowPaid is false'
   });
   assert.equal(decision.primaryModelId, 'nvidia/nemotron-3-super-120b-a12b:free');
   assert.equal(decision.selectionSource, 'coding_desk_auto');
+  assert.ok(decision.fallbackModelIds.includes('gemini-flash-latest'));
+});
+
+test('Auto escalate with empty Active list still keeps Gemini last-resort fallback', () => {
+  const decision = selectModelsForTurn({
+    models: [],
+    message: 'Refactor the entire multi-file architecture',
+    explicitModelId: 'auto',
+    buildMode: true,
+    hasVFS: true,
+    qualityHints: { fileCount: 12 },
+  });
+  assert.equal(decision.primaryModelId, 'gemini-flash-latest');
+  assert.equal(decision.selectionSource, 'coding_desk_auto');
 });
 
 test('null modelId on a coding turn uses Coding Desk Auto', () => {

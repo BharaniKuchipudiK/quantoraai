@@ -97,6 +97,11 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
     const fallbackModelIds = rankFreeModels(models, input.message, input.arenaPrefs)
       .filter((model) => model.id !== resolved.modelId && model.available !== false)
       .map((model) => model.id);
+    // Always keep Gemini free-tier in the failover chain for Coding Desk Auto,
+    // even when the Active list is empty or marks Gemini unavailable.
+    if (resolved.modelId !== 'gemini-flash-latest' && !fallbackModelIds.includes('gemini-flash-latest')) {
+      fallbackModelIds.push('gemini-flash-latest');
+    }
     return {
       primaryModelId: resolved.modelId,
       fallbackModelIds,
