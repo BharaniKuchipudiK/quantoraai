@@ -1,0 +1,230 @@
+/**
+ * Debt-crisis + consolidation engine (ADR-025, Phase B) — the deterministic core
+ * behind "bridge the gap between my salary and my debt".
+ *
+ * It synthesizes the whole picture (income, essential expenses, every liability)
+ * and answers the real question a person in a cash-flow squeeze has: can I even
+ * cover my minimums, would consolidation help, and exactly how much do I have to
+ * free up. Decisive by design — it leads with the verdict and the one number
+ * that matters (the monthly gap), lays out every option with real figures, and
+ * then hands the decision back to the human. It never picks the path for you.
+ *
+ * Pure arithmetic, reusing the payoff simulator. No forecast, no market call —
+ * a consolidation answer must be reproducible and defensible.
+ */
+
+import { type Debt, comparePayoff, type PayoffComparison } from "./debt-payoff.js";
+
+export type CrisisInputs = {
+  incomeMonthly: number;
+  essentialExpenses: number; // non-debt essentials
+  debts: Debt[];
+  currency: string;
+};
+
+export type ConsolidationOffer = { ratePct: number; termMonths: number };
+
+export type CrisisSeverity = "manageable" | "tight" | "shortfall" | "critical";
+
+export type CrisisAssessment = {
+  incomeMonthly: number;
+  essentialExpenses: number;
+  availableForDebt: number; // income - essentials
+  totalBalance: number;
+  totalMinPayments: number;
+  blendedAprPct: number;
+  gap: number; // totalMinPayments - availableForDebt (positive = short of even minimums)
+  severity: CrisisSeverity;
+  highestApr: Debt | null;
+};
+
+/** Standard amortized monthly payment for a loan. */
+export function amortizedPayment(principal: number, aprPct: number, months: number): number {
+  if (months <= 0) return principal;
+  const r = aprPct / 100 / 12;
+  if (r === 0) return Number((principal / months).toFixed(2));
+  const pay = (principal * r) / (1 - (1 + r) ** -months);
+  return Number(pay.toFixed(2));
+}
+
+/**
+ * Highest APR whose amortized payment still fits `payment` over `months`, or null
+ * when even a 0% loan over that term needs more than `payment` (principal too big
+ * for the budget/term — the honest "this doesn't fit" signal).
+ */
+export function maxRateForPayment(principal: number, payment: number, months: number): number | null {
+  if (months <= 0 || payment <= 0) return null;
+  if (amortizedPayment(principal, 0, months) > payment) return null; // can't even cover principal
+  let lo = 0;
+  let hi = 200;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (amortizedPayment(principal, mid, months) > payment) hi = mid;
+    else lo = mid;
+  }
+  return Number(lo.toFixed(2));
+}
+
+export function assessCrisis(inputs: CrisisInputs): CrisisAssessment {
+  const debts = inputs.debts.filter((d) => d.balance > 0);
+  const totalBalance = Number(debts.reduce((s, d) => s + d.balance, 0).toFixed(2));
+  const totalMinPayments = Number(debts.reduce((s, d) => s + Math.max(0, d.minPayment), 0).toFixed(2));
+  const blendedAprPct = totalBalance > 0
+    ? Number((debts.reduce((s, d) => s + d.balance * d.apr, 0) / totalBalance).toFixed(2))
+    : 0;
+  const availableForDebt = Number((inputs.incomeMonthly - inputs.essentialExpenses).toFixed(2));
+  const gap = Number((totalMinPayments - availableForDebt).toFixed(2));
+
+  let severity: CrisisSeverity;
+  if (availableForDebt <= 0) severity = "critical";
+  else if (gap > 0) severity = "shortfall";
+  else if (gap > -0.1 * Math.max(1, totalMinPayments)) severity = "tight";
+  else severity = "manageable";
+
+  const highestApr = debts.length ? debts.reduce((a, b) => (b.apr > a.apr ? b : a)) : null;
+  return { incomeMonthly: inputs.incomeMonthly, essentialExpenses: inputs.essentialExpenses, availableForDebt, totalBalance, totalMinPayments, blendedAprPct, gap, severity, highestApr };
+}
+
+export type ConsolidationScenario = {
+  kind: "offer" | "fit-to-budget" | "infeasible";
+  termMonths: number;
+  ratePct: number | null; // the offer's rate, or the max rate that fits, or null when nothing fits
+  payment: number | null;
+  fitsBudget: boolean;
+  note: string;
+};
+
+/** Model consolidation: either a concrete offer, or solve for what would fit the budget. */
+export function analyzeConsolidation(assessment: CrisisAssessment, offer?: ConsolidationOffer): ConsolidationScenario {
+  const { totalBalance, availableForDebt } = assessment;
+  if (totalBalance <= 0) return { kind: "infeasible", termMonths: 0, ratePct: null, payment: null, fitsBudget: false, note: "No balances to consolidate." };
+
+  if (offer) {
+    const payment = amortizedPayment(totalBalance, offer.ratePct, offer.termMonths);
+    return {
+      kind: "offer",
+      termMonths: offer.termMonths,
+      ratePct: offer.ratePct,
+      payment,
+      fitsBudget: availableForDebt > 0 && payment <= availableForDebt,
+      note: `A single loan of the full balance at ${offer.ratePct}% over ${offer.termMonths} months is one payment of about {payment}.`,
+    };
+  }
+
+  // No offer: solve for what fits. Prefer the shortest term that fits the budget.
+  for (const termMonths of [36, 48, 60, 84]) {
+    const maxRate = availableForDebt > 0 ? maxRateForPayment(totalBalance, availableForDebt, termMonths) : null;
+    if (maxRate !== null) {
+      return {
+        kind: "fit-to-budget",
+        termMonths,
+        ratePct: maxRate,
+        payment: availableForDebt,
+        fitsBudget: true,
+        note: `To fit your budget, a consolidation loan of the full balance needs a rate no higher than ${maxRate}% over ${termMonths} months.`,
+      };
+    }
+  }
+  // Even a 0% loan over 7 years exceeds the budget → structural, not a rate problem.
+  const floorPayment = amortizedPayment(totalBalance, 0, 84);
+  return {
+    kind: "infeasible",
+    termMonths: 84,
+    ratePct: null,
+    payment: floorPayment,
+    fitsBudget: false,
+    note: `Even an interest-free loan over 7 years would need about {floor}/month — more than the {avail} you have for debt. Consolidation alone can't bridge this; the gap has to close through income or essentials.`,
+  };
+}
+
+export type CrisisPlan = {
+  assessment: CrisisAssessment;
+  payoff: PayoffComparison | null; // status-quo aggressive payoff, when there's room
+  consolidation: ConsolidationScenario;
+  currency: string;
+};
+
+export function buildCrisisPlan(inputs: CrisisInputs, options: { offer?: ConsolidationOffer } = {}): CrisisPlan {
+  const assessment = assessCrisis(inputs);
+  const extra = Math.max(0, assessment.availableForDebt - assessment.totalMinPayments);
+  const payoff = inputs.debts.length ? comparePayoff(inputs.debts, extra) : null;
+  const consolidation = analyzeConsolidation(assessment, options.offer);
+  return { assessment, payoff, consolidation, currency: inputs.currency };
+}
+
+function m(amount: number, currency: string): string {
+  return `${currency} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
+/** Decisive, human-in-the-loop write-up: verdict, picture, options with numbers, your move. */
+export function formatCrisisPlan(plan: CrisisPlan, opts: { assumedMinimums?: boolean } = {}): string {
+  const a = plan.assessment;
+  const c = plan.currency;
+  const cons = plan.consolidation;
+
+  // 1) Verdict first — the one number that matters, no preamble.
+  let verdict: string;
+  if (a.severity === "critical") {
+    verdict = `**Straight answer: your essentials (${m(a.essentialExpenses, c)}) already consume your income (${m(a.incomeMonthly, c)}), so there's nothing left for debt.** This is a restructuring / credit-counseling situation, not a budgeting one — no payoff schedule fixes a negative starting point.`;
+  } else if (a.severity === "shortfall") {
+    verdict = `**Straight answer: you're ${m(a.gap, c)}/month short of even the minimum payments.** A structural gap like this won't close by budgeting harder — you either lower the monthly payment (consolidate / extend the term) or free up ${m(a.gap, c)} from income or essentials. Both levers are below.`;
+  } else if (a.severity === "tight") {
+    verdict = `**Straight answer: you can just cover the minimums, with little room to spare.** You're not in crisis, but you're one shock from it — the priority is speed and a buffer.`;
+  } else {
+    verdict = `**Straight answer: you can cover the minimums with ${m(a.availableForDebt - a.totalMinPayments, c)}/month to spare.** Put that spare toward the highest-rate debt and you'll clear this faster than the minimums alone.`;
+  }
+
+  // 2) The picture — synthesized from everything you've given.
+  const picture = [
+    "**The picture**",
+    `- Income: ${m(a.incomeMonthly, c)}/mo · Essentials: ${m(a.essentialExpenses, c)}/mo → **${m(a.availableForDebt, c)}/mo for debt**`,
+    `- Debt: **${m(a.totalBalance, c)}** across ${plan.payoff ? plan.payoff.avalanche.order.length || "several" : "your"} balances · blended rate **${a.blendedAprPct}%**`,
+    `- Minimum payments total **${m(a.totalMinPayments, c)}/mo**${a.highestApr ? ` · highest-rate debt: **${a.highestApr.name}** at ${a.highestApr.apr}%` : ""}`,
+  ];
+
+  // 3) Options — every lever, with real figures.
+  const options: string[] = ["**Your options**"];
+
+  // A) Consolidate
+  if (cons.kind === "offer" && cons.payment !== null) {
+    options.push(`- **A — Consolidate (your offer):** one loan of ${m(a.totalBalance, c)} at ${cons.ratePct}% over ${cons.termMonths} mo = **${m(cons.payment, c)}/mo**${cons.fitsBudget ? " — fits your budget." : ` — still above the ${m(a.availableForDebt, c)} you have; you'd need a longer term or lower rate.`}`);
+  } else if (cons.kind === "fit-to-budget" && cons.ratePct !== null) {
+    options.push(`- **A — Consolidate (to fit your budget):** a single ${m(a.totalBalance, c)} loan at **≤ ${cons.ratePct}% over ${cons.termMonths} mo** lands at ${m(cons.payment ?? a.availableForDebt, c)}/mo — within reach. Bring me a real offer's rate + term and I'll check it exactly.`);
+  } else {
+    options.push(`- **A — Consolidate:** won't bridge this alone — ${cons.payment !== null ? `even a 0% loan over 7 years is ~${m(cons.payment, c)}/mo, above your ${m(a.availableForDebt, c)}.` : "there's no budget available for debt."} Consolidation only helps once the gap below is closed.`);
+  }
+
+  // B) Aggressive payoff — only honest when the budget actually covers the minimums.
+  const canCoverMinimums = a.availableForDebt >= a.totalMinPayments;
+  if (canCoverMinimums && plan.payoff?.recommended) {
+    const best = plan.payoff.recommended === "avalanche" ? plan.payoff.avalanche : plan.payoff.snowball;
+    options.push(`- **B — Attack it as-is (${plan.payoff.recommended}):** debt-free in **${Math.round(best.months / 12 * 10) / 10} yrs** (${best.months} mo), ${m(best.totalInterest, c)} total interest, order ${best.order.join(" → ")}.`);
+  } else {
+    options.push(`- **B — Attack it as-is:** not possible at today's budget — you can't fully cover the ${m(a.totalMinPayments, c)} in minimums with ${m(a.availableForDebt, c)}, so the balances don't clear. Close the gap first (A / C).`);
+  }
+
+  // C) Close the gap
+  if (a.gap > 0) {
+    options.push(`- **C — Close the gap:** free up **${m(a.gap, c)}/mo** — cut essentials, raise income, or both — to at least cover minimums. This is the floor; anything above it starts reducing the debt.`);
+  } else {
+    options.push(`- **C — Redirect the surplus:** you already clear minimums; steer the spare ${m(Math.max(0, a.availableForDebt - a.totalMinPayments), c)}/mo to the ${a.highestApr ? `${a.highestApr.apr}% ${a.highestApr.name}` : "highest-rate debt"} first.`);
+  }
+
+  // D) Negotiate / restructure
+  options.push(`- **D — Negotiate / restructure:** call the ${a.highestApr ? `${a.highestApr.name} (${a.highestApr.apr}%)` : "highest-rate"} lender for a hardship rate or a fixed repayment plan${a.severity === "critical" || a.severity === "shortfall" ? " — and speak to a non-profit credit counsellor; a structural shortfall is exactly what they exist for." : "."}`);
+
+  // 4) Human-in-the-loop — the plan ends in YOUR decision.
+  const move = [
+    "**Your move** — I won't pick for you.",
+    "Tell me a direction (**A, B, C, or D**), or hand me a real consolidation offer (rate + term) and I'll model it exactly. Say the word and I'll build the month-by-month plan for whichever path you choose.",
+  ];
+
+  const disclaimer = "_This is grounded decision-support from the figures you gave — not licensed debt advice, and no lender's acceptance is guaranteed. For a formal plan, a licensed credit counsellor is the right next stop._";
+
+  const notes: string[] = [];
+  if (opts.assumedMinimums) {
+    notes.push("_For any debt without a stated minimum, I assumed the greater of 2% of the balance or 25/mo — tell me the real minimums to tighten this._");
+  }
+
+  return [verdict, "", ...picture, "", ...options, "", ...move, "", disclaimer, ...(notes.length ? ["", ...notes] : [])].join("\n");
+}
