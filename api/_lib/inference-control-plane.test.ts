@@ -176,3 +176,46 @@ test('Studio stays executable whenever any inference gateway has credentials', a
   assert.equal(empty.ready, false);
   assert.equal(empty.routeCount, 0);
 });
+
+test('a paid rescue rung is held for last, and only when the meter allows', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+  };
+
+  // Not configured: the ladder is exactly as before, all free.
+  const noPaid = await planInferenceRoutes(base);
+  assert.ok(noPaid.every((route) => route.paid !== true), 'no paid rung without config');
+
+  // Configured but the meter says no: still no paid rung.
+  const denied = await planInferenceRoutes({ ...base, paidLastResortModelId: 'anthropic/claude-3.5-sonnet', paidLastResortAllowed: false });
+  assert.ok(denied.every((route) => route.paid !== true), 'meter denial keeps paid off');
+
+  // Configured and allowed: paid appears exactly once, as the FINAL rung.
+  const allowed = await planInferenceRoutes({ ...base, paidLastResortModelId: 'anthropic/claude-3.5-sonnet', paidLastResortAllowed: true });
+  const paidRungs = allowed.filter((route) => route.paid === true);
+  assert.equal(paidRungs.length, 1, 'exactly one paid rung');
+  assert.equal(allowed[allowed.length - 1].paid, true, 'paid is the last rung');
+  assert.notEqual(allowed[0].paid, true, 'the primary is never the paid rung');
+  // The free ladder still leads.
+  assert.ok(allowed.slice(0, -1).every((route) => route.paid !== true), 'free routes come first');
+});
+
+test('canOfferPaidLastResort fails closed', async () => {
+  const { canOfferPaidLastResort } = await import('./spend-store.js');
+  const paid = 'anthropic/claude-3.5-sonnet';
+  // no model configured
+  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 0, ceilingUsd: 50, calls: 0 }, ''), false);
+  // unreadable ledger
+  assert.equal(canOfferPaidLastResort({ known: false, monthKey: '2026-08', spentUsd: 0, ceilingUsd: 50, calls: 0 }, paid), false);
+  // no budget
+  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 0, ceilingUsd: 0, calls: 0 }, paid), false);
+  // ceiling reached
+  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 50, ceilingUsd: 50, calls: 9 }, paid), false);
+  // headroom + readable + configured => allowed
+  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 10, ceilingUsd: 50, calls: 3 }, paid), true);
+});

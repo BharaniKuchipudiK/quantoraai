@@ -130,3 +130,28 @@ export async function recordModelSpend(costUsd: number, now = new Date()): Promi
     return unknown(monthKey, ceilingUsd);
   }
 }
+
+/*
+ * Whether a paid rescue rung may be OFFERED on this turn's ladder.
+ *
+ * This is the coarse, pre-call gate: exact per-call cost is unknown before the
+ * model runs, so at planning time we require only that the ledger is readable
+ * and this month still has headroom. The precise check happens after the call,
+ * when recordModelSpend() books the real cost and the next turn re-reads the
+ * ledger - so a single call can nudge slightly over the ceiling at most, and
+ * paid stops being offered the moment headroom reaches zero.
+ *
+ * Fails closed: no paid model configured, no budget, an unreadable ledger, or a
+ * reached ceiling all yield false.
+ */
+export function canOfferPaidLastResort(snapshot: SpendSnapshot | null, paidModelId?: string | null): boolean {
+  if (!paidModelId || !String(paidModelId).trim()) return false;
+  if (!snapshot || snapshot.known !== true) return false;
+  if (!(snapshot.ceilingUsd > 0)) return false;
+  return snapshot.spentUsd < snapshot.ceilingUsd;
+}
+
+/** The configured paid last-resort model id, or '' when none is set. */
+export function configuredPaidLastResortModelId(): string {
+  return String(process.env.QUANTORA_PAID_LAST_RESORT_MODEL || '').trim();
+}
