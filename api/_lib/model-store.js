@@ -80,6 +80,27 @@ export async function readModelQualitySummary() {
   }
 }
 
+const QUALITY_SUMMARY_TTL_MS = 60_000;
+let qualitySummaryCache = null; // { at: number, rows: any[] }
+
+/**
+ * Cached read of the measured-outcome summary for per-turn routing. Outcome
+ * ledgers move slowly, so a short TTL keeps routing evidence fresh without a
+ * database round-trip on every coding turn.
+ */
+export async function readModelQualitySummaryCached(ttlMs = QUALITY_SUMMARY_TTL_MS) {
+  const now = Date.now();
+  if (qualitySummaryCache && now - qualitySummaryCache.at < ttlMs) return qualitySummaryCache.rows;
+  const rows = await readModelQualitySummary();
+  qualitySummaryCache = { at: now, rows };
+  return rows;
+}
+
+/** Test/edge hook: drop the cached quality summary so the next read is fresh. */
+export function clearModelQualitySummaryCache() {
+  qualitySummaryCache = null;
+}
+
 export async function writeModelRegistry(rows) {
   if (!rows.length) return false;
   const response = await request('model_registry?on_conflict=id', {

@@ -15,7 +15,7 @@ import { normalizeOutcomeSessionId } from "./outcome-state.js";
 import { repairArtifact } from "./repair.js";
 import { verifyBuild } from "./verify-build.js";
 import { evaluateSafetyText } from "./safety-policy.js";
-import { readModelRegistryCached } from "./model-store.js";
+import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-store.js";
 import { DIRECT_MODELS, CURATED_MODELS } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
@@ -55,6 +55,7 @@ import { buildResponseContract } from "../../src/lib/communication/policy/conver
 import { evaluationFromVerification } from "../../src/lib/communication/evaluation/from-verification.js";
 import { selectModelsForTurn } from "../../src/lib/communication/routing/select-models.js";
 import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
+import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-outcome-routing.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
@@ -576,7 +577,10 @@ export default async function handler(req: any, res: any) {
         ? readProjectContext(activeSessionUser.sub, projectId)
         : Promise.resolve(null),
     ]);
-    const registryModels = await readModelRegistryCached();
+    const [registryModels, qualitySummaryRows] = await Promise.all([
+      readModelRegistryCached(),
+      readModelQualitySummaryCached().catch(() => []),
+    ]);
     const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
       ? {
           probeFailure: req.body.qualityHints.probeFailure === true,
@@ -588,7 +592,7 @@ export default async function handler(req: any, res: any) {
           repair: req.body?.task === "repair",
           fileCount: 0,
         };
-    const routingModels = activeModelsForRouting({
+    const routingCatalog = activeModelsForRouting({
       registryRows: registryModels,
       featuredModels: [
         ...DIRECT_MODELS,
@@ -599,6 +603,13 @@ export default async function handler(req: any, res: any) {
         })),
       ],
     });
+    // Decorate the catalog with measured-outcome signals for this turn's task so
+    // the router weighs real reliability, not just model-name heuristics. When
+    // there is no evidence yet the catalog passes through unchanged.
+    const routingModels = withOutcomeSignals(
+      routingCatalog,
+      outcomeSignalsForTask(qualitySummaryRows, taskCategory),
+    );
     const modelRouting = selectModelsForTurn({
       models: routingModels,
       message,

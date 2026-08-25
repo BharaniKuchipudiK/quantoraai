@@ -4,6 +4,8 @@
  * Never invent models; only choose from the Active / available list.
  */
 
+import { MIN_OUTCOME_SAMPLES, outcomeRoutingAdjust } from './model-outcome-routing.js';
+
 export const CODING_DESK_AUTO_MODEL_ID = 'auto';
 
 export const CODING_DESK_AUTO_MODEL = {
@@ -103,12 +105,18 @@ function codingStrength(model, { allowPaid = false } = {}) {
   if (/claude|sonnet|opus|gpt-?4|gpt-?5/.test(hay)) score += 28;
   if (/llama[^a-z]*3\.[13]|mistral[^a-z]*large|grok/.test(hay)) score += 16;
   if (/gemini|flash/.test(hay)) score -= 8;
-  if (model.quality?.sampleSize >= 5 && Number.isFinite(model.quality?.score)) {
-    score += Math.max(0, Math.min(12, model.quality.score / 8));
-  }
+  // Measured reality overrides the name guess as evidence accumulates: a model
+  // that actually succeeds is promoted, one that keeps failing is demoted.
+  // Fail-safe — no trustworthy signal contributes 0 (see model-outcome-routing).
+  score += outcomeRoutingAdjust(model.quality);
   if (allowPaid && !isFreeReady(model) && /coder|claude|sonnet|deepseek|qwen/.test(hay)) score += 10;
   if (!allowPaid && isFreeReady(model)) score += 4;
   return score;
+}
+
+function hasTrustedOutcome(model) {
+  return Number(model?.quality?.sampleSize) >= MIN_OUTCOME_SAMPLES
+    && Number.isFinite(model?.quality?.score);
 }
 
 function pickStrongCoding(models, { allowPaid = false } = {}) {
@@ -117,8 +125,14 @@ function pickStrongCoding(models, { allowPaid = false } = {}) {
     if (allowPaid) return true;
     return isFreeReady(model);
   });
-  const specialists = pool.filter((model) => CODING_SPECIALIST.test(`${model.id} ${model.name} ${model.specialty || ''}`));
-  const ranked = (specialists.length ? specialists : pool)
+  // Name specialists are the usual contenders, but a model with a trustworthy
+  // measured record earns a seat at the table even without "coder" in its name —
+  // otherwise the name gate would hide a proven performer before evidence is read.
+  const contenders = pool.filter((model) =>
+    CODING_SPECIALIST.test(`${model.id} ${model.name} ${model.specialty || ''}`)
+    || hasTrustedOutcome(model),
+  );
+  const ranked = (contenders.length ? contenders : pool)
     .map((model, index) => ({ model, index, score: codingStrength(model, { allowPaid }) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
   return ranked[0]?.model || null;
