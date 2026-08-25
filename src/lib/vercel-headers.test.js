@@ -7,6 +7,7 @@ import {
   requiresCorp,
   resolveHeadersForPath,
   sourceToRegExp,
+  crossOriginHeadersForPath,
 } from './vercel-headers.js';
 
 const config = JSON.parse(
@@ -76,4 +77,40 @@ test('contract check actually fails when COEP is missing', () => {
   });
   assert.equal(problems.length, 1);
   assert.match(problems[0], /embed-ready never fires/);
+});
+
+test('dev-server parity: cross-origin headers come from vercel.json', () => {
+  // vite.config.ts serves exactly these, so dev and prod cannot drift again.
+  assert.deepEqual(crossOriginHeadersForPath(config, PREVIEW_EMBED), {
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+  });
+  assert.deepEqual(crossOriginHeadersForPath(config, '/desk'), {
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+  });
+  assert.deepEqual(crossOriginHeadersForPath(config, '/'), {
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+    'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+  });
+});
+
+test('dev-server parity reflects a broken config instead of masking it', () => {
+  // The whole point: if COEP is dropped from vercel.json, the dev server stops
+  // sending it too, so the failure shows up locally instead of only in prod.
+  const broken = JSON.parse(JSON.stringify(config));
+  const rule = broken.headers.find((r) => r.source === '/preview/(.*)');
+  rule.headers = rule.headers.filter((h) => h.key.toLowerCase() !== 'cross-origin-embedder-policy');
+  assert.equal(
+    crossOriginHeadersForPath(broken, PREVIEW_EMBED)['Cross-Origin-Embedder-Policy'],
+    undefined,
+  );
+});
+
+test('CSP is never mirrored into the dev server', () => {
+  // Production CSP forbids the eval/websocket traffic Vite needs for HMR.
+  for (const path of [PREVIEW_EMBED, '/desk', '/']) {
+    const keys = Object.keys(crossOriginHeadersForPath(config, path)).map((k) => k.toLowerCase());
+    assert.ok(!keys.includes('content-security-policy'), `${path} must not carry CSP into dev`);
+  }
 });

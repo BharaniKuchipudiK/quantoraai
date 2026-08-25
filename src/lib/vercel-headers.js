@@ -69,6 +69,30 @@ export function requiresCorp(config, path) {
 }
 
 /**
+ * The cross-origin isolation headers vercel.json serves for `path`, in the
+ * casing browsers expect.
+ *
+ * This is the set the dev server must mirror. It deliberately excludes CSP:
+ * production's policy forbids the eval/websocket traffic Vite needs for HMR, so
+ * dev cannot serve it verbatim. COEP/COOP/CORP are exactly the headers whose
+ * dev-vs-prod drift broke the Preview shell, so those are derived rather than
+ * hand-copied.
+ */
+export function crossOriginHeadersForPath(config, path) {
+  const resolved = resolveHeadersForPath(config, path);
+  const names = {
+    'cross-origin-embedder-policy': 'Cross-Origin-Embedder-Policy',
+    'cross-origin-opener-policy': 'Cross-Origin-Opener-Policy',
+    'cross-origin-resource-policy': 'Cross-Origin-Resource-Policy',
+  };
+  const out = {};
+  for (const [lower, proper] of Object.entries(names)) {
+    if (resolved[lower]) out[proper] = resolved[lower];
+  }
+  return out;
+}
+
+/**
  * The invariant that was violated in production.
  *
  * A document framed inside a COEP:require-corp parent must itself be served with
