@@ -112,6 +112,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const [warmingFailed, setWarmingFailed] = useState(false);
   /** Shell remounts only — must not burn MAX_HEAL_ATTEMPTS. */
   const [remountNonce, setRemountNonce] = useState(0);
+  /** Bumps when desk HTML forces another idle remount window. */
+  const [shellKick, setShellKick] = useState(0);
   const warmingRetriedRef = useRef(false);
   const warmingStartedAtRef = useRef(null);
   const embedModeRef = useRef('blob');
@@ -769,7 +771,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   }[!previewShellReady && (status === 'running' || status === 'healing') ? 'warming' : status] || null;
 
   const deskHasHtml = Boolean(
-    currentCode && /<!DOCTYPE html>|<html[\s>]/i.test(String(currentCode)),
+    (typeof currentCode === 'string' && currentCode.trim())
+    || Object.keys(vfs || {}).some((path) => /\.html?$/i.test(path) && String(vfs[path]?.content || '').trim()),
   );
 
   useEffect(() => {
@@ -819,10 +822,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       // HTML already on the desk: keep remounting — never sticky "shell did not start".
       if (deskHasHtml) {
         warmingRetriedRef.current = false;
-        warmingStartedAtRef.current = Date.now();
+        warmingStartedAtRef.current = null;
         setWarmingFailed(false);
         setStatus('running');
         setRemountNonce((value) => value + 1);
+        setShellKick((value) => value + 1);
         return;
       }
       setWarmingFailed(true);
@@ -836,7 +840,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     // Intentionally omit assemblyKey / currentCode — shop inject churn must not
     // reset the fail clock (that caused eternal "retrying the shell" theater).
-  }, [headless, previewShellReady, turnBusy, warmingFailed, deskHasHtml]);
+  }, [headless, previewShellReady, turnBusy, warmingFailed, deskHasHtml, shellKick]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div

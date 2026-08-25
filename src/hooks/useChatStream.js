@@ -1260,7 +1260,8 @@ export function useChatStream({
               shopIntakeAsk.oversize
               || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
             );
-            // Model died — still prove skills-seeded desk before declaring failure.
+            // Model died — keep desk only when THIS turn seeded/repaired it.
+            // Do not call a prior Preview a success for a timed-out refine.
             if (turnPlan?.isCodingTurn && !stopped) {
               const deskProof = proveCodingTurn({
                 plan: turnPlan,
@@ -1270,7 +1271,12 @@ export function useChatStream({
                 allowRepair: true,
                 sessionId: activeSessionId,
               });
-              if (codingTurnMayClaimSuccess(deskProof)) {
+              const thisTurnOwnedDesk = Boolean(
+                turnPlan.runSkillsFirst
+                || deskProof.repaired
+                || (Array.isArray(deskProof.ran) && deskProof.ran.length > 0),
+              );
+              if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
                 if (typeof onCodingTurnProved === 'function') {
                   try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
                 }
