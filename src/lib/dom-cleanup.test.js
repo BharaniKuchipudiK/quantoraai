@@ -86,6 +86,12 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.doesNotMatch(preview, /Still starting Preview — retrying the shell/);
   assert.match(preview, /omit assemblyKey \/ currentCode/);
   assert.match(preview, /canUseBlobPreviewEmbed/);
+  assert.match(preview, /turnBusy/);
+  assert.match(preview, /shell fail clock paused|Building — Preview waits/);
+  assert.match(
+    fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8'),
+    /turnBusy=\{isGenerating\}/,
+  );
 });
 
 test('build timeout and deployed canary credentials honor the release contract', () => {
