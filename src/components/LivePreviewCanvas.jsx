@@ -13,6 +13,7 @@ import {
   revokePreviewEmbedObjectUrl,
   buildPreviewSandbox,
 } from '../lib/preview-utils.js';
+import { shouldShowPreviewShellTombstone } from '../lib/preview-shell-warming.js';
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
 import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
@@ -836,6 +837,9 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       warmingAutoRemountsRef.current = 0;
       return undefined;
     }
+    // Files landed after a premature fail: clear the tombstone and keep remounting.
+    // Without this, overlay stays "shell did not start" forever while index.html
+    // sits in Review (exact boutique screenshot).
     // Files already on the desk: never keep the sticky fail overlay.
     if (deskHasHtml && warmingFailed) {
       setWarmingFailed(false);
@@ -957,15 +961,20 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     return () => clearTimeout(autoTimer);
   }, [headless, previewShellReady, warmingFailed, currentCode, deskHasHtml]);
 
-  const showShellFailOverlay = warmingFailed && !deskHasHtml;
+  const showShellTombstone = shouldShowPreviewShellTombstone({
+    warmingFailed,
+    hasDeskHtml: deskHasHtml,
+    embedReady: previewShellReady,
+  });
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
       role="status"
       aria-live="polite"
       data-quantora-preview-warming="true"
-      data-quantora-preview-warming-failed={showShellFailOverlay ? 'true' : 'false'}
+      data-quantora-preview-warming-failed={showShellTombstone ? 'true' : 'false'}
       data-quantora-preview-turn-busy={turnBusy ? 'true' : 'false'}
+      data-quantora-preview-desk-html={deskHasHtml ? 'true' : 'false'}
       data-quantora-preview-has-html={deskHasHtml ? 'true' : 'false'}
       style={{
         position: 'absolute',
@@ -982,7 +991,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         textAlign: 'center',
       }}
     >
-      {showShellFailOverlay ? (
+      {showShellTombstone ? (
         <>
           <AlertTriangle size={28} color="#ef4444" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview shell did not start</div>
@@ -1010,12 +1019,15 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         <>
           <Clock size={28} color="#f97316" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>
-            {turnBusy ? 'Building — Preview waits for this turn…' : 'Preview is starting…'}
+            {turnBusy
+              ? 'Building — Preview waits for this turn…'
+              : deskHasHtml
+                ? 'Connecting Preview to your files…'
+                : 'Preview is starting…'}
           </div>
           <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
             {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
-            {turnBusy ? ' · shell fail clock paused' : ''}
-            {deskHasHtml && !turnBusy ? ' · page is on the desk' : ''}
+            {turnBusy ? ' · shell fail clock paused' : deskHasHtml ? ' · retrying shell' : ''}
           </div>
         </>
       )}

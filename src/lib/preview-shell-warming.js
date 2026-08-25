@@ -44,12 +44,24 @@ export function shouldFailPreviewShell({
   return Number(idleElapsedMs) >= Number(failMs);
 }
 
-/** Sticky fail overlay is only honest when the desk has nothing to show. */
-export function shouldShowPreviewShellFailOverlay({
+/**
+ * Red "Preview shell did not start" tombstone — only when the desk has NOTHING
+ * runnable. If index.html / preview code exists, keep trying; never leave the
+ * boutique screenshot (Files full + red shell fail) as the product.
+ */
+export function shouldShowPreviewShellTombstone({
   warmingFailed = false,
   hasDeskHtml = false,
+  embedReady = false,
 } = {}) {
-  return Boolean(warmingFailed) && !hasDeskHtml;
+  if (embedReady) return false;
+  if (hasDeskHtml) return false;
+  return Boolean(warmingFailed);
+}
+
+/** Alias kept for callers/tests from main (#315). */
+export function shouldShowPreviewShellFailOverlay(state = {}) {
+  return shouldShowPreviewShellTombstone(state);
 }
 
 /**

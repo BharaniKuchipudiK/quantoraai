@@ -88,11 +88,16 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /canUseBlobPreviewEmbed/);
   assert.match(preview, /turnBusy/);
   assert.match(preview, /shell fail clock paused|Building — Preview waits/);
+  assert.match(preview, /deskHasHtml/);
+  assert.match(preview, /shouldShowPreviewShellTombstone/);
+  assert.match(preview, /Files landed after a premature fail/);
+  assert.match(preview, /Connecting Preview to your files/);
   assert.match(
     fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8'),
     /turnBusy=\{isGenerating\}/,
   );
 });
+
 
 test('Proof Control Plane owns coding turn success', () => {
   const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
