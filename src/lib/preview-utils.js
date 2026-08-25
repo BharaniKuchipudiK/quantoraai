@@ -110,6 +110,7 @@ export function getPreviewEmbedPathUrl(cacheBust = '') {
 export function isPreviewEmbedFrameSrc(src = '') {
   const value = String(src || '').trim();
   if (!value) return false;
+  if (value === 'about:srcdoc') return true;
   if (value.startsWith('blob:')) return true;
   try {
     const url = new URL(value, typeof window !== 'undefined' ? window.location?.origin : 'https://quantoraai.app');
@@ -303,10 +304,33 @@ export function injectPreviewHarness(html) {
   safe = safe.replace(/\bhref\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'href="#"');
   safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/\1/gi, '/* preview nav blocked */ void 0');
   safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/desk\/?\1/gi, '/* preview nav blocked */ void 0');
+  safe = safe.replace(/\b(?:window\s*\.\s*|document\s*\.\s*)?location\s*\.\s*href\s*=\s*[^;]+;?/gi, 'void 0;');
+  safe = safe.replace(/\b(?:window\s*\.\s*)?location\s*=\s*['"][^'"]*['"]\s*;?/gi, 'void 0;');
   const bundle = PREVIEW_ERROR_HARNESS + PREVIEW_TAILWIND_PROBE;
   if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + bundle);
   if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + bundle + '</head>');
   return bundle + safe;
+}
+
+/** True when Preview should paint this string as an HTML document (not React source). */
+export function isHtmlPreviewDocument(code = '') {
+  return /<!DOCTYPE html>|<html[\s>]/i.test(String(code || ''));
+}
+
+/**
+ * Build a complete srcDoc for Coding Desk HTML Preview.
+ * Caller prepares HTML (images, shop UI). This locks harness + CSP.
+ * Contract: desk has HTML → this string is what the iframe shows.
+ */
+export function buildPreviewSrcDoc(preparedHtml = '') {
+  let doc = injectPreviewHarness(String(preparedHtml || ''));
+  if (!/http-equiv=["']?Content-Security-Policy/i.test(doc)) {
+    const meta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_RELAXED_CSP}">`;
+    if (/<head[^>]*>/i.test(doc)) doc = doc.replace(/<head[^>]*>/i, (m) => m + meta);
+    else if (/<html[^>]*>/i.test(doc)) doc = doc.replace(/<html[^>]*>/i, (m) => `${m}<head>${meta}</head>`);
+    else doc = meta + doc;
+  }
+  return doc;
 }
 
 function looksLikeReactSource(source = '') {
