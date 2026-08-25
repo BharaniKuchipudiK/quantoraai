@@ -25,6 +25,14 @@ import OfficePreview from './OfficePreview.jsx';
 import ProjectRuntimePreview from './ProjectRuntimePreview.jsx';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from '../lib/project-runtime-preview.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
+import {
+  PREVIEW_SHELL_FAIL_MS,
+  PREVIEW_SHELL_RETRY_MS,
+  PREVIEW_SHELL_AUTO_REMOUNT_MS,
+  PREVIEW_SHELL_AUTO_REMOUNT_MAX,
+  PREVIEW_SHELL_IDLE_REMOUNT_MAX,
+  shouldAutoRemountFailedPreviewShell,
+} from '../lib/preview-shell-warming.js';
 
 // Office kind → download-button label / extension.
 const OFFICE_LABEL = {
@@ -44,10 +52,8 @@ const OFFICE_LABEL = {
  */
 
 const MAX_HEAL_ATTEMPTS = 3;
-/** One real remount (new iframe URL) if embed-ready never arrives. */
-const PREVIEW_WARMING_RETRY_MS = 6_000;
-/** Hard stop after the coding turn is idle — never while the stream is still writing. */
-const PREVIEW_WARMING_FAIL_MS = 12_000;
+const PREVIEW_WARMING_RETRY_MS = PREVIEW_SHELL_RETRY_MS;
+const PREVIEW_WARMING_FAIL_MS = PREVIEW_SHELL_FAIL_MS;
 
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
@@ -112,8 +118,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const [warmingFailed, setWarmingFailed] = useState(false);
   /** Shell remounts only — must not burn MAX_HEAL_ATTEMPTS. */
   const [remountNonce, setRemountNonce] = useState(0);
-  const warmingRetriedRef = useRef(false);
+  /** Idle remount count after turnBusy ends (before first sticky fail). */
+  const warmingIdleRemountsRef = useRef(0);
+  /** Quiet auto-remounts after sticky fail while Files still have code. */
+  const warmingAutoRemountsRef = useRef(0);
   const warmingStartedAtRef = useRef(null);
+  const lastWarmingCodeRef = useRef('');
   const embedModeRef = useRef('blob');
 
   const iframeRef = useRef(null);
@@ -240,7 +250,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setAttempt(0);
       setLastError(null);
       setWarmingFailed(false);
-      warmingRetriedRef.current = false;
+      warmingIdleRemountsRef.current = 0;
+      warmingAutoRemountsRef.current = 0;
       warmingStartedAtRef.current = null;
       healingRef.current = false;
       errorSeenRef.current = false;
@@ -739,7 +750,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const retryVerification = () => {
     setLastError(null);
     setWarmingFailed(false);
-    warmingRetriedRef.current = false;
+    warmingIdleRemountsRef.current = 0;
+    warmingAutoRemountsRef.current = 0;
     warmingStartedAtRef.current = null;
     errorSeenRef.current = false;
     healingRef.current = false;
@@ -773,15 +785,17 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       setReadyElapsedSec(0);
       setWarmingFailed(false);
       warmingStartedAtRef.current = null;
-      warmingRetriedRef.current = false;
+      warmingIdleRemountsRef.current = 0;
+      warmingAutoRemountsRef.current = 0;
       return undefined;
     }
     // Boutique / long coding turns keep the main thread busy for 30–90s. Failing
     // the shell at 12s mid-stream is the "Preview shell did not start" screenshot.
-    // Hold the fail clock until the turn is idle, then remount once and wait again.
+    // Hold the fail clock until the turn is idle, then remount (up to 2) and wait again.
     if (turnBusy) {
       warmingStartedAtRef.current = null;
-      warmingRetriedRef.current = false;
+      warmingIdleRemountsRef.current = 0;
+      warmingAutoRemountsRef.current = 0;
       setWarmingFailed(false);
       setStatus((prev) => (prev === 'failed' ? 'running' : prev));
       const busyTick = setInterval(() => {
@@ -789,6 +803,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       }, 1000);
       return () => clearInterval(busyTick);
     }
+
     if (warmingFailed) {
       return undefined;
     }
@@ -803,27 +818,78 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     tick();
     const timer = setInterval(tick, 250);
-    const retryDelay = Math.max(0, PREVIEW_WARMING_RETRY_MS - (Date.now() - startedAt));
-    const failDelay = Math.max(0, PREVIEW_WARMING_FAIL_MS - (Date.now() - startedAt));
-    const retryTimer = setTimeout(() => {
-      if (embedReadyRef.current || warmingRetriedRef.current) return;
-      warmingRetriedRef.current = true;
+    const hasRunnablePreview = Boolean(String(currentCodeRef.current || '').trim());
+    const scheduleIdleRemount = (delayMs) => setTimeout(() => {
+      if (embedReadyRef.current) return;
+      if (warmingIdleRemountsRef.current >= PREVIEW_SHELL_IDLE_REMOUNT_MAX) return;
+      warmingIdleRemountsRef.current += 1;
       setRemountNonce((value) => value + 1);
-    }, retryDelay);
+    }, delayMs);
+    const retryTimer = scheduleIdleRemount(
+      Math.max(0, PREVIEW_WARMING_RETRY_MS - (Date.now() - startedAt)),
+    );
+    // Second idle remount when Files already have preview HTML (extend beyond one).
+    const secondRemountTimer = hasRunnablePreview
+      ? scheduleIdleRemount(Math.max(
+        0,
+        PREVIEW_WARMING_RETRY_MS + PREVIEW_SHELL_AUTO_REMOUNT_MS - (Date.now() - startedAt),
+      ))
+      : null;
     const failTimer = setTimeout(() => {
       if (embedReadyRef.current) return;
       setWarmingFailed(true);
       setStatus('failed');
       setLastError('Preview shell did not start in time. Tap Retry Preview, or open the HTML from Files.');
-    }, failDelay);
+    }, Math.max(0, PREVIEW_WARMING_FAIL_MS - (Date.now() - startedAt)));
     return () => {
       clearInterval(timer);
       clearTimeout(retryTimer);
+      if (secondRemountTimer) clearTimeout(secondRemountTimer);
       clearTimeout(failTimer);
     };
     // Intentionally omit assemblyKey / currentCode — shop inject churn must not
     // reset the fail clock (that caused eternal "retrying the shell" theater).
   }, [headless, previewShellReady, turnBusy, warmingFailed]);
+
+  // Sticky fail with Files present: quiet auto-remount (~3s) up to 2×, or clear when code changes.
+  useEffect(() => {
+    if (headless || previewShellReady || !warmingFailed) return undefined;
+    const code = String(currentCode || '').trim();
+    if (!code) return undefined;
+
+    if (lastWarmingCodeRef.current && lastWarmingCodeRef.current !== code) {
+      lastWarmingCodeRef.current = code;
+      warmingAutoRemountsRef.current = 0;
+      setWarmingFailed(false);
+      warmingStartedAtRef.current = null;
+      setLastError(null);
+      setStatus('running');
+      setRemountNonce((value) => value + 1);
+      return undefined;
+    }
+    lastWarmingCodeRef.current = code;
+
+    if (!shouldAutoRemountFailedPreviewShell({
+      warmingFailed: true,
+      hasRunnablePreview: true,
+      autoRemountAttempts: warmingAutoRemountsRef.current,
+      maxAttempts: PREVIEW_SHELL_AUTO_REMOUNT_MAX,
+    })) {
+      return undefined;
+    }
+
+    const autoTimer = setTimeout(() => {
+      if (embedReadyRef.current) return;
+      warmingAutoRemountsRef.current += 1;
+      setWarmingFailed(false);
+      warmingIdleRemountsRef.current = 0;
+      warmingStartedAtRef.current = null;
+      setLastError(null);
+      setStatus('running');
+      setRemountNonce((value) => value + 1);
+    }, PREVIEW_SHELL_AUTO_REMOUNT_MS);
+    return () => clearTimeout(autoTimer);
+  }, [headless, previewShellReady, warmingFailed, currentCode]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div

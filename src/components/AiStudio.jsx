@@ -1,4 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
@@ -2162,7 +2162,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        if (lastMsg.isError) {
+        // Provider-dead / stream errors often still carry partial fences. Apply
+        // those to Files+Preview; only bare-return when there is nothing to land.
+        const errorHasExtractableCode = lastMsg.isError
+          && messageHasExtractableWorkspaceCode(lastMsg.text, vfs);
+        if (lastMsg.isError && !errorHasExtractableCode) {
           const keepWorkspace = shouldKeepWorkspaceForPrompt({
             prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
             hasWorkspace: isWorkspaceMode || canvasOpen,
@@ -2176,7 +2180,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         // Proof Control Plane already rejected this turn — do not open as success.
-        if (lastMsg.codingProof && lastMsg.codingProof.ok === false) {
+        // Exception: error turns with extractable fences still land the partial workspace.
+        if (lastMsg.codingProof && lastMsg.codingProof.ok === false && !errorHasExtractableCode) {
           return;
         }
 

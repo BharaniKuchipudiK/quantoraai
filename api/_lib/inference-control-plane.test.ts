@@ -117,6 +117,22 @@ test('open OpenRouter domain circuits still keep a last-resort executable route'
   assert.equal(routes[0].gateway, 'openrouter');
 });
 
+test('empty/unhealthy Active list still yields a Gemini last-resort when credentials exist', async () => {
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    models: [
+      { id: 'nvidia/nemotron-3-super-120b-a12b:free', available: false, lifecycle: 'offline' },
+      { id: 'gemini-flash-latest', available: false, lifecycle: 'unavailable' },
+      { id: 'deepseek/deepseek-chat', available: false, health: 'offline' },
+    ],
+  });
+  assert.ok(routes.length >= 1);
+  assert.equal(routes[0].id, 'gemini-flash-latest');
+  assert.equal(routes[0].gateway, 'gemini');
+});
+
 test('Studio stays executable whenever any inference gateway has credentials', async () => {
   const now = Date.now();
   const openStore = {
