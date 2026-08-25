@@ -33,6 +33,8 @@ import {
 } from '../lib/shop-catalog-scale.js';
 import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
+import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
+import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
   correlationHeaders,
@@ -157,10 +159,23 @@ export function useChatStream({
   sessionContext,
   conversationContext,
   updateActiveSession,
+  onCodingTurnExecute = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
   const { getLearnedBehaviors } = useModelExperienceMemory();
+
+  const recordTurnLesson = (outcomeKind, extras = {}) => {
+    rememberCodingTurnLesson(activeSessionId, {
+      kind: lessonKindFromOutcome({
+        outcomeKind,
+        shopIntakeAsk: extras.shopIntakeAsk,
+        isShopPhotoTurn: extras.isShopPhotoTurn,
+      }),
+      detail: String(extras.detail || outcomeKind || '').slice(0, 240),
+      intentKind: extras.intentKind,
+    });
+  };
 
   const cancelStream = () => {
     generationTokenRef.current = null;
@@ -218,10 +233,16 @@ export function useChatStream({
       autoMode: autoModeEarly,
       availableModels: availableModels || [],
       vfsFileCount: vfsFileCountEarly,
+      lessons: readCodingTurnLessons(activeSessionId),
     });
     const intakeAccept = turnPlan.intakeAccept || { expanded: false, catalogTarget: null, userAsked: 0 };
     if (turnPlan.mode === 'execute' || turnPlan.mode === 'interrupt') {
       text = turnPlan.messageForModel || text;
+    }
+    if (turnPlan.mode === 'execute' && turnPlan.runSkillsFirst && typeof onCodingTurnExecute === 'function') {
+      try {
+        onCodingTurnExecute(turnPlan);
+      } catch { /* desk seed is best-effort; model still runs */ }
     }
     const turnCorrelationId = createCorrelationId('studio');
     const goldenTransaction = (() => {
@@ -746,6 +767,7 @@ export function useChatStream({
           intent: turnPlan.intent,
           skillsRequired: turnPlan.skillsRequired.map((s) => s.id),
           proof: turnPlan.proof,
+          runSkillsFirst: Boolean(turnPlan.runSkillsFirst),
         },
       } : {}),
       correlationId: turnCorrelationId,
@@ -934,6 +956,11 @@ export function useChatStream({
                     : 'no healthy AI route'),
                 shopIntakeAsk,
               });
+              recordTurnLesson('provider-dead', {
+                shopIntakeAsk,
+                detail: streamedError?.message || 'provider-dead',
+                intentKind: turnPlan.intent?.kind,
+              });
               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                 ...m,
                 text: currentText && !artifactFailed
@@ -963,6 +990,11 @@ export function useChatStream({
                 kind: 'stream-ended',
                 errorMessage: 'the response stream ended unexpectedly',
                 shopIntakeAsk,
+              });
+              recordTurnLesson('stream-ended', {
+                shopIntakeAsk,
+                detail: 'stream-ended',
+                intentKind: turnPlan.intent?.kind,
               });
               updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                 ...m,
@@ -1019,6 +1051,11 @@ export function useChatStream({
               ...m,
               ...(() => {
                 const outcome = resolveCodingTurnOutcome({ kind: 'no-preview', shopIntakeAsk });
+                recordTurnLesson('no-preview', {
+                  shopIntakeAsk,
+                  detail: 'no-preview',
+                  intentKind: turnPlan.intent?.kind,
+                });
                 return {
                   text: outcome.text,
                   isError: outcome.isError,
@@ -1110,16 +1147,33 @@ export function useChatStream({
             continue;
           }
           if (isCodingRequest) {
+            const isShopPhotoTurn = Boolean(
+              shopIntakeAsk.oversize
+              || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
+            );
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
               turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
               errorMessage: error.message || 'Unable to reach the AI gateway.',
               shopIntakeAsk,
-              isShopPhotoTurn: Boolean(
-                shopIntakeAsk.oversize
-                || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
-              ),
+              isShopPhotoTurn,
             });
+            if (!stopped) {
+              recordTurnLesson(timedOut ? 'timeout' : 'provider-dead', {
+                shopIntakeAsk,
+                isShopPhotoTurn,
+                detail: error.message || (timedOut ? 'timeout' : 'provider-dead'),
+                intentKind: turnPlan.intent?.kind,
+              });
+              if (timedOut && shopIntakeAsk?.oversize && !intakeAccept.expanded) {
+                recordTurnLesson('oversize_burn', {
+                  shopIntakeAsk,
+                  isShopPhotoTurn: true,
+                  detail: 'oversize timed out without agree',
+                  intentKind: turnPlan.intent?.kind,
+                });
+              }
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: outcome.text,

@@ -32,7 +32,8 @@ test('agree start with 10 executes with proof plan and honest status', () => {
   assert.equal(plan.feasible, true);
   assert.equal(plan.skillsMissing.length, 0);
   assert.match(plan.messageForModel, /about 10 working catalog photos/i);
-  assert.match(plan.statusLabel, /about 10 working catalog photos/i);
+  assert.match(plan.statusLabel, /~10 catalog photos|about 10/i);
+  assert.equal(plan.runSkillsFirst, true);
   assert.ok(plan.proof.mustHave.some((item) => /photo/i.test(item)));
   assert.ok(plan.modelPlan?.modelId);
 });
@@ -57,4 +58,29 @@ test('non-coding advisor turns pass through without planner interrupt', () => {
   });
   assert.equal(plan.mode, 'pass');
   assert.equal(plan.isCodingTurn, false);
+});
+
+test('prior timeout_shop lesson reinforces interrupt on oversize ask', () => {
+  const plan = planCodingTurn({
+    message: FOX,
+    codingDeskOpen: true,
+    lessons: [{ kind: 'timeout_shop', at: Date.now() }],
+  });
+  assert.equal(plan.mode, 'interrupt');
+  assert.match(plan.statusLabel, /Learned from timeout_shop/i);
+  assert.equal(plan.hints.reinforceInterrupt, true);
+});
+
+test('svg_only lesson prefers deterministic shop skills on agree', () => {
+  const plan = planCodingTurn({
+    message: 'start with 10',
+    priorUserMessages: [FOX],
+    codingDeskOpen: true,
+    autoMode: true,
+    availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+    lessons: [{ kind: 'svg_only_desk', at: Date.now() }],
+  });
+  assert.equal(plan.mode, 'execute');
+  assert.equal(plan.runSkillsFirst, true);
+  assert.equal(plan.hints.preferDeterministicShopSkills, true);
 });

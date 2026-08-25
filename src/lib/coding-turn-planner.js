@@ -16,6 +16,7 @@ import {
 } from './shop-catalog-scale.js';
 import { assessPartnerInterrupt } from './studio-partner-interrupt.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-intent.js';
+import { lessonsToPlannerHints } from './coding-turn-memory.js';
 
 /** @typedef {{ id: string, label: string, available: boolean, why: string }} CodingSkill */
 
@@ -68,6 +69,8 @@ export const CODING_SKILLS = Object.freeze({
  *   proof: { mustHave: string[], how: string[] },
  *   shop: object | null,
  *   intakeAccept: object | null,
+ *   runSkillsFirst: boolean,
+ *   hints: object,
  * }} CodingTurnPlan
  */
 
@@ -168,12 +171,14 @@ export function planCodingTurn({
   autoMode = true,
   availableModels = [],
   vfsFileCount = 0,
+  lessons = [],
 } = {}) {
   const raw = String(message || '').trim();
   const prior = Array.isArray(priorUserMessages) ? priorUserMessages : [];
   const intakeAccept = expandShopIntakeAccept(raw, prior);
   const displayUserText = raw;
   const messageForModel = intakeAccept.expanded ? intakeAccept.text : raw;
+  const hints = lessonsToPlannerHints(lessons);
 
   const isCodingTurn = resolveIsCodingRequest(messageForModel, {
     codingDeskOpen: Boolean(codingDeskOpen),
@@ -196,6 +201,8 @@ export function planCodingTurn({
       proof: { mustHave: [], how: [] },
       shop: null,
       intakeAccept: intakeAccept.expanded ? intakeAccept : null,
+      runSkillsFirst: false,
+      hints,
     };
   }
 
@@ -216,12 +223,22 @@ export function planCodingTurn({
   const feasible = skillsMissing.length === 0 && !interrupt?.blockModel;
   const proof = proofForIntent(intent);
 
-  if (interrupt?.blockModel || (skillsMissing.length > 0 && intent.kind === 'shop_oversize')) {
+  // Past timeouts / SVG dumps teach us: interrupt earlier, don't burn another turn.
+  const forceInterrupt = Boolean(
+    hints.reinforceInterrupt
+    && shopAsk?.oversize
+    && !intakeAccept.expanded
+  );
+
+  if (interrupt?.blockModel || forceInterrupt || (skillsMissing.length > 0 && intent.kind === 'shop_oversize')) {
     const partner = interrupt || {
       kind: 'shop-catalog-oversize',
       reply: (
         `Hold on — this ask needs skills we do not have in one Coding Desk turn `
-        + `(${skillsMissing.map((s) => s.label).join(', ')}).\n\n`
+        + `(${skillsMissing.map((s) => s.label).join(', ') || 'unique AI mockups at scale'}).\n\n`
+        + (hints.lastLesson
+          ? `Last time this class of ask failed (${hints.lastLesson.kind}). I'm not repeating that.\n\n`
+          : '')
         + `**Proposal:** ship a working shop with about ${SHOP_INTAKE_CATALOG_SIZE} real catalog photos, `
         + `cart, and currency — then expand.\n\nAgree?`
       ),
@@ -237,7 +254,9 @@ export function planCodingTurn({
       feasible: false,
       messageForModel,
       displayUserText,
-      statusLabel: 'Waiting for your agree — not burning a model turn on a lie.',
+      statusLabel: hints.lastLesson
+        ? `Learned from ${hints.lastLesson.kind} — waiting for your agree before we act.`
+        : 'Waiting for your agree — not burning a model turn on a lie.',
       modelPlan: null,
       interrupt: {
         kind: partner.kind,
@@ -248,6 +267,8 @@ export function planCodingTurn({
       proof,
       shop: shopAsk,
       intakeAccept: intakeAccept.expanded ? intakeAccept : null,
+      runSkillsFirst: false,
+      hints,
     };
   }
 
@@ -257,18 +278,20 @@ export function planCodingTurn({
       task: 'coding',
       message: messageForModel,
       hasVFS: vfsFileCount > 0,
-      refineMode: Boolean(refineDesk),
+      refineMode: Boolean(refineDesk) || hints.escalateModel,
       availableModels: availableModels || [],
       qualityHints: {
         fileCount: vfsFileCount,
         shopImageOversize: Boolean(shopAsk?.oversize),
-        repair: Boolean(refineDesk),
+        repair: Boolean(refineDesk) || hints.escalateModel,
       },
     });
     modelPlan = {
       modelId: resolved.modelId || null,
       modelName: resolved.model?.name || resolved.modelId || null,
-      reason: resolved.reason || 'auto',
+      reason: hints.escalateModel
+        ? `${resolved.reason || 'auto'}+lesson_escalate`
+        : (resolved.reason || 'auto'),
     };
   }
 
@@ -277,8 +300,14 @@ export function planCodingTurn({
     || shopAsk.proposedCatalogSize
     || SHOP_INTAKE_CATALOG_SIZE;
 
+  const runSkillsFirst = Boolean(
+    intent.kind.startsWith('shop')
+    || intakeAccept.expanded
+    || hints.preferDeterministicShopSkills
+  );
+
   const statusLabel = intent.kind === 'shop_catalog_slice' || intakeAccept.expanded
-    ? `Building about ${catalogTarget} working catalog photos — proving Preview, not chat claims`
+    ? `Running shop skills then building ~${catalogTarget} catalog photos — proving Preview`
     : intent.kind === 'shop_build'
       ? `Building the shop for Preview (~${catalogTarget} catalog photos max)`
       : intent.kind === 'refine_desk'
@@ -300,5 +329,7 @@ export function planCodingTurn({
     proof,
     shop: shopAsk.imageAskCount || shopAsk.oversize ? shopAsk : null,
     intakeAccept: intakeAccept.expanded ? intakeAccept : null,
+    runSkillsFirst,
+    hints,
   };
 }
