@@ -203,9 +203,11 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/coding-desk-chrome-browser-gate.mjs
 
-      - name: Execute Preview ready not stuck (Start with 10)
+      - name: Execute Preview ready not stuck (Start with 10 shop act)
         id: preview_ready_gate
         continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/preview-ready-not-stuck-gate.mjs
 
       - name: Upload browser evidence

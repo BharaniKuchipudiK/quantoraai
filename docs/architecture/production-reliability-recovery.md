@@ -65,9 +65,11 @@ The existing synthetic browser suite remains valuable for deterministic UI regre
 
 The `Deployed Golden Transactions` workflow waits for the exact Vercel Preview SHA on pull requests, then runs again for a successful Production deployment event after merge. It checks out that deployed SHA and drives the deployed Studio through Vercel's automation-only protection bypass; Preview remains SSO-protected for ordinary traffic. Only `/api/auth/session` is isolated with a synthetic canary identity. `/api/chat`, route selection, provider calls, SSE parsing, VFS extraction, `/api/preview-compile`, iframe rendering, and interactions are real. It uploads correlations, timings, and screenshots for both golden transactions.
 
+Shop scorecard proof uses a separate deployed gate (`scripts/deployed-shop-preview-gate.mjs`) against the path-first `/preview/embed.html` shell: Start-with-10 catalog photos must paint (`naturalWidth > 0`) and Add to Cart must increment Bag. Full `/desk` chat remains SSO-protected (403 without bypass). See `docs/SHOP_PREVIEW_PROD_CHECKLIST.md`. Calculator/website LLM goldens stay non-blocking when flaky; the shop embed act is the shop release proof.
+
 A production fix may be declared only when:
 
 1. typecheck, frontend lint, all tests, production build, and dependency audit pass;
-2. deterministic browser gates pass;
+2. deterministic browser gates pass (including Start-with-10 shop act);
 3. the exact production commit is Vercel `READY`; and
-4. both deployed golden transactions pass against that deployment with end-to-end correlation evidence.
+4. deployed shop preview act (and ideally both calculator/website goldens) pass against that deployment with evidence.

@@ -266,14 +266,19 @@ try {
   if (!(await frameShowing('h1', 'Drive Cleaner'))) {
     throw new Error('Preview never rendered the Drive Cleaner dashboard.');
   }
-  const driveMission = page.locator('[data-quantora-mission="true"]').first();
-  await visible(driveMission, 'Mission card missing for Drive Cleaner desk.', 12_000);
-  const driveMissionText = (await driveMission.innerText()).trim();
-  if (!/Drive|cleaner/i.test(driveMissionText)) {
-    throw new Error(`Mission card did not name Drive Cleaner. Saw: ${driveMissionText}`);
+  const driveJob = page.locator('[data-quantora-desk-job="true"]').first();
+  await visible(driveJob, 'Desk job label missing for Drive Cleaner desk.', 12_000);
+  const driveJobText = (await driveJob.innerText()).trim();
+  if (!/Drive|cleaner/i.test(driveJobText)) {
+    throw new Error(`Desk job did not name Drive Cleaner. Saw: ${driveJobText}`);
   }
-  if (/newton/i.test(driveMissionText)) {
-    throw new Error(`Mission card showed Study Newton on a Drive Cleaner desk. Saw: ${driveMissionText}`);
+  if (/newton/i.test(driveJobText)) {
+    throw new Error(`Desk job showed Study Newton on a Drive Cleaner desk. Saw: ${driveJobText}`);
+  }
+  // Idle Coding Desk must not keep sticky "Building:" mission chrome above chat.
+  if (await page.locator('[data-quantora-mission="true"]').count()) {
+    const card = (await page.locator('[data-quantora-mission="true"]').first().innerText()).trim();
+    throw new Error(`Sticky mission chrome still present on idle Drive Cleaner desk: ${card}`);
   }
   await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Drive Cleaner desk has no Preview checks panel.', 15_000);
   const driveRows = await probeRows();
