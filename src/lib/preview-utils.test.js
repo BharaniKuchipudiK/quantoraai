@@ -241,3 +241,16 @@ test('unstyled assembled HTML is degraded, not clean', () => {
   const html = '<!DOCTYPE html><html><body><button>7</button></body></html>';
   assert.equal(decidePreviewTrustStatus({ assembledHtml: html }), 'degraded');
 });
+
+test('previewVerdict never calls a sub-bar build "verified"', async () => {
+  const { previewVerdict } = await import('./preview-utils.js');
+  // The reported contradiction: "Verified — runs clean · 65/100" (bar is 80).
+  assert.equal(previewVerdict({ qualityReport: { score: 65, passed: false } }), 'needs-work');
+  assert.equal(previewVerdict({ qualityReport: { score: 45, passed: false }, attempt: 2 }), 'needs-work');
+  // Passing builds still read as verified.
+  assert.equal(previewVerdict({ qualityReport: { score: 92, passed: true } }), 'verified');
+  assert.equal(previewVerdict({ qualityReport: { score: 92, passed: true }, attempt: 1 }), 'verified-autofixed');
+  // Ran without errors but no score yet — claim only what is known.
+  assert.equal(previewVerdict({ qualityReport: null }), 'ran-clean');
+  assert.equal(previewVerdict(), 'ran-clean');
+});
