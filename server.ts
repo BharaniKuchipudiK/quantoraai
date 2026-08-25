@@ -16,6 +16,7 @@ import {
   shouldPreferTravelConversationProvider,
 } from "./api/_lib/travel-model-routing.js";
 import { readByokCredentials } from "./api/_lib/byok-credentials.js";
+import { resolveOpenRouterEnvKey } from "./api/_lib/openrouter-key.js";
 import deploy from "./api/deploy.js";
 import domains from "./api/domains.js";
 import enhance from "./api/enhance.js";
@@ -111,7 +112,7 @@ async function startServer() {
     })) {
       const signedIn = Boolean(getSessionUser(req));
       const byok = readByokCredentials(req);
-      let openRouterAvailable = Boolean(byok.openRouter || (signedIn && process.env.OPENROUTER_API_KEY));
+      let openRouterAvailable = Boolean(byok.openRouter || (signedIn && resolveOpenRouterEnvKey()));
       if (!openRouterAvailable && signedIn) {
         try {
           openRouterAvailable = Boolean(await fetchApiGatewayKey("OPENROUTER"));

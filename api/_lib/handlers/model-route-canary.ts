@@ -1,5 +1,6 @@
 import { clientIp, isRateLimited } from '../rate-limit.js';
 import { isGoldenCanaryRequest } from '../transaction-trace.js';
+import { resolveOpenRouterEnvKey } from '../openrouter-key.js';
 
 const CANARY_MODEL = 'deepseek/deepseek-chat';
 
@@ -10,7 +11,7 @@ export default async function handler(req: any, res: any) {
     return res.status(429).json({ ok: false, reason: 'rate_limited' });
   }
 
-  const key = process.env.OPENROUTER_API_KEY;
+  const key = resolveOpenRouterEnvKey();
   if (!key) return res.status(503).json({ ok: false, reason: 'missing_key' });
 
   const controller = new AbortController();
