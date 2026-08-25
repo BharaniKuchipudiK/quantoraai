@@ -306,7 +306,7 @@ const WORKSPACES = [
     id: 'study',
     tag: 'Learning',
     title: 'Study Tutor',
-    body: 'Explanation, practice, and review — in the same thread as the work you are building.',
+    body: 'The lesson stays beside the work you are building. Explanation, practice, review — one thread.',
     color: ORANGE,
     icon: Lightbulb,
     mock: 'study',
@@ -315,7 +315,7 @@ const WORKSPACES = [
     id: 'research',
     tag: 'Research',
     title: 'Research Analyst',
-    body: 'Frame the question, compare sources, and move toward a defensible conclusion.',
+    body: 'The question, the sources, the conclusion — held in the same place you left them.',
     color: ORANGE,
     icon: BookOpen,
     mock: 'research',
@@ -324,7 +324,7 @@ const WORKSPACES = [
     id: 'travel',
     tag: 'Travel',
     title: 'Travel Advisor',
-    body: 'Destination, dates, constraints — into an itinerary you can follow.',
+    body: 'Destination, dates, the itinerary you can still open next week.',
     color: ORANGE,
     icon: Globe,
     mock: 'travel',
@@ -333,7 +333,7 @@ const WORKSPACES = [
     id: 'finance',
     tag: 'Finance',
     title: 'Finance Advisor',
-    body: 'Cash flow, trade-offs, and a recommendation you can act on.',
+    body: 'The numbers, the trade-off, the decision you have not yet taken.',
     color: ORANGE,
     icon: PieChart,
     mock: 'finance',
@@ -341,18 +341,18 @@ const WORKSPACES = [
 ];
 
 const DESK_POINTS = [
-  'Live preview of the running app',
-  'Multi-file editor',
-  'Integrated terminal and git',
-  'Agent console reads the files on the desk',
-  'Detects the failing line, writes a patch',
-  'Re-runs tests before it calls the work done',
+  'A live preview of what you built',
+  'The files, open beside it',
+  'Terminal and git, on the same desk',
+  'The agent reads those files — not a paste',
+  'It finds the failing line and writes the patch',
+  'Tests run before the work is called done',
 ];
 
 const CAPABILITIES = [
-  { icon: Code2, title: 'A real workspace', body: 'Preview, editor, terminal, and git sit beside the conversation. The output is a running app, not a code dump.' },
-  { icon: RefreshCw, title: 'Self-healing builds', body: 'When a run fails, the console locates the fault, applies a patch, and verifies it. You stay in the prompt.' },
-  { icon: Sparkles, title: 'Model selection, handled', body: 'Each turn is routed to a model suited to the task. You describe the outcome. Quantora chooses the path.' },
+  { icon: Code2, title: 'A desk you keep', body: 'Preview, editor, terminal, and git sit with the conversation. What remains is a running app — not a transcript.' },
+  { icon: RefreshCw, title: 'The fault, repaired in place', body: 'When a run fails, the console finds the line, writes the patch, and proves it. You remain in the prompt.' },
+  { icon: Sparkles, title: 'You name the outcome', body: 'Each turn is sent where it should go. You stay with the work. Quantora finds the path.' },
 ];
 
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, themeMode, setThemeMode, isLight: isLightProp }) {
@@ -361,9 +361,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const promptRef = useRef(null);
 
   const heroExamples = [
-    'A study planner from my syllabus…',
-    'A metrics dashboard for my team…',
-    'Flashcards from lecture notes…',
+    'The study planner I started last night…',
+    'The dashboard I left unfinished…',
+    'Flashcards from last night’s notes…',
     'A checkout flow with tax…',
   ];
 
@@ -455,10 +455,10 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               Sovereign vibe coding
             </div>
             <h1 className="landing-hero__title" style={{ color: textColor }}>
-              From idea to <span className="landing-accent">outcome.</span>
+              It already knows<br />your <span className="landing-accent">world.</span>
             </h1>
             <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-              Describe what you want. Quantora writes the files, heals the faults, and leaves you a running preview — not a chat you have to babysit.
+              Close one screen. Open another. The files, the preview, and the last prompt are waiting. You do not begin again.
             </p>
 
             <div
@@ -495,9 +495,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <Reveal>
             <div className="landing-section__header is-center">
               <span className="landing-section__eyebrow">AI Studio</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>The desk where the work actually runs.</h2>
+              <h2 className="landing-section__title" style={{ color: textColor }}>The desk does not vanish when you go.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                The build lands in a real workspace. The console reads those files, flags the fault, and patches it in place.
+                The build lands in a workspace you can leave and return to. The console reads those files, finds the fault, and writes the repair in place.
               </p>
             </div>
           </Reveal>
@@ -508,7 +508,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>Built in</span>
                 <h3 style={{ color: textColor, margin: '8px 0 6px', fontSize: '1.15rem' }}>The IDE console</h3>
                 <p style={{ color: subtextColor, margin: '0 0 16px', fontSize: '0.88rem', lineHeight: 1.55 }}>
-                  Not a chat log pasted into an editor. Terminal, preview, and repair run against the files on the desk.
+                  Not a transcript poured into an editor. Terminal, preview, and repair run against the files still on the desk.
                 </p>
                 <ul className="desk-points__list">
                   {DESK_POINTS.map((point) => (
@@ -530,9 +530,9 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <Reveal>
             <div className="landing-section__header is-center">
               <span className="landing-section__eyebrow">Workspaces</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>One conversation. The right workspace.</h2>
+              <h2 className="landing-section__title" style={{ color: textColor }}>One world. Several rooms.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Build on Coding Desk, then stay in-thread for study, research, travel, or finance — without starting over.
+                Study, research, travel, finance — the same assistant, the same thread. You do not leave the room to change the subject.
               </p>
             </div>
           </Reveal>
@@ -591,7 +591,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               <span className="landing-section__eyebrow">Dream to Action</span>
               <h2 className="landing-section__title" style={{ color: textColor }}>The prompt does not die in chat.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Plan, preview, and ship on one board. The studio writes. The canvas keeps the thread until something runs.
+                It becomes a board you can walk around. The studio writes. The canvas holds the thread until something runs.
               </p>
             </div>
           </Reveal>
@@ -621,7 +621,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               <span className="landing-section__eyebrow">Quantum</span>
               <h2 className="landing-section__title" style={{ color: textColor }}>A lab for circuits, not a footnote.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Same prompt box. Pointed at a circuit you can inspect and measure.
+                The same prompt. Aimed at a circuit you can see, and measure.
               </p>
             </div>
           </Reveal>
@@ -632,7 +632,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>Playground</span>
                 <h3 style={{ color: textColor, margin: '8px 0 6px', fontSize: '1.15rem' }}>Build, then look</h3>
                 <p style={{ color: subtextColor, margin: '0 0 16px', fontSize: '0.88rem', lineHeight: 1.55 }}>
-                  Gates on a canvas. A readout you can trust. The same prompt box, pointed at quantum.
+                  Gates on a canvas. A readout you can trust. The experiment stays next to the code.
                 </p>
                 <ul className="desk-points__list">
                   {['Compose a circuit from a sentence', 'See superposition before you measure', 'Keep the experiment next to the code'].map((point) => (
@@ -653,8 +653,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         <div className="landing-container">
           <Reveal>
             <div className="landing-final-cta__inner">
-              <h2 style={{ color: textColor }}>Start with a prompt.</h2>
-              <p style={{ color: subtextColor }}>Vibe coding with a desk you keep — files, preview, and the patch.</p>
+              <h2 style={{ color: textColor }}>The desk is waiting.</h2>
+              <p style={{ color: subtextColor }}>Your world does not reset when you change screens.</p>
               <TryCta large />
             </div>
           </Reveal>
