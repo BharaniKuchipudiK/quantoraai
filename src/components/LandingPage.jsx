@@ -398,7 +398,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               {isLight ? <Moon size={18} color={ORANGE} /> : <Sun size={18} color={ORANGE} />}
             </button>
             {user ? (
-              <button type="button" onClick={onLaunchStudio} className="landing-cta landing-cta--primary">
+              <button
+                type="button"
+                data-quantora-enter-studio="true"
+                onClick={onLaunchStudio}
+                className="landing-cta landing-cta--primary"
+              >
                 Try Quantora <ArrowRight size={16} />
               </button>
             ) : (
