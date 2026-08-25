@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { diffVfsReview, lineDiffStats, unifiedFileDiff, unifiedTreeDiff } from './studio-file-review.js';
+import { diffVfsReview, lineDiffStats, mergeDeskReview, unifiedFileDiff, unifiedTreeDiff } from './studio-file-review.js';
 
 test('identical files produce no review rows', () => {
   const vfs = { 'src/App.jsx': { content: 'export default function App(){return 1}' } };
@@ -109,4 +109,18 @@ test('review rows carry the real hunk, not only +/− counts', () => {
   assert.ok(lines.includes('-      <h1>Mission Control is alive</h1>'));
   assert.ok(lines.includes('+      <h1>Mission Control is patched</h1>'));
   assert.equal(lines.some((line) => line.includes('Telemetry is nominal')), false);
+});
+
+test('mergeDeskReview keeps prior Review on empty re-apply and seeds from {} when empty', () => {
+  const after = { 'src/App.jsx': { content: 'export default function App(){return 1}' } };
+  const seeded = mergeDeskReview([], {}, after);
+  assert.equal(seeded.length, 1);
+  assert.equal(seeded[0].path, 'src/App.jsx');
+
+  const kept = mergeDeskReview(seeded, after, after);
+  assert.equal(kept, seeded);
+
+  const forced = mergeDeskReview([], after, after);
+  assert.equal(forced.length, 1);
+  assert.equal(forced[0].path, 'src/App.jsx');
 });
