@@ -5,8 +5,6 @@ import {
   getPreviewEmbedPathUrl,
   canUseBlobPreviewEmbed,
   isPreviewEmbedFrameSrc,
-  isHtmlPreviewDocument,
-  buildPreviewSrcDoc,
   injectPreviewHarness,
   prepareCodeForPreview,
   decidePreviewTrustStatus,
@@ -169,11 +167,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   useEffect(() => {
     setEmbedReady(false);
     embedReadyRef.current = false;
-    // HTML documents paint via srcDoc (durable path). Skip embed shell entirely.
-    if (!wcUrl && isHtmlPreviewDocument(currentCode)) {
-      setEmbedSrc('');
-      return undefined;
-    }
     // Path-first under COEP require-corp: sandboxed blob: iframes cannot send
     // CORP headers, so Chrome never loads them and embed-ready never fires.
     // /preview/embed.html is served with Cross-Origin-Resource-Policy: cross-origin.
@@ -186,7 +179,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       return getPreviewEmbedPathUrl(bust);
     });
     return () => revokePreviewEmbedObjectUrl(undefined);
-  }, [attempt, remountNonce, currentCode, wcUrl]);
+  }, [attempt, remountNonce]);
 
   useEffect(() => {
     if (!embedSrc || embedReady) return undefined;
@@ -229,17 +222,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   }, []);
 
-  /** Shell ready only if the iframe is still on /preview/embed.html (or blob/srcdoc). */
+  /** Shell ready only if the iframe is still on /preview/embed.html (or blob). */
   const handleEmbedFrameLoad = useCallback(() => {
-    if (isHtmlPreviewDocument(currentCodeRef.current)) {
-      if (!embedReadyRef.current) {
-        embedReadyRef.current = true;
-        setEmbedReady(true);
-      }
-      setWarmingFailed(false);
-      setStatus((prev) => (prev === 'failed' ? 'running' : prev));
-      return;
-    }
     const src = iframeRef.current?.src || embedSrc || '';
     if (!isPreviewEmbedFrameSrc(src)) {
       // Navigated onto the SPA → X-Frame-Options: DENY → "quantoraai.app refused to connect".
@@ -277,7 +261,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   // If generated HTML escapes onto the SPA, XFO DENY shows "refused to connect"
   // and onLoad may never fire — poll and remount the shell.
   useEffect(() => {
-    if (headless || wcUrl || !embedReady || isHtmlPreviewDocument(currentCode)) return undefined;
+    if (headless || wcUrl || !embedReady) return undefined;
     const tick = () => {
       const frame = iframeRef.current;
       const src = frame?.src || '';
@@ -291,7 +275,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     const id = setInterval(tick, 400);
     tick();
     return () => clearInterval(id);
-  }, [embedReady, headless, wcUrl, currentCode]);
+  }, [embedReady, headless, wcUrl]);
 
   useEffect(() => {
     setCurrentCode(code || '');
@@ -323,7 +307,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   }, [code, assemblyKey]);
 
   useEffect(() => {
-    if (!currentCode || !embedReady || isHtmlPreviewDocument(currentCode)) return;
+    if (!currentCode || !embedReady) return;
     const assembly = String(assemblyKey || '');
     const sameAssembly = lastAssemblyKeyRef.current === assembly
       && verifiedCodeRef.current === currentCodeRef.current;
@@ -813,35 +797,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     [currentCode, vfs],
   );
   const projectRuntimeActive = Boolean(projectRuntimeVfs);
-  // HTML shops/pages use srcDoc. Vite/React project VFS keeps ProjectRuntimePreview
-  // even when pickPreviewEntry returns index.html (a doctype document).
-  const useHtmlSrcDoc = Boolean(
-    !wcUrl
-    && !projectRuntimeActive
-    && isHtmlPreviewDocument(currentCode),
-  );
-  const previewSrcDoc = useMemo(() => {
-    if (!useHtmlSrcDoc || !currentCode) return '';
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(currentCode, vfs), origin);
-    if (looksLikeShopDesk({ html: preparedHtml, vfs, job: jobCard }) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
-      preparedHtml = injectShopCommerceUi(preparedHtml).html;
-    }
-    return buildPreviewSrcDoc(preparedHtml);
-  }, [useHtmlSrcDoc, currentCode, vfs, jobCard, remountNonce, attempt]);
-
   const goldenRuntimeContractError = goldenTransaction && Object.keys(vfs || {}).length > 0 && !projectRuntimeActive
     ? 'Generated files did not satisfy the React/VFS project runtime contract.'
     : null;
-  const previewShellReady = projectRuntimeActive || Boolean(wcUrl) || embedReady || Boolean(useHtmlSrcDoc && previewSrcDoc);
-
-  useEffect(() => {
-    if (!useHtmlSrcDoc || !previewSrcDoc) return;
-    embedReadyRef.current = true;
-    setEmbedReady(true);
-    setWarmingFailed(false);
-    setStatus((prev) => (prev === 'failed' ? 'running' : prev));
-  }, [useHtmlSrcDoc, previewSrcDoc]);
+  const previewShellReady = projectRuntimeActive || Boolean(wcUrl) || embedReady;
 
   // Never say “Verifying — running” while the shell overlay still says getting ready.
   const statusUI = {
@@ -1016,31 +975,25 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       goldenTransaction={goldenTransaction}
       onDeskProbe={publishLiveDeskProbe}
     />
-  ) : ((currentCode && (previewSrcDoc || embedSrc)) || wcUrl ? (
+  ) : ((currentCode && embedSrc) || wcUrl ? (
     <div style={{ width: '100%', height: '100%', minHeight: headless ? '480px' : viewportStyles[viewport].height, position: 'relative' }}>
       {previewWarmingOverlay}
       <iframe
         ref={iframeRef}
-        key={useHtmlSrcDoc
-          ? `srcdoc-${attempt}-${remountNonce}-${previewSrcDoc.length}`
-          : `${attempt}-${remountNonce}-${embedSrc}`}
+        key={`${attempt}-${remountNonce}-${embedSrc}`}
         title="Live Preview"
-        src={wcUrl || (useHtmlSrcDoc ? undefined : embedSrc)}
-        srcDoc={useHtmlSrcDoc ? previewSrcDoc : undefined}
+        src={wcUrl || embedSrc}
         onLoad={handleEmbedFrameLoad}
         onError={handleEmbedFrameError}
         sandbox={buildPreviewSandbox({ trustedRuntimeUrl: wcUrl })}
-        data-quantora-preview-mode={useHtmlSrcDoc ? 'srcdoc' : (wcUrl ? 'webcontainer' : 'embed')}
         style={{
           width: '100%',
           height: '100%',
           minHeight: headless ? '480px' : viewportStyles[viewport].height,
           border: 'none',
           background: previewShellReady ? '#ffffff' : (isLight ? '#f8fafc' : '#0f172a'),
-          // srcDoc HTML must stay visible for Playwright/live probes — do not hide
-          // behind the warming shell the way the embed path does before embed-ready.
-          visibility: (previewShellReady || useHtmlSrcDoc) ? 'visible' : 'hidden',
-          pointerEvents: (previewShellReady || useHtmlSrcDoc) ? 'auto' : 'none',
+          visibility: previewShellReady ? 'visible' : 'hidden',
+          pointerEvents: previewShellReady ? 'auto' : 'none',
         }}
       />
     </div>
