@@ -2,6 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { stripDataUris } from "./model-payload.js";
 import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
 import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
+// Commerce intent lives in ONE place — see src/lib/commerce-intent.js for why.
+import { briefWantsOnlineSelling, briefWantsProductCatalog } from "../../src/lib/commerce-intent.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -47,43 +49,6 @@ function has(re: RegExp, s: string): boolean {
 
 function hasRealStyling(src: string): boolean {
   return assembledPreviewHasUsableCss(src);
-}
-
-/*
- * "shop", "store" and "product" are usually VENUE or generic nouns, not a
- * request to sell online: "a coffee shop", "a book store", "our product page".
- * Matching them as e-commerce attached a CRITICAL product-photo check, and a
- * failed critical check caps the score at 45 — below the 80 pass bar — so an
- * ordinary landing page became permanently unpassable. The desk then auto-healed
- * against that impossible bar and injected a phantom catalog ("Ember Oak Shop 9",
- * "Product 10") into a coffee-shop page nobody asked to sell anything on.
- *
- * Require an explicit selling signal instead of a bare noun. Note that
- * "<venue> shop website" ("barber shop website") is still a venue page, so a
- * bare "shop site/website" is deliberately NOT a selling signal either. A
- * genuine shop turn carries a job card whose mustWork items name "Add to Cart"
- * and "catalog photos", which match on their own.
- */
-const SELLS_ONLINE_RE =
-  /\b(e-?commerce|online\s+(?:shop|store|boutique)|web\s?shop|storefront|shopping\s+(?:cart|bag)|add[\s-]?to[\s-]?(?:cart|bag)|check\s?out|payment\s+gateway|sell(?:s|ing)?|cart|boutique|catalog(?:ue)?|merchandise)\b/i;
-
-/*
- * Only a genuine merchandise/catalog brief may impose the CRITICAL photo bar.
- * "sell a subscription with a checkout" is commerce, but it has no catalog of
- * product shots to prove, so a missing image must not cap its score.
- */
-const MERCHANDISE_BRIEF_RE =
-  /\b(boutique|catalog(?:ue)?|merchandise|storefront|e-?commerce|online\s+(?:shop|store)|product\s+(?:photos?|images?|shots?))\b/i;
-
-/** True when the brief actually asks to sell online, not merely names a venue. */
-export function briefWantsOnlineSelling(brief = ""): boolean {
-  return SELLS_ONLINE_RE.test(String(brief || ""));
-}
-
-/** True when the brief asks for a product catalog whose photos must be real. */
-export function briefWantsProductCatalog(brief = ""): boolean {
-  const b = String(brief || "");
-  return briefWantsOnlineSelling(b) && MERCHANDISE_BRIEF_RE.test(b);
 }
 
 /*
