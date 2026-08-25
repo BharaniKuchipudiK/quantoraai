@@ -812,11 +812,14 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     () => (isProjectRuntimeVfs(vfs) ? vfs : createInlineReactRuntimeVfs(currentCode, vfs)),
     [currentCode, vfs],
   );
-  // Durable contract: HTML on the desk paints via srcDoc. Never let a leftover
-  // React project VFS steal Preview and leave shops on "refused to connect".
-  const htmlDocActive = Boolean(!wcUrl && isHtmlPreviewDocument(currentCode));
-  const projectRuntimeActive = Boolean(projectRuntimeVfs) && !htmlDocActive;
-  const useHtmlSrcDoc = htmlDocActive;
+  const projectRuntimeActive = Boolean(projectRuntimeVfs);
+  // HTML shops/pages use srcDoc. Vite/React project VFS keeps ProjectRuntimePreview
+  // even when pickPreviewEntry returns index.html (a doctype document).
+  const useHtmlSrcDoc = Boolean(
+    !wcUrl
+    && !projectRuntimeActive
+    && isHtmlPreviewDocument(currentCode),
+  );
   const previewSrcDoc = useMemo(() => {
     if (!useHtmlSrcDoc || !currentCode) return '';
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -1034,8 +1037,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           minHeight: headless ? '480px' : viewportStyles[viewport].height,
           border: 'none',
           background: previewShellReady ? '#ffffff' : (isLight ? '#f8fafc' : '#0f172a'),
-          visibility: previewShellReady ? 'visible' : 'hidden',
-          pointerEvents: previewShellReady ? 'auto' : 'none',
+          // srcDoc HTML must stay visible for Playwright/live probes — do not hide
+          // behind the warming shell the way the embed path does before embed-ready.
+          visibility: (previewShellReady || useHtmlSrcDoc) ? 'visible' : 'hidden',
+          pointerEvents: (previewShellReady || useHtmlSrcDoc) ? 'auto' : 'none',
         }}
       />
     </div>
