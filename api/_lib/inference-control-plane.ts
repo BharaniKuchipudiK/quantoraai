@@ -48,9 +48,16 @@ export type InferencePlanInput = {
 const GEMINI_STABLE = 'gemini-flash-latest';
 const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
 const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
-const MAX_INFERENCE_ATTEMPTS = 2;
+/*
+ * How many models one turn may try. Two meant a free-quota 429 plus one
+ * unlucky fallback ended the turn with "the model is busy" while other healthy
+ * routes sat unused. The wall-clock budget, the circuit breaker and the
+ * failed-quota-domain skip are what prevent a retry storm — not this count.
+ */
+const MAX_INFERENCE_ATTEMPTS = 4;
 const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
-const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
+/* An attempt below this has no realistic chance of producing a build. */
+const MIN_VIABLE_ATTEMPT_MS = 20_000;
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
 
 const MODEL_ID_ALIASES: Record<string, string> = {
@@ -74,7 +81,14 @@ export function canonicalizeModelId(modelId: string): string {
 export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemaining: number) {
   const remaining = Math.max(0, Math.floor(totalRemainingMs));
   if (attemptsRemaining <= 1) return remaining;
-  return Math.max(0, Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - RESERVED_INDEPENDENT_FALLBACK_MS));
+  /*
+   * Share the clock across EVERY attempt still planned. The previous formula
+   * reserved for exactly one fallback, which was fine at two attempts but
+   * starved the middle rungs of a longer ladder to zero ms — the turn would
+   * report four tries while two never had a chance to produce anything.
+   */
+  const share = Math.floor(remaining / attemptsRemaining);
+  return Math.max(0, Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining, Math.max(share, MIN_VIABLE_ATTEMPT_MS)));
 }
 
 function safeLabel(value: string, fallback: string) {

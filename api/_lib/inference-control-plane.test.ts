@@ -2,10 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalizeModelId, inferenceAttemptBudgetMs, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
 
-test('build attempt budget reserves time for an independent fallback', () => {
-  assert.equal(inferenceAttemptBudgetMs(120_000, 2), 65_000);
+test('every planned attempt gets a viable share of the turn budget', () => {
+  // Even split, so no rung of the ladder is starved. The old formula reserved
+  // for exactly one fallback, which gave the third attempt of four 0 ms - the
+  // turn would report four tries while two never had a chance to produce
+  // anything.
+  assert.equal(inferenceAttemptBudgetMs(120_000, 2), 60_000);
+  assert.equal(inferenceAttemptBudgetMs(120_000, 4), 30_000);
   assert.equal(inferenceAttemptBudgetMs(90_000, 2), 45_000);
   assert.equal(inferenceAttemptBudgetMs(55_000, 1), 55_000);
+});
+
+test('a longer ladder never starves a rung and never overruns the turn', () => {
+  for (const planned of [2, 3, 4]) {
+    let remaining = 120_000;
+    for (let left = planned; left >= 1; left -= 1) {
+      const slice = inferenceAttemptBudgetMs(remaining, left);
+      assert.ok(slice >= 20_000, `attempt with ${left} left got only ${slice}ms`);
+      remaining -= slice;
+    }
+    assert.ok(remaining >= 0, `ladder of ${planned} overran the turn budget`);
+  }
 });
 
 test('selected model remains primary while failover prefers an independent gateway and quota domain', async () => {
@@ -22,7 +39,9 @@ test('selected model remains primary while failover prefers an independent gatew
   assert.notEqual(routes[1].failureDomain, routes[0].failureDomain);
   assert.equal(routes[0].costClass, 'free');
   assert.equal(routes[1].quotaDomain, 'gemini:server');
-  assert.equal(routes.length, 2);
+  // More rungs than before, but the invariant that matters is unchanged: the
+  // first fallback leaves the failed gateway and quota domain behind.
+  assert.ok(routes.length >= 2 && routes.length <= 4, `planned ${routes.length} routes`);
 });
 
 test('travel tools stay on the only capability-qualified gateway', async () => {
