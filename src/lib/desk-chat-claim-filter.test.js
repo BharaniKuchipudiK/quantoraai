@@ -69,8 +69,23 @@ test('a job card without a live check still blocks the add-item lie', () => {
   assert.equal(filtered, 'Preview has not confirmed that an item can be added yet.');
 });
 
-test('no packet means the reply is left alone', () => {
-  assert.equal(filterDeskChatClaims('Add to Cart is ready.', null, 'studio'), 'Add to Cart is ready.');
+test('null packet denies done-claims instead of passing them through', () => {
+  const original = 'Add to Cart is ready.';
+  const filtered = filterDeskChatClaims(original, null, 'studio');
+  assert.equal(filtered, 'Preview has not confirmed Add to Cart yet.');
+  assert.equal(deskChatClaimWasFiltered(original, filtered), true);
+});
+
+test('warm Preview cannot leave ready/working claims intact', () => {
+  const original = 'Add to Cart is ready and working on Preview.';
+  const packet = {
+    checks: [{ id: 'cart', ok: true, state: 'ok' }, { id: 'cart-click', ok: true, state: 'ok' }],
+    facts: { hasCart: true, bagIncremented: true },
+  };
+  assert.equal(filterDeskChatClaims(original, packet, 'studio'), original);
+  const filtered = filterDeskChatClaims(original, packet, 'studio', { previewWarming: true });
+  assert.equal(filtered, 'Preview has not confirmed Add to Cart yet.');
+  assert.equal(/ready|working/i.test(filtered), false);
 });
 
 test('a cart lie is rewritten from live facts even without a named check', () => {

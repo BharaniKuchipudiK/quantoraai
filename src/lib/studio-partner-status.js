@@ -3,7 +3,7 @@
  * This is the Cursor-style "human progress" line — not a chatbot spinner.
  */
 
-function previewShellIsWarming(previewRunStatus = '') {
+export function previewShellIsWarming(previewRunStatus = '') {
   const value = typeof previewRunStatus === 'string'
     ? previewRunStatus
     : (previewRunStatus && typeof previewRunStatus === 'object' && previewRunStatus.kind === 'quality'

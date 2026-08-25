@@ -176,7 +176,23 @@ test('live Preview cart and currency win over a failed HTML regex check', () => 
   assert.equal(chips.some((chip) => chip.id === 'gap-photos'), false);
 });
 
-test('an older live probe without photo counts does not wipe HTML photo facts', () => {
+test('photos stay unverified without live decode even when HTML has photos', () => {
+  const packet = buildDeskContextPacket({
+    html: shopHtml,
+    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
+    vfs: {
+      'index.html': { content: shopHtml, language: 'html' },
+      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
+    },
+  });
+  assert.equal(packet.facts.hasPhotos, true);
+  const photos = packet.checks.find((check) => check.id === 'photos');
+  assert.equal(photos.ok, false);
+  assert.equal(photos.state, 'unverified');
+  assert.equal(photos.sourceOk, true);
+});
+
+test('a partial live probe without photo counts cannot keep photos green from source alone', () => {
   const packet = buildDeskContextPacket({
     html: shopHtml,
     job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
@@ -188,7 +204,10 @@ test('an older live probe without photo counts does not wipe HTML photo facts', 
   assert.equal(packet.facts.hasPhotos, true);
   const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: true });
   assert.equal(merged.facts.hasPhotos, true);
-  assert.ok(merged.checks.some((check) => check.id === 'photos' && check.ok === true));
+  const photos = merged.checks.find((check) => check.id === 'photos');
+  assert.equal(photos.ok, false);
+  assert.equal(photos.state, 'unverified');
+  assert.equal(photos.sourceOk, true);
 });
 
 test('catalog and cart-click only pass from the live page', () => {

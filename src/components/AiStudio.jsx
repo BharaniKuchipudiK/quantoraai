@@ -13,7 +13,7 @@ import PlainCodeBlock from './PlainCodeBlock.jsx';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
-import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
 import { assessShopBuildAsk, shopPhotoTurnFailureCopy } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
@@ -1387,6 +1387,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (!previewRunCode) setLiveDeskProbe(null);
   }, [previewRunCode]);
 
+  // Same shell gate as partner strip: warming/running/healing = not past embedReady/verify.
+  const previewWarming = previewShellIsWarming(previewRunStatus);
+  const claimFilterOpts = { previewWarming };
+
   const renderedChatFeed = React.useMemo(() => {
     return messages.filter(msg => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text)) : null;
@@ -1400,7 +1404,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       
       const displayText = getChatDisplayText(msg.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '');
       let cleanText = msg.sender === 'ai'
-        ? filterDeskChatClaims(displayText, deskPacket, studioDomain)
+        ? filterDeskChatClaims(displayText, deskPacket, studioDomain, claimFilterOpts)
         : displayText;
       const claimFiltered = msg.sender === 'ai' && deskChatClaimWasFiltered(displayText, cleanText);
       let modalData = null;
@@ -1486,7 +1490,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 }
                               }}
                             >
-                              {filterDeskChatClaims(getChatDisplayText(msg.modelA.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || ''), deskPacket, studioDomain)}
+                              {filterDeskChatClaims(getChatDisplayText(msg.modelA.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || ''), deskPacket, studioDomain, claimFilterOpts)}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -1560,7 +1564,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                                 }
                               }}
                             >
-                              {filterDeskChatClaims(getChatDisplayText(msg.modelB.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || ''), deskPacket, studioDomain)}
+                              {filterDeskChatClaims(getChatDisplayText(msg.modelB.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || ''), deskPacket, studioDomain, claimFilterOpts)}
                             </ReactMarkdown>
                           </div>
                         </div>
@@ -2061,7 +2065,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {
