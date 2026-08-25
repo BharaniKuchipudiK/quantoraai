@@ -1090,7 +1090,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
     if (!verdict.vfs || (!verdict.ok && !verdict.evidence?.hasHtml && !Object.keys(verdict.vfs).length)) return;
     const nextVfs = verdict.vfs;
-    setDeskReview(diffVfsReview(vfs, nextVfs));
+    const review = diffVfsReview(vfs, nextVfs);
+    if (review.length) setDeskReview(review);
     setVfs(nextVfs);
     const entry = pickPreviewEntry(nextVfs);
     if (entry) setWorkspaceCode(entry);
@@ -1101,7 +1102,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const onCodingTurnProved = useCallback((verdict) => {
     if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
-    setDeskReview(diffVfsReview(vfs, verdict.vfs));
+    const review = diffVfsReview(vfs, verdict.vfs);
+    if (review.length) setDeskReview(review);
     setVfs(verdict.vfs);
     const entry = pickPreviewEntry(verdict.vfs);
     if (entry) {
@@ -2228,7 +2230,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (Object.keys(parsedVfs).length > 0) {
            const shopVfs = proved.vfs;
-           setDeskReview(diffVfsReview(vfs, shopVfs));
+           const review = diffVfsReview(vfs, shopVfs);
+           // Do not wipe a real Review when proof re-applies the same VFS (common after
+           // onCodingTurnProved already landed the files).
+           if (review.length) setDeskReview(review);
            setVfs(shopVfs);
            setDeskJob((prev) => {
              const base = assembled.job || buildStudioJobCard({
