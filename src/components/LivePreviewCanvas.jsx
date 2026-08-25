@@ -258,6 +258,25 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const pushHtmlToEmbedRef = useRef(pushHtmlToEmbed);
   pushHtmlToEmbedRef.current = pushHtmlToEmbed;
 
+  // If generated HTML escapes onto the SPA, XFO DENY shows "refused to connect"
+  // and onLoad may never fire — poll and remount the shell.
+  useEffect(() => {
+    if (headless || wcUrl || !embedReady) return undefined;
+    const tick = () => {
+      const frame = iframeRef.current;
+      const src = frame?.src || '';
+      if (!src || isPreviewEmbedFrameSrc(src)) return;
+      embedReadyRef.current = false;
+      setEmbedReady(false);
+      setStatus('running');
+      setWarmingFailed(false);
+      setRemountNonce((value) => value + 1);
+    };
+    const id = setInterval(tick, 400);
+    tick();
+    return () => clearInterval(id);
+  }, [embedReady, headless, wcUrl]);
+
   useEffect(() => {
     setCurrentCode(code || '');
     if (!code) {

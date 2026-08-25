@@ -136,21 +136,48 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
   function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
   // Model HTML often does location.href='/' or a document base pointing at the app.
   // That navigates the iframe to the SPA, which sends X-Frame-Options: DENY → refused to connect.
+  function allowNav(u) {
+    var s = String(u == null ? '' : u);
+    if (!s || s === '#' || s.indexOf('#') === 0) return true;
+    if (s.indexOf('blob:') === 0) return true;
+    if (s.indexOf('/preview/embed.html') !== -1) return true;
+    // Block app root / desk / any absolute app URL — those are XFO DENY.
+    if (s === '/' || s === '/desk' || s === '/desk/' || s.indexOf('/desk?') === 0) return false;
+    try {
+      var abs = new URL(s, window.location.href);
+      if (/quantoraai\\.app$/i.test(abs.hostname) && abs.pathname.indexOf('/preview/') !== 0) return false;
+      if (abs.origin === window.location.origin && abs.pathname.indexOf('/preview/') !== 0
+        && (abs.pathname === '/' || abs.pathname.indexOf('/desk') === 0 || abs.pathname.indexOf('/studio') === 0)) {
+        return false;
+      }
+    } catch (urlErr) {}
+    return true;
+  }
   try {
     var _assign = window.location.assign.bind(window.location);
     var _replace = window.location.replace.bind(window.location);
-    function allowNav(u) {
-      var s = String(u || '');
-      return s.indexOf('/preview/embed.html') !== -1 || s.indexOf('blob:') === 0 || s.indexOf('#') === 0;
-    }
     window.location.assign = function(u){ if (allowNav(u)) return _assign(u); report({ kind:'error', message:'Preview blocked navigation: ' + u }); };
     window.location.replace = function(u){ if (allowNav(u)) return _replace(u); report({ kind:'error', message:'Preview blocked navigation: ' + u }); };
   } catch (navErr) {}
+  try {
+    var hrefDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+    if (hrefDesc && hrefDesc.set && hrefDesc.get) {
+      Object.defineProperty(window.location, 'href', {
+        configurable: true,
+        enumerable: true,
+        get: function(){ return hrefDesc.get.call(window.location); },
+        set: function(u){
+          if (allowNav(u)) return hrefDesc.set.call(window.location, u);
+          report({ kind:'error', message:'Preview blocked navigation: ' + u });
+        }
+      });
+    }
+  } catch (hrefErr) {}
   document.addEventListener('click', function(e) {
     var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!a) return;
     var href = a.getAttribute('href') || '';
-    if (href === '/' || href === '' || /^https?:\\/\\/[^/]*quantoraai\\.app\\/?$/i.test(href)) {
+    if (!allowNav(href) || href === '/' || href === '' || /^https?:\\/\\/[^/]*quantoraai\\.app\\/?$/i.test(href)) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -270,6 +297,12 @@ export function injectPreviewHarness(html) {
   // Drop escapes that yank the iframe onto the main app (XFO DENY → refused to connect).
   safe = safe.replace(/<base\b[^>]*>/gi, '');
   safe = safe.replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, '');
+  // Neutralize root/app links that leave the Preview shell.
+  safe = safe.replace(/\bhref\s*=\s*(["'])\/\1/gi, 'href="#"');
+  safe = safe.replace(/\bhref\s*=\s*(["'])\/desk\/?\1/gi, 'href="#"');
+  safe = safe.replace(/\bhref\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'href="#"');
+  safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/\1/gi, '/* preview nav blocked */ void 0');
+  safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/desk\/?\1/gi, '/* preview nav blocked */ void 0');
   const bundle = PREVIEW_ERROR_HARNESS + PREVIEW_TAILWIND_PROBE;
   if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + bundle);
   if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + bundle + '</head>');

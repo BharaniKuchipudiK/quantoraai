@@ -185,10 +185,13 @@ test('harness strips base/refresh that yank the iframe onto the SPA', async () =
   const out = injectPreviewHarness(`<!DOCTYPE html><html><head>
 <base href="https://quantoraai.app/">
 <meta http-equiv="refresh" content="0;url=/">
-</head><body><h1>Shop</h1></body></html>`);
+</head><body><h1>Shop</h1><a href="/">Home</a><script>location.href='/'</script></body></html>`);
   assert.doesNotMatch(out, /<base\s+href=/i);
   assert.doesNotMatch(out, /http-equiv=["']?refresh/i);
+  assert.doesNotMatch(out, /<a\s+href=["']\/["']/i);
+  assert.doesNotMatch(out, /<script>location\.href\s*=\s*['"]\/['"]/i);
   assert.match(out, /Preview blocked navigation/);
+  assert.match(out, /Object\.defineProperty\(window\.location, 'href'/);
 });
 
 test('still ignores opaque script errors', () => {
