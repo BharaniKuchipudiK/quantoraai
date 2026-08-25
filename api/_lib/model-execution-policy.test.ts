@@ -2,14 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { modelAttemptsForTurn, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
 
-test('a turn never gets more than two model attempts', () => {
+test('a turn keeps trying past the first fallback, but stays bounded', () => {
+  // Two attempts meant one free-quota 429 plus one unlucky fallback ended the
+  // turn with "the model is busy" while healthy routes sat unused.
   const attempts = modelAttemptsForTurn({
     primaryModelId: 'gemini-3-flash-preview',
     fallbackModelIds: ['openai/gpt-4o-mini', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'],
   });
-  assert.equal(attempts.length, 2);
+  assert.ok(attempts.length > 2, 'a turn must try more than two models when more are available');
+  assert.ok(attempts.length <= 4, 'but the ladder stays bounded so one turn cannot storm a provider');
   assert.equal(attempts[0].reason, 'primary');
-  assert.equal(attempts[1].reason, 'fallback');
+  assert.ok(attempts.slice(1).every((attempt) => attempt.reason === 'fallback'));
+  assert.equal(new Set(attempts.map((a) => a.id)).size, attempts.length, 'no model is tried twice');
 });
 
 test('free Studio routes fail over to Gemini before another OpenRouter model', () => {
@@ -23,10 +27,11 @@ test('free Studio routes fail over to Gemini before another OpenRouter model', (
       primaryModelId,
       fallbackModelIds: ['deepseek/deepseek-chat', 'openai/gpt-oss-20b:free'],
     });
-    assert.deepEqual(attempts.map((attempt) => attempt.id), [
-      primaryModelId,
-      'gemini-flash-latest',
-    ]);
+    // The invariant that matters: the FIRST fallback leaves the shared free
+    // OpenRouter quota for the independent Gemini gateway. Later rungs may add
+    // same-provider routes, which is fine once the independent one is tried.
+    assert.equal(attempts[0].id, primaryModelId);
+    assert.equal(attempts[1].id, 'gemini-flash-latest');
     assert.equal(attempts[1].provider, 'gemini');
   }
 });
@@ -38,7 +43,7 @@ test('Travel never falls back to a model that would lose travel tools', () => {
     travelToolsEnabled: true,
   });
   assert.ok(attempts.every((attempt) => attempt.provider === 'gemini'));
-  assert.ok(attempts.length <= 2);
+  assert.ok(attempts.length <= 4);
 });
 
 test('retryable provider failures include endpoint loss and quota exhaustion before streaming', () => {

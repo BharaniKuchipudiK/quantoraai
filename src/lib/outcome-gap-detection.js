@@ -4,6 +4,7 @@
  */
 
 import { assessShopBuildAsk, expandCatalogChip, shopCatalogWasCapped } from './shop-catalog-scale.js';
+import { briefWantsNoImages, briefWantsOnlineSelling } from './commerce-intent.js';
 
 function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
@@ -136,7 +137,10 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
   }
 
   const chatWithoutCode = ai.replace(/```[\s\S]*?```/g, ' ');
-  const wantsShop = /\b(saree|sari|boutique|ready.?made|dress(?:es)?|shop|storefront|e-?commerce|online shop|catalog|sell)\b/i.test(userPrompt)
+  // A venue noun is not a request to sell. Bare \bshop\b matched "a coffee shop"
+  // and offered a cafe a payment gateway and international shipping.
+  const wantsShop = briefWantsOnlineSelling(userPrompt)
+    || /\b(saree|sari|ready.?made|dress(?:es)?)\b/i.test(userPrompt)
     || /\b(cart|checkout|products\.json|book appointment)\b/i.test(ai);
   const lifeAdvisor = studioDomain === 'travel'
     || studioDomain === 'education'
@@ -186,7 +190,8 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
       gaps.push(expandCatalogChip());
     }
   } else {
-    const wantsPhotos = /\b(images?|photos?|pictures?|visuals?)\b/i.test(userPrompt);
+    const wantsPhotos = /\b(images?|photos?|pictures?|visuals?)\b/i.test(userPrompt)
+      && !briefWantsNoImages(userPrompt);
     const hasPhotos = photosPresent({ deskFacts, ai });
     if (wantsPhotos && !lifeAdvisor && !hasPhotos && !probeGaps.some((gap) => gap.id === 'gap-photos')) {
       gaps.push(beat(

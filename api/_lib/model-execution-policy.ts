@@ -9,7 +9,8 @@ const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
 const NEMOTRON_ULTRA = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 const LAGUNA_S = 'poolside/laguna-s-2.1:free';
 const DEEPSEEK_CHAT = 'deepseek/deepseek-chat';
-const MAX_MODEL_ATTEMPTS = 2;
+/* Kept in step with MAX_INFERENCE_ATTEMPTS in inference-control-plane.ts. */
+const MAX_MODEL_ATTEMPTS = 4;
 
 const QUALIFIED_OPENROUTER_FALLBACKS: Record<string, string> = {
   // Free OpenRouter endpoints share one account quota. The independent Gemini

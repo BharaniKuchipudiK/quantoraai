@@ -19,10 +19,12 @@ export const PREVIEW_SHELL_IDLE_REMOUNT_MAX = 2;
 export function shouldHoldPreviewShellFailClock({
   turnBusy = false,
   embedReady = false,
-  warmingFailed = false,
 } = {}) {
   if (embedReady) return false;
-  if (warmingFailed) return false;
+  // A busy turn holds the clock even after an earlier failure: the component
+  // clears a stale `warmingFailed` when a new turn starts building, so treating
+  // a past failure as a reason NOT to hold would leave the red tombstone up
+  // while the desk is actively producing files.
   return Boolean(turnBusy);
 }
 
@@ -57,11 +59,6 @@ export function shouldShowPreviewShellTombstone({
   if (embedReady) return false;
   if (hasDeskHtml) return false;
   return Boolean(warmingFailed);
-}
-
-/** Alias kept for callers/tests from main (#315). */
-export function shouldShowPreviewShellFailOverlay(state = {}) {
-  return shouldShowPreviewShellTombstone(state);
 }
 
 /**
