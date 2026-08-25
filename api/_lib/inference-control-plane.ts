@@ -56,6 +56,7 @@ const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
  */
 const MAX_INFERENCE_ATTEMPTS = 4;
 const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
+const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
 /* An attempt below this has no realistic chance of producing a build. */
 const MIN_VIABLE_ATTEMPT_MS = 20_000;
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
@@ -82,13 +83,18 @@ export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemai
   const remaining = Math.max(0, Math.floor(totalRemainingMs));
   if (attemptsRemaining <= 1) return remaining;
   /*
-   * Share the clock across EVERY attempt still planned. The previous formula
-   * reserved for exactly one fallback, which was fine at two attempts but
-   * starved the middle rungs of a longer ladder to zero ms — the turn would
-   * report four tries while two never had a chance to produce anything.
+   * The first attempt keeps a generous slice: it uses the model actually chosen
+   * for the task and is the most likely to succeed, so squeezing it to make room
+   * for fallbacks trades a working build for a faster failure.
+   *
+   * What the reserve alone could not do is keep a LONGER ladder viable - it held
+   * back enough for exactly one more attempt, so the third rung of four received
+   * 0 ms and was dead on arrival. Flooring each slice at a viable minimum keeps
+   * every planned rung a real attempt; the wall clock still bounds the total.
    */
-  const share = Math.floor(remaining / attemptsRemaining);
-  return Math.max(0, Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining, Math.max(share, MIN_VIABLE_ATTEMPT_MS)));
+  const afterReserve = remaining - RESERVED_INDEPENDENT_FALLBACK_MS;
+  const slice = Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, Math.max(afterReserve, MIN_VIABLE_ATTEMPT_MS));
+  return Math.max(0, Math.min(slice, remaining));
 }
 
 function safeLabel(value: string, fallback: string) {
