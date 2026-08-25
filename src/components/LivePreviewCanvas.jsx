@@ -4,6 +4,7 @@ import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
   canUseBlobPreviewEmbed,
+  isPreviewEmbedFrameSrc,
   injectPreviewHarness,
   prepareCodeForPreview,
   decidePreviewTrustStatus,
@@ -221,8 +222,18 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   }, []);
 
-  /** Don't wait for postMessage — if the iframe loaded, the shell is up. */
+  /** Shell ready only if the iframe is still on /preview/embed.html (or blob). */
   const handleEmbedFrameLoad = useCallback(() => {
+    const src = iframeRef.current?.src || embedSrc || '';
+    if (!isPreviewEmbedFrameSrc(src)) {
+      // Navigated onto the SPA → X-Frame-Options: DENY → "quantoraai.app refused to connect".
+      embedReadyRef.current = false;
+      setEmbedReady(false);
+      setStatus('running');
+      setLastError(null);
+      setRemountNonce((value) => value + 1);
+      return;
+    }
     if (!embedReadyRef.current) {
       embedReadyRef.current = true;
       setEmbedReady(true);
@@ -231,7 +242,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setStatus((prev) => (prev === 'failed' ? 'running' : prev));
     const html = currentCodeRef.current;
     if (html) pushHtmlToEmbedRef.current?.(html);
-  }, []);
+  }, [embedSrc]);
 
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
