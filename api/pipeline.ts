@@ -26,6 +26,8 @@ import { handleMarketDataLookup } from "./_lib/market-data-gateway.js";
 import { handleFxAnalytics } from "./_lib/fx-analytics-gateway.js";
 import { handleDebtPlan } from "./_lib/debt-gateway.js";
 import { handleSavingsGoal } from "./_lib/savings-gateway.js";
+import { handleFinancialProfile } from "./_lib/financial-profile-gateway.js";
+import { handleFinanceAdvisor } from "./_lib/finance-advisor-gateway.js";
 import { routeTravelConversationBody, shouldPreferTravelConversationProvider } from "./_lib/travel-model-routing.js";
 import { readByokCredentials } from "./_lib/byok-credentials.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
@@ -95,6 +97,8 @@ export default async function handler(req: any, res: any) {
     if (await handleMarketDataLookup(req, res)) return;
     if (await handleDebtPlan(req, res)) return;
     if (await handleSavingsGoal(req, res)) return;
+    if (await handleFinancialProfile(req, res)) return;
+    if (await handleFinanceAdvisor(req, res)) return;
 
     if (shouldPreferTravelConversationProvider(req.body, {
       hasGeminiByok: Boolean(readByokCredentials(req).gemini),
