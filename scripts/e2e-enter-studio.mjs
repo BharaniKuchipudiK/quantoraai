@@ -1,14 +1,14 @@
 /**
  * Browser gates start on the marketing page. Studio is behind a signed-in
- * check: clicking AI Studio too early opens auth instead of the desk.
- * Wait for "Enter Portal" (only rendered when the session user is in React),
+ * check: clicking Try Quantora before the session hydrates opens auth instead
+ * of the desk. Wait for the signed-in header CTA (data-quantora-enter-studio),
  * then enter Studio and wait for the composer.
  */
 export async function enterSignedInStudio(page) {
   if (!/\/desk\/?(\?|$)/.test(page.url())) {
-    const enterPortal = page.getByRole('button', { name: /Enter Portal/i }).first();
-    await enterPortal.waitFor({ state: 'visible', timeout: 15_000 });
-    await enterPortal.click();
+    const enterStudio = page.locator('[data-quantora-enter-studio]').first();
+    await enterStudio.waitFor({ state: 'visible', timeout: 15_000 });
+    await enterStudio.click();
     await page.waitForURL(/\/desk\/?$/, { timeout: 20_000 });
   }
   const enteredAt = Date.now();

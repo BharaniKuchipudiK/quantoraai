@@ -103,6 +103,30 @@ async function startServer() {
     req.query = { ...(req.query || {}), route: "logout" };
     return auth(req, res);
   });
+  route("all", "/api/auth/signup", (req, res) => {
+    req.query = { ...(req.query || {}), route: "signup" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/login", (req, res) => {
+    req.query = { ...(req.query || {}), route: "login" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/password-reset-request", (req, res) => {
+    req.query = { ...(req.query || {}), route: "password-reset-request" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/password-reset-confirm", (req, res) => {
+    req.query = { ...(req.query || {}), route: "password-reset-confirm" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/github", (req, res) => {
+    req.query = { ...(req.query || {}), route: "github" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/github/callback", (req, res) => {
+    req.query = { ...(req.query || {}), route: "github-callback" };
+    return auth(req, res);
+  });
   route("all", "/api/chat", async (req, res) => {
     if (await handleAffordabilityDecision(req, res)) return;
 

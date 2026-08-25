@@ -12,11 +12,7 @@ import {
   tabFromLocation,
   takeStudioPrefill,
 } from './lib/studio-isolation.js';
-import {
-  authGoogleWellStyle,
-  authModalCardStyle,
-  authModalOverlayStyle,
-} from './lib/auth-modal-styles.js';
+import AuthModal from './components/AuthModal';
 
 /*
  * The heavy surfaces load on demand.
@@ -60,9 +56,8 @@ const PrivacyVault = lazyWithReload(() => import('./components/PrivacyVault'));
 const AdminDashboard = lazyWithReload(() => import('./components/AdminDashboard'));
 const ModelDashboard = lazyWithReload(() => import('./components/ModelDashboard'));
 const WelcomeHub = lazyWithReload(() => import('./components/WelcomeHub'));
-import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from './lib/coding-desk-auto-model.js';
 // import { Analytics } from '@vercel/analytics/react';
 // import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -111,13 +106,20 @@ export default function App() {
   ));
   const [showAuthModal, setShowAuthModal] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return new URLSearchParams(window.location.search).has('signin');
+    const params = new URLSearchParams(window.location.search);
+    return params.has('signin') || params.has('reset');
   });
-  const [themeMode, setThemeMode] = useState('dark'); // 'light' | 'dark' | 'system'
-
-  const [showCustomAccountInput, setShowCustomAccountInput] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [customEmail, setCustomEmail] = useState('');
+  const [authResetToken, setAuthResetToken] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('reset') || '';
+  });
+  const [themeMode, setThemeMode] = useState(() => {
+    try {
+      const saved = typeof window !== 'undefined' && window.localStorage.getItem('quantora_theme_mode');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+    } catch (e) { /* ignore */ }
+    return 'dark';
+  }); // 'light' | 'dark' | 'system'
 
   // Compute effective theme (Light / Dark / System OS match)
   const getEffectiveTheme = () => {
@@ -134,15 +136,44 @@ export default function App() {
   useEffect(() => {
     try {
       document.documentElement.setAttribute('data-theme', effectiveTheme);
-      document.body.style.background = isLight ? '#fdfbf7' : '#070913';
+      document.documentElement.style.colorScheme = effectiveTheme;
+      document.body.style.background = isLight ? '#ffffff' : '#070913';
       document.body.style.color = isLight ? '#0f172a' : '#ffffff';
     } catch (e) {
       console.error(e);
     }
   }, [effectiveTheme, isLight]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('quantora_theme_mode', themeMode);
+    } catch (e) { /* ignore */ }
+  }, [themeMode]);
+
   const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  const clearAuthQueryParams = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    ['signin', 'reset', 'auth', 'message', 'next'].forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    setAuthResetToken('');
+  }, []);
+
+  const finishAuth = useCallback((newUser) => {
+    const next = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('next')
+      : '';
+    setUser(newUser);
+    setShowAuthModal(false);
+    clearAuthQueryParams();
+    if (next === isolatedStudioHref()) {
+      window.location.assign(isolatedStudioHref());
+      return;
+    }
+    setActiveTab('hub');
+  }, [clearAuthQueryParams]);
 
   /*
    * Restore an existing session by asking the server, not by trusting a cached
@@ -162,7 +193,7 @@ export default function App() {
             email: data.user.email,
             avatar: data.user.picture
               || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
-            authProvider: 'Google OAuth 2.0 (Verified)',
+            authProvider: data.user.authProvider || 'Signed in',
             tier: 'Indie Creator ($0 / mo)',
             joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
             isAdmin: data.user.isAdmin === true,
@@ -178,6 +209,34 @@ export default function App() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const authResult = params.get('auth');
+    if (authResult === 'success') {
+      fetch('/api/auth/session')
+        .then((res) => (res.ok ? res.json() : { user: null }))
+        .then((data) => {
+          if (!data?.user) return;
+          finishAuth({
+            name: data.user.name || 'Creator',
+            email: data.user.email,
+            avatar: data.user.picture
+              || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
+            authProvider: 'GitHub',
+            tier: 'Indie Creator ($0 / mo)',
+            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+            isAdmin: data.user.isAdmin === true,
+          });
+        })
+        .catch(() => {});
+    } else if (authResult === 'error') {
+      setLoginError(decodeURIComponent(params.get('message') || 'Sign-in failed.'));
+      setShowAuthModal(true);
+      clearAuthQueryParams();
+    }
+  }, [finishAuth, clearAuthQueryParams]);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
@@ -198,33 +257,13 @@ export default function App() {
 
       // Backend cryptographically verified the token and returned the secure profile
       const newUser = await res.json();
-
-      /*
-       * The server has verified the token and set an HttpOnly session cookie.
-       * The profile below is display data only — it is deliberately NOT the
-       * proof of identity. Storing it in localStorage is fine for showing a
-       * name and avatar; what matters is that no server route trusts it.
-       */
-      setUser(newUser);
-      setShowAuthModal(false);
-      const next = typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('next')
-        : '';
-      if (next === isolatedStudioHref()) {
-        window.location.assign(isolatedStudioHref());
-        return;
-      }
-      setActiveTab('hub');
+      finishAuth(newUser);
     } catch (error) {
       console.error("Error during secure login:", error);
       setLoginError(error.message || 'Failed to verify account securely.');
     } finally {
       setIsVerifyingLogin(false);
     }
-  };
-
-  const handleGoogleError = () => {
-    console.log('Google Login Failed');
   };
 
   const handleTabChange = (tabName) => {
@@ -393,12 +432,12 @@ export default function App() {
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
-      background: 'transparent',
+      background: activeTab === 'landing' ? (isLight ? '#ffffff' : '#0a0a0a') : 'transparent',
       color: isLight ? '#0f172a' : '#ffffff',
       transition: 'background 0.3s ease, color 0.3s ease'
     }}>
-      {/* Ambient background — see AuroraBackground for why this replaced the canvas */}
-      <AuroraBackground theme={effectiveTheme} />
+      {/* Aurora only inside the app — landing is flat black/white */}
+      {activeTab !== 'landing' && <AuroraBackground theme={effectiveTheme} />}
 
       {/* Main View Router */}
       {activeTab === 'landing' ? (
@@ -410,6 +449,7 @@ export default function App() {
           availableModels={availableModels}
           themeMode={themeMode}
           setThemeMode={setThemeMode}
+          isLight={isLight}
         />
       ) : (
         <>
@@ -535,90 +575,24 @@ export default function App() {
 
       {/* Google OAuth Modal — isolated so landing filters cannot hide the iframe */}
       {showAuthModal && (
-        <div data-quantora-auth-modal="true" style={authModalOverlayStyle()}>
-          <div style={authModalCardStyle(isLight)}>
-            <button
-              onClick={() => {
-                setShowAuthModal(false);
-                setShowCustomAccountInput(false);
-              }}
-              style={{
-                position: 'absolute',
-                top: '24px',
-                right: '24px',
-                background: isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)',
-                border: 'none',
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                fontSize: '1.2rem',
-                color: isLight ? '#64748b' : '#a1a1aa',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.15)'}
-              onMouseLeave={e => e.currentTarget.style.background = isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)'}
-            >
-              ✕
-            </button>
-
-            <p style={{ fontSize: '1.1rem', color: isLight ? '#64748b' : '#a1a1aa', margin: '0 0 16px 0', fontWeight: '400' }}>
-              Welcome to
-            </p>
-            <h2 style={{ fontSize: '3.2rem', fontWeight: '700', margin: '0 0 24px 0', color: isLight ? '#0f172a' : '#ffffff', letterSpacing: '-0.04em', lineHeight: '1.1' }}>
-              quantora/ai
-            </h2>
-            <p style={{ fontSize: '1.1rem', color: isLight ? '#475569' : '#d4d4d8', margin: '0 0 40px 0' }}>
-              Sign in with Google
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-              {isVerifyingLogin ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#a1a1aa', fontSize: '1rem', fontWeight: '500' }}>
-                  <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
-                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                  </svg>
-                  Cryptographically verifying with Google...
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
-                  {loginError && (
-                    <div style={{ color: '#ef4444', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px' }}>
-                      {loginError}
-                    </div>
-                  )}
-                  {/* Google Login Component using a dynamic pill button matching the aesthetic */}
-                  {!(typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) ? (
-                  <div style={authGoogleWellStyle()}>
-                  <GoogleLogin
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    shape="pill"
-                    theme="outline"
-                    text="signin_with"
-                    size="large"
-                  />
-                  </div>
-                  ) : (
-                    <p style={{ color: '#a1a1aa' }}>Sign in from the home page so Google Sign-In can open.</p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <AuthModal
+          isLight={isLight}
+          onClose={() => {
+            setShowAuthModal(false);
+            setLoginError('');
+            clearAuthQueryParams();
+          }}
+          onGoogleSuccess={handleGoogleSuccess}
+          onSuccess={finishAuth}
+          resetToken={authResetToken}
+          externalError={loginError}
+          isolatedDesk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)}
+        />
       )}
 
       {/* Global Footer — hidden in Studio for maximum conversation real estate (Cursor-style) */}
       {!isStudioShell && (
-        <Footer
-          isLight={themeMode === 'light'}
-          activeTab={activeTab}
-          handleTabChange={handleTabChange}
-        />
+        <Footer isLight={isLight} />
       )}
       {/* {shouldLoadVercelTelemetry && <Analytics />} */}
       {/* {shouldLoadVercelTelemetry && <SpeedInsights />} */}

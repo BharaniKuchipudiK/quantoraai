@@ -4,6 +4,7 @@ import {
   buildStudioJobCard,
   formatJobCardForRepair,
   formatJobCardForVerify,
+  isStudioProductSwitch,
   jobNeedsProductPhotos,
   studioJobCardLabel,
 } from './studio-job-card.js';
@@ -85,4 +86,12 @@ test('a Drive cleaner brief replaces a leftover shop job card', () => {
   assert.match(next.purpose, /Drive|cleaner|Agent/i);
   assert.doesNotMatch(next.purpose, /shop/i);
   assert.equal(jobNeedsProductPhotos(next), false);
+});
+
+test('a landing-page section for an existing dashboard is a refine, not a product switch', () => {
+  const dashboard = { purpose: 'A Drive dashboard', mustWork: ['Files still list'] };
+  const brief = 'Create a landing page section for the existing dashboard with a call to action';
+  assert.equal(isStudioProductSwitch(brief, dashboard), false);
+  const next = buildStudioJobCard({ brief, existing: dashboard });
+  assert.equal(next.purpose, 'A Drive dashboard');
 });
