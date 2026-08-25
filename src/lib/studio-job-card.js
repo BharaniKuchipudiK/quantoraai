@@ -80,7 +80,12 @@ function looksLikeNewJob(brief, existing) {
       && text.length > 40)
     || /\b(landing\s+page|one-?page\s+(?:site|landing|app)|productivity\s+app)\b/i.test(text)
   );
-  if (inventsProduct) {
+  // “Create a landing page section for the existing dashboard” is a refine.
+  const refiningExisting = (
+    /\b(existing|current|this)\b/i.test(text)
+    && /\b(section|add(?:ing)?|also|into|onto|for the)\b/i.test(text)
+  );
+  if (inventsProduct && !refiningExisting) {
     return !namedPurposeMatch(text, existing.purpose);
   }
   return false;

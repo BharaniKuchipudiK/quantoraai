@@ -1,5 +1,5 @@
 import { createSessionToken, setSessionCookie, isSessionConfigured } from "./session.js";
-import { isAdminUser, recordSignIn, type StoredUser } from "./store.js";
+import { findUserByEmail, isAdminUser, recordSignIn, type StoredUser } from "./store.js";
 
 export type AuthIdentity = {
   sub: string;
@@ -36,6 +36,27 @@ export async function issueSessionResponse(
 ): Promise<{ ok: true; body: ReturnType<typeof formatClientUser> } | { ok: false; status: number; error: string }> {
   if (!isSessionConfigured()) {
     return { ok: false, status: 503, error: "Sign-in is not configured on this deployment." };
+  }
+
+  const existing = await findUserByEmail(identity.email);
+  if (existing && existing.google_sub !== identity.sub) {
+    if (existing.blocked_at) {
+      return {
+        ok: false,
+        status: 403,
+        error: existing.blocked_reason || "This account has been suspended.",
+      };
+    }
+    const provider = existing.auth_provider === "github"
+      ? "GitHub"
+      : existing.auth_provider === "email"
+        ? "email and password"
+        : "Google";
+    return {
+      ok: false,
+      status: 409,
+      error: `An account already exists for this email. Sign in with ${provider} instead.`,
+    };
   }
 
   const stored: StoredUser | null = await recordSignIn({

@@ -16,6 +16,7 @@ import {
   FileCode2,
   FolderTree,
   Sparkles,
+  Play,
 } from 'lucide-react';
 import './LandingPage.css';
 
