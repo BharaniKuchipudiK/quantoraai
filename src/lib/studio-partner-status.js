@@ -3,6 +3,15 @@
  * This is the Cursor-style "human progress" line — not a chatbot spinner.
  */
 
+export function previewShellIsWarming(previewRunStatus = '') {
+  const value = typeof previewRunStatus === 'string'
+    ? previewRunStatus
+    : (previewRunStatus && typeof previewRunStatus === 'object' && previewRunStatus.kind === 'quality'
+      ? ''
+      : '');
+  return value === 'warming' || value === 'running' || value === 'healing';
+}
+
 export function resolveStudioPartnerStatus({
   isGenerating = false,
   generatingLabel = '',
@@ -20,7 +29,10 @@ export function resolveStudioPartnerStatus({
   shopUiMissing = false,
   shopIntake = null,
   shopTurnFailureCopy = '',
+  previewRunStatus = '',
 } = {}) {
+  void photosMissing;
+  void shopUiMissing;
   const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'
@@ -28,6 +40,7 @@ export function resolveStudioPartnerStatus({
     || studioDomain === 'research';
   const intakeCopy = typeof shopIntake?.userCopy === 'string' ? shopIntake.userCopy.trim() : '';
   const intakeOversize = Boolean(shopIntake?.oversize && intakeCopy);
+  const shellWarming = previewShellIsWarming(previewRunStatus);
 
   if (isGenerating) {
     if (lifeDomain) {
@@ -63,6 +76,22 @@ export function resolveStudioPartnerStatus({
     };
   }
 
+  // Idle Coding Desk: no sticky "photos missing" / "Building…" furniture above chat.
+  // Gaps live on Preview checks. Progress copy is only for generating (above) or warming.
+  if (codingDeskOpen && !shellWarming) {
+    return null;
+  }
+
+  // Files on the desk are not "done" while the Preview shell is still warming.
+  if ((hasPreview || (codingDeskOpen && hasDeskFiles)) && shellWarming && !officeKind) {
+    return {
+      now: 'Preview is starting…',
+      next: intakeOversize
+        ? `About ${shopIntake.proposedCatalogSize || 10} catalog photos — wait for the live page, or Retry if it stalls. ${clock}`
+        : `Files are on the desk — wait for the live page, or Retry if it stalls. ${clock}`,
+    };
+  }
+
   if (hasPreview) {
     if (officeKind) {
       const file = officeKind === 'excel' ? 'workbook' : officeKind === 'word' ? 'document' : 'presentation';
@@ -73,39 +102,8 @@ export function resolveStudioPartnerStatus({
           : 'Next: download the file, or tell me which slide or section to change.',
       };
     }
-    if (intakeOversize && !photosMissing) {
-      return {
-        now: intakeCopy,
-        next: continueLabel
-          ? `Next: ${continueLabel}.`
-          : `Catalog target is about ${shopIntake.proposedCatalogSize || 10} photos this turn — upload more or expand when you are ready.`,
-      };
-    }
-    if (photosMissing) {
-      return {
-        now: codingDeskOpen
-          ? 'Preview is running. Product photos are still missing — empty picture boxes are not done.'
-          : 'The app is ready, but product photos are still missing.',
-        next: continueLabel && !/publish this site/i.test(continueLabel)
-          ? `Next: ${continueLabel}.`
-          : 'Tap Add real product photos — the desk injects catalog images; do not wait on chat-only claims.',
-      };
-    }
-    if (shopUiMissing) {
-      return {
-        now: codingDeskOpen
-          ? 'Preview is running. Currency and Add to Cart are still missing from the page.'
-          : 'The app is ready, but currency and Add to Cart are still missing.',
-        next: continueLabel && !/publish this site/i.test(continueLabel)
-          ? `Next: ${continueLabel}.`
-          : 'Tap Add to Cart on Preview — those controls must appear on the desk, not only in chat.',
-      };
-    }
-    if (codingDeskOpen) return null;
-    return {
-      now: 'The app is ready. Open Coding desk for files and Preview.',
-      next: continueLabel ? `Next: ${continueLabel}.` : '',
-    };
+    // Non-desk canvas preview (rare): stay quiet — do not nag about photos in chat chrome.
+    return null;
   }
 
   if (lifeDomain && lastAiText && hasUserTurn) {
@@ -126,20 +124,8 @@ export function resolveStudioPartnerStatus({
   }
 
   if (lastAiText && hasUserTurn) {
-    if (codingDeskOpen && !hasPreview) {
-      return {
-        now: hasDeskFiles
-          ? 'Files are on the desk, but Preview is not running yet.'
-          : 'Coding desk still has no files — chat alone is not enough.',
-        next: continueLabel || (hasDeskFiles
-          ? 'Open Preview, or ask me to fix the page so it runs.'
-          : 'Ask me to build again — I should write files into this desk, not only plan in chat.'),
-      };
-    }
-    return {
-      now: 'Answered in chat. There is no runnable preview yet.',
-      next: continueLabel || 'Ask me to build a working page if that is the outcome you want.',
-    };
+    // No sticky "no preview yet" strip — chips / desk own the next move.
+    return null;
   }
 
   return null;
@@ -151,6 +137,7 @@ export function studioPreviewRunLabel(status) {
     : (status && typeof status === 'object' && status.kind === 'quality'
       ? (status.passed ? 'clean' : 'degraded')
       : '');
+  if (value === 'warming') return 'Preview is starting…';
   if (value === 'running') return 'Preview is starting…';
   if (value === 'healing') return 'Preview is fixing a crash…';
   if (value === 'clean') return 'Preview is running';

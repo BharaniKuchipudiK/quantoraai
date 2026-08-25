@@ -1,7 +1,7 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
 import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
-import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview } from './preview-utils.js';
+import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview, vfsAssetToDataUri } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
   injectMissingShopPhotos,
@@ -9,10 +9,11 @@ import {
   scaffoldShopCatalogJson,
   countRealPreviewPhotos,
   stripInjectedShopPhotos,
+  SHOP_CATALOG_CAP,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
-import { buildStudioJobCard } from './studio-job-card.js';
+import { buildStudioJobCard, jobNeedsProductPhotos } from './studio-job-card.js';
 import { shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
@@ -27,6 +28,102 @@ function vfsFileContent(vfs, path) {
   if (typeof entry === 'string') return entry;
   if (entry && typeof entry.content === 'string') return entry.content;
   return '';
+}
+
+/** Prefer model-shipped foxwolf_*.svg files as loadable catalog photos. */
+export function collectVfsShopImageDataUris(vfs = {}, limit = SHOP_CATALOG_CAP) {
+  const paths = Object.keys(vfs || {})
+    .filter((path) => /\.(?:svg|png|jpe?g|webp|gif)$/i.test(path))
+    .filter((path) => !/(?:^|\/)(?:icon|logo|favicon|avatar|spinner)/i.test(path))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const out = [];
+  for (const path of paths) {
+    if (out.length >= limit) break;
+    const uri = vfsAssetToDataUri(path, vfsFileContent(vfs, path));
+    if (uri && /^data:image\//i.test(uri)) out.push({ path, uri });
+  }
+  return out;
+}
+
+/**
+ * When Review shows foxwolf_*.svg but HTML still points at relative paths (or
+ * products.json has none), wire those assets in as data-URI photos so Preview
+ * is not waiting on missing files forever.
+ */
+export function wireVfsShopImagesIntoDesk(vfs = {}, options = {}) {
+  if (!vfs || typeof vfs !== 'object') return { vfs: vfs || {}, changed: false };
+  const assets = collectVfsShopImageDataUris(vfs);
+  if (!assets.length) return { vfs, changed: false };
+
+  const brief = String(options?.brief || '');
+  const next = { ...vfs };
+  let changed = false;
+  const htmlPath = pickPreviewEntryPath(next);
+
+  if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
+    let html = next[htmlPath].content;
+    let idx = 0;
+    const rewritten = html.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
+      const src = (String(attrs).match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
+      if (!src || /^data:/i.test(src) || /^(https?:)?\/\//i.test(src) || src.includes('/api/preview-image')) {
+        return full;
+      }
+      const hit = assets.find((asset) => (
+        src === asset.path
+        || src.endsWith(`/${asset.path}`)
+        || src.replace(/^\.\//, '') === asset.path
+      )) || assets[idx % assets.length];
+      idx += 1;
+      if (!hit) return full;
+      changed = true;
+      return `<img${String(attrs).replace(/\bsrc\s*=\s*["'][^"']*["']/i, `src="${hit.uri}"`)}>`;
+    });
+    if (rewritten !== html) {
+      next[htmlPath] = { ...next[htmlPath], content: rewritten };
+      html = rewritten;
+    }
+  }
+
+  if (next['products.json'] && typeof next['products.json'].content === 'string') {
+    try {
+      const data = JSON.parse(next['products.json'].content);
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : null);
+      if (list?.length) {
+        let catalogChanged = false;
+        const mapped = list.map((item, i) => {
+          if (!item || typeof item !== 'object') return item;
+          const image = String(item.image || '').trim();
+          if (image && /^data:image\//i.test(image)) return item;
+          const asset = assets[i % assets.length];
+          if (!asset) return item;
+          catalogChanged = true;
+          return { ...item, image: asset.uri };
+        });
+        if (catalogChanged) {
+          next['products.json'] = {
+            ...next['products.json'],
+            content: `${JSON.stringify(Array.isArray(data) ? mapped : { ...data, products: mapped }, null, 2)}\n`,
+          };
+          changed = true;
+        }
+      }
+    } catch { /* keep */ }
+  } else if (htmlPath && assets.length) {
+    const brand = String(next[htmlPath]?.content || '').match(/<title>([^<]{2,80})<\/title>/i)?.[1]
+      || 'Collection';
+    const products = assets.slice(0, Math.min(assets.length, SHOP_CATALOG_CAP)).map((asset, i) => ({
+      id: `item-${i + 1}`,
+      name: `${String(brand).trim().slice(0, 40)} ${i + 1}`,
+      priceCents: (1800 + i * 250) * 100,
+      currency: 'inr',
+      image: asset.uri,
+    }));
+    next['products.json'] = { content: `${JSON.stringify(products, null, 2)}\n`, language: 'json' };
+    changed = true;
+  }
+
+  void brief;
+  return { vfs: next, changed };
 }
 
 /** Fingerprint of files the browser Preview actually runs (not Python/native sidecars). */
@@ -243,8 +340,9 @@ export function applyDeskReviewPatch(vfs = {}, job = null, options = {}) {
 export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
   if (!vfsLooksLikeShop(vfs, job)) return { vfs, changed: false };
   const brief = String(options?.brief || '');
-  const next = { ...vfs };
-  let changed = false;
+  const wired = wireVfsShopImagesIntoDesk(vfs, { brief });
+  const next = { ...wired.vfs };
+  let changed = wired.changed;
   const htmlPath = pickPreviewEntryPath(next);
   if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
     const result = injectMissingShopPhotos(next[htmlPath].content, { brief });
@@ -274,9 +372,43 @@ export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
 
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
 export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
-  if (!vfsLooksLikeShop(vfs, job)) return purgeStaleShopArtifacts(vfs, job);
   const brief = String(options?.brief || '');
-  const withPhotos = ensureShopPhotosInVfs(vfs, job, { brief });
+  let seed = { ...(vfs || {}) };
+  let seededHtml = false;
+  // SVG-only merchandise dumps are not a shop. Seed a real HTML desk when the job
+  // requires product photos and there is no runnable HTML page yet.
+  if (jobNeedsProductPhotos(job) && !pickPreviewEntryPath(seed)) {
+    const purpose = String(job?.purpose || '').trim();
+    const hay = `${brief}\n${purpose}\n${Object.keys(seed).join('\n')}`;
+    const ampBrand = hay.match(/\b([A-Za-z][\w']*\s*&\s*[A-Za-z][\w']*)(?:\s+Kids)?\b/i);
+    const gluedBrand = hay.match(/fox\s*[_&-]?\s*wolf/i);
+    let title = '';
+    if (ampBrand) {
+      title = `${ampBrand[1].replace(/\s+/g, ' ').trim()}${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
+    } else if (gluedBrand) {
+      title = `Fox & Wolf${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
+    } else if (purpose && !/^a\s+shop\b/i.test(purpose)) {
+      title = purpose;
+    } else {
+      title = 'Shop';
+    }
+    seed = {
+      ...seed,
+      'index.html': {
+        content: (
+          `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
+          + `<title>${title}</title></head><body>`
+          + `<header><nav>Shop</nav><h1>${title}</h1></header>`
+          + `<main class="product-catalog" data-quantora-shop-catalog="true" style="min-height:60vh;background:#fff;padding:24px"></main>`
+          + `<footer>${title}</footer></body></html>`
+        ),
+        language: 'html',
+      },
+    };
+    seededHtml = true;
+  }
+  if (!vfsLooksLikeShop(seed, job)) return purgeStaleShopArtifacts(seed, job);
+  const withPhotos = ensureShopPhotosInVfs(seed, job, { brief });
   if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;
   const next = { ...withPhotos.vfs };
   const htmlPath = pickPreviewEntryPath(next);
@@ -288,7 +420,7 @@ export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
   if (!ui.changed) {
     return {
       vfs: next,
-      changed: withPhotos.changed,
+      changed: withPhotos.changed || seededHtml,
       scaleNote,
       photoCount: countRealPreviewPhotos(next[htmlPath].content),
     };

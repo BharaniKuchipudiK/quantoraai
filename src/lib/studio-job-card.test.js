@@ -47,6 +47,35 @@ test('a boutique brief becomes a shop job that requires real photos', () => {
   assert.equal(jobNeedsProductPhotos(buildStudioJobCard({ brief: 'Build me a simple calculator' })), false);
 });
 
+test('Start with 10 does not become a fake job that claims the page still runs', () => {
+  const shop = buildStudioJobCard({ brief: 'Build Fox & Wolf kids merchandise shop with 100 unique design images' });
+  const next = buildStudioJobCard({
+    brief: 'Start with 10',
+    existing: shop,
+    vfs: {
+      'index.html': { content: '<!DOCTYPE html><html><head><title>Fox & Wolf</title></head><body><header>Shop</header></body></html>' },
+      'foxwolf_1.svg': { content: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' },
+    },
+  });
+  assert.equal(next.purpose, 'A shop website');
+  assert.doesNotMatch(next.purpose, /Start with 10/i);
+  assert.equal(next.mustWork.includes('The page still runs'), false);
+  assert.match(next.mustWork.join(' '), /photos|Catalog/i);
+});
+
+test('Start with 10 with foxwolf SVG files still becomes a shop job', () => {
+  const next = buildStudioJobCard({
+    brief: 'Start with 10',
+    vfs: {
+      'index.html': { content: '<!DOCTYPE html><html><head><title>Fox & Wolf Kids Collection</title></head><body><header><nav>Shop</nav></header><main></main><footer>©</footer></body></html>' },
+      'foxwolf_1.svg': { content: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>' },
+      'foxwolf_2.svg': { content: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>' },
+    },
+  });
+  assert.equal(next.purpose, 'A shop website');
+  assert.equal(next.mustWork.includes('The page still runs'), false);
+});
+
 test('a Drive cleaner brief replaces a leftover shop job card', () => {
   const shop = buildStudioJobCard({ brief: 'build a website for an Indian ethnic saree boutique' });
   const next = buildStudioJobCard({

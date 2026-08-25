@@ -167,9 +167,9 @@ function observedCount(live, key) {
 
 /**
  * Source can fail a row. Only the running page can pass one.
- * A partial live payload must not wipe a photo pass the older probe never re-asked.
+ * Photos never get a source-only green — live decode must observe them.
  */
-function sourceOrLiveCheck({ sourceOk, observed, livePresent, preserveSourcePass = false }) {
+function sourceOrLiveCheck({ sourceOk, observed, livePresent }) {
   const heldInSource = sourceOk === true;
   if (observed) return { ok: heldInSource, state: heldInSource ? 'ok' : 'fix', sourceOk: heldInSource };
   if (!livePresent) {
@@ -177,7 +177,6 @@ function sourceOrLiveCheck({ sourceOk, observed, livePresent, preserveSourcePass
       ? { ok: false, state: 'unverified', sourceOk: true }
       : { ok: false, state: 'fix', sourceOk: false };
   }
-  if (preserveSourcePass && heldInSource) return { ok: true, state: 'ok', sourceOk: true };
   return heldInSource
     ? { ok: false, state: 'unverified', sourceOk: true }
     : { ok: false, state: 'fix', sourceOk: false };
@@ -192,7 +191,6 @@ export function buildDeskChecks(facts = {}, { includeCatalog = false, job = null
       sourceOk: facts.hasPhotos === true && facts.hasDistinctPhotos === true,
       observed: observedCount(live, 'photoCount') || observedCount(live, 'uniquePhotoCount') || observedBool(live, 'hasPhotos'),
       livePresent,
-      preserveSourcePass: true,
     });
     checks.push({
       id: 'photos',

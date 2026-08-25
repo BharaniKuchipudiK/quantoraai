@@ -63,9 +63,18 @@ export const PREVIEW_EMBED_SHELL_HTML = `<!DOCTYPE html>
         }
       });
       bindEscape();
-      try {
-        parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
-      } catch (err) { /* cross-origin guard */ }
+      function signalReady() {
+        try {
+          parent.postMessage({ __quantora: true, kind: 'embed-ready' }, '*');
+        } catch (err) { /* cross-origin guard */ }
+      }
+      // Post more than once — parent listener can attach after the first paint
+      // (Strict Mode remount / assembly churn), and a single shot leaves Preview
+      // stuck on “getting ready”.
+      signalReady();
+      setTimeout(signalReady, 0);
+      setTimeout(signalReady, 250);
+      setTimeout(signalReady, 1000);
     })();
   <\/script>
 </head>
@@ -83,11 +92,20 @@ export function revokePreviewEmbedObjectUrl(url) {
   }
 }
 
-export function getPreviewEmbedPathUrl() {
+export function getPreviewEmbedPathUrl(cacheBust = '') {
+  const bust = cacheBust === undefined || cacheBust === null || cacheBust === ''
+    ? ''
+    : `?r=${encodeURIComponent(String(cacheBust))}`;
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}${PREVIEW_EMBED_PATH}`;
+    return `${window.location.origin}${PREVIEW_EMBED_PATH}${bust}`;
   }
-  return PREVIEW_EMBED_PATH;
+  return `${PREVIEW_EMBED_PATH}${bust}`;
+}
+
+/** Blob embeds cannot set CORP — under COEP (Coding Desk) they never load. */
+export function canUseBlobPreviewEmbed() {
+  if (typeof window === 'undefined') return true;
+  return window.crossOriginIsolated !== true;
 }
 
 export const PREVIEW_TAILWIND_PROBE_ID = '__quantora_tailwind_probe';
@@ -255,7 +273,43 @@ function resolveVfsFile(vfs, href) {
     || vfsText(vfs, clean.split('/').pop());
 }
 
-/** Opaque-origin preview has no HTTP server. Local CSS/JS must be inlined. */
+function mimeForVfsAsset(path = '', content = '') {
+  const name = String(path || '').toLowerCase();
+  if (/\.svg$/i.test(name) || /^\s*<svg[\s>]/i.test(content)) return 'image/svg+xml;charset=utf-8';
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.jpe?g$/i.test(name)) return 'image/jpeg';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  if (/\.gif$/i.test(name)) return 'image/gif';
+  return 'application/octet-stream';
+}
+
+/** Turn a VFS image/SVG file into a data URI the opaque Preview iframe can paint. */
+export function vfsAssetToDataUri(path = '', content = '') {
+  const raw = String(content || '');
+  if (!raw) return '';
+  if (/^data:/i.test(raw.trim())) return raw.trim();
+  const mime = mimeForVfsAsset(path, raw);
+  if (mime.startsWith('image/svg+xml')) {
+    return `data:${mime},${encodeURIComponent(raw)}`;
+  }
+  // Text VFS entries for raster images are uncommon; still expose a usable URI.
+  if (/^[A-Za-z0-9+/=\s]+$/.test(raw) && raw.replace(/\s+/g, '').length > 32) {
+    return `data:${mime};base64,${raw.replace(/\s+/g, '')}`;
+  }
+  return `data:${mime},${encodeURIComponent(raw)}`;
+}
+
+function rewriteLocalImageSrc(src, vfs = {}) {
+  const raw = String(src || '').trim();
+  if (!raw || /^data:/i.test(raw) || /^(https?:)?\/\//i.test(raw) || raw.startsWith('/api/')) {
+    return raw;
+  }
+  const content = resolveVfsFile(vfs, raw);
+  if (!content) return raw;
+  return vfsAssetToDataUri(raw, content) || raw;
+}
+
+/** Opaque-origin preview has no HTTP server. Local CSS/JS/images must be inlined. */
 export function inlineVfsAssets(html, vfs = {}) {
   let out = String(html || '');
   const css = collectVfsCss(vfs);
@@ -280,6 +334,16 @@ export function inlineVfsAssets(html, vfs = {}) {
     return `<script${pre}${post}>\n${code}\n</script>`;
   });
 
+  // foxwolf_*.svg (and friends) live in VFS but Preview is opaque-origin — no fetch.
+  out = out.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
+    const srcMatch = String(attrs).match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    if (!srcMatch) return full;
+    const next = rewriteLocalImageSrc(srcMatch[1], vfs);
+    if (next === srcMatch[1]) return full;
+    const nextAttrs = String(attrs).replace(/\bsrc\s*=\s*["'][^"']*["']/i, `src="${next}"`);
+    return `<img${nextAttrs}>`;
+  });
+
   for (const key of ['script.js', 'index.js', 'app.js', 'main.js']) {
     const code = vfsText(vfs, key);
     if (!code || looksLikeReactSource(code)) continue;
@@ -292,7 +356,29 @@ export function inlineVfsAssets(html, vfs = {}) {
 
   const catalog = vfsText(vfs, 'products.json');
   if (catalog) {
-    const payload = JSON.stringify(catalog);
+    let catalogText = catalog;
+    try {
+      const data = JSON.parse(catalog);
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : null);
+      if (list?.length) {
+        let changed = false;
+        const next = list.map((item) => {
+          if (!item || typeof item !== 'object') return item;
+          const image = String(item.image || '').trim();
+          if (!image || /^data:/i.test(image) || /^(https?:)?\/\//i.test(image) || image.includes('/api/preview-image')) {
+            return item;
+          }
+          const resolved = rewriteLocalImageSrc(image, vfs);
+          if (resolved === image) return item;
+          changed = true;
+          return { ...item, image: resolved };
+        });
+        if (changed) {
+          catalogText = JSON.stringify(Array.isArray(data) ? next : { ...data, products: next });
+        }
+      }
+    } catch { /* keep catalog text */ }
+    const payload = JSON.stringify(catalogText);
     out = out.replace(
       /fetch\(\s*(['"`])(?:\.\/|\/)?products\.json\1\s*\)/g,
       `Promise.resolve(new Response(${payload},{headers:{'Content-Type':'application/json'}}))`,
@@ -303,13 +389,28 @@ export function inlineVfsAssets(html, vfs = {}) {
 }
 
 export function pickPreviewEntryPath(vfs = {}) {
-  const preferred = ['index.html', 'presentation.html', 'src/main.jsx', 'App.jsx', 'src/App.jsx'];
+  const preferred = [
+    'index.html',
+    'presentation.html',
+    'src/main.jsx',
+    'src/main.tsx',
+    'App.jsx',
+    'App.tsx',
+    'src/App.jsx',
+    'src/App.tsx',
+  ];
   for (const key of preferred) {
     if (vfsText(vfs, key)) return key;
   }
   const htmlKey = Object.keys(vfs || {}).find((key) => /\.html$/i.test(key));
   if (htmlKey) return htmlKey;
-  return Object.keys(vfs || {})[0] || null;
+  // Runnable JS/TS/React entries — never fall through to .svg / images / json.
+  const browserKey = Object.keys(vfs || {}).find((key) => (
+    /\.(jsx|tsx|js|ts)$/i.test(key)
+    && !/(^|\/)(vite\.config|tailwind\.config|postcss\.config|eslint)/i.test(key)
+  ));
+  if (browserKey && vfsText(vfs, browserKey)) return browserKey;
+  return null;
 }
 
 export function pickPreviewEntry(vfs = {}) {

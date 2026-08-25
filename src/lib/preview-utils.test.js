@@ -137,6 +137,45 @@ test('inlines products.json fetch so the boutique catalog can run without a serv
   assert.doesNotMatch(prepared, /fetch\('products\.json'\)/);
 });
 
+test('inlines relative VFS SVG imgs so opaque Preview can paint them', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#111"/></svg>';
+  const html = `<!DOCTYPE html><html><body>
+<img src="foxwolf_1.svg" alt="Fox">
+<img src="./assets/foxwolf_2.svg" alt="Wolf">
+</body></html>`;
+  const prepared = prepareCodeForPreview(html, {
+    'foxwolf_1.svg': { content: svg },
+    'assets/foxwolf_2.svg': { content: svg },
+  });
+  assert.match(prepared, /data:image\/svg\+xml/);
+  assert.doesNotMatch(prepared, /src="foxwolf_1\.svg"/);
+  assert.doesNotMatch(prepared, /src="\.\/assets\/foxwolf_2\.svg"/);
+});
+
+test('rewrites relative products.json image paths to data URIs when inlining', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#222"/></svg>';
+  const html = `<!DOCTYPE html><html><body>
+<script>fetch('products.json').then((r)=>r.json()).then((items)=>{window.__catalog=items})</script>
+</body></html>`;
+  const prepared = prepareCodeForPreview(html, {
+    'foxwolf_1.svg': { content: svg },
+    'products.json': { content: '[{"id":"a","name":"Fox","image":"foxwolf_1.svg"}]' },
+  });
+  assert.match(prepared, /data:image\/svg\+xml/);
+  assert.doesNotMatch(prepared, /"image":"foxwolf_1\.svg"/);
+});
+
+test('embed shell posts embed-ready more than once', () => {
+  assert.match(PREVIEW_EMBED_SHELL_HTML, /setTimeout\(signalReady/);
+});
+
+test('path embed URL can cache-bust remounts', async () => {
+  const { getPreviewEmbedPathUrl, canUseBlobPreviewEmbed } = await import('./preview-utils.js');
+  assert.equal(getPreviewEmbedPathUrl(), '/preview/embed.html');
+  assert.match(getPreviewEmbedPathUrl('3-0'), /\?r=3-0$/);
+  assert.equal(typeof canUseBlobPreviewEmbed(), 'boolean');
+});
+
 test('still ignores opaque script errors', () => {
   assert.equal(isIgnorableRuntimeError('Script error.'), true);
 });

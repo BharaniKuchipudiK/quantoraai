@@ -30,8 +30,12 @@ import {
   assessShopBuildAsk,
   messageLooksLikeShopBuild,
   shopIntakeSessionFacts,
-  shopPhotoTurnFailureCopy,
 } from '../lib/shop-catalog-scale.js';
+import { planCodingTurn } from '../lib/coding-turn-planner.js';
+import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
+import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
+import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -155,10 +159,23 @@ export function useChatStream({
   sessionContext,
   conversationContext,
   updateActiveSession,
+  onCodingTurnExecute = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
   const { getLearnedBehaviors } = useModelExperienceMemory();
+
+  const recordTurnLesson = (outcomeKind, extras = {}) => {
+    rememberCodingTurnLesson(activeSessionId, {
+      kind: lessonKindFromOutcome({
+        outcomeKind,
+        shopIntakeAsk: extras.shopIntakeAsk,
+        isShopPhotoTurn: extras.isShopPhotoTurn,
+      }),
+      detail: String(extras.detail || outcomeKind || '').slice(0, 240),
+      intentKind: extras.intentKind,
+    });
+  };
 
   const cancelStream = () => {
     generationTokenRef.current = null;
@@ -191,6 +208,44 @@ export function useChatStream({
     const stillCurrent = () => isActiveGeneration(generationTokenRef.current, generationToken);
 
     const visibleUserText = text.trim();
+    const priorUserTexts = (messages || [])
+      .filter((message) => message?.sender === 'user' && message.text)
+      .map((message) => String(message.text));
+    const studioDomainEarly = activeStudioDomain(chatSessions, activeSessionId);
+    const refineDeskEarly = shouldRefineRunningDesk({
+      prompt: visibleUserText,
+      hasDeskFiles: Boolean(canvasCode || (vfs && Object.keys(vfs).length)),
+      studioDomain: studioDomainEarly,
+    });
+    const pinnedEarly = targetModelOverride
+      || selectedModel
+      || (availableModels || []).find((model) => model?.available !== false)
+      || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
+    const autoModeEarly = !targetModelOverride && isCodingDeskAutoSelection(pinnedEarly);
+    const vfsFileCountEarly = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+    const openRouterApiKeyHint = getClientSecret('openrouter');
+    const turnPlan = planCodingTurn({
+      message: visibleUserText,
+      priorUserMessages: priorUserTexts,
+      codingDeskOpen: Boolean(codingDeskOpen),
+      refineDesk: Boolean(refineDeskEarly),
+      studioDomain: studioDomainEarly,
+      history: messages,
+      autoMode: autoModeEarly,
+      availableModels: availableModels || [],
+      vfsFileCount: vfsFileCountEarly,
+      lessons: readCodingTurnLessons(activeSessionId),
+      allowPaid: Boolean(openRouterApiKeyHint),
+    });
+    const intakeAccept = turnPlan.intakeAccept || { expanded: false, catalogTarget: null, userAsked: 0 };
+    if (turnPlan.mode === 'execute' || turnPlan.mode === 'interrupt') {
+      text = turnPlan.messageForModel || text;
+    }
+    if (turnPlan.mode === 'execute' && turnPlan.runSkillsFirst && typeof onCodingTurnExecute === 'function') {
+      try {
+        onCodingTurnExecute(turnPlan);
+      } catch { /* desk seed is best-effort; model still runs */ }
+    }
     const turnCorrelationId = createCorrelationId('studio');
     const goldenTransaction = (() => {
       try { return sessionStorage.getItem('quantora_golden_transaction') || null; } catch { return null; }
@@ -229,13 +284,46 @@ export function useChatStream({
     const userMsg = {
       id: createMessageId('user'),
       sender: 'user',
-      text: text.trim(),
+      // Keep the short typed accept in the transcript; the model still gets the expanded brief.
+      text: intakeAccept.expanded ? visibleUserText : text.trim(),
       attachments: [...attachments]
     };
 
     updateActiveMessages(prev => [...prev, userMsg]);
     if (!textToSend) setInputText('');
     setAttachments([]);
+
+    // Coding Turn Planner owns the turn: analyse → skills → interrupt | execute.
+    if (turnPlan.mode === 'interrupt' && turnPlan.interrupt) {
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: turnPlan.interrupt.reply,
+        componentType: 'formatted_text',
+        codingTurnPlan: {
+          intent: turnPlan.intent,
+          skillsRequired: turnPlan.skillsRequired.map((s) => s.id),
+          skillsMissing: turnPlan.skillsMissing.map((s) => s.id),
+          proof: turnPlan.proof,
+        },
+        partnerInterrupt: {
+          kind: turnPlan.interrupt.kind,
+          catalogTarget: turnPlan.interrupt.assessment?.catalogTarget || null,
+          userAsked: turnPlan.interrupt.assessment?.userAsked || null,
+        },
+        continueSet: {
+          prompt: 'Agree on the next move',
+          items: (turnPlan.interrupt.chips || []).map((chip) => ({
+            id: chip.id,
+            label: chip.label,
+            value: chip.value,
+            priority: chip.priority,
+          })),
+        },
+      }]);
+      return;
+    }
+
     setIsGenerating(true);
 
     try {
@@ -443,29 +531,39 @@ export function useChatStream({
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
-    const shopIntakeAsk = assessShopBuildAsk(visibleUserText || text);
+    const shopIntakeAsk = turnPlan.shop || assessShopBuildAsk(intakeAccept.expanded ? text : (visibleUserText || text));
     if (autoMode && isCodingRequest) {
-      const openRouterApiKeyHint = getClientSecret('openrouter');
-      const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
-      const resolved = resolveCodingDeskModel({
-        task: 'coding',
-        message: text,
-        hasVFS: vfsFileCount > 0,
-        refineMode: refineDesk,
-        availableModels: availableModels || [],
-        qualityHints: {
-          fileCount: vfsFileCount,
-          shopImageOversize: shopIntakeAsk.oversize,
-        },
-        allowPaid: Boolean(openRouterApiKeyHint),
-      });
-      autoResolvedLabel = resolved.model?.name || resolved.modelId;
-      targetModel = {
-        id: 'auto',
-        name: 'Auto',
-        resolvedModelId: resolved.modelId,
-        resolvedModelName: autoResolvedLabel,
-      };
+      if (turnPlan.modelPlan?.modelId) {
+        autoResolvedLabel = turnPlan.modelPlan.modelName || turnPlan.modelPlan.modelId;
+        targetModel = {
+          id: 'auto',
+          name: 'Auto',
+          resolvedModelId: turnPlan.modelPlan.modelId,
+          resolvedModelName: autoResolvedLabel,
+        };
+      } else {
+        const openRouterApiKeyHint = getClientSecret('openrouter');
+        const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+        const resolved = resolveCodingDeskModel({
+          task: 'coding',
+          message: text,
+          hasVFS: vfsFileCount > 0,
+          refineMode: refineDesk,
+          availableModels: availableModels || [],
+          qualityHints: {
+            fileCount: vfsFileCount,
+            shopImageOversize: shopIntakeAsk.oversize,
+          },
+          allowPaid: Boolean(openRouterApiKeyHint),
+        });
+        autoResolvedLabel = resolved.model?.name || resolved.modelId;
+        targetModel = {
+          id: 'auto',
+          name: 'Auto',
+          resolvedModelId: resolved.modelId,
+          resolvedModelName: autoResolvedLabel,
+        };
+      }
     }
     const turnDomain = resolveTurnStudioDomain({
       explicit: studioDomain,
@@ -483,7 +581,15 @@ export function useChatStream({
       hasPreview: Boolean(isWorkspaceMode && (canvasCode || (vfs && Object.keys(vfs).length))),
       officeKind: briefingKind || activeOfficeArtifactKind(messages),
     });
-    const intakeFacts = shopIntakeSessionFacts(shopIntakeAsk);
+    const intakeFacts = [
+      ...shopIntakeSessionFacts(shopIntakeAsk),
+      ...(intakeAccept.expanded && intakeAccept.catalogTarget
+        ? [
+          `shopCatalogTarget:${intakeAccept.catalogTarget}`,
+          `Catalog photos this turn: about ${intakeAccept.catalogTarget} working images (user accepted the smaller catalog; do not generate dozens of unique AI mockups).`,
+        ]
+        : []),
+    ];
     const turnContext = mergeStudySyllabusFromText(
       mergeSessionContext(
         conversationContext,
@@ -655,7 +761,17 @@ export function useChatStream({
       latencyMs: 0,
       provider: targetModel.name,
       liveConnected: false,
-      executionStatus: null,
+      executionStatus: turnPlan.statusLabel
+        ? { label: turnPlan.statusLabel }
+        : null,
+      ...(turnPlan.isCodingTurn ? {
+        codingTurnPlan: {
+          intent: turnPlan.intent,
+          skillsRequired: turnPlan.skillsRequired.map((s) => s.id),
+          proof: turnPlan.proof,
+          runSkillsFirst: Boolean(turnPlan.runSkillsFirst),
+        },
+      } : {}),
       correlationId: turnCorrelationId,
       ...(goldenTransaction ? { goldenTransaction } : {}),
       ...(briefingPrompt ? { officeBriefing: true, officeBriefingKind: briefingKind } : {})
@@ -765,9 +881,14 @@ export function useChatStream({
               if (parsed.travelDegraded === true) travelDegraded = true;
               if (parsed.status) {
                 if (!stillCurrent()) return;
+                const nextStatus = sanitizePartnerBuildStatus(parsed.status, {
+                  catalogTarget: intakeAccept.catalogTarget || shopIntakeAsk.catalogTarget || 10,
+                  intakeAccepted: Boolean(intakeAccept.expanded || shopIntakeAsk.oversize),
+                  userAsked: intakeAccept.userAsked || shopIntakeAsk.userAsked || shopIntakeAsk.imageAskCount || 0,
+                });
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
-                  executionStatus: parsed.status,
+                  executionStatus: nextStatus,
                 } : m));
               }
               if (parsed.text) {
@@ -827,19 +948,67 @@ export function useChatStream({
               } : m));
               return;
             }
+            if (isCodingRequest) {
+              const providerOutcome = resolveCodingTurnOutcome({
+                kind: 'provider-dead',
+                errorMessage: artifactFailed
+                  ? streamedError.message
+                  : (currentText
+                    ? 'provider handoff failed after a partial reply'
+                    : 'no healthy AI route'),
+                shopIntakeAsk,
+              });
+              recordTurnLesson('provider-dead', {
+                shopIntakeAsk,
+                detail: streamedError?.message || 'provider-dead',
+                intentKind: turnPlan.intent?.kind,
+              });
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: currentText && !artifactFailed
+                  ? `${sanitizeAssistantStream(currentText)}\n\n${providerOutcome.text}`
+                  : providerOutcome.text,
+                isError: providerOutcome.isError,
+                executionStatus: null,
+                ...(providerOutcome.continueSet ? { continueSet: providerOutcome.continueSet } : {}),
+              } : m));
+              return;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: artifactFailed
-                ? `⚠️ **Preview could not run:** ${streamedError.message}`
+                ? `⚠️ **Could not finish:** ${streamedError.message}`
                 : currentText
-                ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
-                : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
+                  ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
+                  : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
               isError: true,
               executionStatus: null,
             } : m));
             return;
           }
           if (!receivedDone) {
+            if (isCodingRequest) {
+              const streamOutcome = resolveCodingTurnOutcome({
+                kind: 'stream-ended',
+                errorMessage: 'the response stream ended unexpectedly',
+                shopIntakeAsk,
+              });
+              recordTurnLesson('stream-ended', {
+                shopIntakeAsk,
+                detail: 'stream-ended',
+                intentKind: turnPlan.intent?.kind,
+              });
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: currentText
+                  ? `${sanitizeAssistantStream(currentText)}\n\n${streamOutcome.text}`
+                  : streamOutcome.text,
+                isError: streamOutcome.isError,
+                executionStatus: null,
+                ...(streamOutcome.continueSet ? { continueSet: streamOutcome.continueSet } : {}),
+              } : m));
+              return;
+            }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: currentText
@@ -882,9 +1051,20 @@ export function useChatStream({
             }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
-              text: '⚠️ **Preview could not run:** Quantora generated a chat plan with no runnable files. Retry and I will rebuild a complete page.',
-              isError: true,
-              executionStatus: null,
+              ...(() => {
+                const outcome = resolveCodingTurnOutcome({ kind: 'no-preview', shopIntakeAsk });
+                recordTurnLesson('no-preview', {
+                  shopIntakeAsk,
+                  detail: 'no-preview',
+                  intentKind: turnPlan.intent?.kind,
+                });
+                return {
+                  text: outcome.text,
+                  isError: outcome.isError,
+                  executionStatus: null,
+                  ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
+                };
+              })(),
             } : m));
             return;
           }
@@ -968,35 +1148,52 @@ export function useChatStream({
             announceRecovery(recovery.notice);
             continue;
           }
+          if (isCodingRequest) {
+            const isShopPhotoTurn = Boolean(
+              shopIntakeAsk.oversize
+              || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
+            );
+            const outcome = resolveCodingTurnOutcome({
+              kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
+              turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
+              errorMessage: error.message || 'Unable to reach the AI gateway.',
+              shopIntakeAsk,
+              isShopPhotoTurn,
+            });
+            if (!stopped) {
+              recordTurnLesson(timedOut ? 'timeout' : 'provider-dead', {
+                shopIntakeAsk,
+                isShopPhotoTurn,
+                detail: error.message || (timedOut ? 'timeout' : 'provider-dead'),
+                intentKind: turnPlan.intent?.kind,
+              });
+              if (timedOut && shopIntakeAsk?.oversize && !intakeAccept.expanded) {
+                recordTurnLesson('oversize_burn', {
+                  shopIntakeAsk,
+                  isShopPhotoTurn: true,
+                  detail: 'oversize timed out without agree',
+                  intentKind: turnPlan.intent?.kind,
+                });
+              }
+            }
+            updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+              ...m,
+              text: outcome.text,
+              isError: outcome.isError,
+              executionStatus: null,
+              ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
+            } : m));
+            return;
+          }
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
             text: stopped
               ? '⚠️ **Generation Stopped**'
-              : timedOut && (
-                shopIntakeAsk.oversize
-                || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText))
-              )
-                ? shopPhotoTurnFailureCopy({
-                  timedOut: true,
-                  seconds: Math.round(turnDeadlineMs / 1000),
-                  assessment: shopIntakeAsk,
-                })
-                : timedOut
-                  ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
+              : timedOut
+                ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
                 : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
             isError: true,
             executionStatus: null,
-            ...(timedOut && shopIntakeAsk.oversize
-              ? {
-                continueSet: {
-                  items: shopIntakeAsk.chips.map((chip) => ({
-                    id: chip.id,
-                    label: chip.label,
-                    value: chip.value,
-                  })),
-                },
-              }
-              : {}),
           } : m));
           return;
         } finally {

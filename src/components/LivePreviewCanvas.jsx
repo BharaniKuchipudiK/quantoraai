@@ -3,6 +3,7 @@ import { Smartphone, Tablet, Monitor, Download, X, Rocket, ShieldCheck, Wrench, 
 import {
   createPreviewEmbedObjectUrl,
   getPreviewEmbedPathUrl,
+  canUseBlobPreviewEmbed,
   injectPreviewHarness,
   prepareCodeForPreview,
   decidePreviewTrustStatus,
@@ -43,6 +44,10 @@ const OFFICE_LABEL = {
  */
 
 const MAX_HEAL_ATTEMPTS = 3;
+/** One real remount (new iframe URL) if embed-ready never arrives. */
+const PREVIEW_WARMING_RETRY_MS = 6_000;
+/** Hard stop — no endless theater while assemblyKey churns. */
+const PREVIEW_WARMING_FAIL_MS = 12_000;
 
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   code,
@@ -102,6 +107,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const [embedReady, setEmbedReady] = useState(false);
   const [embedSrc, setEmbedSrc] = useState('');
   const [readyElapsedSec, setReadyElapsedSec] = useState(0);
+  const [warmingFailed, setWarmingFailed] = useState(false);
+  /** Shell remounts only — must not burn MAX_HEAL_ATTEMPTS. */
+  const [remountNonce, setRemountNonce] = useState(0);
+  const warmingRetriedRef = useRef(false);
+  const warmingStartedAtRef = useRef(null);
   const embedModeRef = useRef('blob');
 
   const iframeRef = useRef(null);
@@ -140,27 +150,36 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   onVerificationStatusChangeRef.current = onVerificationStatusChange;
 
   useEffect(() => {
-    onVerificationStatusChangeRef.current?.(status);
-  }, [status, headless, verifyOnly]);
+    // Project-runtime / WebContainer shells are ready without embed-ready.
+    const shellReady = Boolean(wcUrl)
+      || embedReady
+      || isProjectRuntimeVfs(vfs)
+      || Boolean(createInlineReactRuntimeVfs(currentCode, vfs));
+    const reported = !shellReady && status === 'running' ? 'warming' : status;
+    onVerificationStatusChangeRef.current?.(reported);
+  }, [status, embedReady, wcUrl, vfs, currentCode, headless, verifyOnly]);
 
   useEffect(() => {
     setEmbedReady(false);
     embedReadyRef.current = false;
-    // Blob-first: the Studio document sends COEP require-corp. Framing
-    // /preview/embed.html without CORP makes Chrome report
-    // "quantoraai.app refused to connect". The blob shell is opaque-origin
-    // and receives HTML over postMessage.
-    embedModeRef.current = 'blob';
-    const blobUrl = createPreviewEmbedObjectUrl();
+    // Path-first under COEP require-corp: sandboxed blob: iframes cannot send
+    // CORP headers, so Chrome never loads them and embed-ready never fires.
+    // /preview/embed.html is served with Cross-Origin-Resource-Policy: cross-origin.
+    // Always cache-bust on remount — same path URL otherwise leaves a dead iframe
+    // after we clear embedReady (theatrical "retrying" with no actual remount).
+    embedModeRef.current = 'path';
+    const bust = `${remountNonce}-${attempt}`;
     setEmbedSrc((previous) => {
       revokePreviewEmbedObjectUrl(previous);
-      return blobUrl;
+      return getPreviewEmbedPathUrl(bust);
     });
-    return () => revokePreviewEmbedObjectUrl(blobUrl);
-  }, [attempt]);
+    return () => revokePreviewEmbedObjectUrl(undefined);
+  }, [attempt, remountNonce]);
 
   useEffect(() => {
     if (!embedSrc || embedReady) return undefined;
+    // Never fall back to blob under COEP — it cannot load and only burns the clock.
+    if (!canUseBlobPreviewEmbed()) return undefined;
     const timer = setTimeout(() => {
       if (embedReadyRef.current) return;
       if (embedModeRef.current === 'path') {
@@ -168,20 +187,33 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           embedModeRef.current = 'blob';
           setEmbedSrc(createPreviewEmbedObjectUrl());
         } catch { /* keep path */ }
-        return;
       }
     }, 4000);
     return () => clearTimeout(timer);
-  }, [embedSrc, embedReady, attempt]);
+  }, [embedSrc, embedReady, attempt, remountNonce]);
 
   const handleEmbedFrameError = useCallback(() => {
-    if (embedModeRef.current === 'blob') return;
+    if (!canUseBlobPreviewEmbed()) {
+      // Under COEP, only path remounts work.
+      setRemountNonce((value) => value + 1);
+      return;
+    }
+    if (embedModeRef.current === 'path') {
+      try {
+        embedModeRef.current = 'blob';
+        setEmbedSrc(createPreviewEmbedObjectUrl());
+      } catch { /* keep path */ }
+      return;
+    }
     try {
+      embedModeRef.current = 'path';
+      setEmbedSrc((previous) => {
+        revokePreviewEmbedObjectUrl(previous);
+        return getPreviewEmbedPathUrl(`err-${Date.now()}`);
+      });
+    } catch {
       embedModeRef.current = 'blob';
       setEmbedSrc(createPreviewEmbedObjectUrl());
-    } catch {
-      embedModeRef.current = 'path';
-      setEmbedSrc(getPreviewEmbedPathUrl());
     }
   }, []);
 
@@ -201,7 +233,24 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
 
   useEffect(() => {
     setCurrentCode(code || '');
-    setStatus(code ? 'running' : 'clean');
+    if (!code) {
+      setStatus('clean');
+      setAttempt(0);
+      setLastError(null);
+      setWarmingFailed(false);
+      warmingRetriedRef.current = false;
+      warmingStartedAtRef.current = null;
+      healingRef.current = false;
+      errorSeenRef.current = false;
+      stylingFailedRef.current = false;
+      autoJobHealRef.current = false;
+      verifiedCodeRef.current = null;
+      return;
+    }
+    // Assembly churn (shop inject / streaming / SVG wiring) must NOT reset the
+    // hang-tight deadline or remount the shell — that left Preview stuck on
+    // “getting ready” forever while Review already showed files.
+    setStatus('running');
     setAttempt(0);
     setLastError(null);
     healingRef.current = false;
@@ -483,11 +532,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           return;
         }
         if (!errorSeenRef.current && !headless && !verifyOnly) {
+          // Preview is proven by the iframe load — do not stay on “Verifying”
+          // while verify-build chats with the model.
+          setStatus(stylingFailedRef.current ? 'degraded' : 'clean');
           if (verifiedCodeRef.current !== currentCodeRef.current) {
             verifiedCodeRef.current = currentCodeRef.current;
             void runQualityCheck(prepared);
-          } else {
-            setStatus(stylingFailedRef.current ? 'degraded' : 'clean');
           }
         }
       }
@@ -685,22 +735,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   }), [handlePublishClick, handleSharePreview]);
 
   const retryVerification = () => {
-    setAttempt(0);
     setLastError(null);
+    setWarmingFailed(false);
+    warmingRetriedRef.current = false;
+    warmingStartedAtRef.current = null;
     errorSeenRef.current = false;
     healingRef.current = false;
     stylingFailedRef.current = false;
     setStatus('running');
-    pushHtmlToEmbed(currentCodeRef.current + '\n<!-- retry -->');
+    setRemountNonce((value) => value + 1);
   };
-
-  const statusUI = {
-    running: { icon: <Loader size={14} className="animate-spin" />, label: 'Verifying — running the preview…', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
-    healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
-    degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-    failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
-  }[status] || null;
 
   const projectRuntimeVfs = useMemo(
     () => (isProjectRuntimeVfs(vfs) ? vfs : createInlineReactRuntimeVfs(currentCode, vfs)),
@@ -712,24 +756,60 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     : null;
   const previewShellReady = projectRuntimeActive || Boolean(wcUrl) || embedReady;
 
+  // Never say “Verifying — running” while the shell overlay still says getting ready.
+  const statusUI = {
+    warming: { icon: <Loader size={14} className="animate-spin" />, label: 'Preview is starting…', color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+    running: { icon: <Loader size={14} className="animate-spin" />, label: 'Verifying — running the preview…', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+    healing: { icon: <Wrench size={14} />, label: `Runtime error found — auto-fixing (attempt ${Math.min(attempt + 1, MAX_HEAL_ATTEMPTS)}/${MAX_HEAL_ATTEMPTS})…`, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+    clean: { icon: <ShieldCheck size={14} />, label: attempt > 0 ? 'Verified — auto-fixed and running clean' : 'Verified — runs clean', color: '#10b981', bg: 'rgba(16,185,129,0.14)' },
+    degraded: { icon: <AlertTriangle size={14} />, label: 'Preview loaded but styling may be incomplete', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+    failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
+  }[!previewShellReady && (status === 'running' || status === 'healing') ? 'warming' : status] || null;
+
   useEffect(() => {
     if (headless || previewShellReady) {
       setReadyElapsedSec(0);
+      setWarmingFailed(false);
+      warmingStartedAtRef.current = null;
       return undefined;
     }
-    const startedAt = Date.now();
-    setReadyElapsedSec(0);
-    const timer = setInterval(() => {
+    if (!warmingStartedAtRef.current) {
+      warmingStartedAtRef.current = Date.now();
+    }
+    const startedAt = warmingStartedAtRef.current;
+    const tick = () => {
       setReadyElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
-    }, 250);
-    return () => clearInterval(timer);
-  }, [headless, previewShellReady, attempt, currentCode]);
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    const retryDelay = Math.max(0, PREVIEW_WARMING_RETRY_MS - (Date.now() - startedAt));
+    const failDelay = Math.max(0, PREVIEW_WARMING_FAIL_MS - (Date.now() - startedAt));
+    const retryTimer = setTimeout(() => {
+      if (embedReadyRef.current || warmingRetriedRef.current) return;
+      warmingRetriedRef.current = true;
+      setRemountNonce((value) => value + 1);
+    }, retryDelay);
+    const failTimer = setTimeout(() => {
+      if (embedReadyRef.current) return;
+      setWarmingFailed(true);
+      setStatus('failed');
+      setLastError('Preview shell did not start in time. Tap Retry Preview, or open the HTML from Files.');
+    }, failDelay);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(retryTimer);
+      clearTimeout(failTimer);
+    };
+    // Intentionally omit assemblyKey / currentCode — shop inject churn must not
+    // reset the fail clock (that caused eternal "retrying the shell" theater).
+  }, [headless, previewShellReady]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
       role="status"
       aria-live="polite"
       data-quantora-preview-warming="true"
+      data-quantora-preview-warming-failed={warmingFailed ? 'true' : 'false'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -741,13 +821,45 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         gap: '10px',
         background: isLight ? '#f8fafc' : '#0f172a',
         color: isLight ? '#334155' : '#cbd5e1',
+        padding: '24px',
+        textAlign: 'center',
       }}
     >
-      <Clock size={28} color="#f97316" />
-      <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview is getting ready — hang tight</div>
-      <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-        {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
-      </div>
+      {warmingFailed || readyElapsedSec >= Math.floor(PREVIEW_WARMING_FAIL_MS / 1000) ? (
+        <>
+          <AlertTriangle size={28} color="#ef4444" />
+          <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview shell did not start</div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.85, maxWidth: '320px' }}>
+            This is a desk problem, not your brief. We stopped waiting after {Math.floor(PREVIEW_WARMING_FAIL_MS / 1000)}s.
+          </div>
+          <button
+            type="button"
+            onClick={retryVerification}
+            style={{
+              marginTop: '6px',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid rgba(239,68,68,0.45)',
+              background: 'rgba(239,68,68,0.12)',
+              color: '#ef4444',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Retry Preview
+          </button>
+        </>
+      ) : (
+        <>
+          <Clock size={28} color="#f97316" />
+          <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>
+            Preview is starting…
+          </div>
+          <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+            {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
+          </div>
+        </>
+      )}
     </div>
   ) : null;
 
@@ -772,7 +884,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       {previewWarmingOverlay}
       <iframe
         ref={iframeRef}
-        key={`${attempt}-${embedSrc}`}
+        key={`${attempt}-${remountNonce}-${embedSrc}`}
         title="Live Preview"
         src={wcUrl || embedSrc}
         onError={handleEmbedFrameError}
@@ -790,7 +902,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     </div>
   ) : (
     <div style={{ padding: '24px', fontFamily: 'sans-serif', color: '#64748b', position: 'relative', minHeight: '240px' }}>
-      {previewWarmingOverlay || 'Preview is getting ready — hang tight'}
+      {previewWarmingOverlay || 'Preview is starting…'}
     </div>
   ));
 

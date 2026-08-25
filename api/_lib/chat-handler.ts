@@ -21,6 +21,7 @@ import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilien
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
 import { shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
   TRAVEL_DEGRADED_DIRECTIVE,
@@ -1020,6 +1021,18 @@ export default async function handler(req: any, res: any) {
               nextGateway: nextRoute?.gateway,
             })
           ) throw error;
+          if (!sse.isCommitted && nextRoute) {
+            sse.status({
+              phase: 'build',
+              state: 'failover',
+              label: partnerProviderPressureLabel({
+                attempt: index + 1,
+                maxAttempts: attempts.length,
+                nextModelLabel: nextRoute.id,
+                statusCode: status,
+              }),
+            });
+          }
         }
       }
 
