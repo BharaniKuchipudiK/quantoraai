@@ -92,11 +92,20 @@ export function revokePreviewEmbedObjectUrl(url) {
   }
 }
 
-export function getPreviewEmbedPathUrl() {
+export function getPreviewEmbedPathUrl(cacheBust = '') {
+  const bust = cacheBust === undefined || cacheBust === null || cacheBust === ''
+    ? ''
+    : `?r=${encodeURIComponent(String(cacheBust))}`;
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}${PREVIEW_EMBED_PATH}`;
+    return `${window.location.origin}${PREVIEW_EMBED_PATH}${bust}`;
   }
-  return PREVIEW_EMBED_PATH;
+  return `${PREVIEW_EMBED_PATH}${bust}`;
+}
+
+/** Blob embeds cannot set CORP — under COEP (Coding Desk) they never load. */
+export function canUseBlobPreviewEmbed() {
+  if (typeof window === 'undefined') return true;
+  return window.crossOriginIsolated !== true;
 }
 
 export const PREVIEW_TAILWIND_PROBE_ID = '__quantora_tailwind_probe';
