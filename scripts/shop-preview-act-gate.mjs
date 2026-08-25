@@ -183,17 +183,6 @@ async function openHostPage(browser, target) {
   }
 
   const page = await context.newPage();
-  // Register embed-ready BEFORE any navigation so production CSP (no unsafe-inline)
-  // cannot block the host listener after goto(baseUrl).
-  await page.addInitScript(() => {
-    window.__embedReady = false;
-    window.addEventListener('message', (event) => {
-      if (event.data && event.data.__quantora === true && event.data.kind === 'embed-ready') {
-        window.__embedReady = true;
-      }
-    });
-  });
-
   const hostHtml = `<!DOCTYPE html><html><body style="margin:0">
 <iframe id="f" title="shop-preview" sandbox="${sandbox}" ${
     target.embedUrl
@@ -202,16 +191,34 @@ async function openHostPage(browser, target) {
   }></iframe>
 </body></html>`;
 
+  const installEmbedReadyListener = async () => {
+    // Playwright CDP evaluate — not an inline <script>, so production root CSP
+    // (script-src without unsafe-inline) cannot block it after goto(baseUrl).
+    await page.evaluate(() => {
+      window.__embedReady = false;
+      if (window.__quantoraEmbedReadyBound) return;
+      window.__quantoraEmbedReadyBound = true;
+      window.addEventListener('message', (event) => {
+        if (event.data && event.data.__quantora === true && event.data.kind === 'embed-ready') {
+          window.__embedReady = true;
+        }
+      });
+    });
+  };
+
   if (target.mode === 'deployed-embed') {
     // Parent must share the deployment origin so the path-first iframe is same-site
     // for postMessage delivery (matches Coding Desk hosting /preview/embed.html).
     await page.goto(target.baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.setContent(hostHtml, { waitUntil: 'domcontentloaded' });
+    await installEmbedReadyListener();
   } else if (target.mode === 'local-preview') {
     await page.goto(target.baseUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
     await page.setContent(hostHtml, { waitUntil: 'domcontentloaded' });
+    await installEmbedReadyListener();
   } else {
     await page.setContent(hostHtml, { waitUntil: 'domcontentloaded' });
+    await installEmbedReadyListener();
     await page.locator('#f').evaluate((iframe, shell) => {
       iframe.srcdoc = shell;
     }, PATH_EMBED_HTML);
@@ -258,28 +265,20 @@ export async function runShopPreviewActGate({ requireDeployed = false } = {}) {
     const preview = page.frameLocator('#f');
     await preview.locator('img').first().waitFor({ state: 'attached', timeout: READY_MS });
 
-    // Poll until at least one image has decoded (CI / deployed browsers vary).
-    await page.waitForFunction(() => {
-      const frame = document.getElementById('f')?.contentDocument;
-      if (!frame) return false;
-      return Array.from(frame.querySelectorAll('img')).some((img) => img.naturalWidth > 0);
-    }, null, { timeout: READY_MS }).catch(async () => {
-      // Sandbox may omit allow-same-origin — fall back to CDP evaluateAll poll.
-      const deadline = Date.now() + READY_MS;
-      while (Date.now() < deadline) {
-        const stats = await preview.locator('img').evaluateAll((imgs) => imgs.map((img) => img.naturalWidth));
-        if (stats.some((width) => width > 0)) return;
-        await page.waitForTimeout(100);
-      }
-      throw new Error('Timed out waiting for a painted catalog image (naturalWidth>0).');
-    });
-
-    const imgStats = await preview.locator('img').evaluateAll((imgs) => imgs.map((img) => ({
-      src: (img.getAttribute('src') || '').slice(0, 48),
-      complete: img.complete,
-      naturalWidth: img.naturalWidth,
-    })));
-    const painted = imgStats.filter((row) => row.naturalWidth > 0);
+    // Poll via Playwright frameLocator — sandbox may omit allow-same-origin.
+    const paintDeadline = Date.now() + READY_MS;
+    let imgStats = [];
+    let painted = [];
+    while (Date.now() < paintDeadline) {
+      imgStats = await preview.locator('img').evaluateAll((imgs) => imgs.map((img) => ({
+        src: (img.getAttribute('src') || '').slice(0, 48),
+        complete: img.complete,
+        naturalWidth: img.naturalWidth,
+      })));
+      painted = imgStats.filter((row) => row.naturalWidth > 0);
+      if (painted.length >= 1) break;
+      await page.waitForTimeout(100);
+    }
     assert.ok(
       painted.length >= 1,
       `need ≥1 painted img (naturalWidth>0); got ${JSON.stringify(imgStats.slice(0, 5))}`,
