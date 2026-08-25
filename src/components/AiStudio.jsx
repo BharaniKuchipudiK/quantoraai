@@ -13,7 +13,7 @@ import PlainCodeBlock from './PlainCodeBlock.jsx';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
-import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady } from '../lib/studio-partner-status.js';
+import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
 import { assessShopBuildAsk, shopPhotoTurnFailureCopy } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
@@ -1345,8 +1345,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (!previewRunCode) setLiveDeskProbe(null);
   }, [previewRunCode]);
 
-  // LivePreviewCanvas reports "warming" until embedReady; claims must wait for that shell.
-  const previewWarming = previewRunStatus === 'warming' || previewRunStatus === 'healing';
+  // Same shell gate as partner strip: warming/running/healing = not past embedReady/verify.
+  const previewWarming = previewShellIsWarming(previewRunStatus);
   const claimFilterOpts = { previewWarming };
 
   const renderedChatFeed = React.useMemo(() => {
