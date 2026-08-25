@@ -46,7 +46,7 @@ const OFFICE_LABEL = {
 const MAX_HEAL_ATTEMPTS = 3;
 /** One real remount (new iframe URL) if embed-ready never arrives. */
 const PREVIEW_WARMING_RETRY_MS = 6_000;
-/** Hard stop — no endless theater while assemblyKey churns. */
+/** Hard stop after the coding turn is idle — never while the stream is still writing. */
 const PREVIEW_WARMING_FAIL_MS = 12_000;
 
 const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
@@ -76,6 +76,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   jobCard = null,
   onHealedPreview,
   onLiveDeskProbe,
+  /** True while chat/stream is still building — do not declare shell dead yet. */
+  turnBusy = false,
 }, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -110,6 +112,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const [warmingFailed, setWarmingFailed] = useState(false);
   /** Shell remounts only — must not burn MAX_HEAL_ATTEMPTS. */
   const [remountNonce, setRemountNonce] = useState(0);
+  /** Bumps when desk HTML forces another idle remount window. */
+  const [shellKick, setShellKick] = useState(0);
   const warmingRetriedRef = useRef(false);
   const warmingStartedAtRef = useRef(null);
   const embedModeRef = useRef('blob');
@@ -766,15 +770,39 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     failed: { icon: <AlertTriangle size={14} />, label: 'Preview hit an error. The page is still on the desk.', color: '#ef4444', bg: 'rgba(239,68,68,0.14)' }
   }[!previewShellReady && (status === 'running' || status === 'healing') ? 'warming' : status] || null;
 
+  const deskHasHtml = Boolean(
+    (typeof currentCode === 'string' && currentCode.trim())
+    || Object.keys(vfs || {}).some((path) => /\.html?$/i.test(path) && String(vfs[path]?.content || '').trim()),
+  );
+
   useEffect(() => {
     if (headless || previewShellReady) {
       setReadyElapsedSec(0);
       setWarmingFailed(false);
       warmingStartedAtRef.current = null;
+      warmingRetriedRef.current = false;
+      return undefined;
+    }
+    // Boutique / long coding turns keep the main thread busy for 30–90s. Failing
+    // the shell at 12s mid-stream is the "Preview shell did not start" screenshot.
+    // Hold the fail clock until the turn is idle, then remount once and wait again.
+    if (turnBusy) {
+      warmingStartedAtRef.current = null;
+      warmingRetriedRef.current = false;
+      setWarmingFailed(false);
+      setStatus((prev) => (prev === 'failed' ? 'running' : prev));
+      const busyTick = setInterval(() => {
+        setReadyElapsedSec((sec) => sec + 1);
+      }, 1000);
+      return () => clearInterval(busyTick);
+    }
+    if (warmingFailed && !deskHasHtml) {
       return undefined;
     }
     if (!warmingStartedAtRef.current) {
       warmingStartedAtRef.current = Date.now();
+      // Fresh idle window after a busy turn — remount so embed-ready can fire.
+      setRemountNonce((value) => value + 1);
     }
     const startedAt = warmingStartedAtRef.current;
     const tick = () => {
@@ -791,6 +819,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }, retryDelay);
     const failTimer = setTimeout(() => {
       if (embedReadyRef.current) return;
+      // HTML already on the desk: keep remounting — never sticky "shell did not start".
+      if (deskHasHtml) {
+        warmingRetriedRef.current = false;
+        warmingStartedAtRef.current = null;
+        setWarmingFailed(false);
+        setStatus('running');
+        setRemountNonce((value) => value + 1);
+        setShellKick((value) => value + 1);
+        return;
+      }
       setWarmingFailed(true);
       setStatus('failed');
       setLastError('Preview shell did not start in time. Tap Retry Preview, or open the HTML from Files.');
@@ -802,7 +840,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     };
     // Intentionally omit assemblyKey / currentCode — shop inject churn must not
     // reset the fail clock (that caused eternal "retrying the shell" theater).
-  }, [headless, previewShellReady]);
+  }, [headless, previewShellReady, turnBusy, warmingFailed, deskHasHtml, shellKick]);
 
   const previewWarmingOverlay = !headless && !previewShellReady ? (
     <div
@@ -810,6 +848,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       aria-live="polite"
       data-quantora-preview-warming="true"
       data-quantora-preview-warming-failed={warmingFailed ? 'true' : 'false'}
+      data-quantora-preview-turn-busy={turnBusy ? 'true' : 'false'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -825,7 +864,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         textAlign: 'center',
       }}
     >
-      {warmingFailed || readyElapsedSec >= Math.floor(PREVIEW_WARMING_FAIL_MS / 1000) ? (
+      {warmingFailed ? (
         <>
           <AlertTriangle size={28} color="#ef4444" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>Preview shell did not start</div>
@@ -853,10 +892,11 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         <>
           <Clock size={28} color="#f97316" />
           <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>
-            Preview is starting…
+            {turnBusy ? 'Building — Preview waits for this turn…' : 'Preview is starting…'}
           </div>
           <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>
             {Math.floor(readyElapsedSec / 60)}:{String(readyElapsedSec % 60).padStart(2, '0')}
+            {turnBusy ? ' · shell fail clock paused' : ''}
           </div>
         </>
       )}

@@ -14,7 +14,7 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
-import { assessShopBuildAsk, shopPhotoTurnFailureCopy } from '../lib/shop-catalog-scale.js';
+import { assessShopBuildAsk, shopPhotoTurnFailureCopy, messageLooksLikeShopBuild } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
@@ -2162,7 +2162,39 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
+        // Model died / timed out — still prove the desk. Skills may already have
+        // a runnable shop; never leave sticky failure with index.html on Files.
         if (lastMsg.isError) {
+          const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
+          const skillPlan = planFromMessageSnapshot(lastMsg.codingTurnPlan, {
+            messageForModel: userBrief,
+            displayUserText: userBrief,
+          });
+          if (skillPlan?.isCodingTurn || messageLooksLikeShopBuild(userBrief)) {
+            const proved = proveCodingTurn({
+              plan: skillPlan || {
+                mode: 'execute',
+                isCodingTurn: true,
+                intent: { kind: 'shop_build' },
+                skillsRequired: ['preview_html', 'shop_catalog_photos', 'shop_commerce_ui'],
+                messageForModel: userBrief,
+              },
+              vfs,
+              job: deskJob,
+              brief: userBrief,
+              allowRepair: true,
+              sessionId: activeSessionId,
+            });
+            if (proved?.vfs && Object.keys(proved.vfs).length) {
+              commitDeskVfs(proved.vfs);
+              const entry = pickPreviewEntry(proved.vfs);
+              if (entry) setWorkspaceCode(entry);
+              setWorkspaceActiveTab('preview');
+              setIsWorkspaceMode(true);
+              setCodingDeskOpen(true);
+            }
+            return;
+          }
           const keepWorkspace = shouldKeepWorkspaceForPrompt({
             prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
             hasWorkspace: isWorkspaceMode || canvasOpen,
@@ -2303,7 +2335,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
       }
     }
-  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen, commitDeskVfs]);
+  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen, commitDeskVfs, deskJob, activeSessionId]);
 
   const hasUserTurn = messages.some((message) => message.sender === 'user');
   const generatingStatus = lastAiMessage?.executionStatus?.label;
@@ -4179,6 +4211,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       user={user}
                       onRequireAuth={onOpenAuth}
                       vfs={vfs}
+                      turnBusy={isGenerating}
                       onVerificationStatusChange={setPreviewRunStatus}
                       jobCard={deskJob}
                       onHealedPreview={handleHealedPreview}
