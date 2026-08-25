@@ -202,6 +202,30 @@
       "destination": "/api/auth?route=logout"
     },
     {
+      "source": "/api/auth/signup",
+      "destination": "/api/auth?route=signup"
+    },
+    {
+      "source": "/api/auth/login",
+      "destination": "/api/auth?route=login"
+    },
+    {
+      "source": "/api/auth/password-reset-request",
+      "destination": "/api/auth?route=password-reset-request"
+    },
+    {
+      "source": "/api/auth/password-reset-confirm",
+      "destination": "/api/auth?route=password-reset-confirm"
+    },
+    {
+      "source": "/api/auth/github",
+      "destination": "/api/auth?route=github"
+    },
+    {
+      "source": "/api/auth/github/callback",
+      "destination": "/api/auth?route=github-callback"
+    },
+    {
       "source": "/api/admin/feedback",
       "destination": "/api/admin?route=feedback"
     },

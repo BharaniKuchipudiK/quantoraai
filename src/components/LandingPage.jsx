@@ -1,51 +1,44 @@
 import React, { useState, useRef, useEffect } from 'react';
-import AuroraBackground from './AuroraBackground';
-import { QuantoraEmblemSvg, QuantoraFullLogoSvg } from './QuantoraLogoSvg';
+import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import {
-  Sparkles,
-  Workflow,
-  Cpu,
-  ShieldCheck,
   ArrowRight,
-  ArrowLeft,
-  LogIn,
-  CheckCircle2,
-  Zap,
   Sun,
   Moon,
-  Lock,
-  Search,
-  BarChart3,
-  Terminal,
   Code2,
   Layers,
-  Key,
-  Play,
-  RotateCcw,
-  Check,
-  ChevronRight,
-  Gauge,
-  Globe2,
-  Atom,
+  Terminal,
+  Lightbulb,
   BookOpen,
-  GraduationCap,
-  Smartphone,
+  PieChart,
+  Globe,
+  RefreshCw,
+  CheckCircle2,
+  FileCode2,
+  FolderTree,
+  Sparkles,
 } from 'lucide-react';
 import './LandingPage.css';
 
-/*
- * Reveal-on-scroll wrapper. Content starts slightly lowered and transparent,
- * then eases into place the first time it enters the viewport — so the page
- * unfolds as you scroll instead of presenting a static wall of text. Honors
- * reduced-motion and degrades to "always visible" without IntersectionObserver.
- */
+const ORANGE = '#ea580c';
+const ORANGE_BRIGHT = '#f97316';
+
+function mockTokens(isLight) {
+  return {
+    surface: isLight ? '#ffffff' : '#0a0a0a',
+    panel: isLight ? '#f5f5f5' : '#141414',
+    border: isLight ? '#e5e5e5' : '#262626',
+    muted: isLight ? '#737373' : '#a3a3a3',
+    ink: isLight ? '#0a0a0a' : '#ffffff',
+  };
+}
+
 function Reveal({ children, delay = 0, style, className }) {
   const ref = useRef(null);
   const [shown, setShown] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (reduce || typeof IntersectionObserver === 'undefined') { setShown(true); return; }
     const io = new IntersectionObserver((entries) => {
       entries.forEach((e) => { if (e.isIntersecting) { setShown(true); io.disconnect(); } });
@@ -57,40 +50,304 @@ function Reveal({ children, delay = 0, style, className }) {
     <div ref={ref} className={className} style={{
       ...style,
       opacity: shown ? 1 : 0,
-      transform: shown ? 'none' : 'translateY(30px)',
+      transform: shown ? 'none' : 'translateY(28px)',
       transition: `opacity 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms, transform 0.7s cubic-bezier(0.22,1,0.36,1) ${delay}ms`,
-      willChange: 'opacity, transform'
     }}>{children}</div>
   );
 }
 
-export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, availableModels = [], themeMode, setThemeMode }) {
-  const [activeCapability, setActiveCapability] = useState('studio');
+function CodingDeskMock({ isLight }) {
+  const { surface, panel, border, muted, ink } = mockTokens(isLight);
+  return (
+    <div className="workspace-mock workspace-mock--ide" style={{ background: surface, borderColor: border }}>
+      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
+        <span className="workspace-mock__dot" style={{ background: ORANGE_BRIGHT }} />
+        <span className="workspace-mock__dot" style={{ background: muted }} />
+        <span className="workspace-mock__dot" style={{ background: muted }} />
+        <span className="workspace-mock__title">Coding desk</span>
+        <div className="workspace-mock__tabs">
+          {['Preview', 'Code', 'Terminal', 'Git'].map((tab, i) => (
+            <span key={tab} className={`workspace-mock__tab${i === 0 ? ' is-active' : ''}`} style={{ borderColor: border, color: i === 0 ? ORANGE : muted }}>{tab}</span>
+          ))}
+        </div>
+      </div>
+      <div className="workspace-mock__ide-body">
+        <div className="workspace-mock__sidebar" style={{ borderColor: border, background: panel }}>
+          <div className="workspace-mock__sidebar-head"><FolderTree size={12} /> Files</div>
+          {['index.html', 'styles.css', 'app.js'].map((f, i) => (
+            <div key={f} className={`workspace-mock__file${i === 0 ? ' is-active' : ''}`} style={{ color: i === 0 ? ORANGE : muted }}>
+              <FileCode2 size={11} /> {f}
+            </div>
+          ))}
+        </div>
+        <div className="workspace-mock__editor" style={{ borderColor: border, background: panel }}>
+          <div className="workspace-mock__line"><span style={{ color: muted }}>1</span><span style={{ color: ORANGE }}>async function</span><span> processCheckout(cart) {'{'}</span></div>
+          <div className="workspace-mock__line"><span style={{ color: muted }}>2</span><span>  let subtotal = 0;</span></div>
+          <div className="workspace-mock__line"><span style={{ color: muted }}>3</span><span>  const total = subtotal;</span></div>
+          <div className="workspace-mock__line"><span style={{ color: muted }}>4</span><span style={{ color: ORANGE_BRIGHT }}>  // heal: apply tax</span></div>
+          <div className="workspace-mock__line"><span style={{ color: muted }}>5</span><span style={{ color: ORANGE }}>{'}'}</span></div>
+          <div className="workspace-mock__cursor" />
+        </div>
+        <div className="workspace-mock__preview" style={{ borderColor: border, background: panel }}>
+          <div className="workspace-mock__preview-frame">
+            <div className="workspace-mock__preview-bar" style={{ background: isLight ? '#e5e5e5' : '#262626' }} />
+            <div className="workspace-mock__preview-block" style={{ background: isLight ? '#f5f5f5' : '#141414', borderColor: border }} />
+            <Play size={20} color={ORANGE} className="workspace-mock__play" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  // The hero's real prompt box — the same idea a build starts from. Not a
-  // simulation: submitting it drops the visitor straight into a live build.
-  const [heroPrompt, setHeroPrompt] = useState('');
-  const [phIdx, setPhIdx] = useState(0);
+function StudyTutorMock({ isLight }) {
+  const { surface, panel, border, muted } = mockTokens(isLight);
+  return (
+    <div className="workspace-mock workspace-mock--study" style={{ background: surface, borderColor: border }}>
+      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
+        <Lightbulb size={14} color={ORANGE} />
+        <span className="workspace-mock__title">Study Tutor</span>
+      </div>
+      <div className="workspace-mock__study-body">
+        <div className="workspace-mock__chat-bubble is-ai" style={{ background: panel, borderColor: border }}>
+          Let&apos;s break this into three concepts you can practise.
+        </div>
+        <div className="workspace-mock__lab" style={{ borderColor: border, background: panel }}>
+          <span className="workspace-mock__lab-label">Study lab</span>
+          <div className="workspace-mock__flashcards">
+            {['Photosynthesis', 'Krebs cycle', 'Review'].map((c, i) => (
+              <div key={c} className="workspace-mock__flashcard" style={{ borderColor: i === 1 ? ORANGE : border, background: 'transparent' }}>{c}</div>
+            ))}
+          </div>
+          <div className="workspace-mock__progress" style={{ background: border }}>
+            <span style={{ width: '68%', background: ORANGE }} />
+          </div>
+        </div>
+        <div className="workspace-mock__chat-bubble is-user" style={{ background: panel, color: muted, borderColor: border }}>
+          Quiz me on chapter 4
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const heroExamples = [
-    'A research assistant that searches papers and summarizes them…',
-    'A study planner that turns my syllabus into daily goals…',
-    'A dashboard to track weekly metrics for my team…',
-    'A tool that turns my lecture notes into flashcards…',
-    'An invoice generator for my consulting clients…',
-    'A cozy cafe website with online ordering…',
-    'A literature-review helper for my thesis…',
-    'A portfolio for a photographer with a booking form…'
+function SelfHealConsole({ isLight }) {
+  const { surface, panel, border, muted, ink } = mockTokens(isLight);
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setPhase((p) => (p + 1) % 5), 2200);
+    return () => clearInterval(id);
+  }, []);
+
+  const status = [
+    'Writing checkout.js…',
+    'Bug found — tax never applied',
+    'Self-heal writing patch…',
+    'Patch applied. Running tests…',
+    'Fixed. Tests passed.',
+  ][phase];
+
+  const lines = [
+    { n: 1, text: 'async function processCheckout(cart) {' },
+    { n: 2, text: '  const session = await getSession();' },
+    { n: 3, text: '  if (!session) throw new Error(\'Unauthorized\');' },
+    { n: 4, text: '' },
+    { n: 5, text: '  let subtotal = 0;' },
+    { n: 6, text: '  for (const item of cart.items) {' },
+    { n: 7, text: '    subtotal += item.price * item.quantity;' },
+    { n: 8, text: '  }' },
+    { n: 9, text: '' },
   ];
 
-  // Cycle the prompt placeholder so ideas suggest themselves as gentle motion,
-  // instead of a static block of example chips sitting on the page. Pauses
-  // while the visitor is actually typing.
+  return (
+    <div className="heal-console" style={{ background: surface, borderColor: border }}>
+      <div className="heal-console__bar" style={{ borderColor: border }}>
+        <Terminal size={14} color={ORANGE} />
+        <span>Coding Desk · checkout.js</span>
+        <span className="heal-console__status" style={{ color: ORANGE }}>{status}</span>
+      </div>
+      <div className="heal-console__body">
+        <div className="heal-console__code" style={{ color: ink, background: panel }}>
+          {lines.map((line) => (
+            <div key={line.n} className="heal-console__line">
+              <span className="heal-console__ln" style={{ color: muted }}>{line.n}</span>
+              <span>{line.text}</span>
+            </div>
+          ))}
+          {phase < 3 ? (
+            <div className={`heal-console__line${phase >= 1 ? ' is-bug' : ''}`}>
+              <span className="heal-console__ln" style={{ color: muted }}>10</span>
+              <span>  const total = subtotal; // BUG: tax never applied</span>
+            </div>
+          ) : (
+            <>
+              <div className="heal-console__line is-del">
+                <span className="heal-console__ln" style={{ color: muted }}>—</span>
+                <span>  const total = subtotal; // BUG: tax never applied</span>
+              </div>
+              <div className="heal-console__line is-add">
+                <span className="heal-console__ln" style={{ color: muted }}>+</span>
+                <span>  const tax = await calculateTax(cart.address);</span>
+              </div>
+              <div className="heal-console__line is-add">
+                <span className="heal-console__ln" style={{ color: muted }}>+</span>
+                <span>  const total = Math.round(subtotal * (1 + tax));</span>
+              </div>
+            </>
+          )}
+          {[
+            { n: 15, text: '' },
+            { n: 16, text: '  const charge = await stripe.charges.create({' },
+            { n: 17, text: '    amount: total,' },
+            { n: 18, text: '    currency: \'usd\',' },
+            { n: 19, text: '    source: cart.token,' },
+            { n: 20, text: '  });' },
+            { n: 21, text: '' },
+            { n: 22, text: '  return new Response(JSON.stringify(charge));' },
+            { n: 23, text: '}' },
+          ].map((line) => (
+            <div key={line.n} className="heal-console__line">
+              <span className="heal-console__ln" style={{ color: muted }}>{line.n}</span>
+              <span>{line.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="heal-console__term" style={{ borderColor: border, color: muted }}>
+          <p>$ quantora heal checkout.js</p>
+          {phase >= 1 && <p>[agent] Scanning 23 lines · Bug at L10 — total ignores tax</p>}
+          {phase >= 2 && <p>[agent] Writing patch…</p>}
+          {phase >= 3 && (
+            <>
+              <p className="heal-console__del-line">− const total = subtotal;</p>
+              <p className="heal-console__add-line">+ const tax = await calculateTax(cart.address);</p>
+              <p className="heal-console__add-line">+ const total = Math.round(subtotal * (1 + tax));</p>
+            </>
+          )}
+          {phase >= 4 && (
+            <>
+              <p>$ vitest run checkout.test.js</p>
+              <p style={{ color: ORANGE }}>✓ tax is applied  ·  ✓ integer rounding</p>
+            </>
+          )}
+          <span className="heal-console__caret" aria-hidden="true" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdvisorMock({ isLight, type }) {
+  const titles = {
+    research: 'Research Analyst',
+    travel: 'Travel Advisor',
+    finance: 'Finance Advisor',
+  };
+  const items = {
+    research: ['Compare sources', 'Evidence map', 'Conclusion draft'],
+    travel: ['Flights', 'Hotels', 'Itinerary'],
+    finance: ['Portfolio', 'Cash flow', 'Decisions'],
+  };
+  const title = titles[type] || titles.research;
+  const rows = items[type] || items.research;
+  const { surface, border, muted } = mockTokens(isLight);
+  return (
+    <div className="workspace-mock workspace-mock--advisor" style={{ background: surface, borderColor: border }}>
+      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
+        <Layers size={14} color={ORANGE} />
+        <span className="workspace-mock__title">{title}</span>
+      </div>
+      <div className="workspace-mock__advisor-body">
+        {rows.map((item, i) => (
+          <div key={item} className="workspace-mock__advisor-row" style={{ borderColor: border }}>
+            <span className="workspace-mock__advisor-num" style={{ color: ORANGE }}>{String(i + 1).padStart(2, '0')}</span>
+            <span>{item}</span>
+            <CheckCircle2 size={14} color={i < 2 ? ORANGE : muted} style={{ marginLeft: 'auto', opacity: i < 2 ? 1 : 0.35 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const WORKSPACES = [
+  {
+    id: 'study',
+    tag: 'Learning',
+    title: 'Study Tutor',
+    body: 'Explanation, practice, and review — in the same thread as the work you are building.',
+    color: ORANGE,
+    icon: Lightbulb,
+    mock: 'study',
+  },
+  {
+    id: 'research',
+    tag: 'Research',
+    title: 'Research Analyst',
+    body: 'Frame the question, compare sources, and move toward a defensible conclusion.',
+    color: ORANGE,
+    icon: BookOpen,
+    mock: 'research',
+  },
+  {
+    id: 'travel',
+    tag: 'Travel',
+    title: 'Travel Advisor',
+    body: 'Destination, dates, constraints — into an itinerary you can follow.',
+    color: ORANGE,
+    icon: Globe,
+    mock: 'travel',
+  },
+  {
+    id: 'finance',
+    tag: 'Finance',
+    title: 'Finance Advisor',
+    body: 'Cash flow, trade-offs, and a recommendation you can act on.',
+    color: ORANGE,
+    icon: PieChart,
+    mock: 'finance',
+  },
+];
+
+const DESK_POINTS = [
+  'Live preview of the running app',
+  'Multi-file editor',
+  'Integrated terminal and git',
+  'Agent console reads the files on the desk',
+  'Detects the failing line, writes a patch',
+  'Re-runs tests before it calls the work done',
+];
+
+const CAPABILITIES = [
+  { icon: Code2, title: 'A real workspace', body: 'Preview, editor, terminal, and git sit beside the conversation. The output is a running app, not a code dump.' },
+  { icon: RefreshCw, title: 'Self-healing builds', body: 'When a run fails, the console locates the fault, applies a patch, and verifies it. You stay in the prompt.' },
+  { icon: Sparkles, title: 'Model selection, handled', body: 'Each turn is routed to a model suited to the task. You describe the outcome. Quantora chooses the path.' },
+];
+
+export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, themeMode, setThemeMode, isLight: isLightProp }) {
+  const [heroPrompt, setHeroPrompt] = useState('');
+  const [phIdx, setPhIdx] = useState(0);
+  const promptRef = useRef(null);
+
+  const heroExamples = [
+    'A study planner from my syllabus…',
+    'A metrics dashboard for my team…',
+    'Flashcards from lecture notes…',
+    'A checkout flow with tax…',
+  ];
+
   useEffect(() => {
     if (heroPrompt) return;
-    const t = setInterval(() => setPhIdx((i) => (i + 1) % heroExamples.length), 2600);
+    const t = setInterval(() => setPhIdx((i) => (i + 1) % heroExamples.length), 2800);
     return () => clearInterval(t);
   }, [heroPrompt, heroExamples.length]);
+
+  const isLight = typeof isLightProp === 'boolean' ? isLightProp : themeMode === 'light';
+  const textColor = isLight ? '#0a0a0a' : '#ffffff';
+  const subtextColor = isLight ? '#525252' : '#a3a3a3';
+  const cardBorder = isLight ? '1px solid #e5e5e5' : '1px solid #262626';
+  const cardBg = isLight ? '#ffffff' : '#0a0a0a';
+  const navBg = isLight ? '#ffffff' : '#0a0a0a';
 
   const startBuild = (prompt) => {
     const text = (prompt ?? heroPrompt ?? '').toString();
@@ -99,540 +356,238 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
     else onOpenAuth();
   };
 
-  // The four steps that make Quantora outcome-first — all real product
-  // behaviour, no mock. This is the journey, told as a filmstrip.
-  const journey = [
-    { icon: Sparkles, color: '#f97316', step: '01', title: 'Define the outcome', body: 'State what you need in plain language — no templates, configuration, or code required.' },
-    { icon: Workflow, color: '#8b5cf6', step: '02', title: 'Refine through dialogue', body: 'Quantora clarifies requirements, proposes options, and iterates with you until the result is right.' },
-    { icon: ShieldCheck, color: '#10b981', step: '03', title: 'Validate before delivery', body: 'Apps and builds run in a live sandbox; research and plans are checked for gaps before you commit.' },
-    { icon: Globe2, color: '#06b6d4', step: '04', title: 'Finish and share', body: 'Submit a thesis section, ship an app, publish a page when you need to — or keep iterating in the same thread.' }
-  ];
+  const openStudio = () => (user ? onLaunchStudio() : onOpenAuth());
 
-  const techPillars = [
-    { icon: Layers, color: '#f97316', title: 'Multi-model orchestration', body: 'Requests route across approved frontier models — selecting the right capability for each task.' },
-    { icon: ShieldCheck, color: '#10b981', title: 'Self-healing build loop', body: 'Generated artifacts are executed, verified, and repaired automatically before delivery.' },
-    { icon: Workflow, color: '#8b5cf6', title: 'Conversation-first workflow', body: 'No rigid forms. Requirements emerge naturally through structured dialogue.' },
-    { icon: Lock, color: '#06b6d4', title: 'Privacy by design', body: 'Bring your own API keys. Your data, models, and outputs remain under your control.' }
-  ];
+  const renderWorkspaceMock = (mock) => {
+    if (mock === 'coding') return <CodingDeskMock isLight={isLight} />;
+    if (mock === 'study') return <StudyTutorMock isLight={isLight} />;
+    return <AdvisorMock isLight={isLight} type={mock} />;
+  };
 
-  // Use global theme
-  const isLight = themeMode === 'light';
-
-  const bgColor = isLight ? '#f8fafc' : '#070913';
-  const textColor = isLight ? '#0f172a' : '#ffffff';
-  const subtextColor = isLight ? '#475569' : '#94a3b8';
-  const cardBg = isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.75)';
-  const cardBorder = isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)';
-  const navBg = isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 9, 19, 0.88)';
-
-  // Live model facts for the trust strip — sourced from the real registry the
-  // app already fetched, so nothing here can drift out of date.
-  const onlineModels = (availableModels || []).filter((m) => m && m.available !== false);
-  const liveModelCount = onlineModels.length;
-  const liveModelNames = onlineModels.slice(0, 5).map((m) => m.name).filter(Boolean);
-
-  const outcomes = [
-    { metric: 'Ask', title: 'Research & writing', body: 'Thesis chapters, literature reviews, study plans, and project submissions — clarified and drafted through dialogue.' },
-    { metric: 'Build', title: 'Apps & tools', body: 'Interactive apps, dashboards, and utilities you can preview, refine, and use — not just describe.' },
-    { metric: 'Ship', title: 'When the web fits', body: 'Publish a page or shop when that is the outcome. Quantora is an AI studio, not a website builder with a chat box.' }
-  ];
-
-  // Placeholder slots — swap for real quotes, metrics, and names as stories arrive.
-  const successStorySlots = [
-    {
-      category: 'Research',
-      icon: BookOpen,
-      color: '#8b5cf6',
-      title: 'Thesis chapter, structured',
-      teaser: 'A graduate student turns a vague topic into an outline, draft sections, and a submission checklist — in one week of sessions.',
-      status: 'Coming soon',
-    },
-    {
-      category: 'App',
-      icon: Smartphone,
-      color: '#06b6d4',
-      title: 'Study planner app',
-      teaser: 'A syllabus becomes a daily goal tracker with flashcards — built, previewed, and shared with classmates.',
-      status: 'Coming soon',
-    },
-    {
-      category: 'Plan',
-      icon: GraduationCap,
-      color: '#10b981',
-      title: 'Research project intake',
-      teaser: 'Scope, methodology, and milestones clarified before writing — so the first draft is intentional, not generic.',
-      status: 'Coming soon',
-    },
-  ];
-
-  const flagshipCapabilities = [
-    {
-      id: 'studio',
-      number: '01',
-      label: 'Create',
-      title: 'Build from a conversation.',
-      description: 'Turn an idea into a working artifact — an app, a research draft, a plan, or a page when you need one. Refine with an AI partner that remembers context.',
-      action: 'Open AI Studio',
-      color: '#f97316',
-      icon: Code2
-    },
-    {
-      id: 'canvas',
-      number: '02',
-      label: 'Shape',
-      title: 'Track what you finish, not just what you start.',
-      description: 'Build Journey keeps your outcomes in three lanes — captured, in progress, and done — linked back to AI Studio.',
-      action: 'Open Build Journey',
-      color: '#f59e0b',
-      icon: Workflow
-    },
-    {
-      id: 'quantum',
-      number: '03',
-      label: 'Explore',
-      title: 'Make quantum ideas tangible.',
-      description: 'Simulate circuits, inspect state probabilities and learn by interacting instead of starting with a wall of mathematics.',
-      action: 'Explore Quantum Horizon',
-      color: '#06b6d4',
-      icon: Atom
-    },
-    {
-      id: 'vault',
-      number: '04',
-      label: 'Protect',
-      title: 'Keep access under your control.',
-      description: 'Connect your own model keys through a privacy-minded gateway without turning security into another complicated workflow.',
-      action: 'Open Privacy Vault',
-      color: '#10b981',
-      icon: ShieldCheck
-    }
-  ];
-
-  const selectedCapability = flagshipCapabilities.find((item) => item.id === activeCapability) || flagshipCapabilities[0];
-  const SelectedCapabilityIcon = selectedCapability.icon;
+  const TryCta = ({ className = 'landing-cta landing-cta--primary', large }) => (
+    <button
+      type="button"
+      data-quantora-login="true"
+      onClick={() => startBuild()}
+      className={`${className}${large ? ' landing-cta--large' : ''}`}
+    >
+      Try Quantora <ArrowRight size={large ? 18 : 16} />
+    </button>
+  );
 
   return (
-    <div className="landing-page" style={{
-      minHeight: '100vh',
-      background: bgColor,
-      color: textColor,
-      position: 'relative',
-      overflowX: 'hidden',
-      fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-      transition: 'background 0.4s ease, color 0.4s ease'
-    }}>
-      {/* Header Navigation */}
-      <header className="landing-header" style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        background: navBg,
-        backdropFilter: 'blur(20px)',
-        borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)',
-        padding: '14px 5%',
-        transition: 'all 0.3s ease'
-      }}>
-        <div className="landing-header__inner" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-          {/* Brand Logo */}
-          <button
-            type="button"
-            className="landing-header__brand"
-            aria-label="Open Quantora AI Studio"
-            onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-          >
+    <div className={`landing-page${isLight ? ' is-light' : ' is-dark'}`}>
+      <header className="landing-header" style={{ background: navBg, borderBottom: cardBorder }}>
+        <div className="landing-header__inner">
+          <button type="button" className="landing-header__brand" aria-label="Open Quantora AI Studio" onClick={openStudio}>
             <QuantoraFullLogoSvg height={38} isDark={!isLight} tagline="PROMPT TO ACTION" />
           </button>
 
-          {/* Navigation Links */}
-          <nav className="landing-header__nav" aria-label="Primary navigation" style={{ display: 'flex', alignItems: 'center', gap: '28px', fontSize: '0.92rem', fontWeight: '600', color: isLight ? '#334155' : '#cbd5e1' }}>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              AI Studio
-            </button>
-            <button
-              type="button"
-              onClick={() => document.getElementById('success-stories')?.scrollIntoView({ behavior: 'smooth' })}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Success stories
-            </button>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Dream Canvas
-            </button>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Quantum Horizon
-            </button>
-            <button
-              type="button"
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              className="landing-header__link hover:text-amber-500"
-            >
-              Privacy Vault
-            </button>
+          <nav className="landing-header__nav" aria-label="Primary navigation">
+            <button type="button" className="landing-header__link" onClick={() => document.getElementById('desk')?.scrollIntoView({ behavior: 'smooth' })}>Desk</button>
+            <button type="button" className="landing-header__link" onClick={() => document.getElementById('workspaces')?.scrollIntoView({ behavior: 'smooth' })}>Workspaces</button>
           </nav>
 
-          {/* Theme Switcher */}
-          <div className="landing-header__actions" style={{ display: 'flex', alignItems: 'center', gap: '14px', zIndex: 60 }}>
+          <div className="landing-header__actions">
             <button
               type="button"
+              className="landing-theme-toggle"
               onClick={() => setThemeMode(isLight ? 'dark' : 'light')}
-              style={{
-                background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
-                border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                color: textColor,
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease'
-              }}
-              title="Toggle Theme"
               aria-label={`Switch to ${isLight ? 'dark' : 'light'} theme`}
             >
-              {isLight ? <Moon size={18} color="#8b5cf6" /> : <Sun size={18} color="#fb923c" />}
+              {isLight ? <Moon size={18} color={ORANGE} /> : <Sun size={18} color={ORANGE} />}
             </button>
-
             {user ? (
-              <button
-                type="button"
-                onClick={onLaunchStudio}
-                style={{
-                  background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '10px 22px',
-                  borderRadius: '9999px',
-                  fontSize: '0.9rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 18px rgba(249, 115, 22, 0.4)'
-                }}
-              >
-                <Sparkles size={16} color="#ffffff" /> Enter Portal
+              <button type="button" onClick={onLaunchStudio} className="landing-cta landing-cta--primary">
+                Try Quantora <ArrowRight size={16} />
               </button>
             ) : (
-              <button
-                type="button"
-                data-quantora-login="true"
-                onClick={onOpenAuth}
-                style={{
-                  background: isLight ? '#0f172a' : '#ffffff',
-                  color: isLight ? '#ffffff' : '#0f172a',
-                  border: 'none',
-                  padding: '10px 22px',
-                  borderRadius: '9999px',
-                  fontSize: '0.9rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                <LogIn size={16} /> Log In
-              </button>
+              <TryCta />
             )}
           </div>
         </div>
       </header>
 
-      {/* Hero — same column width as every section below */}
-      <section
-        className="landing-hero"
-        style={{
-          position: 'relative',
-          zIndex: 10,
-          background: isLight
-            ? 'radial-gradient(1000px 480px at 50% -10%, rgba(249,115,22,0.10), rgba(255,255,255,0) 62%), #ffffff'
-            : 'radial-gradient(1000px 520px at 50% -8%, rgba(249,115,22,0.14), rgba(7,9,19,0) 60%), #070913'
-        }}
-      >
-        <div className="landing-container animate-fade-in-up">
+      {/* Hero */}
+      <section className="landing-hero">
+        <div className="landing-container">
           <div className="landing-hero__inner">
-          <div className="landing-hero__eyebrow" style={{ color: isLight ? '#9a3412' : '#fdba74' }}>
-            <span className="landing-hero__eyebrow-dot" />
-            Possibility, built with purpose
-          </div>
-
-          <h1 className="landing-hero__title" style={{ color: isLight ? '#0b1220' : '#ffffff' }}>
-            From intent to <span style={{ color: '#ea580c' }}>outcome.</span>
-          </h1>
-
-          <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-            An AI studio for curious builders — research a thesis, shape a project, build an app, or ship a page when that is the outcome. One conversation, something finished.
-          </p>
-
-          <div
-            className="landing-hero__prompt"
-            style={{
-              background: isLight ? '#ffffff' : 'rgba(17,23,38,0.92)',
-              border: isLight ? '1px solid #e5e7eb' : '1px solid rgba(255,255,255,0.1)',
-              boxShadow: isLight ? '0 14px 44px rgba(15,23,42,0.10)' : '0 14px 48px rgba(0,0,0,0.5)'
-            }}
-          >
-            <textarea
-              aria-label="Describe what you want to build"
-              value={heroPrompt}
-              onChange={(e) => setHeroPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
-              rows={1}
-              placeholder={heroExamples[phIdx]}
-              style={{
-                flex: 1, resize: 'none', border: 'none', outline: 'none',
-                background: 'transparent', color: textColor,
-                fontSize: '1.02rem', lineHeight: 1.5, fontFamily: 'inherit',
-                padding: '11px 0', maxHeight: '120px'
-              }}
-            />
-            <button type="button" className="landing-hero__submit" onClick={() => startBuild()} style={{
-              flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '8px',
-              background: '#ea580c', color: '#ffffff', border: 'none',
-              padding: '13px 24px', borderRadius: '11px',
-              fontSize: '0.98rem', fontWeight: '700', cursor: 'pointer'
-            }}>
-              Build free <ArrowRight size={17} strokeWidth={2.5} />
-            </button>
-          </div>
-
-          <div className="landing-hero__models" style={{ color: isLight ? '#64748b' : '#94a3b8' }}>
-            <span>{liveModelCount > 0 ? `${liveModelCount} live models` : 'Live model routing'}</span>
-            {liveModelNames.map((name, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ opacity: 0.4 }}>·</span> {name}
-              </span>
-            ))}
-          </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Outcomes — value-first, same width rhythm as hero */}
-      <section className={`landing-section landing-outcomes ${isLight ? 'is-light' : ''}`}>
-        <div className="landing-container">
-          <Reveal>
-            <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow" style={{ color: '#fdba74' }}>What you get</span>
-              <h2 className="landing-section__title" style={{ color: '#ffffff' }}>Real outcomes, not chat logs.</h2>
-              <p className="landing-section__lead" style={{ color: 'rgba(255,255,255,0.72)' }}>
-                Every session aims to finish with something you can use — a draft, a preview, a plan, or a live link when the web is the right medium.
-              </p>
+            <div className="landing-hero__eyebrow">
+              <span className="landing-hero__eyebrow-dot" />
+              An AI studio for builders
             </div>
-            <div className="landing-outcomes__grid">
-              {outcomes.map((item) => (
-                <div key={item.metric} className="landing-outcome-card">
-                  <em>{item.metric}</em>
-                  <strong>{item.title}</strong>
-                  <span>{item.body}</span>
-                </div>
-              ))}
-            </div>
-            <p style={{
-              margin: 'clamp(28px, 4vh, 36px) auto 0',
-              fontSize: 'clamp(1.05rem, 1.6vw, 1.25rem)',
-              lineHeight: 1.55,
-              fontWeight: 500,
-              color: 'rgba(255,255,255,0.88)',
-              maxWidth: '680px',
-              textAlign: 'center',
-              textWrap: 'balance'
-            }}>
-              The distance between an idea and a deployed outcome should be measured in conversation — not in quarters, headcount, or capital.
+            <h1 className="landing-hero__title" style={{ color: textColor }}>
+              From idea to <span className="landing-accent">outcome.</span>
+            </h1>
+            <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
+              Describe what you want. Quantora writes the code, finds the faults, and opens a live preview on Coding Desk.
             </p>
-          </Reveal>
-        </div>
-      </section>
 
-      {/* How it works */}
-      <section className="landing-section" style={{ position: 'relative', zIndex: 10 }}>
-        <div className="landing-container">
-        <Reveal>
-          <div className="landing-section__header is-center">
-            <span className="landing-section__eyebrow">How it works</span>
-            <h2 className="landing-section__title" style={{ color: textColor }}>Four stages. One continuous workflow.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>From first prompt to a finished artifact — research, apps, plans, or a published page when you need one.</p>
-          </div>
-        </Reveal>
-        <div className="landing-card-grid">
-          {journey.map((s, i) => {
-            const Icon = s.icon;
-            return (
-              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
-              <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
-                <div className="landing-card__step" style={{ color: s.color }}>{s.step}</div>
-                <div className="landing-card__icon" style={{ background: `${s.color}1f`, border: `1px solid ${s.color}55` }}>
-                  <Icon size={22} color={s.color} />
-                </div>
-                <h3 style={{ color: textColor }}>{s.title}</h3>
-                <p style={{ color: subtextColor }}>{s.body}</p>
+            <div
+              className={`landing-hero__prompt${isLight ? ' is-light' : ' is-dark'}`}
+              onClick={() => promptRef.current?.focus()}
+            >
+              <div className="landing-hero__prompt-field">
+                <textarea
+                  ref={promptRef}
+                  aria-label="Describe what you want to build"
+                  value={heroPrompt}
+                  onChange={(e) => setHeroPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
+                  rows={1}
+                  placeholder=""
+                  style={{ color: textColor, caretColor: heroPrompt ? ORANGE : 'transparent' }}
+                />
+                {!heroPrompt && (
+                  <div className="landing-hero__ghost" aria-hidden="true">
+                    <span>{heroExamples[phIdx]}</span>
+                    <span className="landing-hero__caret" />
+                  </div>
+                )}
               </div>
-              </Reveal>
-            );
-          })}
-        </div>
-        <Reveal delay={120}>
-          <div style={{ textAlign: 'center', marginTop: '36px' }}>
-            <button onClick={() => startBuild()} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#fff', border: 'none', padding: '15px 32px', borderRadius: '14px', fontSize: '1.05rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 10px 28px rgba(249,115,22,0.4)' }}>
-              Start building free <ArrowRight size={19} strokeWidth={2.5} />
-            </button>
+              <TryCta className="landing-hero__submit" />
+            </div>
           </div>
-        </Reveal>
         </div>
       </section>
 
-      {/* Success stories — placeholder until real builder quotes land */}
-      <section id="success-stories" className="landing-section landing-stories" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
+      {/* Desk — the product, once */}
+      <section id="desk" className="landing-section landing-agentic">
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <span className="landing-section__eyebrow">Success stories</span>
-              <h2 className="landing-section__title" style={{ color: textColor }}>Builders who finished something meaningful.</h2>
+              <span className="landing-section__eyebrow">Coding Desk</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>Editor, preview, and agent console — one surface.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Researchers, students, and curious makers — not just web designers. Real stories from early Quantora sessions will live here.
+                The build lands in a real workspace. The console reads those files, flags the fault, and patches it in place.
               </p>
             </div>
           </Reveal>
-          <div className="landing-stories__grid">
-            {successStorySlots.map((story, i) => {
-              const StoryIcon = story.icon;
+          <Reveal>
+            <div className="desk-split">
+              <SelfHealConsole isLight={isLight} />
+              <aside className="desk-points" style={{ border: cardBorder, background: cardBg }}>
+                <span className="landing-workspace-card__tag" style={{ color: ORANGE }}>Built in</span>
+                <h3 style={{ color: textColor, margin: '8px 0 6px', fontSize: '1.15rem' }}>The IDE console</h3>
+                <p style={{ color: subtextColor, margin: '0 0 16px', fontSize: '0.88rem', lineHeight: 1.55 }}>
+                  Not a chat log pasted into an editor. Terminal, preview, and repair run against the files on the desk.
+                </p>
+                <ul className="desk-points__list">
+                  {DESK_POINTS.map((point) => (
+                    <li key={point} style={{ color: textColor }}>
+                      <CheckCircle2 size={16} color={ORANGE} strokeWidth={2} />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Workspaces — other desks, no Coding Desk repeat */}
+      <section id="workspaces" className="landing-section landing-workspaces">
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header is-center">
+              <span className="landing-section__eyebrow">Workspaces</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>One conversation. The right workspace.</h2>
+              <p className="landing-section__lead" style={{ color: subtextColor }}>
+                Build on Coding Desk, then stay in-thread for study, research, travel, or finance — without starting over.
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="landing-workspaces__featured">
+            {WORKSPACES.filter((w) => w.id === 'study').map((ws) => {
+              const Icon = ws.icon;
               return (
-                <Reveal key={story.title} delay={i * 80} style={{ height: '100%' }}>
-                  <article
-                    className={`landing-story-card${isLight ? ' is-light' : ''}`}
-                    style={{ background: cardBg, border: cardBorder }}
-                  >
-                    <span className="landing-story-card__status">{story.status}</span>
-                    <div className="landing-story-card__icon" style={{ background: `${story.color}18`, border: `1px solid ${story.color}44` }}>
-                      <StoryIcon size={20} color={story.color} />
+                <Reveal key={ws.id} className="landing-workspace-showcase">
+                  <article className={`landing-workspace-card is-featured${isLight ? ' is-light' : ' is-dark'}`} style={{ border: cardBorder, background: cardBg }}>
+                    <div className="landing-workspace-card__visual">
+                      {renderWorkspaceMock(ws.mock)}
                     </div>
-                    <span className="landing-story-card__category" style={{ color: story.color }}>{story.category}</span>
-                    <h3 style={{ color: textColor }}>{story.title}</h3>
-                    <p style={{ color: subtextColor }}>{story.teaser}</p>
+                    <div className="landing-workspace-card__copy">
+                      <span className="landing-workspace-card__tag" style={{ color: ws.color }}>{ws.tag}</span>
+                      <div className="landing-workspace-card__title-row">
+                        <Icon size={20} color={ws.color} />
+                        <h3 style={{ color: textColor }}>{ws.title}</h3>
+                      </div>
+                      <p style={{ color: subtextColor }}>{ws.body}</p>
+                    </div>
                   </article>
                 </Reveal>
               );
             })}
           </div>
-          <Reveal delay={120}>
-            <p className="landing-stories__footnote" style={{ color: subtextColor }}>
-              Early access is open. When you finish a thesis section, app, or project with Quantora,{' '}
-              <button
-                type="button"
-                onClick={() => (user ? onLaunchStudio() : onOpenAuth())}
-                style={{ background: 'none', border: 'none', padding: 0, color: '#ea580c', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '3px' }}
-              >
-                your story could be featured here
-              </button>
-              .
-            </p>
+
+          <div className="landing-workspaces__grid">
+            {WORKSPACES.filter((w) => w.id !== 'study').map((ws, i) => {
+              const Icon = ws.icon;
+              return (
+                <Reveal key={ws.id} delay={i * 60}>
+                  <article className={`landing-workspace-card${isLight ? ' is-light' : ' is-dark'}`} style={{ border: cardBorder, background: cardBg }}>
+                    <div className="landing-workspace-card__visual landing-workspace-card__visual--compact">
+                      {renderWorkspaceMock(ws.mock)}
+                    </div>
+                    <span className="landing-workspace-card__tag" style={{ color: ws.color }}>{ws.tag}</span>
+                    <div className="landing-workspace-card__title-row">
+                      <Icon size={16} color={ws.color} />
+                      <h3 style={{ color: textColor }}>{ws.title}</h3>
+                    </div>
+                    <p style={{ color: subtextColor }}>{ws.body}</p>
+                  </article>
+                </Reveal>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Capabilities */}
+      <section id="why" className="landing-section">
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header is-center">
+              <span className="landing-section__eyebrow">Capabilities</span>
+              <h2 className="landing-section__title" style={{ color: textColor }}>Finish the work you start.</h2>
+              <p className="landing-section__lead" style={{ color: subtextColor }}>
+                A running workspace, an agent that repairs its own output, and model choice handled for you.
+              </p>
+            </div>
+          </Reveal>
+          <div className="landing-card-grid landing-why-grid">
+            {CAPABILITIES.map((p, i) => {
+              const Icon = p.icon;
+              return (
+                <Reveal key={p.title} delay={i * 70}>
+                  <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
+                    <div className="landing-card__icon" style={{ background: isLight ? '#ffffff' : '#141414', border: `1px solid ${ORANGE}` }}>
+                      <Icon size={22} color={ORANGE} />
+                    </div>
+                    <h3 style={{ color: textColor }}>{p.title}</h3>
+                    <p style={{ color: subtextColor }}>{p.body}</p>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="landing-section landing-final-cta">
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-final-cta__inner">
+              <h2 style={{ color: textColor }}>Start with a prompt.</h2>
+              <p style={{ color: subtextColor }}>For students, independent builders, and teams who need a working result — not an unfinished chat.</p>
+              <TryCta large />
+            </div>
           </Reveal>
         </div>
       </section>
-
-      {/* Platform */}
-      <section className="landing-section" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
-        <div className="landing-container">
-        <Reveal>
-          <div className="landing-section__header is-center">
-            <span className="landing-section__eyebrow">Platform</span>
-            <h2 className="landing-section__title" style={{ color: textColor }}>Engineered for reliability, not hype.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>Model routing, automated verification, and a privacy-first gateway — built to turn dialogue into dependable outcomes.</p>
-          </div>
-        </Reveal>
-        <div className="landing-card-grid">
-          {techPillars.map((t, i) => {
-            const Icon = t.icon;
-            return (
-              <Reveal key={i} delay={i * 90} style={{ height: '100%' }}>
-              <div className="landing-card" style={{ background: cardBg, border: cardBorder }}>
-                <div className="landing-card__icon" style={{ background: `${t.color}1f`, border: `1px solid ${t.color}55` }}>
-                  <Icon size={22} color={t.color} />
-                </div>
-                <h3 style={{ color: textColor }}>{t.title}</h3>
-                <p style={{ color: subtextColor }}>{t.body}</p>
-              </div>
-              </Reveal>
-            );
-          })}
-        </div>
-        </div>
-      </section>
-
-      {/* Studio modules — text-first, no heavy photography */}
-      <section className="landing-section" style={{ position: 'relative', zIndex: 10, paddingTop: 0 }}>
-        <div className="landing-container">
-        <Reveal>
-          <div className="landing-section__header">
-            <span className="landing-section__eyebrow">The studio</span>
-            <h2 className="landing-section__title" style={{ color: textColor }}>Four surfaces. One build loop.</h2>
-            <p className="landing-section__lead" style={{ color: subtextColor }}>
-              Create, shape, explore, and protect — each module connects back to the same conversation, so you never lose context between idea and delivery.
-            </p>
-          </div>
-        </Reveal>
-
-        <div className="landing-card-grid">
-          {flagshipCapabilities.map((item) => {
-            const ItemIcon = item.icon;
-            const isActive = item.id === selectedCapability.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`landing-capability ${isLight ? 'is-light' : ''}${isActive ? ' is-active' : ''}`}
-                style={{ '--cap-accent': item.color, color: textColor }}
-                onClick={() => setActiveCapability(item.id)}
-              >
-                <div className="landing-capability__label">{item.number} · {item.label}</div>
-                <h3>{item.title}</h3>
-                <p style={{ color: subtextColor }}>{item.description}</p>
-                <ItemIcon size={16} style={{ position: 'absolute', top: 16, right: 16, opacity: 0.35, color: item.color }} />
-              </button>
-            );
-          })}
-        </div>
-
-        <Reveal delay={60}>
-          <div className={`landing-capability-panel ${isLight ? 'is-light' : ''}`} style={{ '--panel-accent': selectedCapability.color }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', color: selectedCapability.color, fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              <SelectedCapabilityIcon size={16} />
-              {selectedCapability.number} / {selectedCapability.label}
-            </div>
-            <h3 style={{ fontSize: 'clamp(1.2rem, 2vw, 1.5rem)', fontWeight: 600, margin: '0 0 10px', color: textColor }}>{selectedCapability.title}</h3>
-            <p style={{ margin: '0 0 20px', maxWidth: '560px', lineHeight: 1.6, color: subtextColor }}>{selectedCapability.description}</p>
-            <button
-              onClick={() => user ? onLaunchStudio() : onOpenAuth()}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: selectedCapability.color, color: '#fff', border: 'none',
-                padding: '12px 22px', borderRadius: '10px',
-                fontSize: '0.92rem', fontWeight: 700, cursor: 'pointer'
-              }}
-            >
-              {selectedCapability.action} <ArrowRight size={16} />
-            </button>
-          </div>
-        </Reveal>
-        </div>
-      </section>
-
-      {/* Footer removed to prevent double-layering with App.jsx Global Footer */}
     </div>
   );
 }

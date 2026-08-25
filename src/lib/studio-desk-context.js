@@ -52,7 +52,9 @@ export function jobClearlyNotShop(job = null) {
   if (!card) return false;
   const hay = [card.purpose, ...card.mustWork].join(' ');
   if (/\b(shop|boutique|storefront|e-?commerce|saree|sari|catalog|cart|bag)\b/i.test(hay)) return false;
-  return /\b(drive|cleaner|calculator|to-?do|timer|quiz|dashboard|agent|todo)\b/i.test(hay);
+  if (/\b(drive|cleaner|calculator|to-?do|timer|quiz|dashboard|agent|todo)\b/i.test(hay)) return true;
+  // Named non-shop product (Nimbus landing, etc.) — leftover boutique files are bleed.
+  return Boolean(card.purpose) && !jobNeedsProductPhotos(card);
 }
 
 export function looksLikeShopDesk({ html = '', vfs = {}, job = null } = {}) {

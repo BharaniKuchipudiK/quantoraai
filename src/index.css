@@ -2087,7 +2087,7 @@ body {
   pointer-events: none;
 }
 
-.aurora-bg.is-light { background: #fdfbf7; }   /* warm off-white, not clinical white */
+.aurora-bg.is-light { background: #ffffff; }
 .aurora-bg.is-dark  { background: #070913; }
 
 .aurora-blob {
