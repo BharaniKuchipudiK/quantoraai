@@ -82,6 +82,10 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /createInlineReactRuntimeVfs/);
   assert.match(preview, /data-quantora-preview-contract-error/);
   assert.match(preview, /project-runtime-contract-missing/);
+  // Endless "retrying the shell" theater: fail clock must not restart on assembly churn.
+  assert.doesNotMatch(preview, /Still starting Preview — retrying the shell/);
+  assert.match(preview, /omit assemblyKey \/ currentCode/);
+  assert.match(preview, /canUseBlobPreviewEmbed/);
 });
 
 test('build timeout and deployed canary credentials honor the release contract', () => {

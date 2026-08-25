@@ -169,6 +169,13 @@ test('embed shell posts embed-ready more than once', () => {
   assert.match(PREVIEW_EMBED_SHELL_HTML, /setTimeout\(signalReady/);
 });
 
+test('path embed URL can cache-bust remounts', async () => {
+  const { getPreviewEmbedPathUrl, canUseBlobPreviewEmbed } = await import('./preview-utils.js');
+  assert.equal(getPreviewEmbedPathUrl(), '/preview/embed.html');
+  assert.match(getPreviewEmbedPathUrl('3-0'), /\?r=3-0$/);
+  assert.equal(typeof canUseBlobPreviewEmbed(), 'boolean');
+});
+
 test('still ignores opaque script errors', () => {
   assert.equal(isIgnorableRuntimeError('Script error.'), true);
 });
