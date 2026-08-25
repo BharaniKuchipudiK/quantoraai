@@ -1260,6 +1260,44 @@ export function useChatStream({
               shopIntakeAsk.oversize
               || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
             );
+            // Model died — still prove skills-seeded desk before declaring failure.
+            if (turnPlan?.isCodingTurn && !stopped) {
+              const deskProof = proveCodingTurn({
+                plan: turnPlan,
+                vfs: vfs || {},
+                job: deskJob,
+                brief: turnPlan.messageForModel || visibleUserText,
+                allowRepair: true,
+                sessionId: activeSessionId,
+              });
+              if (codingTurnMayClaimSuccess(deskProof)) {
+                if (typeof onCodingTurnProved === 'function') {
+                  try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                }
+                const why = timedOut
+                  ? `The model hit the ${Math.round(turnDeadlineMs / 1000)}s limit`
+                  : (error.message || 'The model route failed');
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  text: (
+                    `${why}, but Preview is already proved on the desk `
+                    + `(${deskProof.evidence.photos || 0} catalog photos`
+                    + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                    + 'Open Coding desk — the page is there.'
+                  ),
+                  isError: false,
+                  executionStatus: null,
+                  codingProof: {
+                    ok: true,
+                    gaps: [],
+                    evidence: deskProof.evidence,
+                    status: 'pass',
+                    repaired: deskProof.repaired,
+                  },
+                } : m));
+                return;
+              }
+            }
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
               turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
