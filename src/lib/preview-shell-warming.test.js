@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PREVIEW_SHELL_FAIL_MS,
+  PREVIEW_SHELL_AUTO_REMOUNT_MAX,
   shouldFailPreviewShell,
   shouldHoldPreviewShellFailClock,
+  shouldAutoRemountFailedPreviewShell,
   shouldShowPreviewShellFailOverlay,
 } from './preview-shell-warming.js';
 
@@ -52,4 +54,32 @@ test('never fail when embed is already ready', () => {
     idleElapsedMs: 99_000,
   }), false);
   assert.equal(shouldHoldPreviewShellFailClock({ turnBusy: true, embedReady: true }), false);
+});
+
+test('auto-remount sticky fail when Files still have runnable preview', () => {
+  assert.equal(shouldAutoRemountFailedPreviewShell({
+    warmingFailed: true,
+    hasRunnablePreview: true,
+    autoRemountAttempts: 0,
+  }), true);
+  assert.equal(shouldAutoRemountFailedPreviewShell({
+    warmingFailed: true,
+    hasRunnablePreview: true,
+    autoRemountAttempts: PREVIEW_SHELL_AUTO_REMOUNT_MAX - 1,
+  }), true);
+  assert.equal(shouldAutoRemountFailedPreviewShell({
+    warmingFailed: true,
+    hasRunnablePreview: true,
+    autoRemountAttempts: PREVIEW_SHELL_AUTO_REMOUNT_MAX,
+  }), false);
+  assert.equal(shouldAutoRemountFailedPreviewShell({
+    warmingFailed: true,
+    hasRunnablePreview: false,
+    autoRemountAttempts: 0,
+  }), false);
+  assert.equal(shouldAutoRemountFailedPreviewShell({
+    warmingFailed: false,
+    hasRunnablePreview: true,
+    autoRemountAttempts: 0,
+  }), false);
 });

@@ -184,13 +184,24 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
   const described = (await Promise.all(ids.map((id, index) => describeRoute(id, index === 0 ? 'primary' : 'fallback', input, registry))))
     .filter((route): route is InferenceRoute => Boolean(route))
     .filter((route) => route.health !== 'offline');
-  if (!described.length) return [];
 
-  const live = described.filter((route) => route.circuit !== 'open');
+  // Active list empty/unhealthy can mark every catalog row offline — including
+  // gemini-flash-latest. Coding Desk Auto must still get one last-resort Gemini
+  // attempt when credentials exist (otherwise "no healthy AI route" spine).
+  let poolDescribed = described;
+  if (!poolDescribed.length && input.geminiAvailable) {
+    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, new Map());
+    if (lastResort && lastResort.health !== 'offline') {
+      poolDescribed = [lastResort];
+    }
+  }
+  if (!poolDescribed.length) return [];
+
+  const live = poolDescribed.filter((route) => route.circuit !== 'open');
   // An open circuit must not leave Studio with zero routes. Use a last-resort
   // executable path (prefer a different gateway) so two OpenRouter 429s cannot
   // strand a signed-in user with "No executable model was selected."
-  const pool = live.length ? live : described;
+  const pool = live.length ? live : poolDescribed;
 
   const selected = pool.find((route) => route.id === primary && route.circuit !== 'open')
     || pool.find((route) => route.circuit !== 'open')

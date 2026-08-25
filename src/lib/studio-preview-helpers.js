@@ -480,6 +480,16 @@ export function extractRunnableCode(rawText) {
   return null;
 }
 
+/**
+ * Error / provider-dead turns often still carry partial fences. Those must land
+ * in Files + Preview — do not bare-return on isError when extractable code exists.
+ */
+export function messageHasExtractableWorkspaceCode(rawText, currentVfs = {}) {
+  if (!rawText || typeof rawText !== 'string') return false;
+  if (extractRunnableCode(rawText)) return true;
+  return canOpenStudioPreviewPane(rawText, currentVfs);
+}
+
 const BROWSER_ENTRY = /(?:^|\/)(?:index\.html|presentation\.html|App\.jsx|App\.tsx|src\/App\.jsx|src\/App\.tsx|src\/main\.jsx|src\/main\.tsx)$/i;
 
 function vfsHasBrowserPreview(vfs = {}) {
