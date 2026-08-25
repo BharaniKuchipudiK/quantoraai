@@ -72,15 +72,30 @@ function looksLikeNewJob(brief, existing) {
       return true;
     }
   }
-  // Drive cleaner / agent dashboards must not keep a leftover shop job card —
-  // that card alone is enough for looksLikeShopDesk to attach cart/photo probes.
-  const inventsProduct = /\b(build|create|make|develop)\b/i.test(text)
-    && /\b(app|page|site|tool|game|agent|dashboard|cleaner)\b/i.test(text)
-    && text.length > 40;
-  if (inventsProduct) {
+  // Drive cleaner / landing pages / productivity apps must not keep a leftover
+  // shop job — that card alone keeps cart/photo probes and blocks purge.
+  const inventsProduct = (
+    (/\b(build|create|make|develop)\b/i.test(text)
+      && /\b(app|page|site|tool|game|agent|dashboard|cleaner|landing)\b/i.test(text)
+      && text.length > 40)
+    || /\b(landing\s+page|one-?page\s+(?:site|landing|app)|productivity\s+app)\b/i.test(text)
+  );
+  // “Create a landing page section for the existing dashboard” is a refine.
+  const refiningExisting = (
+    /\b(existing|current|this)\b/i.test(text)
+    && /\b(section|add(?:ing)?|also|into|onto|for the)\b/i.test(text)
+  );
+  if (inventsProduct && !refiningExisting) {
     return !namedPurposeMatch(text, existing.purpose);
   }
   return false;
+}
+
+/** True when this ask should replace the desk product (not refine the current one). */
+export function isStudioProductSwitch(brief, existing = null) {
+  const prev = normalizeStudioJobCard(existing);
+  if (!prev) return false;
+  return looksLikeNewJob(brief, prev);
 }
 
 function namedPurposeMatch(text, purpose) {
@@ -109,6 +124,17 @@ export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {
 
   for (const named of NAMED_JOBS) {
     if (named.re.test(text)) return { purpose: named.purpose, mustWork: named.mustWork };
+  }
+
+  // Intentional product switch: the brief owns the job. Leftover boutique
+  // products.json / Ember HTML must not re-attach "A shop website" and block purge.
+  if (switchingProduct && text) {
+    const clipped = text.replace(/^(please |can you |could you )/i, '').slice(0, 80).trim();
+    const purpose = clipped.charAt(0).toUpperCase() + clipped.slice(1);
+    return {
+      purpose,
+      mustWork: ['Interactive controls still work', 'Do not replace this with a different product'],
+    };
   }
 
   const fromFiles = purposeFromVfs(vfs);

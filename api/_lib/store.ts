@@ -1,4 +1,5 @@
 import { normalizeOutcomeState, type OutcomeState, type OutcomeStateRecord } from "./outcome-state.js";
+import { randomUUID } from "node:crypto";
 
 /*
  * Server-side reads and writes against Supabase.
@@ -70,6 +71,8 @@ export type StoredUser = {
   blocked_at: string | null;
   blocked_reason: string | null;
   is_admin?: boolean | null;
+  password_hash?: string | null;
+  auth_provider?: string | null;
 };
 
 /*
@@ -100,6 +103,11 @@ export async function recordSignIn(user: {
       email: user.email,
       name: user.name,
       picture: user.picture,
+      auth_provider: user.sub.startsWith("github:")
+        ? "github"
+        : user.sub.startsWith("email:")
+          ? "email"
+          : "google",
       last_seen_at: now,
       ...(user.geo ? {
         country_code: user.geo.countryCode,
@@ -122,7 +130,7 @@ export async function recordSignIn(user: {
 export async function readStoredUser(googleSub: string): Promise<StoredUser | null> {
   if (!googleSub) return null;
   const response = await request(
-    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin&google_sub=eq.${encodeURIComponent(googleSub)}&limit=1`,
+    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin,password_hash,auth_provider&google_sub=eq.${encodeURIComponent(googleSub)}&limit=1`,
     { method: "GET" },
   );
   if (!response) return null;
@@ -133,6 +141,65 @@ export async function readStoredUser(googleSub: string): Promise<StoredUser | nu
   } catch {
     return null;
   }
+}
+
+export async function findUserByEmail(email: string): Promise<StoredUser | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const response = await request(
+    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin,password_hash,auth_provider&email=ilike.${encodeURIComponent(normalized)}&limit=1`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function createEmailUser(input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+}): Promise<StoredUser | null> {
+  const now = new Date().toISOString();
+  const sub = `email:${randomUUID()}`;
+  const response = await request("users", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify([{
+      google_sub: sub,
+      email: input.email.trim().toLowerCase(),
+      name: input.name,
+      picture: "",
+      password_hash: input.passwordHash,
+      auth_provider: "email",
+      created_at: now,
+      last_seen_at: now,
+    }]),
+  });
+  if (!response) return null;
+  try {
+    const rows = await response.json();
+    return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateUserPassword(sub: string, passwordHash: string): Promise<boolean> {
+  if (!sub) return false;
+  const response = await request(
+    `users?google_sub=eq.${encodeURIComponent(sub)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ password_hash: passwordHash }),
+    },
+  );
+  return Boolean(response);
 }
 
 /*

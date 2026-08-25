@@ -12,8 +12,8 @@ import {
   SHOP_CATALOG_CAP,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
-import { deskChecksRegressed, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
-import { buildStudioJobCard, jobNeedsProductPhotos } from './studio-job-card.js';
+import { deskChecksRegressed, jobClearlyNotShop, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
+import { buildStudioJobCard, isStudioProductSwitch, jobNeedsProductPhotos } from './studio-job-card.js';
 import { shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
@@ -189,7 +189,10 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
  */
 export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, options = {}) {
   const brief = typeof options === 'string' ? options : String(options?.brief || '');
-  const assembled = assembleStudioPreview(rawText, currentVfs);
+  // Shop → landing (or any new product): do not merge Latte/products.json into Nimbus.
+  const switchingProduct = isStudioProductSwitch(brief, job);
+  const assembleBase = switchingProduct ? {} : currentVfs;
+  const assembled = assembleStudioPreview(rawText, assembleBase);
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
   );
@@ -210,8 +213,9 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
   const onlyNativeSidecars = changedPaths.length > 0
     && changedPaths.every((path) => isNativeSidecarPath(path));
   const needsWebEntry = Boolean(hadProject && didUpdate && onlyNativeSidecars && !previewChanged);
-  // Dropping a leftover boutique catalog is an intentional product switch.
-  if (hadProject && didUpdate && previewChanged && !purged.changed) {
+  // Dropping a leftover boutique catalog is an intentional product switch —
+  // never reject the new product for losing old shop/calc checks.
+  if (hadProject && didUpdate && previewChanged && !purged.changed && !switchingProduct) {
     const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job: nextJob });
     const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job: nextJob });
     if (deskChecksRegressed(before.checks, after.checks)) {
