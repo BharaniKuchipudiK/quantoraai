@@ -15,6 +15,7 @@ import { countRealPreviewPhotos } from './preview-images.js';
 import { previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
 import { rememberCodingTurnLesson } from './coding-turn-memory.js';
 import { lessonKindFromOutcome } from './coding-turn-lesson-kinds.js';
+import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from './project-runtime-preview.js';
 
 /** @typedef {'pending'|'pass'|'repair'|'fail'} ProofStatus */
 
@@ -76,10 +77,15 @@ export function evaluateProofEvidence(plan, {
 } = {}) {
   const shopTurn = isShopPlan(plan);
   const target = photoTargetFor(plan);
-  const { html } = readHtml(vfs);
+  const { path, html } = readHtml(vfs);
   const photos = countRealPreviewPhotos(html);
   const hasCart = previewHtmlHasAddToCartControl(html);
-  const hasHtml = Boolean(html && /<!DOCTYPE html>|<html[\s>]/i.test(html));
+  const hasHtmlDoc = Boolean(html && /<!DOCTYPE html>|<html[\s>]/i.test(html));
+  const hasReactRuntime = isProjectRuntimeVfs(vfs)
+    || Boolean(createInlineReactRuntimeVfs('', vfs))
+    || /\.(jsx|tsx)$/i.test(String(path || ''));
+  // Shop desks must be HTML Preview. Ordinary builds may use the React project runtime.
+  const hasRunnable = shopTurn ? hasHtmlDoc : (hasHtmlDoc || hasReactRuntime);
 
   const livePhotoCount = liveFacts && typeof liveFacts.photoCount === 'number'
     ? liveFacts.photoCount
@@ -91,7 +97,7 @@ export function evaluateProofEvidence(plan, {
   const evidence = {
     photos,
     hasCart,
-    hasHtml,
+    hasHtml: hasRunnable,
     photoTarget: target,
     shopTurn,
     embedReady: embedReady == null ? undefined : Boolean(embedReady),
@@ -99,7 +105,9 @@ export function evaluateProofEvidence(plan, {
   };
 
   const gaps = [];
-  if (!hasHtml) gaps.push('runnable Preview HTML');
+  if (!hasRunnable) {
+    gaps.push(shopTurn ? 'runnable Preview HTML' : 'runnable Preview (HTML or React VFS)');
+  }
   if (shopTurn) {
     const effectivePhotos = livePhotoCount != null ? Math.max(photos, livePhotoCount) : photos;
     if (effectivePhotos < Math.min(target, 10)) {

@@ -1026,13 +1026,58 @@ export function useChatStream({
             return;
           }
 
-          // Coding Desk build turns must land files. A chat-only plan is not success.
+          // Coding Desk build turns must land files OR already-proved skills on the desk.
           // Advisor domains (Study flashcards, Travel, etc.) intentionally stay chat.
           if (
             isCodingRequest
             && !advisorBlocksPreviewBuild(turnDomain)
             && !assembleStudioPreview(currentText).code
           ) {
+            const shopOwned = Boolean(
+              turnPlan?.isCodingTurn
+              && (turnPlan.intent?.kind?.startsWith('shop') || turnPlan.shop || turnPlan.intakeAccept?.expanded),
+            );
+            // Skills-first may already have proved a shop on the desk while the model
+            // returned prose — prove that VFS before declaring no-preview.
+            if (turnPlan?.isCodingTurn) {
+              const seededProof = proveCodingTurn({
+                plan: turnPlan,
+                vfs: vfs || {},
+                job: deskJob,
+                brief: turnPlan.messageForModel || visibleUserText,
+                allowRepair: true,
+                sessionId: activeSessionId,
+              });
+              if (codingTurnMayClaimSuccess(seededProof)) {
+                if (typeof onCodingTurnProved === 'function') {
+                  try { onCodingTurnProved(seededProof, turnPlan); } catch { /* ignore */ }
+                }
+                const okCopy = shopOwned
+                  ? (
+                    `Preview is proved on the desk `
+                    + `(${seededProof.evidence.photos} catalog photos`
+                    + `${seededProof.evidence.hasCart ? ', Add to Cart' : ''}).`
+                  )
+                  : 'Preview is proved on the desk — open Coding desk to run it.';
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  text: currentText
+                    ? `${sanitizeAssistantStream(currentText)}\n\n${okCopy}`
+                    : okCopy,
+                  isError: false,
+                  executionStatus: null,
+                  codingProof: {
+                    ok: true,
+                    gaps: [],
+                    evidence: seededProof.evidence,
+                    status: 'pass',
+                    repaired: seededProof.repaired,
+                  },
+                  correlationId: responseCorrelationId,
+                } : m));
+                return;
+              }
+            }
             const recovery = resolveTurnRecovery({
               attempt,
               code: 'BUILD_ARTIFACT_CONTRACT',
@@ -1043,10 +1088,6 @@ export function useChatStream({
               continue;
             }
             // Shop / proof-plane turns never "succeed" via generic scaffold.
-            const shopOwned = Boolean(
-              turnPlan?.isCodingTurn
-              && (turnPlan.intent?.kind?.startsWith('shop') || turnPlan.shop || turnPlan.intakeAccept?.expanded),
-            );
             const scaffolded = !shopOwned && codingDeskOpen
               ? buildCodingDeskScaffoldReply(visibleUserText)
               : null;

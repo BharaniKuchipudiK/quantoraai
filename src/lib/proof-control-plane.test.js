@@ -93,6 +93,21 @@ test('calculator build proves with HTML only', () => {
   assert.equal(verdict.evidence.hasHtml, true);
 });
 
+test('React App.jsx VFS proves for ordinary coding builds', () => {
+  const plan = planCodingTurn({
+    message: 'Build a todo list app',
+    codingDeskOpen: true,
+  });
+  const vfs = {
+    'App.jsx': {
+      content: 'export default function App(){ return <main><h1>Todos</h1></main>; }',
+      language: 'jsx',
+    },
+  };
+  const verdict = proveCodingTurn({ plan, vfs, allowRepair: false });
+  assert.equal(verdict.ok, true, verdict.detail);
+});
+
 test('proof failure copy names gaps without claiming done', () => {
   const copy = proofFailureCopy({
     gaps: ['at least 10 loadable catalog photos'],
