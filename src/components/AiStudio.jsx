@@ -48,6 +48,9 @@ import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { setClientSecret } from '../lib/client-secrets.js';
+import { runCodingTurnSkills, planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
+import { rememberCodingTurnLesson } from '../lib/coding-turn-memory.js';
+import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import {
@@ -783,20 +786,39 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       }
     }
 
-    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, {
-      brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-    });
+    const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
+    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
     if (assembled.rejected) return;
-    if (assembled.code) {
-      setCanvasVfs(assembled.vfs);
-      setCanvasCode(assembled.code);
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
+    const skillPlan = planFromMessageSnapshot(lastAi?.codingTurnPlan, {
+      messageForModel: brief,
+      displayUserText: brief,
+    }) || {
+      mode: 'execute',
+      isCodingTurn: true,
+      intent: { kind: vfsLooksLikeShop(assembled.vfs, assembled.job || deskJob) ? 'shop_build' : 'app_build' },
+      skillsRequired: vfsLooksLikeShop(assembled.vfs, assembled.job || deskJob)
+        ? ['preview_html', 'shop_catalog_photos', 'shop_commerce_ui']
+        : ['preview_html'],
+      messageForModel: brief,
+    };
+    const skilled = runCodingTurnSkills({
+      plan: skillPlan,
+      vfs: assembled.vfs,
+      job: assembled.job || deskJob,
+      brief,
+    });
+    const finalVfs = skilled.changed ? skilled.vfs : assembled.vfs;
+    if (assembled.code || skilled.changed) {
+      setCanvasVfs(finalVfs);
+      setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        if (Object.keys(assembled.vfs).length > 0) {
-          setDeskReview(diffVfsReview(vfs, assembled.vfs));
-          setVfs(assembled.vfs);
+        if (Object.keys(finalVfs).length > 0) {
+          setDeskReview(diffVfsReview(vfs, finalVfs));
+          setVfs(finalVfs);
           if (assembled.job) setDeskJob(assembled.job);
         }
-        setWorkspaceCode(assembled.code);
+        setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         setWorkspaceActiveTab('preview');
         setCodingDeskOpen(true);
         setIsWorkspaceMode(true);
@@ -1055,6 +1077,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (setActiveTab) setActiveTab('canvas');
   };
 
+  const onCodingTurnExecute = useCallback((plan) => {
+    if (!plan?.runSkillsFirst) return;
+    const result = runCodingTurnSkills({
+      plan,
+      vfs,
+      job: deskJob,
+      brief: plan.messageForModel || plan.displayUserText || '',
+    });
+    if (!result.changed && !result.proof.hasHtml) return;
+    const nextVfs = result.vfs;
+    setDeskReview(diffVfsReview(vfs, nextVfs));
+    setVfs(nextVfs);
+    const entry = pickPreviewEntry(nextVfs);
+    if (entry) setWorkspaceCode(entry);
+    setWorkspaceActiveTab('preview');
+    setCodingDeskOpen(true);
+    setIsWorkspaceMode(true);
+  }, [vfs, deskJob]);
+
   const { handleSendMessage: streamSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
     attachments, setAttachments,
@@ -1076,6 +1117,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     sessionContext: projectContext,
     conversationContext,
     updateActiveSession,
+    onCodingTurnExecute,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -2109,10 +2151,43 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
         const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob, { brief: userBrief });
         if (assembled.rejected) return;
-        const parsedVfs = assembled.vfs;
+        const skillPlan = planFromMessageSnapshot(lastMsg.codingTurnPlan, {
+          messageForModel: userBrief,
+          displayUserText: userBrief,
+        }) || {
+          mode: 'execute',
+          isCodingTurn: true,
+          intent: {
+            kind: vfsLooksLikeShop(assembled.vfs, assembled.job || deskJob) ? 'shop_build' : 'app_build',
+          },
+          skillsRequired: vfsLooksLikeShop(assembled.vfs, assembled.job || deskJob)
+            ? ['preview_html', 'shop_catalog_photos', 'shop_commerce_ui']
+            : ['preview_html'],
+          messageForModel: userBrief,
+        };
+        const skilled = runCodingTurnSkills({
+          plan: skillPlan,
+          vfs: assembled.vfs,
+          job: assembled.job || deskJob,
+          brief: userBrief,
+        });
+        const parsedVfs = skilled.changed ? skilled.vfs : assembled.vfs;
+        if (
+          skillPlan.intent?.kind?.startsWith('shop')
+          && skilled.proof
+          && skilled.proof.hasHtml
+          && skilled.proof.photos < 1
+        ) {
+          rememberCodingTurnLesson(activeSessionId, {
+            kind: lessonKindFromOutcome({ outcomeKind: 'svg_only' }),
+            detail: 'shop desk landed without loadable catalog photos',
+            intentKind: skillPlan.intent?.kind,
+          });
+        }
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
           || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '')
-          || assembled.needsWebEntry === true;
+          || assembled.needsWebEntry === true
+          || skilled.proof.hasHtml;
 
         if (!previewable) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
