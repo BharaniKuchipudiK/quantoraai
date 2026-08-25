@@ -3221,12 +3221,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
         <StudioMissionCard
-          mission={studioMission && partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) ? { ...studioMission, next: '' } : (!['travel', 'education', 'finance', 'research'].includes(studioDomain) ? studioMission : null)}
+          mission={
+            // Coding Desk: mission chrome is not a progress indicator — it sits forever
+            // echoing the last oversize ask ("Building: 100 unique…") and mocks failure.
+            // Advisors keep a short sticky goal; coding only shows it while generating.
+            ['travel', 'education', 'finance', 'research'].includes(studioDomain)
+              ? studioMission
+              : (isGenerating ? studioMission : null)
+          }
           isLight={isLight}
           textColor={textColor}
           subtextColor={subtextColor}
         />
-        {partnerStatus && !isGenerating && !['travel', 'education', 'finance', 'research'].includes(studioDomain) && (
+        {partnerStatus && !isGenerating && previewShellIsWarming(previewRunStatus) ? (
           <div
             data-quantora-partner-status="true"
             role="status"
@@ -3241,10 +3248,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 650, color: textColor, lineHeight: 1.4 }}>{partnerStatus.now}</div>
             {partnerStatus.next ? (
-            <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
+              <div style={{ fontSize: '0.74rem', color: subtextColor, marginTop: '2px', lineHeight: 1.4 }}>{partnerStatus.next}</div>
             ) : null}
           </div>
-        )}
+        ) : null}
         {/* Prompt Card Container */}
         <div className="floating-input-pill" style={{
           overflow: 'visible',
