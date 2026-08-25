@@ -88,6 +88,17 @@ test('multi-file project preview is a React-owned runtime', () => {
   assert.match(preview, /canUseBlobPreviewEmbed/);
 });
 
+test('Proof Control Plane owns coding turn success', () => {
+  const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const plane = fs.readFileSync(new URL('./proof-control-plane.js', import.meta.url), 'utf8');
+  assert.match(plane, /export function proveCodingTurn/);
+  assert.match(plane, /export function codingTurnMayClaimSuccess/);
+  assert.match(stream, /proveCodingTurn/);
+  assert.match(stream, /codingTurnMayClaimSuccess/);
+  assert.match(stream, /onCodingTurnProved/);
+  assert.match(stream, /proofFailureCopy/);
+});
+
 test('build timeout and deployed canary credentials honor the release contract', () => {
   const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
   const canary = fs.readFileSync(new URL('../../scripts/deployed-golden-transactions.mjs', import.meta.url), 'utf8');

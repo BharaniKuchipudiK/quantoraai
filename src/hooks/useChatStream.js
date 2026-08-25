@@ -35,6 +35,11 @@ import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import {
+  proveCodingTurn,
+  codingTurnMayClaimSuccess,
+  proofFailureCopy,
+} from '../lib/proof-control-plane.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
   correlationHeaders,
@@ -160,6 +165,7 @@ export function useChatStream({
   conversationContext,
   updateActiveSession,
   onCodingTurnExecute = null,
+  onCodingTurnProved = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
@@ -1036,7 +1042,12 @@ export function useChatStream({
               announceRecovery(recovery.notice);
               continue;
             }
-            const scaffolded = codingDeskOpen
+            // Shop / proof-plane turns never "succeed" via generic scaffold.
+            const shopOwned = Boolean(
+              turnPlan?.isCodingTurn
+              && (turnPlan.intent?.kind?.startsWith('shop') || turnPlan.shop || turnPlan.intakeAccept?.expanded),
+            );
+            const scaffolded = !shopOwned && codingDeskOpen
               ? buildCodingDeskScaffoldReply(visibleUserText)
               : null;
             if (scaffolded) {
@@ -1067,6 +1078,52 @@ export function useChatStream({
               })(),
             } : m));
             return;
+          }
+
+          // Proof Control Plane owns success — skills + repair + evidence, not chat claims.
+          let codingProof = null;
+          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain)) {
+            const assembled = assembleStudioPreview(currentText, vfs || {});
+            const seedVfs = {
+              ...(vfs || {}),
+              ...(assembled.vfs || {}),
+            };
+            codingProof = proveCodingTurn({
+              plan: turnPlan,
+              vfs: seedVfs,
+              job: deskJob,
+              brief: turnPlan.messageForModel || visibleUserText,
+              allowRepair: true,
+              sessionId: activeSessionId,
+            });
+            if (typeof onCodingTurnProved === 'function') {
+              try {
+                onCodingTurnProved(codingProof, turnPlan);
+              } catch { /* desk apply is best-effort */ }
+            }
+            if (!codingTurnMayClaimSuccess(codingProof)) {
+              const failText = proofFailureCopy(codingProof, turnPlan);
+              const chips = (shopIntakeAsk?.chips || turnPlan.interrupt?.chips || []).map((chip) => ({
+                id: chip.id,
+                label: chip.label,
+                value: chip.value,
+                priority: chip.priority,
+              }));
+              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                ...m,
+                text: failText,
+                isError: true,
+                executionStatus: null,
+                codingProof: {
+                  ok: false,
+                  gaps: codingProof.gaps,
+                  evidence: codingProof.evidence,
+                  status: codingProof.status,
+                },
+                ...(chips.length ? { continueSet: { items: chips } } : {}),
+              } : m));
+              return;
+            }
           }
 
           const normalized = normalizeAssistantResponse(currentText);
@@ -1102,6 +1159,15 @@ export function useChatStream({
             ...m,
             text: withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
+            ...(codingProof ? {
+              codingProof: {
+                ok: true,
+                gaps: [],
+                evidence: codingProof.evidence,
+                status: 'pass',
+                repaired: codingProof.repaired,
+              },
+            } : {}),
             ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
             ...(mergedContinueSet ? { continueSet: mergedContinueSet } : {}),
             ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),

@@ -33,6 +33,8 @@ PROMPT
 
 Interrupt alone is not intelligence. **Available skills must run.** Errors teach the next plan — we do not stop at “couldn’t.”
 
+**Proof Control Plane** (`docs/architecture/proof-control-plane.md`) is the single owner of turn success. Planner/skills feed it; they do not claim done.
+
 The model is a **tool inside the loop**, not the loop.
 
 ## Non‑negotiables
