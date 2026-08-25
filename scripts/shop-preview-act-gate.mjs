@@ -183,20 +183,23 @@ async function openHostPage(browser, target) {
   }
 
   const page = await context.newPage();
+  // Register embed-ready BEFORE any navigation so production CSP (no unsafe-inline)
+  // cannot block the host listener after goto(baseUrl).
+  await page.addInitScript(() => {
+    window.__embedReady = false;
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.__quantora === true && event.data.kind === 'embed-ready') {
+        window.__embedReady = true;
+      }
+    });
+  });
+
   const hostHtml = `<!DOCTYPE html><html><body style="margin:0">
 <iframe id="f" title="shop-preview" sandbox="${sandbox}" ${
     target.embedUrl
       ? `src="${target.embedUrl}"`
       : ''
   }></iframe>
-<script>
-  window.__embedReady = false;
-  window.addEventListener('message', function (e) {
-    if (e.data && e.data.__quantora === true && e.data.kind === 'embed-ready') {
-      window.__embedReady = true;
-    }
-  });
-</script>
 </body></html>`;
 
   if (target.mode === 'deployed-embed') {
@@ -255,8 +258,22 @@ export async function runShopPreviewActGate({ requireDeployed = false } = {}) {
     const preview = page.frameLocator('#f');
     await preview.locator('img').first().waitFor({ state: 'attached', timeout: READY_MS });
 
-    // Playwright CDP can read naturalWidth even when sandbox omits allow-same-origin.
-    await page.waitForTimeout(50);
+    // Poll until at least one image has decoded (CI / deployed browsers vary).
+    await page.waitForFunction(() => {
+      const frame = document.getElementById('f')?.contentDocument;
+      if (!frame) return false;
+      return Array.from(frame.querySelectorAll('img')).some((img) => img.naturalWidth > 0);
+    }, null, { timeout: READY_MS }).catch(async () => {
+      // Sandbox may omit allow-same-origin — fall back to CDP evaluateAll poll.
+      const deadline = Date.now() + READY_MS;
+      while (Date.now() < deadline) {
+        const stats = await preview.locator('img').evaluateAll((imgs) => imgs.map((img) => img.naturalWidth));
+        if (stats.some((width) => width > 0)) return;
+        await page.waitForTimeout(100);
+      }
+      throw new Error('Timed out waiting for a painted catalog image (naturalWidth>0).');
+    });
+
     const imgStats = await preview.locator('img').evaluateAll((imgs) => imgs.map((img) => ({
       src: (img.getAttribute('src') || '').slice(0, 48),
       complete: img.complete,
