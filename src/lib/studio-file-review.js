@@ -270,3 +270,17 @@ export function diffVfsReview(before = {}, after = {}) {
   }
   return rows.sort((left, right) => left.path.localeCompare(right.path));
 }
+
+/**
+ * Keep Review honest across prove → re-apply races.
+ * - Prefer a real before→after diff.
+ * - Never wipe an existing Review with an empty re-apply.
+ * - If files land and Review is still empty, surface the after tree vs {}.
+ */
+export function mergeDeskReview(prevReview = [], before = {}, after = {}) {
+  const next = diffVfsReview(before, after);
+  if (next.length) return next;
+  if (Array.isArray(prevReview) && prevReview.length) return prevReview;
+  if (after && Object.keys(after).length > 0) return diffVfsReview({}, after);
+  return Array.isArray(prevReview) ? prevReview : [];
+}

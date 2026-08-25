@@ -32,7 +32,7 @@ import {
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
-import { diffVfsReview } from '../lib/studio-file-review.js';
+import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -48,9 +48,8 @@ import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { setClientSecret } from '../lib/client-secrets.js';
-import { runCodingTurnSkills, planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
-import { rememberCodingTurnLesson } from '../lib/coding-turn-memory.js';
-import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
+import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import {
@@ -517,6 +516,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
   const [deskReview, setDeskReview] = useState([]);
+  const vfsRef = useRef({});
+  useEffect(() => { vfsRef.current = vfs; }, [vfs]);
+  const commitDeskVfs = useCallback((nextVfs) => {
+    if (!nextVfs || typeof nextVfs !== 'object') return;
+    const before = vfsRef.current || {};
+    setDeskReview((prev) => mergeDeskReview(prev, before, nextVfs));
+    vfsRef.current = nextVfs;
+    setVfs(nextVfs);
+  }, []);
   const [deskJob, setDeskJob] = useState(null);
   const [liveDeskProbe, setLiveDeskProbe] = useState(null);
   const [previewRunStatus, setPreviewRunStatus] = useState('');
@@ -662,6 +670,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCodingDeskOpen(false);
       setIsWorkspaceMode(false);
       setDeskReview([]);
+      vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
       return;
@@ -675,11 +684,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setIsWorkspaceMode(false);
       setLastProcessedMessageId(null);
       setDeskReview([]);
+      vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
       return;
     }
     setVfs(restored.vfs);
+    vfsRef.current = restored.vfs || {};
     setWorkspaceCode(restored.workspaceCode);
     setWorkspaceActiveTab('preview');
     setIsWorkspaceMode(true);
@@ -802,14 +813,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         : ['preview_html'],
       messageForModel: brief,
     };
-    const skilled = runCodingTurnSkills({
+    const proved = proveCodingTurn({
       plan: skillPlan,
       vfs: assembled.vfs,
       job: assembled.job || deskJob,
       brief,
+      allowRepair: true,
+      sessionId: activeSessionId,
     });
-    const finalVfs = skilled.changed ? skilled.vfs : assembled.vfs;
-    if (assembled.code || skilled.changed) {
+    const finalVfs = proved.vfs;
+    if (assembled.code || proved.evidence.hasHtml || Object.keys(finalVfs).length > 0) {
       setCanvasVfs(finalVfs);
       setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
@@ -1078,23 +1091,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const onCodingTurnExecute = useCallback((plan) => {
-    if (!plan?.runSkillsFirst) return;
-    const result = runCodingTurnSkills({
+    if (!plan?.runSkillsFirst && !plan?.intent?.kind?.startsWith('shop')) return;
+    const verdict = proveCodingTurn({
       plan,
       vfs,
       job: deskJob,
       brief: plan.messageForModel || plan.displayUserText || '',
+      allowRepair: true,
+      sessionId: activeSessionId,
     });
-    if (!result.changed && !result.proof.hasHtml) return;
-    const nextVfs = result.vfs;
-    setDeskReview(diffVfsReview(vfs, nextVfs));
-    setVfs(nextVfs);
+    if (!verdict.vfs || (!verdict.ok && !verdict.evidence?.hasHtml && !Object.keys(verdict.vfs).length)) return;
+    const nextVfs = verdict.vfs;
+    commitDeskVfs(nextVfs);
     const entry = pickPreviewEntry(nextVfs);
     if (entry) setWorkspaceCode(entry);
     setWorkspaceActiveTab('preview');
     setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
-  }, [vfs, deskJob]);
+  }, [vfs, deskJob, activeSessionId, commitDeskVfs]);
+
+  const onCodingTurnProved = useCallback((verdict) => {
+    if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
+    commitDeskVfs(verdict.vfs);
+    const entry = pickPreviewEntry(verdict.vfs);
+    if (entry) {
+      setWorkspaceCode(entry);
+      setWorkspaceActiveTab('preview');
+      setCodingDeskOpen(true);
+      setIsWorkspaceMode(true);
+    }
+  }, [commitDeskVfs]);
 
   const { handleSendMessage: streamSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
@@ -1118,6 +1144,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     conversationContext,
     updateActiveSession,
     onCodingTurnExecute,
+    onCodingTurnProved,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -2148,6 +2175,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
+        // Proof Control Plane already rejected this turn — do not open as success.
+        if (lastMsg.codingProof && lastMsg.codingProof.ok === false) {
+          return;
+        }
+
         const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
         const assembled = applyWorkspaceFromChat(lastMsg.text, vfs, deskJob, { brief: userBrief });
         if (assembled.rejected) return;
@@ -2165,38 +2197,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             : ['preview_html'],
           messageForModel: userBrief,
         };
-        const skilled = runCodingTurnSkills({
+        const proved = proveCodingTurn({
           plan: skillPlan,
           vfs: assembled.vfs,
           job: assembled.job || deskJob,
           brief: userBrief,
+          allowRepair: true,
+          sessionId: activeSessionId,
         });
-        const parsedVfs = skilled.changed ? skilled.vfs : assembled.vfs;
-        if (
-          skillPlan.intent?.kind?.startsWith('shop')
-          && skilled.proof
-          && skilled.proof.hasHtml
-          && skilled.proof.photos < 1
-        ) {
-          rememberCodingTurnLesson(activeSessionId, {
-            kind: lessonKindFromOutcome({ outcomeKind: 'svg_only' }),
-            detail: 'shop desk landed without loadable catalog photos',
-            intentKind: skillPlan.intent?.kind,
-          });
-        }
+        const parsedVfs = proved.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
           || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '')
           || assembled.needsWebEntry === true
-          || skilled.proof.hasHtml;
+          || proved.evidence.hasHtml;
 
-        if (!previewable) {
+        if (!previewable || (skillPlan.intent?.kind?.startsWith('shop') && !codingTurnMayClaimSuccess(proved))) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
-          if (vfsLooksLikeShop(vfs, deskJob)) {
-            const ensured = ensureShopDeskInVfs(vfs, deskJob, { brief: userBrief || userPrompt });
-            if (ensured.changed) {
-              setDeskReview(diffVfsReview(vfs, ensured.vfs));
-              setVfs(ensured.vfs);
-              setWorkspaceCode(pickPreviewEntry(ensured.vfs));
+          if (vfsLooksLikeShop(vfs, deskJob) || proved.evidence.hasHtml) {
+            if (proved.vfs && Object.keys(proved.vfs).length) {
+              commitDeskVfs(proved.vfs);
+              setWorkspaceCode(pickPreviewEntry(proved.vfs));
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
               setCodingDeskOpen(true);
@@ -2216,9 +2236,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           const shopVfs = ensureShopDeskInVfs(parsedVfs, assembled.job || deskJob, { brief: userBrief }).vfs;
-           setDeskReview(diffVfsReview(vfs, shopVfs));
-           setVfs(shopVfs);
+           const shopVfs = proved.vfs;
+           commitDeskVfs(shopVfs);
            setDeskJob((prev) => {
              const base = assembled.job || buildStudioJobCard({
                brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
@@ -2258,8 +2277,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 existing: deskJob,
               });
               const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob, { brief: userBrief }).vfs;
-              setDeskReview(diffVfsReview(vfs, nextVfs));
-              setVfs(nextVfs);
+              commitDeskVfs(nextVfs);
               setDeskJob(nextJob);
               setWorkspaceCorrelationId(lastMsg.correlationId || null);
               setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
@@ -2285,7 +2303,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
       }
     }
-  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen]);
+  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen, commitDeskVfs]);
 
   const hasUserTurn = messages.some((message) => message.sender === 'user');
   const generatingStatus = lastAiMessage?.executionStatus?.label;
