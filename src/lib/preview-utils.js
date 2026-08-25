@@ -126,6 +126,27 @@ export function canUseBlobPreviewEmbed() {
   return window.crossOriginIsolated !== true;
 }
 
+/**
+ * What the Preview status chip should claim once the page is running.
+ *
+ * "Running without a thrown error" and "passing the quality bar" are two
+ * different facts, and the chip used to show the first while printing the
+ * second's number beside it — hence the contradictory
+ * "Verified — runs clean · 65/100" (the pass bar is 80). A build that scored
+ * below the bar is reported as needing work, not as verified.
+ *
+ * @param {{ qualityReport?: {score?: number, passed?: boolean}|null, attempt?: number }} [opts]
+ * @returns {'needs-work'|'ran-clean'|'verified'|'verified-autofixed'}
+ */
+export function previewVerdict({ qualityReport = null, attempt = 0 } = {}) {
+  if (qualityReport && qualityReport.passed === false) return 'needs-work';
+  const scored = qualityReport && Number.isFinite(qualityReport.score);
+  // Ran without errors, but the verifier has not returned yet — do not claim
+  // a verdict the quality check has not actually given.
+  if (!scored) return 'ran-clean';
+  return attempt > 0 ? 'verified-autofixed' : 'verified';
+}
+
 export const PREVIEW_TAILWIND_PROBE_ID = '__quantora_tailwind_probe';
 
 // Dedicated probe element — do not reuse `.hidden`; generated navs use `hidden md:flex`.

@@ -50,6 +50,43 @@ function hasRealStyling(src: string): boolean {
 }
 
 /*
+ * "shop", "store" and "product" are usually VENUE or generic nouns, not a
+ * request to sell online: "a coffee shop", "a book store", "our product page".
+ * Matching them as e-commerce attached a CRITICAL product-photo check, and a
+ * failed critical check caps the score at 45 — below the 80 pass bar — so an
+ * ordinary landing page became permanently unpassable. The desk then auto-healed
+ * against that impossible bar and injected a phantom catalog ("Ember Oak Shop 9",
+ * "Product 10") into a coffee-shop page nobody asked to sell anything on.
+ *
+ * Require an explicit selling signal instead of a bare noun. Note that
+ * "<venue> shop website" ("barber shop website") is still a venue page, so a
+ * bare "shop site/website" is deliberately NOT a selling signal either. A
+ * genuine shop turn carries a job card whose mustWork items name "Add to Cart"
+ * and "catalog photos", which match on their own.
+ */
+const SELLS_ONLINE_RE =
+  /\b(e-?commerce|online\s+(?:shop|store|boutique)|web\s?shop|storefront|shopping\s+(?:cart|bag)|add[\s-]?to[\s-]?(?:cart|bag)|check\s?out|payment\s+gateway|sell(?:s|ing)?|cart|boutique|catalog(?:ue)?|merchandise)\b/i;
+
+/*
+ * Only a genuine merchandise/catalog brief may impose the CRITICAL photo bar.
+ * "sell a subscription with a checkout" is commerce, but it has no catalog of
+ * product shots to prove, so a missing image must not cap its score.
+ */
+const MERCHANDISE_BRIEF_RE =
+  /\b(boutique|catalog(?:ue)?|merchandise|storefront|e-?commerce|online\s+(?:shop|store)|product\s+(?:photos?|images?|shots?))\b/i;
+
+/** True when the brief actually asks to sell online, not merely names a venue. */
+export function briefWantsOnlineSelling(brief = ""): boolean {
+  return SELLS_ONLINE_RE.test(String(brief || ""));
+}
+
+/** True when the brief asks for a product catalog whose photos must be real. */
+export function briefWantsProductCatalog(brief = ""): boolean {
+  const b = String(brief || "");
+  return briefWantsOnlineSelling(b) && MERCHANDISE_BRIEF_RE.test(b);
+}
+
+/*
  * Deterministic, no-network checks. Cheap, stable, and impossible to fake — the
  * spine of the verdict. Feature checks activate only when the brief asks for
  * them, so a simple landing page is not penalised for lacking a cart.
@@ -87,16 +124,19 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
   }
 
   // Feature checks — only when the brief asks for the capability.
-  if (/\b(shop|store|cart|checkout|buy|sell|product|boutique|ecommerce|e-commerce)\b/.test(b)) {
+  if (briefWantsOnlineSelling(b)) {
     const hasCart = has(/add[\s-]?to[\s-]?cart|data-quantora-checkout|quantoraCheckout|\bcart\b/i, src);
     checks.push({ id: "feat-cart", label: "Shopping cart / checkout present", ok: hasCart, weight: 3, detail: hasCart ? undefined : "Brief asks to sell, but no cart/checkout was built" });
     const hasPhoto = imgTags.some((tag) => /\bsrc\s*=\s*["'](data:image\/|https?:\/\/|\/api\/preview-image)/i.test(tag));
+    // Critical only for a real catalog brief: capping the score on a page that
+    // was never meant to show product shots makes it impossible to pass.
+    const catalogBrief = briefWantsProductCatalog(b);
     checks.push({
       id: "feat-photos",
       label: "Product photos are real images",
       ok: hasPhoto,
       weight: 3,
-      critical: true,
+      critical: catalogBrief,
       detail: hasPhoto ? undefined : "Brief asks for a catalog, but product images are missing",
     });
   }
