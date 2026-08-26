@@ -133,7 +133,7 @@ export function deriveSessionCheck({ label = '', foundation = '', flashcards = [
     kind: 'self_confidence',
     prompt: `Quick honesty check on ${topic}:`,
     options: [
-      { id: 'hold', text: `I feel ready to explain ${topic} without looking`, correct: true, selfConfidence: 1 },
+      { id: 'hold', text: `I can explain ${topic} without looking`, correct: true, selfConfidence: 1 },
       { id: 'gap', text: `I am stuck on ${topic}`, correct: false },
       {
         id: 'foundation',
