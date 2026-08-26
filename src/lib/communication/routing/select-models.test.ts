@@ -31,7 +31,9 @@ test('Auto coding turns default to Gemini', () => {
   assert.equal(decision.reason, 'build');
 });
 
-test('Auto coding refine escalates without picking paid when allowPaid is false', () => {
+test('Auto coding refine stays on fast Gemini instead of a slow unproven free coder', () => {
+  // Escalating to a queued *:free coder is what caused 135s timeouts + the fake
+  // "proved on the desk". Gemini is the primary; the free coder is a fallback.
   const decision = selectModelsForTurn({
     models: MODELS,
     message: 'fix the preview',
@@ -40,9 +42,8 @@ test('Auto coding refine escalates without picking paid when allowPaid is false'
     refineMode: true,
     allowPaid: false,
   });
-  assert.equal(decision.primaryModelId, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(decision.primaryModelId, 'gemini-flash-latest');
   assert.equal(decision.selectionSource, 'coding_desk_auto');
-  assert.ok(decision.fallbackModelIds.includes('gemini-flash-latest'));
 });
 
 test('Auto escalate with empty Active list still keeps Gemini last-resort fallback', () => {
