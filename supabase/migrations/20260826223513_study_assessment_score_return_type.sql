@@ -1,4 +1,4 @@
--- Repeated exposure to one released item must not become fresh mastery evidence.
+-- Keep the graded RPC result exactly aligned with its double-precision contract.
 create or replace function public.complete_study_assessment_attempt(
   p_user_sub text,
   p_attempt_id uuid,

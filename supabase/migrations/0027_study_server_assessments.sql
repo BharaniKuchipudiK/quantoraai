@@ -149,7 +149,7 @@ begin
   ) on conflict (user_sub, event_key) do nothing;
 
   return query select 'graded'::text, v_correct,
-    case when v_correct then 1.0 else 0.0 end,
+    (case when v_correct then 1.0 else 0.0 end)::double precision,
     v_attempt.concept_id, v_attempt.item_key, v_attempt.item_version, v_misconception;
 end;
 $$;
