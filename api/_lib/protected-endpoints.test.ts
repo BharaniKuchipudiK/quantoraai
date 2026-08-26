@@ -7,6 +7,7 @@ import domains from "../domains.js";
 import enhance from "../enhance.js";
 import generateOffice from "../generate-office.js";
 import pipeline from "../pipeline.js";
+import studyEvidence from "../study-evidence.js";
 
 process.env.SESSION_SECRET = "12345678901234567890123456789012";
 process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -111,6 +112,23 @@ test("repository preview refuses anonymous access", async () => {
     body: { targetStage: "repository-preview", repoUrl: "https://github.com/example/repo", task: "summarize" },
   }, res);
   assert.equal(state.status, 401);
+});
+
+test("Study evidence refuses anonymous writes", async () => {
+  const { state, res } = responseHarness();
+  await studyEvidence({
+    method: "POST", headers: {}, socket: {},
+    body: {
+      eventKey: "study.session-1.topic.event-1",
+      conceptKey: "session.topic",
+      conceptLabel: "Topic",
+      sessionId: "session-1",
+      kind: "self_confidence",
+      selfConfidence: 1,
+    },
+  }, res);
+  assert.equal(state.status, 401);
+  assert.equal(state.body?.requiresAuth, true);
 });
 
 test("github create-pr refuses anonymous access", async () => {

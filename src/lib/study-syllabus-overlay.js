@@ -21,7 +21,10 @@ export const STUDY_SYLLABUS_FACT_PREFIX = 'Syllabus overlay:';
 export const STUDY_NODE_FACT_PREFIX = 'Syllabus node:';
 export const STUDY_SUBJECT_FACT_PREFIX = 'Study subject:';
 export const STUDY_COMPETENCY_FACT_PREFIX = 'Competency tag:';
+// Legacy browser-graded pass facts are retained as an exported constant only
+// so old data can be recognized during migration. They are not mastery proof.
 export const STUDY_CHECK_PASSED_PREFIX = 'Check passed:';
+export const STUDY_EVIDENCE_VERIFIED_PREFIX = 'Evidence verified:';
 export const STUDY_CHECK_MISSED_PREFIX = 'Check missed:';
 export const STUDY_FIGURE_URL_PREFIX = 'Figure URL:';
 export const STUDY_FOUNDATION_PREFIX = 'Foundation:';
@@ -252,7 +255,7 @@ export function parseStudyFlashcards(facts = []) {
 
 export function parseStudyCheckOutcomes(facts = []) {
   return {
-    passed: uniqueLabels(parsePrefixedFacts(facts, STUDY_CHECK_PASSED_PREFIX)),
+    passed: uniqueLabels(parsePrefixedFacts(facts, STUDY_EVIDENCE_VERIFIED_PREFIX)),
     missed: uniqueLabels(parsePrefixedFacts(facts, STUDY_CHECK_MISSED_PREFIX)),
   };
 }

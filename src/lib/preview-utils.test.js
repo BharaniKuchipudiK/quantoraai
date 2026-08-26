@@ -210,8 +210,9 @@ test('embed shell html includes relaxed csp and postMessage bridge', () => {
 
 // SECURITY REGRESSION GUARD — do not weaken. Untrusted generated code runs in
 // the default (no wcUrl) preview path; if it ever gains `allow-same-origin` it
-// can read the app's localStorage API keys. These assertions fail the build if
-// that protection is removed.
+// can read the app's browser storage. Provider keys are memory-only, but private
+// workspace data still requires this isolation. These assertions fail the build
+// if that protection is removed.
 test('preview sandbox denies allow-same-origin to untrusted generated code', () => {
   const sandbox = buildPreviewSandbox({ trustedRuntimeUrl: null });
   assert.doesNotMatch(sandbox, /allow-same-origin/, 'untrusted embed must be opaque-origin');

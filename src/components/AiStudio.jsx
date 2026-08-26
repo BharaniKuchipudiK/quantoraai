@@ -47,7 +47,6 @@ import {
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
-import { setClientSecret } from '../lib/client-secrets.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
@@ -67,8 +66,6 @@ import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
-import StudyTutorBoard from './StudyTutorBoard.jsx';
-import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import FinanceBoard from './FinanceBoard.jsx';
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
@@ -90,6 +87,7 @@ import {
 } from '../lib/studio-split-layout.js';
 
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
+const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -1032,8 +1030,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const [keyInputValue, setKeyInputValue] = useState('');
-  const [lastPrompt, setLastPrompt] = useState('');
+  const [, setLastPrompt] = useState('');
 
   // Intelligent Router Logic — Auto Mode switches silently; never interrupt with a Switch pill.
   useEffect(() => {
@@ -1055,24 +1052,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setSuggestedModel(null);
     }
   }, [inputText, selectedModel, availableModels]);
-
-  const saveKeyAndRetry = (keyType) => {
-    if (!keyInputValue.trim()) return;
-    if (keyType === 'gemini') {
-      const value = keyInputValue.trim();
-      localStorage.setItem('geminiApiKey', value);
-      setClientSecret('gemini', value);
-    } else {
-      const value = keyInputValue.trim();
-      localStorage.setItem('openRouterApiKey', value);
-      setClientSecret('openrouter', value);
-    }
-    setKeyInputValue('');
-    updateActiveMessages(prev => prev.filter(m => !m.isKeyPrompt));
-    if (lastPrompt) {
-      handleSendMessage(lastPrompt);
-    }
-  };
 
   const handlePushToDream = (msg) => {
     if (!setDreamNodes || !dreamNodes) return;
@@ -1158,12 +1137,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     ? studySyllabusContinueSet(conversationContext?.goal || '')
     : null;
 
-  // The board only earns its place once a real concept is on the table, so an
-  // empty Study desk cannot show a progress bar for nothing.
-  const studyTutorBrief = React.useMemo(
-    () => (studioDomain === 'education' ? deriveStudyTutorBrief({ conversationContext, messages }) : null),
-    [studioDomain, conversationContext, messages],
-  );
   const financeBrief = React.useMemo(
     () => (studioDomain === 'finance' ? deriveFinanceBrief({ messages }) : null),
     [studioDomain, messages],
@@ -1939,29 +1912,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           />
                           </div>
                         )}
-                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active ? (
-                          <StudyTutorBoard
-                            brief={studyTutorBrief}
-                            isLight={isLight}
-                            textColor={textColor}
-                            subtextColor={subtextColor}
-                            lessonText={cleanText}
-                            onAsk={(text) => setInputText(text)}
-                            onSend={(text) => handleSendMessage(text)}
-                            onCheckOutcome={(fact) => {
-                              const line = String(fact || '').trim();
-                              if (!line) return;
-                              const facts = conversationContext?.facts || [];
-                              if (facts.some((row) => String(row).toLowerCase() === line.toLowerCase())) return;
-                              updateActiveSession({
-                                conversationContext: {
-                                  ...(conversationContext || {}),
-                                  facts: [...facts, line],
-                                },
-                              });
-                            }}
-                          />
-                        ) : null}
                         {studioDomain === 'finance' && msg.id === latestAiId && financeBrief?.active ? (
                           <FinanceBoard
                             brief={financeBrief}
@@ -2092,7 +2042,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {
@@ -3193,6 +3143,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           /* Active Chat Thread */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
+            {studioDomain === 'education' ? (
+              <Suspense fallback={null}>
+                <StudyTutorWorkspace
+                  key={activeSessionId}
+                  activeSessionId={activeSessionId}
+                  conversationContext={conversationContext}
+                  messages={messages}
+                  updateActiveSession={updateActiveSession}
+                  isLight={isLight}
+                  textColor={textColor}
+                  subtextColor={subtextColor}
+                  onAsk={(text) => setInputText(text)}
+                  onSend={(text) => handleSendMessage(text)}
+                />
+              </Suspense>
+            ) : null}
             {pclIntercept && (
               <div className="animate-slide-up" style={{ 
                 margin: '20px 0', 
@@ -3921,7 +3887,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   height: '32px',
                   borderRadius: '50%',
                   cursor: inputText.trim() ? 'pointer' : 'default',
-                  display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   transition: 'all 0.2s ease'

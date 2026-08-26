@@ -23,6 +23,7 @@ import enhance from "./api/enhance.js";
 import generateOffice from "./api/generate-office.js";
 import models from "./api/models.js";
 import pipeline from "./api/pipeline.js";
+import studyEvidence from "./api/study-evidence.js";
 
 dotenv.config();
 
@@ -162,6 +163,7 @@ async function startServer() {
     return pipeline(req, res);
   });
   route("all", "/api/models", models);
+  route("all", "/api/study-evidence", studyEvidence);
   route("all", "/api/admin/models", (req, res) => {
     req.query = { ...(req.query || {}), route: "models" };
     return admin(req, res);

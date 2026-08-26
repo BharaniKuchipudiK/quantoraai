@@ -1,6 +1,5 @@
 import {
   STUDY_CHECK_MISSED_PREFIX,
-  STUDY_CHECK_PASSED_PREFIX,
   assessStudyGaps,
   extractStudyTopicLabel,
   inferStudySyllabus,
@@ -114,6 +113,7 @@ export function deriveSessionCheck({ label = '', foundation = '', flashcards = [
   if (Array.isArray(flashcards) && flashcards.length) {
     const card = flashcards[0];
     return {
+      kind: 'practice',
       prompt: card.front,
       options: [
         { id: 'a', text: card.back, correct: true },
@@ -130,9 +130,10 @@ export function deriveSessionCheck({ label = '', foundation = '', flashcards = [
   }
   if (!topic) return null;
   return {
+    kind: 'self_confidence',
     prompt: `Quick honesty check on ${topic}:`,
     options: [
-      { id: 'hold', text: `I can explain ${topic} without looking`, correct: true },
+      { id: 'hold', text: `I feel ready to explain ${topic} without looking`, correct: true, selfConfidence: 1 },
       { id: 'gap', text: `I am stuck on ${topic}`, correct: false },
       {
         id: 'foundation',
@@ -140,7 +141,7 @@ export function deriveSessionCheck({ label = '', foundation = '', flashcards = [
         correct: false,
       },
     ],
-    ifRight: 'Marked checked for this session — not an exam rank. Prove it with one chat attempt when ready.',
+    ifRight: 'Confidence noted — mastery is still unverified. Prove it with one independent attempt when ready.',
     ifWrong: 'Marked as a gap. Next beat is repair, then one check.',
   };
 }
@@ -203,6 +204,13 @@ export function gradeStudyCheck(check, optionId) {
   if (!option) return null;
   return {
     correct: option.correct === true,
+    verified: false,
+    evidence: check.kind === 'self_confidence'
+      ? {
+          kind: 'self_confidence',
+          selfConfidence: option.correct === true ? (option.selfConfidence ?? 1) : 0.25,
+        }
+      : null,
     message: option.correct
       ? (check.ifRight || 'That check held. Next beat from the gap list — not a rank.')
       : (check.ifWrong || 'Gap found. Repair the foundation this session already named.'),
@@ -211,6 +219,6 @@ export function gradeStudyCheck(check, optionId) {
 
 export function studyCheckOutcomeFact(label, correct) {
   const topic = String(label || '').trim();
-  if (!topic) return '';
-  return `${correct ? STUDY_CHECK_PASSED_PREFIX : STUDY_CHECK_MISSED_PREFIX} ${topic}`;
+  if (!topic || correct) return '';
+  return `${STUDY_CHECK_MISSED_PREFIX} ${topic}`;
 }

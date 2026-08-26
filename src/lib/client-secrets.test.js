@@ -4,7 +4,9 @@ import {
   BYOK_HEADER_GEMINI,
   BYOK_HEADER_OPENROUTER,
   byokRequestHeaders,
+  clearLegacyPersistentSecrets,
   clearClientSecrets,
+  getClientSecret,
   setClientSecret,
 } from "./client-secrets.js";
 
@@ -19,4 +21,25 @@ test("byokRequestHeaders puts secrets in headers only", () => {
   assert.equal(headers.userKey, undefined);
   assert.equal(headers.openRouterKey, undefined);
   clearClientSecrets();
+});
+
+test("provider secrets are memory-only and legacy localStorage values are deleted", () => {
+  const values = new Map([
+    ["geminiApiKey", "legacy-gemini"],
+    ["openRouterApiKey", "legacy-openrouter"],
+    ["unrelated", "keep-me"],
+  ]);
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    removeItem: (key) => values.delete(key),
+  };
+
+  clearClientSecrets();
+  clearLegacyPersistentSecrets(storage);
+
+  assert.equal(values.has("geminiApiKey"), false);
+  assert.equal(values.has("openRouterApiKey"), false);
+  assert.equal(values.get("unrelated"), "keep-me");
+  assert.equal(getClientSecret("gemini"), "");
+  assert.equal(getClientSecret("openrouter"), "");
 });
