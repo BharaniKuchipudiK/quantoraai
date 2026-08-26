@@ -229,6 +229,23 @@ export function resolveCodingDeskModel({
     };
   }
 
+  // Do NOT leave the fast, reliable Gemini default for an UNPROVEN FREE model.
+  // A free non-Gemini coder (e.g. a queued `*:free` model) is routinely slower
+  // than Gemini and blew past the 135s build deadline — which then triggered the
+  // "inject canned photos + claim proved on the desk" fallback. Gemini finishes
+  // in time and writes the real rich page. Only escalate away from it to a PAID
+  // capable coder, or to a free model that has actually earned it on measured
+  // outcomes (not the fabricated "proved-on-dead" successes).
+  if (!allowPaid && isFreeReady(stronger) && !hasTrustedOutcome(stronger)) {
+    return {
+      model: gemini,
+      modelId: geminiId,
+      reason: 'stay_gemini_unproven_free',
+      escalated: false,
+      selectionSource: 'coding_desk_auto',
+    };
+  }
+
   return {
     model: stronger,
     modelId: stronger.id,
