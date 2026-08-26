@@ -27,7 +27,7 @@ export default async function handler(req: any, res: any) {
 
   const user = await findUserByEmail(payload.email);
   if (!user) {
-    return res.status(404).json({ error: "Account not found." });
+    return res.status(400).json({ error: "Reset link is invalid or expired." });
   }
 
   try {

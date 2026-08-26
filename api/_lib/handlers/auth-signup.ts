@@ -41,6 +41,9 @@ export default async function handler(req: any, res: any) {
       name: name || email.split("@")[0],
       passwordHash,
     });
+    if (created === "duplicate") {
+      return res.status(409).json({ error: "An account with this email already exists. Sign in instead." });
+    }
     if (!created) {
       return res.status(503).json({ error: "Could not create account right now. Try again shortly." });
     }

@@ -1,6 +1,7 @@
 import { applyCors } from "../rate-limit.js";
 import { getSessionUser } from "../session.js";
-import { isAdminUser } from "../store.js";
+import { isAdminUser, readStoredUser } from "../store.js";
+import { providerLabel } from "../auth-privacy.js";
 import { requireActiveSession } from "../authz.js";
 
 /*
@@ -19,7 +20,6 @@ export default async function handler(req: any, res: any) {
 
   const sessionUser = getSessionUser(req);
 
-  // A signed-out visitor is a normal state, not an error.
   res.setHeader("Cache-Control", "no-store");
   if (!sessionUser) {
     return res.status(200).json({ user: null });
@@ -27,10 +27,18 @@ export default async function handler(req: any, res: any) {
 
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return;
-  const isAdmin = auth.value.storedUser.is_admin === true || await isAdminUser(sessionUser.sub) === true;
+
+  const stored = auth.value.storedUser.google_sub
+    ? auth.value.storedUser
+    : await readStoredUser(sessionUser.sub) || auth.value.storedUser;
+  const isAdmin = stored.is_admin === true || await isAdminUser(sessionUser.sub) === true;
+
   return res.status(200).json({
     user: {
-      ...auth.value.sessionUser,
+      name: sessionUser.name || stored.name || "Creator",
+      email: sessionUser.email,
+      picture: sessionUser.picture || stored.picture || "",
+      authProvider: providerLabel(stored.auth_provider),
       isAdmin: isAdmin === true,
     },
   });

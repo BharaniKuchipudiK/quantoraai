@@ -26,3 +26,21 @@ export async function verifyPassword(password: string, stored: string | null | u
 export function isStrongEnoughPassword(password: string): boolean {
   return typeof password === "string" && password.length >= 8;
 }
+
+/*
+ * Same scrypt cost as a real hash, so a missing account does not return
+ * faster than a wrong password. The secret is not a live credential.
+ */
+const DUMMY_PASSWORD_HASH =
+  "scrypt:00000000000000000000000000000000:39e67a3b7b6e22cfcdf4a8a88c5b186c32c62062670b56d5551257c0e8bc07588c07f9a412f9ae8ef82f90ec0813d9e162ba6a4bd111f9a353cbf18680b57611";
+
+export async function verifyPasswordAgainstStore(
+  password: string,
+  stored: string | null | undefined,
+): Promise<boolean> {
+  if (stored && stored.startsWith("scrypt:")) {
+    return verifyPassword(password, stored);
+  }
+  await verifyPassword(password, DUMMY_PASSWORD_HASH);
+  return false;
+}
