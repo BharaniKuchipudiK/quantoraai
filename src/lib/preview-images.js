@@ -14,10 +14,15 @@ export const PREVIEW_IMAGE_PROXY_PATH = '/api/preview-image';
 const ALLOWED_HOSTS = new Set([
   'images.unsplash.com',
   'plus.unsplash.com',
+  'source.unsplash.com',
   'images.pexels.com',
   'images.pixabay.com',
   'cdn.pixabay.com',
   'upload.wikimedia.org',
+  // Guaranteed real-photo fallback: picsum always returns a real photograph.
+  'picsum.photos',
+  'fastly.picsum.photos',
+  'i.picsum.photos',
 ]);
 
 /** Matches <img src> values that decode inside Preview without remote fetch. */
@@ -70,7 +75,10 @@ export function isAllowedPreviewImageUrl(href) {
   if (parsed.username || parsed.password) return false;
   if (isBlockedPreviewImageHost(parsed.hostname)) return false;
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-  return ALLOWED_HOSTS.has(host) || host.endsWith('.unsplash.com') || host.endsWith('.pexels.com');
+  return ALLOWED_HOSTS.has(host)
+    || host.endsWith('.unsplash.com')
+    || host.endsWith('.pexels.com')
+    || host.endsWith('.picsum.photos');
 }
 
 /** Photos that Preview can show without depending on Unsplash/hotlink/proxy. */
@@ -81,6 +89,20 @@ export function isReliablePreviewPhotoSrc(src = '') {
   if (raw.includes(PREVIEW_IMAGE_PROXY_PATH)) return true;
   if (/^\/(?!\/)[\w./%-]+\.(?:png|jpe?g|webp|gif|svg)(?:\?.*)?$/i.test(raw)) return true;
   return false;
+}
+
+/**
+ * A real photograph — a same-origin proxied photo or a raster data URI, but NOT
+ * a fabricated `data:image/svg+xml` gradient/gold-frame placeholder. Used where
+ * the injector must decide whether to REPLACE a fake placeholder with a real
+ * proxied photo, without disturbing the broader "will this decode in Preview"
+ * check above (which still treats a self-contained svg as displayable).
+ */
+export function isRealPhotoSrc(src = '') {
+  const raw = String(src || '').trim();
+  if (!raw) return false;
+  if (/^data:image\/svg\+xml/i.test(raw)) return false;
+  return isReliablePreviewPhotoSrc(raw);
 }
 
 export function previewImageProxyUrl(href, origin = '') {
@@ -106,7 +128,13 @@ export function previewHtmlHasRealPhotos(html = '') {
   return new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(String(html || ''));
 }
 
-function shopPhotoDataUri(index = 0) {
+/**
+ * Guaranteed no-network placeholder — used ONLY as the final <img onerror> guard
+ * so a viewer never sees a broken-image icon if every photo host is unreachable.
+ * It is not a "real photo" and never counts as one; it is the safety net beneath
+ * the real proxied photograph.
+ */
+function svgFallbackPhoto(index = 0) {
   const [from, to] = SHOP_PHOTO_PALETTE[index % SHOP_PHOTO_PALETTE.length];
   const id = `quantora-photo-${index + 1}`;
   const label = `Product ${index + 1}`;
@@ -125,7 +153,17 @@ function shopPhotoDataUri(index = 0) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-const SHOP_PHOTOS = Array.from({ length: SHOP_CATALOG_CAP }, (_, i) => shopPhotoDataUri(i));
+/** A real photograph via the same-origin proxy — always renders in Preview. */
+function picsumPhoto(index = 0) {
+  // Keyed with quantora-photo-<n> so photo-identity / uniqueness tracking holds.
+  const url = `https://picsum.photos/seed/quantora-photo-${index + 1}/1200/800`;
+  return `${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(url)}`;
+}
+
+// The injector's fallback photos are now REAL photographs (proxied picsum),
+// not fabricated gradient frames. Topical photos come from the model itself
+// (it is instructed to use proxied Unsplash URLs that match the subject).
+const SHOP_PHOTOS = Array.from({ length: SHOP_CATALOG_CAP }, (_, i) => picsumPhoto(i));
 
 const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
 const MAX_SHOP_PHOTOS = SHOP_CATALOG_CAP;
@@ -136,7 +174,10 @@ const PRODUCT_SLOT_RE = /<(article|div|li|section)([^>]*(?:class=["'][^"']*\b(?:
 function shopPhotoTag(index, alt = 'Product photo') {
   const src = SHOP_PHOTOS[index % SHOP_PHOTOS.length];
   const safeAlt = String(alt || 'Product photo').replace(/[<>&"]/g, '');
-  return `<img ${INJECTED_PHOTO_MARK} src="${src}" alt="${safeAlt}" width="1200" height="800" style="width:100%;max-height:280px;object-fit:cover;display:block;border-radius:12px">`;
+  // Real proxied photo first; if the host is ever unreachable, fall back to the
+  // self-contained placeholder so the viewer never gets a broken-image icon.
+  const guard = svgFallbackPhoto(index);
+  return `<img ${INJECTED_PHOTO_MARK} src="${src}" onerror="this.onerror=null;this.src='${guard}'" alt="${safeAlt}" width="1200" height="800" style="width:100%;max-height:280px;object-fit:cover;display:block;border-radius:12px">`;
 }
 
 function shopProductCard(index, name = '') {
@@ -394,7 +435,9 @@ export function injectProductCatalogImages(raw = '', options = {}) {
     const next = capped.map((item) => {
       if (!item || typeof item !== 'object') return item;
       const id = photoIdentity(item.image);
-      if (isReliablePreviewPhotoSrc(item.image) && id && !used.has(id)) {
+      // Keep only genuine photos (proxied/raster). A fabricated svg placeholder
+      // is upgraded to a real proxied photograph instead of being preserved.
+      if (isRealPhotoSrc(item.image) && id && !used.has(id)) {
         used.add(id);
         return item;
       }
