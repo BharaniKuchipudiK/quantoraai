@@ -40,6 +40,18 @@ test('Preview rewrites Unsplash photos to the Quantora proxy so they can load', 
   assert.equal(rewritePreviewImageUrls(html, ''), html);
 });
 
+test('an injected card photo carries an onerror guard so it never shows a broken icon', () => {
+  // A remote card image (which cannot load through the COEP sandbox, and whose
+  // proxied form needs the /api/preview-image function) is swapped to a real
+  // proxied photo WITH an onerror fallback to a self-contained placeholder — so
+  // even a preview server without the proxy renders a decodable image.
+  const html = '<article class="product-card"><img src="https://images.unsplash.com/photo-xyz?w=400" alt="Silk"></article>';
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, true);
+  assert.match(result.html, /src="\/api\/preview-image\?u=/);
+  assert.match(result.html, /onerror="[^"]*data:image\/svg\+xml/);
+});
+
 test('a boutique card with a large SVG gets a real proxied photo', () => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg>`;
   const html = `<!DOCTYPE html><html><body><div class="product-card">${svg}<p>Pure Gold Zari Kanjeevaram</p></div></body></html>`;

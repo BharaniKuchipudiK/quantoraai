@@ -248,6 +248,17 @@ function nextUnusedShopPhoto(used) {
   return src;
 }
 
+/**
+ * Ensure an <img> carries the onerror→svg guard, so a proxied photo that cannot
+ * reach its host (e.g. a preview server without the /api/preview-image function)
+ * degrades to a self-contained placeholder instead of a broken-image icon.
+ */
+function ensurePhotoGuard(tag, guardIndex = 0) {
+  if (/\bonerror\s*=/i.test(tag)) return tag;
+  const guard = svgFallbackPhoto(guardIndex);
+  return tag.replace(/<img\b/i, `<img onerror="this.onerror=null;this.src='${guard}'"`);
+}
+
 function rewriteCardPhoto(inner, used) {
   let first = true;
   return String(inner || '').replace(/<img\b[^>]*>/gi, (tag) => {
@@ -260,7 +271,8 @@ function rewriteCardPhoto(inner, used) {
       used.add(id);
       return tag;
     }
-    return tag.replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${nextUnusedShopPhoto(used)}"`);
+    const swapped = tag.replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${nextUnusedShopPhoto(used)}"`);
+    return ensurePhotoGuard(swapped, used.size);
   });
 }
 
@@ -287,9 +299,9 @@ export function diversifyDuplicateShopPhotos(html = '') {
     if (!/^https?:\/\//i.test(src)) return full;
     const next = nextUnusedShopPhoto(used);
     if (/\bsrc\s*=\s*["'][^"']*["']/i.test(attrs)) {
-      return `<img ${String(attrs).replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${next}"`)}>`;
+      return ensurePhotoGuard(`<img ${String(attrs).replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${next}"`)}>`, used.size);
     }
-    return `<img src="${next}" ${attrs}>`;
+    return ensurePhotoGuard(`<img src="${next}" ${attrs}>`, used.size);
   });
   return out;
 }
