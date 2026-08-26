@@ -65,6 +65,8 @@ const projectReply = [
   '```',
 ].join('\n');
 
+const BOUTIQUE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/5eZ3GQAAAABJRU5ErkJggg==';
+
 const patchReply = [
   'Updated the heading.',
   '',
@@ -81,7 +83,7 @@ const boutiqueReply = [
   '```',
   '',
   '```html filepath="index.html"',
-  '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=400&q=80" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button type="button">Add to Cart</button></div></main></body></html>',
+  '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="/api/preview-image?fixture=boutique" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button type="button">Add to Cart</button></div></main></body></html>',
   '```',
 ].join('\n');
 
@@ -112,6 +114,13 @@ await page.route('**/api/**', async (route) => {
       { id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true },
       { id: 'synthetic-b', name: 'Synthetic B', provider: 'Synthetic', available: true },
     ] }) });
+  }
+  if (path === '/api/preview-image') {
+    return route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(BOUTIQUE_PNG_BASE64, 'base64'),
+    });
   }
   if (path === '/api/preview-compile') {
     const body = request.postDataJSON?.() || {};

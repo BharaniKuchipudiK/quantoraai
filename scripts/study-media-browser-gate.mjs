@@ -201,8 +201,12 @@ try {
   await visible(honesty, 'Tutor board offered no session honesty check after Test me on this.');
   await honesty.click();
   await visible(
+    board.getByText(/Confidence noted — mastery is still unverified/i).first(),
+    'Tutor board did not record self-confidence without claiming mastery.',
+  );
+  await hidden(
     board.getByText(/Marked checked for this session/i).first(),
-    'Tutor board did not grade the session honesty check.',
+    'Tutor board treated self-confidence as verified mastery.',
   );
 
   console.log('Study media browser gate passed.');

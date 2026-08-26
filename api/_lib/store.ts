@@ -409,6 +409,76 @@ export async function deleteOutcomeState(userSub: string, sessionId: string): Pr
   return response !== null;
 }
 
+export type StudyEvidenceWriteResult = {
+  status: "saved" | "duplicate" | "unmapped" | "unavailable";
+};
+
+/**
+ * Append a learner-owned self-confidence signal to the Study evidence ledger.
+ * It intentionally stores neither `correct` nor `score`: a browser self-report
+ * is useful context, but it must never become proof of mastery.
+ */
+export async function recordStudySelfConfidenceEvent(entry: {
+  userSub: string;
+  eventKey: string;
+  conceptKey: string;
+  conceptLabel: string;
+  sessionId: string;
+  selfConfidence: number;
+  observedAt: string;
+}): Promise<StudyEvidenceWriteResult> {
+  if (!config()) return { status: "unavailable" };
+
+  const byKey = await request(
+    `study_concepts?select=id&canonical_key=eq.${encodeURIComponent(entry.conceptKey)}&status=eq.active&order=updated_at.desc&limit=1`,
+    { method: "GET" },
+  );
+  let conceptId = "";
+  if (byKey) {
+    try {
+      const rows = await byKey.json();
+      conceptId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : "";
+    } catch { /* try the canonical label below */ }
+  }
+
+  if (!conceptId) {
+    const byLabel = await request(
+      `study_concepts?select=id&label=ilike.${encodeURIComponent(entry.conceptLabel)}&status=eq.active&order=updated_at.desc&limit=1`,
+      { method: "GET" },
+    );
+    if (!byLabel) return { status: "unavailable" };
+    try {
+      const rows = await byLabel.json();
+      conceptId = Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : "";
+    } catch { return { status: "unavailable" }; }
+  }
+  if (!conceptId) return { status: "unmapped" };
+
+  const response = await requestRaw("study_mastery_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      event_key: entry.eventKey,
+      user_sub: entry.userSub,
+      concept_id: conceptId,
+      event_kind: "self_confidence",
+      correct: null,
+      score: null,
+      self_confidence: entry.selfConfidence,
+      independent: true,
+      provenance: "connected_source",
+      source_ref: "quantora:study-tutor:self-report",
+      assessment_ref: `session:${entry.sessionId}`,
+      observed_at: entry.observedAt,
+    }]),
+  });
+  if (!response) return { status: "unavailable" };
+  if (response.ok) return { status: "saved" };
+  if (response.status === 409) return { status: "duplicate" };
+  console.warn(`Supabase POST study_mastery_events -> ${response.status}`, await response.text());
+  return { status: "unavailable" };
+}
+
 /*
  * Anonymous model-quality signal. No account id, prompt, response, API key or
  * IP address is stored. This is intentionally operational data only: did a

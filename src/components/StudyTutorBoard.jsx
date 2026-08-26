@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
+import StudyFreeBodyDiagram from './StudyFreeBodyDiagram.jsx';
 import { gradeStudyCheck, studyCheckOutcomeFact } from '../lib/study-tutor-brief.js';
+import { isFreeBodyDiagramRelevant } from '../lib/study-free-body-diagram.js';
 import {
   studyFlashcardAsk,
   studyLessonAsk,
@@ -49,6 +51,7 @@ export default function StudyTutorBoard({
   onAsk,
   onSend,
   onCheckOutcome,
+  onEvidence,
   lessonText = '',
 }) {
   const [showCheck, setShowCheck] = useState(false);
@@ -70,10 +73,11 @@ export default function StudyTutorBoard({
   const tagged = new Set(competencies.map((row) => row.tag));
   const overlayLabel = brief?.overlay?.label || '';
   const subjects = brief?.subjects || [];
+  const showFreeBodyDiagram = isFreeBodyDiagramRelevant({ topic, subjects });
   const progress = brief?.progress || { ratio: 0, caption: 'No fake score. A filled bar only after a real check.' };
-  const barRatio = result?.correct ? Math.max(progress.ratio, 0.4) : result ? Math.max(progress.ratio, 0.12) : progress.ratio;
+  const barRatio = progress.ratio;
   const barCaption = result?.correct
-    ? 'Check passed — not an exam rank.'
+    ? 'Practice answered — mastery changes only after verified evidence.'
     : result
       ? 'Gap found — repair the foundation this session named.'
       : progress.caption;
@@ -213,6 +217,9 @@ export default function StudyTutorBoard({
             }}
           />
         </figure>
+      ) : null}
+      {showFreeBodyDiagram ? (
+        <StudyFreeBodyDiagram isLight={isLight} textColor={textColor} subtextColor={subtextColor} />
       ) : null}
       <div style={{ marginTop: '12px' }}>
         <ProgressMark ratio={barRatio} isLight={isLight} />
@@ -410,6 +417,9 @@ export default function StudyTutorBoard({
                 onClick={() => {
                   const graded = gradeStudyCheck(check, option.id);
                   setResult(graded);
+                  if (graded?.evidence && onEvidence) {
+                    onEvidence(graded.evidence);
+                  }
                   if (graded && onCheckOutcome) {
                     onCheckOutcome(studyCheckOutcomeFact(topic, graded.correct));
                   }

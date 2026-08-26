@@ -34,3 +34,18 @@ test('Study tutor UI modules do not hard-wire famous chapter titles', () => {
     }
   }
 });
+
+test('Study tutor board is a persistent workspace sibling, not mounted under the latest message', () => {
+  const source = fs.readFileSync(path.join(root, 'src/components/AiStudio.jsx'), 'utf8');
+  const workspace = fs.readFileSync(path.join(root, 'src/components/StudyTutorWorkspace.jsx'), 'utf8');
+  const feedIndex = source.indexOf('{renderedChatFeed}');
+  const boardIndex = source.indexOf('<StudyTutorWorkspace');
+  assert.ok(feedIndex >= 0 && boardIndex > feedIndex, 'Study board must render after the chat feed');
+  assert.equal(
+    source.includes("studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active"),
+    false,
+    'Study board must not be keyed to the latest AI message',
+  );
+  assert.match(workspace, /key=\{`\$\{activeSessionId\}:\$\{brief\.conceptId\}`\}/);
+  assert.match(source, /lazy\(\(\) => import\('\.\/StudyTutorWorkspace\.jsx'\)\)/);
+});
