@@ -63,9 +63,20 @@ export function resolveHeadersForPath(config, path) {
   return out;
 }
 
-/** True when `path` is served with COEP require-corp. */
+/**
+ * True when `path` is served with a COEP that cross-origin-isolates the document
+ * AND requires embedded frames to carry their own COEP.
+ *
+ * Both `require-corp` and `credentialless` do this: a nested iframe under either
+ * one is blocked (net::ERR_BLOCKED_BY_RESPONSE ...ByCoep) unless the framed
+ * response itself sends COEP. `credentialless` differs only in that no-cors
+ * cross-origin *subresources* (images, fonts) load credential-stripped instead of
+ * being blocked — which is why the app pages use it, so avatars/preview images
+ * are not nuked while WebContainers stay cross-origin-isolated.
+ */
 export function requiresCorp(config, path) {
-  return resolveHeadersForPath(config, path)['cross-origin-embedder-policy'] === 'require-corp';
+  const coep = resolveHeadersForPath(config, path)['cross-origin-embedder-policy'];
+  return coep === 'require-corp' || coep === 'credentialless';
 }
 
 /**
