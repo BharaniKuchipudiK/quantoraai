@@ -88,15 +88,19 @@ test("build mode tells the model to ship working tools immediately", () => {
   assert.match(prompt, /domestic vs international shipping/);
 });
 
-test("a shop build must emit real product photos, not placeholder frames", () => {
+test("a shop build must emit real proxied photos, not placeholder frames", () => {
   const prompt = buildConversationSystemPrompt({
     buildMode: true,
     guided: false,
     lastMessage: "build a website for an Indian ethnic saree boutique",
   });
-  assert.match(prompt, /data:image\//);
-  assert.match(prompt, /Never SVG empty frames/);
-  assert.match(prompt, /Unsplash/);
+  // Real photos flow through the same-origin proxy, not fabricated data URIs.
+  assert.match(prompt, /\/api\/preview-image\?u=/);
+  assert.match(prompt, /images\.unsplash\.com/);
+  // The products.json example must NOT show an svg placeholder for the image.
+  assert.doesNotMatch(prompt, /"image":\s*"data:image\/svg\+xml/);
+  // The model must never offload image work back onto the user.
+  assert.match(prompt, /NEVER instruct the user to|never tell the user to fill in image data/i);
   assert.doesNotMatch(prompt, /tasteful placeholder imagery/);
 });
 
@@ -115,9 +119,19 @@ test("guided build requires intake before HTML on first turn", () => {
   assert.match(prompt, /FIRST-TURN RULE/);
   assert.match(prompt, /MUST NOT output HTML/);
   assert.match(prompt, /Never invent a business name/);
-  assert.match(prompt, /data:image\//);
-  assert.match(prompt, /Unsplash/);
+  assert.match(prompt, /\/api\/preview-image\?u=/);
+  assert.match(prompt, /images\.unsplash\.com/);
+  assert.doesNotMatch(prompt, /"image":\s*"data:image\/svg\+xml/);
   assert.doesNotMatch(prompt, /tasteful placeholder imagery/);
+});
+
+test("build mode demands a real design system, not a bare page", () => {
+  const prompt = buildConversationSystemPrompt({
+    buildMode: true,
+    lastMessage: "build a landing page for my bakery",
+  });
+  assert.match(prompt, /STYLE IS NOT OPTIONAL/);
+  assert.match(prompt, /never a bare .*page/i);
 });
 
 test("refine mode uses communication layer before code", () => {

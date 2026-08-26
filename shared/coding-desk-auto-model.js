@@ -62,6 +62,9 @@ const FREE_KINDS = new Set(['free', 'free-tier']);
 
 const COMPLEX_ASK = /\b(architect(?:ure|ural)?|system\s+design|complex|multi-?file|refactor\s+(?:the\s+)?entire|migrate|large[\s-]?scale|production[\s-]?ready|enterprise|codebase)\b/i;
 const MULTI_FILE_ASK = /\b(?:across|all)\s+files?\b|\bmultiple\s+files?\b|\bentire\s+(?:app|project|codebase)\b/i;
+// A shop/e-commerce build must satisfy the real-photo + cart + styling contract —
+// too much for a weak default model, so escalate to a capable coder up front.
+const SHOP_BUILD_ASK = /\b(shop|store|storefront|e-?commerce|boutique|catalog(?:ue)?|marketplace)\b|\bsell(?:ing)?\s+online\b/i;
 const CODING_SPECIALIST = /coder|nemotron|deepseek|gpt-oss|qwen|claude|sonnet|gpt-?4|gpt-?5|opus/i;
 
 export function isCodingDeskAutoSelection(modelOrId) {
@@ -153,6 +156,7 @@ export function shouldEscalateCodingDeskModel({
   if (qualityHints?.shopImageOversize) return true;
   const text = String(message || '');
   if (COMPLEX_ASK.test(text) || MULTI_FILE_ASK.test(text)) return true;
+  if (SHOP_BUILD_ASK.test(text)) return true;
   const fileCount = Number(qualityHints?.fileCount) || 0;
   if (hasVFS && (fileCount >= 5 || text.length >= 2500)) return true;
   return false;

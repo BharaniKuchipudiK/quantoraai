@@ -225,8 +225,10 @@ test('a chat that only talks still gets shop photos when the desk already has a 
   };
   const next = ensureShopPhotosInVfs(before);
   assert.equal(next.changed, true);
-  assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
-  assert.match(next.vfs['products.json'].content, /data:image\/svg\+xml/);
+  // Injected HTML photos are real proxied photographs (with the svg only as an
+  // onerror guard); the catalog JSON is upgraded to real proxied photos too.
+  assert.match(next.vfs['index.html'].content, /src="\/api\/preview-image\?u=/);
+  assert.match(next.vfs['products.json'].content, /\/api\/preview-image\?u=/);
 });
 
 test('currency and Add to Cart land on the boutique desk, not only in chat', () => {
