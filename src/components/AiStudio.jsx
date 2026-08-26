@@ -1,6 +1,7 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -517,11 +518,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
   const commitDeskVfs = useCallback((nextVfs) => {
-    if (!nextVfs || typeof nextVfs !== 'object') return;
+    if (!nextVfs || typeof nextVfs !== 'object') return false;
     const before = vfsRef.current || {};
+    // Never let a broken/truncated turn overwrite a working preview. A failed
+    // edit must leave the last working page intact, not destroy it. Returns
+    // whether the commit was accepted so callers can gate their follow-up state.
+    if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
     setDeskReview((prev) => mergeDeskReview(prev, before, nextVfs));
     vfsRef.current = nextVfs;
     setVfs(nextVfs);
+    return true;
   }, []);
   const [deskJob, setDeskJob] = useState(null);
   const [liveDeskProbe, setLiveDeskProbe] = useState(null);
@@ -844,12 +850,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(finalVfs);
       setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        if (Object.keys(finalVfs).length > 0) {
+        // Route through the guard: a truncated/broken turn must not overwrite a
+        // working desk, and downstream state must not adopt a rejected VFS.
+        const accepted = Object.keys(finalVfs).length > 0
+          && !deskCommitRegressesPreview(vfsRef.current || {}, finalVfs).reject;
+        if (accepted) {
           setDeskReview(diffVfsReview(vfs, finalVfs));
+          vfsRef.current = finalVfs;
           setVfs(finalVfs);
           if (assembled.job) setDeskJob(assembled.job);
+          setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         }
-        setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         setWorkspaceActiveTab('preview');
         setCodingDeskOpen(true);
         setIsWorkspaceMode(true);
@@ -1173,25 +1184,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
-    if (Object.keys(assembled.vfs).length > 0) {
-      setDeskReview(diffVfsReview(vfs, assembled.vfs));
-      setVfs(assembled.vfs);
+    // Guard this write path too: a truncated fence still contains <!DOCTYPE, so a
+    // timed-out message's code must not overwrite a working desk. If rejected,
+    // keep the working page and just open the desk on it.
+    const candidateVfs = Object.keys(assembled.vfs).length > 0
+      ? assembled.vfs
+      : { 'index.html': { content: html, language: 'html' } };
+    if (!deskCommitRegressesPreview(vfsRef.current || {}, candidateVfs).reject) {
+      setDeskReview(diffVfsReview(vfs, candidateVfs));
+      vfsRef.current = candidateVfs;
+      setVfs(candidateVfs);
       setDeskJob((prev) => buildStudioJobCard({
         brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-        vfs: assembled.vfs,
+        vfs: candidateVfs,
         existing: prev,
       }));
-    } else {
-      const next = { 'index.html': { content: html, language: 'html' } };
-      setDeskReview(diffVfsReview(vfs, next));
-      setVfs(next);
-      setDeskJob((prev) => buildStudioJobCard({
-        brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-        vfs: next,
-        existing: prev,
-      }));
+      setWorkspaceCode(html);
     }
-    setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
     setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
@@ -1306,8 +1315,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const deskFileCount = Object.keys(vfs || {}).length;
     if ((userAskedForShopDeskFix(textToSend) || userAskedForDeskReview(textToSend)) && deskFileCount) {
       const patched = applyDeskReviewPatch(vfs, deskJob, { brief: textToSend });
-      if (patched.changed && !patched.rejected) {
+      if (patched.changed && !patched.rejected
+        && !deskCommitRegressesPreview(vfsRef.current || {}, patched.vfs).reject) {
         setDeskReview(diffVfsReview(vfs, patched.vfs));
+        vfsRef.current = patched.vfs;
         setVfs(patched.vfs);
         const code = pickPreviewEntry(patched.vfs);
         if (code) setWorkspaceCode(code);
