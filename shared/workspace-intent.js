@@ -1,8 +1,8 @@
 import { advisorBlocksPreviewBuild } from './build-intent.js';
 
-const WORKSPACE_NOUN = /\b(app|application|website|site|page|code|component|preview|workspace|canvas|presentation|deck|slide|document|spreadsheet|workbook)\b/i;
+const WORKSPACE_NOUN = /\b(app|application|website|site|home ?page|homepage|landing page|page|code|component|preview|workspace|canvas|presentation|deck|slide|document|spreadsheet|workbook)\b/i;
 const BUILD_INTENT = /\b(build|create|develop|design|implement|code|prototype)\b/i;
-const EDIT_INTENT = /\b(fix|change|update|edit|refine|modify|add|include|put|remove|rename|restyle|format|make)\b/i;
+const EDIT_INTENT = /\b(fix|change|update|edit|refine|modify|add|include|put|remove|rename|restyle|format|make|improve|enhance|polish|upgrade|better|redesign|revamp|tweak|adjust)\b/i;
 const UI_TARGET = /\b(button|layout|header|footer|form|screen|navigation|navbar|sidebar|color|font|spacing|chart|table|roadmap|slide|section)\b/i;
 const EXPLICIT_REFERENCE = /\b(this|that|the|current|same|existing|above)\s+(app|application|website|site|page|code|component|preview|workspace|canvas|presentation|deck|slide|document|spreadsheet|workbook)\b/i;
 const ARTIFACT_ITERATION = /\b(it|this|that|them|those|the preview|the page|the site|the ui|look|feel|theme|style|layout|design|dark mode|light mode|mobile|desktop)\b/i;

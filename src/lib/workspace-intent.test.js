@@ -23,6 +23,20 @@ test('currency and cart asks keep the boutique on the desk', () => {
   }), true);
 });
 
+test('"improve / enhance / upgrade the website" refines the running site', () => {
+  for (const prompt of [
+    'improve the website',
+    'can you enhance the site',
+    'make the website better',
+    'polish the landing page',
+    'upgrade the design',
+    'revamp the homepage',
+  ]) {
+    assert.equal(shouldKeepWorkspaceForPrompt({ ...open, prompt }), true, prompt);
+    assert.equal(shouldRefineRunningDesk({ prompt, hasDeskFiles: true }), true, prompt);
+  }
+});
+
 test('a running desk follow-up is a refine, not a new product', () => {
   assert.equal(shouldRefineRunningDesk({
     prompt: 'Please include a currency converter',
