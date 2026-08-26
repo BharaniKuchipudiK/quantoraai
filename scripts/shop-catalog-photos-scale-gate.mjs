@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { ensureShopDeskInVfs } from '../src/lib/studio-preview-helpers.js';
 import { buildStudioJobCard } from '../src/lib/studio-job-card.js';
 import { probeRunningDesk } from '../src/lib/studio-desk-context.js';
-import { countRealPreviewPhotos, previewHtmlHasRealPhotos } from '../src/lib/preview-images.js';
+import { countRealPreviewPhotos, previewHtmlHasRealPhotos, isReliablePreviewPhotoSrc } from '../src/lib/preview-images.js';
 import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from '../src/lib/shop-preview-ui.js';
 import { SHOP_CATALOG_CAP, shopCatalogWasCapped } from '../src/lib/shop-catalog-scale.js';
 
@@ -38,7 +38,7 @@ assert.equal(previewHtmlHasCurrencySwitcher(html), true, 'Currency required');
 assert.ok(next.vfs['products.json'], 'products.json required');
 const catalog = JSON.parse(next.vfs['products.json'].content);
 assert.ok(catalog.length <= SHOP_CATALOG_CAP, `catalog capped at ${SHOP_CATALOG_CAP}`);
-assert.ok(catalog.every((row) => /^data:image\//.test(row.image)), 'each SKU needs a loadable data-URI photo');
+assert.ok(catalog.every((row) => isReliablePreviewPhotoSrc(row.image)), 'each SKU needs a Preview-loadable photo (proxied or data-URI)');
 
 const probed = probeRunningDesk({ html, vfs: next.vfs, job });
 assert.equal(probed.facts.hasPhotos, true);
