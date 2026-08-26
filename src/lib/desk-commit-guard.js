@@ -31,21 +31,68 @@ export function looksTruncatedHtml(html = '') {
   return !/<\/html>/i.test(s) && !/<\/body>/i.test(s);
 }
 
+function fileText(entry) {
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry.content === 'string') return entry.content;
+  return '';
+}
+
+/** Rough balance check — a mid-write truncation almost always leaves it unbalanced. */
+function bracketsBalanced(code = '') {
+  let curly = 0;
+  let paren = 0;
+  for (const ch of String(code)) {
+    if (ch === '{') curly += 1;
+    else if (ch === '}') curly -= 1;
+    else if (ch === '(') paren += 1;
+    else if (ch === ')') paren -= 1;
+    if (curly < 0 || paren < 0) return false;
+  }
+  return curly === 0 && paren === 0;
+}
+
+/**
+ * A JSX/React entry that looks complete: has a component signature and balanced
+ * brackets. A truncated component (dangling `App.jsx` fence) fails the balance
+ * check, so it is not treated as runnable.
+ */
+export function jsxEntryLooksComplete(code = '') {
+  const s = String(code || '').trim();
+  if (s.length < 16) return false;
+  if (!/\b(export\s+default|function\s+[A-Za-z]|const\s+[A-Za-z]\w*\s*=|=>)/.test(s)) return false;
+  if (!/<[A-Za-z][\w.]*[\s/>]|React\.createElement/.test(s)) return false;
+  return bracketsBalanced(s);
+}
+
+/** The primary UI component of a React/Vite project (App.* preferred, else main.*). */
+function projectEntryComplete(vfs = {}) {
+  const names = Object.keys(vfs || {});
+  const app = names.find((n) => /(?:^|\/)src\/App\.(?:jsx|tsx|js|ts)$/i.test(n));
+  const main = names.find((n) => /(?:^|\/)src\/main\.(?:jsx|tsx|js|ts)$/i.test(n));
+  const primary = app || main;
+  if (!primary) return false;
+  return jsxEntryLooksComplete(fileText(vfs[primary]));
+}
+
 /** Whether a VFS renders a real preview (HTML doc, React/Vite project, or JSX entry). */
 export function vfsIsRunnablePreview(vfs = {}) {
   if (!vfs || typeof vfs !== 'object') return false;
-  // A React/Vite project runtime (package.json + src/main|App.*).
-  if (isProjectRuntimeVfs(vfs)) return true;
+  // A React/Vite project runtime — but validate its ENTRY COMPONENT is complete,
+  // not just that the filenames exist. A dangling/empty App.jsx keeps the project
+  // shape yet cannot run, and must not count as a working preview.
+  if (isProjectRuntimeVfs(vfs)) return projectEntryComplete(vfs);
   const entry = String(pickPreviewEntry(vfs) || '');
   if (!entry.trim()) return false;
-  // An inline React/JSX entry the runtime can wrap (structure, not length).
-  if (createInlineReactRuntimeVfs(entry, vfs)) return true;
+  // An inline React/JSX entry the runtime can wrap — must look complete.
+  if (createInlineReactRuntimeVfs(entry, vfs)) return jsxEntryLooksComplete(entry);
   // A complete, non-truncated HTML document.
   if (/<!DOCTYPE html>/i.test(entry) || /<html[\s>]/i.test(entry)) {
     return !looksTruncatedHtml(entry);
   }
   // A bare JSX/component entry (e.g. `export default () => <App/>`).
-  if (/\bexport\s+default\b/.test(entry) && /<[A-Za-z][\w.]*[\s/>]/.test(entry)) return true;
+  if (/\bexport\s+default\b/.test(entry) && /<[A-Za-z][\w.]*[\s/>]/.test(entry)) {
+    return jsxEntryLooksComplete(entry);
+  }
   // A substantial HTML fragment with real page structure.
   return /<(body|main|section|header|nav|footer|div|script|ul|ol|table|form|article)\b/i.test(entry);
 }

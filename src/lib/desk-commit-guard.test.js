@@ -67,6 +67,24 @@ test('ALLOWS a legitimate full rewrite and a legit smaller-but-complete page', (
   assert.equal(deskCommitRegressesPreview(htmlVfs(COMPLETE_HTML), htmlVfs(smaller)).reject, false);
 });
 
+// P1 (round 2): a React project whose entry component is truncated is NOT runnable.
+const truncatedReactProjectVfs = {
+  'package.json': { content: JSON.stringify({ dependencies: { react: '^19' } }), language: 'json' },
+  'src/main.jsx': { content: "import { createRoot } from 'react-dom/client'; import App from './App.jsx'; createRoot(document.getElementById('root')).render(<App/>);", language: 'jsx' },
+  'src/App.jsx': { content: 'export default function App(){ return <div><h1>Cof', language: 'jsx' }, // dangling fence
+};
+
+test('a React project with a truncated entry component is NOT runnable', () => {
+  assert.equal(vfsIsRunnablePreview(truncatedReactProjectVfs), false);
+  const emptyApp = { ...truncatedReactProjectVfs, 'src/App.jsx': { content: '', language: 'jsx' } };
+  assert.equal(vfsIsRunnablePreview(emptyApp), false);
+});
+
+test('rejects overwriting a working React project with a truncated React project', () => {
+  const { reject } = deskCommitRegressesPreview(reactProjectVfs, truncatedReactProjectVfs);
+  assert.equal(reject, true);
+});
+
 test('ALLOWS the first build (no prior working preview)', () => {
   assert.equal(deskCommitRegressesPreview({}, htmlVfs(COMPLETE_HTML)).reject, false);
   assert.equal(deskCommitRegressesPreview(htmlVfs(TRUNCATED_STUB), htmlVfs(COMPLETE_HTML)).reject, false);

@@ -1112,7 +1112,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
     if (!verdict.vfs || (!verdict.ok && !verdict.evidence?.hasHtml && !Object.keys(verdict.vfs).length)) return;
     const nextVfs = verdict.vfs;
-    commitDeskVfs(nextVfs);
+    // Gate all follow-up state on acceptance: a rejected (broken/truncated) VFS
+    // must not set workspaceCode or be shown as this turn's result.
+    if (!commitDeskVfs(nextVfs)) return;
     const entry = pickPreviewEntry(nextVfs);
     if (entry) setWorkspaceCode(entry);
     setWorkspaceActiveTab('preview');
@@ -1122,7 +1124,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const onCodingTurnProved = useCallback((verdict) => {
     if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
-    commitDeskVfs(verdict.vfs);
+    // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
+    // open) — only when the commit was actually accepted.
+    if (!commitDeskVfs(verdict.vfs)) return;
     const entry = pickPreviewEntry(verdict.vfs);
     if (entry) {
       setWorkspaceCode(entry);
@@ -2168,8 +2172,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               allowRepair: true,
               sessionId: activeSessionId,
             });
-            if (proved?.vfs && Object.keys(proved.vfs).length) {
-              commitDeskVfs(proved.vfs);
+            if (proved?.vfs && Object.keys(proved.vfs).length && commitDeskVfs(proved.vfs)) {
               const entry = pickPreviewEntry(proved.vfs);
               if (entry) setWorkspaceCode(entry);
               setWorkspaceActiveTab('preview');
@@ -2230,8 +2233,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         if (!previewable || (skillPlan.intent?.kind?.startsWith('shop') && !codingTurnMayClaimSuccess(proved))) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
           if (vfsLooksLikeShop(vfs, deskJob) || proved.evidence.hasHtml) {
-            if (proved.vfs && Object.keys(proved.vfs).length) {
-              commitDeskVfs(proved.vfs);
+            if (proved.vfs && Object.keys(proved.vfs).length && commitDeskVfs(proved.vfs)) {
               setWorkspaceCode(pickPreviewEntry(proved.vfs));
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
@@ -2253,37 +2255,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (Object.keys(parsedVfs).length > 0) {
            const shopVfs = proved.vfs;
-           commitDeskVfs(shopVfs);
-           setDeskJob((prev) => {
-             const base = assembled.job || buildStudioJobCard({
-               brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-               vfs: shopVfs,
-               existing: prev,
+           // Only adopt job/correlation/"parsed"/workspaceCode when the commit is
+           // accepted — a rejected (truncated) VFS must not be reported as parsed
+           // or shown as this turn's result while the desk keeps the prior page.
+           if (commitDeskVfs(shopVfs)) {
+             setDeskJob((prev) => {
+               const base = assembled.job || buildStudioJobCard({
+                 brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+                 vfs: shopVfs,
+                 existing: prev,
+               });
+               if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
+                 return {
+                   ...base,
+                   purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
+                   mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
+                 };
+               }
+               return base;
              });
-             if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
-               return {
-                 ...base,
-                 purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
-                 mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
-               };
-             }
-             return base;
-           });
-           setWorkspaceCorrelationId(lastMsg.correlationId || null);
-           setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
-           void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
-             transaction: lastMsg.goldenTransaction || null,
-             fileCount: Object.keys(parsedVfs).length,
-             detailCode: 'runnable-files-present',
-           });
-           setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
+             setWorkspaceCorrelationId(lastMsg.correlationId || null);
+             setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+             void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+               transaction: lastMsg.goldenTransaction || null,
+               fileCount: Object.keys(parsedVfs).length,
+               detailCode: 'runnable-files-present',
+             });
+             setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
+           }
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
            if (assembled.reopenDesk) setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
               if (code) {
-              setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
               const seedPath = detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx');
               const seedVfs = { [seedPath]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
@@ -2293,15 +2298,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 existing: deskJob,
               });
               const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob, { brief: userBrief }).vfs;
-              commitDeskVfs(nextVfs);
-              setDeskJob(nextJob);
-              setWorkspaceCorrelationId(lastMsg.correlationId || null);
-              setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
-              void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
-                transaction: lastMsg.goldenTransaction || null,
-                fileCount: 1,
-                detailCode: 'single-runnable-file',
-              });
+              // Only show the code / record it parsed / adopt the job when the
+              // guard accepts the write — otherwise the desk keeps the prior page.
+              if (commitDeskVfs(nextVfs)) {
+                setWorkspaceCode(code);
+                setDeskJob(nextJob);
+                setWorkspaceCorrelationId(lastMsg.correlationId || null);
+                setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+                void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+                  transaction: lastMsg.goldenTransaction || null,
+                  fileCount: 1,
+                  detailCode: 'single-runnable-file',
+                });
+              }
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {
