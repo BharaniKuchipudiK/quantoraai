@@ -109,9 +109,15 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
 
-  // Prove headers: parent COEP + embed CORP+COEP (Vite/Coding Desk path embed).
+  // Prove headers: parent COEP isolates (require-corp OR credentialless — the app
+  // pages use credentialless so cross-origin avatars/preview images are not
+  // blocked), and the embed carries CORP + require-corp so the framed shell loads
+  // under that isolated parent (credentialless still blocks a no-COEP nested frame).
   const parentRes = await page.request.get(`${baseUrl}/`);
-  assert.equal(parentRes.headers()['cross-origin-embedder-policy'], 'require-corp');
+  assert.ok(
+    ['require-corp', 'credentialless'].includes(parentRes.headers()['cross-origin-embedder-policy']),
+    'parent page must be cross-origin-isolated (require-corp or credentialless)',
+  );
   const embedRes = await page.request.get(embedUrl);
   assert.equal(embedRes.headers()['cross-origin-resource-policy'], 'cross-origin');
   assert.equal(embedRes.headers()['cross-origin-embedder-policy'], 'require-corp');

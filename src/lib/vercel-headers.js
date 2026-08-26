@@ -63,9 +63,20 @@ export function resolveHeadersForPath(config, path) {
   return out;
 }
 
-/** True when `path` is served with COEP require-corp. */
+/**
+ * True when `path` is served with a COEP that cross-origin-isolates the document
+ * AND requires embedded frames to carry their own COEP.
+ *
+ * Both `require-corp` and `credentialless` do this: a nested iframe under either
+ * one is blocked (net::ERR_BLOCKED_BY_RESPONSE ...ByCoep) unless the framed
+ * response itself sends COEP. `credentialless` differs only in that no-cors
+ * cross-origin *subresources* (images, fonts) load credential-stripped instead of
+ * being blocked — which is why the app pages use it, so avatars/preview images
+ * are not nuked while WebContainers stay cross-origin-isolated.
+ */
 export function requiresCorp(config, path) {
-  return resolveHeadersForPath(config, path)['cross-origin-embedder-policy'] === 'require-corp';
+  const coep = resolveHeadersForPath(config, path)['cross-origin-embedder-policy'];
+  return coep === 'require-corp' || coep === 'credentialless';
 }
 
 /**
@@ -108,10 +119,27 @@ export function crossOriginHeadersForPath(config, path) {
  */
 export function checkFramedDocumentContract(config, { framedPath, parentPaths }) {
   const problems = [];
+  const framed = resolveHeadersForPath(config, framedPath);
+
+  // Framing gate: a document meant to be embedded in an iframe must never be
+  // served `X-Frame-Options: DENY`. DENY blocks ALL framing — including the app
+  // framing its own same-origin Preview shell — and the browser shows
+  // "<host> refused to connect" while Preview sits on "Verifying — running the
+  // preview…" forever (the iframe's onLoad fires on the block page, so the client
+  // never remounts). SAMEORIGIN (consistent with CSP `frame-ancestors 'self'`)
+  // is the correct value; absence is also fine when CSP carries the contract.
+  if (Array.isArray(parentPaths) && parentPaths.length && framed['x-frame-options'] === 'DENY') {
+    problems.push(
+      `${framedPath} is served with X-Frame-Options: DENY but is meant to be framed by `
+      + `[${parentPaths.join(', ')}]. DENY blocks same-origin framing, so the Preview shell `
+      + 'is refused ("refused to connect") and Preview hangs on "Verifying — running the '
+      + 'preview…". Use SAMEORIGIN (matching CSP frame-ancestors \'self\') on the app pages.',
+    );
+  }
+
   const isolatingParents = parentPaths.filter((parent) => requiresCorp(config, parent));
   if (!isolatingParents.length) return problems;
 
-  const framed = resolveHeadersForPath(config, framedPath);
   const parents = isolatingParents.join(', ');
 
   if (!framed['cross-origin-resource-policy']) {
