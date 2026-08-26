@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StudyTutorBoard from './StudyTutorBoard.jsx';
 import { getChatDisplayText } from '../lib/build-communication.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
@@ -25,6 +25,7 @@ export default function StudyTutorWorkspace({
   onSend,
 }) {
   const [assessment, setAssessment] = useState({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
+  const assessmentGeneration = useRef(0);
   const brief = useMemo(
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
@@ -36,6 +37,7 @@ export default function StudyTutorWorkspace({
   }, [messages]);
 
   useEffect(() => {
+    assessmentGeneration.current += 1;
     setAssessment({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
   }, [activeSessionId, brief?.conceptId]);
 
@@ -68,6 +70,7 @@ export default function StudyTutorWorkspace({
 
   const handleRequestAssessment = useCallback(async () => {
     if (!brief?.conceptId || !activeSessionId) return { fallback: true };
+    const generation = assessmentGeneration.current;
     setAssessment({ status: 'loading', item: null, attemptId: '', result: null, error: '' });
     try {
       const issued = await requestStudyAssessment({
@@ -75,9 +78,11 @@ export default function StudyTutorWorkspace({
         conceptLabel: brief.label,
         sessionId: activeSessionId,
       });
+      if (assessmentGeneration.current !== generation) return { fallback: false, stale: true };
       setAssessment({ status: 'ready', item: issued.item, attemptId: issued.attemptId, result: null, error: '' });
       return { fallback: false };
     } catch (error) {
+      if (assessmentGeneration.current !== generation) return { fallback: false, stale: true };
       if (error?.fallbackAllowed) {
         setAssessment({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
         return { fallback: true };
@@ -89,11 +94,14 @@ export default function StudyTutorWorkspace({
 
   const handleSubmitAssessment = useCallback(async (optionId) => {
     if (!assessment.attemptId || assessment.status === 'grading' || assessment.result) return;
+    const generation = assessmentGeneration.current;
     setAssessment((current) => ({ ...current, status: 'grading', error: '' }));
     try {
       const result = await gradeStudyAssessment({ attemptId: assessment.attemptId, optionId });
+      if (assessmentGeneration.current !== generation) return;
       setAssessment((current) => ({ ...current, status: 'graded', result, error: '' }));
     } catch (error) {
+      if (assessmentGeneration.current !== generation) return;
       setAssessment((current) => ({ ...current, status: 'error', error: error?.message || 'Answer not recorded.' }));
     }
   }, [assessment.attemptId, assessment.result, assessment.status]);

@@ -1,49 +1,4 @@
--- Server-owned Study assessment attempts.
--- Correct answers and single-use state never leave the service-role boundary.
-
-create table if not exists public.study_assessment_attempts (
-  id uuid primary key,
-  user_sub text not null references public.users(google_sub) on delete cascade,
-  session_id text not null check (
-    char_length(session_id) between 1 and 128
-    and session_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
-  ),
-  concept_id uuid not null references public.study_concepts(id) on delete restrict,
-  item_key text not null check (
-    char_length(item_key) between 1 and 160
-    and item_key ~ '^[a-z0-9][a-z0-9._:-]*$'
-  ),
-  item_version text not null check (char_length(item_version) between 1 and 80),
-  option_ids text[] not null check (cardinality(option_ids) between 2 and 8),
-  correct_option_id text not null check (char_length(correct_option_id) between 1 and 40),
-  misconception_option_ids text[] not null default '{}'::text[],
-  difficulty double precision not null check (difficulty between 0 and 1),
-  issued_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  submitted_at timestamptz,
-  submitted_option_id text check (submitted_option_id is null or char_length(submitted_option_id) <= 40),
-  correct boolean,
-  score double precision check (score is null or score between 0 and 1),
-  check (correct_option_id = any(option_ids)),
-  check (submitted_option_id is null or submitted_option_id = any(option_ids)),
-  check (expires_at > issued_at),
-  check (
-    (submitted_at is null and submitted_option_id is null and correct is null and score is null)
-    or
-    (submitted_at is not null and submitted_option_id is not null and correct is not null and score is not null)
-  )
-);
-
-create index if not exists study_assessment_attempts_owner_time_idx
-  on public.study_assessment_attempts (user_sub, issued_at desc);
-create index if not exists study_assessment_attempts_expiry_idx
-  on public.study_assessment_attempts (expires_at)
-  where submitted_at is null;
-
-alter table public.study_assessment_attempts enable row level security;
-revoke all on public.study_assessment_attempts from public, anon, authenticated;
-grant select, insert, update, delete on public.study_assessment_attempts to service_role;
-
+-- Repeated exposure to one released item must not become fresh mastery evidence.
 create or replace function public.complete_study_assessment_attempt(
   p_user_sub text,
   p_attempt_id uuid,
@@ -102,9 +57,6 @@ begin
   v_correct := p_option_id = v_attempt.correct_option_id;
   v_misconception := not v_correct and p_option_id = any(v_attempt.misconception_option_ids);
 
-  -- Serialize repeated submissions of one released item. Only the learner's
-  -- first encounter is independent evidence; later attempts remain useful
-  -- history without inflating mastery.
   perform pg_advisory_xact_lock(hashtextextended(
     p_user_sub || ':' || v_attempt.concept_id::text || ':' ||
       v_attempt.item_key || '@' || v_attempt.item_version,

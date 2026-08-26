@@ -93,6 +93,7 @@ test("issue stores the answer server-side but returns only the public item", asy
 test("grade trusts the atomic server result, records evidence, and saves a provisional estimate", async () => {
   const originalFetch = global.fetch;
   let savedEstimate: any = null;
+  let evidenceRequestUrl = "";
   global.fetch = async (url: any, init: any = {}) => {
     const target = String(url);
     if (target.includes("/rest/v1/users?select=")) {
@@ -110,6 +111,7 @@ test("grade trusts the atomic server result, records evidence, and saves a provi
       }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) {
+      evidenceRequestUrl = target;
       return json([{
         event_key: `study.assessment.${ATTEMPT_ID}`,
         event_kind: "assessment_item",
@@ -148,6 +150,7 @@ test("grade trusts the atomic server result, records evidence, and saves a provi
     assert.equal(savedEstimate.user_sub, "learner-1");
     assert.equal(savedEstimate.status, "provisional");
     assert.equal(savedEstimate.evidence_count, 1);
+    assert.match(evidenceRequestUrl, /order=observed_at\.desc/);
   } finally {
     global.fetch = originalFetch;
   }

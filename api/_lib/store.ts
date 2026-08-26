@@ -565,7 +565,7 @@ export async function readStudyMasteryEvidence(
   conceptId: string,
 ): Promise<StudyMasteryEvidenceEvent[] | null> {
   const response = await request(
-    `study_mastery_events?select=event_key,event_kind,correct,score,difficulty,hints_used,response_ms,self_confidence,independent,misconception_signal,delay_days,provenance,source_ref,assessment_ref,item_ref,observed_at&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&order=observed_at.asc&limit=500`,
+    `study_mastery_events?select=event_key,event_kind,correct,score,difficulty,hints_used,response_ms,self_confidence,independent,misconception_signal,delay_days,provenance,source_ref,assessment_ref,item_ref,observed_at&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&order=observed_at.desc&limit=500`,
     { method: "GET" },
   );
   if (!response) return null;

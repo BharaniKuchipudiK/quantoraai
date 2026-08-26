@@ -49,8 +49,17 @@ function eventWeight(event: StudyMasteryEvidenceEvent, score: number): number {
 
 /** Transparent, replaceable estimate. Self-confidence never enters mastery. */
 export function estimateStudyMastery(events: StudyMasteryEvidenceEvent[]): StudyMasteryEstimate {
-  const scored = (Array.isArray(events) ? events : [])
+  const seenAssessmentItems = new Set<string>();
+  const chronological = [...(Array.isArray(events) ? events : [])]
+    .sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt));
+  const scored = chronological
     .filter((event) => event?.independent === true && VERIFIED_KINDS.has(event.kind))
+    .filter((event) => {
+      if (event.kind !== "assessment_item" || !event.itemRef) return true;
+      if (seenAssessmentItems.has(event.itemRef)) return false;
+      seenAssessmentItems.add(event.itemRef);
+      return true;
+    })
     .map((event) => ({ event, score: eventScore(event) }))
     .filter((row): row is { event: StudyMasteryEvidenceEvent; score: number } => row.score !== null);
 

@@ -40,6 +40,21 @@ test("one correct server-graded answer creates only a bounded provisional estima
   assert.equal(result.evidenceCount, 1);
 });
 
+test("repeating the same assessment item does not create fresh mastery evidence", () => {
+  const result = estimateStudyMastery([
+    evidence("assessment_item", false, {
+      itemRef: "motion-graphs-velocity-slope@1",
+      observedAt: "2026-08-26T00:00:00.000Z",
+    }),
+    evidence("assessment_item", true, {
+      itemRef: "motion-graphs-velocity-slope@1",
+      observedAt: "2026-08-27T00:00:00.000Z",
+    }),
+  ]);
+  assert.equal(result.evidenceCount, 1);
+  assert.ok(result.mastery !== null && result.mastery < 0.5);
+});
+
 test("diverse independent evidence can establish mastery", () => {
   const result = estimateStudyMastery([
     evidence("assessment_item", true),
