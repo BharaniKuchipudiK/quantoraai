@@ -645,7 +645,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [splitMobile, filesWidthPx]);
 
   const startNewChat = useCallback(() => {
+    // A new chat starts blank — clear every preview surface up front instead of
+    // relying on the session-change effect, which never reset the Canvas
+    // (canvasOpen/canvasCode). Without this the old, often-broken Preview stayed
+    // on the right after "New Chat".
     setCodingDeskOpen(false);
+    setCanvasOpen(false);
+    setCanvasCode('');
+    setIsWorkspaceMode(false);
+    setVfs({});
+    vfsRef.current = {};
+    setWorkspaceCode('');
+    setDeskReview([]);
+    setDeskJob(null);
+    setPreviewRunStatus('');
+    setLiveDeskProbe(null);
     handleCreateNewChat();
   }, [handleCreateNewChat]);
 
@@ -671,6 +685,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
+      setCanvasOpen(false);
+      setCanvasCode('');
+      setLiveDeskProbe(null);
       return;
     }
     const session = chatSessions.find((item) => item.id === activeSessionId);
@@ -685,6 +702,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
+      setCanvasOpen(false);
+      setCanvasCode('');
+      setLiveDeskProbe(null);
       return;
     }
     setVfs(restored.vfs);
