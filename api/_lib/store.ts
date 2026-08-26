@@ -1,5 +1,7 @@
 import { normalizeOutcomeState, type OutcomeState, type OutcomeStateRecord } from "./outcome-state.js";
 import { randomUUID } from "node:crypto";
+import type { StudyMasteryEstimate } from "./study-mastery-estimator.js";
+import type { StudyMasteryEvidenceEvent } from "./study-truth-layer.js";
 
 /*
  * Server-side reads and writes against Supabase.
@@ -412,6 +414,214 @@ export async function deleteOutcomeState(userSub: string, sessionId: string): Pr
 export type StudyEvidenceWriteResult = {
   status: "saved" | "duplicate" | "unmapped" | "unavailable";
 };
+
+export type ActiveStudyConcept = {
+  id: string;
+  canonicalKey: string;
+  label: string;
+};
+
+function studyConceptRecord(value: any): ActiveStudyConcept | null {
+  const id = typeof value?.id === "string" ? value.id : "";
+  const canonicalKey = typeof value?.canonical_key === "string" ? value.canonical_key : "";
+  const label = typeof value?.label === "string" ? value.label : "";
+  return id && canonicalKey && label ? { id, canonicalKey, label } : null;
+}
+
+function studyLabel(value: string): string {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Resolve only an active canonical concept; ambiguous browser labels stay unmapped. */
+export async function resolveActiveStudyConcept(input: {
+  conceptKey: string;
+  conceptLabel: string;
+}): Promise<ActiveStudyConcept | null | "unavailable"> {
+  if (!config()) return "unavailable";
+  const key = String(input.conceptKey || "").trim().toLowerCase();
+  if (key) {
+    const exact = await request(
+      `study_concepts?select=id,canonical_key,label&canonical_key=eq.${encodeURIComponent(key)}&status=eq.active&order=updated_at.desc&limit=1`,
+      { method: "GET" },
+    );
+    if (!exact) return "unavailable";
+    try {
+      const rows = await exact.json();
+      const record = studyConceptRecord(Array.isArray(rows) ? rows[0] : null);
+      if (record) return record;
+    } catch { return "unavailable"; }
+  }
+
+  const label = studyLabel(input.conceptLabel);
+  if (!label) return null;
+  const candidatesResponse = await request(
+    "study_concepts?select=id,canonical_key,label&status=eq.active&order=updated_at.desc&limit=200",
+    { method: "GET" },
+  );
+  if (!candidatesResponse) return "unavailable";
+  try {
+    const candidates = (await candidatesResponse.json())
+      .map(studyConceptRecord)
+      .filter((row: ActiveStudyConcept | null): row is ActiveStudyConcept => Boolean(row));
+    const matches = candidates.filter((candidate: ActiveStudyConcept) => {
+      const candidateLabel = studyLabel(candidate.label);
+      return label === candidateLabel
+        || label.includes(candidateLabel)
+        || (label.length >= 12 && candidateLabel.includes(label));
+    });
+    return matches.length === 1 ? matches[0] : null;
+  } catch {
+    return "unavailable";
+  }
+}
+
+export async function issueStudyAssessmentAttempt(entry: {
+  userSub: string;
+  sessionId: string;
+  conceptId: string;
+  itemKey: string;
+  itemVersion: string;
+  optionIds: string[];
+  correctOptionId: string;
+  misconceptionOptionIds: string[];
+  difficulty: number;
+  expiresAt: string;
+}): Promise<{ status: "issued"; attemptId: string } | { status: "unavailable" }> {
+  const attemptId = randomUUID();
+  const response = await requestRaw("study_assessment_attempts", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      id: attemptId,
+      user_sub: entry.userSub,
+      session_id: entry.sessionId,
+      concept_id: entry.conceptId,
+      item_key: entry.itemKey,
+      item_version: entry.itemVersion,
+      option_ids: entry.optionIds,
+      correct_option_id: entry.correctOptionId,
+      misconception_option_ids: entry.misconceptionOptionIds,
+      difficulty: entry.difficulty,
+      expires_at: entry.expiresAt,
+    }]),
+  });
+  if (!response?.ok) {
+    if (response) console.warn(`Supabase POST study_assessment_attempts -> ${response.status}`);
+    return { status: "unavailable" };
+  }
+  return { status: "issued", attemptId };
+}
+
+export type StudyAssessmentGradeRecord = {
+  status: "graded" | "already_submitted" | "expired" | "not_found" | "invalid_option";
+  correct: boolean | null;
+  score: number | null;
+  conceptId: string | null;
+  itemKey: string | null;
+  itemVersion: string | null;
+  misconception: boolean | null;
+};
+
+export async function completeStudyAssessmentAttempt(entry: {
+  userSub: string;
+  attemptId: string;
+  optionId: string;
+  observedAt: string;
+}): Promise<StudyAssessmentGradeRecord | "unavailable"> {
+  const response = await requestRaw("rpc/complete_study_assessment_attempt", {
+    method: "POST",
+    body: JSON.stringify({
+      p_user_sub: entry.userSub,
+      p_attempt_id: entry.attemptId,
+      p_option_id: entry.optionId,
+      p_observed_at: entry.observedAt,
+    }),
+  });
+  if (!response?.ok) {
+    if (response) console.warn(`Supabase POST rpc/complete_study_assessment_attempt -> ${response.status}`);
+    return "unavailable";
+  }
+  try {
+    const rows = await response.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    const status = row?.result_status as StudyAssessmentGradeRecord["status"];
+    if (!["graded", "already_submitted", "expired", "not_found", "invalid_option"].includes(status)) return "unavailable";
+    return {
+      status,
+      correct: typeof row?.result_correct === "boolean" ? row.result_correct : null,
+      score: typeof row?.result_score === "number" ? row.result_score : null,
+      conceptId: typeof row?.result_concept_id === "string" ? row.result_concept_id : null,
+      itemKey: typeof row?.result_item_key === "string" ? row.result_item_key : null,
+      itemVersion: typeof row?.result_item_version === "string" ? row.result_item_version : null,
+      misconception: typeof row?.result_misconception === "boolean" ? row.result_misconception : null,
+    };
+  } catch {
+    return "unavailable";
+  }
+}
+
+export async function readStudyMasteryEvidence(
+  userSub: string,
+  conceptId: string,
+): Promise<StudyMasteryEvidenceEvent[] | null> {
+  const response = await request(
+    `study_mastery_events?select=event_key,event_kind,correct,score,difficulty,hints_used,response_ms,self_confidence,independent,misconception_signal,delay_days,provenance,source_ref,assessment_ref,item_ref,observed_at&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&order=observed_at.asc&limit=500`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  try {
+    const rows = await response.json();
+    return (Array.isArray(rows) ? rows : []).map((row: any) => ({
+      id: String(row.event_key || ""),
+      conceptId,
+      kind: row.event_kind,
+      correct: typeof row.correct === "boolean" ? row.correct : null,
+      score: typeof row.score === "number" ? row.score : null,
+      difficulty: typeof row.difficulty === "number" ? row.difficulty : null,
+      hintsUsed: Number(row.hints_used) || 0,
+      responseMs: typeof row.response_ms === "number" ? row.response_ms : null,
+      selfConfidence: typeof row.self_confidence === "number" ? row.self_confidence : null,
+      independent: row.independent === true,
+      misconceptionSignal: row.misconception_signal === true,
+      delayDays: typeof row.delay_days === "number" ? row.delay_days : null,
+      provenance: row.provenance,
+      sourceRef: row.source_ref,
+      assessmentRef: row.assessment_ref,
+      itemRef: row.item_ref,
+      observedAt: String(row.observed_at || ""),
+    })) as StudyMasteryEvidenceEvent[];
+  } catch {
+    return null;
+  }
+}
+
+export async function saveStudyMasteryEstimate(entry: {
+  userSub: string;
+  conceptId: string;
+  estimate: StudyMasteryEstimate;
+}): Promise<boolean> {
+  const estimate = entry.estimate;
+  const response = await requestRaw("study_mastery_estimates?on_conflict=user_sub,concept_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify([{
+      user_sub: entry.userSub,
+      concept_id: entry.conceptId,
+      status: estimate.status,
+      mastery: estimate.mastery,
+      confidence: estimate.confidence,
+      retention: estimate.retention,
+      misconception_risk: estimate.misconceptionRisk,
+      evidence_count: estimate.evidenceCount,
+      effective_evidence_weight: estimate.effectiveEvidenceWeight,
+      estimator_version: estimate.reasonCodes[0],
+      reason_codes: estimate.reasonCodes,
+      observed_through: estimate.observedThrough,
+      updated_at: new Date().toISOString(),
+    }]),
+  });
+  return Boolean(response?.ok);
+}
 
 /**
  * Append a learner-owned self-confidence signal to the Study evidence ledger.

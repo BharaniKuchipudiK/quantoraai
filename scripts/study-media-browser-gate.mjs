@@ -10,6 +10,7 @@ const DEAD_VIDEO_ID = 'studydead123';
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
+let assessmentIssueCount = 0;
 
 function sseBody(text) {
   return [
@@ -86,6 +87,68 @@ await page.route('**/api/**', async (route) => {
         'cache-control': 'no-cache',
       },
       body: sseBody(reply),
+    });
+  }
+
+  if (path === '/api/study-assessment') {
+    const body = request.postDataJSON();
+    if (body.action === 'issue') {
+      assessmentIssueCount += 1;
+      if (assessmentIssueCount === 1) {
+        return route.fulfill({
+          status: 422,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'This topic is not mapped to a reviewed assessment yet.',
+            code: 'verified_assessment_unavailable',
+            fallbackAllowed: true,
+          }),
+        });
+      }
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          attemptId: '11111111-1111-4111-8111-111111111111',
+          expiresAt: '2026-08-26T12:15:00.000Z',
+          concept: { key: 'physics.kinematics.motion-graphs', label: 'Motion graphs' },
+          item: {
+            itemKey: 'motion-graphs-velocity-slope',
+            itemVersion: '1',
+            conceptKey: 'physics.kinematics.motion-graphs',
+            prompt: 'On a displacement-time graph, what does the slope at a point represent?',
+            options: [
+              { id: 'a', text: 'Acceleration' },
+              { id: 'b', text: 'Displacement' },
+              { id: 'c', text: 'Velocity' },
+              { id: 'd', text: 'Distance travelled' },
+            ],
+            responseFormat: 'single_correct',
+          },
+        }),
+      });
+    }
+    if (body.action === 'grade' && body.optionId === 'c') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          recorded: true,
+          duplicate: false,
+          correct: true,
+          score: 1,
+          misconceptionSignal: false,
+          explanation: 'The slope is change in displacement divided by change in time, which is velocity.',
+          evidenceKind: 'assessment_item',
+          masteryUpdated: true,
+          mastery: { status: 'provisional', learningState: 'emerging_understanding', evidenceCount: 1 },
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Unexpected synthetic assessment request.' }),
     });
   }
 
@@ -207,6 +270,29 @@ try {
   await hidden(
     board.getByText(/Marked checked for this session/i).first(),
     'Tutor board treated self-confidence as verified mastery.',
+  );
+
+  await textarea.fill('Teach me motion graphs');
+  await textarea.press('Enter');
+  await visible(
+    board.getByText('motion graphs', { exact: false }).first(),
+    'Tutor board did not switch to the mapped motion-graphs concept.',
+  );
+  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
+  const verifiedCheck = board.locator('[data-quantora-study-verified-check="true"]').first();
+  await visible(verifiedCheck, 'Mapped Study concept did not receive a server-graded check.');
+  await visible(
+    verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }),
+    'Server-issued Study prompt was not rendered.',
+  );
+  await verifiedCheck.getByRole('button', { name: 'Velocity', exact: true }).click();
+  await visible(
+    board.locator('[data-quantora-study-verified-result="correct"]').first(),
+    'Correct server-graded Study result was not rendered.',
+  );
+  await visible(
+    board.getByText(/evidence ledger, not self-report, now informs mastery/i).first(),
+    'Tutor board did not distinguish verified evidence from self-report.',
   );
 
   console.log('Study media browser gate passed.');

@@ -1,10 +1,12 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import StudyTutorBoard from './StudyTutorBoard.jsx';
 import { getChatDisplayText } from '../lib/build-communication.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import {
   createStudyEvidenceEventKey,
+  gradeStudyAssessment,
   recordStudySelfConfidenceEvidence,
+  requestStudyAssessment,
 } from '../lib/study-evidence-client.js';
 
 /**
@@ -22,6 +24,7 @@ export default function StudyTutorWorkspace({
   onAsk,
   onSend,
 }) {
+  const [assessment, setAssessment] = useState({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
   const brief = useMemo(
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
@@ -31,6 +34,10 @@ export default function StudyTutorWorkspace({
       .find((message) => message.sender === 'ai' && message.type !== 'greeting');
     return getChatDisplayText(lastAiMessage?.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '');
   }, [messages]);
+
+  useEffect(() => {
+    setAssessment({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
+  }, [activeSessionId, brief?.conceptId]);
 
   const handleCheckOutcome = useCallback((fact) => {
     const line = String(fact || '').trim();
@@ -59,6 +66,38 @@ export default function StudyTutorWorkspace({
     });
   }, [activeSessionId, brief?.conceptId, brief?.label]);
 
+  const handleRequestAssessment = useCallback(async () => {
+    if (!brief?.conceptId || !activeSessionId) return { fallback: true };
+    setAssessment({ status: 'loading', item: null, attemptId: '', result: null, error: '' });
+    try {
+      const issued = await requestStudyAssessment({
+        conceptId: brief.conceptId,
+        conceptLabel: brief.label,
+        sessionId: activeSessionId,
+      });
+      setAssessment({ status: 'ready', item: issued.item, attemptId: issued.attemptId, result: null, error: '' });
+      return { fallback: false };
+    } catch (error) {
+      if (error?.fallbackAllowed) {
+        setAssessment({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
+        return { fallback: true };
+      }
+      setAssessment({ status: 'error', item: null, attemptId: '', result: null, error: error?.message || 'Verified check unavailable.' });
+      return { fallback: false };
+    }
+  }, [activeSessionId, brief?.conceptId, brief?.label]);
+
+  const handleSubmitAssessment = useCallback(async (optionId) => {
+    if (!assessment.attemptId || assessment.status === 'grading' || assessment.result) return;
+    setAssessment((current) => ({ ...current, status: 'grading', error: '' }));
+    try {
+      const result = await gradeStudyAssessment({ attemptId: assessment.attemptId, optionId });
+      setAssessment((current) => ({ ...current, status: 'graded', result, error: '' }));
+    } catch (error) {
+      setAssessment((current) => ({ ...current, status: 'error', error: error?.message || 'Answer not recorded.' }));
+    }
+  }, [assessment.attemptId, assessment.result, assessment.status]);
+
   if (!brief?.active) return null;
   return (
     <StudyTutorBoard
@@ -72,6 +111,9 @@ export default function StudyTutorWorkspace({
       onSend={onSend}
       onCheckOutcome={handleCheckOutcome}
       onEvidence={handleEvidence}
+      assessment={assessment}
+      onRequestAssessment={handleRequestAssessment}
+      onSubmitAssessment={handleSubmitAssessment}
     />
   );
 }
