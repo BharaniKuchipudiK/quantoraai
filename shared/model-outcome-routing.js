@@ -104,6 +104,28 @@ export function outcomeSignalsForTask(rows, taskCategory = 'coding') {
 }
 
 /**
+ * Fold `model_quality_summary` rows into one overall signal per model, across
+ * every task category. This is the whole-catalog view the Model Dashboard shows
+ * and ranks by — the same reliability/usefulness math as {@link outcomeSignalsForTask}
+ * without the per-task split, so there is one definition of "how good is this
+ * model" rather than a dashboard copy and a routing copy.
+ *
+ * @param {Array<object>} rows  Rows from `model_quality_summary`.
+ * @returns {Map<string, {sampleSize:number, score:number|null, reliability:number|null, usefulness:number|null, avgLatencyMs:number|null}>}
+ */
+export function overallOutcomeSignals(rows) {
+  const all = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row || typeof row.model_id !== 'string' || !row.model_id) continue;
+    if (!all.has(row.model_id)) all.set(row.model_id, emptyBucket());
+    addRow(all.get(row.model_id), row);
+  }
+  const result = new Map();
+  for (const [id, bucket] of all) result.set(id, finalize(bucket));
+  return result;
+}
+
+/**
  * Signed routing adjustment from a measured signal.
  *
  * Score 50 is neutral (coin-flip reliability). Above it rewards, below it

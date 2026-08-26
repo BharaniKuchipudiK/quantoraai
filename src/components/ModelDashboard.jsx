@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clock3, Cpu, FlaskConical, Globe2, RefreshCw, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { rankPublicDashboardModels } from '../../shared/model-dashboard-ranking.js';
 
 function statusTheme(status) {
   if (status === 'available') return { label: 'Active', color: '#059669', bg: 'rgba(16, 185, 129, 0.12)', icon: CheckCircle2 };
@@ -170,17 +171,7 @@ export default function ModelDashboard({
 
   const visibleModels = isAdmin
     ? models
-    : [...models].sort((a, b) => {
-      const rank = (model) => {
-        if (model.id === selectedModel?.id) return 0;
-        if (model.status === 'discovered') return 1;
-        if (model.status === 'available' && (model.pricingKind === 'free' || model.pricingKind === 'free-tier')) return 2;
-        if (model.status === 'available') return 3;
-        if (model.isNew || model.isUpdated) return 4;
-        return 5;
-      };
-      return rank(a) - rank(b) || a.name.localeCompare(b.name);
-    });
+    : rankPublicDashboardModels(models, { selectedModelId: selectedModel?.id });
 
   const displayedModels = showAll ? visibleModels : visibleModels.slice(0, 15);
 
