@@ -621,8 +621,14 @@ export default async function handler(req: any, res: any) {
       buildMode: effectiveBuildMode,
       taskCategory,
       hasVFS: Boolean(hasPreviewCode) || Boolean(req.body?.hasVFS),
-      // Free Studio without BYOK must not Auto-pick paid-only OpenRouter routes.
-      allowPaid: Boolean(openRouterKey),
+      // Paid routes are allowed whenever a usable OpenRouter key is present —
+      // the user's own BYOK key OR the platform's server key (which is already
+      // gated to authenticated sessions via mayUseServerKeys). Using only the
+      // BYOK key here meant builds relying on the server's Vercel key never
+      // escalated to a paid coder, so every build silently fell back to Gemini
+      // and OpenRouter received zero traffic. A truly anonymous visitor (no
+      // session, no BYOK) has no effective key, so they still stay on Gemini.
+      allowPaid: Boolean(effectiveOpenRouterKey),
       qualityHints,
     });
     if (usingServerOwnedModelAccess && autoModelRequest) {
