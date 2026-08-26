@@ -49,3 +49,13 @@ test('Study tutor board is a persistent workspace sibling, not mounted under the
   assert.match(workspace, /key=\{`\$\{activeSessionId\}:\$\{brief\.conceptId\}`\}/);
   assert.match(source, /lazy\(\(\) => import\('\.\/StudyTutorWorkspace\.jsx'\)\)/);
 });
+
+test('Study assessment responses are generation-guarded across topic and session changes', () => {
+  const workspace = fs.readFileSync(path.join(root, 'src/components/StudyTutorWorkspace.jsx'), 'utf8');
+  assert.match(workspace, /const assessmentGeneration = useRef\(0\)/);
+  assert.match(workspace, /assessmentGeneration\.current \+= 1/);
+  assert.ok(
+    (workspace.match(/assessmentGeneration\.current !== generation/g) || []).length >= 3,
+    'issue and grade continuations must reject stale responses',
+  );
+});
