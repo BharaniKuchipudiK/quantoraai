@@ -108,10 +108,27 @@ export function crossOriginHeadersForPath(config, path) {
  */
 export function checkFramedDocumentContract(config, { framedPath, parentPaths }) {
   const problems = [];
+  const framed = resolveHeadersForPath(config, framedPath);
+
+  // Framing gate: a document meant to be embedded in an iframe must never be
+  // served `X-Frame-Options: DENY`. DENY blocks ALL framing — including the app
+  // framing its own same-origin Preview shell — and the browser shows
+  // "<host> refused to connect" while Preview sits on "Verifying — running the
+  // preview…" forever (the iframe's onLoad fires on the block page, so the client
+  // never remounts). SAMEORIGIN (consistent with CSP `frame-ancestors 'self'`)
+  // is the correct value; absence is also fine when CSP carries the contract.
+  if (Array.isArray(parentPaths) && parentPaths.length && framed['x-frame-options'] === 'DENY') {
+    problems.push(
+      `${framedPath} is served with X-Frame-Options: DENY but is meant to be framed by `
+      + `[${parentPaths.join(', ')}]. DENY blocks same-origin framing, so the Preview shell `
+      + 'is refused ("refused to connect") and Preview hangs on "Verifying — running the '
+      + 'preview…". Use SAMEORIGIN (matching CSP frame-ancestors \'self\') on the app pages.',
+    );
+  }
+
   const isolatingParents = parentPaths.filter((parent) => requiresCorp(config, parent));
   if (!isolatingParents.length) return problems;
 
-  const framed = resolveHeadersForPath(config, framedPath);
   const parents = isolatingParents.join(', ');
 
   if (!framed['cross-origin-resource-policy']) {
