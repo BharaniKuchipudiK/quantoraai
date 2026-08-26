@@ -68,6 +68,26 @@ test('complex architecture asks escalate once at request start', () => {
   assert.equal(choice.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
 });
 
+test('shop / e-commerce builds escalate off the weak default model', () => {
+  for (const message of [
+    'build a shop website for my coffee shop',
+    'create an online store to sell my sarees',
+    'make an e-commerce site with a product catalog',
+  ]) {
+    assert.equal(shouldEscalateCodingDeskModel({ message }), true, message);
+  }
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'build a shop website for my coffee shop',
+    availableModels: ACTIVE,
+    allowPaid: false,
+  });
+  assert.equal(choice.escalated, true);
+  assert.notEqual(choice.modelId, 'gemini-flash-latest');
+  // A plain brochure/portfolio ask still stays on the fast default.
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'build a simple about page' }), false);
+});
+
 test('free Studio without keys never auto-picks paid-only models', () => {
   const choice = resolveCodingDeskModel({
     task: 'coding',
