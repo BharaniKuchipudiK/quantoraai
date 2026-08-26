@@ -65,14 +65,7 @@ const projectReply = [
   '```',
 ].join('\n');
 
-const boutiqueImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent([
-  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="520" viewBox="0 0 400 520">',
-  '<rect width="400" height="520" fill="#7c2d12"/>',
-  '<path d="M40 60h320v400H40z" fill="#fef3c7" stroke="#f59e0b" stroke-width="12"/>',
-  '<text x="200" y="250" text-anchor="middle" font-family="serif" font-size="28" fill="#7c2d12">Kanjeevaram</text>',
-  '<text x="200" y="290" text-anchor="middle" font-family="serif" font-size="22" fill="#9a3412">Silk</text>',
-  '</svg>',
-].join(''))}`;
+const BOUTIQUE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/5eZ3GQAAAABJRU5ErkJggg==';
 
 const patchReply = [
   'Updated the heading.',
@@ -90,7 +83,7 @@ const boutiqueReply = [
   '```',
   '',
   '```html filepath="index.html"',
-  `<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="${boutiqueImage}" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button type="button">Add to Cart</button></div></main></body></html>`,
+  '<!DOCTYPE html><html><body><header>Aaranya</header><main><div class="product-card"><img src="/api/preview-image?fixture=boutique" alt="Silk"><p>Kanjeevaram</p><span class="price">INR 18000</span><button type="button">Add to Cart</button></div></main></body></html>',
   '```',
 ].join('\n');
 
@@ -121,6 +114,13 @@ await page.route('**/api/**', async (route) => {
       { id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true },
       { id: 'synthetic-b', name: 'Synthetic B', provider: 'Synthetic', available: true },
     ] }) });
+  }
+  if (path === '/api/preview-image') {
+    return route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(BOUTIQUE_PNG_BASE64, 'base64'),
+    });
   }
   if (path === '/api/preview-compile') {
     const body = request.postDataJSON?.() || {};
