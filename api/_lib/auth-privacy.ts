@@ -7,6 +7,15 @@ export function normalizeAuthEmail(email: string): string {
   return String(email || "").trim().toLowerCase();
 }
 
+export function rowsMatchingAuthEmail<T extends { email?: string | null }>(
+  rows: T[] | null | undefined,
+  email: string,
+): T[] {
+  const normalized = normalizeAuthEmail(email);
+  if (!normalized || !Array.isArray(rows)) return [];
+  return rows.filter((row) => normalizeAuthEmail(row?.email || "") === normalized);
+}
+
 export function passwordResetDelivery(
   user: { password_hash?: string | null } | null | undefined,
 ): PasswordResetDelivery {

@@ -2,6 +2,12 @@ function isProdLikeRuntime() {
   return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
 }
 
+/** True when a reset email can actually be delivered (Resend) or logged (local). */
+export function isAuthMailConfigured(): boolean {
+  if (process.env.RESEND_API_KEY?.trim()) return true;
+  return !isProdLikeRuntime();
+}
+
 /**
  * Password-reset delivery. Uses Resend when configured.
  * Locally, missing RESEND_API_KEY logs the link. Production and Vercel
