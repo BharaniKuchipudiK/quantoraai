@@ -10,6 +10,7 @@
 import {
   CURATED_MODELS,
   DIRECT_MODELS,
+  discoverAnthropicFlagships,
   catalogCreatedAt,
   fetchOpenRouterCatalog,
   formatContext,
@@ -82,8 +83,34 @@ export default async function handler(req, res) {
   const stored = new Map(storedRows.map((row) => [row.id, row]));
   const quality = overallOutcomeSignals(qualityRows);
   const fetchedAt = new Date().toISOString();
-  const models = DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null }));
-  const dashboardModels = DIRECT_MODELS.map((model) => ({
+  /*
+   * Anthropic flagships are not in CURATED_MODELS (their ids move, and a stale
+   * one is a route the provider rejects), so they are read from the live
+   * catalogue here exactly as the chat router reads them. Without this the
+   * router could reach Claude on Auto while the picker never listed it — the
+   * model was selectable by the platform but invisible to the user.
+   */
+  const flagships = discoverAnthropicFlagships(catalog).map((model) => ({
+    ...model,
+    quality: quality.get(model.id) || null,
+  }));
+  const models = [
+    ...DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null })),
+    ...flagships,
+  ];
+  const dashboardModels = [
+    ...flagships.map((model) => ({
+      ...model,
+      status: 'available',
+      health: 'listed',
+      event: 'listed',
+      isNew: false,
+      isUpdated: false,
+      approved: true,
+      selectable: true,
+      category: 'featured',
+    })),
+  ].concat(DIRECT_MODELS.map((model) => ({
     ...model,
     quality: quality.get(model.id) || null,
     status: 'available',
@@ -94,7 +121,7 @@ export default async function handler(req, res) {
     approved: true,
     selectable: true,
     category: 'featured',
-  }));
+  })));
 
   for (const curated of CURATED_MODELS) {
     const live = catalog ? catalog.get(curated.id) : undefined;
