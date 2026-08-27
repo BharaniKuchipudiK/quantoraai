@@ -109,3 +109,32 @@ test('an Office deck gets presentation chips, not Vercel publish', () => {
   assert.ok(labels.includes('Tighten the storyline'));
   assert.equal(labels.some((label) => /publish|vercel/i.test(label)), false);
 });
+
+test('a coffee shop is not offered a payment gateway or shipping', () => {
+  // Reported: "a one-page site for a coffee shop" produced
+  // "Add real product photos | Add a payment gateway | Domestic or international?"
+  const prompt = 'Build a one-page site for a coffee shop called "Ember & Oak" — hero, a 3-item menu with prices, and hours.';
+  const ai = 'Here is Ember & Oak. Menu: Espresso $3.00, Latte $4.50, Cappuccino $4.00. Hours included.';
+  const labels = detectOutcomeGaps(prompt, ai, {}).map((g) => g.label);
+  assert.deepEqual(labels, [], `a cafe page should need no commerce chips, got: ${labels.join(', ')}`);
+});
+
+test('venue nouns do not trigger commerce chips', () => {
+  for (const prompt of ['a barber shop website with opening hours', 'a landing page for a book store']) {
+    const labels = detectOutcomeGaps(prompt, 'Here is your page.', {}).map((g) => g.label);
+    assert.equal(labels.includes('Add a payment gateway'), false, `no gateway chip for: ${prompt}`);
+    assert.equal(labels.includes('Domestic or international?'), false, `no shipping chip for: ${prompt}`);
+  }
+});
+
+test('asking for no images never nudges you to add photos', () => {
+  const prompt = 'A one-page landing site for Nimbus — header, hero tagline, three feature blurbs, footer. One HTML file, no images.';
+  const labels = detectOutcomeGaps(prompt, 'Here is your page.', {}).map((g) => g.label);
+  assert.equal(labels.includes('Add real product photos'), false, `got: ${labels.join(', ')}`);
+});
+
+test('a real shop still gets its commerce chips', () => {
+  const labels = detectOutcomeGaps('Build an online store to sell handmade jewelry with a checkout', 'Here is your store.', {}).map((g) => g.label);
+  assert.ok(labels.includes('Add real product photos'), 'a real shop still needs photos');
+  assert.ok(labels.includes('Add a payment gateway'), 'a real shop still needs payments');
+});

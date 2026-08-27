@@ -5,6 +5,7 @@ import {
   injectProductCatalogImages,
   isAllowedPreviewImageUrl,
   isReliablePreviewPhotoSrc,
+  isRealPhotoSrc,
   previewHtmlHasRealPhotos,
   rewritePreviewImageUrls,
   countRealPreviewPhotos,
@@ -17,8 +18,17 @@ test('only known photo hosts are allowed through the Preview proxy', () => {
   assert.equal(isAllowedPreviewImageUrl('https://evil.example/photo.jpg'), false);
 });
 
-test('data-URI shop photos are reliable without a remote host', () => {
-  assert.equal(isReliablePreviewPhotoSrc('data:image/svg+xml;charset=utf-8,%3Csvg'), true);
+test('svg data-URIs still display, but are not counted as real photos', () => {
+  const svg = 'data:image/svg+xml;charset=utf-8,%3Csvg';
+  // A self-contained svg still decodes in Preview (used only as the onerror guard)...
+  assert.equal(isReliablePreviewPhotoSrc(svg), true);
+  // ...but it is NOT a real photograph, so the injector will replace it.
+  assert.equal(isRealPhotoSrc(svg), false);
+  // A same-origin proxied photograph and a raster data URI are real photos.
+  const proxied = '/api/preview-image?u=https%3A%2F%2Fpicsum.photos%2Fseed%2Fx%2F1200%2F800';
+  assert.equal(isRealPhotoSrc(proxied), true);
+  assert.equal(isRealPhotoSrc('data:image/jpeg;base64,/9j/4AAQ'), true);
+  // A bare remote host is not reliable in Preview (must be proxied).
   assert.equal(isReliablePreviewPhotoSrc('https://images.unsplash.com/photo-123'), false);
 });
 
@@ -30,22 +40,46 @@ test('Preview rewrites Unsplash photos to the Quantora proxy so they can load', 
   assert.equal(rewritePreviewImageUrls(html, ''), html);
 });
 
-test('a boutique card with a large SVG gets a real data-URI photo', () => {
+test('an injected card photo carries an onerror guard so it never shows a broken icon', () => {
+  // A remote card image (which cannot load through the COEP sandbox, and whose
+  // proxied form needs the /api/preview-image function) is swapped to a real
+  // proxied photo WITH an onerror fallback to a self-contained placeholder — so
+  // even a preview server without the proxy renders a decodable image.
+  const html = '<article class="product-card"><img src="https://images.unsplash.com/photo-xyz?w=400" alt="Silk"></article>';
+  const result = injectMissingShopPhotos(html);
+  assert.equal(result.injected, true);
+  assert.match(result.html, /src="\/api\/preview-image\?u=/);
+  assert.match(result.html, /onerror="[^"]*data:image\/svg\+xml/);
+});
+
+test('a boutique card with a large SVG gets a real proxied photo', () => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">${'M'.repeat(200)}</svg>`;
   const html = `<!DOCTYPE html><html><body><div class="product-card">${svg}<p>Pure Gold Zari Kanjeevaram</p></div></body></html>`;
   const result = injectMissingShopPhotos(html);
   assert.equal(result.injected, true);
   assert.equal(previewHtmlHasRealPhotos(result.html), true);
-  assert.match(result.html, /data:image\/svg\+xml/);
+  // The real photo is a same-origin proxied photograph...
+  assert.match(result.html, /src="\/api\/preview-image\?u=/);
+  // ...with the self-contained placeholder only as the onerror guard.
+  assert.match(result.html, /onerror="[^"]*data:image\/svg\+xml/);
   assert.doesNotMatch(result.html, /images\.unsplash\.com/);
 });
 
 test('a shop that already has reliable photos is not rewritten into a different catalog', () => {
-  const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#111"/><text>quantora-photo-99</text></svg>');
+  const src = '/api/preview-image?u=' + encodeURIComponent('https://images.unsplash.com/photo-silk?w=1200');
   const html = `<article class="product-card"><img src="${src}" alt="saree"></article>`;
   const result = injectMissingShopPhotos(html);
   assert.equal(result.injected, false);
   assert.equal(result.html, html);
+});
+
+test('a fabricated svg placeholder in products.json is replaced with a real photo', () => {
+  const svgSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#111"/></svg>');
+  const catalog = injectProductCatalogImages(JSON.stringify([{ id: 'a', name: 'Silk', image: svgSrc }]));
+  assert.equal(catalog.changed, true);
+  const parsed = JSON.parse(catalog.text);
+  assert.match(parsed[0].image, /^\/api\/preview-image\?u=/);
+  assert.doesNotMatch(parsed[0].image, /svg\+xml/);
 });
 
 test('gold frames still get photos when the hero already has one', () => {
@@ -82,11 +116,11 @@ test('nested catalog and stat cards do not get a repeating photo stack', () => {
   assert.equal((result.html.match(/class="card gold-card"/g) || []).length, 8);
 });
 
-test('products.json without image URLs gets catalog photos', () => {
+test('products.json without image URLs gets real proxied catalog photos', () => {
   const catalog = injectProductCatalogImages('[{"id":"a","name":"Kanjeevaram","priceCents":38000}]');
   assert.equal(catalog.changed, true);
-  assert.match(catalog.text, /data:image\/svg\+xml/);
-  assert.doesNotMatch(catalog.text, /images\.unsplash\.com/);
+  assert.match(catalog.text, /\/api\/preview-image\?u=/);
+  assert.doesNotMatch(catalog.text, /data:image\/svg\+xml/);
 });
 
 test('cloned Unsplash URLs on every card become distinct reliable photos', () => {
@@ -113,6 +147,6 @@ test('products.json that repeats one Unsplash URL gets a unique reliable photo p
   assert.equal(catalog.changed, true);
   const parsed = JSON.parse(catalog.text);
   assert.notEqual(parsed[0].image, parsed[1].image);
-  assert.match(parsed[0].image, /^data:image\//);
-  assert.match(parsed[1].image, /^data:image\//);
+  assert.match(parsed[0].image, /^\/api\/preview-image\?u=/);
+  assert.match(parsed[1].image, /^\/api\/preview-image\?u=/);
 });

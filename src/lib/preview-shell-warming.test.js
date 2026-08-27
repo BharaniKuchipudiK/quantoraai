@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   PREVIEW_SHELL_FAIL_MS,
   PREVIEW_SHELL_AUTO_REMOUNT_MAX,
@@ -7,7 +8,7 @@ import {
   shouldHoldPreviewShellFailClock,
   shouldShowPreviewShellTombstone,
   shouldAutoRemountFailedPreviewShell,
-  shouldShowPreviewShellFailOverlay,
+  
 } from './preview-shell-warming.js';
 
 test('hold shell fail clock while the coding turn is busy', () => {
@@ -38,11 +39,11 @@ test('never hard-fail the shell when desk already has HTML', () => {
 });
 
 test('never show fail overlay when desk has HTML even if warmingFailed', () => {
-  assert.equal(shouldShowPreviewShellFailOverlay({
+  assert.equal(shouldShowPreviewShellTombstone({
     warmingFailed: true,
     hasDeskHtml: true,
   }), false);
-  assert.equal(shouldShowPreviewShellFailOverlay({
+  assert.equal(shouldShowPreviewShellTombstone({
     warmingFailed: true,
     hasDeskHtml: false,
   }), true);
@@ -99,4 +100,18 @@ test('auto-remount sticky fail when Files still have runnable preview', () => {
     hasRunnablePreview: true,
     autoRemountAttempts: 0,
   }), false);
+});
+
+test('the component actually calls the policy it is tested against', () => {
+  // This module was tested and asserted by the browser gate while the component
+  // re-derived the same conditions inline and never called it — the same trap
+  // that hid the COEP header bug (a test proving a copy, not the original).
+  // If the component stops calling these, the policy is fiction again.
+  const canvas = fs.readFileSync(
+    new URL('../components/LivePreviewCanvas.jsx', import.meta.url),
+    'utf8',
+  );
+  for (const fn of ['shouldFailPreviewShell', 'shouldHoldPreviewShellFailClock', 'shouldAutoRemountFailedPreviewShell']) {
+    assert.match(canvas, new RegExp(`${fn}\\s*\\(`), `LivePreviewCanvas must call ${fn}`);
+  }
 });

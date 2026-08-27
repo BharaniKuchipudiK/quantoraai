@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Download } from 'lucide-react';
+import StudyFreeBodyDiagram from './StudyFreeBodyDiagram.jsx';
 import { gradeStudyCheck, studyCheckOutcomeFact } from '../lib/study-tutor-brief.js';
+import { isFreeBodyDiagramRelevant } from '../lib/study-free-body-diagram.js';
 import {
   studyFlashcardAsk,
   studyLessonAsk,
@@ -49,6 +51,10 @@ export default function StudyTutorBoard({
   onAsk,
   onSend,
   onCheckOutcome,
+  onEvidence,
+  assessment,
+  onRequestAssessment,
+  onSubmitAssessment,
   lessonText = '',
 }) {
   const [showCheck, setShowCheck] = useState(false);
@@ -70,10 +76,16 @@ export default function StudyTutorBoard({
   const tagged = new Set(competencies.map((row) => row.tag));
   const overlayLabel = brief?.overlay?.label || '';
   const subjects = brief?.subjects || [];
+  const showFreeBodyDiagram = isFreeBodyDiagramRelevant({ topic, subjects });
   const progress = brief?.progress || { ratio: 0, caption: 'No fake score. A filled bar only after a real check.' };
-  const barRatio = result?.correct ? Math.max(progress.ratio, 0.4) : result ? Math.max(progress.ratio, 0.12) : progress.ratio;
-  const barCaption = result?.correct
-    ? 'Check passed — not an exam rank.'
+  const barRatio = progress.ratio;
+  const verifiedResult = assessment?.result || null;
+  const barCaption = verifiedResult?.correct
+    ? 'Verified response recorded — the evidence ledger, not self-report, now informs mastery.'
+    : verifiedResult
+      ? 'Verified gap recorded — repair this idea, then try a changed example.'
+      : result?.correct
+    ? 'Practice answered — mastery changes only after verified evidence.'
     : result
       ? 'Gap found — repair the foundation this session named.'
       : progress.caption;
@@ -214,6 +226,9 @@ export default function StudyTutorBoard({
           />
         </figure>
       ) : null}
+      {showFreeBodyDiagram ? (
+        <StudyFreeBodyDiagram isLight={isLight} textColor={textColor} subtextColor={subtextColor} />
+      ) : null}
       <div style={{ marginTop: '12px' }}>
         <ProgressMark ratio={barRatio} isLight={isLight} />
       </div>
@@ -275,14 +290,18 @@ export default function StudyTutorBoard({
         {chip('Flashcards', () => { setShowCards(true); setCardIndex(0); setCardBack(false); askOrSend(studyFlashcardAsk(topic)); })}
         {chip('Notes', () => askOrSend(studyNotesAsk(topic)))}
         {chip('I got this wrong…', () => onAsk?.('I got this question wrong: '))}
-        {chip('Test me on this', () => {
+        {chip(assessment?.status === 'loading' ? 'Preparing verified check…' : 'Test me on this', async () => {
+          if (onRequestAssessment) {
+            const outcome = await onRequestAssessment();
+            if (!outcome?.fallback) return;
+          }
           if (check) {
             setResult(null);
             setShowCheck(true);
             return;
           }
           askOrSend(studyQuizAsk(topic));
-        })}
+        }, !['loading', 'grading'].includes(assessment?.status))}
       </div>
       <div style={{ marginTop: '14px' }}>
         <div style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: subtextColor }}>
@@ -399,6 +418,57 @@ export default function StudyTutorBoard({
           </div>
         </button>
       ) : null}
+      {assessment?.item ? (
+        <div data-quantora-study-verified-check="true" style={{ marginTop: '14px' }}>
+          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: isLight ? '#047857' : '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Server-graded check
+          </div>
+          <div style={{ marginTop: '6px', fontSize: '0.85rem', fontWeight: 650, color: textColor, lineHeight: 1.45 }}>
+            {assessment.item.prompt}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+            {assessment.item.options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                disabled={assessment.status === 'grading' || Boolean(assessment.result)}
+                onClick={() => onSubmitAssessment?.(option.id)}
+                style={{
+                  textAlign: 'left',
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.25)',
+                  background: isLight ? '#f8fafc' : 'rgba(15,23,42,0.5)',
+                  color: textColor,
+                  cursor: assessment.result ? 'default' : 'pointer',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                }}
+              >
+                {option.text}
+              </button>
+            ))}
+          </div>
+          {assessment.status === 'grading' ? (
+            <div style={{ marginTop: '8px', fontSize: '0.78rem', color: subtextColor }}>Grading on the server…</div>
+          ) : null}
+          {assessment.result ? (
+            <div data-quantora-study-verified-result={assessment.result.correct ? 'correct' : 'incorrect'} style={{ marginTop: '10px', fontSize: '0.82rem', lineHeight: 1.45, color: assessment.result.correct ? (isLight ? '#047857' : '#6ee7b7') : textColor }}>
+              <strong>{assessment.result.correct ? 'Verified.' : 'Not yet.'}</strong> {assessment.result.explanation}
+              <div style={{ marginTop: '4px', color: subtextColor }}>
+                {assessment.result.mastery?.learningState === 'misconception_detected'
+                  ? 'A likely misconception was recorded for targeted repair.'
+                  : 'This independently graded attempt was added to your evidence history.'}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {assessment?.status === 'error' && assessment.error ? (
+        <div role="status" style={{ marginTop: '10px', fontSize: '0.78rem', color: isLight ? '#b45309' : '#fbbf24' }}>
+          {assessment.error} Nothing was counted.
+        </div>
+      ) : null}
       {showCheck && check ? (
         <div style={{ marginTop: '14px' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 650, color: textColor, lineHeight: 1.45 }}>{check.prompt}</div>
@@ -410,6 +480,9 @@ export default function StudyTutorBoard({
                 onClick={() => {
                   const graded = gradeStudyCheck(check, option.id);
                   setResult(graded);
+                  if (graded?.evidence && onEvidence) {
+                    onEvidence(graded.evidence);
+                  }
                   if (graded && onCheckOutcome) {
                     onCheckOutcome(studyCheckOutcomeFact(topic, graded.correct));
                   }

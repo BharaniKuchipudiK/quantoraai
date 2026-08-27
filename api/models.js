@@ -17,6 +17,8 @@ import {
   providerFromId,
 } from './_lib/model-catalog.js';
 import { readModelQualitySummary, readModelRegistry } from './_lib/model-store.js';
+import { overallOutcomeSignals } from '../shared/model-outcome-routing.js';
+import { rankAdminDashboardModels } from '../shared/model-dashboard-ranking.js';
 import { isAuthorizedModelScan, scanModelCatalog } from './_lib/model-scanner.js';
 import { purgeOldTelemetry } from './_lib/store.js';
 
@@ -53,29 +55,6 @@ function candidateFromLive(model, stored) {
   };
 }
 
-function aggregateQuality(rows) {
-  const result = new Map();
-  for (const row of rows) {
-    const current = result.get(row.model_id) || { successes: 0, failures: 0, helpful: 0, notHelpful: 0, fallbacks: 0 };
-    current.successes += Number(row.successful_responses) || 0;
-    current.failures += Number(row.failed_responses) || 0;
-    current.helpful += Number(row.helpful_votes) || 0;
-    current.notHelpful += Number(row.not_helpful_votes) || 0;
-    current.fallbacks += Number(row.fallback_rescues) || 0;
-    result.set(row.model_id, current);
-  }
-  for (const quality of result.values()) {
-    const reliabilitySamples = quality.successes + quality.failures;
-    const feedbackSamples = quality.helpful + quality.notHelpful;
-    const reliability = reliabilitySamples ? quality.successes / reliabilitySamples : null;
-    const usefulness = feedbackSamples ? quality.helpful / feedbackSamples : null;
-    quality.sampleSize = reliabilitySamples;
-    quality.score = reliabilitySamples >= 5
-      ? Math.round(100 * ((reliability ?? 0.5) * 0.7 + (usefulness ?? reliability ?? 0.5) * 0.3))
-      : null;
-  }
-  return result;
-}
 
 export default async function handler(req, res) {
   if (req.method && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -101,7 +80,7 @@ export default async function handler(req, res) {
     readModelQualitySummary(),
   ]);
   const stored = new Map(storedRows.map((row) => [row.id, row]));
-  const quality = aggregateQuality(qualityRows);
+  const quality = overallOutcomeSignals(qualityRows);
   const fetchedAt = new Date().toISOString();
   const models = DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null }));
   const dashboardModels = DIRECT_MODELS.map((model) => ({
@@ -192,6 +171,11 @@ export default async function handler(req, res) {
     dashboardIds.add(row.id);
   }
 
+  // Surface the strongest measured performers first within each category group,
+  // so the dashboard (and the free-models shortlist derived from it) leads with
+  // what has actually earned it rather than raw discovery order.
+  const rankedDashboardModels = rankAdminDashboardModels(dashboardModels);
+
   const summary = {
     available: dashboardModels.filter((model) => model.status === 'available').length,
     free: dashboardModels.filter((model) => (model.pricingKind === 'free' || model.pricingKind === 'free-tier') && model.status !== 'retired').length,
@@ -205,14 +189,14 @@ export default async function handler(req, res) {
     models,
     source: catalog ? 'live' : 'fallback',
     catalogSize: catalog ? catalog.size : 0,
-    freeModelsAvailable: dashboardModels.filter((model) => model.category === 'approved').slice(0, 25),
+    freeModelsAvailable: rankedDashboardModels.filter((model) => model.category === 'approved').slice(0, 25),
     fetchedAt,
     dashboard: {
       source: catalog ? 'live' : 'fallback',
       catalogSize: catalog ? catalog.size : 0,
       fetchedAt,
       summary,
-      models: dashboardModels,
+      models: rankedDashboardModels,
     },
   });
 }

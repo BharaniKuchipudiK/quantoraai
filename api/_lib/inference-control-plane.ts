@@ -18,6 +18,8 @@ export type InferenceRoute = {
   circuitKey: string;
   domainCircuitKey: string;
   circuit: 'closed' | 'open';
+  /** True only for the reserved paid rescue rung. Never a free route. */
+  paid?: boolean;
 };
 
 export type InferenceModelLike = {
@@ -43,14 +45,29 @@ export type InferencePlanInput = {
   requestPartition?: string;
   circuitStore?: Pick<AtomicProviderCircuitStore, 'get'>;
   now?: number;
+  /**
+   * A paid model to hold in reserve as the FINAL rung, reached only after the
+   * free ladder is exhausted. Present only when the account has opted in with a
+   * configured ceiling and the spend meter currently permits paid routing — the
+   * caller decides that from the ledger, so this plane never spends on its own.
+   */
+  paidLastResortModelId?: string;
+  paidLastResortAllowed?: boolean;
 };
 
 const GEMINI_STABLE = 'gemini-flash-latest';
 const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
 const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
-const MAX_INFERENCE_ATTEMPTS = 2;
+/*
+ * How many models one turn may try. Two meant a free-quota 429 plus one
+ * unlucky fallback ended the turn with "the model is busy" while other healthy
+ * routes sat unused. The wall-clock budget, the circuit breaker and the
+ * failed-quota-domain skip are what prevent a retry storm — not this count.
+ */
+const MAX_INFERENCE_ATTEMPTS = 4;
 const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
-const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
+/* An attempt below this has no realistic chance of producing a build. */
+const MIN_VIABLE_ATTEMPT_MS = 20_000;
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
 
 const MODEL_ID_ALIASES: Record<string, string> = {
@@ -74,7 +91,16 @@ export function canonicalizeModelId(modelId: string): string {
 export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemaining: number) {
   const remaining = Math.max(0, Math.floor(totalRemainingMs));
   if (attemptsRemaining <= 1) return remaining;
-  return Math.max(0, Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - RESERVED_INDEPENDENT_FALLBACK_MS));
+  /*
+   * Reserve a viable minimum for EACH remaining attempt, not a fixed amount for
+   * one. The old fixed reserve left the tail of a four-rung ladder with 15s and
+   * then 5s - and the last rung is the reserved PAID rescue, so a naive reserve
+   * set the paid last-resort up to fail. This attempt takes a generous slice but
+   * never eats into the minimum the rungs behind it need.
+   */
+  const reserveForRest = (attemptsRemaining - 1) * MIN_VIABLE_ATTEMPT_MS;
+  const slice = Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - reserveForRest);
+  return Math.max(0, Math.min(remaining, Math.max(slice, MIN_VIABLE_ATTEMPT_MS)));
 }
 
 function safeLabel(value: string, fallback: string) {
@@ -217,7 +243,31 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     return COST_RANK[left.costClass] - COST_RANK[right.costClass];
   });
 
-  return [selected, ...rest].slice(0, MAX_INFERENCE_ATTEMPTS).map((route, index) => ({
+  const freeLadder = [selected, ...rest];
+
+  // Reserve the last rung for a paid rescue when the account has opted in and
+  // the meter permits it. The free ladder always runs first and takes every
+  // slot but one; paid is only ever reached after free is exhausted, and is
+  // never sticky because the caller re-decides `paidLastResortAllowed` each turn.
+  const paidId = canonicalizeModelId(input.paidLastResortModelId || '');
+  const wantsPaid = Boolean(
+    paidId
+    && input.paidLastResortAllowed === true
+    && !freeLadder.some((route) => route.id === paidId),
+  );
+  let paidRoute: InferenceRoute | null = null;
+  if (wantsPaid) {
+    const described = await describeRoute(paidId, 'fallback', input, registry);
+    if (described && described.health !== 'offline' && described.circuit !== 'open') {
+      paidRoute = { ...described, paid: true };
+    }
+  }
+
+  const freeSlots = paidRoute ? Math.max(1, MAX_INFERENCE_ATTEMPTS - 1) : MAX_INFERENCE_ATTEMPTS;
+  const ladder = freeLadder.slice(0, freeSlots);
+  if (paidRoute) ladder.push(paidRoute);
+
+  return ladder.map((route, index) => ({
     ...route,
     reason: index === 0 && route.id === primary ? 'primary' : 'fallback',
   }));

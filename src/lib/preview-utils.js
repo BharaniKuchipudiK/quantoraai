@@ -11,8 +11,9 @@ export const PREVIEW_RELAXED_CSP =
  * SECURITY INVARIANT — untrusted generated code must NEVER get `allow-same-origin`.
  * The embed host is served from the app's own origin (or a blob/data URL that
  * inherits it). Granting `allow-same-origin` there would let generated code read
- * the app's `localStorage` — which holds the user's Gemini / OpenRouter API keys —
- * and exfiltrate them. Without it the frame runs in an opaque origin and cannot
+ * the app's browser storage and exfiltrate private workspace data. Provider
+ * credentials are memory-only, but opaque-origin isolation remains mandatory.
+ * Without it the frame runs in an opaque origin and cannot
  * touch app storage; the preview still works because HTML is delivered by
  * `postMessage` + `document.write`, neither of which needs same-origin.
  *

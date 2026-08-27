@@ -33,7 +33,9 @@ test('ordinary coding turns stay on Gemini', () => {
   assert.equal(choice.reason, 'default_gemini');
 });
 
-test('refine / probe-failure turns escalate to the best free coding model', () => {
+test('refine / probe-failure turns STAY on fast Gemini rather than a slow unproven free coder', () => {
+  // Escalating a free-tier build to a queued *:free coder is what blew past the
+  // 135s deadline and triggered the fake "proved on the desk". Gemini finishes.
   const refine = resolveCodingDeskModel({
     task: 'coding',
     message: 'Fix the preview',
@@ -41,8 +43,9 @@ test('refine / probe-failure turns escalate to the best free coding model', () =
     availableModels: ACTIVE,
     allowPaid: false,
   });
-  assert.equal(refine.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
-  assert.equal(refine.escalated, true);
+  assert.equal(refine.modelId, 'gemini-flash-latest');
+  assert.equal(refine.escalated, false);
+  assert.equal(refine.reason, 'stay_gemini_unproven_free');
 
   const probe = resolveCodingDeskModel({
     task: 'coding',
@@ -51,10 +54,10 @@ test('refine / probe-failure turns escalate to the best free coding model', () =
     qualityHints: { probeFailure: true },
     allowPaid: false,
   });
-  assert.equal(probe.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(probe.modelId, 'gemini-flash-latest');
 });
 
-test('complex architecture asks escalate once at request start', () => {
+test('complex asks still flag escalation, but stay on Gemini without a paid coder', () => {
   assert.equal(shouldEscalateCodingDeskModel({
     message: 'Design the architecture for a multi-file production app',
   }), true);
@@ -64,8 +67,52 @@ test('complex architecture asks escalate once at request start', () => {
     availableModels: ACTIVE,
     allowPaid: false,
   });
+  // No paid coder and no proven free coder → the fast reliable default wins.
+  assert.equal(choice.modelId, 'gemini-flash-latest');
+  assert.equal(choice.escalated, false);
+});
+
+test('shop / e-commerce builds stay on the fast reliable default, not a slow free coder', () => {
+  for (const message of [
+    'build a shop website for my coffee shop',
+    'create an online store to sell my sarees',
+    'make an e-commerce site with a product catalog',
+  ]) {
+    assert.equal(shouldEscalateCodingDeskModel({ message }), true, message);
+  }
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'build a shop website for my coffee shop',
+    availableModels: ACTIVE,
+    allowPaid: false,
+  });
+  // The shop build now runs on Gemini (fast, finishes in time, writes the real
+  // rich page) instead of escalating to a free coder that times out.
+  assert.equal(choice.modelId, 'gemini-flash-latest');
+  // A plain brochure/portfolio ask still stays on the fast default.
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'build a simple about page' }), false);
+});
+
+test('a free coder that has EARNED it on measured outcomes is still escalated to', () => {
+  const withProven = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
+    {
+      id: 'proven/coder:free',
+      name: 'Proven Coder',
+      available: true,
+      pricingKind: 'free',
+      specialty: 'coder',
+      quality: { sampleSize: 50, score: 0.9 },
+    },
+  ];
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'build a shop website for my coffee shop',
+    availableModels: withProven,
+    allowPaid: false,
+  });
+  assert.equal(choice.modelId, 'proven/coder:free');
   assert.equal(choice.escalated, true);
-  assert.equal(choice.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
 });
 
 test('free Studio without keys never auto-picks paid-only models', () => {
@@ -129,11 +176,15 @@ test('activeModelsForRouting keeps featured models and drops unapproved registry
   assert.ok(ids.includes('good/coder-approved'));
   assert.equal(ids.includes('evil/coder-unapproved'), false);
   assert.equal(ids.includes('gone/coder'), false);
+  // good/coder-approved is an approved but UNPROVEN free model — a refine turn
+  // keeps the fast Gemini default rather than escalating to it (it must earn the
+  // escalation on measured outcomes first).
   const escalate = resolveCodingDeskModel({
     task: 'coding',
     refineMode: true,
     availableModels: models,
     allowPaid: false,
   });
-  assert.equal(escalate.modelId, 'good/coder-approved');
+  assert.equal(escalate.modelId, 'gemini-flash-latest');
+  assert.equal(escalate.escalated, false);
 });

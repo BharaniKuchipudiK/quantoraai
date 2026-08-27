@@ -35,6 +35,8 @@ import {
   PREVIEW_SHELL_AUTO_REMOUNT_MAX,
   PREVIEW_SHELL_IDLE_REMOUNT_MAX,
   shouldAutoRemountFailedPreviewShell,
+  shouldFailPreviewShell,
+  shouldHoldPreviewShellFailClock,
 } from '../lib/preview-shell-warming.js';
 
 // Office kind → download-button label / extension.
@@ -863,7 +865,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     // Boutique / long coding turns keep the main thread busy for 30–90s. Failing
     // the shell at 12s mid-stream is the "Preview shell did not start" screenshot.
     // Hold the fail clock until the turn is idle, then remount (up to 2) and wait again.
-    if (turnBusy) {
+    if (shouldHoldPreviewShellFailClock({ turnBusy, embedReady: embedReadyRef.current })) {
       warmingStartedAtRef.current = null;
       warmingIdleRemountsRef.current = 0;
       warmingAutoRemountsRef.current = 0;
@@ -909,8 +911,17 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       : null;
     const failTimer = setTimeout(() => {
       if (embedReadyRef.current) return;
-      // HTML already on the desk: keep remounting — never sticky "shell did not start".
-      if (deskHasHtml) {
+      // Ask the shared policy, rather than re-deriving it here. The inline copy
+      // of these conditions was never exercised by the tests or the browser gate
+      // that assert shouldFailPreviewShell — they proved a function production
+      // did not call, so drift in either would have gone unnoticed.
+      if (!shouldFailPreviewShell({
+        turnBusy,
+        embedReady: embedReadyRef.current,
+        idleElapsedMs: Date.now() - startedAt,
+        hasDeskHtml: deskHasHtml,
+      })) {
+        // HTML already on the desk: keep remounting — never sticky "shell did not start".
         warmingStartedAtRef.current = null;
         setWarmingFailed(false);
         setStatus('running');

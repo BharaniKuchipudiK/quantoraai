@@ -1,6 +1,7 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { countRealPreviewPhotos } from '../lib/preview-images.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -47,7 +48,6 @@ import {
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
-import { setClientSecret } from '../lib/client-secrets.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
@@ -67,8 +67,6 @@ import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
-import StudyTutorBoard from './StudyTutorBoard.jsx';
-import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import FinanceBoard from './FinanceBoard.jsx';
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
@@ -90,6 +88,7 @@ import {
 } from '../lib/studio-split-layout.js';
 
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
+const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -519,11 +518,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
   const commitDeskVfs = useCallback((nextVfs) => {
-    if (!nextVfs || typeof nextVfs !== 'object') return;
+    if (!nextVfs || typeof nextVfs !== 'object') return false;
     const before = vfsRef.current || {};
+    // Never let a broken/truncated turn overwrite a working preview. A failed
+    // edit must leave the last working page intact, not destroy it. Returns
+    // whether the commit was accepted so callers can gate their follow-up state.
+    if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
     setDeskReview((prev) => mergeDeskReview(prev, before, nextVfs));
     vfsRef.current = nextVfs;
     setVfs(nextVfs);
+    return true;
   }, []);
   const [deskJob, setDeskJob] = useState(null);
   const [liveDeskProbe, setLiveDeskProbe] = useState(null);
@@ -647,7 +651,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [splitMobile, filesWidthPx]);
 
   const startNewChat = useCallback(() => {
+    // A new chat starts blank — clear every preview surface up front instead of
+    // relying on the session-change effect, which never reset the Canvas
+    // (canvasOpen/canvasCode). Without this the old, often-broken Preview stayed
+    // on the right after "New Chat".
     setCodingDeskOpen(false);
+    setCanvasOpen(false);
+    setCanvasCode('');
+    setIsWorkspaceMode(false);
+    setVfs({});
+    vfsRef.current = {};
+    setWorkspaceCode('');
+    setDeskReview([]);
+    setDeskJob(null);
+    setPreviewRunStatus('');
+    setLiveDeskProbe(null);
     handleCreateNewChat();
   }, [handleCreateNewChat]);
 
@@ -673,6 +691,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
+      setCanvasOpen(false);
+      setCanvasCode('');
+      setLiveDeskProbe(null);
       return;
     }
     const session = chatSessions.find((item) => item.id === activeSessionId);
@@ -687,6 +708,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
+      setCanvasOpen(false);
+      setCanvasCode('');
+      setLiveDeskProbe(null);
       return;
     }
     setVfs(restored.vfs);
@@ -826,12 +850,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(finalVfs);
       setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        if (Object.keys(finalVfs).length > 0) {
+        // Route through the guard: a truncated/broken turn must not overwrite a
+        // working desk, and downstream state must not adopt a rejected VFS.
+        const accepted = Object.keys(finalVfs).length > 0
+          && !deskCommitRegressesPreview(vfsRef.current || {}, finalVfs).reject;
+        if (accepted) {
           setDeskReview(diffVfsReview(vfs, finalVfs));
+          vfsRef.current = finalVfs;
           setVfs(finalVfs);
           if (assembled.job) setDeskJob(assembled.job);
+          setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         }
-        setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         setWorkspaceActiveTab('preview');
         setCodingDeskOpen(true);
         setIsWorkspaceMode(true);
@@ -1032,8 +1061,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const [keyInputValue, setKeyInputValue] = useState('');
-  const [lastPrompt, setLastPrompt] = useState('');
+  const [, setLastPrompt] = useState('');
 
   // Intelligent Router Logic — Auto Mode switches silently; never interrupt with a Switch pill.
   useEffect(() => {
@@ -1055,24 +1083,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setSuggestedModel(null);
     }
   }, [inputText, selectedModel, availableModels]);
-
-  const saveKeyAndRetry = (keyType) => {
-    if (!keyInputValue.trim()) return;
-    if (keyType === 'gemini') {
-      const value = keyInputValue.trim();
-      localStorage.setItem('geminiApiKey', value);
-      setClientSecret('gemini', value);
-    } else {
-      const value = keyInputValue.trim();
-      localStorage.setItem('openRouterApiKey', value);
-      setClientSecret('openrouter', value);
-    }
-    setKeyInputValue('');
-    updateActiveMessages(prev => prev.filter(m => !m.isKeyPrompt));
-    if (lastPrompt) {
-      handleSendMessage(lastPrompt);
-    }
-  };
 
   const handlePushToDream = (msg) => {
     if (!setDreamNodes || !dreamNodes) return;
@@ -1102,7 +1112,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     });
     if (!verdict.vfs || (!verdict.ok && !verdict.evidence?.hasHtml && !Object.keys(verdict.vfs).length)) return;
     const nextVfs = verdict.vfs;
-    commitDeskVfs(nextVfs);
+    // Gate all follow-up state on acceptance: a rejected (broken/truncated) VFS
+    // must not set workspaceCode or be shown as this turn's result.
+    if (!commitDeskVfs(nextVfs)) return;
     const entry = pickPreviewEntry(nextVfs);
     if (entry) setWorkspaceCode(entry);
     setWorkspaceActiveTab('preview');
@@ -1112,7 +1124,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const onCodingTurnProved = useCallback((verdict) => {
     if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
-    commitDeskVfs(verdict.vfs);
+    // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
+    // open) — only when the commit was actually accepted.
+    if (!commitDeskVfs(verdict.vfs)) return;
     const entry = pickPreviewEntry(verdict.vfs);
     if (entry) {
       setWorkspaceCode(entry);
@@ -1158,12 +1172,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     ? studySyllabusContinueSet(conversationContext?.goal || '')
     : null;
 
-  // The board only earns its place once a real concept is on the table, so an
-  // empty Study desk cannot show a progress bar for nothing.
-  const studyTutorBrief = React.useMemo(
-    () => (studioDomain === 'education' ? deriveStudyTutorBrief({ conversationContext, messages }) : null),
-    [studioDomain, conversationContext, messages],
-  );
   const financeBrief = React.useMemo(
     () => (studioDomain === 'finance' ? deriveFinanceBrief({ messages }) : null),
     [studioDomain, messages],
@@ -1180,25 +1188,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
-    if (Object.keys(assembled.vfs).length > 0) {
-      setDeskReview(diffVfsReview(vfs, assembled.vfs));
-      setVfs(assembled.vfs);
+    // Guard this write path too: a truncated fence still contains <!DOCTYPE, so a
+    // timed-out message's code must not overwrite a working desk. If rejected,
+    // keep the working page and just open the desk on it.
+    const candidateVfs = Object.keys(assembled.vfs).length > 0
+      ? assembled.vfs
+      : { 'index.html': { content: html, language: 'html' } };
+    if (!deskCommitRegressesPreview(vfsRef.current || {}, candidateVfs).reject) {
+      setDeskReview(diffVfsReview(vfs, candidateVfs));
+      vfsRef.current = candidateVfs;
+      setVfs(candidateVfs);
       setDeskJob((prev) => buildStudioJobCard({
         brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-        vfs: assembled.vfs,
+        vfs: candidateVfs,
         existing: prev,
       }));
-    } else {
-      const next = { 'index.html': { content: html, language: 'html' } };
-      setDeskReview(diffVfsReview(vfs, next));
-      setVfs(next);
-      setDeskJob((prev) => buildStudioJobCard({
-        brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-        vfs: next,
-        existing: prev,
-      }));
+      setWorkspaceCode(html);
     }
-    setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
     setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
@@ -1313,8 +1319,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const deskFileCount = Object.keys(vfs || {}).length;
     if ((userAskedForShopDeskFix(textToSend) || userAskedForDeskReview(textToSend)) && deskFileCount) {
       const patched = applyDeskReviewPatch(vfs, deskJob, { brief: textToSend });
-      if (patched.changed && !patched.rejected) {
+      if (patched.changed && !patched.rejected
+        && !deskCommitRegressesPreview(vfsRef.current || {}, patched.vfs).reject) {
         setDeskReview(diffVfsReview(vfs, patched.vfs));
+        vfsRef.current = patched.vfs;
         setVfs(patched.vfs);
         const code = pickPreviewEntry(patched.vfs);
         if (code) setWorkspaceCode(code);
@@ -1939,29 +1947,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           />
                           </div>
                         )}
-                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active ? (
-                          <StudyTutorBoard
-                            brief={studyTutorBrief}
-                            isLight={isLight}
-                            textColor={textColor}
-                            subtextColor={subtextColor}
-                            lessonText={cleanText}
-                            onAsk={(text) => setInputText(text)}
-                            onSend={(text) => handleSendMessage(text)}
-                            onCheckOutcome={(fact) => {
-                              const line = String(fact || '').trim();
-                              if (!line) return;
-                              const facts = conversationContext?.facts || [];
-                              if (facts.some((row) => String(row).toLowerCase() === line.toLowerCase())) return;
-                              updateActiveSession({
-                                conversationContext: {
-                                  ...(conversationContext || {}),
-                                  facts: [...facts, line],
-                                },
-                              });
-                            }}
-                          />
-                        ) : null}
                         {studioDomain === 'finance' && msg.id === latestAiId && financeBrief?.active ? (
                           <FinanceBoard
                             brief={financeBrief}
@@ -2092,7 +2077,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {
@@ -2187,8 +2172,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               allowRepair: true,
               sessionId: activeSessionId,
             });
-            if (proved?.vfs && Object.keys(proved.vfs).length) {
-              commitDeskVfs(proved.vfs);
+            if (proved?.vfs && Object.keys(proved.vfs).length && commitDeskVfs(proved.vfs)) {
               const entry = pickPreviewEntry(proved.vfs);
               if (entry) setWorkspaceCode(entry);
               setWorkspaceActiveTab('preview');
@@ -2249,8 +2233,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         if (!previewable || (skillPlan.intent?.kind?.startsWith('shop') && !codingTurnMayClaimSuccess(proved))) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
           if (vfsLooksLikeShop(vfs, deskJob) || proved.evidence.hasHtml) {
-            if (proved.vfs && Object.keys(proved.vfs).length) {
-              commitDeskVfs(proved.vfs);
+            if (proved.vfs && Object.keys(proved.vfs).length && commitDeskVfs(proved.vfs)) {
               setWorkspaceCode(pickPreviewEntry(proved.vfs));
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
@@ -2272,37 +2255,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
         if (Object.keys(parsedVfs).length > 0) {
            const shopVfs = proved.vfs;
-           commitDeskVfs(shopVfs);
-           setDeskJob((prev) => {
-             const base = assembled.job || buildStudioJobCard({
-               brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-               vfs: shopVfs,
-               existing: prev,
+           // Only adopt job/correlation/"parsed"/workspaceCode when the commit is
+           // accepted — a rejected (truncated) VFS must not be reported as parsed
+           // or shown as this turn's result while the desk keeps the prior page.
+           if (commitDeskVfs(shopVfs)) {
+             setDeskJob((prev) => {
+               const base = assembled.job || buildStudioJobCard({
+                 brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+                 vfs: shopVfs,
+                 existing: prev,
+               });
+               if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
+                 return {
+                   ...base,
+                   purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
+                   mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
+                 };
+               }
+               return base;
              });
-             if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
-               return {
-                 ...base,
-                 purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
-                 mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
-               };
-             }
-             return base;
-           });
-           setWorkspaceCorrelationId(lastMsg.correlationId || null);
-           setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
-           void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
-             transaction: lastMsg.goldenTransaction || null,
-             fileCount: Object.keys(parsedVfs).length,
-             detailCode: 'runnable-files-present',
-           });
-           setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
+             setWorkspaceCorrelationId(lastMsg.correlationId || null);
+             setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+             void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+               transaction: lastMsg.goldenTransaction || null,
+               fileCount: Object.keys(parsedVfs).length,
+               detailCode: 'runnable-files-present',
+             });
+             setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
+           }
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
            if (assembled.reopenDesk) setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
               if (code) {
-              setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
               const seedPath = detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx');
               const seedVfs = { [seedPath]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
@@ -2312,15 +2298,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 existing: deskJob,
               });
               const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob, { brief: userBrief }).vfs;
-              commitDeskVfs(nextVfs);
-              setDeskJob(nextJob);
-              setWorkspaceCorrelationId(lastMsg.correlationId || null);
-              setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
-              void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
-                transaction: lastMsg.goldenTransaction || null,
-                fileCount: 1,
-                detailCode: 'single-runnable-file',
-              });
+              // Only show the code / record it parsed / adopt the job when the
+              // guard accepts the write — otherwise the desk keeps the prior page.
+              if (commitDeskVfs(nextVfs)) {
+                setWorkspaceCode(code);
+                setDeskJob(nextJob);
+                setWorkspaceCorrelationId(lastMsg.correlationId || null);
+                setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+                void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+                  transaction: lastMsg.goldenTransaction || null,
+                  fileCount: 1,
+                  detailCode: 'single-runnable-file',
+                });
+              }
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {
@@ -3193,6 +3183,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           /* Active Chat Thread */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
+            {studioDomain === 'education' ? (
+              <Suspense fallback={null}>
+                <StudyTutorWorkspace
+                  key={activeSessionId}
+                  activeSessionId={activeSessionId}
+                  conversationContext={conversationContext}
+                  messages={messages}
+                  updateActiveSession={updateActiveSession}
+                  isLight={isLight}
+                  textColor={textColor}
+                  subtextColor={subtextColor}
+                  onAsk={(text) => setInputText(text)}
+                  onSend={(text) => handleSendMessage(text)}
+                />
+              </Suspense>
+            ) : null}
             {pclIntercept && (
               <div className="animate-slide-up" style={{ 
                 margin: '20px 0', 
@@ -3921,7 +3927,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   height: '32px',
                   borderRadius: '50%',
                   cursor: inputText.trim() ? 'pointer' : 'default',
-                  display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   transition: 'all 0.2s ease'

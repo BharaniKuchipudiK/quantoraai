@@ -3,6 +3,7 @@ import test from 'node:test';
 import { deriveStudyTutorBrief, gradeStudyCheck, studyCheckOutcomeFact } from './study-tutor-brief.js';
 import {
   STUDY_CHECK_PASSED_PREFIX,
+  STUDY_EVIDENCE_VERIFIED_PREFIX,
   STUDY_FIGURE_URL_PREFIX,
   STUDY_FLASHCARD_PREFIX,
   STUDY_FOUNDATION_PREFIX,
@@ -108,12 +109,13 @@ test('session figure URLs and flashcards render only when facts provide them', (
   assert.match(brief.foundation, /Superposition/);
 });
 
-test('a passed check this session is not an exam rank, and gradeStudyCheck stays honest', () => {
+test('only verified evidence changes progress, and browser checks stay unverified', () => {
   const brief = deriveStudyTutorBrief({
     conversationContext: {
       facts: [
         `${STUDY_NODE_FACT_PREFIX} Wave optics`,
-        `${STUDY_CHECK_PASSED_PREFIX} Wave optics`,
+        `${STUDY_CHECK_PASSED_PREFIX} Legacy browser self-report`,
+        `${STUDY_EVIDENCE_VERIFIED_PREFIX} Wave optics`,
       ],
     },
     messages: [{ sender: 'user', text: 'Teach me wave optics' }],
@@ -122,7 +124,7 @@ test('a passed check this session is not an exam rank, and gradeStudyCheck stays
   assert.equal(brief.nodeStates[0].status, 'checked');
   assert.match(brief.progress.caption, /checked this session/i);
   assert.match(brief.progress.caption, /not an exam rank/i);
-  assert.equal(studyCheckOutcomeFact('Wave optics', true).startsWith(STUDY_CHECK_PASSED_PREFIX), true);
+  assert.equal(studyCheckOutcomeFact('Wave optics', true), '');
 
   const probe = {
     prompt: 'Say the idea.',
@@ -134,5 +136,17 @@ test('a passed check this session is not an exam rank, and gradeStudyCheck stays
     ifWrong: 'Gap found.',
   };
   assert.equal(gradeStudyCheck(probe, 'a').correct, true);
+  assert.equal(gradeStudyCheck(probe, 'a').verified, false);
   assert.equal(gradeStudyCheck(probe, 'b').correct, false);
+});
+
+test('an honesty check records self-confidence but never creates a passed fact', () => {
+  const brief = deriveStudyTutorBrief({
+    messages: [{ sender: 'user', text: 'Teach me wave optics' }],
+  });
+  const graded = gradeStudyCheck(brief.check, 'hold');
+  assert.equal(graded.correct, true);
+  assert.equal(graded.verified, false);
+  assert.deepEqual(graded.evidence, { kind: 'self_confidence', selfConfidence: 1 });
+  assert.equal(studyCheckOutcomeFact('Wave optics', graded.correct), '');
 });

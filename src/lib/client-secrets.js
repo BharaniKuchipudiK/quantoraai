@@ -3,6 +3,11 @@ const memorySecrets = {
   openrouter: '',
 };
 
+const LEGACY_STORAGE_KEYS = Object.freeze([
+  'geminiApiKey',
+  'openRouterApiKey',
+]);
+
 export const BYOK_HEADER_GEMINI = 'x-quantora-gemini-key';
 export const BYOK_HEADER_OPENROUTER = 'x-quantora-openrouter-key';
 export const BYOK_HEADER_ANTHROPIC = 'x-quantora-anthropic-key';
@@ -11,22 +16,23 @@ function normalizeSecret(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function storageSecret(key) {
-  if (typeof localStorage === 'undefined') return '';
+/**
+ * Older builds persisted provider credentials in localStorage. Remove those
+ * values without ever reading them into application memory: localStorage is
+ * available to every same-origin script and is not a credential vault.
+ */
+export function clearLegacyPersistentSecrets(storage = typeof localStorage === 'undefined' ? null : localStorage) {
+  if (!storage) return;
   try {
-    return normalizeSecret(localStorage.getItem(key) || '');
+    for (const key of LEGACY_STORAGE_KEYS) storage.removeItem(key);
   } catch {
-    return '';
+    // Storage can be disabled by browser policy. Secrets still remain memory-only.
   }
 }
 
 export function getClientSecret(provider) {
-  if (provider === 'gemini') {
-    return memorySecrets.gemini || storageSecret('geminiApiKey');
-  }
-  if (provider === 'openrouter') {
-    return memorySecrets.openrouter || storageSecret('openRouterApiKey');
-  }
+  if (provider === 'gemini') return memorySecrets.gemini;
+  if (provider === 'openrouter') return memorySecrets.openrouter;
   return '';
 }
 
