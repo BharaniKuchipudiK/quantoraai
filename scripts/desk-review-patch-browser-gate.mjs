@@ -117,7 +117,11 @@ try {
   await visible(
     page.locator('[data-quantora-desk-probe="photos"][data-quantora-desk-probe-ok="true"]').first(),
     'Review this regressed a passing photos probe.',
-    8_000,
+    // After "Review this" the desk re-applies the patch and re-decodes the proxied
+    // photo, so the probe briefly flips not-ok before settling back. Give it the
+    // same window as the cart-click assertion above (15s) so a slow CI re-decode
+    // is not mistaken for a real regression — the 8s window flaked under load.
+    15_000,
   );
 
   const reviewed = await visibleFrame('.product-card', 12_000);
