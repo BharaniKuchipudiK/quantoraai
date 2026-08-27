@@ -1,8 +1,10 @@
 import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
 import { createPasswordResetToken } from "../reset-token.js";
-import { sendPasswordResetEmail } from "../mail.js";
+import { sendPasswordResetEmail, sendProviderSignInNotice } from "../mail.js";
 import { findUserByEmail } from "../store.js";
 import { appOrigin } from "../app-origin.js";
+import { PASSWORD_RESET_GENERIC_MESSAGE, passwordResetDelivery, providerLabel } from "../auth-privacy.js";
+import { verifyPasswordAgainstStore } from "../password.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "POST,OPTIONS");
@@ -15,37 +17,24 @@ export default async function handler(req: any, res: any) {
 
   const email = String(req.body?.email || "").trim().toLowerCase();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: "Enter a valid email address.", exists: false });
+    return res.status(400).json({ error: "Enter a valid email address." });
   }
 
   const user = await findUserByEmail(email);
-  if (!user) {
-    return res.status(404).json({
-      exists: false,
-      error: "No account found with that email address.",
-    });
+  const delivery = passwordResetDelivery(user);
+
+  if (delivery === "reset") {
+    const token = createPasswordResetToken(email);
+    if (token) {
+      const resetUrl = `${appOrigin()}/?reset=${encodeURIComponent(token)}`;
+      await sendPasswordResetEmail(email, resetUrl);
+    }
+  } else if (delivery === "provider-notice") {
+    await sendProviderSignInNotice(email, providerLabel(user?.auth_provider));
+  } else {
+    // Equalize timing with a password check so missing accounts are not cheaper.
+    await verifyPasswordAgainstStore("quantora-reset-padding", null);
   }
 
-  if (!user.password_hash) {
-    return res.status(400).json({
-      exists: true,
-      error: "This account uses Google or GitHub sign-in. Use that provider instead.",
-    });
-  }
-
-  const token = createPasswordResetToken(email);
-  if (!token) {
-    return res.status(503).json({ exists: true, error: "Password reset is not configured." });
-  }
-
-  const resetUrl = `${appOrigin()}/?reset=${encodeURIComponent(token)}`;
-  const sent = await sendPasswordResetEmail(email, resetUrl);
-  if (!sent) {
-    return res.status(503).json({ exists: true, error: "Could not send reset email. Try again later." });
-  }
-
-  return res.status(200).json({
-    exists: true,
-    message: "Reset link sent. Check your inbox.",
-  });
+  return res.status(200).json({ message: PASSWORD_RESET_GENERIC_MESSAGE });
 }

@@ -226,6 +226,10 @@
       "destination": "/api/auth?route=github-callback"
     },
     {
+      "source": "/api/auth/providers",
+      "destination": "/api/auth?route=providers"
+    },
+    {
       "source": "/api/admin/feedback",
       "destination": "/api/admin?route=feedback"
     },
@@ -238,7 +242,7 @@
       "destination": "/api/admin?route=models"
     },
     {
-      "source": "/((?!api/.*|preview/.*|monaco/.*).*)",
+      "source": "/((?!api/.*|preview/.*|monaco/.*|robots.txt|sitemap.xml).*)",
       "destination": "/index.html"
     }
   ]

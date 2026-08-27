@@ -29,6 +29,7 @@ export function tabFromLocation(pathname = '/', search = '') {
 }
 
 const PREFILL_KEY = 'quantora_studio_prefill';
+const AFTER_AUTH_KEY = 'quantora_after_auth';
 
 export function stashStudioPrefill(text = '') {
   const value = String(text || '').trim();
@@ -49,6 +50,18 @@ export function takeStudioPrefill() {
   } catch {
     return null;
   }
+}
+
+export function stashAfterAuthStudio() {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(AFTER_AUTH_KEY, 'studio');
+}
+
+export function takeAfterAuthStudio() {
+  if (typeof sessionStorage === 'undefined') return false;
+  const value = sessionStorage.getItem(AFTER_AUTH_KEY);
+  sessionStorage.removeItem(AFTER_AUTH_KEY);
+  return value === 'studio';
 }
 
 /** Extra CSP hosts WebContainer needs on the isolated desk only. */

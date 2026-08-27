@@ -20,6 +20,9 @@ export default function AuthModal({
   resetToken = '',
   isolatedDesk = false,
   externalError = '',
+  googleEnabled = true,
+  githubEnabled = true,
+  oauthReady = true,
 }) {
   const [mode, setMode] = useState(resetToken ? MODES.RESET_CONFIRM : initialMode);
   const [email, setEmail] = useState('');
@@ -47,6 +50,7 @@ export default function AuthModal({
 
       const res = await fetch(endpoint, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -67,16 +71,13 @@ export default function AuthModal({
     try {
       const res = await fetch('/api/auth/password-reset-request', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 404) {
-        setError(data.error || 'No account found with that email address.');
-        return;
-      }
       if (!res.ok) throw new Error(data.error || 'Could not send reset link.');
-      setNotice(data.message || 'Reset link sent. Check your inbox.');
+      setNotice(data.message || 'If an account exists for that email, we sent a reset link.');
     } catch (err) {
       setError(err.message || 'Something went wrong.');
     } finally {
@@ -95,6 +96,7 @@ export default function AuthModal({
     try {
       const res = await fetch('/api/auth/password-reset-confirm', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: resetToken, password }),
       });
@@ -125,41 +127,56 @@ export default function AuthModal({
 
         <p className="auth-modal__eyebrow">Quantora</p>
         <h2 className="auth-modal__title">{title}</h2>
+        <p className="auth-modal__privacy">
+          Google and GitHub tokens are verified and discarded. Email passwords are hashed on the server. Sessions live in an HttpOnly cookie — never in the page.
+        </p>
 
         {externalError && !error && <div className="auth-modal__alert is-error">{externalError}</div>}
         {error && <div className="auth-modal__alert is-error">{error}</div>}
         {notice && <div className="auth-modal__alert is-notice">{notice}</div>}
 
-        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && (
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && (googleEnabled || githubEnabled) && (
           <div className="auth-modal__oauth">
-            <div style={authGoogleWellStyle()}>
-              <GoogleLogin
-                onSuccess={(cred) => {
-                  if (onGoogleSuccess) onGoogleSuccess(cred);
-                  else if (cred?.credential) onSuccess({ credential: cred.credential, provider: 'google' });
-                }}
-                onError={() => setError('Google sign-in failed.')}
-                shape="pill"
-                theme="outline"
-                text={mode === MODES.SIGNUP ? 'signup_with' : 'signin_with'}
-                size="large"
-              />
-            </div>
-            <button
-              type="button"
-              className="auth-modal__github"
-              onClick={() => { window.location.href = '/api/auth/github'; }}
-            >
-              Continue with GitHub
-            </button>
+            {googleEnabled && (
+              <div style={authGoogleWellStyle()}>
+                <GoogleLogin
+                  onSuccess={(cred) => {
+                    if (onGoogleSuccess) onGoogleSuccess(cred);
+                    else if (cred?.credential) onSuccess({ credential: cred.credential, provider: 'google' });
+                  }}
+                  onError={() => setError('Google sign-in failed. Check pop-up blockers and try again.')}
+                  shape="pill"
+                  theme="outline"
+                  text={mode === MODES.SIGNUP ? 'signup_with' : 'signin_with'}
+                  size="large"
+                />
+              </div>
+            )}
+            {githubEnabled && (
+              <button
+                type="button"
+                className="auth-modal__github"
+                onClick={() => { window.location.href = '/api/auth/github'; }}
+              >
+                Continue with GitHub
+              </button>
+            )}
           </div>
+        )}
+
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && !oauthReady && (
+          <p className="auth-modal__hint">Loading sign-in options…</p>
+        )}
+
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && !googleEnabled && !githubEnabled && (
+          <p className="auth-modal__hint">Social sign-in is not configured on this deployment. Use email below.</p>
         )}
 
         {isolatedDesk && mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && (
           <p className="auth-modal__hint">Sign in from the home page for Google or GitHub.</p>
         )}
 
-        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && (
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && (googleEnabled || githubEnabled) && (
           <div className="auth-modal__divider"><span>or email</span></div>
         )}
 
@@ -216,7 +233,7 @@ export default function AuthModal({
 
         {mode === MODES.RESET_REQUEST && (
           <form className="auth-modal__form" onSubmit={handleResetRequest}>
-            <p className="auth-modal__hint">Enter your email. We&apos;ll check if an account exists and send a reset link.</p>
+            <p className="auth-modal__hint">Enter your email. If an account exists, we&apos;ll send a reset link.</p>
             <label>
               <span>Email</span>
               <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />

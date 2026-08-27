@@ -31,10 +31,17 @@
 .auth-modal__title {
   font-size: 1.65rem !important;
   font-weight: 700;
-  margin: 0 0 20px !important;
+  margin: 0 0 10px !important;
   letter-spacing: -0.02em;
   line-height: 1.2 !important;
   text-align: left !important;
+}
+
+.auth-modal__privacy {
+  margin: 0 0 18px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #737373;
 }
 
 .auth-modal.is-light .auth-modal__title { color: #0a0a0a; }

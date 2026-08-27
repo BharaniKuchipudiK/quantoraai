@@ -8,8 +8,10 @@ import {
   homeHrefForTab,
   isIsolatedStudioPath,
   isolatedStudioHref,
+  stashAfterAuthStudio,
   stashStudioPrefill,
   tabFromLocation,
+  takeAfterAuthStudio,
   takeStudioPrefill,
 } from './lib/studio-isolation.js';
 import AuthModal from './components/AuthModal';
@@ -152,6 +154,15 @@ export default function App() {
 
   const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const buildGoogleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  const [authProviders, setAuthProviders] = useState({
+    google: Boolean(buildGoogleClientId),
+    github: false,
+    email: false,
+    googleClientId: buildGoogleClientId || null,
+  });
+  const [providersLoaded, setProvidersLoaded] = useState(Boolean(buildGoogleClientId));
+  const googleClientId = (authProviders.googleClientId || buildGoogleClientId || '').trim();
 
   const clearAuthQueryParams = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -165,10 +176,11 @@ export default function App() {
     const next = typeof window !== 'undefined'
       ? new URLSearchParams(window.location.search).get('next')
       : '';
+    const resumeStudio = takeAfterAuthStudio();
     setUser(newUser);
     setShowAuthModal(false);
     clearAuthQueryParams();
-    if (next === isolatedStudioHref()) {
+    if (next === isolatedStudioHref() || resumeStudio) {
       window.location.assign(isolatedStudioHref());
       return;
     }
@@ -182,8 +194,44 @@ export default function App() {
    * and the app treats the visitor as signed out.
    */
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('reset')) return;
+    url.searchParams.delete('reset');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/session')
+    fetch('/api/auth/providers', { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (!data) {
+          setAuthProviders((prev) => ({
+            ...prev,
+            github: prev.github,
+            email: prev.email || true,
+          }));
+          return;
+        }
+        setAuthProviders({
+          google: data.google === true || Boolean(buildGoogleClientId),
+          github: data.github === true,
+          email: data.email === true,
+          googleClientId: data.googleClientId || buildGoogleClientId || null,
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setProvidersLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, [buildGoogleClientId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/session', { credentials: 'same-origin' })
       .then((res) => (res.ok ? res.json() : { user: null }))
       .then((data) => {
         if (cancelled) return;
@@ -215,7 +263,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const authResult = params.get('auth');
     if (authResult === 'success') {
-      fetch('/api/auth/session')
+      fetch('/api/auth/session', { credentials: 'same-origin' })
         .then((res) => (res.ok ? res.json() : { user: null }))
         .then((data) => {
           if (!data?.user) return;
@@ -246,6 +294,7 @@ export default function App() {
       // Send the raw credential token to our secure backend for verification
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential: credentialResponse.credential })
       });
@@ -297,6 +346,7 @@ export default function App() {
       setStudioPrefill({ id: Date.now(), text: prompt.trim() });
       stashStudioPrefill(prompt.trim());
     }
+    if (!user) stashAfterAuthStudio();
     handleTabChange('studio');
   };
 
@@ -419,9 +469,7 @@ export default function App() {
   const shouldLoadVercelTelemetry = typeof window !== 'undefined'
     && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
-  return (
-    <ErrorBoundary>
-      <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
+  const appShell = (
     <div
       className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}${isWorkspaceShell ? ' app-shell--workspace' : ''}`}
       data-quantora-isolated-desk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname) ? 'true' : 'false'}
@@ -586,6 +634,9 @@ export default function App() {
           onSuccess={finishAuth}
           resetToken={authResetToken}
           externalError={loginError}
+          googleEnabled={authProviders.google && Boolean(googleClientId)}
+          githubEnabled={authProviders.github}
+          oauthReady={providersLoaded}
           isolatedDesk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)}
         />
       )}
@@ -597,7 +648,15 @@ export default function App() {
       {/* {shouldLoadVercelTelemetry && <Analytics />} */}
       {/* {shouldLoadVercelTelemetry && <SpeedInsights />} */}
     </div>
-    </GoogleOAuthProvider>
+  );
+
+  return (
+    <ErrorBoundary>
+      {googleClientId ? (
+        <GoogleOAuthProvider clientId={googleClientId}>{appShell}</GoogleOAuthProvider>
+      ) : (
+        appShell
+      )}
     </ErrorBoundary>
   );
 }

@@ -1,6 +1,6 @@
 import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
 import { isSessionConfigured } from "../session.js";
-import { verifyPassword } from "../password.js";
+import { verifyPasswordAgainstStore } from "../password.js";
 import { issueSessionResponse } from "../auth-response.js";
 import { findUserByEmail } from "../store.js";
 import { getRequestGeo } from "../geo.js";
@@ -26,12 +26,8 @@ export default async function handler(req: any, res: any) {
   }
 
   const user = await findUserByEmail(email);
-  if (!user || !user.password_hash) {
-    return res.status(401).json({ error: "Invalid email or password." });
-  }
-
-  const valid = await verifyPassword(password, user.password_hash);
-  if (!valid) {
+  const valid = await verifyPasswordAgainstStore(password, user?.password_hash);
+  if (!user || !valid) {
     return res.status(401).json({ error: "Invalid email or password." });
   }
 

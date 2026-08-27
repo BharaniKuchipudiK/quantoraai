@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /desk
+Disallow: /api/
+
+Sitemap: https://quantoraai.app/sitemap.xml

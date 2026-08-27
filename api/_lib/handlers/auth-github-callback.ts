@@ -1,7 +1,10 @@
 import { applyCors } from "../rate-limit.js";
 import { issueSessionResponse } from "../auth-response.js";
 import { getRequestGeo } from "../geo.js";
-import { appOrigin } from "../app-origin.js";
+import { oauthOrigin } from "../app-origin.js";
+import { normalizeAuthEmail } from "../auth-privacy.js";
+import { resolveGithubOAuthClientId, resolveGithubOAuthClientSecret } from "../auth-env.js";
+import { appendSetCookie, clearOAuthStateCookie, OAUTH_STATE_COOKIE } from "../session.js";
 
 function parseCookies(header: unknown): Record<string, string> {
   if (typeof header !== "string") return {};
@@ -20,9 +23,9 @@ function parseCookies(header: unknown): Record<string, string> {
   return out;
 }
 
-async function exchangeCode(code: string) {
-  const clientId = process.env.GITHUB_CLIENT_ID || process.env.VITE_GITHUB_CLIENT_ID;
-  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+async function exchangeCode(code: string, req: any) {
+  const clientId = resolveGithubOAuthClientId();
+  const clientSecret = resolveGithubOAuthClientSecret();
   if (!clientId || !clientSecret) return null;
 
   const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
@@ -35,7 +38,7 @@ async function exchangeCode(code: string) {
       client_id: clientId,
       client_secret: clientSecret,
       code,
-      redirect_uri: `${appOrigin()}/api/auth/github/callback`,
+      redirect_uri: `${oauthOrigin(req)}/api/auth/github/callback`,
     }),
     signal: AbortSignal.timeout(8_000),
   });
@@ -54,23 +57,23 @@ async function exchangeCode(code: string) {
   if (!userRes.ok) return null;
   const user = await userRes.json();
 
-  let email = user?.email || "";
-  if (!email) {
-    const emailsRes = await fetch("https://api.github.com/user/emails", {
-      headers: {
-        Authorization: `Bearer ${tokenJson.access_token}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "Quantora-Auth",
-      },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (emailsRes.ok) {
-      const emails = await emailsRes.json();
-      const primary = Array.isArray(emails)
-        ? emails.find((e: any) => e.primary && e.verified) || emails.find((e: any) => e.verified)
-        : null;
-      email = primary?.email || "";
-    }
+  const emailsRes = await fetch("https://api.github.com/user/emails", {
+    headers: {
+      Authorization: `Bearer ${tokenJson.access_token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "Quantora-Auth",
+    },
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  let email = "";
+  if (emailsRes.ok) {
+    const emails = await emailsRes.json();
+    const verified = Array.isArray(emails)
+      ? emails.filter((entry: any) => entry?.verified && entry?.email)
+      : [];
+    const primary = verified.find((entry: any) => entry.primary) || verified[0];
+    email = normalizeAuthEmail(primary?.email || "");
   }
 
   if (!user?.id || !email) return null;
@@ -90,18 +93,18 @@ export default async function handler(req: any, res: any) {
   const code = String(req.query?.code || "");
   const state = String(req.query?.state || "");
   const cookies = parseCookies(req?.headers?.cookie);
-  const expectedState = cookies.quantora_github_oauth_state;
+  const expectedState = cookies[OAUTH_STATE_COOKIE];
 
-  res.setHeader("Set-Cookie", "quantora_github_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  appendSetCookie(res, clearOAuthStateCookie());
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in was cancelled.")}`);
+    return res.redirect(302, `${oauthOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in was cancelled.")}`);
   }
 
   try {
-    const identity = await exchangeCode(code);
+    const identity = await exchangeCode(code, req);
     if (!identity) {
-      return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
+      return res.redirect(302, `${oauthOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
     }
 
     const session = await issueSessionResponse(res, {
@@ -113,12 +116,12 @@ export default async function handler(req: any, res: any) {
       geo: getRequestGeo(req),
     });
     if (session.ok === false) {
-      return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent(session.error)}`);
+      return res.redirect(302, `${oauthOrigin(req)}/?auth=error&message=${encodeURIComponent(session.error)}`);
     }
 
-    return res.redirect(302, `${appOrigin()}/?auth=success`);
+    return res.redirect(302, `${oauthOrigin(req)}/?auth=success`);
   } catch (err: any) {
     console.error("GitHub OAuth callback failed:", err?.message || err);
-    return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
+    return res.redirect(302, `${oauthOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
   }
 }

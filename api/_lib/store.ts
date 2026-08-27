@@ -1,5 +1,6 @@
 import { normalizeOutcomeState, type OutcomeState, type OutcomeStateRecord } from "./outcome-state.js";
 import { randomUUID } from "node:crypto";
+import { normalizeAuthEmail } from "./auth-privacy.js";
 import type { StudyMasteryEstimate } from "./study-mastery-estimator.js";
 import type { StudyMasteryEvidenceEvent } from "./study-truth-layer.js";
 
@@ -102,7 +103,7 @@ export async function recordSignIn(user: {
     },
     body: JSON.stringify([{
       google_sub: user.sub,
-      email: user.email,
+      email: normalizeAuthEmail(user.email),
       name: user.name,
       picture: user.picture,
       auth_provider: user.sub.startsWith("github:")
@@ -146,7 +147,7 @@ export async function readStoredUser(googleSub: string): Promise<StoredUser | nu
 }
 
 export async function findUserByEmail(email: string): Promise<StoredUser | null> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeAuthEmail(email);
   if (!normalized) return null;
   const response = await request(
     `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin,password_hash,auth_provider&email=ilike.${encodeURIComponent(normalized)}&limit=1`,
@@ -165,15 +166,15 @@ export async function createEmailUser(input: {
   email: string;
   name: string;
   passwordHash: string;
-}): Promise<StoredUser | null> {
+}): Promise<StoredUser | null | "duplicate"> {
   const now = new Date().toISOString();
   const sub = `email:${randomUUID()}`;
-  const response = await request("users", {
+  const response = await requestRaw("users", {
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify([{
       google_sub: sub,
-      email: input.email.trim().toLowerCase(),
+      email: normalizeAuthEmail(input.email),
       name: input.name,
       picture: "",
       password_hash: input.passwordHash,
@@ -183,6 +184,11 @@ export async function createEmailUser(input: {
     }]),
   });
   if (!response) return null;
+  if (response.status === 409) return "duplicate";
+  if (!response.ok) {
+    console.warn(`Supabase POST users -> ${response.status}`, await response.text());
+    return null;
+  }
   try {
     const rows = await response.json();
     return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
