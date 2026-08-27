@@ -46,25 +46,25 @@ async function exchangeCode(code: string, req: any) {
   const tokenJson = await tokenRes.json();
   if (!tokenJson?.access_token) return null;
 
-  const userRes = await fetch("https://api.github.com/user", {
-    headers: {
-      Authorization: `Bearer ${tokenJson.access_token}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "Quantora-Auth",
-    },
-    signal: AbortSignal.timeout(8_000),
-  });
+  const authHeaders = {
+    Authorization: `Bearer ${tokenJson.access_token}`,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "Quantora-Auth",
+  };
+
+  const [userRes, emailsRes] = await Promise.all([
+    fetch("https://api.github.com/user", {
+      headers: authHeaders,
+      signal: AbortSignal.timeout(8_000),
+    }),
+    fetch("https://api.github.com/user/emails", {
+      headers: authHeaders,
+      signal: AbortSignal.timeout(8_000),
+    }),
+  ]);
+
   if (!userRes.ok) return null;
   const user = await userRes.json();
-
-  const emailsRes = await fetch("https://api.github.com/user/emails", {
-    headers: {
-      Authorization: `Bearer ${tokenJson.access_token}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "Quantora-Auth",
-    },
-    signal: AbortSignal.timeout(8_000),
-  });
 
   let email = "";
   if (emailsRes.ok) {
