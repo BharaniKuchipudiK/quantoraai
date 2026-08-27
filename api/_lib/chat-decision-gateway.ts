@@ -174,12 +174,23 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
 
   if (!isUserContextStoreConfigured()) {
     /*
-     * A deployment without the context store cannot run an affordability
-     * calculation — but this gateway is not domain-gated, so "can I afford X"
-     * anywhere in the product used to end the turn with a 503 the client renders
-     * as "Request failed". That is a permanent dead end, not a transient error.
-     * Fall through: chat can still discuss the question.
+     * An explicit context command ("set liquid cash to SGD 3,000") is a WRITE the
+     * user asked for. Falling through would send it to ordinary chat, save
+     * nothing, and leave the model with no signal that persistence failed - so a
+     * later affordability answer could rely on a fact that was never stored.
+     * Commands keep the explicit failure.
+     *
+     * A conversational affordability question stores nothing either way, so
+     * ending the turn on it only produced a permanent "Request failed" in every
+     * workspace (this gateway is not domain-gated). That case falls through.
      */
+    if (command) {
+      res.status(503).json({
+        error: "Quantora personal context is not configured on this deployment yet, so this could not be saved.",
+        requestId,
+      });
+      return true;
+    }
     return false;
   }
 

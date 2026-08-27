@@ -111,19 +111,36 @@ const CORRUPT_BACKUP_KEY = `${STORAGE_KEY}_corrupt`;
  * dropping regenerable desk snapshots, history intact).
  */
 let storageFault = null;
+const storageFaultListeners = new Set();
 
 export function readStudioStorageFault() {
   return storageFault;
 }
 
+/** Subscribe so the fault reaches React state; a module variable alone is invisible. */
+export function subscribeStudioStorageFault(listener) {
+  if (typeof listener !== 'function') return () => {};
+  storageFaultListeners.add(listener);
+  return () => storageFaultListeners.delete(listener);
+}
+
+function publishStorageFault() {
+  for (const listener of storageFaultListeners) {
+    try { listener(storageFault); } catch { /* a bad listener must not break persistence */ }
+  }
+}
+
 function noteStorageFault(kind, error, extra = {}) {
   storageFault = { kind, at: Date.now(), message: String(error?.message || error || ''), ...extra };
   if (kind !== 'evicted') console.error('Studio session storage fault:', kind, error);
+  publishStorageFault();
   return storageFault;
 }
 
 function clearStorageFault() {
+  if (!storageFault) return;
   storageFault = null;
+  publishStorageFault();
 }
 
 /** DOMException name/code varies by browser; match the ones that mean "full". */
@@ -322,6 +339,8 @@ export function useStudioSession({ user, selectedModel }) {
     () => loadProjects()[0]?.id || DEFAULT_PROJECT_ID,
   );
   const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg));
+  const [storageFault, setStorageFault] = useState(() => readStudioStorageFault());
+  useEffect(() => subscribeStudioStorageFault(setStorageFault), []);
   const [activeSessionId, setActiveSessionId] = useState(() => allChatSessions[0]?.id || 'session-1');
   const [remoteProjectContext, setRemoteProjectContext] = useState(null);
   const accountKey = user?.sub || user?.email || null;
@@ -794,6 +813,13 @@ export function useStudioSession({ user, selectedModel }) {
   }, [activeProject.id, activeSessionId, defaultGreetingMsg, projects]);
 
   return {
+    /*
+     * Surfaced so the UI can say that saving degraded. 'evicted' means the quota
+     * recovery dropped regenerable desk snapshots to keep the conversation - the
+     * builds are gone from storage and will not survive a refresh, so the user
+     * has to be told rather than discovering it later.
+     */
+    storageFault,
     chatSessions,
     setChatSessions: setAllChatSessions,
     activeSessionId,

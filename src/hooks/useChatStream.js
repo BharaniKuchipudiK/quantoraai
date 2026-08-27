@@ -633,8 +633,28 @@ export function useChatStream({
     }
 
     const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+    /*
+     * The server has accepted vision input all along (attachedImages: data-URI
+     * strings, max 4 - see the request normalizer); the client simply never sent
+     * them, so an attached screenshot was read, encoded, displayed in the
+     * composer, and then dropped. Forward them.
+     *
+     * An attachment-only send also has empty `text`, which /api/chat rejects with
+     * "Message string is required" - so skipping the moderation call alone just
+     * moved that dead end one hop. Give the turn a real instruction instead, and
+     * only when an image is actually attached and being delivered.
+     */
+    const attachedImages = (attachments || [])
+      .map((item) => item?.dataUrl)
+      .filter((url) => typeof url === 'string' && url.startsWith('data:image/'))
+      .slice(0, 4);
+    const messageForRequest = text.trim() || (attachedImages.length
+      ? 'I have attached an image. Describe what you see and help me with it.'
+      : text);
+
     const requestBodyFor = (model) => ({
-      message: text,
+      message: messageForRequest,
+      attachedImages,
       modelId: model.id,
       modelName: model.name,
       history: cleanMessages,

@@ -273,6 +273,7 @@ const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim(
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const {
+    storageFault,
     chatSessions,
     activeSessionId,
     setActiveSessionId,
@@ -2415,6 +2416,41 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       overflow: 'hidden',
       transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
+      {/*
+        Browser storage is full or unreadable. Saving is degraded RIGHT NOW, and
+        the consequence lands later — on refresh — so it has to be stated while
+        the user can still act. 'evicted' means the conversation was kept by
+        dropping desk snapshots: the chats are safe, the builds are not.
+        Absolutely positioned so the shell's flex row is untouched.
+      */}
+      {storageFault ? (
+        <div
+          role="status"
+          data-quantora-storage-fault={storageFault.kind}
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            maxWidth: 'min(680px, 92%)',
+            padding: '9px 14px',
+            borderRadius: 10,
+            fontSize: '0.82rem',
+            lineHeight: 1.45,
+            border: '1px solid rgba(249,115,22,0.45)',
+            background: isLight ? '#fff7ed' : 'rgba(120,53,15,0.92)',
+            color: isLight ? '#7c2d12' : '#fed7aa',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
+          }}
+        >
+          {storageFault.kind === 'evicted'
+            ? `Browser storage was full. Your chats were kept, but ${storageFault.deskSnapshotsDropped || 1} saved Coding desk build${(storageFault.deskSnapshotsDropped || 1) === 1 ? ' was' : 's were'} dropped to make room — they will not survive a refresh. Publish or download anything you need.`
+            : storageFault.kind === 'corrupt'
+              ? 'Saved chats could not be read, so a fresh session was started. The previous data was kept aside rather than overwritten.'
+              : 'Browser storage is full, so new messages are no longer being saved. Delete an old chat to free space before refreshing.'}
+        </div>
+      ) : null}
       {/* Left Navigation Sidebar — New Chat + footer stay; Chat History is the scroll region. */}
       <div
         data-quantora-studio-sidebar="true"

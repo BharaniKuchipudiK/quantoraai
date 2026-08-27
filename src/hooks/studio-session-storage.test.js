@@ -87,3 +87,25 @@ test('an unparseable blob is preserved, not overwritten', async () => {
   );
   assert.equal(mod.readStudioStorageFault()?.kind, 'corrupt');
 });
+
+test('an eviction notifies subscribers, so the UI can state the loss', async () => {
+  // Codex was right that a module variable nobody reads is still a silent loss.
+  // The hook subscribes to this and renders a banner; assert the signal fires
+  // with the count, so a future refactor cannot quietly detach the UI again.
+  const storage = makeStorage(2_000);
+  globalThis.localStorage = storage;
+  const mod = await freshModule();
+
+  const seen = [];
+  const unsubscribe = mod.subscribeStudioStorageFault((fault) => seen.push(fault));
+
+  mod.__testables.persistSessions([
+    sessionWithDesk('a', 1, 1_500),
+    sessionWithDesk('b', 2, 1_500),
+  ]);
+
+  const evicted = seen.find((fault) => fault?.kind === 'evicted');
+  assert.ok(evicted, 'subscribers must be told the desk snapshots were dropped');
+  assert.ok(evicted.deskSnapshotsDropped >= 1, 'the count drives the wording shown to the user');
+  unsubscribe();
+});
