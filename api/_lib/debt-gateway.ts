@@ -53,12 +53,14 @@ export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
   }
 
   if (!intent.debts.length || intent.extraMonthly === null) {
-    sendStream(
-      res,
-      requestId,
-      "I can build a debt-payoff plan, but I need the numbers explicitly. Give me each debt as **balance at APR%** (with a minimum if you have it) and the amount you can put toward debt each month — for example: *“$5,000 at 19.99% (min $150) and $3,000 at 24%, $600/month”*. I won't guess balances or rates.",
-    );
-    return true;
+    /*
+     * Same defect as the savings gateway: parseDebtIntent reports matched:true on
+     * the trigger word alone, so "how does debt affect my credit score?" consumed
+     * the turn and returned a demand for balances and APRs, every time, with no
+     * way through to the model. The planner still needs real numbers — it simply
+     * must not end the turn to say so.
+     */
+    return false;
   }
 
   const comparison = comparePayoff(intent.debts, intent.extraMonthly);

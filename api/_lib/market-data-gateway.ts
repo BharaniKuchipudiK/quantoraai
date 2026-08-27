@@ -61,12 +61,13 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
   }
 
   if (!isMarketDataStoreConfigured()) {
-    sendStream(
-      res,
-      requestId,
-      "Market data isn't connected on this deployment yet, so I can't quote a real figure — and I won't guess one. Once the market-data store is configured and the ingestion has run, I'll answer from stored, sourced data.",
-    );
-    return true;
+    /*
+     * No market-data store means no sourced figure, and inventing one is never
+     * acceptable. But consuming the turn made every FX/quote question a dead end
+     * on this deployment. Fall through to chat, which can answer without
+     * quoting a live number.
+     */
+    return false;
   }
 
   if (isFxIntent(intent)) {

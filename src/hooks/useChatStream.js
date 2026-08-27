@@ -332,23 +332,39 @@ export function useChatStream({
     setIsGenerating(true);
 
     try {
-      const modRes = await fetch('/api/moderate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text.trim() })
-      });
+      /*
+       * Sending an attachment with no typed text is allowed (the send button
+       * enables on attachments alone), but /api/moderate rejects an empty prompt
+       * with 400. Every non-ok status mapped to the same "try again in a moment"
+       * copy, so attaching a screenshot and pressing send failed permanently and
+       * blamed a transient outage. Screen a text-only prompt; with no text there
+       * is nothing for the text classifier to read.
+       */
+      const promptToScreen = text.trim();
+      const modRes = promptToScreen
+        ? await fetch('/api/moderate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: promptToScreen })
+          })
+        : null;
       if (!stillCurrent()) return;
-      if (!modRes.ok) {
+      if (modRes && !modRes.ok) {
+        // 413 is deterministic (the prompt is too long) — retrying cannot clear
+        // it, so say that instead of implying the service is briefly down.
+        const tooLong = modRes.status === 413;
         updateActiveMessages(prev => [...prev, {
           id: createMessageId('ai'),
           sender: 'ai',
-          text: '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
+          text: tooLong
+            ? '⚠️ **This message is too long to send.** Shorten it — or remove the attached page context — and try again.'
+            : '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
           isError: true
         }]);
         setIsGenerating(false);
         return;
       }
-      const modData = await modRes.json().catch(() => ({}));
+      const modData = modRes ? await modRes.json().catch(() => ({})) : {};
       if (!stillCurrent()) return;
       if (modData.flagged) {
         updateActiveMessages(prev => [...prev, {

@@ -173,11 +173,14 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
   if (!auth.ok) return true;
 
   if (!isUserContextStoreConfigured()) {
-    res.status(503).json({
-      error: "Quantora personal context is not configured on this deployment yet.",
-      requestId,
-    });
-    return true;
+    /*
+     * A deployment without the context store cannot run an affordability
+     * calculation — but this gateway is not domain-gated, so "can I afford X"
+     * anywhere in the product used to end the turn with a 503 the client renders
+     * as "Request failed". That is a permanent dead end, not a transient error.
+     * Fall through: chat can still discuss the question.
+     */
+    return false;
   }
 
   if (command) {
@@ -195,11 +198,14 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
   }
 
   if (!intent.currency || intent.proposedCost === null) {
-    sendStream(res, {
-      requestId,
-      text: "I can calculate that, but I need an **explicit currency and amount** — for example, `SGD 3,000`. I won't guess what a plain `$` means.",
-    });
-    return true;
+    /*
+     * The intent matches on "can I afford" alone and a bare "$" is deliberately
+     * not mapped to a currency, so "Can I afford to move to Berlin?" and
+     * "can I afford a $1,200 rent?" both landed here and were answered with the
+     * same demand for an ISO currency — permanently, since rephrasing keeps the
+     * trigger. Refusing to GUESS the currency is right; ending the turn is not.
+     */
+    return false;
   }
 
   const graph = await readUserContextGraph(auth.value.sessionUser!.sub);
