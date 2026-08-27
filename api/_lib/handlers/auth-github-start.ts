@@ -13,11 +13,11 @@ export default async function handler(req: any, res: any) {
 
   const clientId = resolveGithubOAuthClientId();
   if (!clientId) {
-    return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in is not configured on this deployment.")}`);
+    return res.redirect(302, `${appOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in is not configured on this deployment.")}`);
   }
 
   const state = randomBytes(16).toString("hex");
-  const callback = `${appOrigin()}/api/auth/github/callback`;
+  const callback = `${appOrigin(req)}/api/auth/github/callback`;
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: callback,

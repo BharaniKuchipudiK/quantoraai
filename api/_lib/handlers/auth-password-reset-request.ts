@@ -26,7 +26,7 @@ export default async function handler(req: any, res: any) {
   if (delivery === "reset") {
     const token = createPasswordResetToken(email);
     if (token) {
-      const resetUrl = `${appOrigin()}/?reset=${encodeURIComponent(token)}`;
+      const resetUrl = `${appOrigin(req)}/?reset=${encodeURIComponent(token)}`;
       await sendPasswordResetEmail(email, resetUrl);
     }
   } else if (delivery === "provider-notice") {

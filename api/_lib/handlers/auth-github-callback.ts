@@ -23,7 +23,7 @@ function parseCookies(header: unknown): Record<string, string> {
   return out;
 }
 
-async function exchangeCode(code: string) {
+async function exchangeCode(code: string, req: any) {
   const clientId = resolveGithubOAuthClientId();
   const clientSecret = resolveGithubOAuthClientSecret();
   if (!clientId || !clientSecret) return null;
@@ -38,7 +38,7 @@ async function exchangeCode(code: string) {
       client_id: clientId,
       client_secret: clientSecret,
       code,
-      redirect_uri: `${appOrigin()}/api/auth/github/callback`,
+      redirect_uri: `${appOrigin(req)}/api/auth/github/callback`,
     }),
     signal: AbortSignal.timeout(8_000),
   });
@@ -98,13 +98,13 @@ export default async function handler(req: any, res: any) {
   appendSetCookie(res, clearOAuthStateCookie());
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in was cancelled.")}`);
+    return res.redirect(302, `${appOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in was cancelled.")}`);
   }
 
   try {
-    const identity = await exchangeCode(code);
+    const identity = await exchangeCode(code, req);
     if (!identity) {
-      return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
+      return res.redirect(302, `${appOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
     }
 
     const session = await issueSessionResponse(res, {
@@ -116,12 +116,12 @@ export default async function handler(req: any, res: any) {
       geo: getRequestGeo(req),
     });
     if (session.ok === false) {
-      return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent(session.error)}`);
+      return res.redirect(302, `${appOrigin(req)}/?auth=error&message=${encodeURIComponent(session.error)}`);
     }
 
-    return res.redirect(302, `${appOrigin()}/?auth=success`);
+    return res.redirect(302, `${appOrigin(req)}/?auth=success`);
   } catch (err: any) {
     console.error("GitHub OAuth callback failed:", err?.message || err);
-    return res.redirect(302, `${appOrigin()}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
+    return res.redirect(302, `${appOrigin(req)}/?auth=error&message=${encodeURIComponent("GitHub sign-in failed.")}`);
   }
 }
