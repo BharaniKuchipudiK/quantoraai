@@ -80,6 +80,10 @@ const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 const FEATURED_SERVER_MODELS = new Set([
   "gemini-flash-latest",
+  // Paid flagship coder: the escalation target for builds that a free/cheap model
+  // truncates. Only reached when allowPaid (a usable OpenRouter key) is present and
+  // the turn escalates; simple builds stay on free Gemini.
+  "anthropic/claude-3.5-sonnet",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "nvidia/nemotron-3-super:free",
   "openai/gpt-oss-120b:free",

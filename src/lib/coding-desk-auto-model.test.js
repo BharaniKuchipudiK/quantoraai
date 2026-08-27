@@ -138,6 +138,38 @@ test('BYOK may escalate to a paid coding specialist already in Active', () => {
   assert.equal(choice.escalated, true);
 });
 
+test('a paid FLAGSHIP is preferred over a cheap "coder" specialist when escalating', () => {
+  // The disease: an agent build escalated but picked qwen-2.5-coder (a cheap paid
+  // coder), which truncated to a 22-line HTML and rendered a blank preview. A
+  // flagship (Claude Sonnet) writes the complete file, so when paid is allowed it
+  // must win the escalation over a model whose only edge is the word "coder".
+  const withFlagship = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', available: true, pricingKind: 'paid', specialty: 'Code Synthesis' },
+    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', available: true, pricingKind: 'paid', specialty: 'Flagship coder' },
+  ];
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'Build an AI agent that connects to my Google Drive and crawls the entire drive',
+    availableModels: withFlagship,
+    allowPaid: true,
+  });
+  assert.equal(choice.modelId, 'anthropic/claude-3.5-sonnet');
+  assert.equal(choice.escalated, true);
+});
+
+test('a mini/lite flagship variant never beats a real coder on the flagship bonus', () => {
+  // gpt-4o-mini carries a flagship name but not the completion reliability — it
+  // must not steal the escalation from qwen on the flagship boost.
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'Refactor the entire codebase architecture',
+    availableModels: ACTIVE,
+    allowPaid: true,
+  });
+  assert.equal(choice.modelId, 'qwen/qwen-2.5-coder-32b-instruct');
+});
+
 test('unavailable stronger models fall back to Gemini instead of inventing ids', () => {
   const choice = resolveCodingDeskModel({
     task: 'coding',
