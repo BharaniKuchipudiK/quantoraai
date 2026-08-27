@@ -128,3 +128,24 @@ test('a discovered flagship carries the catalogue-declared vision capability', (
   assert.equal(found.find((m) => m.id === 'anthropic/claude-sonnet-5').vision, true);
   assert.equal(found.find((m) => m.id === 'anthropic/claude-opus-textonly').vision, false);
 });
+
+test('flagship discovery keeps families distinct and excludes batch endpoints', () => {
+  // Reported as "still no Sonnet": three Opus 5 variants (Fast, plain, batch)
+  // filled all three slots and pushed Sonnet 5 out of the picker. A batch
+  // endpoint is also asynchronous and cannot serve a streaming chat turn, so
+  // offering it is offering a route that never replies.
+  const paid = { prompt: '0.000005', completion: '0.000025' };
+  const sec = (iso) => Math.floor(new Date(iso).getTime() / 1000);
+  const catalog = new Map([
+    ['anthropic/claude-opus-5:fast', { id: 'anthropic/claude-opus-5:fast', name: 'Claude Opus 5 (Fast)', created: sec('2026-07-10'), pricing: paid }],
+    ['anthropic/claude-opus-5', { id: 'anthropic/claude-opus-5', name: 'Claude Opus 5', created: sec('2026-07-09'), pricing: paid }],
+    ['anthropic/claude-opus-5:batch', { id: 'anthropic/claude-opus-5:batch', name: 'Claude Opus 5 (batch)', created: sec('2026-07-08'), pricing: paid }],
+    ['anthropic/claude-sonnet-5', { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', created: sec('2026-07-01'), pricing: paid }],
+  ]);
+
+  const found = discoverAnthropicFlagships(catalog);
+  const ids = found.map((model) => model.id);
+  assert.ok(ids.includes('anthropic/claude-sonnet-5'), 'Sonnet must not be crowded out by variants of another model');
+  assert.ok(!ids.some((id) => /batch/i.test(id)), 'a batch endpoint cannot stream a chat turn');
+  assert.equal(new Set(ids.map((id) => id.split(':')[0])).size, ids.length, 'one entry per family');
+});

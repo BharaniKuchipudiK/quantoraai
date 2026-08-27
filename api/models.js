@@ -135,7 +135,18 @@ export default async function handler(req, res) {
       contextWindow: live?.context_length ? formatContext(live.context_length, curated.contextWindow) : curated.contextWindow,
       pricingKind,
     };
-    models.push(model);
+    /*
+     * A model the provider no longer lists is not a choice - picking it produces
+     * a 404 at the gateway and a silent downgrade. It used to be shown greyed
+     * with "No longer listed by OpenRouter", which still cluttered the picker
+     * with dead options (the reported stale Gemini 2.5 Flash). Keep it out of the
+     * user-facing list entirely; the admin dashboard below still records it as
+     * retired so the change is visible to an operator.
+     *
+     * Only when the catalogue itself was unreachable (available defaults true)
+     * do we keep listing, so a fetch timeout cannot empty the picker.
+     */
+    if (available) models.push(model);
     dashboardModels.push({
       ...model,
       status: available ? 'available' : 'offline',

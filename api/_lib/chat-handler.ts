@@ -807,10 +807,35 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!attempts.length) {
+      /*
+       * "Please retry in a moment" was wrong whenever the cause was a MISSING
+       * CREDENTIAL: no amount of retrying adds an API key, and the opacity turned
+       * a one-line configuration fault into a long diagnosis. Name which side is
+       * unusable. No secret is revealed - only whether a credential resolved.
+       */
+      const noGemini = !effectiveGeminiKey;
+      const noOpenRouter = !effectiveOpenRouterKey;
+      const missingCredentials = noGemini && noOpenRouter;
+      const reason = missingCredentials
+        ? 'no-provider-credential'
+        : noGemini
+          ? 'openrouter-routes-unhealthy'
+          : noOpenRouter
+            ? 'gemini-routes-unhealthy'
+            : 'all-routes-unhealthy';
       return res.status(503).json({
         error: wantTravelTools
           ? 'Live travel lookup needs Gemini, and no conversational backup route is available. Please retry shortly.'
-          : 'Quantora could not reach a healthy AI route for this turn. Please retry in a moment.',
+          : missingCredentials
+            ? 'No AI provider credential is available on this deployment — neither Gemini nor OpenRouter resolved a usable key. This is a configuration problem, not a temporary one: retrying will not help. Add GEMINI_API_KEY or OPENROUTER_API_KEY (a real sk-or-v1-… key) to the server environment, or paste your own key under Privacy Vault → Session-only provider keys.'
+            : noOpenRouter
+              ? 'Every Gemini route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no OpenRouter key is configured as a backup. Add an OpenRouter key to give this turn a second provider.'
+              : noGemini
+                ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.'
+                : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
+        reason,
+        // Lets the desk state the cause without another round of guesswork.
+        providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
