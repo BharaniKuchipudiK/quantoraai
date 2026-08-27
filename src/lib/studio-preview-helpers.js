@@ -6,6 +6,8 @@ import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
   countRealPreviewPhotos,
   stripInjectedShopPhotos,
+  proxyRemoteShopImages,
+  proxyRemoteCatalogImages,
   SHOP_CATALOG_CAP,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
@@ -332,12 +334,33 @@ export function applyDeskReviewPatch(vfs = {}, job = null, options = {}) {
 export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
   if (!vfsLooksLikeShop(vfs, job)) return { vfs, changed: false };
   const brief = String(options?.brief || '');
-  // Honest desk: wire the MODEL'S OWN image files (foxwolf_*.svg, etc.) into the
-  // page and catalog so the photos it actually chose load in Preview. We never
-  // inject stock photos or fabricate a product catalog: a shop the model shipped
-  // without images shows an honest empty/partial catalog, not a picsum-stocked
-  // fake (the "Statue of Liberty / Shop 6 ₹3,050" regression).
-  return wireVfsShopImagesIntoDesk(vfs, { brief });
+  // Honest desk: make the MODEL'S OWN images load in Preview — never fabricate.
+  //  1) wire the model's own image FILES (foxwolf_*.svg, etc.) in as data-URIs;
+  //  2) proxy the model's own allowed REMOTE image URLs (Unsplash/Pexels/…) to
+  //     the same-origin preview proxy so they load and count as real photos.
+  // We never inject stock photos or scaffold a fabricated catalog: a shop the
+  // model shipped without images shows an honest empty/partial catalog, not a
+  // picsum-stocked fake (the "Statue of Liberty / Shop 6 ₹3,050" regression).
+  const wired = wireVfsShopImagesIntoDesk(vfs, { brief });
+  const next = { ...wired.vfs };
+  let changed = wired.changed;
+
+  const htmlPath = pickPreviewEntryPath(next);
+  if (htmlPath && typeof next[htmlPath]?.content === 'string') {
+    const proxied = proxyRemoteShopImages(next[htmlPath].content);
+    if (proxied !== next[htmlPath].content) {
+      next[htmlPath] = { ...next[htmlPath], content: proxied };
+      changed = true;
+    }
+  }
+  if (typeof next['products.json']?.content === 'string') {
+    const catalog = proxyRemoteCatalogImages(next['products.json'].content);
+    if (catalog.changed) {
+      next['products.json'] = { ...next['products.json'], content: catalog.text };
+      changed = true;
+    }
+  }
+  return { vfs: next, changed };
 }
 
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */

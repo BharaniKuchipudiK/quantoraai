@@ -123,6 +123,51 @@ export function rewritePreviewImageUrls(html, origin = '') {
   });
 }
 
+/**
+ * Proxy the MODEL'S OWN allowed remote image URLs (Unsplash/Pexels/…) to the
+ * same-origin preview proxy so they LOAD in Preview and count as real photos.
+ * Unlike the removed injector, this KEEPS the model's chosen image — it never
+ * swaps in a stock photo. Returns a relative /api/preview-image URL (which
+ * resolves in the preview shell); already-proxied and non-allowed srcs are left
+ * exactly as the model wrote them (an honest gap, not a fabricated fill).
+ */
+export function proxyRemoteShopImages(html = '') {
+  return String(html || '').replace(
+    /(<img\b[^>]*?\bsrc\s*=\s*["'])([^"']+)(["'])/gi,
+    (full, pre, src, post) => {
+      const clean = String(src).replace(/&amp;/gi, '&');
+      if (!/^https?:\/\//i.test(clean) || clean.includes(PREVIEW_IMAGE_PROXY_PATH)) return full;
+      if (!isAllowedPreviewImageUrl(clean)) return full;
+      return `${pre}${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(clean)}${post}`;
+    },
+  );
+}
+
+/** Proxy allowed remote image URLs in a products.json catalog (the model's own images). */
+export function proxyRemoteCatalogImages(raw = '') {
+  try {
+    const data = JSON.parse(String(raw || ''));
+    const list = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : null);
+    if (!list?.length) return { text: String(raw || ''), changed: false };
+    let changed = false;
+    const next = list.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const src = String(item.image || '').replace(/&amp;/gi, '&');
+      if (!/^https?:\/\//i.test(src) || src.includes(PREVIEW_IMAGE_PROXY_PATH)) return item;
+      if (!isAllowedPreviewImageUrl(src)) return item;
+      changed = true;
+      return { ...item, image: `${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(src)}` };
+    });
+    if (!changed) return { text: String(raw || ''), changed: false };
+    return {
+      text: `${JSON.stringify(Array.isArray(data) ? next : { ...data, products: next }, null, 2)}\n`,
+      changed: true,
+    };
+  } catch {
+    return { text: String(raw || ''), changed: false };
+  }
+}
+
 /** Preview is the proof. Remote Unsplash srcs that 403 are not product photos. */
 export function previewHtmlHasRealPhotos(html = '') {
   return new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(String(html || ''));
