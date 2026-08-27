@@ -637,8 +637,13 @@ export default async function handler(req: any, res: any) {
     // Gemini excluded below, a broken OpenRouter surfaces as an honest "no healthy
     // route" instead of being silently rescued by Gemini. Default off = normal
     // Auto routing. Requires a usable OpenRouter key (BYOK or the server key).
+    // Vision turns are excluded: OpenRouter routes here are not marked
+    // vision-capable and forced mode drops Gemini, so forcing a vision build would
+    // filter every route and 503. A build with an attached image keeps normal
+    // routing (Gemini handles vision).
     const forceOpenRouter = process.env.QUANTORA_FORCE_OPENROUTER === '1'
       && Boolean(effectiveOpenRouterKey)
+      && visionImages.length === 0
       && (effectiveBuildMode || taskCategory === 'coding');
     if (forceOpenRouter) {
       const openRouterCoder = routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false && /coder|qwen|deepseek|gpt-oss/i.test(String(m.id)))
