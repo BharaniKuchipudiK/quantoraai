@@ -230,3 +230,18 @@ test('LEARNING: a free coder that EARNS a trusted record climbs ahead of Gemini 
   const nemotronAt = chain.indexOf('nvidia/nemotron-3-super-120b-a12b:free');
   assert.ok(nemotronAt < geminiAt, 'a proven free coder earns its place ahead of the default prior');
 });
+
+test('INVARIANT: an unproven paid coder never passes a PROVEN Gemini in the failover chain', () => {
+  // Regression guard (Codex P2): once Gemini crosses the trust threshold its
+  // prior must remain a floor, so an unproven paid endpoint cannot leapfrog a
+  // measured-successful Gemini without earning outcomes of its own.
+  const models = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier', quality: { sampleSize: 6, score: 92 } },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder', available: true, pricingKind: 'paid' },
+  ];
+  const chain = rankCodingDeskFallbacks(models, { primaryId: 'deepseek/deepseek-chat', allowPaid: true });
+  const g = chain.indexOf('gemini-flash-latest');
+  const q = chain.indexOf('qwen/qwen-2.5-coder-32b-instruct');
+  assert.ok(g >= 0 && q >= 0, 'both models present in the chain');
+  assert.ok(g < q, 'proven Gemini must fail over before an unproven paid coder');
+});

@@ -159,14 +159,18 @@ function pickStrongCoding(models, { allowPaid = false } = {}) {
  * order is driven by evidence + a finish prior, never by hardcoded identity.
  */
 function fallbackFinishReliability(model, { allowPaid = false } = {}) {
-  let score = outcomeRoutingAdjust(model?.quality);
-  if (!hasTrustedOutcome(model)) {
-    const id = String(model?.id || '');
-    if (id.startsWith('gemini')) score += 20;
-    else if (allowPaid && !isFreeReady(model)) score += 12;
-    else score -= 6;
-  }
-  return score;
+  // Identity prior — the finish-reliability floor, the one place a name matters.
+  const id = String(model?.id || '');
+  let prior;
+  if (id.startsWith('gemini')) prior = 20;                    // reliably finishes fast, in-deadline
+  else if (allowPaid && !isFreeReady(model)) prior = 12;      // a paid coder generally finishes
+  else prior = -6;                                            // unproven free coder: the deadline risk
+  // Measured reality ADDS on top (never replaces the prior): a model that
+  // actually finishes climbs, one that stalls sinks; 0 until there is trustworthy
+  // evidence. Keeping the prior as a floor preserves the invariant — an UNPROVEN
+  // paid model (12) can never pass proven Gemini (20 + its measured lift); a coder
+  // only overtakes Gemini by EARNING enough measured merit to exceed that floor.
+  return prior + outcomeRoutingAdjust(model?.quality);
 }
 
 /**

@@ -233,6 +233,14 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     || pool.find((route) => route.circuit !== 'open')
     || pool.find((route) => route.gateway === 'gemini')
     || pool[0];
+  // The caller (select-models) hands fallbacks pre-ordered by measured
+  // finish-reliability. Preserve that order as a tiebreaker so a reliable
+  // fallback the router put first is not demoted purely because a less reliable
+  // one is cheaper. Operational resilience still leads — failure-domain
+  // independence from the primary and circuit/health come first, so a same-domain
+  // fallback (likely to fail with the primary) still yields to an independent one.
+  const reliabilityRank = new Map(ids.map((id, index) => [id, index]));
+  const rankOf = (route: InferenceRoute) => (reliabilityRank.has(route.id) ? reliabilityRank.get(route.id)! : Number.MAX_SAFE_INTEGER);
   const rest = pool.filter((route) => route.id !== selected.id).sort((left, right) => {
     const leftIndependent = left.failureDomain !== selected.failureDomain ? 1 : 0;
     const rightIndependent = right.failureDomain !== selected.failureDomain ? 1 : 0;
@@ -240,6 +248,9 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     const leftKnown = left.health === 'available' ? 1 : 0;
     const rightKnown = right.health === 'available' ? 1 : 0;
     if (leftKnown !== rightKnown) return rightKnown - leftKnown;
+    const leftRank = rankOf(left);
+    const rightRank = rankOf(right);
+    if (leftRank !== rightRank) return leftRank - rightRank;
     return COST_RANK[left.costClass] - COST_RANK[right.costClass];
   });
 
