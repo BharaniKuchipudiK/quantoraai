@@ -7,16 +7,16 @@ function isProdLikeRuntime() {
  * Locally, missing RESEND_API_KEY logs the link. Production and Vercel
  * deployments fail closed so a live reset token never lands in logs.
  */
-export async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<boolean> {
+async function sendAuthEmail(email: string, subject: string, html: string, devLog: string): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM || "Quantora <noreply@quantora.app>";
 
   if (!apiKey) {
     if (isProdLikeRuntime()) {
-      console.warn("[auth] Password reset email is not configured (missing RESEND_API_KEY).");
+      console.warn("[auth] Transactional email is not configured (missing RESEND_API_KEY).");
       return false;
     }
-    console.info(`[auth] Password reset for ${email}: ${resetUrl}`);
+    console.info(devLog);
     return true;
   }
 
@@ -27,21 +27,39 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string): P
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from,
-        to: [email],
-        subject: "Reset your Quantora password",
-        html: `
-          <p>You asked to reset your Quantora password.</p>
-          <p><a href="${resetUrl}">Reset password</a></p>
-          <p>This link expires in one hour. If you did not request this, you can ignore this email.</p>
-        `,
-      }),
+      body: JSON.stringify({ from, to: [email], subject, html }),
       signal: AbortSignal.timeout(8_000),
     });
     return response.ok;
   } catch (err: any) {
-    console.warn("Password reset email failed:", err?.message || err);
+    console.warn("Auth email failed:", err?.message || err);
     return false;
   }
+}
+
+export async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<boolean> {
+  return sendAuthEmail(
+    email,
+    "Reset your Quantora password",
+    `
+      <p>You asked to reset your Quantora password.</p>
+      <p><a href="${resetUrl}">Reset password</a></p>
+      <p>This link expires in one hour. If you did not request this, you can ignore this email.</p>
+    `,
+    `[auth] Password reset for ${email}: ${resetUrl}`,
+  );
+}
+
+export async function sendProviderSignInNotice(email: string, provider: string): Promise<boolean> {
+  const label = provider || "your original sign-in method";
+  return sendAuthEmail(
+    email,
+    "How to sign in to Quantora",
+    `
+      <p>You asked to reset a Quantora password.</p>
+      <p>This email is signed in with ${label}, so there is no password to reset. Use ${label} on the sign-in screen.</p>
+      <p>If you did not request this, you can ignore this email.</p>
+    `,
+    `[auth] Provider sign-in notice for ${email} (${label})`,
+  );
 }

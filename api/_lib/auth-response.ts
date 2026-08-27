@@ -1,5 +1,6 @@
 import { createSessionToken, setSessionCookie, isSessionConfigured } from "./session.js";
 import { findUserByEmail, isAdminUser, recordSignIn, type StoredUser } from "./store.js";
+import { normalizeAuthEmail, providerLabel } from "./auth-privacy.js";
 
 export type AuthIdentity = {
   sub: string;
@@ -38,7 +39,12 @@ export async function issueSessionResponse(
     return { ok: false, status: 503, error: "Sign-in is not configured on this deployment." };
   }
 
-  const existing = await findUserByEmail(identity.email);
+  const email = normalizeAuthEmail(identity.email);
+  if (!email) {
+    return { ok: false, status: 400, error: "A valid email address is required." };
+  }
+
+  const existing = await findUserByEmail(email);
   if (existing && existing.google_sub !== identity.sub) {
     if (existing.blocked_at) {
       return {
@@ -47,21 +53,16 @@ export async function issueSessionResponse(
         error: existing.blocked_reason || "This account has been suspended.",
       };
     }
-    const provider = existing.auth_provider === "github"
-      ? "GitHub"
-      : existing.auth_provider === "email"
-        ? "email and password"
-        : "Google";
     return {
       ok: false,
       status: 409,
-      error: `An account already exists for this email. Sign in with ${provider} instead.`,
+      error: `An account already exists for this email. Sign in with ${providerLabel(existing.auth_provider)} instead.`,
     };
   }
 
   const stored: StoredUser | null = await recordSignIn({
     sub: identity.sub,
-    email: identity.email,
+    email,
     name: identity.name,
     picture: identity.picture || "",
     geo: reqGeo || identity.geo || null,
@@ -77,7 +78,7 @@ export async function issueSessionResponse(
 
   const token = createSessionToken({
     sub: identity.sub,
-    email: identity.email,
+    email,
     name: identity.name,
     picture: identity.picture || "",
   });
@@ -91,7 +92,7 @@ export async function issueSessionResponse(
     ok: true,
     body: formatClientUser({
       name: identity.name,
-      email: identity.email,
+      email,
       picture: identity.picture,
       authProvider: identity.authProvider,
       isAdmin: isAdmin === true,

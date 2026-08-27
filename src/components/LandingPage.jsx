@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
+import GuestBuildPreview, { GUEST_DEMO_PROMPT } from './GuestBuildPreview';
 import {
   ArrowRight,
   Sun,
@@ -286,21 +287,39 @@ function SelfHealConsole({ isLight }) {
 
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, themeMode, setThemeMode, isLight: isLightProp }) {
   const [heroPrompt, setHeroPrompt] = useState('');
-  const [phIdx, setPhIdx] = useState(0);
+  const [ghost, setGhost] = useState('');
+  const [guestRun, setGuestRun] = useState('idle');
   const promptRef = useRef(null);
-
-  const heroExamples = [
-    'The study planner I started last night…',
-    'The dashboard I started last night…',
-    'Flashcards from last night’s notes…',
-    'A checkout flow with tax…',
-  ];
+  const previewRef = useRef(null);
 
   useEffect(() => {
-    if (heroPrompt) return;
-    const t = setInterval(() => setPhIdx((i) => (i + 1) % heroExamples.length), 2800);
-    return () => clearInterval(t);
-  }, [heroPrompt, heroExamples.length]);
+    if (heroPrompt) return undefined;
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      setGhost(GUEST_DEMO_PROMPT);
+      return undefined;
+    }
+    let i = 0;
+    let dir = 1;
+    let holdUntil = 0;
+    const id = setInterval(() => {
+      if (dir === 1) {
+        i += 1;
+        setGhost(GUEST_DEMO_PROMPT.slice(0, i));
+        if (i >= GUEST_DEMO_PROMPT.length) {
+          dir = 0;
+          holdUntil = Date.now() + 2400;
+        }
+      } else if (dir === 0) {
+        if (Date.now() >= holdUntil) dir = -1;
+      } else {
+        i = Math.max(0, i - 3);
+        setGhost(GUEST_DEMO_PROMPT.slice(0, i));
+        if (i === 0) dir = 1;
+      }
+    }, 22);
+    return () => clearInterval(id);
+  }, [heroPrompt]);
 
   const isLight = typeof isLightProp === 'boolean' ? isLightProp : themeMode === 'light';
   const textColor = isLight ? '#0a0a0a' : '#ffffff';
@@ -310,19 +329,30 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const navBg = isLight ? '#ffffff' : '#0a0a0a';
 
   const startBuild = (prompt) => {
-    const text = (prompt ?? heroPrompt ?? '').toString();
+    const text = (prompt ?? heroPrompt ?? '').toString().trim() || GUEST_DEMO_PROMPT;
     if (onStartBuild) onStartBuild(text);
     else if (user) onLaunchStudio();
     else onOpenAuth();
   };
 
+  const startGuestOrBuild = (prompt) => {
+    const text = (prompt ?? heroPrompt ?? '').toString().trim() || GUEST_DEMO_PROMPT;
+    if (user) {
+      startBuild(text);
+      return;
+    }
+    setHeroPrompt(text);
+    setGuestRun('running');
+    previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   const openStudio = () => (user ? onLaunchStudio() : onOpenAuth());
 
-  const TryCta = ({ className = 'landing-cta landing-cta--primary', large }) => (
+  const TryCta = ({ className = 'landing-cta landing-cta--primary', large, onClick, login }) => (
     <button
       type="button"
-      data-quantora-login="true"
-      onClick={() => startBuild()}
+      data-quantora-login={login ? 'true' : undefined}
+      onClick={onClick}
       className={`${className}${large ? ' landing-cta--large' : ''}`}
     >
       Try Quantora <ArrowRight size={large ? 18 : 16} />
@@ -355,7 +385,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                 Try Quantora <ArrowRight size={16} />
               </button>
             ) : (
-              <TryCta />
+              <TryCta login onClick={openStudio} />
             )}
           </div>
         </div>
@@ -364,11 +394,12 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section className="landing-hero">
         <div className="landing-container">
           <div className="landing-hero__inner">
+            <p className="landing-hero__eyebrow">The Citizen AI Lab</p>
             <h1 className="landing-hero__title" style={{ color: textColor }}>
-              It already knows<br />your <span className="landing-accent">world.</span>
+              An AI coding desk.<br />From idea to <span className="landing-accent">outcome.</span>
             </h1>
             <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-              Close one screen. Open another. The files, the preview, and the last prompt are waiting. You pick up where you left it.
+              You bring the idea. Quantora writes the files, shows the live preview, and the outcome stays on the desk.
             </p>
             <div
               className={`landing-hero__prompt${isLight ? ' is-light' : ' is-dark'}`}
@@ -380,21 +411,38 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                   aria-label="Describe what you want to build"
                   value={heroPrompt}
                   onChange={(e) => setHeroPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
-                  rows={1}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startGuestOrBuild(); } }}
+                  rows={2}
                   placeholder=""
                   style={{ color: textColor, caretColor: heroPrompt ? ORANGE : 'transparent' }}
                 />
                 {!heroPrompt && (
                   <div className="landing-hero__ghost" aria-hidden="true">
-                    <span>{heroExamples[phIdx]}</span>
+                    <span>{ghost}</span>
                     <span className="landing-hero__caret" />
                   </div>
                 )}
               </div>
-              <TryCta className="landing-hero__submit" />
+              <button
+                type="button"
+                className="landing-hero__submit"
+                disabled={guestRun === 'running'}
+                onClick={() => startGuestOrBuild()}
+              >
+                {guestRun === 'running' ? 'Building…' : 'Try Quantora'} <ArrowRight size={16} />
+              </button>
             </div>
-            <p className="landing-hero__free" style={{ color: subtextColor }}>Try Quantora for free.</p>
+            <p className="landing-hero__free" style={{ color: subtextColor }}>Try Quantora for free. See it work before you sign in.</p>
+            <div ref={previewRef} className="landing-hero__preview">
+              <GuestBuildPreview
+                isLight={isLight}
+                prompt={heroPrompt || GUEST_DEMO_PROMPT}
+                running={guestRun === 'running'}
+                done={guestRun === 'done'}
+                onReady={() => setGuestRun('done')}
+                onContinue={() => startBuild(heroPrompt || GUEST_DEMO_PROMPT)}
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -456,8 +504,8 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
           <Reveal>
             <div className="landing-final-cta__inner">
               <h2 style={{ color: textColor }}>The desk is waiting.</h2>
-              <p style={{ color: subtextColor }}>Try Quantora for free. Your world travels with every screen.</p>
-              <TryCta large />
+              <p style={{ color: subtextColor }}>Bring an idea. Leave with the outcome. Try Quantora for free.</p>
+              <TryCta large onClick={() => startGuestOrBuild()} />
             </div>
           </Reveal>
         </div>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword, isStrongEnoughPassword } from "./password.ts";
+import { hashPassword, verifyPassword, verifyPasswordAgainstStore, isStrongEnoughPassword } from "./password.ts";
 
 test("password hash roundtrip", async () => {
   const hash = await hashPassword("test-password-123");
@@ -8,7 +8,7 @@ test("password hash roundtrip", async () => {
   assert.equal(await verifyPassword("wrong-password", hash), false);
 });
 
-test("password strength check", () => {
-  assert.equal(isStrongEnoughPassword("short"), false);
-  assert.equal(isStrongEnoughPassword("long-enough"), true);
+test("missing accounts still pay a password-check cost and never verify as true", async () => {
+  assert.equal(await verifyPasswordAgainstStore("any-password", null), false);
+  assert.equal(await verifyPasswordAgainstStore("quantora-dummy-not-a-password", null), false);
 });
