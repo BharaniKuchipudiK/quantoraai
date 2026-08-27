@@ -46,7 +46,7 @@ test('files and preview round-trip with the session', () => {
   assert.equal(restored.job.purpose, 'A working calculator');
 });
 
-test('a saved boutique without photos gets them back on restore', () => {
+test('restoring a boutique without photos does NOT fabricate stock photos (honest)', () => {
   const built = buildStudioDeskSnapshot({
     vfs: {
       'index.html': {
@@ -59,10 +59,11 @@ test('a saved boutique without photos gets them back on restore', () => {
     codingDeskOpen: true,
   });
   const restored = restoreStudioDeskSnapshot({ desk: built.snapshot });
-  assert.match(restored.vfs['index.html'].content, /data:image\/svg\+xml/);
-  assert.match(restored.workspaceCode, /data:image\/svg\+xml/);
-  assert.match(restored.vfs['index.html'].content, /Add to Cart/);
-  assert.match(restored.vfs['index.html'].content, /USD/);
+  // Restore preserves the model's real content; it never injects fabricated
+  // stock photos to fill a gap the model left.
+  assert.match(restored.vfs['index.html'].content, /Aaranya/);
+  assert.doesNotMatch(restored.vfs['index.html'].content, /picsum\.photos/);
+  assert.doesNotMatch(restored.vfs['index.html'].content, /data-quantora-shop-photo="true"/);
 });
 
 test('a saved hunk that does not fit is marked cut off, not still exact', () => {

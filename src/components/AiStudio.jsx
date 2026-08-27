@@ -585,6 +585,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
   }, [vfs, deskJob]);
 
+  // Make the model's OWN shop images load in Preview: wire its image files in as
+  // data-URIs and proxy the remote image URLs it chose. This never fabricates
+  // products or injects stock photos — a shop the model shipped without images
+  // stays an honest empty catalog (no "instant fake shop").
   useEffect(() => {
     if (!vfsLooksLikeShop(vfs, deskJob)) return;
     const brief = [...messages].reverse().find((m) => m?.sender === 'user' && m.text)?.text || '';

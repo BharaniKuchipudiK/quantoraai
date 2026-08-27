@@ -117,30 +117,19 @@ test('merchandise brief becomes a shop job that requires photos and cart', () =>
   assert.match(job.mustWork.join(' '), /Cart|currency/i);
 });
 
-test('Fox & Wolf empty shell gets real photos, cart, currency — not gold-frame success', () => {
+test('Fox & Wolf empty shell is NOT fabricated into a stock-photo catalog (honest gap)', () => {
   const job = buildStudioJobCard({ brief: FOX_BRIEF });
   const before = {
     'index.html': { content: FOX_SHELL, language: 'html' },
   };
   const next = ensureShopDeskInVfs(before, job, { brief: FOX_BRIEF });
-  assert.equal(next.changed, true);
   const html = next.vfs['index.html'].content;
-  assert.equal(previewHtmlHasRealPhotos(html), true);
-  assert.ok(countRealPreviewPhotos(html) >= 6, `expected ≥6 photos, got ${countRealPreviewPhotos(html)}`);
-  assert.equal(previewHtmlHasAddToCartControl(html), true);
-  assert.equal(previewHtmlHasCurrencySwitcher(html), true);
-  assert.ok(next.vfs['products.json'], 'products.json must be scaffolded');
-  const catalog = JSON.parse(next.vfs['products.json'].content);
-  assert.ok(catalog.length <= SHOP_CATALOG_CAP);
-  assert.ok(catalog.length >= 6);
-  assert.match(catalog[0].image, /^\/api\/preview-image\?u=/);
-  assert.match(next.scaleNote || '', /24|100/);
-
-  const probed = probeRunningDesk({ html, vfs: next.vfs, job });
-  assert.equal(probed.facts.hasPhotos, true);
-  assert.equal(probed.facts.hasCart, true);
-  assert.equal(probed.facts.hasCurrency, true);
-  assert.ok(probed.facts.photoCount >= 6);
+  // The model shipped an empty shell with no images. We never inject stock
+  // photos or scaffold a fake catalog to fake a "complete" shop — that was the
+  // "Statue of Liberty / Shop 6 ₹3,050" regression.
+  assert.equal(previewHtmlHasRealPhotos(html), false);
+  assert.doesNotMatch(html, /picsum\.photos/);
+  assert.ok(!next.vfs['products.json'], 'no fabricated products.json');
 });
 
 test('injectMissingShopPhotos fills a blank collection main', () => {
@@ -185,19 +174,16 @@ test('a poetry collection page is not treated as a shop desk', () => {
   assert.equal(vfsLooksLikeShop({ 'index.html': { content: html, language: 'html' } }), false);
 });
 
-test('injected catalog survives an unrelated follow-up brief', () => {
+test('an empty shell is never fabricated into product cards, on any follow-up', () => {
   const job = buildStudioJobCard({ brief: FOX_BRIEF });
   const first = ensureShopDeskInVfs(
     { 'index.html': { content: FOX_SHELL, language: 'html' } },
     job,
     { brief: FOX_BRIEF },
   );
-  const cardsBefore = (first.vfs['index.html'].content.match(/data-quantora-shop-card="true"/g) || []).length;
-  assert.ok(cardsBefore >= 6);
-  const second = ensureShopDeskInVfs(first.vfs, job, { brief: 'Change the heading color to navy' });
-  const cardsAfter = (second.vfs['index.html'].content.match(/data-quantora-shop-card="true"/g) || []).length;
-  assert.equal(cardsAfter, cardsBefore);
-  assert.equal(second.changed, false);
+  const cards = (first.vfs['index.html'].content.match(/data-quantora-shop-card="true"/g) || []).length;
+  // No fabricated product cards — the model's shell is shown as-is (honest gap).
+  assert.equal(cards, 0);
 });
 
 test('HTML product cards above the platform cap are trimmed', () => {

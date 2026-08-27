@@ -16,7 +16,7 @@ import {
 } from '../lib/preview-utils.js';
 import { shouldShowPreviewShellTombstone } from '../lib/preview-shell-warming.js';
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
-import { rewritePreviewImageUrls, injectMissingShopPhotos } from '../lib/preview-images.js';
+import { rewritePreviewImageUrls } from '../lib/preview-images.js';
 import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
 import { byokRequestHeaders } from '../lib/client-secrets.js';
@@ -385,17 +385,8 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         });
         if (!verifyOnly && data.passed === false && Array.isArray(data.issues) && data.issues.length && jobCardRef.current && !autoJobHealRef.current) {
           autoJobHealRef.current = true;
-          if (looksLikeShopDesk({ html: codeToCheck, vfs: vfsRef.current, job: jobCardRef.current })) {
-            const photos = injectMissingShopPhotos(codeToCheck);
-            const shop = injectShopCommerceUi(photos.html);
-            if (photos.injected || shop.changed) {
-              verifiedCodeRef.current = null;
-              setQualityReport(null);
-              onHealedPreviewRef.current?.(shop.html);
-              setCurrentCode(shop.html);
-              return;
-            }
-          }
+          // A failing shop desk is repaired by the MODEL, honestly — never by
+          // injecting fabricated stock photos over the user's real page.
           const instruction = `Improve this page for the JOB. Fix ONLY these issues, preserving the product:\n- ${data.issues.join('\n- ')}`;
           try {
             const repaired = await requestRepair(codeToCheck, instruction);

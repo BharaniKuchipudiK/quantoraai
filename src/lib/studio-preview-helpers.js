@@ -4,16 +4,15 @@ import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
 import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview, vfsAssetToDataUri } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
-  injectMissingShopPhotos,
-  injectProductCatalogImages,
-  scaffoldShopCatalogJson,
   countRealPreviewPhotos,
   stripInjectedShopPhotos,
+  proxyRemoteShopImages,
+  proxyRemoteCatalogImages,
   SHOP_CATALOG_CAP,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, jobClearlyNotShop, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
-import { buildStudioJobCard, isStudioProductSwitch, jobNeedsProductPhotos } from './studio-job-card.js';
+import { buildStudioJobCard, isStudioProductSwitch } from './studio-job-card.js';
 import { shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
@@ -108,19 +107,10 @@ export function wireVfsShopImagesIntoDesk(vfs = {}, options = {}) {
         }
       }
     } catch { /* keep */ }
-  } else if (htmlPath && assets.length) {
-    const brand = String(next[htmlPath]?.content || '').match(/<title>([^<]{2,80})<\/title>/i)?.[1]
-      || 'Collection';
-    const products = assets.slice(0, Math.min(assets.length, SHOP_CATALOG_CAP)).map((asset, i) => ({
-      id: `item-${i + 1}`,
-      name: `${String(brand).trim().slice(0, 40)} ${i + 1}`,
-      priceCents: (1800 + i * 250) * 100,
-      currency: 'inr',
-      image: asset.uri,
-    }));
-    next['products.json'] = { content: `${JSON.stringify(products, null, 2)}\n`, language: 'json' };
-    changed = true;
   }
+  // NOTE: we deliberately do NOT fabricate a products.json when the model shipped
+  // image files but no catalog. Inventing named/priced products is fabrication;
+  // an honest empty catalog is shown instead.
 
   void brief;
   return { vfs: next, changed };
@@ -344,32 +334,31 @@ export function applyDeskReviewPatch(vfs = {}, job = null, options = {}) {
 export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
   if (!vfsLooksLikeShop(vfs, job)) return { vfs, changed: false };
   const brief = String(options?.brief || '');
+  // Honest desk: make the MODEL'S OWN images load in Preview — never fabricate.
+  //  1) wire the model's own image FILES (foxwolf_*.svg, etc.) in as data-URIs;
+  //  2) proxy the model's own allowed REMOTE image URLs (Unsplash/Pexels/…) to
+  //     the same-origin preview proxy so they load and count as real photos.
+  // We never inject stock photos or scaffold a fabricated catalog: a shop the
+  // model shipped without images shows an honest empty/partial catalog, not a
+  // picsum-stocked fake (the "Statue of Liberty / Shop 6 ₹3,050" regression).
   const wired = wireVfsShopImagesIntoDesk(vfs, { brief });
   const next = { ...wired.vfs };
   let changed = wired.changed;
+
   const htmlPath = pickPreviewEntryPath(next);
-  if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
-    const result = injectMissingShopPhotos(next[htmlPath].content, { brief });
-    if (result.html !== next[htmlPath].content) {
-      next[htmlPath] = { ...next[htmlPath], content: result.html };
+  if (htmlPath && typeof next[htmlPath]?.content === 'string') {
+    const proxied = proxyRemoteShopImages(next[htmlPath].content);
+    if (proxied !== next[htmlPath].content) {
+      next[htmlPath] = { ...next[htmlPath], content: proxied };
       changed = true;
     }
   }
-  if (next['products.json'] && typeof next['products.json'].content === 'string') {
-    const catalog = injectProductCatalogImages(next['products.json'].content, { brief });
+  if (typeof next['products.json']?.content === 'string') {
+    const catalog = proxyRemoteCatalogImages(next['products.json'].content);
     if (catalog.changed) {
       next['products.json'] = { ...next['products.json'], content: catalog.text };
       changed = true;
     }
-  } else if (htmlPath && next[htmlPath]?.content) {
-    const brand = String(next[htmlPath].content).match(/<title>([^<]{2,80})<\/title>/i)?.[1]
-      || String(next[htmlPath].content).match(/<h1[^>]*>([^<]{2,80})<\/h1>/i)?.[1]
-      || 'Collection';
-    next['products.json'] = {
-      content: scaffoldShopCatalogJson({ brief, brand }),
-      language: 'json',
-    };
-    changed = true;
   }
   return { vfs: next, changed };
 }
@@ -377,40 +366,10 @@ export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
 export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
   const brief = String(options?.brief || '');
-  let seed = { ...(vfs || {}) };
-  let seededHtml = false;
-  // SVG-only merchandise dumps are not a shop. Seed a real HTML desk when the job
-  // requires product photos and there is no runnable HTML page yet.
-  if (jobNeedsProductPhotos(job) && !pickPreviewEntryPath(seed)) {
-    const purpose = String(job?.purpose || '').trim();
-    const hay = `${brief}\n${purpose}\n${Object.keys(seed).join('\n')}`;
-    const ampBrand = hay.match(/\b([A-Za-z][\w']*\s*&\s*[A-Za-z][\w']*)(?:\s+Kids)?\b/i);
-    const gluedBrand = hay.match(/fox\s*[_&-]?\s*wolf/i);
-    let title = '';
-    if (ampBrand) {
-      title = `${ampBrand[1].replace(/\s+/g, ' ').trim()}${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
-    } else if (gluedBrand) {
-      title = `Fox & Wolf${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
-    } else if (purpose && !/^a\s+shop\b/i.test(purpose)) {
-      title = purpose;
-    } else {
-      title = 'Shop';
-    }
-    seed = {
-      ...seed,
-      'index.html': {
-        content: (
-          `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
-          + `<title>${title}</title></head><body>`
-          + `<header><nav>Shop</nav><h1>${title}</h1></header>`
-          + `<main class="product-catalog" data-quantora-shop-catalog="true" style="min-height:60vh;background:#fff;padding:24px"></main>`
-          + `<footer>${title}</footer></body></html>`
-        ),
-        language: 'html',
-      },
-    };
-    seededHtml = true;
-  }
+  const seed = { ...(vfs || {}) };
+  // Never seed a fabricated storefront. If the model shipped no runnable HTML,
+  // the desk stays honest (empty) rather than inventing a "Shop" page.
+  const seededHtml = false;
   if (!vfsLooksLikeShop(seed, job)) return purgeStaleShopArtifacts(seed, job);
   const withPhotos = ensureShopPhotosInVfs(seed, job, { brief });
   if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;

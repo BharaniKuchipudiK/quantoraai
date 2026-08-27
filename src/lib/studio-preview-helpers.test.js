@@ -197,14 +197,18 @@ test('a healed HTML page writes into index.html and does not overwrite React sou
   assert.match(next.vfs['App.jsx'].content, /Old/);
 });
 
-test('healing a boutique writes real photos, not gold frames', () => {
+test('healing a boutique with no product images does NOT fabricate stock photos (honest gap)', () => {
   const vfs = {
     'index.html': { content: '<!DOCTYPE html><html><body><p>old</p></body></html>', language: 'html' },
     'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
   };
   const healed = '<!DOCTYPE html><html><body><main><div class="hero">Kanjeevaram</div></main></body></html>';
   const next = writeHealedPreviewToVfs(vfs, healed);
-  assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
+  // The model shipped no images. We never inject fabricated stock photos to mask
+  // that: the healed page keeps the model's real content, honest gap and all.
+  assert.match(next.vfs['index.html'].content, /Kanjeevaram/);
+  assert.doesNotMatch(next.vfs['index.html'].content, /picsum\.photos/);
+  assert.doesNotMatch(next.vfs['index.html'].content, /data-quantora-shop-photo="true"/);
 });
 
 test('broken-photo asks are not treated as semantic catalog edits', () => {
@@ -214,7 +218,7 @@ test('broken-photo asks are not treated as semantic catalog edits', () => {
   assert.equal(userAskedForBrokenPreviewPhotos('replace photos with blue dresses'), false);
 });
 
-test('a chat that only talks still gets shop photos when the desk already has a boutique', () => {
+test('a talk-only turn never fabricates stock photos onto a boutique desk', () => {
   assert.equal(userAskedForPreviewPhotos('no images .. please fix'), true);
   const before = {
     'index.html': {
@@ -224,11 +228,11 @@ test('a chat that only talks still gets shop photos when the desk already has a 
     'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
   };
   const next = ensureShopPhotosInVfs(before);
-  assert.equal(next.changed, true);
-  // Injected HTML photos are real proxied photographs (with the svg only as an
-  // onerror guard); the catalog JSON is upgraded to real proxied photos too.
-  assert.match(next.vfs['index.html'].content, /src="\/api\/preview-image\?u=/);
-  assert.match(next.vfs['products.json'].content, /\/api\/preview-image\?u=/);
+  // The model shipped no image FILES to wire in, so nothing changes — and we
+  // never inject picsum stock photos or a fabricated catalog to fill the gap.
+  assert.equal(next.changed, false);
+  assert.doesNotMatch(next.vfs['index.html'].content, /picsum\.photos/);
+  assert.doesNotMatch(next.vfs['products.json'].content, /picsum\.photos/);
 });
 
 test('currency and Add to Cart land on the boutique desk, not only in chat', () => {
