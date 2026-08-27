@@ -6,6 +6,7 @@ import Footer from './components/Footer';
 import { createJourneyNode } from './lib/build-journey';
 import {
   homeHrefForTab,
+  hasOAuthReturnPending,
   isIsolatedStudioPath,
   isolatedStudioHref,
   stashAfterAuthStudio,
@@ -13,8 +14,10 @@ import {
   tabFromLocation,
   takeAfterAuthStudio,
   takeStudioPrefill,
+  clearOAuthReturnPending,
 } from './lib/studio-isolation.js';
 import AuthModal from './components/AuthModal';
+import { authModalOverlayStyle } from './lib/auth-modal-styles.js';
 
 /*
  * The heavy surfaces load on demand.
@@ -153,6 +156,12 @@ export default function App() {
   }, [themeMode]);
 
   const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+  const [authFinishing, setAuthFinishing] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'success') return true;
+    return hasOAuthReturnPending();
+  });
   const [loginError, setLoginError] = useState('');
   const buildGoogleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
   const [authProviders, setAuthProviders] = useState({
@@ -177,15 +186,32 @@ export default function App() {
       ? new URLSearchParams(window.location.search).get('next')
       : '';
     const resumeStudio = takeAfterAuthStudio();
+    clearOAuthReturnPending();
     setUser(newUser);
     setShowAuthModal(false);
+    setAuthFinishing(false);
     clearAuthQueryParams();
     if (next === isolatedStudioHref() || resumeStudio) {
+      setAuthFinishing(true);
       window.location.assign(isolatedStudioHref());
       return;
     }
     setActiveTab('hub');
   }, [clearAuthQueryParams]);
+
+  const mapSessionUser = useCallback((data) => {
+    if (!data?.user) return null;
+    return {
+      name: data.user.name || 'Creator',
+      email: data.user.email,
+      avatar: data.user.picture
+        || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
+      authProvider: data.user.authProvider || 'Signed in',
+      tier: 'Indie Creator ($0 / mo)',
+      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      isAdmin: data.user.isAdmin === true,
+    };
+  }, []);
 
   /*
    * Restore an existing session by asking the server, not by trusting a cached
@@ -231,60 +257,55 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/session', { credentials: 'same-origin' })
-      .then((res) => (res.ok ? res.json() : { user: null }))
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.user) {
-          setUser({
-            name: data.user.name || 'Creator',
-            email: data.user.email,
-            avatar: data.user.picture
-              || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
-            authProvider: data.user.authProvider || 'Signed in',
-            tier: 'Indie Creator ($0 / mo)',
-            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-            isAdmin: data.user.isAdmin === true,
-          });
-        } else {
-          // No valid server session — clear any leftover local profile.
-          try { localStorage.removeItem('quantora_user'); } catch (e) {}
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setSessionReady(true);
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    const authResult = params.get('auth');
-    if (authResult === 'success') {
-      fetch('/api/auth/session', { credentials: 'same-origin' })
-        .then((res) => (res.ok ? res.json() : { user: null }))
-        .then((data) => {
-          if (!data?.user) return;
-          finishAuth({
-            name: data.user.name || 'Creator',
-            email: data.user.email,
-            avatar: data.user.picture
-              || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
-            authProvider: 'GitHub',
-            tier: 'Indie Creator ($0 / mo)',
-            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-            isAdmin: data.user.isAdmin === true,
-          });
-        })
-        .catch(() => {});
-    } else if (authResult === 'error') {
+    const oauthReturn = params.get('auth') === 'success';
+    const oauthError = params.get('auth') === 'error';
+
+    if (oauthReturn) {
+      setAuthFinishing(true);
+      setShowAuthModal(false);
+      clearOAuthReturnPending();
+      clearAuthQueryParams();
+    } else if (oauthError) {
+      clearOAuthReturnPending();
       setLoginError(decodeURIComponent(params.get('message') || 'Sign-in failed.'));
       setShowAuthModal(true);
       clearAuthQueryParams();
     }
-  }, [finishAuth, clearAuthQueryParams]);
+
+    fetch('/api/auth/session', { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : { user: null }))
+      .then((data) => {
+        if (cancelled) return;
+        const mapped = mapSessionUser(data);
+        if (mapped) {
+          if (oauthReturn) {
+            finishAuth(mapped);
+            return;
+          }
+          setUser(mapped);
+          return;
+        }
+        if (oauthReturn) {
+          setLoginError('GitHub sign-in could not be completed. Try again.');
+          setShowAuthModal(true);
+          setAuthFinishing(false);
+          return;
+        }
+        try { localStorage.removeItem('quantora_user'); } catch (e) {}
+      })
+      .catch(() => {
+        if (!cancelled && oauthReturn) {
+          setLoginError('GitHub sign-in could not be completed. Try again.');
+          setShowAuthModal(true);
+          setAuthFinishing(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [clearAuthQueryParams, finishAuth, mapSessionUser]);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
@@ -619,6 +640,21 @@ export default function App() {
             </React.Suspense>
           </main>
         </>
+      )}
+
+      {/* Signing-in overlay — GitHub return and Google verify */}
+      {(authFinishing || isVerifyingLogin) && (
+        <div
+          data-quantora-auth-modal="true"
+          style={authModalOverlayStyle()}
+          role="status"
+          aria-live="polite"
+          aria-label="Signing in"
+        >
+          <p style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>
+            Signing you in…
+          </p>
+        </div>
       )}
 
       {/* Google OAuth Modal — isolated so landing filters cannot hide the iframe */}
