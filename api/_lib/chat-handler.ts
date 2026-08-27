@@ -16,7 +16,7 @@ import { repairArtifact } from "./repair.js";
 import { verifyBuild } from "./verify-build.js";
 import { evaluateSafetyText } from "./safety-policy.js";
 import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-store.js";
-import { DIRECT_MODELS, CURATED_MODELS } from "./model-catalog.js";
+import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
@@ -30,6 +30,8 @@ import {
 import {
   canonicalizeModelId,
   inferenceAttemptBudgetMs,
+  MIN_VIABLE_BUILD_ATTEMPT_MS,
+  maxViableBuildAttempts,
   planInferenceRoutes,
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
@@ -80,10 +82,9 @@ const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 const FEATURED_SERVER_MODELS = new Set([
   "gemini-flash-latest",
-  // Paid flagship coder: the escalation target for builds that a free/cheap model
-  // truncates. Only reached when allowPaid (a usable OpenRouter key) is present and
-  // the turn escalates; simple builds stay on free Gemini.
-  "anthropic/claude-3.5-sonnet",
+  // Anthropic flagships are NOT listed here: the id moves, and a stale one is a
+  // route that 404s at the provider. They are discovered from the live catalogue
+  // and approved in isApprovedServerModel below.
   "nvidia/nemotron-3-super-120b-a12b:free",
   "nvidia/nemotron-3-super:free",
   "openai/gpt-oss-120b:free",
@@ -110,8 +111,6 @@ const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
   "gpt-4o": "openai/gpt-4o",
   "gpt-4o-mini": "openai/gpt-4o-mini",
   "gpt-4": "openai/gpt-4o",
-  "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
-  "claude-3-5-sonnet": "anthropic/claude-3.5-sonnet",
   "deepseek-coder-v2": "deepseek/deepseek-chat",
   "deepseek-coder": "deepseek/deepseek-chat",
   "deepseek-chat": "deepseek/deepseek-chat",
@@ -129,6 +128,13 @@ async function isApprovedServerModel(modelId: string): Promise<boolean> {
   const canonical = canonicalizeModelId(modelId);
   if (canonical.startsWith("gemini") || modelId.startsWith("gemini")) return true;
   if (FEATURED_SERVER_MODELS.has(canonical) || FEATURED_SERVER_MODELS.has(modelId)) return true;
+  // A flagship the live OpenRouter catalogue lists is approved for managed use:
+  // it is a vendor-published paid model, not an unvetted community candidate.
+  // Checked here (not at the call sites) so Auto and an explicit pick agree.
+  try {
+    const flagships = discoverAnthropicFlagships(await fetchOpenRouterCatalogCached());
+    if (flagships.some((model: any) => model.id === canonical || model.id === modelId)) return true;
+  } catch { /* catalogue unavailable — fall through to the registry check */ }
   const rows = await readModelRegistryCached();
   return rows.some((row: any) => (row?.id === canonical || row?.id === modelId) && row?.approved === true && row?.lifecycle === "available");
 }
@@ -581,10 +587,16 @@ export default async function handler(req: any, res: any) {
         ? readProjectContext(activeSessionUser.sub, projectId)
         : Promise.resolve(null),
     ]);
-    const [registryModels, qualitySummaryRows] = await Promise.all([
+    const [registryModels, qualitySummaryRows, liveCatalog] = await Promise.all([
       readModelRegistryCached(),
       readModelQualitySummaryCached().catch(() => []),
+      // Only worth a catalogue read when a paid route is actually reachable.
+      effectiveOpenRouterKey ? fetchOpenRouterCatalogCached().catch(() => null) : Promise.resolve(null),
     ]);
+    // The flagship coder is READ from the live catalogue, never named in code:
+    // a hardcoded model id goes stale, 404s on OpenRouter, and the turn silently
+    // falls back to a cheap coder that truncates the build.
+    const discoveredFlagships = discoverAnthropicFlagships(liveCatalog);
     const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
       ? {
           probeFailure: req.body.qualityHints.probeFailure === true,
@@ -600,6 +612,7 @@ export default async function handler(req: any, res: any) {
       registryRows: registryModels,
       featuredModels: [
         ...DIRECT_MODELS,
+        ...discoveredFlagships,
         ...CURATED_MODELS.map((model) => ({
           ...model,
           available: true,
@@ -785,6 +798,14 @@ export default async function handler(req: any, res: any) {
       finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
     }
 
+    // A build rung too short to finish a multi-file page cannot succeed — it only
+    // spends wall-clock the earlier rungs needed. Keep the ladder to the rungs
+    // this turn's budget can actually fund at build size.
+    if (effectiveBuildMode && attempts.length > 1) {
+      const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS));
+      if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
+    }
+
     if (!attempts.length) {
       return res.status(503).json({
         error: wantTravelTools
@@ -858,7 +879,11 @@ export default async function handler(req: any, res: any) {
         }
         const attemptStartedAt = Date.now();
         const attemptBudgetMs = effectiveBuildMode
-          ? inferenceAttemptBudgetMs(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS), attempts.length - index)
+          ? inferenceAttemptBudgetMs(
+              remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS),
+              attempts.length - index,
+              { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS },
+            )
           : remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS);
         traceBoundary({
           correlationId,

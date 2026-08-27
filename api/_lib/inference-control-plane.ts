@@ -68,6 +68,28 @@ const MAX_INFERENCE_ATTEMPTS = 4;
 const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
 /* An attempt below this has no realistic chance of producing a build. */
 const MIN_VIABLE_ATTEMPT_MS = 20_000;
+/*
+ * A multi-file build (a page plus its catalogue, styles and scripts) does not
+ * come back in 20s on any model. Splitting a 120s turn across four rungs handed
+ * out 60s/20s/20s/20s: the primary was cut off mid-file and the three rungs
+ * behind it could not finish either, so the whole budget was spent producing
+ * truncated output and the turn ended at the client's deadline. Every heavy
+ * build failed the same way, for arithmetic reasons rather than model quality.
+ *
+ * So a BUILD turn plans only as many rungs as the budget can actually fund at a
+ * build-viable size. Fewer, real attempts beat four doomed ones.
+ */
+export const MIN_VIABLE_BUILD_ATTEMPT_MS = 45_000;
+
+/** How many build rungs the remaining wall-clock can fund at a viable size. */
+export function maxViableBuildAttempts(
+  totalBudgetMs: number,
+  minAttemptMs: number = MIN_VIABLE_BUILD_ATTEMPT_MS,
+) {
+  const budget = Math.max(0, Math.floor(totalBudgetMs));
+  const floorMs = Math.max(1, Math.floor(minAttemptMs));
+  return Math.max(1, Math.floor(budget / floorMs));
+}
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
 
 const MODEL_ID_ALIASES: Record<string, string> = {
@@ -88,9 +110,14 @@ export function canonicalizeModelId(modelId: string): string {
  * A build route cannot consume the entire turn before an independent fallback
  * gets a chance. The final attempt receives whatever remains.
  */
-export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemaining: number) {
+export function inferenceAttemptBudgetMs(
+  totalRemainingMs: number,
+  attemptsRemaining: number,
+  { minAttemptMs = MIN_VIABLE_ATTEMPT_MS }: { minAttemptMs?: number } = {},
+) {
   const remaining = Math.max(0, Math.floor(totalRemainingMs));
   if (attemptsRemaining <= 1) return remaining;
+  const MIN_VIABLE_ATTEMPT_MS = Math.max(1, Math.floor(minAttemptMs));
   /*
    * Reserve a viable minimum for EACH remaining attempt, not a fixed amount for
    * one. The old fixed reserve left the tail of a four-rung ladder with 15s and

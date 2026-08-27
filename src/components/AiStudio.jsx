@@ -1,5 +1,4 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
-import { countRealPreviewPhotos } from '../lib/preview-images.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
@@ -1341,11 +1340,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         && !patched.rejected
         && !userAskedForSemanticPhotoEdit(textToSend)
       ) {
-        const html = pickPreviewEntry(patched.vfs) || '';
-        const photoCount = countRealPreviewPhotos(html);
-        const brokenPhotoAsk = userAskedForBrokenPreviewPhotos(textToSend);
-        const canShortCircuit = patched.changed || (brokenPhotoAsk && photoCount > 0);
-        if (canShortCircuit) {
+        // Short-circuit ONLY when the deterministic patch actually changed the
+        // desk. It used to also fire on "the images are broken" whenever the HTML
+        // still contained <img> tags — but countRealPreviewPhotos counts TAGS, not
+        // whether they decode. A page full of <img> elements that all fail to load
+        // therefore answered "already has loadable product photos" and returned
+        // WITHOUT EVER CALLING THE MODEL, so every follow-up replayed the same
+        // canned line and the user could never reach the AI to get it fixed.
+        // When we changed nothing we have nothing to report: fall through to the
+        // model so a real repair can happen.
+        if (patched.changed) {
           const trimmed = String(textToSend || '').trim();
           if (!overrideText) setInputText('');
           updateActiveMessages((prev) => [
@@ -1354,9 +1358,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             {
               id: Date.now() + 1,
               sender: 'ai',
-              text: patched.changed
-                ? 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.'
-                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old Unsplash URLs are still cached in the iframe.',
+              text: 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.',
             },
           ]);
           setAttachments([]);
