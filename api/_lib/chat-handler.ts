@@ -16,7 +16,7 @@ import { repairArtifact } from "./repair.js";
 import { verifyBuild } from "./verify-build.js";
 import { evaluateSafetyText } from "./safety-policy.js";
 import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-store.js";
-import { DIRECT_MODELS, CURATED_MODELS } from "./model-catalog.js";
+import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
@@ -129,6 +129,13 @@ async function isApprovedServerModel(modelId: string): Promise<boolean> {
   const canonical = canonicalizeModelId(modelId);
   if (canonical.startsWith("gemini") || modelId.startsWith("gemini")) return true;
   if (FEATURED_SERVER_MODELS.has(canonical) || FEATURED_SERVER_MODELS.has(modelId)) return true;
+  // A flagship the live OpenRouter catalogue lists is approved for managed use:
+  // it is a vendor-published paid model, not an unvetted community candidate.
+  // Checked here (not at the call sites) so Auto and an explicit pick agree.
+  try {
+    const flagships = discoverAnthropicFlagships(await fetchOpenRouterCatalogCached());
+    if (flagships.some((model: any) => model.id === canonical || model.id === modelId)) return true;
+  } catch { /* catalogue unavailable — fall through to the registry check */ }
   const rows = await readModelRegistryCached();
   return rows.some((row: any) => (row?.id === canonical || row?.id === modelId) && row?.approved === true && row?.lifecycle === "available");
 }
@@ -581,10 +588,16 @@ export default async function handler(req: any, res: any) {
         ? readProjectContext(activeSessionUser.sub, projectId)
         : Promise.resolve(null),
     ]);
-    const [registryModels, qualitySummaryRows] = await Promise.all([
+    const [registryModels, qualitySummaryRows, liveCatalog] = await Promise.all([
       readModelRegistryCached(),
       readModelQualitySummaryCached().catch(() => []),
+      // Only worth a catalogue read when a paid route is actually reachable.
+      effectiveOpenRouterKey ? fetchOpenRouterCatalogCached().catch(() => null) : Promise.resolve(null),
     ]);
+    // The flagship coder is READ from the live catalogue, never named in code:
+    // a hardcoded model id goes stale, 404s on OpenRouter, and the turn silently
+    // falls back to a cheap coder that truncates the build.
+    const discoveredFlagships = discoverAnthropicFlagships(liveCatalog);
     const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
       ? {
           probeFailure: req.body.qualityHints.probeFailure === true,
@@ -600,6 +613,7 @@ export default async function handler(req: any, res: any) {
       registryRows: registryModels,
       featuredModels: [
         ...DIRECT_MODELS,
+        ...discoveredFlagships,
         ...CURATED_MODELS.map((model) => ({
           ...model,
           available: true,

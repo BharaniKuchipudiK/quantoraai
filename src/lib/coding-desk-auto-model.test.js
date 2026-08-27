@@ -146,7 +146,7 @@ test('a paid FLAGSHIP is preferred over a cheap "coder" specialist when escalati
   const withFlagship = [
     { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
     { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', available: true, pricingKind: 'paid', specialty: 'Code Synthesis' },
-    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', available: true, pricingKind: 'paid', specialty: 'Flagship coder' },
+    { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', available: true, pricingKind: 'paid', specialty: 'Flagship coder' },
   ];
   const choice = resolveCodingDeskModel({
     task: 'coding',
@@ -154,7 +154,7 @@ test('a paid FLAGSHIP is preferred over a cheap "coder" specialist when escalati
     availableModels: withFlagship,
     allowPaid: true,
   });
-  assert.equal(choice.modelId, 'anthropic/claude-3.5-sonnet');
+  assert.equal(choice.modelId, 'anthropic/claude-sonnet-5');
   assert.equal(choice.escalated, true);
 });
 

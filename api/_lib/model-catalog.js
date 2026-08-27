@@ -4,15 +4,6 @@ const FETCH_TIMEOUT_MS = 4_000;
 
 export const CURATED_MODELS = [
   {
-    id: 'anthropic/claude-3.5-sonnet',
-    name: 'Claude 3.5 Sonnet',
-    provider: 'Anthropic',
-    description: 'Paid flagship coder. Writes complete, non-truncated builds — the escalation target when a turn needs a model that finishes.',
-    contextWindow: '200k',
-    tag: 'CODING',
-    icon: 'brain',
-  },
-  {
     id: 'google/gemini-2.5-flash',
     name: 'Gemini 2.5 Flash',
     provider: 'Google',
@@ -83,6 +74,57 @@ export const DIRECT_MODELS = [
     icon: 'cpu',
   },
 ];
+
+/**
+ * Discover the paid flagship coders that OpenRouter ACTUALLY lists right now.
+ *
+ * A hardcoded slug is how the Coding Desk ended up routing to a model id that
+ * no longer exists: the router picked it, OpenRouter 404'd the unknown id, and
+ * the turn silently fell back to a cheap coder that truncates. Model ids move
+ * (claude-3.5-sonnet -> claude-sonnet-4.x -> claude-sonnet-5 ...), so the
+ * flagship is READ from the live catalogue instead of named in code.
+ *
+ * Ranked newest-first: on this vendor the newer Sonnet/Opus is the stronger
+ * coder, and "newest listed" keeps working after the next rename with no edit.
+ * Haiku-tier is excluded — it carries the vendor name without the completion
+ * reliability that makes a flagship worth escalating to.
+ */
+export function discoverAnthropicFlagships(catalog, { limit = 3 } = {}) {
+  if (!catalog) return [];
+  const rows = [];
+  for (const model of catalog.values()) {
+    const id = String(model?.id || '');
+    if (!/^anthropic\//i.test(id)) continue;
+    if (!/sonnet|opus/i.test(id)) continue;
+    if (isFreeModel(model)) continue;
+    rows.push(model);
+  }
+  rows.sort((left, right) => (Number(right?.created) || 0) - (Number(left?.created) || 0));
+  return rows.slice(0, limit).map((model) => ({
+    id: model.id,
+    name: model.name || model.id,
+    provider: 'Anthropic',
+    description: model.description
+      || 'Paid flagship coder discovered from the live OpenRouter catalogue. Writes complete, non-truncated builds.',
+    contextWindow: formatContext(model.context_length),
+    pricingKind: 'paid',
+    tag: 'CODING',
+    icon: 'brain',
+    available: true,
+  }));
+}
+
+const CATALOG_TTL_MS = 10 * 60 * 1000;
+let catalogCache = { at: 0, value: null };
+
+/** Catalogue read on the chat path: cached so a build turn adds no per-request fetch. */
+export async function fetchOpenRouterCatalogCached() {
+  const now = Date.now();
+  if (catalogCache.value && now - catalogCache.at < CATALOG_TTL_MS) return catalogCache.value;
+  const fresh = await fetchOpenRouterCatalog();
+  if (fresh) catalogCache = { at: now, value: fresh };
+  return fresh || catalogCache.value;
+}
 
 export async function fetchOpenRouterCatalog() {
   const controller = new AbortController();
