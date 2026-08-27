@@ -80,10 +80,9 @@ const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 const FEATURED_SERVER_MODELS = new Set([
   "gemini-flash-latest",
-  // Paid flagship coder: the escalation target for builds that a free/cheap model
-  // truncates. Only reached when allowPaid (a usable OpenRouter key) is present and
-  // the turn escalates; simple builds stay on free Gemini.
-  "anthropic/claude-3.5-sonnet",
+  // Anthropic flagships are NOT listed here: the id moves, and a stale one is a
+  // route that 404s at the provider. They are discovered from the live catalogue
+  // and approved in isApprovedServerModel below.
   "nvidia/nemotron-3-super-120b-a12b:free",
   "nvidia/nemotron-3-super:free",
   "openai/gpt-oss-120b:free",
@@ -110,8 +109,6 @@ const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
   "gpt-4o": "openai/gpt-4o",
   "gpt-4o-mini": "openai/gpt-4o-mini",
   "gpt-4": "openai/gpt-4o",
-  "claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
-  "claude-3-5-sonnet": "anthropic/claude-3.5-sonnet",
   "deepseek-coder-v2": "deepseek/deepseek-chat",
   "deepseek-coder": "deepseek/deepseek-chat",
   "deepseek-chat": "deepseek/deepseek-chat",
