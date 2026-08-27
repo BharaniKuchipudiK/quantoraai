@@ -73,6 +73,20 @@ export function modelAttemptsForTurn(input: {
   return attempts;
 }
 
+/**
+ * The provider REJECTED the credential (401/403) or refused it for billing (402).
+ * This is not a transient condition: every retry fails identically until a human
+ * changes the key. Telling the user to "retry in a moment" turned a one-line
+ * configuration fault into days of diagnosis, so it is classified separately and
+ * said out loud.
+ */
+export function isProviderCredentialRejection(error: unknown) {
+  const status = Number((error as any)?.status || 0);
+  if ([401, 402, 403].includes(status)) return true;
+  const message = String((error as any)?.message || error || '');
+  return /\b(invalid api key|no auth credentials|unauthorized|authentication fail|invalid_api_key|user not found)\b/i.test(message);
+}
+
 export function shouldFallbackBeforeStreaming(error: unknown, context?: FallbackContext) {
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);

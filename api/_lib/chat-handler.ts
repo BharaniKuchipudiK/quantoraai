@@ -21,7 +21,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import { isProviderCredentialRejection, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -1531,6 +1531,8 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
+    // An auth/billing rejection must never be reported as "retry in a moment".
+    const credentialRejected = isProviderCredentialRejection(err);
     const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
     const publicError = artifactContractFailure
       ? (err?.detailCode === 'browser-preview-missing'
@@ -1538,6 +1540,8 @@ export default async function handler(req: any, res: any) {
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
         : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+      : credentialRejected
+      ? "The AI provider rejected the configured API key, so no model could run. This is a credential problem, not a temporary one — retrying will fail the same way. Check the key in the server environment (or paste your own under Privacy Vault → Session-only provider keys); a key that shows \"Last Used: Never\" on the provider dashboard has never been accepted."
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";
