@@ -585,16 +585,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
   }, [vfs, deskJob]);
 
-  useEffect(() => {
-    if (!vfsLooksLikeShop(vfs, deskJob)) return;
-    const brief = [...messages].reverse().find((m) => m?.sender === 'user' && m.text)?.text || '';
-    const next = ensureShopDeskInVfs(vfs, deskJob, { brief });
-    if (!next.changed) return;
-    setDeskReview(diffVfsReview(vfs, next.vfs));
-    setVfs(next.vfs);
-    const code = pickPreviewEntry(next.vfs);
-    if (code) setWorkspaceCode(code);
-  }, [vfs, deskJob, messages]);
+  // The desk shows exactly what the model built. It is never reactively mutated
+  // to inject fabricated products or stock photos (the old "instant fake shop").
 
   useEffect(() => {
     const onResize = () => setSplitMobile(isStudioSplitMobile(window.innerWidth));

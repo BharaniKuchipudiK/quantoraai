@@ -4,9 +4,6 @@ import { sanitizePartnerBuildStatus } from './partner-build-status.js';
 import { pickPreviewEntryPath } from './preview-utils.js';
 import { ensureShopDeskInVfs } from './studio-preview-helpers.js';
 import { buildStudioJobCard } from './studio-job-card.js';
-import { countRealPreviewPhotos } from './preview-images.js';
-import { previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
-import { SHOP_INTAKE_CATALOG_SIZE } from './shop-catalog-scale.js';
 
 test('sanitize replaces Building 75 unique… after intake accept', () => {
   const next = sanitizePartnerBuildStatus(
@@ -26,15 +23,14 @@ test('pickPreviewEntryPath keeps App.tsx and rejects SVG-only trees', () => {
   }), null);
 });
 
-test('SVG-only shop job seeds HTML with real photos and cart', () => {
+test('an SVG-only dump is NOT fabricated into a storefront', () => {
   const job = buildStudioJobCard({
     brief: 'Build a Fox & Wolf kids merchandise shop with 100 unique design images',
   });
   const result = ensureShopDeskInVfs({
     'foxwolf_explorer_backpack.svg': { content: '<svg width="40"></svg>', language: 'svg' },
   }, job, { brief: 'Build the shop now with about 10 working catalog photos (not 100 unique AI mockups).' });
-  assert.ok(result.vfs['index.html']?.content);
-  assert.match(result.vfs['index.html'].content, /Fox|Shop|merchandise|catalog/i);
-  assert.ok(countRealPreviewPhotos(result.vfs['index.html'].content) >= SHOP_INTAKE_CATALOG_SIZE);
-  assert.ok(previewHtmlHasAddToCartControl(result.vfs['index.html'].content));
+  // The model shipped no runnable HTML page. We never fabricate a storefront +
+  // stock photos to fake completeness — the desk stays honest.
+  assert.equal(result.vfs['index.html'], undefined);
 });

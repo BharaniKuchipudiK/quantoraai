@@ -10,7 +10,7 @@ import {
 
 const FOX = 'Build a full Fox & Wolf kids merchandise shop website with 100 unique design images, product pages, and checkout.';
 
-test('Start with 10 plan proves with skills — photos + cart + html', () => {
+test('Start with 10 on an EMPTY desk fails proof honestly — never fabricates a shop to pass', () => {
   const plan = planCodingTurn({
     message: 'start with 10',
     priorUserMessages: [FOX],
@@ -27,15 +27,14 @@ test('Start with 10 plan proves with skills — photos + cart + html', () => {
     allowRepair: true,
   });
 
-  assert.equal(verdict.ok, true, verdict.detail);
-  assert.equal(verdict.status, 'pass');
-  assert.ok(verdict.evidence.hasHtml, 'must have HTML');
-  assert.ok(verdict.evidence.photos >= 10, `need ≥10 photos, got ${verdict.evidence.photos}`);
-  assert.equal(verdict.evidence.hasCart, true);
-  assert.equal(codingTurnMayClaimSuccess(verdict), true);
+  // The model shipped nothing. Proof must REFUSE to claim success — it never
+  // injects a fabricated catalog + stock photos to force a green verdict.
+  assert.equal(verdict.ok, false);
+  assert.equal(codingTurnMayClaimSuccess(verdict), false);
+  assert.ok(verdict.gaps.length > 0, 'must report the honest gaps');
 });
 
-test('SVG-only shop VFS fails proof then repairs to pass', () => {
+test('a shop referencing image files it never shipped fails proof honestly (no loadable photos)', () => {
   const plan = planCodingTurn({
     message: 'start with 10',
     priorUserMessages: [FOX],
@@ -51,18 +50,18 @@ test('SVG-only shop VFS fails proof then repairs to pass', () => {
       language: 'html',
     },
   };
-  // First evaluation without repair path via evaluate
   const before = evaluateProofEvidence(plan, { vfs: svgOnly });
-  // SVG relative may or may not count as real — proveCodingTurn must end pass after skills
+  // The referenced fox_*.svg files are not in the VFS, so they are not loadable
+  // photos. Proof reports the honest gap instead of injecting stock photos to
+  // manufacture a pass.
   const verdict = proveCodingTurn({
     plan,
     vfs: svgOnly,
     brief: plan.messageForModel,
     allowRepair: true,
   });
-  assert.equal(verdict.ok, true, `after repair: ${verdict.detail} gaps=${verdict.gaps}`);
-  assert.ok(verdict.evidence.photos >= 10);
-  assert.equal(verdict.evidence.hasCart, true);
+  assert.equal(verdict.ok, false, `gaps=${verdict.gaps}`);
+  assert.ok(verdict.evidence.photos < 10);
   void before;
 });
 
