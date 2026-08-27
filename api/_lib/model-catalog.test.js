@@ -95,3 +95,22 @@ test('no Anthropic model id is hardcoded in the curated catalogue', () => {
   // lived. Anthropic routes are discovered at runtime instead.
   assert.ok(!CURATED_MODELS.some((model) => /anthropic|claude/i.test(model.id)));
 });
+
+test('the picker surfaces a discovered flagship, not only the Auto router', () => {
+  // The router could reach Claude on Auto while the picker never listed it,
+  // because /api/models built its list from DIRECT_MODELS + CURATED_MODELS only
+  // and Anthropic ids are deliberately not in CURATED_MODELS. Both paths must
+  // read the same live source or the model is selectable by the platform and
+  // invisible to the user.
+  const sec = (iso) => Math.floor(new Date(iso).getTime() / 1000);
+  const catalog = new Map([
+    ['anthropic/claude-sonnet-5', { id: 'anthropic/claude-sonnet-5', name: 'Anthropic: Claude Sonnet 5', context_length: 1000000, created: sec('2026-07-01'), pricing: { prompt: '0.000002', completion: '0.00001' } }],
+  ]);
+  const [flagship] = discoverAnthropicFlagships(catalog);
+  assert.equal(flagship.id, 'anthropic/claude-sonnet-5');
+  // Shape the picker relies on to render and enable a row.
+  assert.equal(flagship.available, true);
+  assert.equal(flagship.pricingKind, 'paid');
+  assert.ok(flagship.name);
+  assert.ok(flagship.contextWindow);
+});

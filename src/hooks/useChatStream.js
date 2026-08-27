@@ -20,7 +20,6 @@ import {
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
-import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
@@ -333,23 +332,39 @@ export function useChatStream({
     setIsGenerating(true);
 
     try {
-      const modRes = await fetch('/api/moderate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text.trim() })
-      });
+      /*
+       * Sending an attachment with no typed text is allowed (the send button
+       * enables on attachments alone), but /api/moderate rejects an empty prompt
+       * with 400. Every non-ok status mapped to the same "try again in a moment"
+       * copy, so attaching a screenshot and pressing send failed permanently and
+       * blamed a transient outage. Screen a text-only prompt; with no text there
+       * is nothing for the text classifier to read.
+       */
+      const promptToScreen = text.trim();
+      const modRes = promptToScreen
+        ? await fetch('/api/moderate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: promptToScreen })
+          })
+        : null;
       if (!stillCurrent()) return;
-      if (!modRes.ok) {
+      if (modRes && !modRes.ok) {
+        // 413 is deterministic (the prompt is too long) — retrying cannot clear
+        // it, so say that instead of implying the service is briefly down.
+        const tooLong = modRes.status === 413;
         updateActiveMessages(prev => [...prev, {
           id: createMessageId('ai'),
           sender: 'ai',
-          text: '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
+          text: tooLong
+            ? '⚠️ **This message is too long to send.** Shorten it — or remove the attached page context — and try again.'
+            : '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
           isError: true
         }]);
         setIsGenerating(false);
         return;
       }
-      const modData = await modRes.json().catch(() => ({}));
+      const modData = modRes ? await modRes.json().catch(() => ({})) : {};
       if (!stillCurrent()) return;
       if (modData.flagged) {
         updateActiveMessages(prev => [...prev, {
@@ -618,8 +633,28 @@ export function useChatStream({
     }
 
     const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+    /*
+     * The server has accepted vision input all along (attachedImages: data-URI
+     * strings, max 4 - see the request normalizer); the client simply never sent
+     * them, so an attached screenshot was read, encoded, displayed in the
+     * composer, and then dropped. Forward them.
+     *
+     * An attachment-only send also has empty `text`, which /api/chat rejects with
+     * "Message string is required" - so skipping the moderation call alone just
+     * moved that dead end one hop. Give the turn a real instruction instead, and
+     * only when an image is actually attached and being delivered.
+     */
+    const attachedImages = (attachments || [])
+      .map((item) => item?.dataUrl)
+      .filter((url) => typeof url === 'string' && url.startsWith('data:image/'))
+      .slice(0, 4);
+    const messageForRequest = text.trim() || (attachedImages.length
+      ? 'I have attached an image. Describe what you see and help me with it.'
+      : text);
+
     const requestBodyFor = (model) => ({
-      message: text,
+      message: messageForRequest,
+      attachedImages,
       modelId: model.id,
       modelName: model.name,
       history: cleanMessages,
@@ -942,18 +977,16 @@ export function useChatStream({
           }
 
           if (streamedError) {
+            // A failed build is NOT rewritten into an authored dashboard. This
+            // branch used to substitute a hand-written HTML shell for the model's
+            // missing output, flip isError to false, and hand back a page whose
+            // "Run sample organize pass" button reported "12 files grouped, 3
+            // duplicates flagged" — counts invented in the template. The user was
+            // shown a working product built by nobody, told nothing had failed,
+            // and outcome metrics recorded a success. Fall through to the honest
+            // failure paths below instead. The flag is still read by those paths
+            // to word the real error.
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
-            if (artifactFailed && isCodingRequest && codingDeskOpen && !advisorBlocksPreviewBuild(turnDomain)) {
-              const scaffolded = buildCodingDeskScaffoldReply(visibleUserText);
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: scaffolded,
-                isError: false,
-                executionStatus: null,
-                deskScaffolded: true,
-              } : m));
-              return;
-            }
             if (isCodingRequest) {
               // Model route died mid-stream — still prove skills-seeded desk.
               if (turnPlan?.isCodingTurn) {
@@ -1130,20 +1163,8 @@ export function useChatStream({
               announceRecovery(recovery.notice);
               continue;
             }
-            // Shop / proof-plane turns never "succeed" via generic scaffold.
-            const scaffolded = !shopOwned && codingDeskOpen
-              ? buildCodingDeskScaffoldReply(visibleUserText)
-              : null;
-            if (scaffolded) {
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: scaffolded,
-                isError: false,
-                executionStatus: null,
-                deskScaffolded: true,
-              } : m));
-              return;
-            }
+            // No authored scaffold here either: a build that produced no files is
+            // reported as the failure it is, via resolveCodingTurnOutcome below.
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {

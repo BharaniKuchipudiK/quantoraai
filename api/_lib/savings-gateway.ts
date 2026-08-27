@@ -52,12 +52,18 @@ export async function handleSavingsGoal(req: any, res: any): Promise<boolean> {
   }
 
   if (intent.goal === null || intent.months === null || intent.monthly === null) {
-    sendStream(
-      res,
-      requestId,
-      "I can project a savings goal, but I need three things explicitly: the **target amount**, the **timeframe**, and how much you can **save each month** (a starting balance and expected return are optional) — for example: *“save $20,000 in 3 years, I have $2,000 now and can put away $400/month at 4%”*. I won't assume the numbers.",
-    );
-    return true;
+    /*
+     * The trigger is the bare word "save", so "how can I save on taxes?" and
+     * "should I save or invest?" match it. Consuming the turn here answered every
+     * one of them with the same demand for three numbers, streamed as the
+     * assistant, and the model was never called — the user could not escape it by
+     * rephrasing, because rephrasing still contains "save".
+     *
+     * The projection needs explicit numbers, so it correctly declines to run. But
+     * declining to RUN is not a reason to end the TURN: fall through to chat, which
+     * can answer the question or ask for the numbers conversationally.
+     */
+    return false;
   }
 
   const inputs = {

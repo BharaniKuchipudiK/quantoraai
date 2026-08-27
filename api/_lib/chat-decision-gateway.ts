@@ -173,11 +173,25 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
   if (!auth.ok) return true;
 
   if (!isUserContextStoreConfigured()) {
-    res.status(503).json({
-      error: "Quantora personal context is not configured on this deployment yet.",
-      requestId,
-    });
-    return true;
+    /*
+     * An explicit context command ("set liquid cash to SGD 3,000") is a WRITE the
+     * user asked for. Falling through would send it to ordinary chat, save
+     * nothing, and leave the model with no signal that persistence failed - so a
+     * later affordability answer could rely on a fact that was never stored.
+     * Commands keep the explicit failure.
+     *
+     * A conversational affordability question stores nothing either way, so
+     * ending the turn on it only produced a permanent "Request failed" in every
+     * workspace (this gateway is not domain-gated). That case falls through.
+     */
+    if (command) {
+      res.status(503).json({
+        error: "Quantora personal context is not configured on this deployment yet, so this could not be saved.",
+        requestId,
+      });
+      return true;
+    }
+    return false;
   }
 
   if (command) {
@@ -195,11 +209,14 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
   }
 
   if (!intent.currency || intent.proposedCost === null) {
-    sendStream(res, {
-      requestId,
-      text: "I can calculate that, but I need an **explicit currency and amount** — for example, `SGD 3,000`. I won't guess what a plain `$` means.",
-    });
-    return true;
+    /*
+     * The intent matches on "can I afford" alone and a bare "$" is deliberately
+     * not mapped to a currency, so "Can I afford to move to Berlin?" and
+     * "can I afford a $1,200 rent?" both landed here and were answered with the
+     * same demand for an ISO currency — permanently, since rephrasing keeps the
+     * trigger. Refusing to GUESS the currency is right; ending the turn is not.
+     */
+    return false;
   }
 
   const graph = await readUserContextGraph(auth.value.sessionUser!.sub);
