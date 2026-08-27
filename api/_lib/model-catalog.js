@@ -4,6 +4,15 @@ const FETCH_TIMEOUT_MS = 4_000;
 
 export const CURATED_MODELS = [
   {
+    id: 'anthropic/claude-3.5-sonnet',
+    name: 'Claude 3.5 Sonnet',
+    provider: 'Anthropic',
+    description: 'Paid flagship coder. Writes complete, non-truncated builds — the escalation target when a turn needs a model that finishes.',
+    contextWindow: '200k',
+    tag: 'CODING',
+    icon: 'brain',
+  },
+  {
     id: 'google/gemini-2.5-flash',
     name: 'Gemini 2.5 Flash',
     provider: 'Google',

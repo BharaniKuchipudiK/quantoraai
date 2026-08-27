@@ -126,6 +126,17 @@ function codingStrength(model, { allowPaid = false } = {}) {
   // Fail-safe — no trustworthy signal contributes 0 (see model-outcome-routing).
   score += outcomeRoutingAdjust(model.quality);
   if (allowPaid && !isFreeReady(model) && /coder|claude|sonnet|deepseek|qwen/.test(hay)) score += 10;
+  // A paid FLAGSHIP (Claude/GPT-4+/GPT-5 class) writes COMPLETE builds; a cheap
+  // "coder" specialist truncates. The literal word "coder" alone scores +48, so
+  // without this a weak coder outranks a flagship. When paid is allowed, give a
+  // genuine flagship the decisive edge — but never a mini/lite/haiku variant,
+  // which carries a flagship name without the completion reliability.
+  if (
+    allowPaid
+    && !isFreeReady(model)
+    && /claude|sonnet|opus|gpt-?4|gpt-?5/.test(hay)
+    && !/mini|nano|lite|haiku|flash|small|tiny|\b\d{1,2}b\b/.test(hay)
+  ) score += 40;
   if (!allowPaid && isFreeReady(model)) score += 4;
   return score;
 }
