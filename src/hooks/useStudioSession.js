@@ -102,6 +102,47 @@ function persistProjects(projects) {
   }
 }
 
+const CORRUPT_BACKUP_KEY = `${STORAGE_KEY}_corrupt`;
+
+/**
+ * Storage faults were console-only, so losing your chats looked identical to
+ * nothing happening. This holds the last fault so the UI can say so plainly.
+ * `kind`: 'corrupt' | 'quota' | 'write' | 'evicted' (evicted = recovered by
+ * dropping regenerable desk snapshots, history intact).
+ */
+let storageFault = null;
+
+export function readStudioStorageFault() {
+  return storageFault;
+}
+
+function noteStorageFault(kind, error, extra = {}) {
+  storageFault = { kind, at: Date.now(), message: String(error?.message || error || ''), ...extra };
+  if (kind !== 'evicted') console.error('Studio session storage fault:', kind, error);
+  return storageFault;
+}
+
+function clearStorageFault() {
+  storageFault = null;
+}
+
+/** DOMException name/code varies by browser; match the ones that mean "full". */
+function isQuotaError(error) {
+  const name = String(error?.name || '');
+  return name === 'QuotaExceededError'
+    || name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    || Number(error?.code) === 22
+    || Number(error?.code) === 1014;
+}
+
+/** Copy an unparseable blob aside before anything overwrites it. */
+function preserveCorruptSessionBlob() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) localStorage.setItem(CORRUPT_BACKUP_KEY, raw);
+  } catch { /* storage unavailable — nothing further to protect */ }
+}
+
 function loadSessions(defaultGreeting) {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -116,7 +157,14 @@ function loadSessions(defaultGreeting) {
       }
     }
   } catch (e) {
-    console.error(e);
+    /*
+     * A corrupt blob used to be swallowed here and replaced with a single empty
+     * "New Chat" — and the next persistSessions then overwrote the only copy of
+     * the salvageable bytes. Keep the raw string under a backup key first so the
+     * history is recoverable, and record the fault so it is not silent.
+     */
+    preserveCorruptSessionBlob();
+    noteStorageFault('corrupt', e);
   }
   return [{
     id: 'session-1',
@@ -129,15 +177,59 @@ function loadSessions(defaultGreeting) {
   }];
 }
 
+/**
+ * Chat history is irreplaceable; a desk snapshot is a regenerable build artifact
+ * that can reach MAX_STUDIO_DESK_CHARS (800k chars, ~1.6MB UTF-16) per session.
+ * Three or four coding sessions therefore exhausted the ~5MB origin budget, and
+ * because the quota error was swallowed, EVERY later save silently no-opped —
+ * the user refreshed and found their chats reverted or gone.
+ *
+ * So on a quota failure, shed desk snapshots oldest-first and retry rather than
+ * giving up: the builds can be rebuilt, the conversation cannot. Only when even
+ * a desk-free write fails is the fault recorded for the UI to surface.
+ */
 function persistSessions(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const compact = list.map((session) => ({
+    ...session,
+    messages: compactOfficeMessages(session.messages || []),
+  }));
+
   try {
-    const compact = (Array.isArray(sessions) ? sessions : []).map((session) => ({
-      ...session,
-      messages: compactOfficeMessages(session.messages || []),
-    }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
+    clearStorageFault();
+    return true;
   } catch (e) {
-    console.error(e);
+    if (!isQuotaError(e)) {
+      noteStorageFault('write', e);
+      return false;
+    }
+
+    // Oldest first: the desk you are working in now is the last to be shed.
+    const order = compact
+      .map((session, index) => ({ index, createdAt: Number(session?.createdAt) || 0 }))
+      .sort((left, right) => left.createdAt - right.createdAt || left.index - right.index);
+
+    const trimmed = compact.map((session) => ({ ...session }));
+    let shed = 0;
+    for (const { index } of order) {
+      if (!trimmed[index] || trimmed[index].desk === undefined) continue;
+      delete trimmed[index].desk;
+      shed += 1;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+        noteStorageFault('evicted', null, { deskSnapshotsDropped: shed });
+        return true;
+      } catch (retryError) {
+        if (!isQuotaError(retryError)) {
+          noteStorageFault('write', retryError);
+          return false;
+        }
+      }
+    }
+
+    noteStorageFault('quota', e, { deskSnapshotsDropped: shed });
+    return false;
   }
 }
 
@@ -738,3 +830,6 @@ export function useStudioSession({ user, selectedModel }) {
     projectResume,
   };
 }
+
+/** Test-only handle on the storage internals; not part of the hook's API. */
+export const __testables = { persistSessions, loadSessions };
