@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalizeModelId, inferenceAttemptBudgetMs, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
+import { canonicalizeModelId, inferenceAttemptBudgetMs, MIN_VIABLE_BUILD_ATTEMPT_MS, maxViableBuildAttempts, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
 
 test('the first attempt keeps its generous slice', () => {
   // The chosen model is the most likely to succeed; squeezing it to make room
@@ -219,4 +219,46 @@ test('canOfferPaidLastResort fails closed', async () => {
   assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 50, ceilingUsd: 50, calls: 9 }, paid), false);
   // headroom + readable + configured => allowed
   assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 10, ceilingUsd: 50, calls: 3 }, paid), true);
+});
+
+test('BUILD budget: the turn never plans a rung too short to finish a build', () => {
+  // Why every heavy build ended at the client deadline: a 120s turn split across
+  // four rungs handed out 60s/20s/20s/20s. A multi-file page does not come back
+  // in 20s on any model, so the primary was cut off mid-file and the three rungs
+  // behind it could not finish either — the whole budget went to truncated output
+  // and the turn died on the clock. Arithmetic, not model quality.
+  const TOTAL = 120_000;
+  const ladder = (rungs: number, opts?: { minAttemptMs?: number }) => {
+    let remaining = TOTAL;
+    const slices: number[] = [];
+    for (let index = 0; index < rungs; index += 1) {
+      const slice = inferenceAttemptBudgetMs(remaining, rungs - index, opts);
+      slices.push(slice);
+      remaining = Math.max(0, remaining - slice);
+    }
+    return slices;
+  };
+
+  // The old shape: most rungs below a build-viable size.
+  const before = ladder(4);
+  assert.ok(
+    before.filter((ms) => ms < MIN_VIABLE_BUILD_ATTEMPT_MS).length >= 3,
+    'the un-floored ladder is expected to be mostly doomed rungs',
+  );
+
+  // The turn now plans only what the budget can fund at build size.
+  const fundable = maxViableBuildAttempts(TOTAL);
+  assert.ok(fundable >= 1 && fundable < 4, `expected fewer, viable rungs, got ${fundable}`);
+  const after = ladder(fundable, { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS });
+  assert.equal(
+    after.filter((ms) => ms < MIN_VIABLE_BUILD_ATTEMPT_MS).length,
+    0,
+    `every planned build rung must be able to finish; got ${after.map((ms) => `${Math.floor(ms / 1000)}s`).join(', ')}`,
+  );
+  assert.ok(after.reduce((sum, ms) => sum + ms, 0) <= TOTAL, 'the ladder must not exceed the turn budget');
+});
+
+test('BUILD budget: a tiny budget still plans one real attempt rather than none', () => {
+  assert.equal(maxViableBuildAttempts(10_000), 1);
+  assert.equal(maxViableBuildAttempts(0), 1);
 });

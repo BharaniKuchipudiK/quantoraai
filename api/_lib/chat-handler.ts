@@ -30,6 +30,8 @@ import {
 import {
   canonicalizeModelId,
   inferenceAttemptBudgetMs,
+  MIN_VIABLE_BUILD_ATTEMPT_MS,
+  maxViableBuildAttempts,
   planInferenceRoutes,
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
@@ -796,6 +798,14 @@ export default async function handler(req: any, res: any) {
       finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
     }
 
+    // A build rung too short to finish a multi-file page cannot succeed — it only
+    // spends wall-clock the earlier rungs needed. Keep the ladder to the rungs
+    // this turn's budget can actually fund at build size.
+    if (effectiveBuildMode && attempts.length > 1) {
+      const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS));
+      if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
+    }
+
     if (!attempts.length) {
       return res.status(503).json({
         error: wantTravelTools
@@ -869,7 +879,11 @@ export default async function handler(req: any, res: any) {
         }
         const attemptStartedAt = Date.now();
         const attemptBudgetMs = effectiveBuildMode
-          ? inferenceAttemptBudgetMs(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS), attempts.length - index)
+          ? inferenceAttemptBudgetMs(
+              remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS),
+              attempts.length - index,
+              { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS },
+            )
           : remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS);
         traceBoundary({
           correlationId,
