@@ -18,6 +18,11 @@ import {
 } from './lib/studio-isolation.js';
 import AuthModal from './components/AuthModal';
 import { authModalOverlayStyle } from './lib/auth-modal-styles.js';
+import {
+  clearPasswordResetToken,
+  peekPasswordResetToken,
+  stashPasswordResetToken,
+} from './lib/password-reset.js';
 
 /*
  * The heavy surfaces load on demand.
@@ -112,11 +117,16 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(() => {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
-    return params.has('signin') || params.has('reset');
+    return params.has('signin') || params.has('reset') || Boolean(peekPasswordResetToken());
   });
   const [authResetToken, setAuthResetToken] = useState(() => {
     if (typeof window === 'undefined') return '';
-    return new URLSearchParams(window.location.search).get('reset') || '';
+    const fromUrl = new URLSearchParams(window.location.search).get('reset') || '';
+    if (fromUrl) {
+      stashPasswordResetToken(fromUrl);
+      return fromUrl;
+    }
+    return peekPasswordResetToken();
   });
   const [themeMode, setThemeMode] = useState(() => {
     try {
@@ -168,6 +178,7 @@ export default function App() {
     google: Boolean(buildGoogleClientId),
     github: false,
     email: false,
+    passwordReset: true,
     googleClientId: buildGoogleClientId || null,
   });
   const [providersLoaded, setProvidersLoaded] = useState(Boolean(buildGoogleClientId));
@@ -178,7 +189,6 @@ export default function App() {
     const url = new URL(window.location.href);
     ['signin', 'reset', 'auth', 'message', 'next'].forEach((key) => url.searchParams.delete(key));
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-    setAuthResetToken('');
   }, []);
 
   const finishAuth = useCallback((newUser) => {
@@ -187,6 +197,8 @@ export default function App() {
       : '';
     const resumeStudio = takeAfterAuthStudio();
     clearOAuthReturnPending();
+    clearPasswordResetToken();
+    setAuthResetToken('');
     setUser(newUser);
     setShowAuthModal(false);
     setAuthFinishing(false);
@@ -245,6 +257,7 @@ export default function App() {
           google: data.google === true || Boolean(buildGoogleClientId),
           github: data.github === true,
           email: data.email === true,
+          passwordReset: data.passwordReset !== false,
           googleClientId: data.googleClientId || buildGoogleClientId || null,
         });
       })
@@ -462,6 +475,8 @@ export default function App() {
       window.location.assign(`/?signin=1&next=${encodeURIComponent(isolatedStudioHref())}`);
       return;
     }
+    const storedReset = peekPasswordResetToken();
+    if (storedReset) setAuthResetToken(storedReset);
     setShowAuthModal(true);
   };
 
@@ -673,6 +688,7 @@ export default function App() {
           googleEnabled={authProviders.google && Boolean(googleClientId)}
           githubEnabled={authProviders.github}
           oauthReady={providersLoaded}
+          passwordResetEnabled={authProviders.passwordReset !== false}
           isolatedDesk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)}
         />
       )}

@@ -1,10 +1,14 @@
 import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
+import { isSessionConfigured } from "../session.js";
 import { createPasswordResetToken } from "../reset-token.js";
-import { sendPasswordResetEmail, sendProviderSignInNotice } from "../mail.js";
+import { isAuthMailConfigured, sendPasswordResetEmail, sendProviderSignInNotice } from "../mail.js";
 import { findUserByEmail } from "../store.js";
 import { appOrigin } from "../app-origin.js";
 import { PASSWORD_RESET_GENERIC_MESSAGE, passwordResetDelivery, providerLabel } from "../auth-privacy.js";
 import { verifyPasswordAgainstStore } from "../password.js";
+
+export const PASSWORD_RESET_UNAVAILABLE =
+  "Password reset is not available on this deployment. Sign in with Google or GitHub, or try again later.";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "POST,OPTIONS");
@@ -13,6 +17,10 @@ export default async function handler(req: any, res: any) {
 
   if (isRateLimited(`reset:${clientIp(req)}`, 6, 60_000)) {
     return res.status(429).json({ error: "Too many reset attempts. Please wait a minute." });
+  }
+
+  if (!isSessionConfigured() || !isAuthMailConfigured()) {
+    return res.status(503).json({ error: PASSWORD_RESET_UNAVAILABLE });
   }
 
   const email = String(req.body?.email || "").trim().toLowerCase();
@@ -32,7 +40,6 @@ export default async function handler(req: any, res: any) {
   } else if (delivery === "provider-notice") {
     await sendProviderSignInNotice(email, providerLabel(user?.auth_provider));
   } else {
-    // Equalize timing with a password check so missing accounts are not cheaper.
     await verifyPasswordAgainstStore("quantora-reset-padding", null);
   }
 

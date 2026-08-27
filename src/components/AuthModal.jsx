@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { authGoogleWellStyle, authModalCardStyle, authModalOverlayStyle } from '../lib/auth-modal-styles.js';
 import { isIsolatedStudioPath, stashOAuthReturnPending } from '../lib/studio-isolation.js';
+import { clearPasswordResetToken } from '../lib/password-reset.js';
 import './AuthModal.css';
 
 const MODES = {
@@ -23,6 +24,7 @@ export default function AuthModal({
   googleEnabled = true,
   githubEnabled = true,
   oauthReady = true,
+  passwordResetEnabled = true,
 }) {
   const [mode, setMode] = useState(resetToken ? MODES.RESET_CONFIRM : initialMode);
   const [email, setEmail] = useState('');
@@ -33,6 +35,10 @@ export default function AuthModal({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  useEffect(() => {
+    if (resetToken) setMode(MODES.RESET_CONFIRM);
+  }, [resetToken]);
+
   const clearMessages = () => {
     setError('');
     setNotice('');
@@ -41,6 +47,10 @@ export default function AuthModal({
   const handleEmailAuth = async (event) => {
     event.preventDefault();
     clearMessages();
+    if (mode === MODES.SIGNUP && password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
     setBusy(true);
     try {
       const endpoint = mode === MODES.SIGNUP ? '/api/auth/signup' : '/api/auth/login';
@@ -102,6 +112,11 @@ export default function AuthModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not reset password.');
+      clearPasswordResetToken();
+      if (data?.email) {
+        onSuccess(data);
+        return;
+      }
       setNotice(data.message || 'Password updated. Sign in with your new password.');
       setMode(MODES.LOGIN);
       setPassword('');
@@ -195,7 +210,14 @@ export default function AuthModal({
               <span>Password</span>
               <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
-            <button type="button" className="auth-modal__link" onClick={() => { clearMessages(); setMode(MODES.RESET_REQUEST); }}>
+            <button type="button" className="auth-modal__link" onClick={() => {
+              clearMessages();
+              if (!passwordResetEnabled) {
+                setError('Password reset is not available right now. Sign in with Google or GitHub, or try again later.');
+                return;
+              }
+              setMode(MODES.RESET_REQUEST);
+            }}>
               Forgot password?
             </button>
             <button type="submit" className="auth-modal__submit" disabled={busy}>
@@ -223,6 +245,10 @@ export default function AuthModal({
             <label>
               <span>Password</span>
               <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+            </label>
+            <label>
+              <span>Confirm password</span>
+              <input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={8} required />
             </label>
             <button type="submit" className="auth-modal__submit" disabled={busy}>
               {busy ? 'Creating…' : 'Create account'}
@@ -264,6 +290,9 @@ export default function AuthModal({
             </label>
             <button type="submit" className="auth-modal__submit" disabled={busy}>
               {busy ? 'Saving…' : 'Update password'}
+            </button>
+            <button type="button" className="auth-modal__link" onClick={() => { clearMessages(); setMode(MODES.LOGIN); }}>
+              Back to sign in
             </button>
           </form>
         )}

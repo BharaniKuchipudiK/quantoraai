@@ -1,6 +1,6 @@
 import { normalizeOutcomeState, type OutcomeState, type OutcomeStateRecord } from "./outcome-state.js";
 import { randomUUID } from "node:crypto";
-import { normalizeAuthEmail } from "./auth-privacy.js";
+import { normalizeAuthEmail, rowsMatchingAuthEmail } from "./auth-privacy.js";
 import type { StudyMasteryEstimate } from "./study-mastery-estimator.js";
 import type { StudyMasteryEvidenceEvent } from "./study-truth-layer.js";
 
@@ -150,13 +150,14 @@ export async function findUserByEmail(email: string): Promise<StoredUser | null>
   const normalized = normalizeAuthEmail(email);
   if (!normalized) return null;
   const response = await request(
-    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin,password_hash,auth_provider&email=ilike.${encodeURIComponent(normalized)}&limit=1`,
+    `users?select=google_sub,email,name,picture,blocked_at,blocked_reason,is_admin,password_hash,auth_provider&email=ilike.${encodeURIComponent(normalized)}&limit=20`,
     { method: "GET" },
   );
   if (!response) return null;
   try {
     const rows = await response.json();
-    return Array.isArray(rows) && rows.length ? (rows[0] as StoredUser) : null;
+    const matches = rowsMatchingAuthEmail(Array.isArray(rows) ? rows as StoredUser[] : [], normalized);
+    return matches[0] || null;
   } catch {
     return null;
   }

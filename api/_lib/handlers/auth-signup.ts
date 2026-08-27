@@ -4,6 +4,7 @@ import { hashPassword, isStrongEnoughPassword } from "../password.js";
 import { issueSessionResponse } from "../auth-response.js";
 import { createEmailUser, findUserByEmail } from "../store.js";
 import { getRequestGeo } from "../geo.js";
+import { providerLabel } from "../auth-privacy.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "POST,OPTIONS");
@@ -31,7 +32,10 @@ export default async function handler(req: any, res: any) {
 
   const existing = await findUserByEmail(email);
   if (existing) {
-    return res.status(409).json({ error: "An account with this email already exists. Sign in instead." });
+    const how = existing.password_hash
+      ? "Sign in instead."
+      : `Sign in with ${providerLabel(existing.auth_provider)} instead.`;
+    return res.status(409).json({ error: `An account with this email already exists. ${how}` });
   }
 
   try {
