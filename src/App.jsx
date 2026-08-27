@@ -427,11 +427,20 @@ export default function App() {
     if (dynamicModels.length === 0) return;
     setAvailableModels(dynamicModels);
     if (data.dashboard) setModelDashboard(data.dashboard);
+    /*
+     * A degraded listing must not silently un-pin the user's model. Anthropic
+     * flagships are discovered from the live provider catalogue, so a 4s fetch
+     * timeout returns a list without them (source: 'fallback') — and resetting on
+     * that would drop a pinned Claude back to Auto for a transient network blip,
+     * which reads exactly like "the model disappeared from the list again".
+     * Only reset when the listing is authoritative and the model is genuinely gone.
+     */
+    const listingIsAuthoritative = data.source !== 'fallback';
     setSelectedModel((current) => {
       if (isCodingDeskAutoSelection(current)) return CODING_DESK_AUTO_MODEL;
       const stillExists = dynamicModels.find((d) => d.id === current?.id);
       if (stillExists) return stillExists;
-      return CODING_DESK_AUTO_MODEL;
+      return listingIsAuthoritative ? CODING_DESK_AUTO_MODEL : current;
     });
   }, []);
 

@@ -114,3 +114,17 @@ test('the picker surfaces a discovered flagship, not only the Auto router', () =
   assert.ok(flagship.name);
   assert.ok(flagship.contextWindow);
 });
+
+test('a discovered flagship carries the catalogue-declared vision capability', () => {
+  // Routing grants vision from this flag. Without it an attached image filtered a
+  // pinned OpenRouter model out of the plan — silently rerouting to Gemini, or
+  // 503ing when no Gemini credential existed.
+  const paid = { prompt: '0.000002', completion: '0.00001' };
+  const catalog = new Map([
+    ['anthropic/claude-sonnet-5', { id: 'anthropic/claude-sonnet-5', name: 'Sonnet 5', created: 2, pricing: paid, architecture: { input_modalities: ['text', 'image', 'file'] } }],
+    ['anthropic/claude-opus-textonly', { id: 'anthropic/claude-opus-textonly', name: 'Text only', created: 1, pricing: paid, architecture: { input_modalities: ['text'] } }],
+  ]);
+  const found = discoverAnthropicFlagships(catalog);
+  assert.equal(found.find((m) => m.id === 'anthropic/claude-sonnet-5').vision, true);
+  assert.equal(found.find((m) => m.id === 'anthropic/claude-opus-textonly').vision, false);
+});

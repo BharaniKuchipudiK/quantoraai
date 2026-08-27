@@ -169,6 +169,15 @@ export async function handleAffordabilityDecision(req: any, res: any): Promise<b
     return true;
   }
 
+  /*
+   * Auth is required to READ or WRITE personal context, so a command legitimately
+   * needs a session. A conversational "can I afford…" does not: it stores nothing
+   * and this gateway is not domain-gated, so demanding a session here ended the
+   * turn with a 401 for any signed-out visitor who used the phrase anywhere in
+   * the product. Let that case fall through to ordinary chat instead.
+   */
+  if (!getSessionUser(req) && !command) return false;
+
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return true;
 

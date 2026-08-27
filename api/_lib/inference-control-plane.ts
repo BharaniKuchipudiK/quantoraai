@@ -29,6 +29,8 @@ export type InferenceModelLike = {
   lifecycle?: string;
   health?: string;
   pricingKind?: string;
+  /** Declared by the provider catalogue; not inferred from the id. */
+  vision?: boolean;
 };
 
 export type InferencePlanInput = {
@@ -145,9 +147,17 @@ function upstreamProviderFor(modelId: string, registry?: InferenceModelLike) {
   return safeLabel(fromId || registry?.provider || 'unknown', 'unknown').toLowerCase();
 }
 
-function capabilitiesFor(modelId: string): InferenceCapability[] {
+function capabilitiesFor(modelId: string, registry?: InferenceModelLike): InferenceCapability[] {
   if (gatewayFor(modelId) === 'gemini') return ['text', 'code', 'vision', 'travel-tools'];
-  return ['text', 'code'];
+  /*
+   * Vision used to be granted to Gemini alone, so attaching an image to a turn on
+   * an explicitly pinned OpenRouter model filtered that model out: the turn either
+   * silently rerouted to Gemini (ignoring the user's choice) or 503'd when no
+   * Gemini credential existed. Plenty of OpenRouter models are multimodal, so read
+   * the capability from the catalogue that says so rather than inferring it from
+   * the vendor prefix. Absent that signal we stay conservative and omit vision.
+   */
+  return registry?.vision ? ['text', 'code', 'vision'] : ['text', 'code'];
 }
 
 function costClassFor(modelId: string, registry?: InferenceModelLike): InferenceCostClass {
@@ -181,7 +191,7 @@ async function describeRoute(
   if (gateway === 'openrouter' && !input.openRouterAvailable) return null;
 
   const model = registry.get(modelId);
-  const capabilities = capabilitiesFor(modelId);
+  const capabilities = capabilitiesFor(modelId, model);
   const required = input.requiredCapabilities || ['text'];
   if (required.some((capability) => !capabilities.includes(capability))) return null;
 

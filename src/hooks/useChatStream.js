@@ -644,13 +644,43 @@ export function useChatStream({
      * moved that dead end one hop. Give the turn a real instruction instead, and
      * only when an image is actually attached and being delivered.
      */
-    const attachedImages = (attachments || [])
-      .map((item) => item?.dataUrl)
-      .filter((url) => typeof url === 'string' && url.startsWith('data:image/'))
-      .slice(0, 4);
-    const messageForRequest = text.trim() || (attachedImages.length
-      ? 'I have attached an image. Describe what you see and help me with it.'
-      : text);
+    const MAX_ATTACHED_IMAGE_BYTES = 3_500_000; // keeps the JSON body under Vercel's 4.5MB limit
+    const deliverableImages = [];
+    let attachedBytes = 0;
+    for (const item of attachments || []) {
+      const url = item?.dataUrl;
+      if (typeof url !== 'string' || !url.startsWith('data:image/')) continue;
+      if (deliverableImages.length >= 4) break;
+      // A base64 data URI is ~1 char per byte on the wire; four 3MB files would
+      // otherwise build a ~16MB body that fails opaquely at the platform edge.
+      if (attachedBytes + url.length > MAX_ATTACHED_IMAGE_BYTES) break;
+      attachedBytes += url.length;
+      deliverableImages.push(url);
+    }
+    const attachedImages = deliverableImages;
+
+    /*
+     * Only IMAGES can be delivered: non-image files and images over the reader's
+     * 3MB ceiling never get a dataUrl. Previously such an attachment produced an
+     * empty message that /api/chat rejects with "Message string is required" -
+     * a dead end with the moderation error suppressed, so nothing explained it.
+     * Say what happened instead of sending a turn that cannot succeed.
+     */
+    const undeliverable = (attachments || []).filter((item) => !item?.dataUrl);
+    if (!text.trim() && !attachedImages.length) {
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: undeliverable.length
+          ? `I can read images (PNG/JPG up to 3MB), but not ${undeliverable.map((f) => f.name).filter(Boolean).join(', ') || 'that file'} — describe what you need and I will help.`
+          : 'Add a message so I know what you would like me to do.',
+        isError: true,
+      }]);
+      setIsGenerating(false);
+      return;
+    }
+
+    const messageForRequest = text.trim() || 'I have attached an image. Describe what you see and help me with it.';
 
     const requestBodyFor = (model) => ({
       message: messageForRequest,

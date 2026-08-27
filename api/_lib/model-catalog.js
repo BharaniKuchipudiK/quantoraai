@@ -104,6 +104,11 @@ export function discoverAnthropicFlagships(catalog, { limit = 3 } = {}) {
     id: model.id,
     name: model.name || model.id,
     provider: 'Anthropic',
+    // Read from the catalogue's declared modalities, never inferred from the id:
+    // routing uses this to keep an image turn on the model the user picked.
+    vision: Array.isArray(model?.architecture?.input_modalities)
+      ? model.architecture.input_modalities.includes('image')
+      : undefined,
     description: model.description
       || 'Paid flagship coder discovered from the live OpenRouter catalogue. Writes complete, non-truncated builds.',
     contextWindow: formatContext(model.context_length),
