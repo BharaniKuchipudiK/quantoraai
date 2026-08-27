@@ -30,6 +30,22 @@ export function tabFromLocation(pathname = '/', search = '') {
 
 const PREFILL_KEY = 'quantora_studio_prefill';
 const AFTER_AUTH_KEY = 'quantora_after_auth';
+const OAUTH_RETURN_KEY = 'quantora_oauth_return';
+
+export function stashOAuthReturnPending() {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(OAUTH_RETURN_KEY, 'pending');
+}
+
+export function clearOAuthReturnPending() {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(OAUTH_RETURN_KEY);
+}
+
+export function hasOAuthReturnPending() {
+  if (typeof sessionStorage === 'undefined') return false;
+  return sessionStorage.getItem(OAUTH_RETURN_KEY) === 'pending';
+}
 
 export function stashStudioPrefill(text = '') {
   const value = String(text || '').trim();

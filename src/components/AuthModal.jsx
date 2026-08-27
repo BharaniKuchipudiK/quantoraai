@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { authGoogleWellStyle, authModalCardStyle, authModalOverlayStyle } from '../lib/auth-modal-styles.js';
-import { isIsolatedStudioPath } from '../lib/studio-isolation.js';
+import { isIsolatedStudioPath, stashOAuthReturnPending } from '../lib/studio-isolation.js';
 import './AuthModal.css';
 
 const MODES = {
@@ -156,9 +156,14 @@ export default function AuthModal({
               <button
                 type="button"
                 className="auth-modal__github"
-                onClick={() => { window.location.href = '/api/auth/github'; }}
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  stashOAuthReturnPending();
+                  window.location.href = '/api/auth/github';
+                }}
               >
-                Continue with GitHub
+                {busy ? 'Redirecting to GitHub…' : 'Continue with GitHub'}
               </button>
             )}
           </div>

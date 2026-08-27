@@ -1,8 +1,7 @@
 import { applyCors } from "../rate-limit.js";
-import { getSessionUser } from "../session.js";
+import { clearSessionCookie, getSessionUser } from "../session.js";
 import { isAdminUser, readStoredUser } from "../store.js";
 import { providerLabel } from "../auth-privacy.js";
-import { requireActiveSession } from "../authz.js";
 
 /*
  * Who is signed in on this request.
@@ -25,21 +24,26 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ user: null });
   }
 
-  const auth = await requireActiveSession(req, res);
-  if (!auth.ok) return;
+  const [stored, isAdminFlag] = await Promise.all([
+    readStoredUser(sessionUser.sub),
+    isAdminUser(sessionUser.sub),
+  ]);
 
-  const stored = auth.value.storedUser.google_sub
-    ? auth.value.storedUser
-    : await readStoredUser(sessionUser.sub) || auth.value.storedUser;
-  const isAdmin = stored.is_admin === true || await isAdminUser(sessionUser.sub) === true;
+  if (stored?.blocked_at) {
+    clearSessionCookie(res);
+    return res.status(403).json({
+      error: stored.blocked_reason || "This account has been suspended.",
+      sessionRevoked: true,
+    });
+  }
 
   return res.status(200).json({
     user: {
-      name: sessionUser.name || stored.name || "Creator",
+      name: sessionUser.name || stored?.name || "Creator",
       email: sessionUser.email,
-      picture: sessionUser.picture || stored.picture || "",
-      authProvider: providerLabel(stored.auth_provider),
-      isAdmin: isAdmin === true,
+      picture: sessionUser.picture || stored?.picture || "",
+      authProvider: providerLabel(stored?.auth_provider),
+      isAdmin: stored?.is_admin === true || isAdminFlag === true,
     },
   });
 }
