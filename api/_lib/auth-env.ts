@@ -1,4 +1,5 @@
 import { isSessionConfigured } from "./session.js";
+import { isAuthMailConfigured } from "./mail.js";
 
 function firstEnv(...keys: string[]): string {
   for (const key of keys) {
@@ -58,6 +59,7 @@ export function authProvidersStatus() {
     google: Boolean(googleClientId),
     github: Boolean(githubClientId && githubSecret),
     email: isSessionConfigured(),
+    passwordReset: isSessionConfigured() && isAuthMailConfigured(),
     googleClientId: googleClientId || null,
   };
 }
