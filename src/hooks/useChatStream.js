@@ -20,7 +20,6 @@ import {
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
-import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
@@ -942,18 +941,16 @@ export function useChatStream({
           }
 
           if (streamedError) {
+            // A failed build is NOT rewritten into an authored dashboard. This
+            // branch used to substitute a hand-written HTML shell for the model's
+            // missing output, flip isError to false, and hand back a page whose
+            // "Run sample organize pass" button reported "12 files grouped, 3
+            // duplicates flagged" — counts invented in the template. The user was
+            // shown a working product built by nobody, told nothing had failed,
+            // and outcome metrics recorded a success. Fall through to the honest
+            // failure paths below instead. The flag is still read by those paths
+            // to word the real error.
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
-            if (artifactFailed && isCodingRequest && codingDeskOpen && !advisorBlocksPreviewBuild(turnDomain)) {
-              const scaffolded = buildCodingDeskScaffoldReply(visibleUserText);
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: scaffolded,
-                isError: false,
-                executionStatus: null,
-                deskScaffolded: true,
-              } : m));
-              return;
-            }
             if (isCodingRequest) {
               // Model route died mid-stream — still prove skills-seeded desk.
               if (turnPlan?.isCodingTurn) {
@@ -1130,20 +1127,8 @@ export function useChatStream({
               announceRecovery(recovery.notice);
               continue;
             }
-            // Shop / proof-plane turns never "succeed" via generic scaffold.
-            const scaffolded = !shopOwned && codingDeskOpen
-              ? buildCodingDeskScaffoldReply(visibleUserText)
-              : null;
-            if (scaffolded) {
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: scaffolded,
-                isError: false,
-                executionStatus: null,
-                deskScaffolded: true,
-              } : m));
-              return;
-            }
+            // No authored scaffold here either: a build that produced no files is
+            // reported as the failure it is, via resolveCodingTurnOutcome below.
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
