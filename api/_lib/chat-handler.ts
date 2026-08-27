@@ -76,7 +76,15 @@ This turn must update the running page. The previous reply only talked. Output a
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
-const TOTAL_CHAT_BUDGET_MS = 120_000;
+/*
+ * The serverless function is allowed 180s (vercel.json -> api/pipeline.ts
+ * maxDuration), and /api/chat is served by it. Only 120s of that was ever used,
+ * which capped the primary model's window at 65s — not enough for a flagship to
+ * write a multi-file build, so it was cut mid-generation (billed, discarded) and
+ * the turn fell to a weaker model and died. 165s leaves a 15s margin under the
+ * platform ceiling for response teardown.
+ */
+const TOTAL_CHAT_BUDGET_MS = 165_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);

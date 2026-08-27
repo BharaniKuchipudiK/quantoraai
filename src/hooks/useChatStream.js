@@ -56,7 +56,10 @@ import {
 
 const MIN_ATTEMPT_BUDGET_MS = 20_000;
 const CHAT_TURN_DEADLINE_MS = 90_000;
-const BUILD_TURN_DEADLINE_MS = 135_000;
+// Must stay ABOVE the server's TOTAL_CHAT_BUDGET_MS (165s) or the client aborts a
+// turn the server is still working on — the user sees a dead spinner and the
+// server's honest failure never arrives.
+const BUILD_TURN_DEADLINE_MS = 175_000;
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];

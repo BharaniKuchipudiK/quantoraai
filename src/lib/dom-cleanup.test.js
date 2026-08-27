@@ -113,7 +113,28 @@ test('Proof Control Plane owns coding turn success', () => {
 test('build timeout and deployed canary credentials honor the release contract', () => {
   const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
   const canary = fs.readFileSync(new URL('../../scripts/deployed-golden-transactions.mjs', import.meta.url), 'utf8');
-  assert.match(stream, /BUILD_TURN_DEADLINE_MS = 135_000/);
+  /*
+   * The client deadline must OUTLAST the server's TOTAL_CHAT_BUDGET_MS or the UI
+   * aborts a turn the server is still working on: the user gets a dead spinner
+   * and the server's honest failure never arrives. Assert the RELATIONSHIP rather
+   * than a magic number, so raising one budget can never silently invert them.
+   */
+  const clientDeadlineMs = Number(
+    (stream.match(/BUILD_TURN_DEADLINE_MS = ([\d_]+)/) || [])[1]?.replace(/_/g, ''),
+  );
+  const serverBudgetMs = Number(
+    (fs.readFileSync(new URL('../../api/_lib/chat-handler.ts', import.meta.url), 'utf8')
+      .match(/TOTAL_CHAT_BUDGET_MS = ([\d_]+)/) || [])[1]?.replace(/_/g, ''),
+  );
+  assert.ok(Number.isFinite(clientDeadlineMs), 'BUILD_TURN_DEADLINE_MS must be declared');
+  assert.ok(Number.isFinite(serverBudgetMs), 'TOTAL_CHAT_BUDGET_MS must be declared');
+  assert.ok(
+    clientDeadlineMs > serverBudgetMs,
+    `client deadline (${clientDeadlineMs}ms) must exceed the server budget (${serverBudgetMs}ms)`,
+  );
+  // Vercel allows this function 180s (vercel.json -> api/pipeline.ts); staying
+  // under it is what lets the server return its own error instead of being killed.
+  assert.ok(serverBudgetMs <= 175_000, 'server budget must stay under the 180s function ceiling');
   assert.match(stream, /controller\.abort\('timeout'\), attemptBudgetMs/);
   // A self-healing retry must spend what is left of the turn deadline, never a fresh one.
   assert.match(stream, /turnDeadlineMs - \(Date\.now\(\) - turnStartedAt\)/);

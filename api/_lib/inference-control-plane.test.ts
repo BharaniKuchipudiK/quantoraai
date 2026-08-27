@@ -4,11 +4,38 @@ import { canonicalizeModelId, inferenceAttemptBudgetMs, MIN_VIABLE_BUILD_ATTEMPT
 
 test('the first attempt keeps its generous slice', () => {
   // The chosen model is the most likely to succeed; squeezing it to make room
-  // for fallbacks trades a working build for a faster failure.
-  assert.equal(inferenceAttemptBudgetMs(120_000, 2), 65_000);
+  // for fallbacks trades a working build for a faster failure. The cap rose from
+  // 65s to 110s because a flagship was being cut off part-way through a
+  // multi-file build - the tokens were generated and billed, then discarded.
+  assert.equal(inferenceAttemptBudgetMs(165_000, 2), 110_000);
+  assert.equal(inferenceAttemptBudgetMs(120_000, 2), 100_000);
   assert.equal(inferenceAttemptBudgetMs(120_000, 4), 60_000);
-  assert.equal(inferenceAttemptBudgetMs(90_000, 2), 65_000);
+  assert.equal(inferenceAttemptBudgetMs(90_000, 2), 70_000);
   assert.equal(inferenceAttemptBudgetMs(55_000, 1), 55_000);
+  // Whatever the split, a rung behind the primary still gets a usable window.
+  assert.ok(inferenceAttemptBudgetMs(165_000, 2) <= 165_000 - MIN_VIABLE_BUILD_ATTEMPT_MS);
+});
+
+test('a build turn spends its budget on two real attempts, not several cramped ones', () => {
+  // Reported as "the connection to the model died before Preview was ready" with
+  // real spend on the provider: the flagship generated tokens and was cut at 65s.
+  // The function is allowed 180s, only 120s was used, and a third rung was
+  // reserved out of the primary's window - so the attempt most likely to succeed
+  // had the least time.
+  const TOTAL = 165_000;
+  const rungs = maxViableBuildAttempts(TOTAL);
+  assert.equal(rungs, 2, 'two full-length attempts beat three cramped ones');
+
+  let remaining = TOTAL;
+  const slices = [];
+  for (let index = 0; index < rungs; index += 1) {
+    const slice = inferenceAttemptBudgetMs(remaining, rungs - index, { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS });
+    slices.push(slice);
+    remaining -= slice;
+  }
+  assert.equal(slices[0], 110_000, 'the primary gets a window it can finish a build in');
+  assert.ok(slices[1] >= MIN_VIABLE_BUILD_ATTEMPT_MS, 'the fallback is still build-viable');
+  assert.ok(slices.reduce((sum, ms) => sum + ms, 0) <= TOTAL, 'the ladder never overruns the turn');
 });
 
 test('a longer ladder never starves a rung and never overruns the turn', () => {
