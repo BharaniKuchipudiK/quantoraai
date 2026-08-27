@@ -245,3 +245,25 @@ test('INVARIANT: an unproven paid coder never passes a PROVEN Gemini in the fail
   assert.ok(g >= 0 && q >= 0, 'both models present in the chain');
   assert.ok(g < q, 'proven Gemini must fail over before an unproven paid coder');
 });
+
+test('agent / integration / backend asks escalate off the fast default', () => {
+  // The "connect to my Google Drive, crawl all files, find duplicates, organize"
+  // ask ran on Gemini Flash and hit the 135s wall because the old keyword regex
+  // did not see it as complex. Intent-based signals now escalate it up front.
+  const drive = 'I want to build an AI agent that connects to my Google Drive, crawl through all the files, list large files not touched in a year, find duplicate and redundant files, and help organize them into folders';
+  assert.equal(shouldEscalateCodingDeskModel({ message: drive }), true);
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'Build a Slack bot that posts standup reminders' }), true);
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'Build a scraper that indexes documents' }), true);
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'Connect to the Stripe API and sync payments to a database' }), true);
+});
+
+test('ordinary small builds still stay on the fast Gemini default', () => {
+  for (const message of [
+    'Build a calculator',
+    'Build me a simple portfolio website',
+    'Build a todo list with React',
+    'build a simple about page',
+  ]) {
+    assert.equal(shouldEscalateCodingDeskModel({ message }), false, message);
+  }
+});

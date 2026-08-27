@@ -65,7 +65,20 @@ const MULTI_FILE_ASK = /\b(?:across|all)\s+files?\b|\bmultiple\s+files?\b|\benti
 // A shop/e-commerce build must satisfy the real-photo + cart + styling contract —
 // too much for a weak default model, so escalate to a capable coder up front.
 const SHOP_BUILD_ASK = /\b(shop|store|storefront|e-?commerce|boutique|catalog(?:ue)?|marketplace)\b|\bsell(?:ing)?\s+online\b/i;
+// An "AI agent", a backend/integration, an OAuth/API connection, or crawling/
+// automation over an external service is far heavier than a static page — the
+// fast default routinely blows the build deadline on these. Escalate up front.
+const AGENT_OR_INTEGRATION_ASK = /\b(a\s?i\.?\s*agent|agent\s+that|autonomous|automat(?:e|es|ed|ion|ing)|integrat(?:e|es|ed|ion|ing)|connect(?:s|ed|ing)?\s+to|o\s?auth|api\s+(?:key|integration|call|endpoint)|webhook|back-?end|server-?side|micro-?service|database|data\s+pipeline|crawl(?:s|ing)?|scrap(?:e|er|ers|ing)|index(?:es|ing)?\s+(?:files|documents|data)|google\s+drive|dropbox|gmail|outlook|slack|notion|airtable|salesforce)\b/i;
 const CODING_SPECIALIST = /coder|nemotron|deepseek|gpt-oss|qwen|claude|sonnet|gpt-?4|gpt-?5|opus/i;
+
+// A long request that strings together several distinct deliverables is a bigger
+// build than the fast default reliably finishes in one turn — route it up front.
+function looksLikeBigMultiPartAsk(text = '') {
+  const t = String(text || '');
+  if (t.length < 240) return false;
+  const requirements = (t.match(/\b(list|find|organi[sz]e|categori[sz]e|detect|dedup(?:e|licate)?|generate|create|build|connect|crawl|sort|filter|remove|delete|move|summari[sz]e|analy[sz]e|sync|schedule|track)\b/gi) || []).length;
+  return requirements >= 3;
+}
 
 export function isCodingDeskAutoSelection(modelOrId) {
   if (modelOrId == null) return true;
@@ -212,6 +225,11 @@ export function shouldEscalateCodingDeskModel({
   const text = String(message || '');
   if (COMPLEX_ASK.test(text) || MULTI_FILE_ASK.test(text)) return true;
   if (SHOP_BUILD_ASK.test(text)) return true;
+  // Agent/backend/integration builds and long multi-part asks are heavy enough
+  // that the fast default tends to time out — escalate to a stronger coder so
+  // the turn has a real chance of finishing, instead of a 135s dead spinner.
+  if (AGENT_OR_INTEGRATION_ASK.test(text)) return true;
+  if (looksLikeBigMultiPartAsk(text)) return true;
   const fileCount = Number(qualityHints?.fileCount) || 0;
   if (hasVFS && (fileCount >= 5 || text.length >= 2500)) return true;
   return false;
