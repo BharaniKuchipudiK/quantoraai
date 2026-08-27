@@ -22,6 +22,7 @@ export default function AuthModal({
   externalError = '',
   googleEnabled = true,
   githubEnabled = true,
+  oauthReady = true,
 }) {
   const [mode, setMode] = useState(resetToken ? MODES.RESET_CONFIRM : initialMode);
   const [email, setEmail] = useState('');
@@ -134,7 +135,7 @@ export default function AuthModal({
         {error && <div className="auth-modal__alert is-error">{error}</div>}
         {notice && <div className="auth-modal__alert is-notice">{notice}</div>}
 
-        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && (googleEnabled || githubEnabled) && (
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && (googleEnabled || githubEnabled) && (
           <div className="auth-modal__oauth">
             {googleEnabled && (
               <div style={authGoogleWellStyle()}>
@@ -163,7 +164,11 @@ export default function AuthModal({
           </div>
         )}
 
-        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && !googleEnabled && !githubEnabled && (
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && !oauthReady && (
+          <p className="auth-modal__hint">Loading sign-in options…</p>
+        )}
+
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && !googleEnabled && !githubEnabled && (
           <p className="auth-modal__hint">Social sign-in is not configured on this deployment. Use email below.</p>
         )}
 
@@ -171,7 +176,7 @@ export default function AuthModal({
           <p className="auth-modal__hint">Sign in from the home page for Google or GitHub.</p>
         )}
 
-        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && (googleEnabled || githubEnabled) && (
+        {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && (googleEnabled || githubEnabled) && (
           <div className="auth-modal__divider"><span>or email</span></div>
         )}
 

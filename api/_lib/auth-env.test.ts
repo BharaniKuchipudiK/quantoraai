@@ -46,3 +46,10 @@ test("resolveGithubOAuthClientSecret accepts GITHUB_OAUTH_CLIENT_SECRET alias", 
     assert.equal(resolveGithubOAuthClientSecret(), "gh-secret");
   });
 });
+
+test("recover GitHub OAuth when Vercel key is the client id itself", () => {
+  withEnv({ Ov23liPvrsDBTXGqV16r: "ghp_client_secret_value" }, () => {
+    assert.equal(resolveGithubOAuthClientId(), "Ov23liPvrsDBTXGqV16r");
+    assert.equal(resolveGithubOAuthClientSecret(), "ghp_client_secret_value");
+  });
+});

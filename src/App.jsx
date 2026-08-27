@@ -161,6 +161,7 @@ export default function App() {
     email: false,
     googleClientId: buildGoogleClientId || null,
   });
+  const [providersLoaded, setProvidersLoaded] = useState(Boolean(buildGoogleClientId));
   const googleClientId = (authProviders.googleClientId || buildGoogleClientId || '').trim();
 
   const clearAuthQueryParams = useCallback(() => {
@@ -205,15 +206,26 @@ export default function App() {
     fetch('/api/auth/providers', { credentials: 'same-origin' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data) return;
+        if (cancelled) return;
+        if (!data) {
+          setAuthProviders((prev) => ({
+            ...prev,
+            github: prev.github,
+            email: prev.email || true,
+          }));
+          return;
+        }
         setAuthProviders({
-          google: data.google === true,
+          google: data.google === true || Boolean(buildGoogleClientId),
           github: data.github === true,
           email: data.email === true,
           googleClientId: data.googleClientId || buildGoogleClientId || null,
         });
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setProvidersLoaded(true);
+      });
     return () => { cancelled = true; };
   }, [buildGoogleClientId]);
 
@@ -624,6 +636,7 @@ export default function App() {
           externalError={loginError}
           googleEnabled={authProviders.google && Boolean(googleClientId)}
           githubEnabled={authProviders.github}
+          oauthReady={providersLoaded}
           isolatedDesk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)}
         />
       )}
