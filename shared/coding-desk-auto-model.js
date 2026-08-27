@@ -142,6 +142,57 @@ function pickStrongCoding(models, { allowPaid = false } = {}) {
 }
 
 /**
+ * How reliably a model FINISHES a coding turn in time — the objective for a
+ * failover pick (which differs from `codingStrength`, whose objective is raw
+ * coding power for the PRIMARY pick).
+ *
+ * Measured reality leads: `outcomeRoutingAdjust` promotes a model that actually
+ * succeeds and demotes one that keeps stalling, and contributes 0 until there
+ * is trustworthy evidence. Only while a model is still UNPROVEN do we seed a
+ * finish-reliability prior — the one place a name matters, and only until real
+ * outcomes replace it:
+ *   - Gemini reliably finishes fast, inside the build deadline → strong prior.
+ *   - A paid coder generally finishes → mild prior.
+ *   - An unproven free coder (e.g. a queued `*:free`) is the model that blew the
+ *     135s deadline and triggered the fake "proved on the desk" → negative prior.
+ * Swap the catalog tomorrow and this still does the right thing, because the
+ * order is driven by evidence + a finish prior, never by hardcoded identity.
+ */
+function fallbackFinishReliability(model, { allowPaid = false } = {}) {
+  let score = outcomeRoutingAdjust(model?.quality);
+  if (!hasTrustedOutcome(model)) {
+    const id = String(model?.id || '');
+    if (id.startsWith('gemini')) score += 20;
+    else if (allowPaid && !isFreeReady(model)) score += 12;
+    else score -= 6;
+  }
+  return score;
+}
+
+/**
+ * Order the failover candidates for a Coding Desk turn by finish-reliability,
+ * NOT by model name. Gemini free-tier is always kept as the last-resort safety
+ * net; a paid coder can only rank ahead of it by EARNING it on measured
+ * outcomes, never by default. Anonymous/free sessions keep a free-only failover
+ * set (allowPaid=false); a session with a usable key may also fail over to
+ * another paid coder when the evidence says it is the more reliable finisher.
+ */
+export function rankCodingDeskFallbacks(availableModels = [], { primaryId = '', allowPaid = false } = {}) {
+  const pool = readyModels(availableModels).filter((model) => {
+    if (model.id === primaryId) return false;
+    return allowPaid ? true : isFreeReady(model);
+  });
+  const ranked = pool
+    .map((model, index) => ({ id: model.id, index, score: fallbackFinishReliability(model, { allowPaid }) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((entry) => entry.id);
+  if (primaryId !== 'gemini-flash-latest' && !ranked.includes('gemini-flash-latest')) {
+    ranked.push('gemini-flash-latest');
+  }
+  return ranked;
+}
+
+/**
  * Whether this coding turn should leave the Gemini default for a stronger coder.
  * Switch is decided once here — callers must not re-route mid-stream.
  */

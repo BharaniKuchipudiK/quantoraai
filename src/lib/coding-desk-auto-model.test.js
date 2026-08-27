@@ -4,6 +4,7 @@ import {
   CODING_DESK_AUTO_MODEL_ID,
   activeModelsForRouting,
   isCodingDeskAutoSelection,
+  rankCodingDeskFallbacks,
   resolveCodingDeskModel,
   shouldEscalateCodingDeskModel,
 } from './coding-desk-auto-model.js';
@@ -187,4 +188,45 @@ test('activeModelsForRouting keeps featured models and drops unapproved registry
   });
   assert.equal(escalate.modelId, 'gemini-flash-latest');
   assert.equal(escalate.escalated, false);
+});
+
+test('failover ranks fast reliable Gemini AHEAD of an unproven slow free coder (the 135s ghost)', () => {
+  // The regression that caused 135s timeouts + fake "proved on the desk":
+  // a paid coder primary whose FIRST fallback was the slow *:free coder.
+  const chain = rankCodingDeskFallbacks(ACTIVE, {
+    primaryId: 'qwen/qwen-2.5-coder-32b-instruct',
+    allowPaid: true,
+  });
+  const geminiAt = chain.indexOf('gemini-flash-latest');
+  const nemotronAt = chain.indexOf('nvidia/nemotron-3-super-120b-a12b:free');
+  assert.ok(geminiAt >= 0, 'Gemini must be in the failover chain');
+  assert.ok(geminiAt < nemotronAt, 'fast reliable Gemini must fail over before the unproven slow free coder');
+});
+
+test('Gemini is always retained as the last-resort failover, even off an empty catalog', () => {
+  const chain = rankCodingDeskFallbacks([], { primaryId: 'qwen/qwen-2.5-coder-32b-instruct', allowPaid: true });
+  assert.ok(chain.includes('gemini-flash-latest'));
+});
+
+test('anonymous/free sessions keep a free-only failover set (no paid coder)', () => {
+  const chain = rankCodingDeskFallbacks(ACTIVE, { primaryId: 'gemini-flash-latest', allowPaid: false });
+  assert.ok(!chain.includes('qwen/qwen-2.5-coder-32b-instruct'), 'no paid coder for a keyless session');
+  assert.ok(!chain.includes('openai/gpt-4o-mini'));
+});
+
+test('LEARNING: a free coder that EARNS a trusted record climbs ahead of Gemini on merit', () => {
+  // Not hardwired: the prior only holds until real outcomes exist. Give the free
+  // coder a strong measured record and it must overtake Gemini's default prior.
+  const withOutcomes = ACTIVE.map((model) =>
+    model.id === 'nvidia/nemotron-3-super-120b-a12b:free'
+      ? { ...model, quality: { sampleSize: 40, score: 96 } }
+      : model,
+  );
+  const chain = rankCodingDeskFallbacks(withOutcomes, {
+    primaryId: 'qwen/qwen-2.5-coder-32b-instruct',
+    allowPaid: true,
+  });
+  const geminiAt = chain.indexOf('gemini-flash-latest');
+  const nemotronAt = chain.indexOf('nvidia/nemotron-3-super-120b-a12b:free');
+  assert.ok(nemotronAt < geminiAt, 'a proven free coder earns its place ahead of the default prior');
 });

@@ -1,6 +1,7 @@
 import { chooseBestFreeModel, rankFreeModels } from '../../model-routing.js';
 import {
   isCodingDeskAutoSelection,
+  rankCodingDeskFallbacks,
   resolveCodingDeskModel,
 } from '../../coding-desk-auto-model.js';
 import type { RoutingDecision } from './model-router';
@@ -94,14 +95,16 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
       qualityHints: input.qualityHints || null,
       allowPaid: Boolean(input.allowPaid),
     });
-    const fallbackModelIds = rankFreeModels(models, input.message, input.arenaPrefs)
-      .filter((model) => model.id !== resolved.modelId && model.available !== false)
-      .map((model) => model.id);
-    // Always keep Gemini free-tier in the failover chain for Coding Desk Auto,
-    // even when the Active list is empty or marks Gemini unavailable.
-    if (resolved.modelId !== 'gemini-flash-latest' && !fallbackModelIds.includes('gemini-flash-latest')) {
-      fallbackModelIds.push('gemini-flash-latest');
-    }
+    // Order the failover chain by finish-reliability (measured outcomes first,
+    // a finish prior only until a model is proven), NOT by model name. This is
+    // what keeps a fast, reliable Gemini ahead of an unproven slow *:free coder
+    // — the pairing that historically blew the 135s deadline — while letting a
+    // paid coder climb the chain the moment it earns it on real outcomes.
+    // Gemini free-tier is always retained as the last-resort safety net.
+    const fallbackModelIds = rankCodingDeskFallbacks(models, {
+      primaryId: resolved.modelId,
+      allowPaid: Boolean(input.allowPaid),
+    });
     return {
       primaryModelId: resolved.modelId,
       fallbackModelIds,
