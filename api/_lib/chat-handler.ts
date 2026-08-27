@@ -631,6 +631,24 @@ export default async function handler(req: any, res: any) {
       allowPaid: Boolean(effectiveOpenRouterKey),
       qualityHints,
     });
+    // Diagnostic isolation switch: set QUANTORA_FORCE_OPENROUTER=1 to take Gemini
+    // out of the picture entirely for coding/build turns and route straight to an
+    // OpenRouter coder — so you can confirm OpenRouter alone carries builds. With
+    // Gemini excluded below, a broken OpenRouter surfaces as an honest "no healthy
+    // route" instead of being silently rescued by Gemini. Default off = normal
+    // Auto routing. Requires a usable OpenRouter key (BYOK or the server key).
+    const forceOpenRouter = process.env.QUANTORA_FORCE_OPENROUTER === '1'
+      && Boolean(effectiveOpenRouterKey)
+      && (effectiveBuildMode || taskCategory === 'coding');
+    if (forceOpenRouter) {
+      const openRouterCoder = routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false && /coder|qwen|deepseek|gpt-oss/i.test(String(m.id)))
+        || routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false)
+        || { id: 'qwen/qwen-2.5-coder-32b-instruct' };
+      modelRouting.primaryModelId = String(openRouterCoder.id);
+      modelRouting.provider = 'openrouter';
+      modelRouting.hasVisionSupport = false;
+      modelRouting.fallbackModelIds = (modelRouting.fallbackModelIds || []).filter((id) => !String(id).startsWith('gemini'));
+    }
     if (usingServerOwnedModelAccess && autoModelRequest) {
       const approved = await isApprovedServerModel(modelRouting.primaryModelId);
       if (!approved) {
@@ -725,7 +743,7 @@ export default async function handler(req: any, res: any) {
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
         : [...textCapabilities],
-      geminiAvailable: Boolean(effectiveGeminiKey),
+      geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
       openRouterAvailable: Boolean(effectiveOpenRouterKey),
       geminiCredentialScope: userKey ? 'user' : 'server',
       openRouterCredentialScope: openRouterKey ? 'user' : 'server',
@@ -743,7 +761,7 @@ export default async function handler(req: any, res: any) {
         fallbackModelIds: modelRouting?.fallbackModelIds || [],
         models: registryModels,
         requiredCapabilities: [...textCapabilities],
-        geminiAvailable: Boolean(effectiveGeminiKey),
+        geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
         openRouterAvailable: Boolean(effectiveOpenRouterKey),
         geminiCredentialScope: userKey ? 'user' : 'server',
         openRouterCredentialScope: openRouterKey ? 'user' : 'server',
