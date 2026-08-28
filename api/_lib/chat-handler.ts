@@ -62,7 +62,7 @@ import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-ou
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { briefNeedsJob } from "../../src/lib/build-job.js";
-import { paidRouteAllowed } from "./paid-route-gate.js";
+import { describePaidHold, paidRouteAllowed } from "./paid-route-gate.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
@@ -952,6 +952,9 @@ export default async function handler(req: any, res: any) {
           : {}),
         // Lets the desk state the cause without another round of guesswork.
         providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
+      // When the float is what held premium back, say so with the number rather
+      // than letting the turn read as a mysterious downgrade.
+      ...(describePaidHold(paidVerdict) ? { spendHold: describePaidHold(paidVerdict) } : {}),
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }

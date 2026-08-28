@@ -114,3 +114,23 @@ export async function paidRouteAllowed(
 export function resetPaidRouteCache(): void {
   cache = null;
 }
+
+/**
+ * What to tell a person when the paid rung is withheld.
+ *
+ * A silent downgrade is the defect this repo keeps deleting: the turn quietly
+ * runs on a weaker model, the result is worse, and nothing says why. Naming the
+ * number turns "it got dumber" into a fact the operator can act on.
+ *
+ * Returns '' when paid is allowed — nothing to explain.
+ */
+export function describePaidHold(verdict: PaidRouteVerdict | null): string {
+  if (!verdict || verdict.allowed) return "";
+  if (verdict.remainingUsd !== null && verdict.limitUsd !== null) {
+    return `Premium models are paused: $${verdict.remainingUsd.toFixed(2)} left of `
+      + `$${verdict.limitUsd.toFixed(2)} this month. Free routes still work, and `
+      + `they built the calculator and the storefront. Raise the ceiling on the `
+      + `OpenRouter key to bring premium back.`;
+  }
+  return `Premium models are paused — ${verdict.reason}. Free routes still work.`;
+}

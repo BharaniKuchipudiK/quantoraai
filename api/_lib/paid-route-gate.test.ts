@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RESERVE_USD, decidePaidRoute, paidRouteAllowed, resetPaidRouteCache } from './paid-route-gate.js';
+import { RESERVE_USD, decidePaidRoute, describePaidHold, paidRouteAllowed, resetPaidRouteCache } from './paid-route-gate.js';
 
 /*
  * The cost-control subsystem was written, tested and called by nothing:
@@ -75,4 +75,25 @@ test('a transient failure refuses without being cached', async () => {
   assert.equal(first.allowed, false);
   await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 2_000 });
   assert.equal(calls, 2, 'one blip must not lock paid routing off for a minute');
+});
+
+test('a withheld premium route says why, with the number', () => {
+  // A silent downgrade is the defect this repo keeps deleting: the turn quietly
+  // runs on a weaker model and nothing says why.
+  const held = decidePaidRoute({ ok: true, usage: 99.4, limit: 100 });
+  const note = describePaidHold(held);
+  assert.match(note, /\$0\.60 left of \$100\.00 this month/);
+  assert.match(note, /Free routes still work/);
+  assert.match(note, /Raise the ceiling/);
+});
+
+test('an unreadable meter is explained, not dressed up as a balance', () => {
+  const note = describePaidHold(decidePaidRoute({ ok: false, usage: null, limit: null }));
+  assert.match(note, /could not be read/);
+  assert.doesNotMatch(note, /\$0\.00/, 'unknown spend must never be printed as zero');
+});
+
+test('nothing is said when premium is available', () => {
+  assert.equal(describePaidHold(decidePaidRoute({ ok: true, usage: 1, limit: 100 })), '');
+  assert.equal(describePaidHold(null), '');
 });
