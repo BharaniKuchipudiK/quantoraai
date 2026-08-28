@@ -27,6 +27,12 @@
  *   --model <id>    skip discovery and pin an exact model id
  *   --timeout <s>   wall clock for the generation call (default 150)
  *   --out <path>    where to write the HTML (default ./probe-output.html)
+ *
+ * EXIT CODES — safe to script against
+ *   0  a complete document was produced
+ *   1  any failure: no reply, provider rejection, dead stream, truncated or
+ *      incomplete output
+ *   2  bad invocation (no key, no prompt)
  */
 
 const args = process.argv.slice(2);
@@ -196,14 +202,29 @@ async function main() {
   log(`written to:    ${outPath}`);
   log('—'.repeat(60));
 
+  /*
+   * The exit code is part of the verdict, not decoration.
+   *
+   * These two branches used to print a failure and then let main() resolve, so
+   * node exited 0 - a probe that announced INCOMPLETE while telling the shell it
+   * had succeeded. Anything scripting this (a CI gate, a bisect loop, a retry)
+   * would have read the exact failure it was built to catch as a pass. That is
+   * the same defect this file exists to expose, so it does not get to have it.
+   *
+   * `process.exitCode` rather than `process.exit()`: it lets the runtime flush
+   * stdout and finish the write above before the process ends.
+   */
   if (complete && html.length > 500) {
     log('VERDICT: THE MODEL AND THE KEY WORK. Open the file in a browser.');
     log('If that page is good, nothing about the model was ever the problem.');
+    process.exitCode = 0;
   } else if (finishReason === 'length') {
     log('VERDICT: CUT OFF BY TOKEN LIMIT, not by time. Raise max_tokens and rerun.');
+    process.exitCode = 1;
   } else {
     log('VERDICT: INCOMPLETE OUTPUT even with everything else removed.');
     log('That points at the prompt or the model, not at the platform.');
+    process.exitCode = 1;
   }
 }
 
