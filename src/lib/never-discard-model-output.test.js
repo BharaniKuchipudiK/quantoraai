@@ -83,3 +83,23 @@ test('INVARIANT: a failed proof never replaces the model output', () => {
   );
   assert.match(source, /proofNote/, 'the proof failure copy should reach the turn as a note');
 });
+
+test('INVARIANT: the build-truth note is appended, never assigned as the turn text', () => {
+  /*
+   * The newest note on the pile, held to the oldest rule in this file. Build
+   * truth says what does not work on a page — which makes it exactly the kind
+   * of copy that, written one line differently, would replace the page it is
+   * describing. It has to reach the turn the same way every other note does:
+   * concatenated onto the model's output, never substituted for it, and never
+   * in place of the proof note either, since the two answer different
+   * questions and a turn can need both.
+   */
+  const source = hookSource();
+  assert.match(source, /const truthNote = buildTruthNote\(codingProof\);/, 'the note must be computed');
+  assert.match(
+    source,
+    /if \(truthNote\) proofNote = proofNote \? `\$\{proofNote\}\\n\\n\$\{truthNote\}` : truthNote;/,
+    'it must append to any existing proof note rather than overwrite it',
+  );
+  assert.doesNotMatch(source, /text:\s*truthNote/, 'and it may never become the message text');
+});

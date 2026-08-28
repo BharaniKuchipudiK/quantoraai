@@ -38,6 +38,7 @@ import {
   proveCodingTurn,
   codingTurnMayClaimSuccess,
   proofFailureCopy,
+  buildTruthNote,
 } from '../lib/proof-control-plane.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
@@ -1362,6 +1363,23 @@ export function useChatStream({
                 priority: chip.priority,
               }));
             }
+
+            /*
+             * What does not work in the page, whether or not proof passed.
+             *
+             * This is the one that matters to the person who cannot read the
+             * source. Proof passing means there is a runnable file; it says
+             * nothing about whether the buttons on it do anything. A page with
+             * twelve dead buttons passes proof today, looks finished, and is
+             * found out by clicking.
+             *
+             * Appended AFTER the proof note and never in place of it: the two
+             * answer different questions - "could I verify this?" and "what is
+             * wrong with it?" - and a turn can need both. Like every other note
+             * here it is added to the build, never substituted for it.
+             */
+            const truthNote = buildTruthNote(codingProof);
+            if (truthNote) proofNote = proofNote ? `${proofNote}\n\n${truthNote}` : truthNote;
           }
 
           const normalized = normalizeAssistantResponse(currentText);

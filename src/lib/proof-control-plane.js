@@ -16,8 +16,12 @@ import { previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
 import { rememberCodingTurnLesson } from './coding-turn-memory.js';
 import { lessonKindFromOutcome } from './coding-turn-lesson-kinds.js';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from './project-runtime-preview.js';
+import { describeBuildTruth, inspectBuildTruth } from './build-truth.js';
 
 /** @typedef {'pending'|'pass'|'repair'|'fail'} ProofStatus */
+
+/** A turn with nothing to inspect has found nothing — not "found it clean". */
+const NO_TRUTH = { findings: [], skipped: [], checked: 0 };
 
 /**
  * @typedef {{
@@ -94,6 +98,18 @@ export function evaluateProofEvidence(plan, {
       : null);
   const liveCart = liveFacts?.hasCart === true || liveFacts?.bagIncremented === true;
 
+  /*
+   * Build truth runs on EVERY turn, and its findings never join `gaps`.
+   *
+   * `gaps` decide pass/fail and drive the repair loop; these are observations.
+   * Mixing them would make a dead button fail a turn, and a turn that fails on
+   * a check this new - over a page nobody has judged yet - is how the platform
+   * started deleting good work in the first place. It also has to run when
+   * proof PASSES, because that is exactly the case it exists for: a page with
+   * a runnable HTML file and twelve buttons wired to nothing passes today.
+   */
+  const truth = inspectBuildTruth(html, { files: Object.keys(vfs || {}) });
+
   const evidence = {
     photos,
     hasCart,
@@ -117,7 +133,7 @@ export function evaluateProofEvidence(plan, {
   }
   if (embedReady === false) gaps.push('Preview shell embed-ready');
 
-  return { evidence, gaps, ok: gaps.length === 0 };
+  return { evidence, gaps, truth, ok: gaps.length === 0 };
 }
 
 /**
@@ -150,6 +166,7 @@ export function proveCodingTurn({
       },
       repaired: false,
       ran: [],
+      truth: NO_TRUTH,
       vfs: vfs || {},
       outcomeKind: null,
       detail: 'non-coding',
@@ -170,6 +187,7 @@ export function proveCodingTurn({
       },
       repaired: false,
       ran: [],
+      truth: NO_TRUTH,
       vfs: vfs || {},
       outcomeKind: 'interrupt',
       detail: 'turn interrupted before model',
@@ -228,6 +246,7 @@ export function proveCodingTurn({
       evidence: evalResult.evidence,
       repaired,
       ran,
+      truth: evalResult.truth,
       vfs: nextVfs,
       outcomeKind: null,
       detail: repaired ? 'passed after skill repair' : 'passed',
@@ -254,6 +273,7 @@ export function proveCodingTurn({
     evidence: evalResult.evidence,
     repaired,
     ran,
+    truth: evalResult.truth,
     vfs: nextVfs,
     outcomeKind,
     detail: `proof failed: ${evalResult.gaps.join(', ')}`,
@@ -295,4 +315,20 @@ export function proofFailureCopy(verdict, plan = null) {
  */
 export function codingTurnMayClaimSuccess(verdict) {
   return Boolean(verdict?.ok && verdict.status === 'pass');
+}
+
+/**
+ * The note shown alongside a build that WORKED, naming what does not work in it.
+ *
+ * Separate from proofFailureCopy on purpose. That one explains why proof could
+ * not be completed; this one is the product: concrete, checkable statements
+ * about the page a person is looking at, in words they can act on without
+ * knowing what a selector is.
+ *
+ * Returns '' when there is nothing to say. Silence is the right answer to a
+ * page with nothing wrong — a clean bill of health would be a claim, and these
+ * checks are narrow enough that it would be an overclaim.
+ */
+export function buildTruthNote(verdict) {
+  return describeBuildTruth(verdict?.truth || NO_TRUTH);
 }
