@@ -38,6 +38,12 @@ jobs:
       - name: Lint (no-undef, frontend)
         run: npm run lint:undef
 
+      # Runs before the suite because it takes a second and catches the one
+      # thing 1400 passing tests cannot: a feature that is tested and reachable
+      # by nothing. Also inside test:all, so it holds locally too.
+      - name: Wiring gate (tested but called by nothing)
+        run: npm run test:wiring
+
       - name: Run all tests
         run: npm run test:all
 
