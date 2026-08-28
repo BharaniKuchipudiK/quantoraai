@@ -138,3 +138,85 @@ test('an ordinary chat turn is still a pass-through', () => {
   });
   assert.equal(plan.mode, 'pass');
 });
+
+/*
+ * Two defects a review found in the first version of this file. Both are the
+ * same species as the bug it was written to fix: a rule that looked right and
+ * was checked against the wrong thing.
+ */
+
+test('INVARIANT: activation recovers the asks the cold classifier misses', () => {
+  /*
+   * The first version asked resolveIsCodingRequest whether the session had ever
+   * been a build — the same classifier whose misses this is meant to recover
+   * from. "build me a currency converter" is not recognised by it (no matching
+   * noun), so a session opened that way never activated and the circular lock
+   * survived intact for exactly the asks that trip it.
+   */
+  const missedByTheClassifier = [
+    'build me a currency converter',
+    'make me a thing that renames my photos',
+    'create me a slideshow of my holiday',
+  ];
+  for (const ask of missedByTheClassifier) {
+    assert.equal(resolveIsCodingRequest(ask, { codingDeskOpen: true }), false, `fixture: ${ask}`);
+    assert.equal(
+      isBuildSessionActive({ priorUserMessages: [ask], codingDeskOpen: true, isCodingRequest }),
+      true,
+      ask,
+    );
+  }
+  // And an ask the classifier does catch still activates, by the other signal.
+  assert.equal(
+    isBuildSessionActive({ priorUserMessages: ['create me a drive custodian'], codingDeskOpen: true, isCodingRequest }),
+    true,
+  );
+});
+
+test('the whole lock is broken for an ask the classifier misses', () => {
+  const plan = planCodingTurn({
+    message: 'it is still broken',
+    priorUserMessages: ['build me a currency converter'],
+    codingDeskOpen: true,
+    vfsFileCount: 0,
+    autoMode: true,
+    availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+  });
+  assert.equal(plan.isCodingTurn, true);
+  assert.notEqual(plan.mode, 'pass');
+});
+
+test('INVARIANT: a question about anything else stays a question', () => {
+  /*
+   * Trouble words alone are not a build signal — "wrong", "still", "again" and
+   * "can you show" appear in questions about anything at all. Answering "what is
+   * wrong with the economy?" by regenerating somebody's page would be its own
+   * kind of not listening.
+   */
+  for (const text of [
+    'what is wrong with the economy?',
+    "can you show me today's weather?",
+    'why is inflation still rising?',
+    'is that still the best approach in general?',
+    'what is the application deadline?',
+    'why does that appear to be wrong?',
+  ]) {
+    assert.equal(turnBelongsToBuild({ text, buildSessionActive: true }), false, text);
+  }
+});
+
+test('a noun that merely starts like a noun is not a reference to the build', () => {
+  // `app\w*` matched "approach", so a general question read as a reference to
+  // the app. Plurals only.
+  for (const text of ['is that still the best approach?', 'why does that appear wrong?']) {
+    assert.equal(turnBelongsToBuild({ text, buildSessionActive: true }), false, text);
+  }
+  assert.equal(turnBelongsToBuild({ text: 'why are the buttons still broken', buildSessionActive: true }), true);
+});
+
+test('a build session is not activated by a question about building', () => {
+  assert.equal(
+    isBuildSessionActive({ priorUserMessages: ['what should I build next?'], codingDeskOpen: true, isCodingRequest }),
+    false,
+  );
+});

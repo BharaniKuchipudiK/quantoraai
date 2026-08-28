@@ -39,13 +39,43 @@
 const QUESTION_ONLY = /^(how|what|why|when|where|which|who|whose|should|could|would|is|are|was|were|do|does|did|can|will|explain|tell me|help me understand)\b/i;
 
 /**
- * A question that is really an instruction.
+ * Something gone wrong, or an instruction dressed as a question.
  *
- * "Why is the button not working" and "can you give me the file instead" open
- * with question words and are unmistakably about the work. Treating them as
- * chat is how somebody ends up being told to open TextEdit.
+ * On its own this is far too broad — "wrong", "still", "again", "can you show"
+ * appear in questions about anything at all. It is only half the test.
  */
-const WORK_DESPITE_QUESTION = /\b(?:(?:not|doesn'?t|isn'?t|won'?t|didn'?t)\s+work\w*|broken|still|instead|missing|empty|blank|wrong|fail\w*|error|fix\w*|again|nothing happens|no code|can you (?:give|make|add|change|show|send|put|build|create|fix))\b/i;
+const TROUBLE = /\b(?:(?:not|doesn'?t|isn'?t|won'?t|didn'?t)\s+work\w*|broken|still|instead|missing|empty|blank|wrong|fail\w*|error|fix\w*|again|nothing happens|no code|can you (?:give|make|add|change|show|send|put|build|create|fix))\b/i;
+
+/**
+ * A reference to the thing being built.
+ *
+ * This is the other half, and the necessary one. "Why is the button not
+ * working" is about the work; "what is wrong with the economy?" is not, and
+ * they are separated by whether anything on screen is being named. Without this
+ * check, a generic complaint word turned any question at all into a rebuild —
+ * answering a question about the weather by regenerating somebody's page.
+ */
+/*
+ * Note the `(?:s|es)?` rather than `\w*` on the noun group. `app\w*` matched
+ * "approach", so "is that still the best approach in general?" read as a
+ * reference to the app and turned a general question into a rebuild.
+ */
+const ARTIFACT_REFERENCE = /\b(it|this|that|these|those|my|the)\b[^?]{0,40}?\b(app|application|page|site|website|build|code|file|preview|screen|button|link|form|layout|header|footer|nav|menu|cart|checkout|total|price|image|photo|colou?r|font|text|title|table|chart|list|card|section|feature|version)(?:s|es)?\b|\b(?:it|this|that)\b\s*(?:is|'s|does|did|has|was)?\s*(?:not|n'?t)?\s*(?:work|load|show|open|display|render|save|run)\w*|\byou (?:gave|sent|made|built|wrote|showed)\b|\bno code\b|\bnothing happens\b/i;
+
+/**
+ * A build ask, judged more broadly than the cold classifier judges one.
+ *
+ * This exists because the first version asked `resolveIsCodingRequest` whether
+ * the session had ever been a build — the same classifier whose misses this is
+ * supposed to recover from. "build me a currency converter" is not recognised
+ * by it (no matching noun), so a session opened that way never activated, and
+ * the circular lock survived intact for exactly the asks that trip it. A
+ * recovery built on the thing that failed recovers nothing.
+ *
+ * An imperative build verb with an object is enough. It does not force a build
+ * on its own — it only says this session was trying to make something.
+ */
+const IMPERATIVE_BUILD = /\b(build|create|make|generate|design|develop|code|prototype|scaffold|clone|rebuild)\b\s+(?:me\s+)?(?:a|an|the|my|us\s+a|some)?\s*\w/i;
 
 /**
  * Has this session already asked for something to be built?
@@ -61,9 +91,14 @@ export function isBuildSessionActive({
 } = {}) {
   if (hasDeskFiles) return true;
   if (!codingDeskOpen) return false;
-  return (priorUserMessages || []).some(
-    (message) => typeof message === 'string' && isCodingRequest(message),
-  );
+  return (priorUserMessages || []).some((message) => {
+    if (typeof message !== 'string') return false;
+    const t = message.trim();
+    if (!t || QUESTION_ONLY.test(t)) return false;
+    // Two signals, deliberately: the strict classifier, and a plain imperative
+    // build ask it is known to miss.
+    return isCodingRequest(t) || IMPERATIVE_BUILD.test(t);
+  });
 }
 
 /**
@@ -78,6 +113,11 @@ export function turnBelongsToBuild({ text = '', buildSessionActive = false } = {
   const t = String(text || '').trim();
   if (!t) return false;
   if (!QUESTION_ONLY.test(t)) return true;
-  // A question about the work is still about the work.
-  return WORK_DESPITE_QUESTION.test(t);
+  /*
+   * A question about the work is still about the work — but it has to BE about
+   * the work. Trouble words alone are not enough: "what is wrong with the
+   * economy?" and "can you show me today's weather?" carry them and have
+   * nothing to do with the page.
+   */
+  return TROUBLE.test(t) && ARTIFACT_REFERENCE.test(t);
 }
