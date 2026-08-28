@@ -292,6 +292,7 @@ export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
   modelName?: string;
   buildMode?: boolean;
+  needsJobPlan?: boolean;
   guided?: boolean;
   refineMode?: boolean;
   featureSuggest?: boolean;
@@ -316,6 +317,11 @@ export function buildConversationSystemPrompt(options: {
     build = `\n\n${FEATURE_SUGGEST_DIRECTIVE}`;
   } else if (options.guided) {
     build = `\n\n${GUIDED_BUILD_DIRECTIVE}`;
+  } else if (options.needsJobPlan) {
+    // Planning REPLACES building this turn. Sending both invites the model to
+    // emit a plan and then try the whole build anyway, which is the 175s
+    // timeout this directive exists to avoid.
+    build = `\n\n${JOB_PLAN_DIRECTIVE}`;
   } else if (options.buildMode) {
     build = `\n\n${BUILD_DIRECTIVE}`;
     if (options.refineMode) {
@@ -363,6 +369,28 @@ export function buildConversationSystemPrompt(options: {
 
   return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${listeningHints}${proactive}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
 }
+
+const JOB_PLAN_DIRECTIVE = `BIG BUILD — PLAN IT AS STEPS FIRST
+This ask is too large to finish in one reply. Do not try; a reply that runs out
+of time delivers nothing and costs the user real money.
+
+Instead, on THIS turn only:
+1. Say in 2-3 sentences what you are going to build.
+2. Emit the plan marker below and STOP. No code this turn.
+
+<!-- quantora-plan: {"goal":"<one line>","steps":[{"title":"<what this step does>","produces":["<file>","<file>"]}]} -->
+
+Rules the platform enforces, so a plan that breaks them is discarded:
+- EVERY step must name the files it produces. A step is marked done only when
+  those files exist on the desk with real content — never because a reply said
+  so. A step naming no file can never be completed and is dropped.
+- Order steps so each one runs: data and entry files before the components that
+  import them.
+- 3 to 7 steps. Each step must be finishable in one reply.
+- Name real paths you will actually write (src/App.jsx, src/data/roster.js).
+
+After the plan, each following turn does ONE step and emits only that step's
+files.`;
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)
 Use this directive ONLY when the user is planning a software application, feature, or technical system to build.

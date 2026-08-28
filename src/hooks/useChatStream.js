@@ -20,6 +20,7 @@ import {
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
+import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -242,6 +243,7 @@ export function useChatStream({
   onCodingTurnExecute = null,
   onCodingTurnProved = null,
   onDeskRename = null,
+  buildJob = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
@@ -868,7 +870,21 @@ export function useChatStream({
       }]);
     }
 
-    const messageForRequest = text.trim() || 'I have attached an image. Describe what you see and help me with it.';
+    /*
+     * "continue" on a running job means TAKE THE NEXT STEP.
+     *
+     * Sent as the bare word it is nearly meaningless several turns after the
+     * plan: the model no longer has the goal in view and re-reads the whole
+     * project. nextStepBrief restates the goal and names the exact files the
+     * step owes, which is also what marks it done — so the instruction and the
+     * proof are the same list.
+     */
+    const resumingJob = buildJob
+      && !buildJobIsComplete(buildJob)
+      && /^\s*(continue|next|next step|go on|carry on|keep going)\b[\s.!]*$/i.test(text);
+    const messageForRequest = resumingJob
+      ? nextStepBrief(buildJob)
+      : (text.trim() || 'I have attached an image. Describe what you see and help me with it.');
 
     const requestBodyFor = (model) => ({
       message: messageForRequest,
@@ -907,6 +923,9 @@ export function useChatStream({
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,
+      // A job already running means the next turn takes a STEP. Without this,
+      // every follow-up on a big build would re-plan instead of advancing.
+      buildJobActive: Boolean(buildJob && !buildJobIsComplete(buildJob)),
       ...(isCodingRequest ? {
         qualityHints: {
           fileCount: vfsFileCountForHints,

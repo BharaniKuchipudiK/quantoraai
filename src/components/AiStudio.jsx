@@ -33,6 +33,7 @@ import {
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
+import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
@@ -544,6 +545,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * complete success over a half-changed build.
    */
   const [patchNote, setPatchNote] = useState('');
+  /*
+   * Phase 04. A build too large for one reply becomes a job: a goal and steps,
+   * each naming the files it must leave behind. Steps go green only when those
+   * files exist on the desk — never because a turn said so.
+   */
+  const [buildJob, setBuildJob] = useState(null);
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -866,6 +873,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
     const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
+    // A plan turn starts the job; every other turn re-judges it against the
+    // files that now exist, so a step can also go BACK to not-done if its file
+    // is later emptied. The job describes the desk, not the history of claims.
+    const proposed = readPlanMarker(rawText);
+    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
     setPatchNote((assembled.patchFailures || [])
       .map((failure) => describePatchFailures(failure.result, failure.filepath))
       .filter(Boolean)
@@ -1222,6 +1235,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     onCodingTurnExecute,
     onCodingTurnProved,
     onDeskRename,
+    buildJob,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -1769,6 +1783,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
                           {shopUiMissingNote}
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (
+                        <div
+                          data-quantora-build-job="true"
+                          style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+                        >
+                          {describeBuildJob(buildJob)}
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (

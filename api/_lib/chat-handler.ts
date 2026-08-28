@@ -61,6 +61,7 @@ import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
 import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-outcome-routing.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
+import { briefNeedsJob } from "../../src/lib/build-job.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
@@ -743,6 +744,18 @@ export default async function handler(req: any, res: any) {
       cognitiveLevel,
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
+      /*
+       * Phase 04: a build too big for one reply is planned instead of attempted.
+       *
+       * Only on a FIRST build turn — never while refining, and never once a job
+       * is already running, or every follow-up would re-plan instead of taking
+       * the next step. `hasVFS` stands in for "there is already a desk here".
+       */
+      needsJobPlan: effectiveBuildMode
+        && !isRefine
+        && !honorGuided
+        && briefNeedsJob(message, { vfs: req.body?.hasVFS ? { placeholder: 1 } : {} })
+        && !req.body?.buildJobActive,
       guided: honorGuided,
       refineMode: isRefine,
       featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
