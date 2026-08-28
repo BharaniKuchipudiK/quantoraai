@@ -181,3 +181,50 @@ test("a cold tax and portfolio question from empty chat can still open Finance",
 
   assert.equal(request.studioDomain, "finance");
 });
+
+test("capacity envelope classifies a quick turn as light without changing request behavior", () => {
+  const request = normalizeCommunicationRequest({
+    message: "What does this function do?",
+    taskCategory: "quick",
+  });
+
+  assert.equal(request.capacity.policyVersion, "qcu-shadow-v1");
+  assert.equal(request.capacity.taskClass, "light");
+  assert.equal(request.capacity.requestedMode, "light");
+  assert.equal(request.capacity.heavy, false);
+  assert.ok(request.capacity.estimatedQcu >= 1);
+});
+
+test("capacity envelope marks coding and deep-reasoning turns as heavy", () => {
+  const build = normalizeCommunicationRequest({
+    message: "Build a React dashboard with tests",
+  });
+  const deep = normalizeCommunicationRequest({
+    message: "Compare three architecture options and reason through the trade-offs",
+    cognitiveLevel: "Deep Think",
+  });
+
+  assert.equal(build.capacity.taskClass, "build");
+  assert.equal(build.capacity.heavy, true);
+  assert.equal(deep.capacity.taskClass, "deep");
+  assert.equal(deep.capacity.heavy, true);
+  assert.ok(deep.capacity.estimatedQcu > build.capacity.estimatedQcu);
+});
+
+test("capacity estimate grows with context but never copies prompt or history text", () => {
+  const secret = "secret-project-name-that-must-never-enter-capacity-telemetry";
+  const short = normalizeCommunicationRequest({
+    message: "Explain this",
+  });
+  const long = normalizeCommunicationRequest({
+    message: `Explain this ${secret}`,
+    history: Array.from({ length: 20 }, (_, index) => ({
+      sender: index % 2 ? "ai" : "user",
+      text: `${secret} ${"x".repeat(2_000)}`,
+    })),
+  });
+
+  assert.ok(long.capacity.estimatedContextTokens > short.capacity.estimatedContextTokens);
+  assert.ok(long.capacity.estimatedQcu > short.capacity.estimatedQcu);
+  assert.equal(JSON.stringify(long.capacity).includes(secret), false);
+});
