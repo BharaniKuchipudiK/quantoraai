@@ -151,6 +151,20 @@ test('build timeout and deployed canary credentials honor the release contract',
   // under it is what lets the server return its own error instead of being killed.
   assert.ok(serverBudgetMs <= 175_000, 'server budget must stay under the 180s function ceiling');
   assert.match(stream, /controller\.abort\('timeout'\), attemptBudgetMs/);
+  /*
+   * The two wall clocks are not directly comparable unless the client's is
+   * restarted once the server has the request: the client timer is armed before
+   * fetch, while TOTAL_CHAT_BUDGET_MS begins inside the handler after the body
+   * lands. With multi-megabyte image uploads now supported, a slow connection
+   * could spend the entire margin on transport and abort a turn the server had
+   * only just begun - the same inversion, arriving through the network instead
+   * of through a constant.
+   */
+  assert.match(
+    stream,
+    /clearTimeout\(timeoutId\);\s*\n\s*timeoutId = setTimeout\(\(\) => controller\.abort\('timeout'\), attemptBudgetMs\);/,
+    'the turn deadline must be re-armed when response headers arrive, so upload time is not charged to the server budget',
+  );
   // A self-healing retry must spend what is left of the turn deadline, never a fresh one.
   assert.match(stream, /turnDeadlineMs - \(Date\.now\(\) - turnStartedAt\)/);
   assert.match(stream, /buildMode: isCodingRequest/);
