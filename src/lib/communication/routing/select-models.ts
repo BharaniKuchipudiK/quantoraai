@@ -13,6 +13,8 @@ type ModelLike = {
   pricingKind?: string;
   specialty?: string;
   description?: string;
+  /** Declared by the provider catalogue, never inferred from the id. */
+  vision?: boolean;
   quality?: { sampleSize?: number; score?: number } | null;
 };
 
@@ -46,6 +48,24 @@ function isCodingDeskTurn(input: SelectModelsInput) {
   );
 }
 
+/**
+ * The rungs that can actually serve an image turn.
+ *
+ * Vision capability is READ from the catalogue (see discoverAnthropicFlagships),
+ * never inferred from an id: a model earns a rung here by declaring it. Anything
+ * that does not declare vision is dropped downstream by capabilitiesFor, so
+ * offering it builds a ladder with no rungs on it.
+ */
+function visionRungsFor(ready: ModelLike[], input: SelectModelsInput): string[] {
+  const isGemini = (id: string) => id.startsWith('gemini');
+  const declaresVision = (model: ModelLike) => model.vision === true && !isGemini(model.id);
+  const paid = input.allowPaid ? ready.filter(declaresVision).map((model) => model.id) : [];
+  const free = rankFreeModels(ready, input.message, input.arenaPrefs)
+    .filter((model) => declaresVision(model as ModelLike))
+    .map((model) => model.id);
+  return [...new Set([...paid, ...free])];
+}
+
 export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   const models = Array.isArray(input.models) ? input.models : [];
   const explicitId = typeof input.explicitModelId === 'string' ? input.explicitModelId.trim() : '';
@@ -57,9 +77,24 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   // The API approval gate is authoritative. Do not silently replace a user's
   // pinned model merely because the optional registry cache is empty/stale.
   if (explicit) {
-    const fallbackModelIds = rankFreeModels(models, input.message, input.arenaPrefs)
-      .filter((model) => model.id !== explicit.id && model.available !== false)
-      .map((model) => model.id);
+    /*
+     * An image turn on a PINNED model needs the same vision-capable ladder as
+     * Auto. This branch returns before the vision block below, so it kept the
+     * original single-route failure: fallbacks came from rankFreeModels, the
+     * capability filter dropped every one of them for not declaring vision, and
+     * a paid vision model the session pays for was never attempted. Pin Gemini,
+     * attach an image, lose Gemini, and the turn had nowhere to go.
+     *
+     * The pinned model stays primary either way - the user's choice is not
+     * overridden, it is backed up.
+     */
+    const readyForExplicit = models.filter((model) => typeof model?.id === 'string' && model.available !== false);
+    const fallbackModelIds = (input.hasImages
+      ? visionRungsFor(readyForExplicit, input)
+      : rankFreeModels(models, input.message, input.arenaPrefs)
+        .filter((model) => model.available !== false)
+        .map((model) => model.id)
+    ).filter((id) => id !== explicit.id);
     return {
       primaryModelId: explicit.id,
       fallbackModelIds,
@@ -71,16 +106,38 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   }
 
   if (input.hasImages) {
-    const gemini = models.find((model) => typeof model.id === 'string' && model.id.startsWith('gemini') && model.available !== false);
+    const ready = models.filter((model) => typeof model?.id === 'string' && model.available !== false);
+    const isGemini = (id: string) => id.startsWith('gemini');
+    const gemini = ready.find((model) => isGemini(model.id));
+    /*
+     * A vision turn used to have exactly ONE viable route.
+     *
+     * The primary was forced to Gemini, and the fallbacks came from
+     * rankFreeModels - which filters to FREE models. But the only models that
+     * DECLARE vision are the discovered flagships, and those are paid, so they
+     * could never appear as a rung. Downstream, capabilitiesFor drops any route
+     * that does not declare vision, which emptied the rest of the chain too.
+     *
+     * So attaching an image reduced the whole ladder to Gemini alone, and if
+     * Gemini was unhealthy the turn died - on a deployment paying for a
+     * vision-capable flagship that was answering fine on every other turn.
+     *
+     * Vision capability is read from the catalogue (see discoverAnthropicFlagships),
+     * never inferred from the id: a model earns a rung here by declaring it.
+     */
+    const fallbackModelIds = visionRungsFor(ready, input);
+
+    // Gemini stays the default when it exists: it is fast and reliably finishes.
+    // A declared vision model only becomes primary when there is no Gemini at all,
+    // which is the case that used to 503 outright.
+    const primaryModelId = gemini?.id || fallbackModelIds[0] || 'gemini-flash-latest';
     return {
-      primaryModelId: gemini?.id || 'gemini-flash-latest',
-      fallbackModelIds: rankFreeModels(models, input.message, input.arenaPrefs)
-        .filter((model) => !model.id.startsWith('gemini') && model.available !== false)
-        .map((model) => model.id),
+      primaryModelId,
+      fallbackModelIds: fallbackModelIds.filter((id) => id !== primaryModelId),
       reason: 'vision',
-      provider: 'gemini',
+      provider: isGemini(primaryModelId) ? 'gemini' : 'openrouter',
       hasVisionSupport: true,
-      selectionSource: gemini ? 'vision_default' : 'fallback_default',
+      selectionSource: (gemini || fallbackModelIds.length) ? 'vision_default' : 'fallback_default',
     };
   }
 

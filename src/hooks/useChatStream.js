@@ -55,7 +55,21 @@ import {
 } from '../lib/chat-turn-safety.js';
 
 const MIN_ATTEMPT_BUDGET_MS = 20_000;
-const CHAT_TURN_DEADLINE_MS = 90_000;
+/*
+ * Both client deadlines must OUTLAST the server's own budget
+ * (TOTAL_CHAT_BUDGET_MS, 165s), so a slow turn ends with the server's specific
+ * error rather than the browser hanging up on a request that was still working.
+ *
+ * This was 90s while the server was allowed 165s, so any chat turn over a minute
+ * and a half was aborted by the client mid-flight - tokens generated, billed and
+ * discarded, reported as "Request timed out". A flagship answering over a long
+ * conversation crosses 90s routinely.
+ *
+ * The build path was fixed in #347 and given a release gate; the chat path has
+ * the identical relationship and had no gate, so it kept the bug. The gate now
+ * covers both (see dom-cleanup.test.js).
+ */
+const CHAT_TURN_DEADLINE_MS = 175_000;
 // Must stay ABOVE the server's TOTAL_CHAT_BUDGET_MS (165s) or the client aborts a
 // turn the server is still working on — the user sees a dead spinner and the
 // server's honest failure never arrives.
@@ -937,7 +951,11 @@ export function useChatStream({
           MIN_ATTEMPT_BUDGET_MS,
           turnDeadlineMs - (Date.now() - turnStartedAt),
         );
-        const timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
+        /*
+         * Phase 1 - TRANSPORT. Armed before fetch so a request that cannot even
+         * reach the server still ends.
+         */
+        let timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
 
         try {
           const res = await fetch('/api/chat', {
@@ -950,6 +968,21 @@ export function useChatStream({
               turnAttempt: attempt,
             })
           });
+          /*
+           * Phase 2 - SERVER PROCESSING. Re-armed the moment response headers
+           * arrive, because that is when the server's own clock starts.
+           *
+           * The two wall clocks are NOT directly comparable: this one began
+           * before fetch, TOTAL_CHAT_BUDGET_MS begins inside the handler after
+           * the body lands. Now that the composer sends multi-megabyte images, a
+           * slow upload could eat the margin and abort a turn the server had
+           * only just begun - the same inversion this whole change exists to
+           * remove, arriving through the transport instead of the constant.
+           * Restarting here makes the comparison apples to apples whatever the
+           * upload cost.
+           */
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
           if (!stillCurrent()) return;
           const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
 

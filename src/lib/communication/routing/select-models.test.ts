@@ -80,3 +80,121 @@ test('Travel/research non-build Auto stays on ranked free routing', () => {
   });
   assert.notEqual(decision.selectionSource, 'coding_desk_auto');
 });
+
+type Fixture = { id: string; name: string; available: boolean; pricingKind: string; specialty?: string; vision?: boolean };
+
+const VISION_MODELS: Fixture[] = [
+  ...MODELS,
+  // Paid, and the only entry that DECLARES vision — the shape
+  // discoverAnthropicFlagships produces from the live catalogue.
+  { id: 'anthropic/claude-opus-5', name: 'Claude Opus 5', available: true, pricingKind: 'paid', vision: true },
+];
+
+test('an image turn has more than one viable route', () => {
+  /*
+   * Reported live: two attached images, "Request failed: Quantora could not
+   * complete this request", on a deployment whose paid flagship was answering
+   * every other turn.
+   *
+   * The primary was forced to Gemini and the fallbacks came from rankFreeModels,
+   * which filters to FREE models — so the only models that declare vision (the
+   * discovered flagships, all paid) could never be a rung. Downstream,
+   * capabilitiesFor drops any route without vision, emptying the rest. An image
+   * turn was Gemini or nothing.
+   */
+  const decision = selectModelsForTurn({
+    models: VISION_MODELS,
+    message: 'what is in this screenshot?',
+    hasImages: true,
+    allowPaid: true,
+  });
+  assert.equal(decision.reason, 'vision');
+  assert.ok(
+    decision.fallbackModelIds.includes('anthropic/claude-opus-5'),
+    'a paid model that declares vision must be a rung on a vision turn',
+  );
+});
+
+test('a vision fallback must actually declare vision, never be assumed from the id', () => {
+  const decision = selectModelsForTurn({
+    models: VISION_MODELS,
+    message: 'describe this image',
+    hasImages: true,
+    allowPaid: true,
+  });
+  // Nemotron and Qwen declare nothing, so capabilitiesFor would filter them out
+  // downstream; offering them as rungs builds a ladder with no rungs on it.
+  for (const id of decision.fallbackModelIds) {
+    const model = VISION_MODELS.find((candidate) => candidate.id === id);
+    assert.equal(model?.vision, true, `${id} was offered for a vision turn without declaring vision`);
+  }
+});
+
+test('a vision turn still routes when no Gemini exists at all', () => {
+  // This case used to fall through to the literal 'gemini-flash-latest' and 503.
+  const decision = selectModelsForTurn({
+    models: VISION_MODELS.filter((model) => !model.id.startsWith('gemini')),
+    message: 'read this image',
+    hasImages: true,
+    allowPaid: true,
+  });
+  assert.equal(decision.primaryModelId, 'anthropic/claude-opus-5');
+  assert.equal(decision.provider, 'openrouter');
+});
+
+test('a session with no paid access keeps a free-only vision chain', () => {
+  const decision = selectModelsForTurn({
+    models: VISION_MODELS,
+    message: 'what is this',
+    hasImages: true,
+    allowPaid: false,
+  });
+  assert.equal(decision.primaryModelId, 'gemini-flash-latest');
+  assert.ok(
+    !decision.fallbackModelIds.includes('anthropic/claude-opus-5'),
+    'a paid rung must not appear without paid access',
+  );
+});
+
+test('a PINNED model on an image turn also gets vision-capable backup', () => {
+  /*
+   * The explicit branch returns before the vision ladder, so it kept the
+   * original single-route failure: fallbacks came from rankFreeModels, the
+   * capability filter dropped every one for not declaring vision, and the paid
+   * vision model the session pays for was never attempted. Pin Gemini, attach
+   * an image, lose Gemini, and the turn had nowhere to go.
+   */
+  const decision = selectModelsForTurn({
+    models: VISION_MODELS,
+    message: 'what is in this screenshot?',
+    explicitModelId: 'gemini-flash-latest',
+    hasImages: true,
+    allowPaid: true,
+  });
+  assert.equal(decision.primaryModelId, 'gemini-flash-latest', 'the pinned choice stays primary');
+  assert.equal(decision.selectionSource, 'explicit');
+  assert.ok(
+    decision.fallbackModelIds.includes('anthropic/claude-opus-5'),
+    'a pinned image turn must be backed up by a model that declares vision',
+  );
+  for (const id of decision.fallbackModelIds) {
+    assert.equal(
+      VISION_MODELS.find((m) => m.id === id)?.vision, true,
+      `${id} was offered as a vision rung without declaring vision`,
+    );
+  }
+});
+
+test('a pinned NON-image turn keeps its ordinary fallbacks', () => {
+  // The vision ladder must not narrow an ordinary turn to nothing.
+  const decision = selectModelsForTurn({
+    models: VISION_MODELS,
+    message: 'explain this function',
+    explicitModelId: 'gemini-flash-latest',
+    hasImages: false,
+    allowPaid: true,
+  });
+  assert.equal(decision.primaryModelId, 'gemini-flash-latest');
+  assert.ok(decision.fallbackModelIds.length > 0, 'an ordinary pinned turn still needs a ladder');
+  assert.ok(!decision.fallbackModelIds.includes('gemini-flash-latest'), 'the primary is not its own rung');
+});

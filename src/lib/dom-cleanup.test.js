@@ -119,23 +119,52 @@ test('build timeout and deployed canary credentials honor the release contract',
    * and the server's honest failure never arrives. Assert the RELATIONSHIP rather
    * than a magic number, so raising one budget can never silently invert them.
    */
-  const clientDeadlineMs = Number(
-    (stream.match(/BUILD_TURN_DEADLINE_MS = ([\d_]+)/) || [])[1]?.replace(/_/g, ''),
-  );
   const serverBudgetMs = Number(
     (fs.readFileSync(new URL('../../api/_lib/chat-handler.ts', import.meta.url), 'utf8')
       .match(/TOTAL_CHAT_BUDGET_MS = ([\d_]+)/) || [])[1]?.replace(/_/g, ''),
   );
-  assert.ok(Number.isFinite(clientDeadlineMs), 'BUILD_TURN_DEADLINE_MS must be declared');
   assert.ok(Number.isFinite(serverBudgetMs), 'TOTAL_CHAT_BUDGET_MS must be declared');
-  assert.ok(
-    clientDeadlineMs > serverBudgetMs,
-    `client deadline (${clientDeadlineMs}ms) must exceed the server budget (${serverBudgetMs}ms)`,
-  );
+  /*
+   * EVERY client deadline, not just the build one.
+   *
+   * This gate originally checked BUILD_TURN_DEADLINE_MS alone, so the chat path
+   * kept the identical inversion unnoticed: CHAT_TURN_DEADLINE_MS sat at 90s
+   * against a 165s server budget, and any chat turn over a minute and a half was
+   * killed by the browser while the server was still working - tokens generated,
+   * billed and thrown away, surfaced as "Request timed out".
+   *
+   * Guarding one instance of a defect is how the other instances survive, so the
+   * gate now enumerates the deadlines from the source. A new one is covered the
+   * moment it is declared.
+   */
+  const deadlines = [...stream.matchAll(/const (\w*TURN_DEADLINE_MS) = ([\d_]+)/g)]
+    .map(([, name, value]) => ({ name, ms: Number(value.replace(/_/g, '')) }));
+  assert.ok(deadlines.length >= 2, `expected the chat and build deadlines, found ${deadlines.length}`);
+  for (const { name, ms } of deadlines) {
+    assert.ok(
+      ms > serverBudgetMs,
+      `${name} (${ms}ms) must exceed the server budget (${serverBudgetMs}ms), or the browser `
+      + 'aborts a turn the server would have finished',
+    );
+  }
   // Vercel allows this function 180s (vercel.json -> api/pipeline.ts); staying
   // under it is what lets the server return its own error instead of being killed.
   assert.ok(serverBudgetMs <= 175_000, 'server budget must stay under the 180s function ceiling');
   assert.match(stream, /controller\.abort\('timeout'\), attemptBudgetMs/);
+  /*
+   * The two wall clocks are not directly comparable unless the client's is
+   * restarted once the server has the request: the client timer is armed before
+   * fetch, while TOTAL_CHAT_BUDGET_MS begins inside the handler after the body
+   * lands. With multi-megabyte image uploads now supported, a slow connection
+   * could spend the entire margin on transport and abort a turn the server had
+   * only just begun - the same inversion, arriving through the network instead
+   * of through a constant.
+   */
+  assert.match(
+    stream,
+    /clearTimeout\(timeoutId\);\s*\n\s*timeoutId = setTimeout\(\(\) => controller\.abort\('timeout'\), attemptBudgetMs\);/,
+    'the turn deadline must be re-armed when response headers arrive, so upload time is not charged to the server budget',
+  );
   // A self-healing retry must spend what is left of the turn deadline, never a fresh one.
   assert.match(stream, /turnDeadlineMs - \(Date\.now\(\) - turnStartedAt\)/);
   assert.match(stream, /buildMode: isCodingRequest/);
