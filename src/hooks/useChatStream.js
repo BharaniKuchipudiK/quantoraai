@@ -56,7 +56,10 @@ import {
 
 const MIN_ATTEMPT_BUDGET_MS = 20_000;
 const CHAT_TURN_DEADLINE_MS = 90_000;
-const BUILD_TURN_DEADLINE_MS = 135_000;
+// Must stay ABOVE the server's TOTAL_CHAT_BUDGET_MS (165s) or the client aborts a
+// turn the server is still working on — the user sees a dead spinner and the
+// server's honest failure never arrives.
+const BUILD_TURN_DEADLINE_MS = 175_000;
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];
@@ -644,13 +647,88 @@ export function useChatStream({
      * moved that dead end one hop. Give the turn a real instruction instead, and
      * only when an image is actually attached and being delivered.
      */
-    const attachedImages = (attachments || [])
-      .map((item) => item?.dataUrl)
-      .filter((url) => typeof url === 'string' && url.startsWith('data:image/'))
-      .slice(0, 4);
-    const messageForRequest = text.trim() || (attachedImages.length
-      ? 'I have attached an image. Describe what you see and help me with it.'
-      : text);
+    /*
+     * The wire budget, not the file-picker's budget. A base64 data URI is ~4/3 the
+     * size of the file it encodes, so the uploader's 3MB-per-file ceiling produces
+     * a ~4.2M-character string - already past this cap on its own. Anything the cap
+     * excludes must be REPORTED, never dropped in silence: the earlier version
+     * broke out of the loop on the first oversized image, which also discarded
+     * every smaller image queued behind it, and the turn then went to the model
+     * describing an image it had never been sent.
+     */
+    const MAX_ATTACHED_IMAGE_CHARS = 3_500_000; // keeps the JSON body under Vercel's 4.5MB limit
+    const MAX_ATTACHED_IMAGES = 4;
+    const deliverableImages = [];
+    const excluded = [];
+    let attachedChars = 0;
+    for (const item of attachments || []) {
+      const url = item?.dataUrl;
+      // No dataUrl at all: a non-image file, or one the reader already rejected.
+      if (typeof url !== 'string' || !url.startsWith('data:image/')) {
+        excluded.push({ name: item?.name, reason: 'unsupported' });
+        continue;
+      }
+      if (deliverableImages.length >= MAX_ATTACHED_IMAGES) {
+        excluded.push({ name: item?.name, reason: 'count' });
+        continue;
+      }
+      // Skip this one and keep going - a later, smaller image can still fit.
+      if (attachedChars + url.length > MAX_ATTACHED_IMAGE_CHARS) {
+        excluded.push({ name: item?.name, reason: 'size' });
+        continue;
+      }
+      attachedChars += url.length;
+      deliverableImages.push(url);
+    }
+    const attachedImages = deliverableImages;
+
+    const namesOf = (list) => list.map((entry) => entry.name).filter(Boolean).join(', ');
+    const tooLarge = excluded.filter((entry) => entry.reason === 'size');
+    const unsupported = excluded.filter((entry) => entry.reason === 'unsupported');
+    const overCount = excluded.filter((entry) => entry.reason === 'count');
+
+    /*
+     * Nothing to send: an attachment-only turn where every attachment was excluded
+     * would otherwise post an empty message that /api/chat rejects with "Message
+     * string is required" - a dead end with the moderation error suppressed, so
+     * nothing explained it. Say which file was excluded and why.
+     */
+    if (!text.trim() && !attachedImages.length) {
+      const explanation = tooLarge.length
+        ? `${namesOf(tooLarge) || 'That image'} is too large to send once encoded — images need to be roughly 2.5MB or smaller. Try a smaller copy, or tell me what you need and I will help.`
+        : unsupported.length
+          ? `I can read images (PNG/JPG), but not ${namesOf(unsupported) || 'that file'} — describe what you need and I will help.`
+          : 'Add a message so I know what you would like me to do.';
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: explanation,
+        isError: true,
+      }]);
+      setIsGenerating(false);
+      return;
+    }
+
+    /*
+     * The turn IS going ahead, but not with everything that was attached. Saying so
+     * up front is the difference between a partial answer and a wrong one: without
+     * it the model answers about the images it received while the composer shows
+     * the ones it did not.
+     */
+    if (excluded.length) {
+      const parts = [];
+      if (tooLarge.length) parts.push(`${namesOf(tooLarge) || 'one image'} (too large once encoded)`);
+      if (unsupported.length) parts.push(`${namesOf(unsupported) || 'one file'} (not a readable image)`);
+      if (overCount.length) parts.push(`${namesOf(overCount) || 'the rest'} (only ${MAX_ATTACHED_IMAGES} images per turn)`);
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: `Heads up — I could not send ${parts.join(' and ')}. I am answering on what did go through.`,
+        isError: true,
+      }]);
+    }
+
+    const messageForRequest = text.trim() || 'I have attached an image. Describe what you see and help me with it.';
 
     const requestBodyFor = (model) => ({
       message: messageForRequest,

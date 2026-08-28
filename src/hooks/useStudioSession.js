@@ -139,6 +139,13 @@ function noteStorageFault(kind, error, extra = {}) {
 
 function clearStorageFault() {
   if (!storageFault) return;
+  /*
+   * A 'corrupt' notice reports something that already happened and points at the
+   * backup key. The very next message writes successfully, so clearing on
+   * success would erase it a second later — before the user could read it. Only
+   * live degradations ('quota', 'write', 'evicted') are cleared by a good write.
+   */
+  if (storageFault.kind === 'corrupt') return;
   storageFault = null;
   publishStorageFault();
 }
@@ -230,7 +237,9 @@ function persistSessions(sessions) {
     const trimmed = compact.map((session) => ({ ...session }));
     let shed = 0;
     for (const { index } of order) {
-      if (!trimmed[index] || trimmed[index].desk === undefined) continue;
+      // `desk: null` is an empty desk, not a snapshot: deleting it frees nothing,
+      // inflates the reported count, and wastes a retry.
+      if (!trimmed[index]?.desk) continue;
       delete trimmed[index].desk;
       shed += 1;
       try {

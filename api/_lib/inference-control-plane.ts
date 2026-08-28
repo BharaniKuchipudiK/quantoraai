@@ -29,6 +29,8 @@ export type InferenceModelLike = {
   lifecycle?: string;
   health?: string;
   pricingKind?: string;
+  /** Declared by the provider catalogue; not inferred from the id. */
+  vision?: boolean;
 };
 
 export type InferencePlanInput = {
@@ -65,7 +67,14 @@ const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
  * failed-quota-domain skip are what prevent a retry storm — not this count.
  */
 const MAX_INFERENCE_ATTEMPTS = 4;
-const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
+/*
+ * The single largest constraint on build quality. At 65s a flagship model was
+ * cut off part-way through a multi-file page: the tokens were generated and
+ * billed, then discarded, and the turn degraded to a weaker fallback. Raised so
+ * the chosen model gets a window it can actually finish in, while still leaving
+ * a build-viable rung behind it.
+ */
+const MAX_PRIMARY_BUILD_ATTEMPT_MS = 110_000;
 /* An attempt below this has no realistic chance of producing a build. */
 const MIN_VIABLE_ATTEMPT_MS = 20_000;
 /*
@@ -81,6 +90,15 @@ const MIN_VIABLE_ATTEMPT_MS = 20_000;
  */
 export const MIN_VIABLE_BUILD_ATTEMPT_MS = 45_000;
 
+/*
+ * Two rungs, not three. Every extra rung is reserved out of the PRIMARY's window,
+ * and the primary is the attempt most likely to succeed - a third rung cost it
+ * 35s (110s -> 75s) to buy a third try that only runs after two real attempts
+ * already failed. One full-length attempt at the best model plus one real
+ * fallback is the better trade.
+ */
+const MAX_BUILD_RUNGS = 2;
+
 /** How many build rungs the remaining wall-clock can fund at a viable size. */
 export function maxViableBuildAttempts(
   totalBudgetMs: number,
@@ -88,7 +106,7 @@ export function maxViableBuildAttempts(
 ) {
   const budget = Math.max(0, Math.floor(totalBudgetMs));
   const floorMs = Math.max(1, Math.floor(minAttemptMs));
-  return Math.max(1, Math.floor(budget / floorMs));
+  return Math.max(1, Math.min(MAX_BUILD_RUNGS, Math.floor(budget / floorMs)));
 }
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
 
@@ -145,9 +163,17 @@ function upstreamProviderFor(modelId: string, registry?: InferenceModelLike) {
   return safeLabel(fromId || registry?.provider || 'unknown', 'unknown').toLowerCase();
 }
 
-function capabilitiesFor(modelId: string): InferenceCapability[] {
+function capabilitiesFor(modelId: string, registry?: InferenceModelLike): InferenceCapability[] {
   if (gatewayFor(modelId) === 'gemini') return ['text', 'code', 'vision', 'travel-tools'];
-  return ['text', 'code'];
+  /*
+   * Vision used to be granted to Gemini alone, so attaching an image to a turn on
+   * an explicitly pinned OpenRouter model filtered that model out: the turn either
+   * silently rerouted to Gemini (ignoring the user's choice) or 503'd when no
+   * Gemini credential existed. Plenty of OpenRouter models are multimodal, so read
+   * the capability from the catalogue that says so rather than inferring it from
+   * the vendor prefix. Absent that signal we stay conservative and omit vision.
+   */
+  return registry?.vision ? ['text', 'code', 'vision'] : ['text', 'code'];
 }
 
 function costClassFor(modelId: string, registry?: InferenceModelLike): InferenceCostClass {
@@ -181,7 +207,7 @@ async function describeRoute(
   if (gateway === 'openrouter' && !input.openRouterAvailable) return null;
 
   const model = registry.get(modelId);
-  const capabilities = capabilitiesFor(modelId);
+  const capabilities = capabilitiesFor(modelId, model);
   const required = input.requiredCapabilities || ['text'];
   if (required.some((capability) => !capabilities.includes(capability))) return null;
 

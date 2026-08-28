@@ -2448,7 +2448,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             ? `Browser storage was full. Your chats were kept, but ${storageFault.deskSnapshotsDropped || 1} saved Coding desk build${(storageFault.deskSnapshotsDropped || 1) === 1 ? ' was' : 's were'} dropped to make room — they will not survive a refresh. Publish or download anything you need.`
             : storageFault.kind === 'corrupt'
               ? 'Saved chats could not be read, so a fresh session was started. The previous data was kept aside rather than overwritten.'
-              : 'Browser storage is full, so new messages are no longer being saved. Delete an old chat to free space before refreshing.'}
+              : storageFault.kind === 'quota'
+                ? 'Browser storage is full, so new messages are no longer being saved. Delete an old chat to free space before refreshing.'
+                : 'This browser is blocking local storage, so new messages are not being saved. Private browsing or a site-data setting is the usual cause — deleting chats will not help.'}
         </div>
       ) : null}
       {/* Left Navigation Sidebar — New Chat + footer stay; Chat History is the scroll region. */}

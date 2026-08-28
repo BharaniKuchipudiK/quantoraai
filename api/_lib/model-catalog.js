@@ -2,53 +2,24 @@ const OPENROUTER_CATALOG_URL = 'https://openrouter.ai/api/v1/models';
 const GEMINI_CATALOG_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const FETCH_TIMEOUT_MS = 4_000;
 
-export const CURATED_MODELS = [
-  {
-    id: 'google/gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    provider: 'Google',
-    description: 'Fast multimodal reasoning for complex logic and general tasks.',
-    contextWindow: '1M',
-    tag: 'MULTIMODAL',
-    icon: 'sparkles',
-  },
-  {
-    id: 'deepseek/deepseek-chat',
-    name: 'DeepSeek V3',
-    provider: 'DeepSeek',
-    description: 'Open-weights logic, math and coding powerhouse.',
-    contextWindow: '64k',
-    tag: 'OPEN',
-    icon: 'cpu',
-  },
-  {
-    id: 'qwen/qwen-2.5-coder-32b-instruct',
-    name: 'Qwen 2.5 Coder 32B',
-    provider: 'Qwen',
-    description: 'Code synthesis and UI generation specialist.',
-    contextWindow: '128k',
-    tag: 'CODING',
-    icon: 'brain',
-  },
-  {
-    id: 'meta-llama/llama-3.3-70b-instruct',
-    name: 'Llama 3.3 70B',
-    provider: 'Meta',
-    description: 'Highly capable open-source instruction following.',
-    contextWindow: '128k',
-    tag: 'OPEN',
-    icon: 'database',
-  },
-  {
-    id: 'openai/gpt-4o-mini',
-    name: 'GPT-4o Mini',
-    provider: 'OpenAI',
-    description: 'General assistant tuned for fast, low-cost queries.',
-    contextWindow: '128k',
-    tag: 'FAST',
-    icon: 'zap',
-  },
-];
+/*
+ * Deliberately empty.
+ *
+ * This was a hand-written list of models (Gemini 2.5 Flash, Qwen 2.5 Coder,
+ * GPT-4o Mini, Llama 3.3, DeepSeek V3) frozen at the time it was typed. Vendors
+ * ship successors constantly, so the list aged into a menu of superseded options
+ * that the picker still offered - and a hardcoded id is exactly what caused the
+ * retired-Anthropic-model outage: the router selects it, the provider rejects it,
+ * and the turn silently degrades.
+ *
+ * Every route is now DISCOVERED instead of named:
+ *   - DIRECT_MODELS  - the two first-party defaults, verified by their own gateway
+ *   - discoverAnthropicFlagships() - read from the live provider catalogue
+ *   - the approved model registry - operator-curated, checked for liveness
+ *
+ * Keep it empty. Adding an id here reintroduces the defect.
+ */
+export const CURATED_MODELS = [];
 
 export const DIRECT_MODELS = [
   {
@@ -97,13 +68,39 @@ export function discoverAnthropicFlagships(catalog, { limit = 3 } = {}) {
     if (!/^anthropic\//i.test(id)) continue;
     if (!/sonnet|opus/i.test(id)) continue;
     if (isFreeModel(model)) continue;
+    /*
+     * A batch endpoint is asynchronous - it accepts a job and returns later - so
+     * it cannot serve a streaming chat turn. Offering it in the picker is
+     * offering a route that will never stream a reply.
+     */
+    if (/batch/i.test(id) || /batch/i.test(String(model?.name || ''))) continue;
     rows.push(model);
   }
   rows.sort((left, right) => (Number(right?.created) || 0) - (Number(left?.created) || 0));
-  return rows.slice(0, limit).map((model) => ({
+
+  /*
+   * Keep ONE entry per model family. A vendor ships variants of the same model
+   * (":fast", ":thinking", dated snapshots), and counting each against the limit
+   * let three Opus 5 variants fill every slot and push Sonnet 5 out of the list
+   * entirely - the reported "still no Sonnet". Families first, variants never at
+   * the cost of a different model.
+   */
+  const familyOf = (id) => String(id).split(':')[0].replace(/-\d{8}$/, '');
+  const bestPerFamily = new Map();
+  for (const model of rows) {
+    const family = familyOf(model.id);
+    if (!bestPerFamily.has(family)) bestPerFamily.set(family, model);
+  }
+
+  return [...bestPerFamily.values()].slice(0, limit).map((model) => ({
     id: model.id,
     name: model.name || model.id,
     provider: 'Anthropic',
+    // Read from the catalogue's declared modalities, never inferred from the id:
+    // routing uses this to keep an image turn on the model the user picked.
+    vision: Array.isArray(model?.architecture?.input_modalities)
+      ? model.architecture.input_modalities.includes('image')
+      : undefined,
     description: model.description
       || 'Paid flagship coder discovered from the live OpenRouter catalogue. Writes complete, non-truncated builds.',
     contextWindow: formatContext(model.context_length),

@@ -21,7 +21,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import { isProviderCredentialRejection, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -35,6 +35,7 @@ import {
   planInferenceRoutes,
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
+  type InferenceModelLike,
   type InferenceRoute,
 } from './inference-control-plane.js';
 import { providerCircuitStore } from './provider-circuit-store.js';
@@ -76,7 +77,15 @@ This turn must update the running page. The previous reply only talked. Output a
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
-const TOTAL_CHAT_BUDGET_MS = 120_000;
+/*
+ * The serverless function is allowed 180s (vercel.json -> api/pipeline.ts
+ * maxDuration), and /api/chat is served by it. Only 120s of that was ever used,
+ * which capped the primary model's window at 65s — not enough for a flagship to
+ * write a multi-file build, so it was cut mid-generation (billed, discarded) and
+ * the turn fell to a weaker model and died. 165s leaves a 15s margin under the
+ * platform ceiling for response teardown.
+ */
+const TOTAL_CHAT_BUDGET_MS = 165_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
@@ -758,10 +767,51 @@ export default async function handler(req: any, res: any) {
         ? (['text', 'code'] as const)
         : (['text'] as const);
 
+    /*
+     * Route planning reads two different authorities about the same model, so it
+     * has to see both.
+     *
+     * The stored registry is authoritative on LIFECYCLE - it is the only source
+     * that knows a model was retired, and `healthFor` uses that to drop the route
+     * before it is attempted.
+     *
+     * The routing catalogue is authoritative on CAPABILITY and COST - it is where
+     * `discoverAnthropicFlagships` puts the catalogue-declared `vision` flag and a
+     * camelCase `pricingKind`. The registry has neither: the scanner persists only
+     * free models, so a paid Claude usually has no row at all, and the rows it does
+     * write use snake_case `pricing_kind`, which `costClassFor` never reads.
+     *
+     * Passing the registry alone meant `capabilitiesFor` saw no `vision` for a
+     * pinned Claude, so an image turn filtered that model out and silently
+     * rerouted to Gemini - or 503'd when no Gemini credential existed. Passing the
+     * routing catalogue alone would lose the retirement signal. Merge by id:
+     * routing values win, and a registry row that reports offline keeps saying so.
+     */
+    const routePlanningModels = (() => {
+      const merged = new Map<string, InferenceModelLike>();
+      for (const row of registryModels || []) {
+        if (row?.id) merged.set(String(row.id), row as InferenceModelLike);
+      }
+      for (const model of routingModels || []) {
+        if (!model?.id) continue;
+        const id = String(model.id);
+        const stored = merged.get(id);
+        merged.set(id, {
+          ...stored,
+          ...(model as InferenceModelLike),
+          // Lifecycle stays the registry's call: a retired model must not be
+          // resurrected just because it is still listed in the routing catalogue.
+          lifecycle: stored?.lifecycle ?? (model as InferenceModelLike).lifecycle,
+          available: stored?.available === false ? false : (model as InferenceModelLike).available,
+        });
+      }
+      return [...merged.values()];
+    })();
+
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
-      models: registryModels,
+      models: routePlanningModels,
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
         : [...textCapabilities],
@@ -781,7 +831,7 @@ export default async function handler(req: any, res: any) {
       attempts = await planInferenceRoutes({
         primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
         fallbackModelIds: modelRouting?.fallbackModelIds || [],
-        models: registryModels,
+        models: routePlanningModels,
         requiredCapabilities: [...textCapabilities],
         geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
         openRouterAvailable: Boolean(effectiveOpenRouterKey),
@@ -807,10 +857,35 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!attempts.length) {
+      /*
+       * "Please retry in a moment" was wrong whenever the cause was a MISSING
+       * CREDENTIAL: no amount of retrying adds an API key, and the opacity turned
+       * a one-line configuration fault into a long diagnosis. Name which side is
+       * unusable. No secret is revealed - only whether a credential resolved.
+       */
+      const noGemini = !effectiveGeminiKey;
+      const noOpenRouter = !effectiveOpenRouterKey;
+      const missingCredentials = noGemini && noOpenRouter;
+      const reason = missingCredentials
+        ? 'no-provider-credential'
+        : noGemini
+          ? 'openrouter-routes-unhealthy'
+          : noOpenRouter
+            ? 'gemini-routes-unhealthy'
+            : 'all-routes-unhealthy';
       return res.status(503).json({
         error: wantTravelTools
           ? 'Live travel lookup needs Gemini, and no conversational backup route is available. Please retry shortly.'
-          : 'Quantora could not reach a healthy AI route for this turn. Please retry in a moment.',
+          : missingCredentials
+            ? 'No AI provider credential is available on this deployment — neither Gemini nor OpenRouter resolved a usable key. This is a configuration problem, not a temporary one: retrying will not help. Add GEMINI_API_KEY or OPENROUTER_API_KEY (a real sk-or-v1-… key) to the server environment, or paste your own key under Privacy Vault → Session-only provider keys.'
+            : noOpenRouter
+              ? 'Every Gemini route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no OpenRouter key is configured as a backup. Add an OpenRouter key to give this turn a second provider.'
+              : noGemini
+                ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.'
+                : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
+        reason,
+        // Lets the desk state the cause without another round of guesswork.
+        providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
@@ -1506,6 +1581,8 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
+    // An auth/billing rejection must never be reported as "retry in a moment".
+    const credentialRejected = isProviderCredentialRejection(err);
     const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
     const publicError = artifactContractFailure
       ? (err?.detailCode === 'browser-preview-missing'
@@ -1513,6 +1590,8 @@ export default async function handler(req: any, res: any) {
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
         : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+      : credentialRejected
+      ? "The AI provider rejected the configured API key, so no model could run. This is a credential problem, not a temporary one — retrying will fail the same way. Check the key in the server environment (or paste your own under Privacy Vault → Session-only provider keys); a key that shows \"Last Used: Never\" on the provider dashboard has never been accepted."
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";

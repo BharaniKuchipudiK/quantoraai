@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { modelAttemptsForTurn, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import { modelAttemptsForTurn, isProviderCredentialRejection, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
 
 test('a turn keeps trying past the first fallback, but stays bounded', () => {
   // Two attempts meant one free-quota 429 plus one unlucky fallback ended the
@@ -59,4 +59,22 @@ test('retryable provider failures include endpoint loss and quota exhaustion bef
     currentGateway: 'openrouter',
     nextGateway: 'gemini',
   }), true);
+});
+
+test('a rejected provider credential is never reported as retryable', () => {
+  // The reported failure: the OpenRouter key in the server environment had never
+  // been accepted (provider dashboard showed "Last Used: Never"), so every call
+  // 401'd — but the user was told to "retry in a moment", which can never work.
+  for (const status of [401, 402, 403]) {
+    assert.equal(isProviderCredentialRejection({ status }), true, `status ${status}`);
+  }
+  assert.equal(isProviderCredentialRejection({ message: 'No auth credentials found' }), true);
+  assert.equal(isProviderCredentialRejection({ message: 'Invalid API key provided' }), true);
+
+  // Genuinely transient conditions must stay retryable and NOT be called a
+  // credential fault, or a rate limit would send the user hunting a good key.
+  for (const status of [429, 500, 502, 503, 504]) {
+    assert.equal(isProviderCredentialRejection({ status }), false, `status ${status}`);
+    assert.equal(shouldFallbackBeforeStreaming({ status }), true, `status ${status} retryable`);
+  }
 });
