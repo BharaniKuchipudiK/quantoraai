@@ -1,0 +1,408 @@
+#!/usr/bin/env node
+/*
+ * provider-audit — what your keys can actually reach, and which of it finishes a build.
+ *
+ * WHY THIS EXISTS
+ *
+ * Choosing a fallback ladder from memory is how a retired model id ended up in
+ * three files and took the Coding Desk down for a week. Model names move, prices
+ * move, and what a key can reach is a property of the key, not of anyone's
+ * recollection. So this asks the providers instead of asking a model.
+ *
+ * It answers three questions, in order:
+ *   1. what can each key actually reach right now, and at what price
+ *   2. which of those models FINISH a real build, in how long
+ *   3. therefore, what the three-level ladder should be
+ *
+ * Listing is free. Running builds costs money, so it only happens when asked.
+ *
+ * USAGE
+ *   export GEMINI_API_KEY=...            (either or both)
+ *   export OPENROUTER_API_KEY=sk-or-v1-...
+ *
+ *   node scripts/provider-audit.mjs                       list only, free
+ *   node scripts/provider-audit.mjs --test                also run one real build per candidate
+ *   node scripts/provider-audit.mjs --test --only a,b,c   test exactly these model ids
+ *
+ *   --grep <text>    filter the OpenRouter listing (default: coding-relevant vendors)
+ *   --timeout <s>    per-build wall clock (default 150)
+ *   --max <n>        cap how many models --test will run (default 6, to bound spend)
+ *
+ * EXIT CODES
+ *   0  the audit completed
+ *   1  no usable key, or every tested model failed
+ *   2  bad invocation
+ */
+
+const args = process.argv.slice(2);
+const has = (name) => {
+  const i = args.indexOf(`--${name}`);
+  if (i === -1) return false;
+  args.splice(i, 1);
+  return true;
+};
+const flag = (name, fallback) => {
+  const i = args.indexOf(`--${name}`);
+  if (i === -1 || i === args.length - 1) return fallback;
+  const value = args[i + 1];
+  args.splice(i, 2);
+  return value;
+};
+
+const doTest = has('test');
+const only = (flag('only', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
+const grep = flag('grep', '');
+const timeoutMs = Number(flag('timeout', '150')) * 1000;
+const maxTests = Number(flag('max', '6'));
+
+const geminiKey = process.env.GEMINI_API_KEY;
+const orKey = process.env.OPENROUTER_API_KEY;
+
+if (!geminiKey && !orKey) {
+  console.error('Set GEMINI_API_KEY and/or OPENROUTER_API_KEY, then run again.');
+  process.exit(2);
+}
+
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const OR_BASE = 'https://openrouter.ai/api/v1';
+
+/*
+ * One prompt, used for every model, so the comparison is fair. It is a real
+ * build - long enough that a model which truncates will visibly truncate.
+ */
+const BUILD_PROMPT = 'Build a storage-hygiene dashboard: summary stat cards, a '
+  + 'ranked breakdown of where space goes, a findings table with severity, and an '
+  + 'activity log. Working filter buttons. Dark theme.';
+
+const SYSTEM = [
+  'You write complete, self-contained web pages.',
+  'Reply with ONE HTML document and nothing else - no prose, no markdown fences.',
+  'Inline all CSS and JavaScript. No external files, no build step, no CDN.',
+  'The page must be fully working and must end with </html>.',
+].join(' ');
+
+const line = (s = '') => console.log(s);
+const rule = (t) => { line(); line(`── ${t} ${'─'.repeat(Math.max(0, 64 - t.length))}`); line(); };
+
+// ─────────────────────────────────────────────────────────── discovery ───
+
+/** What the Google key can actually reach, and which of it can generate. */
+async function listGemini() {
+  const res = await fetch(`${GEMINI_BASE}/models?key=${geminiKey}&pageSize=200`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} — ${body.slice(0, 300)}`);
+  }
+  const rows = (await res.json()).models || [];
+  return rows
+    .map((m) => ({
+      id: String(m.name || '').replace(/^models\//, ''),
+      display: m.displayName || '',
+      // The only field that says whether this model can serve a chat turn at all.
+      canGenerate: (m.supportedGenerationMethods || []).includes('generateContent'),
+      inputLimit: m.inputTokenLimit,
+      outputLimit: m.outputTokenLimit,
+    }))
+    .filter((m) => m.id.startsWith('gemini'))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** What the OpenRouter key can reach, with real prices. */
+async function listOpenRouter() {
+  const res = await fetch(`${OR_BASE}/models`, { headers: { Authorization: `Bearer ${orKey}` } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rows = (await res.json()).data || [];
+  return rows.map((m) => ({
+    id: m.id,
+    name: m.name || m.id,
+    // Per-million-token, which is the unit anyone actually compares in.
+    inM: Number(m.pricing?.prompt || 0) * 1e6,
+    outM: Number(m.pricing?.completion || 0) * 1e6,
+    context: Number(m.context_length) || 0,
+    vision: Array.isArray(m?.architecture?.input_modalities)
+      ? m.architecture.input_modalities.includes('image')
+      : false,
+    created: Number(m.created) || 0,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────── build ───
+
+/** Run the same build on a Gemini model. Returns a comparable result row. */
+async function buildGemini(id) {
+  const started = Date.now();
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  try {
+    const res = await fetch(
+      `${GEMINI_BASE}/models/${id}:streamGenerateContent?alt=sse&key=${geminiKey}`,
+      {
+        method: 'POST',
+        signal: abort.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM }] },
+          contents: [{ role: 'user', parts: [{ text: BUILD_PROMPT }] }],
+          /*
+           * Both limits are set ON PURPOSE. The platform sets neither, so it runs
+           * on vendor defaults and cannot tell a truncated build from a finished
+           * one. A thinking model with no budget can also spend its whole output
+           * allowance reasoning and return an empty page - which looks exactly
+           * like "Gemini produced nothing".
+           */
+          generationConfig: { maxOutputTokens: 32000, temperature: 0.3 },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { id, gateway: 'google', ok: false, why: `HTTP ${res.status} ${body.slice(0, 120)}` };
+    }
+    let text = '';
+    let finish = null;
+    let blocked = null;
+    for await (const evt of sse(res)) {
+      const cand = evt?.candidates?.[0];
+      for (const part of cand?.content?.parts || []) if (part.text) text += part.text;
+      if (cand?.finishReason) finish = cand.finishReason;
+      if (evt?.promptFeedback?.blockReason) blocked = evt.promptFeedback.blockReason;
+    }
+    return score({ id, gateway: 'google', text, finish: blocked ? `BLOCKED:${blocked}` : finish, started });
+  } catch (error) {
+    return {
+      id, gateway: 'google', ok: false,
+      why: abort.signal.aborted ? `no reply within ${timeoutMs / 1000}s` : error.message,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The same build on an OpenRouter model, so results are directly comparable. */
+async function buildOpenRouter(id) {
+  const started = Date.now();
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${OR_BASE}/chat/completions`, {
+      method: 'POST',
+      signal: abort.signal,
+      headers: { Authorization: `Bearer ${orKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: id,
+        stream: true,
+        max_tokens: 32000,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: SYSTEM },
+          { role: 'user', content: BUILD_PROMPT },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { id, gateway: 'openrouter', ok: false, why: `HTTP ${res.status} ${body.slice(0, 120)}` };
+    }
+    let text = '';
+    let finish = null;
+    for await (const evt of sse(res)) {
+      // A provider can accept with 200 and then fail INSIDE the stream.
+      if (evt?.error) {
+        return {
+          id, gateway: 'openrouter', ok: false,
+          why: `mid-stream: ${evt.error.message || JSON.stringify(evt.error)}`,
+        };
+      }
+      const choice = evt?.choices?.[0];
+      if (choice?.delta?.content) text += choice.delta.content;
+      if (choice?.finish_reason) finish = choice.finish_reason;
+    }
+    return score({ id, gateway: 'openrouter', text, finish, started });
+  } catch (error) {
+    return {
+      id, gateway: 'openrouter', ok: false,
+      why: abort.signal.aborted ? `no reply within ${timeoutMs / 1000}s` : error.message,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Shared SSE reader. Both providers speak `data: {...}` lines. */
+async function* sse(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const l of lines) {
+      if (!l.startsWith('data: ')) continue;
+      const payload = l.slice(6).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try { yield JSON.parse(payload); } catch { /* partial frame */ }
+    }
+  }
+}
+
+/** One definition of "finished", applied identically to every model. */
+function score({ id, gateway, text, finish, started }) {
+  const html = extract(text);
+  const complete = /<\/html>\s*$/i.test(html.trim());
+  return {
+    id,
+    gateway,
+    ok: complete && html.length > 1500,
+    bytes: html.length,
+    seconds: ((Date.now() - started) / 1000).toFixed(1),
+    finish: finish || 'unknown',
+    why: complete ? '' : (String(finish).toUpperCase().includes('MAX_TOKENS') || finish === 'length'
+      ? 'cut off by the token limit'
+      : 'no complete document'),
+  };
+}
+
+function extract(raw) {
+  const fenced = String(raw).match(/```(?:html)?\s*([\s\S]*?)```/i);
+  const body = fenced ? fenced[1] : String(raw);
+  const start = body.search(/<!doctype html|<html/i);
+  return (start > 0 ? body.slice(start) : body).trim();
+}
+
+// ──────────────────────────────────────────────────────────────── main ───
+
+async function main() {
+  const candidates = [];
+
+  if (geminiKey) {
+    rule('GOOGLE — what your paid key can actually reach');
+    try {
+      const models = await listGemini();
+      const usable = models.filter((m) => m.canGenerate);
+      line(`  ${models.length} Gemini models listed, ${usable.length} can serve a chat turn`);
+      line();
+      for (const m of usable) {
+        line(`  ${m.id.padEnd(38)} out≤${String(m.outputLimit || '?').padStart(7)}  ${m.display}`);
+        candidates.push({ id: m.id, gateway: 'google' });
+      }
+      const dead = models.filter((m) => !m.canGenerate).map((m) => m.id);
+      if (dead.length) line(`\n  cannot generate (embedding/other): ${dead.join(', ')}`);
+    } catch (error) {
+      line(`  FAILED to list: ${error.message}`);
+      line('  A 400/403 here means the key or the Generative Language API, not the platform.');
+    }
+  } else {
+    rule('GOOGLE — skipped (GEMINI_API_KEY not set)');
+  }
+
+  if (orKey) {
+    rule('OPENROUTER — what your key can reach, cheapest capable first');
+    try {
+      const models = await listOpenRouter();
+      const filter = grep
+        ? (m) => `${m.id} ${m.name}`.toLowerCase().includes(grep.toLowerCase())
+        // Default view: paid models with real context, which is what a build needs.
+        : (m) => m.outM > 0 && m.context >= 100000;
+      const rows = models.filter(filter).sort((a, b) => a.outM - b.outM);
+      line(`  ${models.length} models on this key; ${rows.length} match${grep ? ` "${grep}"` : ' (paid, ≥100k context)'}`);
+      line();
+      line(`  ${'$/Mtok out'.padStart(11)}  ${'ctx'.padStart(7)}  vis  id`);
+      for (const m of rows.slice(0, 40)) {
+        line(`  ${m.outM.toFixed(2).padStart(11)}  ${String(Math.round(m.context / 1000) + 'k').padStart(7)}  ${m.vision ? ' ✓ ' : '   '}  ${m.id}`);
+      }
+      if (rows.length > 40) line(`  … and ${rows.length - 40} more (use --grep to narrow)`);
+      for (const m of rows) candidates.push({ id: m.id, gateway: 'openrouter' });
+    } catch (error) {
+      line(`  FAILED to list: ${error.message}`);
+    }
+  } else {
+    rule('OPENROUTER — skipped (OPENROUTER_API_KEY not set)');
+  }
+
+  if (!doTest) {
+    rule('NEXT');
+    line('  Listing only. To find out which of these actually FINISH a build:');
+    line();
+    line('    node scripts/provider-audit.mjs --test --only <id>,<id>,<id>');
+    line();
+    line('  That spends real money — one build per model — so it is opt-in and');
+    line(`  capped at ${maxTests} models per run.`);
+    return 0;
+  }
+
+  const toTest = (only.length
+    ? candidates.filter((c) => only.includes(c.id))
+    : candidates
+  ).slice(0, maxTests);
+
+  if (!toTest.length) {
+    rule('NOTHING TO TEST');
+    line('  --only matched no model your keys can reach. Run without --test to see the list.');
+    return 1;
+  }
+
+  rule(`BUILD TEST — the same page, ${toTest.length} models, ${timeoutMs / 1000}s each`);
+  const results = [];
+  for (const c of toTest) {
+    process.stdout.write(`  ${c.id.padEnd(42)} `);
+    const r = c.gateway === 'google' ? await buildGemini(c.id) : await buildOpenRouter(c.id);
+    results.push(r);
+    line(r.ok
+      ? `OK    ${String(r.seconds).padStart(6)}s  ${String(r.bytes).padStart(7)} bytes  finish=${r.finish}`
+      : `FAIL  ${r.why}`);
+  }
+
+  rule('VERDICT — ranked by what finished, fastest first');
+  const winners = results.filter((r) => r.ok).sort((a, b) => Number(a.seconds) - Number(b.seconds));
+  const losers = results.filter((r) => !r.ok);
+
+  if (!winners.length) {
+    line('  Nothing produced a complete page. That is a finding, not a dead end:');
+    line('  with the platform entirely out of the way, the problem is upstream of it.');
+    losers.forEach((r) => line(`    ${r.id} — ${r.why}`));
+    return 1;
+  }
+
+  winners.forEach((r, i) => {
+    line(`  ${i + 1}. ${r.id.padEnd(40)} ${String(r.seconds).padStart(6)}s  ${String(r.bytes).padStart(7)} bytes  [${r.gateway}]`);
+  });
+  if (losers.length) {
+    line();
+    line('  did not finish:');
+    losers.forEach((r) => line(`     ${r.id.padEnd(40)} ${r.why}`));
+  }
+
+  /*
+   * The ladder is built on GATEWAY INDEPENDENCE first, speed second. Three rungs
+   * on one provider is one outage away from zero rungs; that is the failure this
+   * project keeps living through, and no amount of model quality fixes it.
+   */
+  rule('SUGGESTED LADDER — independence first, then speed');
+  const byGateway = new Map();
+  for (const r of winners) if (!byGateway.has(r.gateway)) byGateway.set(r.gateway, r);
+  const ladder = [...byGateway.values()];
+  for (const r of winners) if (!ladder.includes(r) && ladder.length < 3) ladder.push(r);
+
+  ladder.slice(0, 3).forEach((r, i) => {
+    const role = i === 0 ? 'primary' : i === 1 ? 'independent backup' : 'last resort';
+    line(`  ${i + 1}. ${r.id}`);
+    line(`     ${role} · ${r.gateway} · ${r.seconds}s`);
+  });
+  if (byGateway.size < 2) {
+    line();
+    line('  WARNING: every model that finished is on ONE gateway. That is a single');
+    line('  point of failure — one provider outage takes the whole ladder down.');
+    line('  Getting a second gateway working matters more than any model upgrade.');
+  }
+  return 0;
+}
+
+main()
+  .then((code) => { process.exitCode = code; })
+  .catch((error) => {
+    line(`\n  audit failed before it could finish: ${error.message}`);
+    process.exitCode = 1;
+  });
