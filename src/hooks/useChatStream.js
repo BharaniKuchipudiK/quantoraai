@@ -21,6 +21,7 @@ import {
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
+import { deskCanStart, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -1301,13 +1302,27 @@ export function useChatStream({
                   const why = artifactFailed
                     ? (streamedError.message || 'Build artifact failed')
                     : (streamedError?.message || 'no healthy AI route');
+                  /*
+                   * Never claim "proved" over a desk that cannot start.
+                   *
+                   * A scheduling board was committed with a Scheduler.jsx cut
+                   * off after two import lines and a JobPanel that was never
+                   * written. Preview said "Missing local preview module"; the
+                   * chat said the page was proved and waiting. Whether a page
+                   * RENDERS needs a browser — whether every module it imports
+                   * exists is a fact about files already in hand.
+                   */
+                  const missingImports = findMissingLocalImports(deskProof.vfs || {});
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     text: withBuildTruth(
-                      `${why}, but Preview is already proved on the desk `
-                      + `(${deskProof.evidence.photos || 0} catalog photos`
-                      + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
-                      + 'Open Coding desk — the page is there.',
+                      missingImports.length
+                        ? `${why}. ${describeMissingImports(missingImports)} Ask me to finish `
+                          + `${missingImports.length === 1 ? 'that file' : 'those files'} and the rest of the build stays as it is.`
+                        : `${why}, but Preview is already proved on the desk `
+                          + `(${deskProof.evidence.photos || 0} catalog photos`
+                          + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                          + 'Open Coding desk — the page is there.',
                       deskProof,
                     ),
                     isError: false,
@@ -1688,10 +1703,12 @@ export function useChatStream({
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   text: withBuildTruth(
-                    `${why}, but Preview is already proved on the desk `
-                    + `(${deskProof.evidence.photos || 0} catalog photos`
-                    + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
-                    + 'Open Coding desk — the page is there.',
+                    deskCanStart(deskProof.vfs || {})
+                      ? `${why}, but Preview is already proved on the desk `
+                        + `(${deskProof.evidence.photos || 0} catalog photos`
+                        + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                        + 'Open Coding desk — the page is there.'
+                      : `${why}. ${describeMissingImports(findMissingLocalImports(deskProof.vfs || {}))}`,
                     deskProof,
                   ),
                   isError: false,

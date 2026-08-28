@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deskCommitRegressesPreview, vfsIsRunnablePreview, looksTruncatedHtml } from './desk-commit-guard.js';
+import {
+  deskCanStart,
+  deskCommitRegressesPreview,
+  describeMissingImports,
+  findMissingLocalImports,
+  looksTruncatedHtml,
+  vfsIsRunnablePreview,
+} from './desk-commit-guard.js';
 
 const COMPLETE_HTML = `<!DOCTYPE html><html lang="en"><head><title>Ember & Oak</title></head>
 <body><header><h1>Ember & Oak</h1></header>
@@ -89,4 +96,68 @@ test('ALLOWS the first build (no prior working preview)', () => {
   assert.equal(deskCommitRegressesPreview({}, htmlVfs(COMPLETE_HTML)).reject, false);
   assert.equal(deskCommitRegressesPreview(htmlVfs(TRUNCATED_STUB), htmlVfs(COMPLETE_HTML)).reject, false);
   assert.equal(deskCommitRegressesPreview(htmlVfs(''), reactProjectVfs).reject, false);
+});
+
+/*
+ * THE DESK THAT COULD NOT START, REPORTED AS PROVED.
+ *
+ * A scheduling board came back as three files: App.jsx and main.jsx complete,
+ * and a Scheduler.jsx cut off after two import lines. JobPanel was never
+ * written. Preview said "Missing local preview module: ./App"; the chat said
+ * "the model hit the 175s limit, but Preview is already proved on the desk."
+ *
+ * Whether a page RENDERS needs a browser. Whether every module it imports was
+ * written does not — it is a fact about files already in hand, and the cheap
+ * half of the check was simply never done.
+ */
+const TRUNCATED_DESK = {
+  'src/App.jsx': { content: "import React from 'react';\nimport Scheduler from './Scheduler';\nexport default function App(){ return <Scheduler/>; }" },
+  'src/main.jsx': { content: "import React from 'react';\nimport App from './App';\nimport './styles.css';" },
+  'src/Scheduler.jsx': { content: "import React, { useState } from 'react';\nimport JobPanel from './JobPanel';" },
+};
+
+test('a module that was never written is found', () => {
+  const missing = findMissingLocalImports(TRUNCATED_DESK);
+  const specs = missing.map((m) => m.spec).sort();
+  assert.deepEqual(specs, ['./JobPanel', './styles.css']);
+  assert.equal(deskCanStart(TRUNCATED_DESK), false, 'this desk cannot be called proved');
+});
+
+test('the report names the file and the import, not just a failure', () => {
+  const note = describeMissingImports(findMissingLocalImports(TRUNCATED_DESK));
+  assert.match(note, /`\.\/JobPanel` \(imported by src\/Scheduler\.jsx\)/);
+  assert.match(note, /ran out before finishing/);
+  assert.equal(describeMissingImports([]), '', 'a complete desk says nothing');
+});
+
+test('a complete project starts', () => {
+  const vfs = {
+    'src/App.jsx': { content: "import Scheduler from './Scheduler';\nexport default function App(){ return <Scheduler/>; }" },
+    'src/Scheduler.jsx': { content: "export default function Scheduler(){ return <div/>; }" },
+  };
+  assert.deepEqual(findMissingLocalImports(vfs), []);
+  assert.equal(deskCanStart(vfs), true);
+});
+
+test('extensions and index files resolve like a bundler', () => {
+  const vfs = {
+    'src/App.jsx': { content: "import a from './a';\nimport b from './b.jsx';\nimport c from './c/index.js';\nimport css from './s.css';" },
+    'src/a.js': { content: 'export default 1;' },
+    'src/b.jsx': { content: 'export default 2;' },
+    'src/c/index.js': { content: 'export default 3;' },
+    'src/s.css': { content: 'body{}' },
+  };
+  assert.deepEqual(findMissingLocalImports(vfs), []);
+});
+
+test('package imports are not local files and are never flagged', () => {
+  const vfs = {
+    'src/App.jsx': { content: "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nexport default function App(){ return null; }" },
+  };
+  assert.deepEqual(findMissingLocalImports(vfs), [], 'react is resolved by the compiler, not the desk');
+});
+
+test('a plain HTML desk has no module graph to check', () => {
+  assert.equal(deskCanStart({ 'index.html': { content: '<!DOCTYPE html><html><body><h1>Hi</h1></body></html>' } }), true);
+  assert.equal(deskCanStart({}), true, 'an empty desk is not a broken one');
 });

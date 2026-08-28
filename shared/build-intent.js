@@ -1,3 +1,4 @@
+import { requestIsAnalysisNotBuild } from '../src/lib/request-kind.js';
 /**
  * When should Studio generate a runnable artifact vs run website intake?
  *
@@ -51,6 +52,19 @@ export function resolveIsCodingRequest(text, {
 } = {}) {
   if (refineDesk) return true;
   if (isSpecifiedRunnableTool(text)) return true;
+  /*
+   * A request for judgement is not a request for software.
+   *
+   * A board decision paper — "determine whether we should proceed", "identify
+   * at least 12 contradictions", "produce a decision paper" — was routed here
+   * because the phrase "Create a portfolio showing CONTINUE, ACCELERATE" (a
+   * TABLE in a document) matched a build verb and a build noun. The model then
+   * emitted native iOS files, Preview died, and the reply offered travel chips.
+   *
+   * Checked BEFORE detectBuildIntent, because the whole point is that the
+   * noun-match is what gets it wrong.
+   */
+  if (requestIsAnalysisNotBuild(text)) return false;
   if (detectBuildIntent(text)) return true;
   if (!codingDeskOpen || !text || typeof text !== 'string') return false;
   const t = text.trim();
@@ -89,6 +103,9 @@ export function resolveEffectiveBuildMode({
   const toolBuild = isSpecifiedRunnableTool(message);
   if (explicitAsk && !toolBuild) return false;
   if (explicitBuild || toolBuild) return true;
+  // A person who pressed Build gets a build (handled above). Everyone else asking
+  // for analysis gets analysis, rather than a preview that cannot exist.
+  if (requestIsAnalysisNotBuild(message)) return false;
   return Boolean(buildMode);
 }
 
