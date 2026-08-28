@@ -17,8 +17,9 @@
  * Listing is free. Running builds costs money, so it only happens when asked.
  *
  * USAGE
- *   export GEMINI_API_KEY=...            (either or both)
- *   export OPENROUTER_API_KEY=sk-or-v1-...
+ *   Keys are read from .env.local or .env automatically, so the usual path is:
+ *     npx vercel env pull .env.local
+ *   Exporting GEMINI_API_KEY / OPENROUTER_API_KEY by hand also works.
  *
  *   node scripts/provider-audit.mjs                       list only, free
  *   node scripts/provider-audit.mjs --test                also run one real build per candidate
@@ -33,6 +34,8 @@
  *   1  no usable key, or every tested model failed
  *   2  bad invocation
  */
+
+import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const has = (name) => {
@@ -55,11 +58,50 @@ const grep = flag('grep', '');
 const timeoutMs = Number(flag('timeout', '150')) * 1000;
 const maxTests = Number(flag('max', '6'));
 
-const geminiKey = process.env.GEMINI_API_KEY;
-const orKey = process.env.OPENROUTER_API_KEY;
+/*
+ * Read keys from a local env file if they are not already exported.
+ *
+ * Asking someone to export a secret by hand is a step that fails: the key gets
+ * pasted with the masking dots still in it, or the shell eats part of it, or
+ * OpenRouter will not show it a second time. `vercel env pull` writes the real
+ * values to .env.local, so prefer that and let exporting be the fallback.
+ *
+ * Nothing here is printed. Only the last four characters of a key are ever
+ * shown, so a screenshot of this output cannot leak a credential.
+ */
+function readEnvFile() {
+  const found = {};
+  for (const name of ['.env.local', '.env']) {
+    let raw;
+    try { raw = readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'); } catch { continue; }
+    for (const rawLine of raw.split('\n')) {
+      const l = rawLine.trim();
+      if (!l || l.startsWith('#')) continue;
+      const eq = l.indexOf('=');
+      if (eq === -1) continue;
+      const k = l.slice(0, eq).trim();
+      let v = l.slice(eq + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (v && !(k in found)) found[k] = v;
+    }
+  }
+  return found;
+}
+
+const fromFile = readEnvFile();
+const geminiKey = process.env.GEMINI_API_KEY || fromFile.GEMINI_API_KEY;
+const orKey = process.env.OPENROUTER_API_KEY || fromFile.OPENROUTER_API_KEY;
+const tail = (k) => (k ? `…${String(k).slice(-4)}` : 'not found');
 
 if (!geminiKey && !orKey) {
-  console.error('Set GEMINI_API_KEY and/or OPENROUTER_API_KEY, then run again.');
+  console.error('No API keys found.\n');
+  console.error('Easiest way — pull them from Vercel, where they already live:');
+  console.error('    npx vercel link');
+  console.error('    npx vercel env pull .env.local');
+  console.error('    node scripts/provider-audit.mjs\n');
+  console.error('Or export them by hand:');
+  console.error('    export GEMINI_API_KEY=your-google-key');
+  console.error('    export OPENROUTER_API_KEY=your-openrouter-key');
   process.exit(2);
 }
 
@@ -276,6 +318,9 @@ function extract(raw) {
 
 async function main() {
   const candidates = [];
+  rule('KEYS FOUND');
+  line(`  Google       ${geminiKey ? 'yes  ' + tail(geminiKey) : 'NO - Gemini section will be skipped'}`);
+  line(`  OpenRouter   ${orKey ? 'yes  ' + tail(orKey) : 'NO - OpenRouter section will be skipped'}`);
 
   if (geminiKey) {
     rule('GOOGLE — what your paid key can actually reach');
