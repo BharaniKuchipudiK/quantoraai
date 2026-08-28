@@ -3,6 +3,7 @@ import { normalizeProjectId } from "../project-state.js";
 import { type StudioDomain } from "../studio-domains.js";
 import { inferStudioDomain } from "../studio-domain-inference.js";
 import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
+import { estimateCapacityRequest, type CapacityRequestEnvelope } from "../capacity-control-plane.js";
 import { detectBuildIntent } from "../../../shared/build-intent.js";
 
 export type CommunicationRequest = {
@@ -24,6 +25,11 @@ export type CommunicationRequest = {
   buildMode: boolean;
   guidedBuild: boolean;
   featureSuggest: boolean;
+  /**
+   * Phase-0 shadow capacity contract. It is computed for every ingress turn but
+   * is NOT enforced yet. A later admission gate will reserve/settle against it.
+   */
+  capacity: CapacityRequestEnvelope;
 };
 
 function hasLiveCodingDeskPacket(deskContext: unknown): boolean {
@@ -56,6 +62,27 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const nestedProjectId = body?.sessionContext && typeof body.sessionContext === "object"
     ? body.sessionContext.projectId
     : null;
+  const taskCategory = typeof body?.taskCategory === "string" && body.taskCategory.trim()
+    ? body.taskCategory
+    : inferredBuildMode ? "coding" : "general";
+
+  /*
+   * Capacity classification belongs at ingress, before model routing. That keeps
+   * the entitlement/admission contract stable even when Quantora changes model
+   * vendors. Crucially, this envelope contains only numerical/classification
+   * metadata — never the user's prompt or history text.
+   */
+  const capacity = estimateCapacityRequest({
+    message,
+    history: body?.history,
+    taskCategory,
+    studioMode,
+    buildMode,
+    cognitiveLevel: body?.cognitiveLevel,
+    attachedImageCount: attachedImages.length,
+    hasPreviewCode,
+    isRefine: body?.refineMode === true,
+  });
 
   return {
     message,
@@ -64,9 +91,7 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     studioMode,
     studioModeExplicit,
     studioDomain,
-    taskCategory: typeof body?.taskCategory === "string" && body.taskCategory.trim()
-      ? body.taskCategory
-      : inferredBuildMode ? "coding" : "general",
+    taskCategory,
     attachedImages,
     choiceSelected: body?.choiceSelected === true,
     memoryConsented: body?.memoryConsented === true,
@@ -78,5 +103,6 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     buildMode,
     guidedBuild: body?.guidedBuild === true,
     featureSuggest: body?.featureSuggest === true,
+    capacity,
   };
 }
