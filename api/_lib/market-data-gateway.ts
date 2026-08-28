@@ -1,9 +1,10 @@
 /**
  * Deterministic market-data gateway (ADR-025, P2) — the Finance analog of
  * handleAffordabilityDecision. On a Finance turn that asks for an FX rate or a
- * stock quote, it answers from the stored, sourced market data (or refuses when
- * the data is missing/stale) BEFORE the language model runs, so the figure is
- * grounded, not hallucinated.
+ * stock quote, it answers from real, sourced market data — the live ECB feed
+ * for FX, the ingested table for everything else — or refuses when the data is
+ * missing or stale, BEFORE the language model runs, so the figure is grounded
+ * and not hallucinated.
  *
  * Isolation: it returns false immediately unless the turn is studioDomain
  * 'finance' AND carries a market-data lookup intent. Every other domain and
@@ -14,13 +15,15 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseMarketDataIntent, isFxIntent, isPriceIntent } from "./market-data-intent.js";
-import { fxLookupResult, priceLookupResult } from "./market-data-lookup.js";
+import { fxLookupResult, freshestFxRate, priceLookupResult } from "./market-data-lookup.js";
 import {
+  isBarStale,
   isMarketDataStoreConfigured,
   readLatestFxRate,
   readLatestPrice,
   readInstrument,
 } from "./market-data-store.js";
+import { liveFxRate } from "./market-data/frankfurter-provider.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 
@@ -60,6 +63,50 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
     return true;
   }
 
+  /*
+   * FX is answered LIVE first, and from the store only if the live call fails.
+   *
+   * Answering from the store alone made conversion depend on a workflow that
+   * has never run on a schedule: the stored rate ages past the four-day window
+   * and the desk refuses every conversion until somebody clicks "Run workflow".
+   * That is a feature that breaks every four days by construction, and it is
+   * what "the real time conversion is no longer happening" looks like.
+   *
+   * Two independent paths now. Frankfurter is free and keyless and serves the
+   * same ECB reference rates the ingestion pulls, so the two sources cannot
+   * disagree about what a rate IS — only about how recent it is, and the live
+   * one is always at least as recent. Note this runs BEFORE the store-not-
+   * configured refusal below, because FX no longer needs a store at all.
+   */
+  if (isFxIntent(intent)) {
+    const storeReady = isMarketDataStoreConfigured();
+    const live = await liveFxRate(intent.base, intent.quote);
+
+    /*
+     * "The feed answered" and "the answer is usable" are two different facts,
+     * and the freshness rule decides the second one further down. Treating a
+     * live row as success the moment it arrives let a stale one MASK a usable
+     * stored rate: the store was never read, and the turn was refused with a
+     * good answer sitting in the database. Same shape as every other defect
+     * this codebase has had — a rule about what an answer ought to be, standing
+     * in for checking it.
+     *
+     * So the store is consulted whenever the live row would be refused, and the
+     * freshest of the two wins.
+     */
+    const liveUsable = Boolean(live) && !isBarStale({ as_of: live!.as_of });
+    const stored = storeReady && !liveUsable ? await readLatestFxRate(intent.base, intent.quote) : null;
+    const direct = freshestFxRate(live, stored);
+
+    // The inverse row is a third candidate, not a consolation prize for a
+    // missing direct one: a stale base→quote must not shadow a fresh quote→base.
+    const directUsable = Boolean(direct) && !isBarStale({ as_of: direct!.as_of });
+    const inverse = storeReady && !directUsable ? await readLatestFxRate(intent.quote, intent.base) : null;
+
+    sendStream(res, requestId, fxLookupResult(intent, direct, inverse).text);
+    return true;
+  }
+
   if (!isMarketDataStoreConfigured()) {
     /*
      * This one must NOT fall through. Every other refusal in this file consumes
@@ -73,13 +120,6 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
       requestId,
       "Market data isn't connected on this deployment yet, so I can't quote a real figure \u2014 and I won't guess one. Ask me anything else about this, or start a new chat for a non-market question.",
     );
-    return true;
-  }
-
-  if (isFxIntent(intent)) {
-    const direct = await readLatestFxRate(intent.base, intent.quote);
-    const inverse = direct ? null : await readLatestFxRate(intent.quote, intent.base);
-    sendStream(res, requestId, fxLookupResult(intent, direct, inverse).text);
     return true;
   }
 

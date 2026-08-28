@@ -55,7 +55,7 @@ test('a key is described, never disclosed', () => {
   const shape = describeKeyShape('AIzaSyABCDEFGHIJKLMNOP1234', 'env');
   assert.equal(shape.present, true);
   assert.equal(shape.last4, '1234');
-  assert.equal(shape.looksLikeGoogleKey, true);
+  assert.equal(shape.matchesKnownKeyFormat, true);
   assert.equal(shape.looksRedacted, false);
   // Nothing in the report may carry the value itself.
   assert.ok(!JSON.stringify(shape).includes('SyABCDEFGHIJKLMNOP'));
@@ -235,4 +235,36 @@ test('generate: false spends nothing and still answers the credential question',
   assert.equal(generateCalls, 0);
   assert.equal(report.list.ok, true);
   assert.match(report.verdict, /sees 1 Gemini models/);
+});
+
+test('INVARIANT: a working key is never called wrongly-shaped', async () => {
+  /*
+   * This exact report came back from production: a 53-character key that does
+   * not start "AIza", which listed 53 models and streamed a complete answer —
+   * and the verdict said "does not have the shape of a Google API key". The
+   * heuristic ran above the evidence and overrode two live proofs from Google.
+   *
+   * Google decides whether a key is valid. Nothing in this file may overrule it.
+   */
+  const unfamiliarKey = 'AQ.Ab8RN6Jexamplekeymaterialthatisfiftythreelong.WexQ';
+  const fetchFn = (async (url: string) => (
+    String(url).includes(':streamGenerateContent')
+      ? sseResponse(200, [candidate('<html><h1>Gemini is reachable</h1></html>', 'STOP')])
+      : jsonResponse(200, { models: [{ name: 'models/gemini-3.7-flash' }] })
+  )) as any;
+
+  const report = await probeGemini({ key: unfamiliarKey, fetchFn });
+  assert.equal(report.key.matchesKnownKeyFormat, false, 'the fixture must be an unfamiliar format');
+  assert.equal(report.generate.ok, true);
+  assert.match(report.verdict, /Gemini works from here/);
+  assert.doesNotMatch(report.verdict, /shape|format|wrong secret/i);
+});
+
+test('an unfamiliar format is offered as a hint only when Google actually refuses', () => {
+  const odd = describeKeyShape('AQ.Ab8RN6Jexamplekeymaterialthatisfiftythreelong.WexQ', 'env');
+  const refused = { attempted: true, ok: false, status: 400, models: [], totalListed: 0, error: 'API key not valid.', ms: 82 };
+  const none = { attempted: false, ok: false, status: null, model: null, chars: 0, chunks: 0, finishReason: null, blockReason: null, error: null, ms: 0 };
+  const verdict = verdictFor(odd, refused, none);
+  assert.match(verdict, /Google rejected the key/);
+  assert.match(verdict, /hint, not proof/);
 });

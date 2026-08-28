@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fxLookupResult, priceLookupResult } from "./market-data-lookup.js";
+import { freshestFxRate, fxLookupResult, priceLookupResult } from "./market-data-lookup.js";
 import type { FxRate, PriceBar, Instrument } from "./market-data-store.js";
 
 const NOW = new Date("2026-08-24T12:00:00Z");
@@ -77,4 +77,75 @@ test("price: unknown symbol refuses rather than inventing", () => {
   const r = priceLookupResult({ kind: "price", symbol: "ZZZZ" }, null, null, NOW);
   assert.equal(r.resolved, false);
   assert.match(r.text, /don't have \*\*ZZZZ\*\*/);
+});
+
+/*
+ * A stale row must never MASK a fresh one.
+ *
+ * Two hops had this defect, both the same shape: something was treated as the
+ * answer because it arrived first, not because it was checked. A live rate that
+ * arrived before the store was read, and a direct row that was preferred over
+ * an inverse one whatever their dates.
+ */
+
+const row = (rate: number, asOf: string, base = 'USD', quote = 'INR') => ({
+  base_currency: base, quote_currency: quote, rate,
+  rate_date: asOf.slice(0, 10), as_of: asOf, source: 'ecb',
+});
+
+const AT_NINE = new Date('2026-08-28T09:00:00Z');
+const YESTERDAY = '2026-08-27T16:00:00Z';
+const LAST_MONTH = '2026-08-01T16:00:00Z';
+
+test('freshestFxRate picks by publication date, not by argument order', () => {
+  const older = row(80, LAST_MONTH);
+  const newer = row(87, YESTERDAY);
+  assert.equal(freshestFxRate(older, newer)?.rate, 87);
+  assert.equal(freshestFxRate(newer, older)?.rate, 87);
+});
+
+test('freshestFxRate ignores rows that cannot be used or dated', () => {
+  assert.equal(freshestFxRate(null, undefined), null);
+  assert.equal(freshestFxRate(row(0, YESTERDAY)), null, 'a zero rate is not a rate');
+  assert.equal(freshestFxRate({ ...row(87, YESTERDAY), as_of: 'not-a-date' } as any), null);
+  assert.equal(freshestFxRate(row(87, YESTERDAY), row(0, YESTERDAY))?.rate, 87);
+});
+
+test('INVARIANT: a stale live rate does not mask a fresh stored one', () => {
+  // The live feed answered, so the old code stopped there and the turn was
+  // refused as stale — with a usable rate sitting in the database.
+  const staleLive = row(80, LAST_MONTH);
+  const freshStored = row(87.42, YESTERDAY);
+  const result = fxLookupResult(
+    { kind: 'fx', base: 'USD', quote: 'INR', amount: null } as any,
+    freshestFxRate(staleLive, freshStored),
+    null,
+    AT_NINE,
+  );
+  assert.equal(result.resolved, true);
+  assert.match(result.text, /87\.4200 INR/);
+});
+
+test('INVARIANT: a stale direct rate does not shadow a fresh inverse one', () => {
+  const staleDirect = row(80, LAST_MONTH);
+  const freshInverse = row(0.0125, YESTERDAY, 'INR', 'USD');
+  const result = fxLookupResult(
+    { kind: 'fx', base: 'USD', quote: 'INR', amount: null } as any,
+    staleDirect,
+    freshInverse,
+    AT_NINE,
+  );
+  assert.equal(result.resolved, true, 'the fresh inverse should answer');
+  assert.match(result.text, /80\.0000 INR/, 'inverted 1/0.0125 = 80');
+});
+
+test('when everything is stale it still names the date it is refusing', () => {
+  const result = fxLookupResult(
+    { kind: 'fx', base: 'USD', quote: 'INR', amount: null } as any,
+    row(80, LAST_MONTH),
+    null,
+    AT_NINE,
+  );
+  assert.equal(result.stale, true);
+  assert.match(result.text, /2026-08-01/);
 });
