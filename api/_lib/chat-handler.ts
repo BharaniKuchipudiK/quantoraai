@@ -35,6 +35,7 @@ import {
   planInferenceRoutes,
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
+  type InferenceModelLike,
   type InferenceRoute,
 } from './inference-control-plane.js';
 import { providerCircuitStore } from './provider-circuit-store.js';
@@ -766,10 +767,51 @@ export default async function handler(req: any, res: any) {
         ? (['text', 'code'] as const)
         : (['text'] as const);
 
+    /*
+     * Route planning reads two different authorities about the same model, so it
+     * has to see both.
+     *
+     * The stored registry is authoritative on LIFECYCLE - it is the only source
+     * that knows a model was retired, and `healthFor` uses that to drop the route
+     * before it is attempted.
+     *
+     * The routing catalogue is authoritative on CAPABILITY and COST - it is where
+     * `discoverAnthropicFlagships` puts the catalogue-declared `vision` flag and a
+     * camelCase `pricingKind`. The registry has neither: the scanner persists only
+     * free models, so a paid Claude usually has no row at all, and the rows it does
+     * write use snake_case `pricing_kind`, which `costClassFor` never reads.
+     *
+     * Passing the registry alone meant `capabilitiesFor` saw no `vision` for a
+     * pinned Claude, so an image turn filtered that model out and silently
+     * rerouted to Gemini - or 503'd when no Gemini credential existed. Passing the
+     * routing catalogue alone would lose the retirement signal. Merge by id:
+     * routing values win, and a registry row that reports offline keeps saying so.
+     */
+    const routePlanningModels = (() => {
+      const merged = new Map<string, InferenceModelLike>();
+      for (const row of registryModels || []) {
+        if (row?.id) merged.set(String(row.id), row as InferenceModelLike);
+      }
+      for (const model of routingModels || []) {
+        if (!model?.id) continue;
+        const id = String(model.id);
+        const stored = merged.get(id);
+        merged.set(id, {
+          ...stored,
+          ...(model as InferenceModelLike),
+          // Lifecycle stays the registry's call: a retired model must not be
+          // resurrected just because it is still listed in the routing catalogue.
+          lifecycle: stored?.lifecycle ?? (model as InferenceModelLike).lifecycle,
+          available: stored?.available === false ? false : (model as InferenceModelLike).available,
+        });
+      }
+      return [...merged.values()];
+    })();
+
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
-      models: registryModels,
+      models: routePlanningModels,
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
         : [...textCapabilities],
@@ -789,7 +831,7 @@ export default async function handler(req: any, res: any) {
       attempts = await planInferenceRoutes({
         primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
         fallbackModelIds: modelRouting?.fallbackModelIds || [],
-        models: registryModels,
+        models: routePlanningModels,
         requiredCapabilities: [...textCapabilities],
         geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
         openRouterAvailable: Boolean(effectiveOpenRouterKey),

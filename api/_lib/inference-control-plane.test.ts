@@ -289,3 +289,57 @@ test('BUILD budget: a tiny budget still plans one real attempt rather than none'
   assert.equal(maxViableBuildAttempts(10_000), 1);
   assert.equal(maxViableBuildAttempts(0), 1);
 });
+
+test('an image turn keeps a pinned model that the catalogue says can see', async () => {
+  /*
+   * Route planning was handed the stored registry, which has no `vision` field —
+   * and usually no row at all for a paid model, since the scanner persists only
+   * free ones. So a pinned Claude with an image attached scored no vision
+   * capability, was filtered out of its own turn, and the request silently
+   * rerouted to Gemini (or 503'd when no Gemini credential existed). The flag has
+   * to come from the catalogue that declares it.
+   */
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'vendor/seeing-model',
+    fallbackModelIds: [],
+    models: [{ id: 'vendor/seeing-model', vision: true, pricingKind: 'paid' }],
+    requiredCapabilities: ['text', 'vision'],
+    geminiAvailable: false,
+    openRouterAvailable: true,
+  });
+  assert.equal(routes[0]?.id, 'vendor/seeing-model');
+  assert.ok(routes[0].capabilities.includes('vision'));
+  // Cost class is read from the same catalogue entry, so it resolves too — the
+  // registry writes snake_case `pricing_kind`, which this never reads.
+  assert.equal(routes[0].costClass, 'standard');
+});
+
+test('an image turn drops a model with no declared vision rather than guessing', async () => {
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'vendor/text-only',
+    fallbackModelIds: [],
+    models: [{ id: 'vendor/text-only', pricingKind: 'paid' }],
+    requiredCapabilities: ['text', 'vision'],
+    geminiAvailable: false,
+    openRouterAvailable: true,
+  });
+  assert.equal(routes.filter((route) => route.id === 'vendor/text-only').length, 0);
+});
+
+test('a retired model stays filtered out even when it is still listed', async () => {
+  /*
+   * The registry is the only source that knows a model was retired. Route
+   * planning now merges it with the routing catalogue to pick up vision and
+   * pricing — that merge must not resurrect a retired route just because the
+   * catalogue still lists it.
+   */
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'vendor/retired-model',
+    fallbackModelIds: [],
+    models: [{ id: 'vendor/retired-model', lifecycle: 'retired', vision: true, pricingKind: 'paid' }],
+    requiredCapabilities: ['text'],
+    geminiAvailable: false,
+    openRouterAvailable: true,
+  });
+  assert.equal(routes.filter((route) => route.id === 'vendor/retired-model').length, 0);
+});
