@@ -8,6 +8,7 @@ import {
   evaluateProofEvidence,
   codingTurnMayClaimSuccess,
   proofFailureCopy,
+  buildTruthNote,
 } from './proof-control-plane.js';
 
 const FOX = 'Build a full Fox & Wolf kids merchandise shop website with 100 unique design images, product pages, and checkout.';
@@ -153,4 +154,136 @@ test('INVARIANT: a failed proof never replaces the model output', () => {
     'the proof failure copy must be appended as a note, never assigned as the message text',
   );
   assert.match(hook, /proofNote/, 'the failure copy should reach the turn as a note');
+});
+
+/*
+ * Build truth rides ALONGSIDE proof, and the case that matters is the passing
+ * one: proof passing means a runnable file exists, and says nothing about
+ * whether anything on the page works.
+ */
+
+function ordinaryPlan(message) {
+  return planCodingTurn({
+    message,
+    priorUserMessages: [],
+    codingDeskOpen: true,
+    autoMode: true,
+    availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+  });
+}
+
+const DEAD_BUTTON_PAGE = '<!DOCTYPE html><html><body><h1>Notes</h1>'
+  + '<button class="add">Add note</button><a href="#missing">Jump</a></body></html>';
+
+test('INVARIANT: a page that PASSES proof is still told what does not work on it', () => {
+  // The exact hole Phase 01 exists to close. This page has a runnable document,
+  // so the old gate had nothing further to say about it — while its one button
+  // is wired to nothing and its one link goes to a section that is not there.
+  const plan = ordinaryPlan('build me a notes page');
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: DEAD_BUTTON_PAGE } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+
+  assert.equal(verdict.ok, true, 'proof passes: there is a runnable page');
+  assert.equal(verdict.truth.findings.length, 2);
+  const note = buildTruthNote(verdict);
+  assert.match(note, /"Add note" doesn't do anything/);
+  assert.match(note, /isn't on the page/);
+});
+
+test('a page with nothing wrong gets no note at all', () => {
+  const plan = ordinaryPlan('build me a notes page');
+  const html = '<!DOCTYPE html><html><body><button id="add">Add</button>'
+    + '<script>document.getElementById("add").onclick = add;</script></body></html>';
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: html } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+  assert.deepEqual(verdict.truth.findings, []);
+  assert.equal(buildTruthNote(verdict), '', 'silence, not a clean bill of health');
+});
+
+test('INVARIANT: build-truth findings never become proof gaps', () => {
+  // Gaps decide pass/fail and drive the repair loop. A dead button must never
+  // fail a turn — that is how the platform started destroying good work.
+  const result = evaluateProofEvidence(ordinaryPlan('build me a notes page'), {
+    vfs: { 'index.html': { content: DEAD_BUTTON_PAGE } },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.gaps, []);
+  assert.ok(result.truth.findings.length > 0, 'observed, but not counted against the turn');
+});
+
+test('every verdict carries a truth field, so no caller has to guard for it', () => {
+  const nonCoding = proveCodingTurn({ plan: { isCodingTurn: false }, vfs: {} });
+  assert.deepEqual(nonCoding.truth.findings, []);
+  assert.equal(buildTruthNote(nonCoding), '');
+  assert.equal(buildTruthNote(null), '', 'and a missing verdict is silence, not a crash');
+});
+
+/*
+ * Phase 02 inside the turn: the gate fixes what it can, ships it, and says what
+ * it did — and what it would not do.
+ */
+
+const REPAIRABLE_PAGE = '<!DOCTYPE html><html><body>'
+  + '<a href="#pricing">Pricing</a><section id="pricing-section"><h2>Pricing</h2></section>'
+  + '<p>Lorem ipsum dolor.</p></body></html>';
+
+test('a repairable page comes back FIXED, and the turn carries the corrected file', () => {
+  const plan = ordinaryPlan('build me a pricing page');
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: REPAIRABLE_PAGE } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+
+  // The corrected page is what ships, not just a note about it.
+  assert.match(verdict.vfs['index.html'].content, /href="#pricing-section"/);
+  assert.equal(verdict.repair.fixes.length, 1);
+  assert.ok(verdict.ran.includes('repair_build_truth'));
+
+  // And the finding it fixed is gone from the re-inspection, not merely claimed.
+  assert.ok(!verdict.truth.findings.some((f) => f.kind === 'broken-link'));
+});
+
+test('INVARIANT: what the platform refuses to invent is said out loud', () => {
+  const plan = ordinaryPlan('build me a pricing page');
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: REPAIRABLE_PAGE } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+  const note = buildTruthNote(verdict);
+  assert.match(note, /I fixed one thing:/);
+  assert.match(note, /Pointed "#pricing" at the "pricing-section" section/);
+  assert.match(note, /Lorem ipsum/);
+  assert.match(note, /does not invent/, 'the refusal, and the reason for it');
+});
+
+test('a page with nothing repairable is left byte-for-byte alone', () => {
+  const plan = ordinaryPlan('build me a page');
+  const original = '<!DOCTYPE html><html><body><p>Lorem ipsum.</p></body></html>';
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: original } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+  assert.equal(verdict.vfs['index.html'].content, original);
+  assert.deepEqual(verdict.repair.fixes, []);
+  assert.equal(verdict.repair.refusals.length, 1);
+});
+
+test('every verdict carries a repair field, so no caller has to guard for it', () => {
+  const nonCoding = proveCodingTurn({ plan: { isCodingTurn: false }, vfs: {} });
+  assert.deepEqual(nonCoding.repair.fixes, []);
+  assert.equal(buildTruthNote(nonCoding), '');
 });

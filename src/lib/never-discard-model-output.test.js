@@ -83,3 +83,44 @@ test('INVARIANT: a failed proof never replaces the model output', () => {
   );
   assert.match(source, /proofNote/, 'the proof failure copy should reach the turn as a note');
 });
+
+test('INVARIANT: the build-truth note is appended, never assigned as the turn text', () => {
+  /*
+   * The newest note on the pile, held to the oldest rule in this file. Build
+   * truth says what does not work on a page — which makes it exactly the kind
+   * of copy that, written one line differently, would replace the page it is
+   * describing. It has to reach the turn the same way every other note does:
+   * concatenated onto the model's output, never substituted for it, and never
+   * in place of the proof note either, since the two answer different
+   * questions and a turn can need both.
+   */
+  const source = hookSource();
+  assert.match(source, /const truthNote = buildTruthNote\(codingProof\);/, 'the note must be computed');
+  assert.match(
+    source,
+    /if \(truthNote\) proofNote = proofNote \? `\$\{proofNote\}\\n\\n\$\{truthNote\}` : truthNote;/,
+    'it must append to any existing proof note rather than overwrite it',
+  );
+  assert.doesNotMatch(source, /text:\s*truthNote/, 'and it may never become the message text');
+});
+
+test('INVARIANT: no success branch may declare a proved Preview without the truth note', () => {
+  /*
+   * "Preview is proved" means a runnable page exists. It does not mean anything
+   * on that page works — and four separate branches can declare it: the normal
+   * completion, a skills-seeded desk, and two error-recovery paths where the
+   * desk was already proved. Three of them originally skipped the note, so on
+   * exactly the turns where the platform was most eager to report success it
+   * was quietest about the dead controls.
+   *
+   * Every claim of a proved Preview must therefore pass through withBuildTruth.
+   */
+  const source = hookSource();
+  const claims = [...source.matchAll(/Preview is (?:already )?proved on the desk/g)];
+  assert.ok(claims.length >= 3, `expected the known success branches; found ${claims.length}`);
+  const wrapped = [...source.matchAll(/withBuildTruth\(/g)];
+  assert.ok(
+    wrapped.length >= claims.length,
+    `each proved-Preview claim needs a withBuildTruth wrapper; ${claims.length} claims, ${wrapped.length} wrappers`,
+  );
+});
