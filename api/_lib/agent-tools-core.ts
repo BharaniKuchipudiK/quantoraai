@@ -7,6 +7,7 @@
  */
 
 import { Duffel } from '@duffel/api';
+import { describeDoors, doorsBlocking } from '../../src/lib/capability-doors.js';
 
 const defaultDuffelClient = process.env.DUFFEL_API_KEY
   ? new Duffel({ token: process.env.DUFFEL_API_KEY })
@@ -186,7 +187,16 @@ async function searchGooglePlaces(
   },
 ) {
   if (!apiKey) {
-    return unavailable('Google Places API (New) is not connected. Set GOOGLE_MAPS_API_KEY in Vercel and enable Places API (New).');
+    /*
+     * "Set GOOGLE_MAPS_API_KEY in Vercel" tells a developer what to do and
+     * tells everybody else nothing — not where the key comes from, not that
+     * Places must be enabled separately (a key without it returns nothing and
+     * looks like a bug), not how to check. The door says all three.
+     */
+    return unavailable(
+      describeDoors(doorsBlocking(['places_lookup']), { ask: 'this' })
+        || 'Google Places API (New) is not connected. Set GOOGLE_MAPS_API_KEY in Vercel and enable Places API (New).',
+    );
   }
 
   const textQuery = String(options.textQuery || '').trim();

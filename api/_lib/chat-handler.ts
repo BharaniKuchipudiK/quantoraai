@@ -60,6 +60,7 @@ import { selectModelsForTurn } from "../../src/lib/communication/routing/select-
 import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
 import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-outcome-routing.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
+import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
@@ -910,6 +911,20 @@ export default async function handler(req: any, res: any) {
                 ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.'
                 : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
         reason,
+        /*
+         * When there is no credential at all, the user has a handle: their own
+         * Gemini or OpenRouter key, pasted into the Vault, works immediately
+         * and needs no redeploy. The prose above names the server variables —
+         * which only the operator can set — so without this a signed-in user
+         * reads a wall where they are actually standing at a door.
+         *
+         * Only for missingCredentials. An unhealthy route is not something a
+         * user key fixes, and offering a handle that changes nothing would be
+         * the crueller lie.
+         */
+        ...(missingCredentials
+          ? { door: describeDoors(doorsBlocking(['own_provider_key']), { ask: 'this' }) }
+          : {}),
         // Lets the desk state the cause without another round of guesswork.
         providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),

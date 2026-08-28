@@ -122,3 +122,44 @@ test('currency conversion is not behind a door it does not need', () => {
   assert.match(CAPABILITY_DOORS.market_prices.label, /Stock prices/);
   assert.ok(!/currency|conversion/i.test(CAPABILITY_DOORS.market_prices.label));
 });
+
+/*
+ * EVERY DOOR MUST HAVE A CALLER.
+ *
+ * The wiring gate cannot see this: doors are entries in an object, not
+ * exported functions, so three of the four sat defined and unreachable while
+ * every test here passed. A door nobody can arrive at is a paragraph, not a
+ * feature — the same defect as a tested function nothing calls, wearing a
+ * different hat. This test is the gate for that blind spot.
+ */
+test('INVARIANT: every capability door is reachable from production code', async () => {
+  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const { join, extname } = await import('node:path');
+  const root = new URL('../../', import.meta.url).pathname;
+
+  const walk = (dir, out = []) => {
+    for (const name of readdirSync(dir)) {
+      if (['node_modules', 'dist', '.git'].includes(name)) continue;
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path, out);
+      else if (['.js', '.jsx', '.mjs', '.ts', '.tsx'].includes(extname(path))) out.push(path);
+    }
+    return out;
+  };
+
+  const sources = [...walk(join(root, 'api')), ...walk(join(root, 'src'))]
+    .filter((path) => !/\.test\.[jt]sx?$/.test(path))
+    .filter((path) => !path.endsWith('capability-doors.js'))
+    .map((path) => readFileSync(path, 'utf8'))
+    .join('\n');
+
+  const unreachable = Object.keys(CAPABILITY_DOORS)
+    .filter((id) => !new RegExp(`['"\`]${id}['"\`]`).test(sources));
+
+  assert.deepEqual(
+    unreachable,
+    [],
+    `these doors are defined but nothing can open them: ${unreachable.join(', ')}. `
+    + 'Either wire the door at the point that refuses, or delete it.',
+  );
+});
