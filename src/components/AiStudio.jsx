@@ -33,7 +33,7 @@ import {
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
-import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { advanceBuildJob, buildJobIsComplete, describeBuildJob, nextStepBrief, readPlanMarker, shouldAutoAdvanceJob } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
@@ -551,6 +551,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * files exist on the desk — never because a turn said so.
    */
   const [buildJob, setBuildJob] = useState(null);
+  // Steps taken without being asked. Reset when a new plan starts; capped so an
+  // agent loop can never become an open tap.
+  const autoStepsRef = useRef(0);
+  const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -877,8 +881,36 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // files that now exist, so a step can also go BACK to not-done if its file
     // is later emptied. The job describes the desk, not the history of claims.
     const proposed = readPlanMarker(rawText);
-    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
-    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
+    if (proposed) {
+      autoStepsRef.current = 0;
+      autoPauseRef.current = '';
+      setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
+    } else {
+      setBuildJob((prev) => {
+        if (!prev) return prev;
+        const next = advanceBuildJob(prev, assembled.vfs || vfs);
+        /*
+         * Take the next step without being asked — this is what turns one
+         * 175-second shot into several short ones. Every stop condition lives
+         * in shouldAutoAdvanceJob, and the one that matters is NO PROGRESS: a
+         * step that delivered no new file will not deliver one on a retry, so
+         * repeating it is a charge with a known outcome.
+         */
+        const verdict = shouldAutoAdvanceJob({
+          job: next,
+          previousJob: prev,
+          autoStepsUsed: autoStepsRef.current,
+          lastTurnFailed: Boolean(assembled.rejected),
+        });
+        autoPauseRef.current = verdict.advance ? '' : verdict.reason;
+        if (verdict.advance) {
+          autoStepsRef.current += 1;
+          // After paint, so the step just finished is on screen before the next starts.
+          setTimeout(() => handleSendMessageRef.current?.(nextStepBrief(next)), 0);
+        }
+        return next;
+      });
+    }
     setPatchNote((assembled.patchFailures || [])
       .map((failure) => describePatchFailures(failure.result, failure.filepath))
       .filter(Boolean)
@@ -1379,6 +1411,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
   };
 
+  const handleSendMessageRef = useRef(null);
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
@@ -1444,6 +1477,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
     streamSendMessage(overrideText);
   };
+  // The auto-advance loop calls through this ref so it always reaches the
+  // current closure rather than the one captured when the job started.
+  handleSendMessageRef.current = handleSendMessage;
 
   const commitStudySyllabusChip = (item) => {
     if (!STUDY_SYLLABUS_CHIPS.some((chip) => chip.id === item.id)) return;
@@ -1791,6 +1827,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
                         >
                           {describeBuildJob(buildJob)}
+                          {autoPauseRef.current && !buildJobIsComplete(buildJob)
+                            ? `
+
+Paused — ${autoPauseRef.current}.`
+                            : ''}
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (

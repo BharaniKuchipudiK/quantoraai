@@ -5,11 +5,13 @@ import {
   briefNeedsJob,
   buildJobIsComplete,
   completedCount,
+  MAX_AUTO_STEPS,
   createBuildJob,
   describeBuildJob,
   nextStep,
   nextStepBrief,
   readPlanMarker,
+  shouldAutoAdvanceJob,
   stepIsProved,
   stripPlanMarker,
 } from './build-job.js';
@@ -155,4 +157,74 @@ test('a plan is capped so it cannot become a to-do list', () => {
 test('stepIsProved refuses a step with nothing to prove', () => {
   assert.equal(stepIsProved({ produces: [] }, {}), false);
   assert.equal(stepIsProved(null, {}), false);
+});
+
+/*
+ * AUTO-ADVANCE: THE STOP CONDITIONS ARE THE FEATURE.
+ *
+ * Turning one 175-second shot into several short ones is the point. A loop that
+ * cannot stop is worse than no loop — it spends real money producing nothing,
+ * on a platform running against a $100 float.
+ */
+const twoStep = () => createBuildJob({
+  goal: 'A scheduler',
+  steps: [
+    { title: 'Data', produces: ['src/data.js'] },
+    { title: 'Grid', produces: ['src/Grid.jsx'] },
+  ],
+});
+
+test('a job with work left and progress made advances', () => {
+  const before = advanceBuildJob(twoStep(), {});
+  const after = advanceBuildJob(twoStep(), { 'src/data.js': file() });
+  const verdict = shouldAutoAdvanceJob({ job: after, previousJob: before, autoStepsUsed: 1 });
+  assert.equal(verdict.advance, true);
+  assert.match(verdict.reason, /next: Grid/);
+});
+
+test('a step that produced nothing stops the loop', () => {
+  // The model does not know something now that it did not know a minute ago.
+  // Repeating the step is a charge with a known outcome.
+  const same = advanceBuildJob(twoStep(), {});
+  const verdict = shouldAutoAdvanceJob({ job: same, previousJob: same, autoStepsUsed: 1 });
+  assert.equal(verdict.advance, false);
+  assert.match(verdict.reason, /produced nothing new/);
+});
+
+test('progress is judged by which files are outstanding, not how many', () => {
+  // One file delivered while another goes missing is not movement.
+  const before = advanceBuildJob(twoStep(), { 'src/data.js': file() });
+  const after = advanceBuildJob(twoStep(), { 'src/Grid.jsx': file() });
+  assert.equal(shouldAutoAdvanceJob({ job: after, previousJob: before }).advance, true);
+  const stuck = advanceBuildJob(twoStep(), { 'src/data.js': file() });
+  assert.equal(shouldAutoAdvanceJob({ job: stuck, previousJob: before }).advance, false);
+});
+
+test('every other stop condition holds', () => {
+  const job = advanceBuildJob(twoStep(), { 'src/data.js': file() });
+  const base = { job, previousJob: advanceBuildJob(twoStep(), {}) };
+  assert.equal(shouldAutoAdvanceJob({ ...base, lastTurnFailed: true }).advance, false);
+  assert.equal(shouldAutoAdvanceJob({ ...base, userInterjected: true }).advance, false);
+  assert.equal(shouldAutoAdvanceJob({ ...base, autoStepsUsed: MAX_AUTO_STEPS }).advance, false);
+  assert.equal(shouldAutoAdvanceJob({ job: null }).advance, false);
+});
+
+test('a finished job stops rather than looking for more work', () => {
+  const done = advanceBuildJob(twoStep(), { 'src/data.js': file(), 'src/Grid.jsx': file() });
+  const verdict = shouldAutoAdvanceJob({ job: done, previousJob: done });
+  assert.equal(verdict.advance, false);
+  assert.match(verdict.reason, /every step is done/);
+});
+
+test('a halted job always says why', () => {
+  // A loop that stops silently is a loop nobody can trust.
+  for (const args of [
+    { job: null },
+    { job: advanceBuildJob(twoStep(), {}), lastTurnFailed: true },
+    { job: advanceBuildJob(twoStep(), {}), autoStepsUsed: 99 },
+  ]) {
+    const verdict = shouldAutoAdvanceJob(args);
+    assert.equal(verdict.advance, false);
+    assert.ok(verdict.reason && verdict.reason.length > 3, 'a stop with no reason is a mystery');
+  }
 });
