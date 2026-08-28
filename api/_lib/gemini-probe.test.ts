@@ -153,6 +153,27 @@ test('INVARIANT: a truncated answer is not a success', async () => {
   assert.equal(result.ok, false, 'MAX_TOKENS is a cut-off answer, never a completed one');
 });
 
+test('INVARIANT: a stream that closes with no terminal finish reason is not a success', async () => {
+  // A proxy hangs up, or the upstream link ends gracefully mid-answer. No
+  // error event, no finishReason — just text that stops. It is the one failure
+  // shape where nothing else is left to notice, so the absence of STOP has to
+  // be read as the incompleteness it is.
+  const result = await generateGeminiOnce('AIzaKEY', 'gemini-3.7-flash', {
+    fetchFn: (async () => sseResponse(200, [candidate('<html><h1>looks finished</h1>')])) as any,
+  });
+  assert.equal(result.finishReason, null);
+  assert.equal(result.ok, false, 'no terminal STOP means the answer is incomplete');
+  assert.match(result.error || '', /no terminal finish reason/);
+  assert.match(
+    verdictFor(
+      describeKeyShape('AIzaSyREALKEY0001', 'env'),
+      { attempted: true, ok: true, status: 200, models: ['gemini-3.7-flash'], totalListed: 1, error: null, ms: 1 },
+      result,
+    ),
+    /connection closed/,
+  );
+});
+
 test('a mid-stream provider failure is not read as an empty answer', async () => {
   // HTTP 200 followed by an error event: quota, safety, an upstream outage.
   const result = await generateGeminiOnce('AIzaKEY', 'gemini-3.7-flash', {

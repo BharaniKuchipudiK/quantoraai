@@ -37,6 +37,8 @@
 
 import { readFileSync } from 'node:fs';
 
+import { namedButBlocked, splitByGatewayReadiness } from './audit-testability.mjs';
+
 const args = process.argv.slice(2);
 const has = (name) => {
   const i = args.indexOf(`--${name}`);
@@ -394,6 +396,15 @@ function extract(raw) {
 
 async function main() {
   const candidates = [];
+  /*
+   * Which gateways can actually be CALLED, as opposed to merely listed.
+   *
+   * These differ, and the difference is a trap. The OpenRouter catalogue is
+   * public and is read anonymously on purpose, so a missing key still gets you
+   * the listing — but the candidates it yields are unreachable. Set only when a
+   * credential has been proven, never inferred from a catalogue that answered.
+   */
+  const gatewayReady = { google: false, openrouter: false };
   rule('KEYS FOUND');
   line(`  Google       ${geminiKey ? 'yes  ' + tail(geminiKey) : 'no  — Gemini listing needs one'}`);
   line(`  OpenRouter   ${orKey ? 'yes  ' + tail(orKey) : 'no  — catalogue is public, so it still lists'}`);
@@ -403,6 +414,7 @@ async function main() {
     rule('GOOGLE — what your paid key can actually reach');
     try {
       const models = await listGemini();
+      gatewayReady.google = true;
       const usable = models.filter((m) => m.canGenerate);
       line(`  ${models.length} Gemini models listed, ${usable.length} can serve a chat turn`);
       line();
@@ -424,6 +436,7 @@ async function main() {
     rule('OPENROUTER — catalogue, cheapest capable first');
     try {
       const auth = orKey ? await checkOpenRouterKey() : { ok: false, why: 'no key present' };
+      gatewayReady.openrouter = auth.ok;
       line(auth.ok
         ? `  key OK${auth.label ? ` (${auth.label})` : ''}${auth.usage != null ? ` · $${Number(auth.usage).toFixed(2)} used` : ''}`
         : `  KEY NOT ACCEPTED — ${auth.why}. The listing below is the PUBLIC catalogue and`
@@ -459,15 +472,42 @@ async function main() {
     return 0;
   }
 
+  /*
+   * A candidate whose gateway has no usable credential must never be TESTED.
+   *
+   * Listing openrouter anonymously is deliberate, but it means openrouter
+   * candidates get collected even when the key is missing or rejected. Testing
+   * one then sends `Bearer null`, earns a guaranteed 401, and records it as a
+   * MODEL failure. With every candidate failing that way the verdict below
+   * reads "nothing produced a complete page ... the problem is upstream of the
+   * platform" — a confident, false conclusion of precisely the kind this
+   * script was written to stop us from drawing.
+   */
+  const { reachable, blocked } = splitByGatewayReadiness(candidates, gatewayReady);
   const toTest = (only.length
-    ? candidates.filter((c) => only.includes(c.id))
-    : candidates
+    ? reachable.filter((c) => only.includes(c.id))
+    : reachable
   ).slice(0, maxTests);
 
   if (!toTest.length) {
     rule('NOTHING TO TEST');
-    line('  --only matched no model your keys can reach. Run without --test to see the list.');
+    const unreachable = namedButBlocked(only, blocked);
+    if (unreachable.length) {
+      // Say which credential is missing. Dropping these silently would leave
+      // "no models finished" as the apparent answer, which is the lie.
+      line(`  ${unreachable.join(', ')}`);
+      line('  — listed, but the gateway that serves them has no usable key here.');
+      line('    Testing them would measure the credential and report it as a model');
+      line('    failure, so they are excluded rather than run.');
+    } else {
+      line('  --only matched no model your keys can reach. Run without --test to see the list.');
+    }
     return 1;
+  }
+
+  if (blocked.length) {
+    line(`  skipping ${blocked.length} listed model(s): their gateway has no usable key here.`);
+    line();
   }
 
   rule(`BUILD TEST — the same page, ${toTest.length} models, ${timeoutMs / 1000}s each`);

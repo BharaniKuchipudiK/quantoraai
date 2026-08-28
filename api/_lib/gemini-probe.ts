@@ -293,18 +293,33 @@ export async function generateGeminiOnce(
     if (streamError) {
       return finish({ status: response.status, chars: text.length, chunks, finishReason, blockReason, error: streamError });
     }
+    /*
+     * STOP is the only finish reason that means the model chose to end.
+     *
+     * MAX_TOKENS, SAFETY and RECITATION all produce output that looks
+     * plausible and is cut off, and calling that a success is exactly how the
+     * ledger got poisoned. A MISSING finish reason is the same failure wearing
+     * a different hat: the HTTP stream closed - a proxy hung up, the upstream
+     * connection ended - before any terminal candidate arrived. Treating that
+     * absence as consent would let this file commit the defect it exists to
+     * catch, on the one path where nothing is left to notice it.
+     */
+    const incomplete = !text.length
+      ? 'the stream completed but carried no text'
+      : finishReason === 'STOP'
+        ? null
+        : finishReason
+          ? `the model stopped early: finish_reason ${finishReason}`
+          : 'the stream ended with no terminal finish reason — the connection closed before the model finished';
+
     return finish({
-      // STOP is the only finish reason that means the model chose to end.
-      // MAX_TOKENS, SAFETY and RECITATION all produce output that looks
-      // plausible and is cut off, and calling that a success is exactly how
-      // the ledger got poisoned.
-      ok: text.length > 0 && (finishReason === null || finishReason === 'STOP'),
+      ok: incomplete === null,
       status: response.status,
       chars: text.length,
       chunks,
       finishReason,
       blockReason,
-      error: text.length ? null : 'the stream completed but carried no text',
+      error: incomplete,
     });
   } catch (error: any) {
     const aborted = controller.signal.aborted;
@@ -352,12 +367,15 @@ export function verdictFor(key: GeminiKeyShape, list: GeminiListResult, generate
     if (generate.finishReason === 'MAX_TOKENS') {
       return `${generate.model} generated ${generate.chars} chars and was cut off by the token limit, not by an error. The key and project are fine; the limit is ours to raise.`;
     }
+    if (generate.chars > 0 && !generate.finishReason) {
+      return `${generate.model} streamed ${generate.chars} chars and then the connection closed with no terminal finish reason. The answer is incomplete however complete it looks, and the break is in transport — a proxy or the upstream link — not in the model.`;
+    }
     if (generate.status === 404) {
       return `The key works, but ${generate.model} returned 404 — that model id is not served to this project. The hardcoded ids in the codebase are the suspects.`;
     }
     return `The key lists ${list.models.length} models but generation failed on ${generate.model}: ${generate.error || `HTTP ${generate.status}`}.`;
   }
-  return `Gemini works from here. ${generate.model} streamed ${generate.chars} chars in ${generate.chunks} chunks, finish_reason ${generate.finishReason || 'none reported'}, in ${generate.ms}ms. If the Coding Desk still fails on Gemini, the fault is ours and not Google's.`;
+  return `Gemini works from here. ${generate.model} streamed ${generate.chars} chars in ${generate.chunks} chunks, finish_reason ${generate.finishReason}, in ${generate.ms}ms. If the Coding Desk still fails on Gemini, the fault is ours and not Google's.`;
 }
 
 const NOT_ATTEMPTED_LIST: GeminiListResult = {
