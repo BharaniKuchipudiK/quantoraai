@@ -1,4 +1,5 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
@@ -514,6 +515,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [codingDeskOpen, setCodingDeskOpen] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  // Which session this saver last ran for, and the live session id a deferred
+  // write re-checks against. Refs, because both are read inside a timer.
+  const deskSaveSessionRef = useRef(null);
+  const activeSessionIdRef = useRef(null);
   const [deskReview, setDeskReview] = useState([]);
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
@@ -728,8 +733,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setDeskJob(restored.job || null);
   }, [activeSessionId, studioDomain, chatSessions]);
 
+  activeSessionIdRef.current = activeSessionId;
+
   useEffect(() => {
     if (!canAutoOpenCodeWorkspace(studioDomain)) return;
+    /*
+     * A desk belongs to the chat that built it.
+     *
+     * This save is debounced 400ms and its effect re-runs when activeSessionId
+     * changes — so on a chat switch it used to build a snapshot from the
+     * PREVIOUS chat's files and write it to whichever session was active when
+     * the timer fired. The new chat then restored it: you opened a fresh chat,
+     * typed a brief, and the desk beside you force-opened somebody else's
+     * build, persisted into your session record.
+     *
+     * Two guards. Skip the pass on which the session changed, because the files
+     * in state are the outgoing chat's and its own desk was already saved.
+     * And re-check at fire time, because the session can change inside the
+     * debounce window.
+     */
+    const target = resolveDeskSaveTarget({
+      activeSessionId,
+      lastSeenSession: deskSaveSessionRef.current,
+    });
+    deskSaveSessionRef.current = target.nextSeen;
+    if (!target.save) return;
+
     const built = buildStudioDeskSnapshot({
       vfs,
       workspaceCode,
@@ -739,7 +768,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       job: deskJob,
     });
     if (!built.ok) return;
+    const sessionAtBuild = activeSessionId;
     const timer = setTimeout(() => {
+      if (!deferredWriteStillValid({ sessionAtBuild, sessionNow: activeSessionIdRef.current })) return;
       updateActiveSession({ desk: built.snapshot });
     }, 400);
     return () => clearTimeout(timer);

@@ -89,19 +89,44 @@ const TOTAL_CHAT_BUDGET_MS = 165_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
+/*
+ * What the platform may route to when it is spending its own credit.
+ *
+ * The comment below used to sit above eight PINNED ids and apply to none of
+ * them. Anthropic was held to the rule; gpt-4o-mini, gemma-2-9b-it,
+ * llama-3.3-70b-instruct, qwen-2.5-coder-32b and deepseek-chat were not, and
+ * every one of them is a generation or two behind — none appears anywhere in
+ * OpenRouter's current top twenty by usage.
+ *
+ * That mattered beyond staleness: this set is not the model PICKER's list, so
+ * the platform was choosing models it never showed anybody. A person watched
+ * gpt-4o-mini answer a question about their build and went looking for it in
+ * the menu, where it has never been.
+ *
+ * The replacements are chosen from live usage rather than reputation. DeepSeek
+ * V4 Flash carries 12.5T tokens a week on OpenRouter — real production volume
+ * on long jobs, which is the only signal that predicts finishing a build — at
+ * $0.12/Mtok against roughly $12 for a flagship. GLM 5.3 Flash and Gemini 3.7
+ * Flash are the next rungs, then GPT-5.6 Luna.
+ */
 const FEATURED_SERVER_MODELS = new Set([
+  // Rung 0 — direct to Google, costs no OpenRouter credit at all.
   "gemini-flash-latest",
-  // Anthropic flagships are NOT listed here: the id moves, and a stale one is a
-  // route that 404s at the provider. They are discovered from the live catalogue
-  // and approved in isApprovedServerModel below.
+  // Rung 1 — the cheap workhorses. Ranked by measured usage, not by name.
+  "deepseek/deepseek-v4-flash-0731",
+  "z-ai/glm-5.3-flash",
+  // Rung 2 — stronger, still an order of magnitude under a flagship.
+  "openai/gpt-5.6-luna",
+  "google/gemini-3.7-flash",
+  // Free rungs, kept because a free route that works is worth more than a cheap
+  // one that does not.
   "nvidia/nemotron-3-super-120b-a12b:free",
-  "nvidia/nemotron-3-super:free",
   "openai/gpt-oss-120b:free",
-  "deepseek/deepseek-chat",
-  "qwen/qwen-2.5-coder-32b-instruct",
-  "meta-llama/llama-3.3-70b-instruct",
-  "google/gemma-2-9b-it",
-  "openai/gpt-4o-mini",
+  // Anthropic flagships are still NOT listed: the id moves, and a stale one is
+  // a route that 404s at the provider. They are discovered from the live
+  // catalogue and approved in isApprovedServerModel below. That rule now
+  // applies to every id here — nothing pinned that the catalogue does not
+  // serve, which is what the eight removed ids violated.
 ]);
 
 function emitBuildProgress(sse: SseWriter, enabled: boolean, beat: { t: number }) {
