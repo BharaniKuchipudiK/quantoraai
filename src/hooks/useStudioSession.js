@@ -13,6 +13,7 @@ import {
   syncRemoteProjectSessions,
 } from '../lib/project-store.js';
 import { compactOfficeMessages } from '../lib/office-session-state.js';
+import { compactSupersededBuilds } from '../lib/session-code-budget.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
 import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, isCannedProjectDescription } from '../lib/studio-mission.js';
 
@@ -214,9 +215,23 @@ function loadSessions(defaultGreeting) {
  */
 function persistSessions(sessions) {
   const list = Array.isArray(sessions) ? sessions : [];
+  /*
+   * Fold superseded builds before writing, not after the quota throws.
+   *
+   * Measured on a 5-turn storefront session (a 970-line index.html): 774 KB
+   * stored, of which 645 KB was the same page repeated in chat history and
+   * only 129 KB was the desk snapshot. Six such sessions exhausted the origin,
+   * and the eviction below then dropped a build the user still wanted.
+   *
+   * The newest build keeps its code verbatim — Preview replays it and it
+   * matches the desk. Older copies leave a marker naming the file and its
+   * size, because a transcript that silently loses a code block is the same
+   * defect as a proof gate that silently claimed a pass. Same fixture after
+   * folding: 43 sessions fit instead of 6.
+   */
   const compact = list.map((session) => ({
     ...session,
-    messages: compactOfficeMessages(session.messages || []),
+    messages: compactSupersededBuilds(compactOfficeMessages(session.messages || [])).messages,
   }));
 
   try {
