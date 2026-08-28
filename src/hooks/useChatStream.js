@@ -19,6 +19,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
+import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
@@ -636,7 +637,18 @@ export function useChatStream({
       studioDomain,
       live: liveDeskProbe,
     });
-    const isCodingRequest = resolveIsCodingRequest(text, {
+    /*
+     * Same rule as the planner, applied to the streaming path: a follow-up in a
+     * build session is work on the build, not a fresh chat turn. Without this
+     * the desk, the Preview and the whole proof path fall away mid-conversation.
+     */
+    const buildSessionActive = isBuildSessionActive({
+      priorUserMessages: messages.filter((m) => m.sender === 'user').map((m) => m.text),
+      codingDeskOpen: Boolean(codingDeskOpen),
+      hasDeskFiles: Object.keys(vfs || {}).length > 0,
+      isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
+    });
+    const isCodingRequest = turnBelongsToBuild({ text, buildSessionActive }) || resolveIsCodingRequest(text, {
       codingDeskOpen: Boolean(codingDeskOpen),
       refineDesk,
     });

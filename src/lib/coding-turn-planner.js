@@ -16,6 +16,7 @@ import {
 } from './shop-catalog-scale.js';
 import { assessPartnerInterrupt } from './studio-partner-interrupt.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-intent.js';
+import { isBuildSessionActive, turnBelongsToBuild } from './build-session.js';
 import { lessonsToPlannerHints } from './coding-turn-memory.js';
 
 /** @typedef {{ id: string, label: string, available: boolean, why: string }} CodingSkill */
@@ -189,11 +190,33 @@ export function planCodingTurn({
     priorUserMessages: prior,
   });
 
+  /*
+   * A build session stays a build session.
+   *
+   * This used to be the single line above on its own, re-deciding from scratch
+   * on every message with no memory that a build was under way - and its
+   * fallback to refine-mode needed desk files, so a session whose first turn
+   * produced none could never get back in. "the buttons do not work", "add a
+   * dark mode", "can you give me the file instead" were all classified as
+   * chat, the desk went away, and a general model asked for an app answered the
+   * only way it can: open TextEdit and paste this.
+   *
+   * turnBelongsToBuild is consulted only AFTER the original classifier says no,
+   * so it can add turns to the build and never take one away.
+   */
+  const buildSessionActive = isBuildSessionActive({
+    priorUserMessages: prior,
+    codingDeskOpen: Boolean(codingDeskOpen),
+    hasDeskFiles: Number(vfsFileCount) > 0,
+    isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
+  });
+
   const isCodingTurn = (
     resolveIsCodingRequest(messageForModel, {
       codingDeskOpen: Boolean(codingDeskOpen),
       refineDesk: Boolean(refineDesk),
     })
+    || turnBelongsToBuild({ text: messageForModel, buildSessionActive })
     || Boolean(shopAsk?.oversize)
     || Boolean(interrupt?.blockModel)
   ) && !advisorBlocksPreviewBuild(studioDomain);
