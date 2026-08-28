@@ -15,6 +15,7 @@ import {
   messageLooksLikeShopBuild,
 } from './shop-catalog-scale.js';
 import { assessPartnerInterrupt } from './studio-partner-interrupt.js';
+import { describeDoors, doorsBlocking, pendingAskFor } from './capability-doors.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-intent.js';
 import { lessonsToPlannerHints } from './coding-turn-memory.js';
 
@@ -173,6 +174,16 @@ export function planCodingTurn({
   vfsFileCount = 0,
   lessons = [],
   allowPaid = false,
+  /**
+   * Which capability doors this deployment has open, as { id: true }.
+   *
+   * Absent means shut, which is the safe default: offering to use a capability
+   * that turns out to be off produces a refusal mid-build, and a refusal after
+   * the work has started is worse than one before it.
+   */
+  capabilities = {},
+  /** Capability ids this ask needs, when the caller knows them up front. */
+  capabilitiesNeeded = [],
 } = {}) {
   const raw = String(message || '').trim();
   const prior = Array.isArray(priorUserMessages) ? priorUserMessages : [];
@@ -237,6 +248,45 @@ export function planCodingTurn({
     && shopAsk?.oversize
     && !intakeAccept.expanded
   );
+
+  /*
+   * A shut door interrupts BEFORE a wall does.
+   *
+   * These two used to be the same answer. A capability the user can switch on
+   * in two minutes and one that will never exist both came back as a refusal,
+   * so the person was told no in a case where the honest answer was "yes, after
+   * you do this". Doors are checked first because a door has a way through and
+   * a wall does not, and answering with the wall would hide the way through.
+   */
+  const doors = doorsBlocking(capabilitiesNeeded, { enabled: capabilities });
+  if (doors.length) {
+    return {
+      mode: 'interrupt',
+      isCodingTurn: true,
+      intent,
+      skillsRequired,
+      skillsMissing,
+      feasible: false,
+      messageForModel,
+      displayUserText,
+      statusLabel: `Waiting on ${doors.length === 1 ? 'one capability' : `${doors.length} capabilities`} — not burning a model turn on a build that cannot finish.`,
+      modelPlan: null,
+      interrupt: {
+        kind: 'capability-door',
+        reply: describeDoors(doors, { ask: intent.summary ? intent.summary.replace(/\.$/, '') : '' }),
+        chips: [],
+        doors: doors.map((door) => door.id),
+        // Parked so the ask survives the round trip. Opening a door takes
+        // minutes, a reload and sometimes a redeploy; a request that has to be
+        // retyped afterwards is a request that gets abandoned.
+        pendingAsk: pendingAskFor({ ask: messageForModel, doors }),
+      },
+      proof,
+      shop: shopAsk,
+      intakeAccept,
+      hints,
+    };
+  }
 
   if (interrupt?.blockModel || forceInterrupt || (skillsMissing.length > 0 && intent.kind === 'shop_oversize')) {
     const partner = interrupt || {

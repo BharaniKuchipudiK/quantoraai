@@ -96,3 +96,62 @@ test('svg_only lesson prefers deterministic shop skills on agree', () => {
   assert.equal(plan.runSkillsFirst, true);
   assert.equal(plan.hints.preferDeterministicShopSkills, true);
 });
+
+/*
+ * Phase 03 in the planner: a shut door interrupts with a way through, and a
+ * wall still refuses.
+ */
+
+function planWith(extra) {
+  return planCodingTurn({
+    message: 'build me a notes page',
+    codingDeskOpen: true,
+    autoMode: true,
+    availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+    ...extra,
+  });
+}
+
+test('a shut door interrupts with steps instead of burning a model turn', () => {
+  const plan = planWith({ capabilitiesNeeded: ['market_data'] });
+  assert.equal(plan.mode, 'interrupt');
+  assert.equal(plan.interrupt.kind, 'capability-door');
+  assert.deepEqual(plan.interrupt.doors, ['market_data']);
+  assert.match(plan.interrupt.reply, /^1\. /m, 'numbered steps');
+  assert.match(plan.interrupt.reply, /You'll know it worked/);
+  assert.match(plan.statusLabel, /not burning a model turn/);
+});
+
+test('the ask is parked so the user never retypes it', () => {
+  const plan = planWith({ message: 'build a page that converts 100 USD to INR', capabilitiesNeeded: ['market_data'] });
+  assert.equal(plan.interrupt.pendingAsk.ask, 'build a page that converts 100 USD to INR');
+  assert.deepEqual(plan.interrupt.pendingAsk.waitingOn, ['market_data']);
+});
+
+test('an open door does not interrupt at all', () => {
+  const plan = planWith({ capabilitiesNeeded: ['market_data'], capabilities: { market_data: true } });
+  assert.equal(plan.mode, 'execute');
+  assert.equal(plan.interrupt, null);
+});
+
+test('INVARIANT: a capability nobody built is a wall, never a door', () => {
+  // Offering steps for something that will never exist sends somebody hunting
+  // for a handle that is not there — crueller than the dead end it replaced.
+  const plan = planWith({ capabilitiesNeeded: ['unique_ai_mockups_at_scale'] });
+  assert.notEqual(plan.interrupt?.kind, 'capability-door');
+});
+
+test('a turn needing nothing extra is unaffected by the door check', () => {
+  const plan = planWith({});
+  assert.equal(plan.mode, 'execute');
+  assert.equal(plan.interrupt, null);
+});
+
+test('a non-coding turn is never gated on a build capability', () => {
+  // The pass-through returns before the door check, and should: a chat turn is
+  // not a build, and asking somebody to configure Supabase to answer a question
+  // would be an obstacle invented out of nothing.
+  const plan = planCodingTurn({ message: 'what do you think of this?', capabilitiesNeeded: ['market_data'] });
+  assert.equal(plan.mode, 'pass');
+  assert.equal(plan.interrupt, null);
+});

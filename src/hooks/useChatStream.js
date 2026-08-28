@@ -162,10 +162,47 @@ async function persistPclContinuity({
   }
 }
 
+/**
+ * What went wrong, in terms the person reading it can act on.
+ *
+ * This used to collapse every failure into "The AI gateway could not complete
+ * the request with X" — a sentence that is true of a dead key, an empty
+ * balance, an oversize prompt, a rate limit and an upstream outage alike, and
+ * useful for none of them. `status` was accepted as an argument and then
+ * thrown away, and the payload arrives as `{}` whenever the error body is not
+ * JSON, so the generic line was what people actually saw.
+ *
+ * Debugging it then took a screenshot and an investigation. The status was
+ * sitting right there the whole time.
+ *
+ * A server-provided message still wins, because it knows more than a status
+ * code does. When there is none, say which code came back and what that class
+ * of failure means — above all whether retrying can possibly help.
+ */
 function responseErrorMessage(status, payload, modelName) {
   if (status === 401 && payload?.requiresAuth) return payload.error || 'Please sign in to continue.';
-  if (status === 429) return payload?.error || 'Too many requests. Please try again shortly.';
-  return payload?.error || `The AI gateway could not complete the request with ${modelName || 'the selected model'}.`;
+  if (payload?.error) return payload.error;
+
+  const who = modelName || 'the selected model';
+  if (status === 401 || status === 403) {
+    return `${who} refused the request as unauthorised (HTTP ${status}). That is the provider credential on this deployment, not your prompt — retrying will not clear it.`;
+  }
+  if (status === 402) {
+    return `${who} needs provider credit this deployment does not have (HTTP 402). Top up the provider account, or paste your own key under Privacy Vault → Session-only provider keys.`;
+  }
+  if (status === 404) {
+    return `${who} is not being served under that name (HTTP 404) — the model id is stale, not your prompt.`;
+  }
+  if (status === 413) {
+    return `This turn is too large for ${who} (HTTP 413). Shorten the message or send fewer images.`;
+  }
+  if (status === 429) {
+    return `${who} is rate limiting this deployment (HTTP 429). Waiting a minute usually clears it; a free-tier model hits this fastest.`;
+  }
+  if (status >= 500) {
+    return `${who} is failing upstream (HTTP ${status}) — the provider, not your prompt. Another model will usually work right now.`;
+  }
+  return `${who} could not complete the request (HTTP ${status}).`;
 }
 
 function activeStudioDomain(chatSessions, activeSessionId) {
