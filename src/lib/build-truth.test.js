@@ -5,6 +5,7 @@ import {
   findBrokenLinks,
   findDeadControls,
   findFabricatedContent,
+  findNumbersThatDisagree,
   inspectBuildTruth,
 } from './build-truth.js';
 
@@ -201,7 +202,7 @@ test('INVARIANT: a check that stood down is reported, never quietly omitted', ()
   const html = page('<button>Buy</button>', 'ReactDOM.createRoot(el).render(<App />);');
   const report = inspectBuildTruth(html);
   assert.equal(report.skipped.length, 1);
-  assert.equal(report.checked, 2);
+  assert.equal(report.checked, 3, 'links, content and numbers still ran');
   const withFinding = inspectBuildTruth(page('<p>Lorem ipsum.</p><button>Buy</button>', 'createRoot(x)'));
   assert.match(describeBuildTruth(withFinding), /Not everything could be checked/);
 });
@@ -274,4 +275,62 @@ test('the page this exists to catch is caught in full', () => {
   assert.ok(kinds.includes('dead-control'), 'the Add to Cart button');
   assert.ok(kinds.includes('broken-link'), 'the #about jump and the missing terms.html');
   assert.ok(kinds.includes('placeholder-content'), 'the lorem ipsum and the grey image');
+});
+
+// ---------------------------------------------------------------- numbers --
+
+const row = (label, amount) => `<tr><td>${label}</td><td>${amount}</td></tr>`;
+const table = (...rows) => `<table><tr><th>Item</th><th>Price</th></tr>${rows.join('')}</table>`;
+
+test('a total that is not the sum of its rows is named, with both figures', () => {
+  const result = findNumbersThatDisagree(table(row('Saree', '1200'), row('Blouse', '800'), row('Total', '1900')));
+  assert.equal(result.findings.length, 1);
+  assert.match(result.findings[0].what, /total says 1,900/);
+  assert.match(result.findings[0].what, /add up to 2,000/);
+});
+
+test('INVARIANT: correct arithmetic is silent in every number format', () => {
+  /*
+   * This is the case that caught a real bug. The money pattern let the
+   * comma-grouped branch match with zero commas, and because alternation takes
+   * the first branch that matches at all rather than the longest, a bare 1200
+   * was read as 120 and 1900 as 190 — turning a page whose sums were right into
+   * an accusation aimed at somebody who cannot check the working.
+   */
+  const correct = [
+    ['plain', table(row('A', '1200'), row('B', '800'), row('Total', '2000'))],
+    ['western grouping', table(row('A', '1,200.50'), row('B', '800.50'), row('Total', '2,001.00'))],
+    ['indian grouping', table(row('A', '1,00,000'), row('B', '50,000'), row('Total', '1,50,000'))],
+    ['currency symbols', table(row('A', '₹1,200'), row('B', '₹800'), row('Total', '₹2,000'))],
+    ['dollars', table(row('A', '$19.99'), row('B', '$5.01'), row('Total', '$25.00'))],
+    ['per-line rounding', table(row('A', '10.005'), row('B', '20.005'), row('Total', '30.01'))],
+  ];
+  for (const [label, html] of correct) {
+    assert.deepEqual(findNumbersThatDisagree(html).findings, [], label);
+  }
+});
+
+test('INVARIANT: a total that legitimately differs from a plain sum is left alone', () => {
+  // Tax, shipping and discounts all make a total correctly exceed or undercut
+  // the lines above it. Arithmetic pedantry here would be noise, not truth.
+  for (const adjustment of ['Tax', 'GST', 'Shipping', 'Discount', 'Handling fee']) {
+    const html = table(row('Saree', '1200'), row(adjustment, '216'), row('Total', '9999'));
+    assert.deepEqual(findNumbersThatDisagree(html).findings, [], adjustment);
+  }
+});
+
+test('the check stands down when the structure is not a sum', () => {
+  // A subtotal is not the claim; one line is not a sum; no labelled total is
+  // no claim at all.
+  assert.deepEqual(findNumbersThatDisagree(table(row('A', '1'), row('Subtotal', '99'))).findings, []);
+  assert.deepEqual(findNumbersThatDisagree(table(row('A', '1200'), row('Total', '99'))).findings, []);
+  assert.deepEqual(findNumbersThatDisagree(table(row('A', '1'), row('B', '2'), row('C', '3'))).findings, []);
+  assert.deepEqual(findNumbersThatDisagree('<p>Total: 500</p>').findings, [], 'prose is not a table');
+});
+
+test('a wrong total joins the report alongside the other checks', () => {
+  const html = page(`<p>Lorem ipsum.</p>${table(row('A', '10'), row('B', '10'), row('Total', '30'))}`);
+  const kinds = inspectBuildTruth(html).findings.map((f) => f.kind);
+  assert.ok(kinds.includes('numbers-disagree'));
+  assert.ok(kinds.includes('placeholder-content'));
 });

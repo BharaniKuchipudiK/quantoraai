@@ -293,6 +293,95 @@ export function findFabricatedContent(html) {
   return { checked: true, reason: null, findings };
 }
 
+
+// --------------------------------------------------------------- numbers ---
+
+/**
+ * A currency amount, with or without a symbol, tolerant of both Western
+ * (1,200,000) and Indian (12,00,000) grouping.
+ *
+ * The grouped branch requires at least one comma. With `*` it also matched a
+ * bare "1200" — but only its first three digits, because alternation takes the
+ * first branch that matches at all, not the longest. That read 1200 as 120 and
+ * 1900 as 190, which turned a page whose arithmetic was correct into an
+ * accusation. Silently wrong parsing is worse than no check.
+ */
+const MONEY = /(?:[$£€₹¥]|\bRs\.?|\bINR\b|\bUSD\b)?\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)/;
+
+/** Row labels that promise the sum of everything above them. */
+const TOTAL_LABEL = /\b(?:grand\s+)?total\b|\bsum\b|\bamount\s+due\b|\bbalance\s+due\b/i;
+
+/** Labels for lines that legitimately are NOT part of a plain sum. */
+const ADJUSTMENT_LABEL = /\b(?:tax|vat|gst|shipping|delivery|discount|coupon|fee|handling|tip|subtotal)\b/i;
+
+function toNumber(text) {
+  const match = MONEY.exec(String(text || '').trim());
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(value) ? value : null;
+}
+
+function cellsOf(rowHtml) {
+  return [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+    .map((m) => visibleText(m[1]).replace(/\s+/g, ' ').trim());
+}
+
+/**
+ * A stated total that is not the sum of the rows above it.
+ *
+ * Narrow on purpose. It only reads a table that carries a labelled total row,
+ * only when every other row contributes exactly one number in that column, and
+ * it stands down the moment the structure is ambiguous or any row is a tax, a
+ * discount, or shipping — the things that make a total legitimately differ from
+ * a plain sum. The alternative is arithmetic pedantry aimed at someone who
+ * cannot check the working, which is worse than saying nothing.
+ */
+export function findNumbersThatDisagree(html) {
+  const source = String(html || '');
+  const findings = [];
+
+  for (const table of source.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const rows = [...table[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map((m) => cellsOf(m[0]));
+    if (rows.length < 3) continue;
+
+    const totalIndex = rows.findIndex((cells) =>
+      cells.some((cell) => TOTAL_LABEL.test(cell) && !/\bsubtotal\b/i.test(cell)));
+    if (totalIndex < 1) continue;
+
+    const totalRow = rows[totalIndex];
+    const stated = totalRow.map(toNumber).filter((n) => n !== null).pop();
+    if (stated === null || stated === undefined) continue;
+
+    // Which column holds the money? The last one carrying a number in the
+    // total row, and it has to be a real column in the item rows too.
+    const column = totalRow.length - 1 - [...totalRow].reverse().findIndex((cell) => toNumber(cell) !== null);
+
+    const items = [];
+    let ambiguous = false;
+    for (let i = 0; i < totalIndex; i += 1) {
+      const cells = rows[i];
+      if (cells.some((cell) => ADJUSTMENT_LABEL.test(cell))) { ambiguous = true; break; }
+      const value = toNumber(cells[column]);
+      if (value === null) continue;               // a header row, or a label row
+      items.push(value);
+    }
+    // Fewer than two contributing rows is not a sum worth checking, and a
+    // header-only table is not a claim about arithmetic.
+    if (ambiguous || items.length < 2) continue;
+
+    const sum = items.reduce((a, b) => a + b, 0);
+    // Two decimal places of tolerance: a page that rounds each line is not lying.
+    if (Math.abs(sum - stated) < 0.011) continue;
+
+    findings.push({
+      kind: 'numbers-disagree',
+      what: `The total says ${stated.toLocaleString()} but the ${items.length} amounts above it add up to ${Number(sum.toFixed(2)).toLocaleString()}.`,
+      where: totalRow.join(' | ').slice(0, 120),
+    });
+  }
+  return { checked: true, reason: null, findings };
+}
+
 /**
  * Everything above, over one build.
  *
@@ -307,6 +396,7 @@ export function inspectBuildTruth(html, { files = [] } = {}) {
     controls: findDeadControls(source, { scripts }),
     links: findBrokenLinks(source, { files }),
     content: findFabricatedContent(source),
+    numbers: findNumbersThatDisagree(source),
   };
 
   const findings = [];
