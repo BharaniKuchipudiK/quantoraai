@@ -33,7 +33,14 @@ export function resolveStudioPartnerStatus({
 } = {}) {
   void photosMissing;
   void shopUiMissing;
-  const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
+  /*
+   * The minute used to be a literal zero, so the clock could not count past 59:
+   * a 110s build rendered "0:110" and a full turn "0:165". It stayed invisible
+   * while every build died inside a minute; now that the primary attempt gets
+   * 110s and the turn 165s, it is on screen for the whole wait.
+   */
+  const totalSec = Math.max(0, Math.floor(Number(elapsedSec) || 0));
+  const clock = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'
     || studioDomain === 'finance'

@@ -97,3 +97,33 @@ export function shouldFallbackBeforeStreaming(error: unknown, context?: Fallback
   if ([404, 408, 410, 425, 429, 500, 502, 503, 504].includes(status)) return true;
   return /not found|no endpoints?|timeout|temporar|quota|rate.?limit|high demand|unavailable|network|fetch failed|payment required|credits?/i.test(message);
 }
+
+/*
+ * A provider can accept the request with HTTP 200 and then fail INSIDE the
+ * stream, emitting an event that carries `error` instead of `choices`.
+ *
+ * Both stream parsers read only `choices[0].delta.content`, so such an event
+ * produced no token and was dropped, with two consequences:
+ *
+ *   - no tokens yet: the turn threw "returned an empty response", naming the
+ *     gateway instead of the real cause (credits, quota, an upstream outage)
+ *     that was sitting in the stream;
+ *   - some tokens already: nothing threw at all. The turn finished as a
+ *     success with a silently truncated build, and recordModelQualityEvent
+ *     wrote outcome:"success" - teaching the outcome router that a model which
+ *     had just failed is reliable.
+ *
+ * Returns an Error rather than throwing, because the callers parse inside a
+ * try/catch that deliberately swallows malformed events; the caller throws it
+ * once the try has been left.
+ */
+export function streamErrorFrom(parsed: any, gateway: string): Error | null {
+  const raw = parsed?.error;
+  if (!raw) return null;
+  const message = typeof raw === 'string' ? raw : (raw.message || 'provider failed mid-stream');
+  const status = Number(raw?.code) || Number(raw?.status) || 502;
+  // Carrying the upstream status lets the existing classifiers do their job:
+  // 401/402/403 is a credential rejection worth saying plainly, 429/5xx is
+  // retryable on another rung.
+  return Object.assign(new Error(`${gateway} failed mid-stream: ${message}`), { status });
+}
