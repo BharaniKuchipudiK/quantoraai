@@ -205,6 +205,19 @@ async function describeRoute(
   const gateway = gatewayFor(modelId);
   if (gateway === 'gemini' && !input.geminiAvailable) return null;
   if (gateway === 'openrouter' && !input.openRouterAvailable) return null;
+  /*
+   * A batch endpoint is ASYNCHRONOUS: it accepts a job and answers later, so it
+   * can never stream a chat turn. Routing to one produces a turn that simply
+   * never replies.
+   *
+   * These are a trap because they are cheap - a provider's `:batch` variant can
+   * list at half the price of the same model, so anyone choosing on price picks
+   * the one that cannot work. The Anthropic discovery path already filtered
+   * them, which left every OTHER way into the router unguarded: an operator
+   * approving one in the registry, a pinned id, a curated entry. This is the
+   * chokepoint all routes pass through, so it belongs here.
+   */
+  if (/[:-]batch\b/i.test(modelId)) return null;
 
   const model = registry.get(modelId);
   const capabilities = capabilitiesFor(modelId, model);
