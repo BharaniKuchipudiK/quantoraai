@@ -334,3 +334,54 @@ test('a wrong total joins the report alongside the other checks', () => {
   assert.ok(kinds.includes('numbers-disagree'));
   assert.ok(kinds.includes('placeholder-content'));
 });
+
+/*
+ * Four defects a review found that this file's own silence tests had missed.
+ * Three of them were false accusations on correct pages — the exact failure
+ * mode these checks are built to avoid — and one could throw out of a module
+ * that is only ever supposed to annotate.
+ */
+
+test('INVARIANT: a malformed fragment annotates, it never throws', () => {
+  // decodeURIComponent throws URIError on `#%`, and that propagated out through
+  // inspectBuildTruth and proveCodingTurn into the turn — so a fragment every
+  // browser navigates happily could break a build.
+  for (const href of ['#%', '#%zz', '#%E0%A4', '#50%25off']) {
+    const html = page(`<a href="${href}">x</a>`);
+    assert.doesNotThrow(() => inspectBuildTruth(html), href);
+    assert.doesNotThrow(() => findBrokenLinks(html), href);
+  }
+  // And a raw fragment still resolves against a matching id.
+  assert.deepEqual(findBrokenLinks(page('<a href="#%">x</a><div id="%"></div>')).findings, []);
+});
+
+test('INVARIANT: a numeric column header is a label, never an amount', () => {
+  // A year heading a column of figures is one of the commonest tables anybody
+  // builds. Counting 2025 as a row turned a correct table into an accusation.
+  const html = '<table><tr><th>Item</th><th>2025</th></tr>'
+    + '<tr><td>Salaries</td><td>$100</td></tr><tr><td>Rent</td><td>$200</td></tr>'
+    + '<tr><td>Total</td><td>$300</td></tr></table>';
+  assert.deepEqual(findNumbersThatDisagree(html).findings, []);
+});
+
+test('INVARIANT: a negative amount keeps its sign', () => {
+  // A refund of -$20 read as +20, so a correct total of 80 was reported as 120.
+  const correct = [
+    ['minus before symbol', '-$20'],
+    ['minus after symbol', '$-20'],
+    ['unicode minus', '\u2212$20'],
+  ];
+  for (const [label, refund] of correct) {
+    const html = '<table><tr><th>I</th><th>P</th></tr><tr><td>Sale</td><td>$100</td></tr>'
+      + `<tr><td>Returned item</td><td>${refund}</td></tr>`
+      + '<tr><td>Total</td><td>$80</td></tr></table>';
+    assert.deepEqual(findNumbersThatDisagree(html).findings, [], label);
+  }
+});
+
+test('the numeric check still catches a total that is genuinely wrong', () => {
+  // After three rounds of making it quieter, it must still do its job.
+  const html = '<table><tr><th>I</th><th>P</th></tr><tr><td>A</td><td>1200</td></tr>'
+    + '<tr><td>B</td><td>800</td></tr><tr><td>Total</td><td>1900</td></tr></table>';
+  assert.equal(findNumbersThatDisagree(html).findings.length, 1);
+});

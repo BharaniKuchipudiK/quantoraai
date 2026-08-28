@@ -231,10 +231,23 @@ export function findBrokenLinks(html, { files = [] } = {}) {
     if (/^(?:https?:|mailto:|tel:|data:|blob:)/i.test(target)) continue;
 
     if (target.startsWith('#')) {
-      const anchor = decodeURIComponent(target.slice(1));
+      /*
+       * A malformed percent escape (`href="#%"`) makes decodeURIComponent
+       * throw, and that URIError propagated out of inspectBuildTruth, through
+       * proveCodingTurn, into the turn — so a fragment every browser navigates
+       * happily could break a build. An annotation module that can throw is not
+       * an annotation module. The raw fragment is the right fallback: it is
+       * exactly what the id would have to match.
+       */
+      let anchor = target.slice(1);
+      try { anchor = decodeURIComponent(anchor); } catch { /* keep the raw form */ }
       if (anchor && !ids.has(anchor)) {
         findings.push({
           kind: 'broken-link',
+          // Structured, not just prose. A repair pass that has to regex the
+          // English back out of a finding is parsing its own output, and it
+          // breaks the moment the wording improves.
+          data: { anchor },
           what: `"${target}" jumps to a section that isn't on the page.`,
           where: match[0].slice(0, 120),
         });
@@ -247,6 +260,7 @@ export function findBrokenLinks(html, { files = [] } = {}) {
       if (path && !known.has(path)) {
         findings.push({
           kind: 'broken-link',
+          data: { file: path },
           what: `"${target}" points at a file that wasn't built.`,
           where: match[0].slice(0, 120),
         });
@@ -306,7 +320,7 @@ export function findFabricatedContent(html) {
  * 1900 as 190, which turned a page whose arithmetic was correct into an
  * accusation. Silently wrong parsing is worse than no check.
  */
-const MONEY = /(?:[$£€₹¥]|\bRs\.?|\bINR\b|\bUSD\b)?\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)/;
+const MONEY = /(-|\u2212)?\s*(?:[$£€₹¥]|\bRs\.?|\bINR\b|\bUSD\b)?\s*(-|\u2212)?\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)/;
 
 /** Row labels that promise the sum of everything above them. */
 const TOTAL_LABEL = /\b(?:grand\s+)?total\b|\bsum\b|\bamount\s+due\b|\bbalance\s+due\b/i;
@@ -317,14 +331,36 @@ const ADJUSTMENT_LABEL = /\b(?:tax|vat|gst|shipping|delivery|discount|coupon|fee
 function toNumber(text) {
   const match = MONEY.exec(String(text || '').trim());
   if (!match) return null;
-  const value = Number(match[1].replace(/,/g, ''));
-  return Number.isFinite(value) ? value : null;
+  const value = Number(match[3].replace(/,/g, ''));
+  if (!Number.isFinite(value)) return null;
+  /*
+   * The sign is part of the number. Without it a refund row of -$20 read as
+   * +20, so a page whose total of 80 was correct got accused of adding to 120 —
+   * a false accusation aimed at somebody who cannot check the working. The sign
+   * may sit on either side of the currency symbol (-$20 and $-20 both occur).
+   */
+  return (match[1] || match[2]) ? -value : value;
 }
 
+/**
+ * A row's cells, each remembering whether it was a header.
+ *
+ * Dropping that distinction made a numeric `<th>` — a year like 2025 heading a
+ * column of figures — count as one of the amounts. A perfectly correct
+ * financial table with a 2025 header and rows of 100 and 200 was reported as
+ * adding up to 2,325. Year-headed tables are among the commonest things anybody
+ * builds, so this was a false accusation waiting on a very ordinary page.
+ */
 function cellsOf(rowHtml) {
-  return [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
-    .map((m) => visibleText(m[1]).replace(/\s+/g, ' ').trim());
+  return [...rowHtml.matchAll(/<(t[dh])\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+    .map((m) => ({
+      header: m[1].toLowerCase() === 'th',
+      text: visibleText(m[2]).replace(/\s+/g, ' ').trim(),
+    }));
 }
+
+/** The plain text of a row, for label matching. */
+const textsOf = (cells) => cells.map((cell) => cell.text);
 
 /**
  * A stated total that is not the sum of the rows above it.
@@ -345,24 +381,28 @@ export function findNumbersThatDisagree(html) {
     if (rows.length < 3) continue;
 
     const totalIndex = rows.findIndex((cells) =>
-      cells.some((cell) => TOTAL_LABEL.test(cell) && !/\bsubtotal\b/i.test(cell)));
+      textsOf(cells).some((text) => TOTAL_LABEL.test(text) && !/\bsubtotal\b/i.test(text)));
     if (totalIndex < 1) continue;
 
     const totalRow = rows[totalIndex];
-    const stated = totalRow.map(toNumber).filter((n) => n !== null).pop();
+    const totalTexts = textsOf(totalRow);
+    const stated = totalTexts.map(toNumber).filter((n) => n !== null).pop();
     if (stated === null || stated === undefined) continue;
 
     // Which column holds the money? The last one carrying a number in the
     // total row, and it has to be a real column in the item rows too.
-    const column = totalRow.length - 1 - [...totalRow].reverse().findIndex((cell) => toNumber(cell) !== null);
+    const column = totalTexts.length - 1 - [...totalTexts].reverse().findIndex((text) => toNumber(text) !== null);
 
     const items = [];
     let ambiguous = false;
     for (let i = 0; i < totalIndex; i += 1) {
       const cells = rows[i];
-      if (cells.some((cell) => ADJUSTMENT_LABEL.test(cell))) { ambiguous = true; break; }
-      const value = toNumber(cells[column]);
-      if (value === null) continue;               // a header row, or a label row
+      if (textsOf(cells).some((text) => ADJUSTMENT_LABEL.test(text))) { ambiguous = true; break; }
+      const cell = cells[column];
+      // A header cell is a label, never an amount — even when it reads 2025.
+      if (!cell || cell.header) continue;
+      const value = toNumber(cell.text);
+      if (value === null) continue;               // a label row, or an empty cell
       items.push(value);
     }
     // Fewer than two contributing rows is not a sum worth checking, and a
@@ -373,10 +413,17 @@ export function findNumbersThatDisagree(html) {
     // Two decimal places of tolerance: a page that rounds each line is not lying.
     if (Math.abs(sum - stated) < 0.011) continue;
 
+    const correct = Number(sum.toFixed(2));
+    // `printed` is the total EXACTLY as it appears in the document, grouping
+    // and all. The formatted figures below are for a person to read; a repair
+    // needs the literal string it has to replace, and the two differ the
+    // moment a page writes 1900 and the report says 1,900.
+    const printed = (MONEY.exec(totalTexts[column] || '') || [])[3] || String(stated);
     findings.push({
       kind: 'numbers-disagree',
-      what: `The total says ${stated.toLocaleString()} but the ${items.length} amounts above it add up to ${Number(sum.toFixed(2)).toLocaleString()}.`,
-      where: totalRow.join(' | ').slice(0, 120),
+      data: { stated, correct, printed },
+      what: `The total says ${stated.toLocaleString()} but the ${items.length} amounts above it add up to ${correct.toLocaleString()}.`,
+      where: totalTexts.join(' | ').slice(0, 120),
     });
   }
   return { checked: true, reason: null, findings };

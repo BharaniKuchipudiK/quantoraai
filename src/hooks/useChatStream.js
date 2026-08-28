@@ -70,6 +70,24 @@ const MIN_ATTEMPT_BUDGET_MS = 20_000;
  * the identical relationship and had no gate, so it kept the bug. The gate now
  * covers both (see dom-cleanup.test.js).
  */
+/**
+ * Success copy with what does not work on the page appended to it.
+ *
+ * "Preview is proved" means a runnable page exists. It does not mean anything
+ * on that page works, and there are four separate branches that can declare it
+ * — the normal completion, a skills-seeded desk, and two error-recovery paths
+ * where the desk was already proved. Three of them originally skipped the
+ * build-truth note, so on exactly the turns where the platform was most eager
+ * to report success, it was quietest about the dead controls.
+ *
+ * One helper rather than four copies, so the next success branch cannot omit it
+ * by being written somewhere else.
+ */
+function withBuildTruth(copy, proof) {
+  const note = buildTruthNote(proof);
+  return note ? `${copy}\n\n${note}` : copy;
+}
+
 const CHAT_TURN_DEADLINE_MS = 175_000;
 // Must stay ABOVE the server's TOTAL_CHAT_BUDGET_MS (165s) or the client aborts a
 // turn the server is still working on — the user sees a dead spinner and the
@@ -1137,11 +1155,12 @@ export function useChatStream({
                     : (streamedError?.message || 'no healthy AI route');
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
-                    text: (
+                    text: withBuildTruth(
                       `${why}, but Preview is already proved on the desk `
                       + `(${deskProof.evidence.photos || 0} catalog photos`
                       + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
-                      + 'Open Coding desk — the page is there.'
+                      + 'Open Coding desk — the page is there.',
+                      deskProof,
                     ),
                     isError: false,
                     executionStatus: null,
@@ -1260,11 +1279,12 @@ export function useChatStream({
                     + `${seededProof.evidence.hasCart ? ', Add to Cart' : ''}).`
                   )
                   : 'Preview is proved on the desk — open Coding desk to run it.';
+                const okCopyWithTruth = withBuildTruth(okCopy, seededProof);
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   text: currentText
-                    ? `${sanitizeAssistantStream(currentText)}\n\n${okCopy}`
-                    : okCopy,
+                    ? `${sanitizeAssistantStream(currentText)}\n\n${okCopyWithTruth}`
+                    : okCopyWithTruth,
                   isError: false,
                   executionStatus: null,
                   codingProof: {
@@ -1514,11 +1534,12 @@ export function useChatStream({
                   : (error.message || 'The model route failed');
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
-                  text: (
+                  text: withBuildTruth(
                     `${why}, but Preview is already proved on the desk `
                     + `(${deskProof.evidence.photos || 0} catalog photos`
                     + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
-                    + 'Open Coding desk — the page is there.'
+                    + 'Open Coding desk — the page is there.',
+                    deskProof,
                   ),
                   isError: false,
                   executionStatus: null,
