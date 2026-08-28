@@ -4,6 +4,7 @@
  */
 
 import { advisorBlocksPreviewBuild } from './build-intent.js';
+import { inspectBuildTruth } from './build-truth.js';
 import { countRealPreviewPhotos, previewHtmlHasRealPhotos, uniqueShopPhotoIds } from './preview-images.js';
 import { previewHtmlHasAddToCartControl, previewHtmlHasCurrencySwitcher } from './shop-preview-ui.js';
 import { pickPreviewEntry } from './preview-utils.js';
@@ -153,10 +154,78 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   };
 
   const includeCatalog = Boolean(vfsText(vfs, 'products.json') || facts.catalogCount);
-  const checks = buildDeskChecks(facts, { includeCatalog, job });
+  // Shop and calculator checks where they apply, PLUS the ones that apply to
+  // every build. Before this, anything that was neither got a single
+  // unverifiable placeholder.
+  const checks = [...buildDeskChecks(facts, { includeCatalog, job }), ...buildTruthChecks(source, listStudioFiles(vfs))];
   const failed = failingChecks(checks);
   const nextBeat = failed[0]?.label || '';
   return { facts, checks, failed, nextBeat, catalog };
+}
+
+/**
+ * Checks that apply to ANY build, from Phase 01's Build Truth.
+ *
+ * WHY THIS EXISTS
+ *
+ * buildDeskChecks only knew two vocabularies: shop (photos, cart, currency,
+ * catalog) and calculator (display, keys, scientific). Everything else — a
+ * scheduling board, a dashboard, a CRM, a booking system — got exactly ONE
+ * check, and it was a placeholder that is never verified:
+ *
+ *   "Not checked on Preview yet: Interactive controls still work"
+ *
+ * So a real build shipped with an unwired button, a dead anchor and lorem
+ * ipsum in it, and the panel had nothing to say. It is also why "0 catalog
+ * photos" leaked onto a scheduler: shop was the only vocabulary available, so
+ * shop words were what came out.
+ *
+ * Build Truth already finds these on any HTML — dead controls, broken links,
+ * fabricated content, numbers that disagree — and was wired into the proof
+ * plane but not into the panel the user actually reads.
+ */
+export function buildTruthChecks(html = '', files = []) {
+  const source = String(html || '');
+  if (!source.trim()) return [];
+  let truth;
+  try {
+    truth = inspectBuildTruth(source, { files });
+  } catch {
+    // A check that throws must not take the panel down with it.
+    return [];
+  }
+  const findings = truth?.findings || [];
+  const byKind = new Map();
+  for (const finding of findings) {
+    const kind = String(finding?.kind || '');
+    if (!kind) continue;
+    byKind.set(kind, (byKind.get(kind) || 0) + 1);
+  }
+  const LABELS = {
+    'dead-control': (n) => `${n} control${n === 1 ? '' : 's'} on the page do${n === 1 ? 'es' : ''} nothing when clicked`,
+    'broken-link': (n) => `${n} link${n === 1 ? '' : 's'} point${n === 1 ? 's' : ''} nowhere`,
+    'placeholder-content': (n) => `${n} block${n === 1 ? '' : 's'} of placeholder text left in`,
+    'numbers-disagree': (n) => `${n} total${n === 1 ? ' does' : 's do'} not match the rows above ${n === 1 ? 'it' : 'them'}`,
+  };
+  const checks = [];
+  for (const [kind, label] of Object.entries(LABELS)) {
+    const count = byKind.get(kind) || 0;
+    checks.push({
+      id: `truth-${kind}`,
+      ok: count === 0,
+      state: count === 0 ? 'ok' : 'fix',
+      sourceOk: count === 0,
+      label: count === 0 ? okLabelFor(kind) : label(count),
+    });
+  }
+  return checks;
+}
+
+function okLabelFor(kind) {
+  if (kind === 'dead-control') return 'Every control is wired to something';
+  if (kind === 'broken-link') return 'Every link resolves';
+  if (kind === 'placeholder-content') return 'No placeholder text left in';
+  return 'Totals match their rows';
 }
 
 function observedBool(live, key) {
