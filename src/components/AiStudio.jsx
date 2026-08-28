@@ -32,6 +32,7 @@ import {
 } from '../lib/github-import.js';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
+import { describePatchFailures } from '../lib/diff-patcher.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
@@ -536,6 +537,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, []);
   const [deskJob, setDeskJob] = useState(null);
   const [liveDeskProbe, setLiveDeskProbe] = useState(null);
+  /*
+   * Edits the model asked for that could not be applied to the file.
+   * The reply describes what it INTENDED to change; this says what actually
+   * landed. Without it a two-part edit where one part missed reads as a
+   * complete success over a half-changed build.
+   */
+  const [patchNote, setPatchNote] = useState('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -858,6 +866,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
     const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
+    setPatchNote((assembled.patchFailures || [])
+      .map((failure) => describePatchFailures(failure.result, failure.filepath))
+      .filter(Boolean)
+      .join('\n\n'));
     if (assembled.rejected) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
     const skillPlan = planFromMessageSnapshot(lastAi?.codingTurnPlan, {
@@ -1757,6 +1769,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
                           {shopUiMissingNote}
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (
+                        <div
+                          data-quantora-preview-honesty="patch"
+                          style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}
+                        >
+                          {patchNote}
                         </div>
                       ) : null}
 

@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVFSFromMarkdown } from './vfs-parser.js';
+import { parseVFSWithReport } from './vfs-parser.js';
+
+/*
+ * The files-only wrapper is gone. It survived one commit with no production
+ * caller and the wiring gate flagged it — a lossy signature left lying around
+ * is how the silent partial-patch bug existed in the first place, so tests go
+ * through the reporting API like everything else.
+ */
+const parseVFSFromMarkdown = (text, currentVfs = {}) => parseVFSWithReport(text, currentVfs).vfs;
 
 test('verified Office HTML replaces stale workspace VFS without mutation', () => {
   const officeHtml = '<!doctype html><html><body><section>Deck</section><script type="application/json" id="quantora-office-manifest">{"version":1}</script></body></html>';
@@ -107,4 +115,56 @@ test('an unclosed HTML fence still becomes a file, not the chat', () => {
 `);
   assert.match(parsed['index.html'].content, /<body>Hi<\/body>/);
   assert.doesNotMatch(parsed['index.html'].content, /Here is the page/);
+});
+
+/*
+ * A PATCH TO index.html HAD NEVER ONCE BEEN ACCEPTED.
+ *
+ * isolateHtmlDocument looks for <!DOCTYPE html> or <html>. A search/replace
+ * block contains neither, so an html-language patch was thrown away before the
+ * patch path was ever reached. Full-document rewrites were not a policy choice
+ * here — they were the only thing that could get through, which is why a
+ * one-word rename regenerated 970 lines and timed out.
+ */
+test('a search/replace patch to index.html is applied', () => {
+  const current = {
+    'index.html': {
+      content: '<!DOCTYPE html><html><body>\n<h1>Kaapi Bharat</h1>\n<p>Price: 1200</p>\n</body></html>',
+      language: 'html',
+    },
+  };
+  const reply = 'Renamed it.\n\n```html filepath="index.html"\n<<<<\n<h1>Kaapi Bharat</h1>\n====\n<h1>Hirans Coffee</h1>\n>>>>\n```';
+  const { vfs, patchFailures } = parseVFSWithReport(reply, current);
+  assert.deepEqual(patchFailures, []);
+  assert.match(vfs['index.html'].content, /<h1>Hirans Coffee<\/h1>/);
+  assert.match(vfs['index.html'].content, /Price: 1200/, 'the rest of the page survives');
+  assert.match(vfs['index.html'].content, /<!DOCTYPE html>/, 'the document is not truncated');
+});
+
+test('an edit that only partly applies is reported to the caller', () => {
+  const current = {
+    'index.html': { content: '<!DOCTYPE html><html><body>\n<h1>A</h1>\n<p>B</p>\n</body></html>', language: 'html' },
+  };
+  const reply = 'Both done.\n\n```html filepath="index.html"\n<<<<\n<h1>A</h1>\n====\n<h1>Z</h1>\n>>>>\n<<<<\n<p>NOT HERE</p>\n====\n<p>Y</p>\n>>>>\n```';
+  const { vfs, patchFailures } = parseVFSWithReport(reply, current);
+  assert.equal(patchFailures.length, 1);
+  assert.equal(patchFailures[0].filepath, 'index.html');
+  assert.deepEqual(patchFailures[0].result.failed.map((f) => f.reason), ['missing']);
+  assert.match(vfs['index.html'].content, /<h1>Z<\/h1>/, 'what landed is kept');
+});
+
+test('a patch where nothing lands leaves the desk untouched', () => {
+  const content = '<!DOCTYPE html><html><body><h1>A</h1></body></html>';
+  const current = { 'index.html': { content, language: 'html' } };
+  const reply = 'Changed it.\n\n```html filepath="index.html"\n<<<<\n<h1>NOT HERE</h1>\n====\n<h1>Z</h1>\n>>>>\n```';
+  const { vfs, patchFailures } = parseVFSWithReport(reply, current);
+  assert.equal(Object.keys(vfs).length, 0, 'a no-op edit must not be committed as a build');
+  assert.equal(patchFailures.length, 1);
+});
+
+test('a full-document reply still works after the patch reordering', () => {
+  const reply = 'Here.\n\n```html filepath="index.html"\n<!DOCTYPE html><html><body><h1>Fresh</h1></body></html>\n```';
+  const { vfs, patchFailures } = parseVFSWithReport(reply, {});
+  assert.deepEqual(patchFailures, []);
+  assert.match(vfs['index.html'].content, /<h1>Fresh<\/h1>/);
 });
