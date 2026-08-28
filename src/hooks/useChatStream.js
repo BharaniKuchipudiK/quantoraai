@@ -19,6 +19,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -240,6 +241,7 @@ export function useChatStream({
   updateActiveSession,
   onCodingTurnExecute = null,
   onCodingTurnProved = null,
+  onDeskRename = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
@@ -621,6 +623,44 @@ export function useChatStream({
 
     let effectiveArenaMode = arenaMode;
     const deskFiles = Boolean(isWorkspaceMode && vfs && Object.keys(vfs).length > 0);
+
+    /*
+     * A RENAME IS A FIND AND REPLACE. IT NEVER GOES TO A MODEL.
+     *
+     * "can you rename or rebrand this as Hiran's Coffee" used to be sent as a
+     * full regeneration: re-emit all 970 lines of index.html to change a
+     * string. It hit the 175s ceiling and produced nothing — no rename, no
+     * site, and a charge for the attempt.
+     *
+     * The answer is derivable from files already in hand, so it is computed
+     * here in milliseconds. It cannot time out, cannot redesign the page it was
+     * asked to rename, and cannot drop the other 969 lines.
+     *
+     * A refusal short-circuits too. When the current name cannot be derived,
+     * asking one question is a better turn than spending three minutes letting
+     * a model guess which string to swap.
+     */
+    if (deskFiles && typeof onDeskRename === 'function') {
+      const renameAsk = detectRenameRequest(visibleUserText);
+      if (renameAsk) {
+        const plan = planDeskRename({ vfs, html: canvasCode || '', newName: renameAsk.newName });
+        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan)) : false;
+        if (!plan.ok || applied) {
+          if (!stillCurrent()) return;
+          updateActiveMessages(prev => [...prev, {
+            id: createMessageId('ai'),
+            sender: 'ai',
+            text: describeDeskRename(plan),
+            // Not an error — a refusal here is a question, and the desk is intact.
+            isError: false,
+          }]);
+          setIsGenerating(false);
+          return;
+        }
+        // The commit was rejected (a broken VFS guard upstream). Fall through to
+        // the model rather than reporting a rename that did not land.
+      }
+    }
     const hasCodingWorkspace = deskFiles
       || Boolean(isWorkspaceMode)
       || Boolean(codingDeskOpen)

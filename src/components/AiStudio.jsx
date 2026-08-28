@@ -1157,6 +1157,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(true);
   }, [vfs, deskJob, activeSessionId, commitDeskVfs]);
 
+  /*
+   * Commit a deterministic rename. Returns whether the desk actually took it,
+   * so the caller reports a rename only when one happened — a "Renamed X to Y"
+   * message over an unchanged desk is the exact class of claim this codebase
+   * keeps having to delete.
+   */
+  const onDeskRename = useCallback((nextVfs) => {
+    if (!nextVfs || !Object.keys(nextVfs).length) return false;
+    if (!commitDeskVfs(nextVfs)) return false;
+    const entry = pickPreviewEntry(nextVfs);
+    if (entry) setWorkspaceCode(entry);
+    setWorkspaceActiveTab('preview');
+    return true;
+  }, [commitDeskVfs]);
+
   const onCodingTurnProved = useCallback((verdict) => {
     if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
     // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
@@ -1194,6 +1209,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession,
     onCodingTurnExecute,
     onCodingTurnProved,
+    onDeskRename,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
