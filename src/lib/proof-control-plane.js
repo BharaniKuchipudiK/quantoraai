@@ -17,11 +17,48 @@ import { rememberCodingTurnLesson } from './coding-turn-memory.js';
 import { lessonKindFromOutcome } from './coding-turn-lesson-kinds.js';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from './project-runtime-preview.js';
 import { describeBuildTruth, inspectBuildTruth } from './build-truth.js';
+import { describeRepair, repairBuild } from './build-repair.js';
 
 /** @typedef {'pending'|'pass'|'repair'|'fail'} ProofStatus */
 
 /** A turn with nothing to inspect has found nothing — not "found it clean". */
 const NO_TRUTH = { findings: [], skipped: [], checked: 0 };
+const NO_REPAIR = { fixes: [], refusals: [], changed: false };
+
+/**
+ * Fix what has one right answer, then re-check, then carry both accounts.
+ *
+ * Phase 02: the gate becomes a collaborator instead of a censor. Saying a link
+ * is broken and stopping is half a product — the person reading it cannot fix a
+ * dead anchor, because fixing one means editing HTML, and not being able to
+ * edit HTML is why they are here.
+ *
+ * Three rules hold this safe. Only derivable corrections are applied, never
+ * guesses. The repaired page is RE-INSPECTED rather than assumed improved, so
+ * what the turn reports is measured and not claimed. And the refusals travel
+ * with the fixes, because somebody told two things were fixed and not told
+ * three were left will believe their page is finished.
+ */
+function repairPass(vfs, truth) {
+  if (!truth?.findings?.length) return { vfs, truth, repair: NO_REPAIR };
+  const path = pickPreviewEntryPath(vfs);
+  const html = path && vfs[path]?.content ? String(vfs[path].content) : '';
+  if (!html) return { vfs, truth, repair: NO_REPAIR };
+
+  const repair = repairBuild(html, truth.findings);
+  if (!repair.changed) return { vfs, truth, repair };
+
+  const nextVfs = { ...vfs, [path]: { ...vfs[path], content: repair.html } };
+  const after = inspectBuildTruth(repair.html, { files: Object.keys(nextVfs) });
+  /*
+   * A repair that made things worse is not a repair. Nothing observed so far
+   * does this - there is a test asserting the count never rises - but a
+   * rewrite of somebody's page is not the place to rely on that holding, so
+   * the original is kept whenever the evidence does not improve.
+   */
+  if (after.findings.length > truth.findings.length) return { vfs, truth, repair: NO_REPAIR };
+  return { vfs: nextVfs, truth: after, repair };
+}
 
 /**
  * @typedef {{
@@ -167,6 +204,7 @@ export function proveCodingTurn({
       repaired: false,
       ran: [],
       truth: NO_TRUTH,
+      repair: NO_REPAIR,
       vfs: vfs || {},
       outcomeKind: null,
       detail: 'non-coding',
@@ -188,6 +226,7 @@ export function proveCodingTurn({
       repaired: false,
       ran: [],
       truth: NO_TRUTH,
+      repair: NO_REPAIR,
       vfs: vfs || {},
       outcomeKind: 'interrupt',
       detail: 'turn interrupted before model',
@@ -238,6 +277,12 @@ export function proveCodingTurn({
     });
   }
 
+  const afterRepair = repairPass(nextVfs, evalResult.truth);
+  nextVfs = afterRepair.vfs;
+  evalResult = { ...evalResult, truth: afterRepair.truth };
+  const repair = afterRepair.repair;
+  if (repair.fixes.length) ran = [...new Set([...ran, 'repair_build_truth'])];
+
   if (evalResult.ok) {
     return {
       status: 'pass',
@@ -247,6 +292,7 @@ export function proveCodingTurn({
       repaired,
       ran,
       truth: evalResult.truth,
+      repair,
       vfs: nextVfs,
       outcomeKind: null,
       detail: repaired ? 'passed after skill repair' : 'passed',
@@ -274,6 +320,7 @@ export function proveCodingTurn({
     repaired,
     ran,
     truth: evalResult.truth,
+    repair,
     vfs: nextVfs,
     outcomeKind,
     detail: `proof failed: ${evalResult.gaps.join(', ')}`,
@@ -330,5 +377,12 @@ export function codingTurnMayClaimSuccess(verdict) {
  * checks are narrow enough that it would be an overclaim.
  */
 export function buildTruthNote(verdict) {
-  return describeBuildTruth(verdict?.truth || NO_TRUTH);
+  /*
+   * What was fixed comes first, then what is left. A person wants to know what
+   * changed on their page before they are told what is still wrong with it, and
+   * the repair account carries its own refusals so nothing goes unmentioned.
+   */
+  const repaired = describeRepair(verdict?.repair || NO_REPAIR);
+  const remaining = describeBuildTruth(verdict?.truth || NO_TRUTH);
+  return [repaired, remaining].filter(Boolean).join('\n\n');
 }

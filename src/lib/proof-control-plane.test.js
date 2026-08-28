@@ -225,3 +225,65 @@ test('every verdict carries a truth field, so no caller has to guard for it', ()
   assert.equal(buildTruthNote(nonCoding), '');
   assert.equal(buildTruthNote(null), '', 'and a missing verdict is silence, not a crash');
 });
+
+/*
+ * Phase 02 inside the turn: the gate fixes what it can, ships it, and says what
+ * it did — and what it would not do.
+ */
+
+const REPAIRABLE_PAGE = '<!DOCTYPE html><html><body>'
+  + '<a href="#pricing">Pricing</a><section id="pricing-section"><h2>Pricing</h2></section>'
+  + '<p>Lorem ipsum dolor.</p></body></html>';
+
+test('a repairable page comes back FIXED, and the turn carries the corrected file', () => {
+  const plan = ordinaryPlan('build me a pricing page');
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: REPAIRABLE_PAGE } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+
+  // The corrected page is what ships, not just a note about it.
+  assert.match(verdict.vfs['index.html'].content, /href="#pricing-section"/);
+  assert.equal(verdict.repair.fixes.length, 1);
+  assert.ok(verdict.ran.includes('repair_build_truth'));
+
+  // And the finding it fixed is gone from the re-inspection, not merely claimed.
+  assert.ok(!verdict.truth.findings.some((f) => f.kind === 'broken-link'));
+});
+
+test('INVARIANT: what the platform refuses to invent is said out loud', () => {
+  const plan = ordinaryPlan('build me a pricing page');
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: REPAIRABLE_PAGE } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+  const note = buildTruthNote(verdict);
+  assert.match(note, /I fixed one thing:/);
+  assert.match(note, /Pointed "#pricing" at the "pricing-section" section/);
+  assert.match(note, /Lorem ipsum/);
+  assert.match(note, /does not invent/, 'the refusal, and the reason for it');
+});
+
+test('a page with nothing repairable is left byte-for-byte alone', () => {
+  const plan = ordinaryPlan('build me a page');
+  const original = '<!DOCTYPE html><html><body><p>Lorem ipsum.</p></body></html>';
+  const verdict = proveCodingTurn({
+    plan,
+    vfs: { 'index.html': { content: original } },
+    brief: plan.messageForModel,
+    allowRepair: false,
+  });
+  assert.equal(verdict.vfs['index.html'].content, original);
+  assert.deepEqual(verdict.repair.fixes, []);
+  assert.equal(verdict.repair.refusals.length, 1);
+});
+
+test('every verdict carries a repair field, so no caller has to guard for it', () => {
+  const nonCoding = proveCodingTurn({ plan: { isCodingTurn: false }, vfs: {} });
+  assert.deepEqual(nonCoding.repair.fixes, []);
+  assert.equal(buildTruthNote(nonCoding), '');
+});
