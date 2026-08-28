@@ -8,12 +8,13 @@ import {
   stripInjectedShopPhotos,
   proxyRemoteShopImages,
   proxyRemoteCatalogImages,
-  SHOP_CATALOG_CAP,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, jobClearlyNotShop, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
 import { buildStudioJobCard, isStudioProductSwitch } from './studio-job-card.js';
-import { shopCatalogScaleNote } from './shop-catalog-scale.js';
+// SHOP_CATALOG_CAP from its own module rather than through preview-images:
+// re-exporting a constant through an unrelated file hides the dependency.
+import { SHOP_CATALOG_CAP, shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
 const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;

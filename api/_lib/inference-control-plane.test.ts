@@ -242,20 +242,13 @@ test('a paid rescue rung is held for last, and only when the meter allows', asyn
   assert.ok(allowed.slice(0, -1).every((route) => route.paid !== true), 'free routes come first');
 });
 
-test('canOfferPaidLastResort fails closed', async () => {
-  const { canOfferPaidLastResort } = await import('./spend-store.js');
-  const paid = 'anthropic/claude-3.5-sonnet';
-  // no model configured
-  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 0, ceilingUsd: 50, calls: 0 }, ''), false);
-  // unreadable ledger
-  assert.equal(canOfferPaidLastResort({ known: false, monthKey: '2026-08', spentUsd: 0, ceilingUsd: 50, calls: 0 }, paid), false);
-  // no budget
-  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 0, ceilingUsd: 0, calls: 0 }, paid), false);
-  // ceiling reached
-  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 50, ceilingUsd: 50, calls: 9 }, paid), false);
-  // headroom + readable + configured => allowed
-  assert.equal(canOfferPaidLastResort({ known: true, monthKey: '2026-08', spentUsd: 10, ceilingUsd: 50, calls: 3 }, paid), true);
-});
+/*
+ * canOfferPaidLastResort's fail-closed behaviour moved to paid-route-gate,
+ * which reads OpenRouter's own meter instead of a ledger nothing wrote to.
+ * See paid-route-gate.test.ts: "an unreadable meter is a refusal, never an
+ * assumed zero".
+ */
+
 
 test('BUILD budget: the turn never plans a rung too short to finish a build', () => {
   // Why every heavy build ended at the client deadline: a 120s turn split across

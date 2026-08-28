@@ -3,11 +3,7 @@
  * Shop inject uses same-origin data-URI <img> photos that always decode in Preview.
  */
 
-import {
-  SHOP_CATALOG_CAP,
-  SHOP_PHOTO_FLOOR,
-  shopCatalogTargetSize,
-} from './shop-catalog-scale.js';
+import { SHOP_PHOTO_FLOOR } from './shop-catalog-scale.js';
 
 export const PREVIEW_IMAGE_PROXY_PATH = '/api/preview-image';
 
@@ -89,20 +85,6 @@ export function isReliablePreviewPhotoSrc(src = '') {
   if (raw.includes(PREVIEW_IMAGE_PROXY_PATH)) return true;
   if (/^\/(?!\/)[\w./%-]+\.(?:png|jpe?g|webp|gif|svg)(?:\?.*)?$/i.test(raw)) return true;
   return false;
-}
-
-/**
- * A real photograph — a same-origin proxied photo or a raster data URI, but NOT
- * a fabricated `data:image/svg+xml` gradient/gold-frame placeholder. Used where
- * the injector must decide whether to REPLACE a fake placeholder with a real
- * proxied photo, without disturbing the broader "will this decode in Preview"
- * check above (which still treats a self-contained svg as displayable).
- */
-export function isRealPhotoSrc(src = '') {
-  const raw = String(src || '').trim();
-  if (!raw) return false;
-  if (/^data:image\/svg\+xml/i.test(raw)) return false;
-  return isReliablePreviewPhotoSrc(raw);
 }
 
 export function previewImageProxyUrl(href, origin = '') {
@@ -198,45 +180,11 @@ function svgFallbackPhoto(index = 0) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-/** A real photograph via the same-origin proxy — always renders in Preview. */
-function picsumPhoto(index = 0) {
-  // Keyed with quantora-photo-<n> so photo-identity / uniqueness tracking holds.
-  const url = `https://picsum.photos/seed/quantora-photo-${index + 1}/1200/800`;
-  return `${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(url)}`;
-}
-
-// The injector's fallback photos are now REAL photographs (proxied picsum),
-// not fabricated gradient frames. Topical photos come from the model itself
-// (it is instructed to use proxied Unsplash URLs that match the subject).
-const SHOP_PHOTOS = Array.from({ length: SHOP_CATALOG_CAP }, (_, i) => picsumPhoto(i));
 
 const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
-const MAX_SHOP_PHOTOS = SHOP_CATALOG_CAP;
 const INJECTED_PHOTO_RE = /<img\b[^>]*data-quantora-shop-photo="true"[^>]*>/gi;
 const INJECTED_CARD_RE = /<(?:article|div)[^>]*data-quantora-shop-card="true"[^>]*>[\s\S]*?<\/(?:article|div)>/gi;
 const PRODUCT_SLOT_RE = /<(article|div|li|section)([^>]*(?:class=["'][^"']*\b(?:product|card|tile|item|frame|slot|sku|merchandise)[^"']*["']|data-(?:product|sku|frame)|style=["'][^"']*(?:border[^"']*gold|#c4a35a|#d4af37|goldenrod)[^"']*["'])[^>]*)>([\s\S]*?)<\/\1>/gi;
-
-function shopPhotoTag(index, alt = 'Product photo') {
-  const src = SHOP_PHOTOS[index % SHOP_PHOTOS.length];
-  const safeAlt = String(alt || 'Product photo').replace(/[<>&"]/g, '');
-  // Real proxied photo first; if the host is ever unreachable, fall back to the
-  // self-contained placeholder so the viewer never gets a broken-image icon.
-  const guard = svgFallbackPhoto(index);
-  return `<img ${INJECTED_PHOTO_MARK} src="${src}" onerror="this.onerror=null;this.src='${guard}'" alt="${safeAlt}" width="1200" height="800" style="width:100%;max-height:280px;object-fit:cover;display:block;border-radius:12px">`;
-}
-
-function shopProductCard(index, name = '') {
-  const label = String(name || `Product ${index + 1}`).replace(/[<>&"]/g, '');
-  const price = 1800 + (index * 250);
-  return (
-    `<article class="product-card" data-quantora-shop-card="true" style="display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid #e8dfc8;border-radius:16px;background:#fff">`
-    + `${shopPhotoTag(index, label)}`
-    + `<h3 style="margin:0;font-size:1rem">${label}</h3>`
-    + `<div class="price" data-quantora-price="true" data-inr="${price}" style="color:#8a6a1f;font-weight:600">INR ${price.toLocaleString('en-IN')}</div>`
-    + `<button type="button" data-quantora-add="true" style="margin-top:auto;padding:8px 14px;border:0;border-radius:999px;background:#c4a35a;color:#111;font-weight:700;cursor:pointer">Add to Cart</button>`
-    + `</article>`
-  );
-}
 
 /** Previous inject put a photo on every nested "card". Strip those so Preview is not a repeating stack. */
 export function stripInjectedShopPhotos(html = '') {
@@ -286,13 +234,6 @@ function productCardRe() {
   return /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi;
 }
 
-function nextUnusedShopPhoto(used) {
-  const found = SHOP_PHOTOS.find((src) => !used.has(photoIdentity(src)));
-  const src = found || SHOP_PHOTOS[used.size % SHOP_PHOTOS.length];
-  used.add(photoIdentity(src));
-  return src;
-}
-
 /**
  * Ensure an <img> carries the onerror→svg guard, so a proxied photo that cannot
  * reach its host (e.g. a preview server without the /api/preview-image function)
@@ -321,36 +262,6 @@ function rewriteCardPhoto(inner, used) {
   });
 }
 
-/** One repeated remote URL on every card is not a catalog. Give each card its own photo. */
-export function diversifyDuplicateShopPhotos(html = '') {
-  const source = String(html || '');
-  if (!source) return source;
-  const used = new Set();
-  let out = source.replace(productCardRe(), (full, tag, attrs, inner) => (
-    `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`
-  ));
-  out = out.replace(
-    /<(article|div|li)(\b[^>]*)>([\s\S]*?add to (?:bag|cart)[\s\S]*?)<\/\1>/gi,
-    (full, tag, attrs, inner) => {
-      if (/\b(?:product-card|product-item|product-tile|saree-card)\b/i.test(attrs)) return full;
-      if (!new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${ANY_IMG_SRC}`, 'i').test(inner)) return full;
-      return `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`;
-    },
-  );
-  // Replace leftover remote <img> srcs that Preview cannot load.
-  out = out.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
-    const src = (String(attrs).match(/\bsrc\s*=\s*["']([^"']+)/i) || [])[1] || '';
-    if (!src || isReliablePreviewPhotoSrc(src)) return full;
-    if (!/^https?:\/\//i.test(src)) return full;
-    const next = nextUnusedShopPhoto(used);
-    if (/\bsrc\s*=\s*["'][^"']*["']/i.test(attrs)) {
-      return ensurePhotoGuard(`<img ${String(attrs).replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${next}"`)}>`, used.size);
-    }
-    return ensurePhotoGuard(`<img src="${next}" ${attrs}>`, used.size);
-  });
-  return out;
-}
-
 function isTinyDecorativeSvg(svg) {
   const head = svg.slice(0, 280);
   const viewBox = head.match(/viewBox=["']0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)/i);
@@ -370,158 +281,3 @@ function brandHint(html = '') {
     || '';
   return String(title).replace(/\s+/g, ' ').trim().slice(0, 48);
 }
-
-function injectCatalogGrid(html = '', count = SHOP_PHOTO_FLOOR) {
-  const n = Math.min(MAX_SHOP_PHOTOS, Math.max(SHOP_PHOTO_FLOOR, count));
-  const brand = brandHint(html) || 'Collection';
-  const cards = Array.from({ length: n }, (_, i) => shopProductCard(i, `${brand} ${i + 1}`)).join('');
-  const grid = (
-    `<section data-quantora-shop-catalog="true" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;padding:20px;max-width:1100px;margin:0 auto">`
-    + `${cards}</section>`
-  );
-  let out = String(html || '');
-  if (/<section[^>]*data-quantora-shop-catalog="true"/i.test(out)) {
-    return out.replace(/<section[^>]*data-quantora-shop-catalog="true"[^>]*>[\s\S]*?<\/section>/i, grid);
-  }
-  // Empty <main data-quantora-shop-catalog> shells must get a real grid.
-  // Nonempty mains keep their copy/filters and receive the grid inserted, not replaced.
-  if (/<main\b[^>]*data-quantora-shop-catalog="true"[^>]*>/i.test(out)) {
-    return out.replace(
-      /<main\b([^>]*data-quantora-shop-catalog="true"[^>]*)>([\s\S]*?)<\/main>/i,
-      (full, attrs, inner) => {
-        const body = String(inner || '').trim();
-        if (!body) return `<main${attrs}>${grid}</main>`;
-        if (/data-quantora-shop-card=/i.test(body) || /class=["'][^"']*\bproduct-card\b/i.test(body)) {
-          return full;
-        }
-        return `<main${attrs}>${inner}${grid}</main>`;
-      },
-    );
-  }
-  if (/<main\b[^>]*>/i.test(out)) {
-    return out.replace(/<main\b[^>]*>/i, (open) => `${open}${grid}`);
-  }
-  if (/<\/body>/i.test(out)) {
-    return out.replace(/<\/body>/i, `${grid}</body>`);
-  }
-  return `${out}${grid}`;
-}
-
-/**
- * The model keeps drawing gold frames. Preview is the product: put real photos
- * in the HTML when a shop has none — including blank collection shells.
- */
-export function injectMissingShopPhotos(html = '', options = {}) {
-  const target = shopCatalogTargetSize(options.brief || '', Number(options.targetCount) || 0);
-  const source = String(html || '');
-  if (!source) {
-    return { html: source, injected: false };
-  }
-  // Keep an already-injected capped catalog across unrelated follow-ups
-  // (“change the heading”) — do not strip and rebuild on every turn.
-  const existingCards = (source.match(/data-quantora-shop-card="true"/gi) || []).length;
-  const existingPhotos = countRealPreviewPhotos(source);
-  if (
-    existingCards >= SHOP_PHOTO_FLOOR
-    && existingPhotos >= SHOP_PHOTO_FLOOR
-    && /data-quantora-shop-catalog="true"/i.test(source)
-    && !/images\.unsplash\.com|images\.pexels\.com/i.test(source)
-  ) {
-    return { html: source, injected: false };
-  }
-
-  const cleaned = stripInjectedShopPhotos(source);
-  let index = 0;
-  let out = cleaned.replace(/<svg\b[\s\S]*?<\/svg>/gi, (svg) => {
-    if (isTinyDecorativeSvg(svg) || index >= MAX_SHOP_PHOTOS) return svg;
-    return shopPhotoTag(index++);
-  });
-  let cardCount = 0;
-  out = out.replace(
-    productCardRe(),
-    (full, tag, attrs, inner) => {
-      cardCount += 1;
-      if (cardCount > MAX_SHOP_PHOTOS) return '';
-      if (new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(inner)) return full;
-      // Remote Unsplash/etc. look like photos in source but break in Preview — replace.
-      if (new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${ANY_IMG_SRC}`, 'i').test(inner)) {
-        if (index >= MAX_SHOP_PHOTOS) return full;
-        const used = new Set();
-        return `<${tag}${attrs}>${rewriteCardPhoto(inner, used)}</${tag}>`;
-      }
-      if (index >= MAX_SHOP_PHOTOS) return full;
-      return `<${tag}${attrs}>${shopPhotoTag(index++)}${inner}</${tag}>`;
-    },
-  );
-  // CSS gold frames / generic product slots without <img>
-  out = out.replace(PRODUCT_SLOT_RE, (full, tag, attrs, inner) => {
-    if (/\b(?:product-card|product-item|product-tile|saree-card)\b/i.test(attrs)) return full;
-    if (new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(inner)) return full;
-    if (index >= MAX_SHOP_PHOTOS) return full;
-    if (!/\b(product|card|tile|frame|slot|sku|merchandise|gold)\b/i.test(attrs + inner)) return full;
-    return `<${tag}${attrs}>${shopPhotoTag(index++)}${inner}</${tag}>`;
-  });
-
-  const photoCount = countRealPreviewPhotos(out);
-  const hasProductCards = /class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b/i.test(out)
-    || /data-quantora-shop-card=/i.test(out);
-  // Empty collection chrome, or a lone gold-frame photo with no product cards —
-  // scaffold a real capped catalog. Do not rewrite shops that already have cards.
-  const needsCatalogGrid = (!hasProductCards && photoCount < SHOP_PHOTO_FLOOR)
-    && (/<(header|nav|footer)\b/i.test(out) || /<main\b/i.test(out) || /<\/body>/i.test(out));
-  if (needsCatalogGrid) {
-    out = injectCatalogGrid(out, target);
-  } else if (!previewHtmlHasRealPhotos(out) && /<main\b/i.test(out)) {
-    out = out.replace(/<main\b[^>]*>/i, (open) => `${open}${shopPhotoTag(index++, 'Collection photo')}`);
-  } else if (!previewHtmlHasRealPhotos(out) && /<\/body>/i.test(out)) {
-    out = out.replace(/<\/body>/i, `${shopPhotoTag(index++, 'Collection photo')}</body>`);
-  }
-  const diversified = diversifyDuplicateShopPhotos(out);
-  return { html: diversified, injected: diversified !== cleaned && diversified !== source };
-}
-
-export function injectProductCatalogImages(raw = '', options = {}) {
-  try {
-    const data = JSON.parse(String(raw || ''));
-    const list = Array.isArray(data) ? data : (Array.isArray(data?.products) ? data.products : null);
-    if (!list?.length) return { text: String(raw || ''), changed: false };
-    const target = shopCatalogTargetSize(options.brief || '', list.length);
-    const capped = list.slice(0, target);
-    const used = new Set();
-    let changed = capped.length !== list.length;
-    const next = capped.map((item) => {
-      if (!item || typeof item !== 'object') return item;
-      const id = photoIdentity(item.image);
-      // Keep only genuine photos (proxied/raster). A fabricated svg placeholder
-      // is upgraded to a real proxied photograph instead of being preserved.
-      if (isRealPhotoSrc(item.image) && id && !used.has(id)) {
-        used.add(id);
-        return item;
-      }
-      changed = true;
-      return { ...item, image: nextUnusedShopPhoto(used) };
-    });
-    if (!changed) return { text: String(raw || ''), changed: false };
-    const body = Array.isArray(data) ? next : { ...data, products: next };
-    return { text: `${JSON.stringify(body, null, 2)}\n`, changed: true };
-  } catch {
-    return { text: String(raw || ''), changed: false };
-  }
-}
-
-/** Build a capped products.json when the model shipped a shop chrome with no catalog. */
-export function scaffoldShopCatalogJson(options = {}) {
-  const target = shopCatalogTargetSize(options.brief || '', Number(options.count) || 0);
-  const brand = String(options.brand || 'Collection').replace(/\s+/g, ' ').trim().slice(0, 40) || 'Collection';
-  const used = new Set();
-  const products = Array.from({ length: target }, (_, i) => ({
-    id: `item-${i + 1}`,
-    name: `${brand} ${i + 1}`,
-    priceCents: (1800 + i * 250) * 100,
-    currency: 'inr',
-    image: nextUnusedShopPhoto(used),
-  }));
-  return `${JSON.stringify(products, null, 2)}\n`;
-}
-
-export { SHOP_CATALOG_CAP, SHOP_PHOTO_FLOOR };
