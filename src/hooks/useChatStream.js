@@ -919,6 +919,18 @@ export function useChatStream({
         if (!stillCurrent()) return;
         const controller = new AbortController();
         abortControllerRef.current = controller;
+        /*
+         * What the model actually streamed before anything went wrong.
+         *
+         * `currentText` lives inside the read loop, so the outer catch could not
+         * see it and overwrote the message with the error copy - throwing away a
+         * page that was most of the way built. That is the same deletion the proof
+         * gate used to do, and it is worse here: those tokens were generated and
+         * billed. Three sites further down already append the outcome to the
+         * partial instead of replacing it; the catch was the one that could not,
+         * for want of a variable in the right scope.
+         */
+        let streamedSoFar = '';
         // The deadline covers the whole turn, so a second attempt inherits what
         // is left of it rather than doubling how long the person waits.
         const attemptBudgetMs = Math.max(
@@ -1012,6 +1024,7 @@ export function useChatStream({
               }
               if (parsed.text) {
                 currentText += parsed.text;
+                streamedSoFar = currentText;
                 if (!stillCurrent()) return;
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
@@ -1253,7 +1266,13 @@ export function useChatStream({
                   intentKind: turnPlan.intent?.kind,
                 });
                 return {
-                  text: outcome.text,
+                  // Same rule as the other paths: a turn that produced no FILES
+                  // may still have produced words, and showing them is not the
+                  // fabrication the comment above guards against - it is the
+                  // opposite. Only the platform's own invented content is banned.
+                  text: currentText
+                    ? `${sanitizeAssistantStream(currentText)}\n\n${outcome.text}`
+                    : outcome.text,
                   isError: outcome.isError,
                   executionStatus: null,
                   ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
@@ -1488,20 +1507,30 @@ export function useChatStream({
             }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
-              text: outcome.text,
+              // Keep the build and explain what stopped it, the way the three
+              // sites above already do. A page that got 90% of the way is worth
+              // more than a sentence saying it did not arrive.
+              text: streamedSoFar
+                ? `${sanitizeAssistantStream(streamedSoFar)}\n\n${outcome.text}`
+                : outcome.text,
               isError: outcome.isError,
               executionStatus: null,
               ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
             } : m));
             return;
           }
+          const failureNote = stopped
+            ? '⚠️ **Generation Stopped**'
+            : timedOut
+              ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
+              : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: stopped
-              ? '⚠️ **Generation Stopped**'
-              : timedOut
-                ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
-                : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
+            // Stopping a turn - by timeout, by Stop, or by a dead connection -
+            // must not erase what already arrived.
+            text: streamedSoFar
+              ? `${sanitizeAssistantStream(streamedSoFar)}\n\n${failureNote}`
+              : failureNote,
             isError: true,
             executionStatus: null,
           } : m));
