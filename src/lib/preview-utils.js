@@ -196,6 +196,28 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
       });
     }
   } catch (hrefErr) {}
+  document.addEventListener('submit', function(e) {
+    // A static preview has no server. EVERY default form submission is a
+    // navigation that destroys the running page, so cancel the default and let
+    // the page's own submit handler (which capture-phase preventDefault does
+    // not stop) do the real work. Only an escaping action is worth reporting.
+    var f = e.target;
+    if (!f || f.tagName !== 'FORM') return;
+    e.preventDefault();
+    var action = f.getAttribute('action');
+    if (action == null || action === '' || action === '#') return;
+    if (!allowNav(action)) {
+      report({ kind:'error', message:'Preview blocked form navigation: ' + action });
+    }
+  }, true);
+  // The parent cannot trust iframe.src after an in-frame navigation: the src
+  // ATTRIBUTE stays on /preview/embed.html while the frame is somewhere else.
+  // A heartbeat is the only signal that distinguishes a live page from a dead
+  // one. Do not ping on pagehide/beforeunload — those also fire for navigations
+  // allowNav permits, and would report a healthy page as escaped.
+  try {
+    setInterval(function(){ report({ kind:'preview-alive' }); }, 700);
+  } catch (aliveErr) {}
   document.addEventListener('click', function(e) {
     var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!a) return;
@@ -324,6 +346,13 @@ export function injectPreviewHarness(html) {
   safe = safe.replace(/\bhref\s*=\s*(["'])\/\1/gi, 'href="#"');
   safe = safe.replace(/\bhref\s*=\s*(["'])\/desk\/?\1/gi, 'href="#"');
   safe = safe.replace(/\bhref\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'href="#"');
+  // Unquoted href=/ is common in model HTML. The lookahead keeps href=/styles.css
+  // intact — only a bare slash followed by whitespace or '>' is the escape hatch.
+  safe = safe.replace(/\bhref\s*=\s*\/(?=[\s>])/gi, 'href="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])\/\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])\/desk\/?\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*\/(?=[\s>])/gi, 'action="#"');
   safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/\1/gi, '/* preview nav blocked */ void 0');
   safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/desk\/?\1/gi, '/* preview nav blocked */ void 0');
   safe = safe.replace(/\b(?:window\s*\.\s*|document\s*\.\s*)?location\s*\.\s*href\s*=\s*[^;]+;?/gi, 'void 0;');
