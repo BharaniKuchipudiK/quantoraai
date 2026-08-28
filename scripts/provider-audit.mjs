@@ -69,11 +69,13 @@ const maxTests = Number(flag('max', '6'));
  * Nothing here is printed. Only the last four characters of a key are ever
  * shown, so a screenshot of this output cannot leak a credential.
  */
+const envFilesSeen = [];
 function readEnvFile() {
   const found = {};
   for (const name of ['.env.local', '.env']) {
     let raw;
     try { raw = readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'); } catch { continue; }
+    envFilesSeen.push(name);
     for (const rawLine of raw.split('\n')) {
       const l = rawLine.trim();
       if (!l || l.startsWith('#')) continue;
@@ -95,10 +97,27 @@ const tail = (k) => (k ? `…${String(k).slice(-4)}` : 'not found');
 
 if (!geminiKey && !orKey) {
   console.error('No API keys found.\n');
-  console.error('Easiest way — pull them from Vercel, where they already live:');
-  console.error('    npx vercel link');
-  console.error('    npx vercel env pull .env.local');
-  console.error('    node scripts/provider-audit.mjs\n');
+  if (envFilesSeen.length) {
+    /*
+     * The file exists but has neither key. Saying only "not found" sends someone
+     * back to re-run the pull that already worked. `vercel env pull` defaults to
+     * the DEVELOPMENT environment, and a key set only for Production is simply
+     * absent from it - so name what was actually in the file and how to get the
+     * right environment. Names only, never values.
+     */
+    const names = Object.keys(fromFile).sort();
+    console.error(`Read ${envFilesSeen.join(' and ')}, but neither GEMINI_API_KEY nor OPENROUTER_API_KEY is in it.`);
+    console.error(`It contains ${names.length} variable(s): ${names.join(', ') || '(none)'}\n`);
+    console.error('`vercel env pull` defaults to the DEVELOPMENT environment. If your keys');
+    console.error('are set for Production, ask for that one instead:\n');
+    console.error('    npx vercel env pull .env.local --environment=production');
+    console.error('    node scripts/provider-audit.mjs\n');
+  } else {
+    console.error('Pull them from Vercel, where they already live:');
+    console.error('    npx vercel link');
+    console.error('    npx vercel env pull .env.local --environment=production');
+    console.error('    node scripts/provider-audit.mjs\n');
+  }
   console.error('Or export them by hand:');
   console.error('    export GEMINI_API_KEY=your-google-key');
   console.error('    export OPENROUTER_API_KEY=your-openrouter-key');
