@@ -65,13 +65,13 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
      * This one must NOT fall through. Every other refusal in this file consumes
      * the turn precisely so an unsourced figure is never produced; letting an
      * FX/quote question reach the LLM instead invites an invented rate stated as
-     * fact. Refusing and saying so is the honest answer here, not a dead end -
+     * fact. Refusing and saying so is the correct answer here, not a dead end -
      * the reply names the reason and does not pretend a number exists.
      */
     sendStream(
       res,
       requestId,
-      "Market data isn't connected on this deployment yet, so I can't quote a real figure — and I won't guess one. Ask me anything else about this, or start a new chat for a non-market question.",
+      "Market data isn't connected on this deployment yet, so I can't quote a real figure \u2014 and I won't guess one. Ask me anything else about this, or start a new chat for a non-market question.",
     );
     return true;
   }
