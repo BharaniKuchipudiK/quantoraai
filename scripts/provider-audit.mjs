@@ -91,13 +91,34 @@ function readEnvFile() {
 }
 
 const fromFile = readEnvFile();
-const geminiKey = process.env.GEMINI_API_KEY || fromFile.GEMINI_API_KEY;
-const orKey = process.env.OPENROUTER_API_KEY || fromFile.OPENROUTER_API_KEY;
+
+/*
+ * Vercel will not export the VALUE of an env var marked Sensitive. `env pull`
+ * still writes the name, with a placeholder like "[REDACTED - SENSITIVE]" in
+ * place of the secret. Sent to a provider that reads as an invalid key, and the
+ * error says "API key not valid" - which points the blame at a key that is
+ * actually fine and sitting safely in production.
+ */
+const REDACTED = /redacted|sensitive|^\[.*\]$|^\*+$|^x{6,}$/i;
+const usable = (v) => (v && !REDACTED.test(String(v).trim()) ? v : null);
+const redactedNames = ['GEMINI_API_KEY', 'OPENROUTER_API_KEY']
+  .filter((n) => fromFile[n] && !usable(fromFile[n]));
+
+const geminiKey = usable(process.env.GEMINI_API_KEY) || usable(fromFile.GEMINI_API_KEY);
+const orKey = usable(process.env.OPENROUTER_API_KEY) || usable(fromFile.OPENROUTER_API_KEY);
 const tail = (k) => (k ? `…${String(k).slice(-4)}` : 'not found');
 
 if (!geminiKey && !orKey) {
   console.error('No API keys found.\n');
-  if (envFilesSeen.length) {
+  if (redactedNames.length) {
+    console.error(`${envFilesSeen.join(' and ')} contains ${redactedNames.join(' and ')}, but the`);
+    console.error('value is a placeholder, not the key. Vercel does not export the value of an');
+    console.error('env var marked Sensitive - the lock icon beside it in the dashboard.\n');
+    console.error('Two ways round it:');
+    console.error('  a) create a fresh key at the provider and export it here for this one run;');
+    console.error('  b) or leave production alone and test from production instead, where the');
+    console.error('     real key already is.\n');
+  } else if (envFilesSeen.length) {
     /*
      * The file exists but has neither key. Saying only "not found" sends someone
      * back to re-run the pull that already worked. `vercel env pull` defaults to
@@ -168,7 +189,21 @@ async function listGemini() {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** What the OpenRouter key can reach, with real prices. */
+/**
+ * Verify the OpenRouter key actually works.
+ *
+ * /models is a PUBLIC catalogue - it answers with or without a key, so a
+ * successful listing proves nothing about the credential. This endpoint needs
+ * one, so it is the honest test.
+ */
+async function checkOpenRouterKey() {
+  const res = await fetch(`${OR_BASE}/auth/key`, { headers: { Authorization: `Bearer ${orKey}` } });
+  if (!res.ok) return { ok: false, why: `HTTP ${res.status}` };
+  const d = (await res.json()).data || {};
+  return { ok: true, label: d.label, limit: d.limit, usage: d.usage };
+}
+
+/** The public OpenRouter catalogue, with real prices. */
 async function listOpenRouter() {
   const res = await fetch(`${OR_BASE}/models`, { headers: { Authorization: `Bearer ${orKey}` } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -363,8 +398,14 @@ async function main() {
   }
 
   if (orKey) {
-    rule('OPENROUTER — what your key can reach, cheapest capable first');
+    rule('OPENROUTER — catalogue, cheapest capable first');
     try {
+      const auth = await checkOpenRouterKey();
+      line(auth.ok
+        ? `  key OK${auth.label ? ` (${auth.label})` : ''}${auth.usage != null ? ` · $${Number(auth.usage).toFixed(2)} used` : ''}`
+        : `  KEY NOT ACCEPTED — ${auth.why}. The listing below is the PUBLIC catalogue and`
+          + '\n  proves nothing about your credential; --test would fail.');
+      line();
       const models = await listOpenRouter();
       const filter = grep
         ? (m) => `${m.id} ${m.name}`.toLowerCase().includes(grep.toLowerCase())
