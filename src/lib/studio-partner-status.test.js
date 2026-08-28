@@ -87,3 +87,24 @@ test('studioPreviewRunLabel maps shell states', () => {
   assert.equal(studioPreviewRunLabel('failed'), 'Preview is running with errors');
   assert.equal(studioPreviewRunLabel({ kind: 'quality', passed: true }), 'Preview is running');
 });
+
+test('the build clock counts past a minute', () => {
+  /*
+   * The minute was a literal zero, so the clock could not roll over: 110s
+   * rendered as "0:110" and a full turn as "0:165". It stayed invisible while
+   * every build died inside a minute. Now that the primary attempt gets 110s
+   * and the turn 165s, this is on screen for the whole wait — so it is pinned
+   * at the boundary and past both budgets.
+   */
+  const at = (elapsedSec) => resolveStudioPartnerStatus({
+    isGenerating: true,
+    generatingLabel: 'Building your preview…',
+    elapsedSec,
+    hasPreview: false,
+  }).next.match(/\d+:\d\d/)?.[0];
+
+  assert.equal(at(59), '0:59');
+  assert.equal(at(60), '1:00', 'the minute must roll over, not stay literal');
+  assert.equal(at(110), '1:50', 'the primary build attempt budget');
+  assert.equal(at(165), '2:45', 'the full turn budget');
+});
