@@ -44,6 +44,13 @@ jobs:
       - name: Wiring gate (tested but called by nothing)
         run: npm run test:wiring
 
+      # Report-only for now: it currently finds one real defect and one design
+      # hazard, both unfixed on purpose so they can be judged before being
+      # patched. Drop continue-on-error once the defect list is empty.
+      - name: Pipeline stress (hostile replies, no model calls)
+        continue-on-error: true
+        run: npm run test:stress
+
       - name: Run all tests
         run: npm run test:all
 
