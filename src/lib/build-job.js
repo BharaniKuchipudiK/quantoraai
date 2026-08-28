@@ -188,7 +188,7 @@ export function stripPlanMarker(text = '') {
  * missed plan (one long turn) is far lower than the cost of a spurious one
  * (six round trips for a page).
  */
-const MULTI_SURFACE = /\b(dashboard|admin|portal|multi[- ]?page|several pages|pages for|workflow|pipeline|editor|scheduler|planner|tracker|crm|inventory|booking|kanban|gantt|analytics)\b/i;
+const MULTI_SURFACE = /\b(dashboard|admin|portal|multi[- ]?page|several pages|pages for|workflow|pipeline|editor|schedul\w*|planner|planning|tracker|tracking|crm|erp|inventory|booking|kanban|gantt|analytics|board|system|console|marketplace|timeline|roster|rota)\b/i;
 const MULTI_PART = /\b(and then|as well as|plus a|along with|also add|with a separate)\b/i;
 
 export function briefNeedsJob(brief = '', { vfs = {} } = {}) {

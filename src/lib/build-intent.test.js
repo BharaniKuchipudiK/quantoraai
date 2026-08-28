@@ -112,3 +112,43 @@ test('a question about a screenshot is not a build', () => {
     isVisionQuestion: true,
   }), false);
 });
+
+/*
+ * THE COMPLAINT, AS A TEST.
+ *
+ * "The calculator or coffee websites are a joke — not what real users use the
+ * Coding Desk for." They were the only nouns it could HEAR: the original list
+ * was consumer-shaped, so six of these eight were not recognised as builds at
+ * all and never reached the desk.
+ */
+test('real business software is recognised as a build', () => {
+  const asks = [
+    'Build a production scheduling board for a small furniture workshop',
+    'Build a shift scheduler for my cafe',
+    'Build a booking system for my salon',
+    'Build an inventory management screen',
+    'Build a CRM for my agency',
+    'Build a kanban board for my team',
+    'Create a rota planner for the kitchen staff',
+    'Make an invoice generator for my consultancy',
+  ];
+  for (const ask of asks) {
+    assert.equal(detectBuildIntent(ask), true, `not recognised as a build: ${ask}`);
+  }
+});
+
+test('a broader noun list does not turn conversation into a build', () => {
+  // A verb is still required alongside the noun, so ordinary talk about a
+  // system or a plan stays ordinary talk.
+  const notBuilds = [
+    'What is the weather in Singapore?',
+    'Explain quantum computing simply',
+    'I might rebrand the business someday',
+    'How do I make a good first impression?',
+    'The booking system at my gym is terrible',
+    'Can you explain how a CRM works?',
+  ];
+  for (const text of notBuilds) {
+    assert.equal(detectBuildIntent(text), false, `wrongly treated as a build: ${text}`);
+  }
+});

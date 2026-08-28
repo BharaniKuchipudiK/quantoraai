@@ -8,7 +8,25 @@
 const QUESTION_PREFIX = /^(how|what|why|when|where|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)/i;
 
 const BUILD_VERB = /\b(build|create|make|generate|design|develop|code|prototype|clone|scaffold)\b/i;
-const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone|agent|bot|crawler|automation|organizer|script|service|workflow|extension|plugin|macos|ios|desktop)\b/i;
+/*
+ * The vocabulary of software people actually pay to have built.
+ *
+ * The original list was consumer-shaped — website, landing page, calculator,
+ * portfolio, game — so six of eight real business asks were NOT recognised as
+ * builds at all:
+ *
+ *   "Build a production scheduling board"   missed
+ *   "Build a shift scheduler for my cafe"   missed
+ *   "Build a booking system for my salon"   missed
+ *   "Build an inventory management screen"  missed
+ *   "Build a CRM for my agency"             missed
+ *   "Build a kanban board for my team"      missed
+ *
+ * That is why the Coding Desk looked like it only did calculators and coffee
+ * shops: those were the only nouns it could hear. A verb is still required
+ * alongside, so the broader list cannot turn ordinary conversation into a build.
+ */
+const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone|agent|bot|crawler|automation|organizer|script|service|workflow|extension|plugin|macos|ios|desktop|board|scheduler|schedule|planner|system|screen|portal|console|admin|panel|crm|erp|inventory|roster|rota|timeline|kanban|gantt|booking|checkout|catalogue|catalog|directory|wizard|viewer|table|chart|map|feed|inbox|queue|pipeline|report|invoice|quote|ledger|calendar|marketplace|storefront|builder|manager|monitor|analyzer|analyser)\b/i;
 
 const SPECIFIED_TOOL = /\b(calculator|calc\b|todo(?:s| list)?|to-do list|timer|stopwatch|pomodoro|counter|unit converter|tip calculator|bmi(?: calculator)?|quiz|flash ?cards?|notepad|markdown editor|tic-?tac-?toe|snake(?: game)?|pong|weather (?:app|widget)|password generator|color picker|habit tracker|kanban|clock|alarm|notes app|drawing (?:app|pad)|whiteboard|kanban board)\b/i;
 
