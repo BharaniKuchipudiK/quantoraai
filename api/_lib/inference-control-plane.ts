@@ -58,7 +58,13 @@ export type InferencePlanInput = {
 };
 
 const GEMINI_STABLE = 'gemini-flash-latest';
-const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
+/*
+ * The cheapest route worth falling back to. This pointed at deepseek-chat, a
+ * V3-era id, while deepseek/deepseek-v4-flash-0731 carries 12.5T tokens a week
+ * on OpenRouter at $0.12/Mtok — the most-used low-cost model there, and a
+ * hundredth the price of a flagship.
+ */
+const OPENROUTER_LOW_COST = 'deepseek/deepseek-v4-flash-0731';
 const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
 /*
  * How many models one turn may try. Two meant a free-quota 429 plus one
@@ -280,12 +286,41 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
   // Active list empty/unhealthy can mark every catalog row offline — including
   // gemini-flash-latest. Coding Desk Auto must still get one last-resort Gemini
   // attempt when credentials exist (otherwise "no healthy AI route" spine).
+  /*
+   * Every gateway with a credential gets a way in, not just Gemini.
+   *
+   * The old form only injected a last resort when the pool was COMPLETELY
+   * empty, and only for Gemini. So when the Active list marked the Gemini rows
+   * offline but left something unusable on OpenRouter, the pool was non-empty,
+   * nothing was injected, and Flash died alone — the client painting "no
+   * healthy AI route" while a perfectly good OpenRouter credential sat unused.
+   *
+   * A gateway that is credentialed and unrepresented now gets one stable route
+   * appended. Registry health cannot veto it: an empty registry means health
+   * "unknown", which is not the same as offline, and treating an absent record
+   * as a dead provider is the same mistake as reading a key's shape as proof it
+   * works.
+   */
   let poolDescribed = described;
-  if (!poolDescribed.length && input.geminiAvailable) {
-    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, new Map());
-    if (lastResort && lastResort.health !== 'offline') {
-      poolDescribed = [lastResort];
-    }
+  const hasGateway = (gateway: InferenceGateway) => poolDescribed.some((route) => route.gateway === gateway);
+  const emptyRegistry = new Map<string, InferenceModelLike>();
+
+  /*
+   * Gemini goes to the FRONT, the OpenRouter fallback to the back.
+   *
+   * Not arbitrary: Gemini is direct to Google on the operator's own plan and
+   * costs no OpenRouter credit at all, so when both are only reachable as last
+   * resorts, the free one is tried first. The old code expressed the same
+   * preference by REPLACING the pool with the Gemini route; appending it would
+   * have quietly demoted the zero-cost gateway below a paid one.
+   */
+  if (input.geminiAvailable && !hasGateway('gemini')) {
+    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, emptyRegistry);
+    if (lastResort && lastResort.health !== 'offline') poolDescribed = [lastResort, ...poolDescribed];
+  }
+  if (input.openRouterAvailable && !hasGateway('openrouter')) {
+    const lastResort = await describeRoute(OPENROUTER_LOW_COST, 'fallback', input, emptyRegistry);
+    if (lastResort && lastResort.health !== 'offline') poolDescribed = [...poolDescribed, lastResort];
   }
   if (!poolDescribed.length) return [];
 
