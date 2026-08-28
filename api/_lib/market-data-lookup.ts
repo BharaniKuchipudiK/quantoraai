@@ -28,19 +28,56 @@ function asOfLine(source: string, asOf: string): string {
   return `As of ${date} · source: ${source}. This is a real, sourced figure — not a model estimate.`;
 }
 
+/**
+ * The most recently published of several candidate rows, ignoring the ones that
+ * carry no usable date. Used to choose between a live rate and a stored one
+ * rather than trusting whichever was fetched first — which is not a fact about
+ * the rate at all, only about the order of two awaits.
+ */
+export function freshestFxRate(...candidates: Array<FxRate | null | undefined>): FxRate | null {
+  let best: FxRate | null = null;
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate.rate !== "number" || !(candidate.rate > 0)) continue;
+    const when = Date.parse(candidate.as_of || "");
+    if (!Number.isFinite(when)) continue;
+    if (!best || when > Date.parse(best.as_of)) best = candidate;
+  }
+  return best;
+}
+
+function usable(row: FxRate | null): boolean {
+  return Boolean(row) && typeof row!.rate === "number" && row!.rate > 0;
+}
+
 /** Resolve base→quote from a direct row, or invert a quote→base row. */
 export function resolveFxRate(
   base: string,
   quote: string,
   direct: FxRate | null,
   inverse: FxRate | null,
+  now: number = Date.now(),
 ): { rate: number; source: string; as_of: string; rate_date: string; inverted: boolean } | null {
-  if (direct && typeof direct.rate === "number" && direct.rate > 0) {
-    return { rate: direct.rate, source: direct.source, as_of: direct.as_of, rate_date: direct.rate_date, inverted: false };
-  }
-  if (inverse && typeof inverse.rate === "number" && inverse.rate > 0) {
-    return { rate: 1 / inverse.rate, source: inverse.source, as_of: inverse.as_of, rate_date: inverse.rate_date, inverted: true };
-  }
+  const asDirect = (row: FxRate) =>
+    ({ rate: row.rate, source: row.source, as_of: row.as_of, rate_date: row.rate_date, inverted: false });
+  const asInverse = (row: FxRate) =>
+    ({ rate: 1 / row.rate, source: row.source, as_of: row.as_of, rate_date: row.rate_date, inverted: true });
+
+  /*
+   * Direct is preferred, but only while it is USABLE. It used to win
+   * unconditionally, so a stale base→quote row shadowed a fresh quote→base one
+   * and the turn was refused with a good rate available — the same masking
+   * defect as a stale live row hiding a fresh stored one, one hop over.
+   */
+  const directFresh = usable(direct) && !isBarStale({ as_of: direct!.as_of }, undefined, now);
+  if (directFresh) return asDirect(direct!);
+
+  const inverseFresh = usable(inverse) && !isBarStale({ as_of: inverse!.as_of }, undefined, now);
+  if (inverseFresh) return asInverse(inverse!);
+
+  // Nothing fresh. Still return the best row there is, so the caller can say
+  // WHICH date it is refusing rather than "I have no rate for this pair".
+  if (usable(direct)) return asDirect(direct!);
+  if (usable(inverse)) return asInverse(inverse!);
   return null;
 }
 
@@ -51,7 +88,7 @@ export function fxLookupResult(
   now: Date = new Date(),
 ): LookupResult {
   const { base, quote, amount } = intent;
-  const resolved = resolveFxRate(base, quote, direct, inverse);
+  const resolved = resolveFxRate(base, quote, direct, inverse, now.getTime());
 
   if (!resolved) {
     return {

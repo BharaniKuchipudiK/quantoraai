@@ -15,8 +15,9 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseMarketDataIntent, isFxIntent, isPriceIntent } from "./market-data-intent.js";
-import { fxLookupResult, priceLookupResult } from "./market-data-lookup.js";
+import { fxLookupResult, freshestFxRate, priceLookupResult } from "./market-data-lookup.js";
 import {
+  isBarStale,
   isMarketDataStoreConfigured,
   readLatestFxRate,
   readLatestPrice,
@@ -79,9 +80,29 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
    */
   if (isFxIntent(intent)) {
     const storeReady = isMarketDataStoreConfigured();
-    const direct = (await liveFxRate(intent.base, intent.quote))
-      || (storeReady ? await readLatestFxRate(intent.base, intent.quote) : null);
-    const inverse = direct || !storeReady ? null : await readLatestFxRate(intent.quote, intent.base);
+    const live = await liveFxRate(intent.base, intent.quote);
+
+    /*
+     * "The feed answered" and "the answer is usable" are two different facts,
+     * and the freshness rule decides the second one further down. Treating a
+     * live row as success the moment it arrives let a stale one MASK a usable
+     * stored rate: the store was never read, and the turn was refused with a
+     * good answer sitting in the database. Same shape as every other defect
+     * this codebase has had — a rule about what an answer ought to be, standing
+     * in for checking it.
+     *
+     * So the store is consulted whenever the live row would be refused, and the
+     * freshest of the two wins.
+     */
+    const liveUsable = Boolean(live) && !isBarStale({ as_of: live!.as_of });
+    const stored = storeReady && !liveUsable ? await readLatestFxRate(intent.base, intent.quote) : null;
+    const direct = freshestFxRate(live, stored);
+
+    // The inverse row is a third candidate, not a consolation prize for a
+    // missing direct one: a stale base→quote must not shadow a fresh quote→base.
+    const directUsable = Boolean(direct) && !isBarStale({ as_of: direct!.as_of });
+    const inverse = storeReady && !directUsable ? await readLatestFxRate(intent.quote, intent.base) : null;
+
     sendStream(res, requestId, fxLookupResult(intent, direct, inverse).text);
     return true;
   }
