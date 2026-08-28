@@ -111,6 +111,63 @@ export function discoverAnthropicFlagships(catalog, { limit = 3 } = {}) {
   }));
 }
 
+/*
+ * The everyday roster: cheap, reliable routes we WANT offered when the provider
+ * actually lists them.
+ *
+ * This is a PREFERENCE, not a catalogue. CURATED_MODELS above is deliberately
+ * empty because a hardcoded id is what caused the retired-model outage — the
+ * router picks it, the provider rejects it, the turn silently degrades. So
+ * these are ids we look FOR in the live catalogue, exactly as Anthropic
+ * flagships are discovered. An id that no longer exists simply does not appear:
+ * nothing 404s, and the picker never advertises a route that is not there.
+ *
+ * Ordered cheapest-first. Costs per user-month at 20 builds, measured against a
+ * $100 OpenRouter float: DeepSeek V4 Flash $1.02, GLM 5.3 Flash $2.13,
+ * GPT-5.6 Luna $10.20. Opus-class is $102 and is deliberately NOT here — it
+ * stays a deliberate escalation, not an everyday default.
+ */
+export const FEATURED_ROSTER_IDS = Object.freeze([
+  'deepseek/deepseek-v4-flash-0731',
+  'z-ai/glm-5.3-flash',
+  'openai/gpt-5.6-luna',
+]);
+
+/**
+ * Resolve the roster against the live catalogue.
+ *
+ * Codex caught the gap this closes: the roster lived only in an approval
+ * allowlist and a transient client fallback, so `/api/models` never returned
+ * it and the four new routes vanished from the picker the moment the real
+ * response arrived. Approving a model and OFFERING it are different things.
+ */
+export function discoverFeaturedRoster(catalog) {
+  if (!catalog) return [];
+  const rows = [];
+  for (const id of FEATURED_ROSTER_IDS) {
+    const model = catalog.get(id);
+    if (!model) continue;
+    rows.push({
+      id: model.id,
+      name: model.name || model.id,
+      provider: String(model.id).split('/')[0] || 'OpenRouter',
+      // Declared by the catalogue, never inferred from the id — routing uses
+      // this to keep an image turn on the model the user actually picked.
+      vision: Array.isArray(model?.architecture?.input_modalities)
+        ? model.architecture.input_modalities.includes('image')
+        : undefined,
+      description: model.description
+        || 'Everyday coding route, discovered from the live OpenRouter catalogue.',
+      contextWindow: formatContext(model.context_length),
+      pricingKind: isFreeModel(model) ? 'free' : 'paid',
+      tag: 'CODING',
+      icon: 'sparkles',
+      available: true,
+    });
+  }
+  return rows;
+}
+
 const CATALOG_TTL_MS = 10 * 60 * 1000;
 let catalogCache = { at: 0, value: null };
 

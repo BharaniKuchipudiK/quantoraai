@@ -10,6 +10,7 @@
 import {
   CURATED_MODELS,
   DIRECT_MODELS,
+  discoverFeaturedRoster,
   discoverAnthropicFlagships,
   catalogCreatedAt,
   fetchOpenRouterCatalog,
@@ -94,9 +95,17 @@ export default async function handler(req, res) {
     ...model,
     quality: quality.get(model.id) || null,
   }));
+  // The everyday roster, resolved against the SAME live catalogue. Without this
+  // the picker only ever showed the two DIRECT_MODELS and the Anthropic
+  // flagships, so every roster change was invisible to the person choosing.
+  const roster = discoverFeaturedRoster(catalog).map((model) => ({
+    ...model,
+    quality: quality.get(model.id) || null,
+  }));
   const models = [
     ...DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null })),
     ...flagships,
+    ...roster,
   ];
   const dashboardModels = [
     ...flagships.map((model) => ({
@@ -110,7 +119,17 @@ export default async function handler(req, res) {
       selectable: true,
       category: 'featured',
     })),
-  ].concat(DIRECT_MODELS.map((model) => ({
+  ].concat(roster.map((model) => ({
+    ...model,
+    status: 'available',
+    health: 'listed',
+    event: 'listed',
+    isNew: false,
+    isUpdated: false,
+    approved: true,
+    selectable: true,
+    category: 'featured',
+  }))).concat(DIRECT_MODELS.map((model) => ({
     ...model,
     quality: quality.get(model.id) || null,
     status: 'available',

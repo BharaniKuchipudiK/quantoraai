@@ -4,6 +4,7 @@ import {
   CURATED_MODELS,
   buildInternetCatalogEntries,
   discoverAnthropicFlagships,
+  discoverFeaturedRoster,
   formatContext,
   isFreeModel,
   metadataFingerprint,
@@ -148,4 +149,43 @@ test('flagship discovery keeps families distinct and excludes batch endpoints', 
   assert.ok(ids.includes('anthropic/claude-sonnet-5'), 'Sonnet must not be crowded out by variants of another model');
   assert.ok(!ids.some((id) => /batch/i.test(id)), 'a batch endpoint cannot stream a chat turn');
   assert.equal(new Set(ids.map((id) => id.split(':')[0])).size, ids.length, 'one entry per family');
+});
+
+/*
+ * A ROSTER NOBODY CAN SEE IS NOT A ROSTER.
+ *
+ * Codex caught this and the user had already reported the symptom: the new
+ * models lived only in an approval allowlist and a transient client fallback,
+ * so /api/models never returned them and they vanished from the picker the
+ * moment the real response arrived. Approving a model and OFFERING it are
+ * different things.
+ */
+test('the roster is resolved against the live catalogue, never hardcoded', () => {
+  const catalog = new Map([
+    ['deepseek/deepseek-v4-flash-0731', {
+      id: 'deepseek/deepseek-v4-flash-0731',
+      name: 'DeepSeek V4 Flash',
+      context_length: 128000,
+      architecture: { input_modalities: ['text'] },
+      pricing: { prompt: '0.00000002', completion: '0.00000006' },
+    }],
+  ]);
+  const rows = discoverFeaturedRoster(catalog);
+  assert.equal(rows.length, 1, 'only ids the provider actually lists are offered');
+  assert.equal(rows[0].id, 'deepseek/deepseek-v4-flash-0731');
+  assert.equal(rows[0].vision, false, 'declared by the catalogue, not inferred from the id');
+  assert.equal(rows[0].available, true);
+});
+
+test('an id the provider no longer lists simply does not appear', () => {
+  // The retired-model outage in one assertion: a named id the provider dropped
+  // must vanish from the picker rather than become a route that 404s.
+  assert.deepEqual(discoverFeaturedRoster(new Map()), []);
+  assert.deepEqual(discoverFeaturedRoster(null), []);
+});
+
+test('CURATED_MODELS stays empty', () => {
+  // The comment above it says adding an id here reintroduces the defect. This
+  // is that comment, enforced.
+  assert.deepEqual(CURATED_MODELS, []);
 });
