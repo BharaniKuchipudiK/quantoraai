@@ -21,7 +21,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { isProviderCredentialRejection, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import { isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -131,6 +131,7 @@ const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
   "qwen-2.5-coder-32b": "qwen/qwen-2.5-coder-32b-instruct",
   "qwen-2.5-coder-32b-instruct": "qwen/qwen-2.5-coder-32b-instruct",
 };
+
 
 async function isApprovedServerModel(modelId: string): Promise<boolean> {
   if (!modelId || typeof modelId !== "string") return false;
@@ -1085,8 +1086,10 @@ export default async function handler(req: any, res: any) {
               buffer = lines.pop() || '';
               for (const line of lines) {
                 if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+                let midStreamFailure: Error | null = null;
                 try {
                   const parsed = JSON.parse(line.slice(6));
+                  midStreamFailure = streamErrorFrom(parsed, route.gateway);
                   const token = parsed.choices?.[0]?.delta?.content || '';
                   if (token) {
                     attemptReply += token;
@@ -1094,6 +1097,9 @@ export default async function handler(req: any, res: any) {
                     if (!effectiveBuildMode) sse.text(token);
                   }
                 } catch { /* malformed upstream events do not satisfy the route contract */ }
+                // Thrown outside the try: the catch above deliberately swallows
+                // malformed events, and a real provider failure is not one.
+                if (midStreamFailure) throw midStreamFailure;
               }
             }
           }
@@ -1531,14 +1537,19 @@ export default async function handler(req: any, res: any) {
       buffer = lines.pop() || '';
       for (const line of lines) {
         if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+        let midStreamFailure: Error | null = null;
         try {
           const parsed = JSON.parse(line.slice(6));
+          midStreamFailure = streamErrorFrom(parsed, 'OpenRouter');
           const token = parsed.choices?.[0]?.delta?.content || '';
           if (token) {
             fullReply += token;
             sse.text(token);
           }
         } catch { /* ignore malformed upstream event */ }
+        // Must escape before the success path below, which records
+        // outcome:"success" into the ledger the outcome router reads.
+        if (midStreamFailure) throw midStreamFailure;
       }
     }
 

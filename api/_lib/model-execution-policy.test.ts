@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { modelAttemptsForTurn, isProviderCredentialRejection, shouldFallbackBeforeStreaming } from './model-execution-policy.js';
+import { modelAttemptsForTurn, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 
 test('a turn keeps trying past the first fallback, but stays bounded', () => {
   // Two attempts meant one free-quota 429 plus one unlucky fallback ended the
@@ -77,4 +77,33 @@ test('a rejected provider credential is never reported as retryable', () => {
     assert.equal(isProviderCredentialRejection({ status }), false, `status ${status}`);
     assert.equal(shouldFallbackBeforeStreaming({ status }), true, `status ${status} retryable`);
   }
+});
+
+test('a mid-stream provider failure is recognised and carries its upstream status', () => {
+  /*
+   * A provider can accept the request with HTTP 200 and then fail inside the
+   * stream. Both parsers read only choices[0].delta.content, so such an event
+   * produced no token and vanished: with no tokens yet the turn blamed the
+   * gateway for "an empty response", and with tokens already streamed nothing
+   * threw at all - a silently truncated build recorded as outcome:"success",
+   * which is the ledger the outcome router later trusts to rank models.
+   */
+  const credits = streamErrorFrom({ error: { message: 'Insufficient credits', code: 402 } }, 'OpenRouter');
+  assert.ok(credits, 'an error event must be recognised');
+  assert.match(credits!.message, /Insufficient credits/);
+  assert.equal((credits as any).status, 402);
+  // The status is the point: it lets the existing classifiers do their job.
+  assert.equal(isProviderCredentialRejection(credits), true);
+
+  const rateLimited = streamErrorFrom({ error: { message: 'Rate limited', code: 429 } }, 'OpenRouter');
+  assert.equal((rateLimited as any).status, 429);
+  assert.equal(isProviderCredentialRejection(rateLimited), false, '429 is retryable, not a credential problem');
+
+  // A bare string error, and an unknown shape, still surface rather than vanish.
+  assert.match(streamErrorFrom({ error: 'upstream exploded' }, 'OpenRouter')!.message, /upstream exploded/);
+  assert.equal((streamErrorFrom({ error: {} }, 'OpenRouter') as any).status, 502);
+
+  // Ordinary content events must not be mistaken for failures.
+  assert.equal(streamErrorFrom({ choices: [{ delta: { content: 'hi' } }] }, 'OpenRouter'), null);
+  assert.equal(streamErrorFrom({}, 'OpenRouter'), null);
 });

@@ -30,8 +30,8 @@
  *
  * EXIT CODES — safe to script against
  *   0  a complete document was produced
- *   1  any failure: no reply, provider rejection, dead stream, truncated or
- *      incomplete output
+ *   1  any failure: no reply, provider rejection (before or mid-stream), dead
+ *      stream, truncated or incomplete output
  *   2  bad invocation (no key, no prompt)
  */
 
@@ -144,6 +144,15 @@ async function main() {
   let finishReason = null;
   let chunks = 0;
   let lastTick = 0;
+  /*
+   * A provider can accept the request with HTTP 200 and then fail INSIDE the
+   * stream - a quota exhaustion, a mid-flight rejection, an upstream outage -
+   * by emitting an event carrying `error` instead of `choices`. Reading only
+   * `choices` made that invisible, so the probe would fall through to
+   * "INCOMPLETE OUTPUT ... points at the prompt or the model", which is the
+   * precise opposite of the truth and defeats the one job this file has.
+   */
+  let streamError = null;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -168,7 +177,12 @@ async function main() {
           chunks += 1;
         }
         if (choice?.finish_reason) finishReason = choice.finish_reason;
+        if (event.error) {
+          streamError = event.error;
+          break;
+        }
       }
+      if (streamError) break;
       // Heartbeat once a second so a long generation is visibly alive.
       if (Date.now() - lastTick > 1000) {
         lastTick = Date.now();
@@ -187,6 +201,17 @@ async function main() {
 
   const html = extractDocument(text);
   await writeOut(html);
+
+  if (streamError) {
+    // Named as a PROVIDER failure, never as a model or prompt shortcoming: the
+    // request was accepted and then abandoned upstream, which is a different
+    // problem with a different fix.
+    const detail = streamError.message || JSON.stringify(streamError);
+    log(`VERDICT: PROVIDER FAILED MID-STREAM after ${text.length} chars — ${detail}`);
+    if (text) log(`Partial output was still written to ${outPath}.`);
+    process.exitCode = 1;
+    return;
+  }
 
   /*
    * The verdict. `finish_reason` is the fact the platform never surfaced: it
