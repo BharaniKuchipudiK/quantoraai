@@ -24,6 +24,7 @@ import {
   readInstrument,
 } from "./market-data-store.js";
 import { liveFxRate } from "./market-data/frankfurter-provider.js";
+import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 
@@ -115,10 +116,24 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
      * fact. Refusing and saying so is the correct answer here, not a dead end -
      * the reply names the reason and does not pretend a number exists.
      */
+    /*
+     * A door, not a dead end.
+     *
+     * This used to say market data "isn't connected on this deployment yet" and
+     * stop — accurate, and useless to the person holding it, who could have
+     * fixed it in two minutes if anybody had said which two minutes. It is the
+     * same failure as the FX bug this file shipped for weeks: a refusal that is
+     * technically correct and practically abandoning.
+     *
+     * The doors live here rather than in the planner because THIS is where the
+     * platform knows: it has just checked the store and found nothing. A
+     * planner would have had to guess.
+     */
     sendStream(
       res,
       requestId,
-      "Market data isn't connected on this deployment yet, so I can't quote a real figure \u2014 and I won't guess one. Ask me anything else about this, or start a new chat for a non-market question.",
+      describeDoors(doorsBlocking(["market_prices"]), { ask: "this" })
+        || "Market data isn't connected on this deployment yet, and I won't guess a figure.",
     );
     return true;
   }

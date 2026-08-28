@@ -5,8 +5,6 @@ import {
   describeDoors,
   doorStateFor,
   doorsBlocking,
-  pendingAskFor,
-  pendingAskIsReady,
 } from './capability-doors.js';
 
 /**
@@ -20,13 +18,13 @@ import {
  */
 
 test('a capability that is on is open, and blocks nothing', () => {
-  assert.equal(doorStateFor('market_data', { enabled: { market_data: true } }), 'open');
-  assert.deepEqual(doorsBlocking(['market_data'], { enabled: { market_data: true } }), []);
+  assert.equal(doorStateFor('market_prices', { enabled: { market_prices: true } }), 'open');
+  assert.deepEqual(doorsBlocking(['market_prices'], { enabled: { market_prices: true } }), []);
 });
 
 test('a capability that is off is a door, not a refusal', () => {
-  assert.equal(doorStateFor('market_data'), 'closed');
-  const doors = doorsBlocking(['market_data']);
+  assert.equal(doorStateFor('market_prices'), 'closed');
+  const doors = doorsBlocking(['market_prices']);
   assert.equal(doors.length, 1);
   assert.ok(doors[0].steps.length >= 2, 'a door without steps is just a locked door');
   assert.ok(doors[0].verify, 'and the person must be able to check it themselves');
@@ -44,8 +42,8 @@ test('INVARIANT: a genuine no is never dressed as a door', () => {
 });
 
 test('the same door is asked for once, however many times a turn needs it', () => {
-  const doors = doorsBlocking(['market_data', 'market_data', 'places_lookup']);
-  assert.deepEqual(doors.map((d) => d.id), ['market_data', 'places_lookup']);
+  const doors = doorsBlocking(['market_prices', 'market_prices', 'places_lookup']);
+  assert.deepEqual(doors.map((d) => d.id), ['market_prices', 'places_lookup']);
 });
 
 test('every declared door can actually be opened by the person reading it', () => {
@@ -64,18 +62,18 @@ test('every declared door can actually be opened by the person reading it', () =
 // ------------------------------------------------------------------- copy ---
 
 test('the message says what I can do, what is missing, and how to check', () => {
-  const text = describeDoors(doorsBlocking(['market_data']), { ask: 'a currency converter' });
-  assert.match(text, /I can build a currency converter/);
+  const text = describeDoors(doorsBlocking(['market_prices']), { ask: 'a stock tracker' });
+  assert.match(text, /I can build a stock tracker/);
   assert.match(text, /needs a Supabase project/);
   assert.match(text, /^1\. /m, 'numbered steps a non-technical person can follow');
   assert.match(text, /You'll know it worked/);
-  assert.match(text, /pick this up exactly where we left it/);
+  assert.match(text, /ask me again and I'll build it/);
 });
 
 test('two doors are counted honestly rather than merged into one ask', () => {
-  const text = describeDoors(doorsBlocking(['market_data', 'places_lookup']), { ask: 'a store finder' });
+  const text = describeDoors(doorsBlocking(['market_prices', 'places_lookup']), { ask: 'a store finder' });
   assert.match(text, /I need 2 things switched on first/);
-  assert.match(text, /Live market and currency data/);
+  assert.match(text, /Stock prices and market history/);
   assert.match(text, /Real places and addresses/);
 });
 
@@ -83,36 +81,44 @@ test('no doors, no message', () => {
   assert.equal(describeDoors([]), '');
 });
 
-// ----------------------------------------------------------------- resume ---
+/*
+ * The parked-ask tests are gone with the code they covered. They asserted that
+ * an ask was captured for a resume that nothing performed: no writer, no reader,
+ * and a promise in the copy that no code kept. A green test over an unkept
+ * promise is worse than no test, because it reads as proof.
+ */
 
-test('the ask is parked so it never has to be retyped', () => {
-  // Opening a door takes minutes, a page reload and sometimes a redeploy. A
-  // request that has to be retyped afterwards is a request that gets abandoned.
-  const doors = doorsBlocking(['market_data']);
-  const pending = pendingAskFor({ ask: 'convert 100 USD to INR', doors, turnId: 't1' });
-  assert.equal(pending.ask, 'convert 100 USD to INR');
-  assert.deepEqual(pending.waitingOn, ['market_data']);
+test('INVARIANT: the copy promises only what the code does', () => {
+  const text = describeDoors(doorsBlocking(['market_prices']), { ask: 'a stock tracker' });
+  assert.match(text, /ask me again and I'll build it/);
+  assert.doesNotMatch(text, /pick this up|won't have to ask again/, 'no resume is performed, so none is promised');
 });
 
-test('INVARIANT: parked state never carries a credential', () => {
-  // This outlives the turn and gets written where a later session can read it.
-  const pending = pendingAskFor({ ask: 'convert 100 USD', doors: doorsBlocking(['market_data']) });
-  assert.deepEqual(Object.keys(pending).sort(), ['ask', 'at', 'turnId', 'waitingOn']);
+test('INVARIANT: a door names only what the platform can actually accept', () => {
+  // The Vault renders two inputs and byokRequestHeaders forwards two headers.
+  // Naming a third provider sends somebody to a form that cannot take their key.
+  const vault = CAPABILITY_DOORS.own_provider_key;
+  assert.match(vault.needs, /Gemini or OpenRouter/);
+  for (const absent of ['Anthropic', 'OpenAI', 'Claude']) {
+    assert.ok(!JSON.stringify(vault).includes(absent), `${absent} is not accepted by the Vault`);
+  }
 });
 
-test('a parked ask resumes only once every door it waited on is open', () => {
-  const pending = pendingAskFor({ ask: 'x', doors: doorsBlocking(['market_data', 'places_lookup']) });
-  assert.equal(pendingAskIsReady(pending), false);
-  assert.equal(pendingAskIsReady(pending, { enabled: { market_data: true } }), false, 'one of two is not ready');
-  assert.equal(
-    pendingAskIsReady(pending, { enabled: { market_data: true, places_lookup: true } }),
-    true,
-  );
+test('INVARIANT: the privacy line describes who really handles the key', () => {
+  // byokRequestHeaders attaches the key to a request to Quantora's /api/chat,
+  // which reads it before calling the provider. Saying it goes nowhere but the
+  // provider would misdescribe who handles a secret.
+  const steps = CAPABILITY_DOORS.own_provider_key.steps.join(' ');
+  assert.match(steps, /through Quantora/);
+  assert.ok(!/never sent anywhere but the provider/.test(steps));
 });
 
-test('nothing is parked when nothing was blocking', () => {
-  assert.equal(pendingAskFor({ ask: 'build a page', doors: [] }), null);
-  assert.equal(pendingAskFor({ ask: '', doors: doorsBlocking(['market_data']) }), null);
-  assert.equal(pendingAskIsReady(null), false);
-  assert.equal(pendingAskIsReady({ waitingOn: [] }), false);
+test('currency conversion is not behind a door it does not need', () => {
+  // FX is answered live from the keyless ECB feed and needs no store at all.
+  // A door telling somebody to configure Supabase first would be asking for
+  // work the deployment does not require.
+  const ids = Object.keys(CAPABILITY_DOORS);
+  assert.ok(!ids.includes('market_data'), 'the old currency-gated door is gone');
+  assert.match(CAPABILITY_DOORS.market_prices.label, /Stock prices/);
+  assert.ok(!/currency|conversion/i.test(CAPABILITY_DOORS.market_prices.label));
 });

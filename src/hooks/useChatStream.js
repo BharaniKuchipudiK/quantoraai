@@ -34,6 +34,7 @@ import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
 import {
   proveCodingTurn,
   codingTurnMayClaimSuccess,
@@ -469,7 +470,24 @@ export function useChatStream({
     const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
     let targetModel = pinnedOrOverride;
 
-    const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    /*
+     * The transcript has to FIT, not just be short enough by count.
+     *
+     * The server caps history at 100 items and nothing capped its size, while a
+     * Coding Desk turn carries the whole HTML document it built. A few pages, or
+     * one page with inline data-URI images, and the request body passes the
+     * platform's limit — where it is rejected BEFORE the function runs, so there
+     * is no handler to write a JSON error and nothing in any log. The browser
+     * reads a non-JSON body, the payload becomes {}, and every model appears to
+     * fail at once, including one that talks straight to Google.
+     *
+     * Worse, retrying made it worse: each attempt added turns, and the only
+     * escape was to start a new chat and lose the work.
+     */
+    const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    const historyBudget = budgetHistory(filteredMessages);
+    const cleanMessages = historyBudget.history;
+    const historyNotice = describeHistoryBudget(historyBudget);
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
     const currentOfficeArtifact = activeOfficeArtifact(messages);
@@ -1470,8 +1488,13 @@ export function useChatStream({
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: proofNote
-              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${proofNote}`.trim()
+            /*
+             * The trim notice rides with the other turn notes, never alone and
+             * never silent: a platform that quietly forgets a conversation
+             * leaves somebody wondering why it stopped remembering.
+             */
+            text: (proofNote || historyNotice)
+              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${[historyNotice, proofNote].filter(Boolean).join('\n\n')}`.trim()
               : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
             ...(codingProof ? {

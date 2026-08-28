@@ -42,25 +42,34 @@
  * mechanism, which is the move this whole line of work exists to refuse.
  */
 export const CAPABILITY_DOORS = Object.freeze({
-  market_data: {
-    id: 'market_data',
-    label: 'Live market and currency data',
+  market_prices: {
+    id: 'market_prices',
+    label: 'Stock prices and market history',
     needs: 'a Supabase project holding the market tables',
     steps: [
       'Open your Supabase project and copy its URL and service-role key.',
       'Add them to this deployment as SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
       'Redeploy — environment changes do not reach a running deployment until you do.',
+      'Run the Market Data Ingestion workflow once to fill the tables.',
     ],
-    verify: 'Ask me to convert a currency. A real rate comes back, with its date and source.',
+    verify: 'Ask me for a stock price. A real close comes back, with its date and source.',
   },
   own_provider_key: {
     id: 'own_provider_key',
     label: 'Your own AI provider key',
-    needs: 'a key you already hold from Anthropic, OpenRouter, OpenAI or Google',
+    // Gemini and OpenRouter ONLY. The Vault renders exactly two inputs and
+    // byokRequestHeaders forwards exactly two headers, so naming Anthropic or
+    // OpenAI here would send somebody to a form that cannot take their key —
+    // a door whose steps cannot be followed is worse than no door.
+    needs: 'a Gemini or OpenRouter key you already hold',
     steps: [
       'Open Privacy Vault from the menu.',
-      'Paste your key under Session-only provider keys.',
-      'It stays in this session and is never written to disk or sent anywhere but the provider.',
+      'Paste your Gemini or OpenRouter key under Session-only provider keys.',
+      // The Vault's own copy is the accurate one, and it is accurate on purpose:
+      // byokRequestHeaders attaches the key to a request to Quantora's /api/chat,
+      // which reads it before calling the provider. Saying it goes nowhere but
+      // the provider would misdescribe who handles a secret.
+      'It stays in memory for this browser tab only, is attached to provider requests through Quantora, and is never written to storage.',
     ],
     verify: 'Start a build. The model label under the reply names your provider.',
   },
@@ -143,45 +152,31 @@ export function describeDoors(doors = [], { ask = '' } = {}) {
     lines.push(`*You'll know it worked:* ${door.verify}`);
   }
 
+  /*
+   * What this can honestly promise.
+   *
+   * The first version said "I'll pick this up exactly where we left it — you
+   * won't have to ask again", and nothing in the code did that: the parked ask
+   * lived on one plan object, was never written anywhere, and had no reader. A
+   * promise the code does not keep is the exact failure this whole line of work
+   * exists to remove, and it does not get an exception for being kind.
+   *
+   * Asking again is a real, small cost. Saying so is cheaper than owing
+   * somebody a resume that never comes.
+   */
   lines.push(
     '',
     one
-      ? "Tell me when it's on and I'll pick this up exactly where we left it — you won't have to ask again."
-      : "Tell me when they're on and I'll pick this up exactly where we left it — you won't have to ask again.",
+      ? "Once it's on, ask me again and I'll build it."
+      : "Once they're on, ask me again and I'll build it.",
   );
   return lines.join('\n');
 }
 
-/**
- * What has to survive while the user goes and opens a door.
- *
- * The whole promise above — "I'll pick this up exactly where we left it" —
- * depends on this outliving the turn. A door takes minutes to open, across a
- * page reload and sometimes a redeploy, and a request that has to be retyped
- * afterwards is a request that gets abandoned instead.
- *
- * Only what is needed to re-run the ask, and deliberately no credentials: this
- * is written where a session can find it later, and a secret that lives in
- * resumable state is a secret that leaks.
+/*
+ * There was a pendingAskFor/pendingAskIsReady pair here, to park the ask across
+ * the round trip. It is gone rather than shipped, because nothing wrote it and
+ * nothing read it: the copy promised a resume that no code performed. Parking
+ * an ask properly needs storage that survives a reload and a redeploy, and that
+ * is worth building — as a thing that works, not as a sentence that claims to.
  */
-export function pendingAskFor({ ask = '', doors = [], turnId = null, at = Date.now() } = {}) {
-  if (!ask || !doors.length) return null;
-  return {
-    ask: String(ask).slice(0, 4000),
-    waitingOn: doors.map((door) => door.id),
-    turnId,
-    at,
-  };
-}
-
-/**
- * Is a parked ask ready to run again?
- *
- * Every door it was waiting on has to be open. Resuming while one is still shut
- * would produce the same refusal a second time, which reads as the platform not
- * having listened.
- */
-export function pendingAskIsReady(pending, { enabled = {} } = {}) {
-  if (!pending?.waitingOn?.length) return false;
-  return pending.waitingOn.every((id) => doorStateFor(id, { enabled }) === 'open');
-}

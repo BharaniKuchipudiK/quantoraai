@@ -139,3 +139,55 @@ test("FX: a dead live feed refuses honestly rather than inventing a rate", async
     if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
   }
 });
+
+/*
+ * The door has a real caller now.
+ *
+ * A review found the door path living in the planner, which no production
+ * caller ever supplied, so not one of the messages could reach a user. This
+ * gateway is where the knowledge actually is: it has just looked in the store
+ * and found nothing.
+ */
+
+test('an unconfigured store answers with steps, not a dead end', async () => {
+  const savedUrl = process.env.SUPABASE_URL;
+  const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const restore = withFetch((async () => { throw new Error("no live feed either"); }) as typeof fetch);
+  try {
+    const res = capturingRes();
+    const handled = await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "AAPL price" }, headers: {} },
+      res,
+    );
+    assert.equal(handled, true);
+    const text = res.text();
+    assert.match(text, /^1\. /m, "numbered steps a person can follow");
+    assert.match(text, /SUPABASE_SERVICE_ROLE_KEY/, "names the thing to set");
+    assert.match(text, /You'll know it worked/, "and how to check");
+    assert.doesNotMatch(text, /isn't connected on this deployment yet/, "the dead end is gone");
+  } finally {
+    restore();
+    if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
+    if (savedKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey;
+  }
+});
+
+test('INVARIANT: a figure is still never invented when the door is shut', async () => {
+  // The door replaces the copy, not the refusal. Nothing may produce a number.
+  const savedUrl = process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_URL;
+  const restore = withFetch((async () => { throw new Error("down"); }) as typeof fetch);
+  try {
+    const res = capturingRes();
+    await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "AAPL price" }, headers: {} },
+      res,
+    );
+    assert.doesNotMatch(res.text(), /\$\s?\d/, "no price, invented or otherwise");
+  } finally {
+    restore();
+    if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
+  }
+});
