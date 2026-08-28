@@ -63,6 +63,7 @@ import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreview
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { briefNeedsJob } from "../../src/lib/build-job.js";
 import { describePaidHold, paidRouteAllowed } from "./paid-route-gate.js";
+import { TRAVEL_CONVERSATION_MODEL_ID } from "./travel-model-routing.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
@@ -125,6 +126,17 @@ const FEATURED_SERVER_MODELS = new Set([
   // one that does not.
   "nvidia/nemotron-3-super-120b-a12b:free",
   "openai/gpt-oss-120b:free",
+  /*
+   * Travel's own conversation model. It is here because
+   * TRAVEL_CONVERSATION_MODEL_ID names it directly, and removing it from this
+   * set while that constant still pointed at it broke Travel for everyone:
+   * every travel turn answered "The model 'Quantora Travel Advisor' is not
+   * approved for Quantora-managed usage yet."
+   *
+   * A test pins the pair together so the next roster edit cannot separate
+   * them silently.
+   */
+  TRAVEL_CONVERSATION_MODEL_ID,
   // Anthropic flagships are still NOT listed: the id moves, and a stale one is
   // a route that 404s at the provider. They are discovered from the live
   // catalogue and approved in isApprovedServerModel below. That rule now
