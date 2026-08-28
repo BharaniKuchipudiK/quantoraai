@@ -261,18 +261,33 @@ export function proveCodingTurn({
 }
 
 /**
- * Build user-facing failure text when proof fails after repair.
+ * Build the note shown ALONGSIDE a build whose proof did not pass.
+ *
+ * This used to be written as replacement text for the whole turn, and it spoke
+ * about catalog photos and Add to Cart no matter what had been asked for - so a
+ * storage dashboard, a task tracker, anything at all, came back as advice about
+ * a shop. Shop wording now appears only on a shop turn, and the copy says
+ * plainly that the build is still there, because it is.
  */
 export function proofFailureCopy(verdict, plan = null) {
   const gaps = (verdict?.gaps || []).join(', ') || 'required Preview proof';
-  const target = photoTargetFor(plan);
-  return (
-    `I will not claim this turn is done — Preview proof failed (${gaps}).\n\n`
-    + `**What failed:** ${verdict?.detail || 'proof contract unmet'}.\n`
-    + `**What I’ll do:** keep the desk honest — ship a working page with about ${target} `
-    + `catalog photos and Add to Cart, or say so if I still cannot prove it.\n\n`
-    + `Tap **Start with ${target}** if you want the capped shop, or tell me the next slice.`
-  );
+  const lines = [
+    `**Preview proof did not pass** — missing: ${gaps}.`,
+    '',
+    'The build above is exactly what the model produced. Nothing was replaced or '
+    + 'removed. Open Preview and judge it yourself — this is a warning about what '
+    + 'I could not verify, not a verdict on the work.',
+  ];
+  if (isShopPlan(plan)) {
+    const target = photoTargetFor(plan);
+    lines.push(
+      '',
+      `For a shop I check for about ${target} loadable catalog photos and an Add to `
+      + `Cart control. Tap **Start with ${target}** for a capped catalog, or tell me `
+      + 'the next slice.',
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
