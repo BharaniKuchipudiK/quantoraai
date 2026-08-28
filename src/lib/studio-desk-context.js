@@ -231,17 +231,30 @@ export function buildDeskChecks(facts = {}, { includeCatalog = false, job = null
     });
     if (includeCatalog) {
       const catalogCount = Number(facts.catalogCount) || 0;
+      const inSource = Number(facts.catalogCountInSource) || 0;
+      const rendered = typeof facts.catalogCountLive === 'number' ? facts.catalogCountLive : null;
+      /*
+       * A catalog is only proved when what rendered matches what was written.
+       * Any count above zero used to pass, so a page showing 1 of 18 products
+       * was a green tick reading "1 catalog item" — the shortfall, which is
+       * the whole finding, went unmentioned.
+       */
+      const short = rendered !== null && inSource > 0 && rendered < inSource;
       const catalog = sourceOrLiveCheck({
-        sourceOk: catalogCount > 0,
+        sourceOk: catalogCount > 0 && !short,
         observed: observedCount(live, 'catalogCount'),
         livePresent,
       });
+      let label;
+      if (short) label = `Only ${rendered} of ${inSource} catalog items reached Preview`;
+      else if (catalogCount) label = `${catalogCount} catalog item${catalogCount === 1 ? '' : 's'}`;
+      else label = 'products.json has no named items';
       checks.push({
         id: 'catalog',
         ok: catalog.ok,
         state: catalog.state,
         sourceOk: catalog.sourceOk,
-        label: catalogCount ? `${catalogCount} catalog item${catalogCount === 1 ? '' : 's'}` : 'products.json has no named items',
+        label,
       });
     }
   }
@@ -325,7 +338,18 @@ export function mergeLiveDeskProbe(packet, live = null) {
   applyLiveBool(facts, live, 'hasScientificKeys');
   applyLiveCount(facts, live, 'photoCount');
   applyLiveCount(facts, live, 'uniquePhotoCount');
+  /*
+   * The live count is what RENDERED; the source count is what was WRITTEN.
+   * Overwriting one with the other loses the only interesting fact — a
+   * products.json with 18 items whose page renders 1 was reported as
+   * "1 catalog item" with a green tick, turning a rendering failure into a
+   * pass. Keep both; the check below says so when they disagree.
+   */
+  facts.catalogCountInSource = Number(packet.facts?.catalogCount) || 0;
   applyLiveCount(facts, live, 'catalogCount');
+  facts.catalogCountLive = typeof live.catalogCount === 'number' && Number.isFinite(live.catalogCount)
+    ? live.catalogCount
+    : null;
   if (typeof live.photoCount === 'number' && Number.isFinite(live.photoCount)) {
     facts.hasPhotos = live.photoCount > 0;
   }
@@ -342,13 +366,19 @@ export function mergeLiveDeskProbe(packet, live = null) {
 
   const includeCatalog = (packet.checks || []).some((check) => check.id === 'catalog');
   const checks = buildDeskChecks(facts, { includeCatalog, job: packet.job, live });
-  if (facts.shop) {
+  /*
+   * Only report the CLICK when there is a control to click. The old else-branch
+   * repeated "Add to Cart missing from Preview" verbatim under a second id, so
+   * a missing cart printed the same sentence twice and read like two separate
+   * faults. A control that is not there has one finding, not two.
+   */
+  if (facts.shop && facts.hasCart === true) {
     checks.push({
       id: 'cart-click',
       ok: live.bagIncremented === true,
       label: live.bagIncremented === true
         ? 'Add to Cart increments the bag'
-        : (facts.hasCart === true ? 'Add to Cart did not increment the bag' : 'Add to Cart missing from Preview'),
+        : 'Add to Cart did not increment the bag',
     });
   }
   const failed = failingChecks(checks);
@@ -585,4 +615,25 @@ export function chipsFromDeskProbes(checks = []) {
   return (Array.isArray(checks) ? checks : [])
     .filter((check) => checkState(check) === 'fix' && beats[check.id])
     .map((check) => beats[check.id]);
+}
+
+/**
+ * Names ONLY the shop controls that are actually absent.
+ *
+ * The chat used to print one fixed sentence — "Preview still has no currency
+ * switcher or Add to Cart" — whenever EITHER was missing. So a build whose own
+ * check list said "Currency switcher is on Preview" was accused, two inches
+ * lower, of not having one. The platform contradicted itself on the same
+ * screen, and the reader has no way to tell which half to believe.
+ *
+ * Returns '' when nothing is missing, so the caller renders no warning at all.
+ */
+export function describeMissingShopUi(facts = {}) {
+  if (!facts || !facts.shop) return '';
+  const missing = [];
+  if (!facts.hasCart) missing.push('Add to Cart');
+  if (!facts.hasCurrency) missing.push('currency switcher');
+  if (!missing.length) return '';
+  const list = missing.length === 2 ? `${missing[0]} or ${missing[1]}` : missing[0];
+  return `Preview still has no ${list}. Chat cannot add that until it appears on the desk.`;
 }

@@ -68,3 +68,47 @@ test('Build mode means act — no intake delay', () => {
     studioMode: 'build',
   }), false);
 });
+
+/*
+ * THE GATE MUST STAY WIRED.
+ *
+ * shouldStartGuidedBuild was exported and tested for months while nothing
+ * called it, so the platform never asked a single intake question. These cases
+ * are the real session that exposed it.
+ */
+test('a bare website request asks first', () => {
+  assert.equal(shouldStartGuidedBuild({
+    text: 'help me build a website for my coffee shop',
+    hasPreview: false,
+    isWorkspace: false,
+    studioMode: 'ask',
+  }), true, 'the shop name, the menu and the cart are all still unknown');
+});
+
+test('intake never re-opens on a desk that already has a build', () => {
+  const args = { text: 'help me build a website for my coffee shop', studioMode: 'ask' };
+  assert.equal(shouldStartGuidedBuild({ ...args, hasPreview: true }), false,
+    'a running preview means the questions are already answered');
+  assert.equal(shouldStartGuidedBuild({ ...args, isWorkspace: true }), false);
+});
+
+test('a named tool is built, not interviewed', () => {
+  assert.equal(shouldStartGuidedBuild({
+    text: 'build me a tip calculator',
+    studioMode: 'ask',
+  }), false, 'nothing about a tip calculator is ambiguous enough to stall on');
+});
+
+test('an explicit Build or Plan mode skips intake', () => {
+  const args = { text: 'help me build a website for my coffee shop' };
+  assert.equal(shouldStartGuidedBuild({ ...args, studioMode: 'build' }), false);
+  assert.equal(shouldStartGuidedBuild({ ...args, studioMode: 'plan' }), false);
+});
+
+test('a question about a screenshot is not a build', () => {
+  assert.equal(shouldStartGuidedBuild({
+    text: 'help me build a website for my coffee shop',
+    studioMode: 'ask',
+    isVisionQuestion: true,
+  }), false);
+});

@@ -18,7 +18,7 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -842,6 +842,28 @@ export function useChatStream({
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
+      /*
+       * Ask the essentials before writing a thousand lines.
+       *
+       * shouldStartGuidedBuild existed, was exported, was tested — and had NO
+       * caller. Nothing ever put `guidedBuild` in this body, so the server's
+       * shouldHonorGuidedBuild was permanently false, the BUILD CHOICE
+       * TEMPLATES were never added to the system prompt, and the conversation
+       * engine's `clarify / guided_intake` factor never fired.
+       *
+       * The visible cost: "help me build a website for my coffee shop" went
+       * straight to a 970-line storefront under an invented brand name, and
+       * the reply had to admit mid-paragraph that the name was a placeholder
+       * and the shipping terms were assumed. One question first is cheaper
+       * than a rebuild, for the user and for the credit meter.
+       */
+      guidedBuild: shouldStartGuidedBuild({
+        text: visibleUserText,
+        hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+        isWorkspace: hasCodingWorkspace,
+        studioMode: refineDesk ? 'build' : 'ask',
+        isVisionQuestion: attachedImages.length > 0,
+      }),
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,

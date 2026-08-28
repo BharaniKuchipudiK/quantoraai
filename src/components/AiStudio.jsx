@@ -31,7 +31,7 @@ import {
   readGithubApiJson,
 } from '../lib/github-import.js';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
-import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
@@ -1453,8 +1453,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const photosMissing = Boolean(previewRunCode)
     && deskPacket?.facts?.shop
     && (!deskPacket.facts.hasPhotos || deskPacket.facts.hasDistinctPhotos === false);
-  const shopUiMissing = Boolean(deskPacket?.facts?.shop)
-    && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
+  // Name only what is actually absent — see describeMissingShopUi.
+  const shopUiMissingNote = describeMissingShopUi(deskPacket?.facts);
+  const shopUiMissing = Boolean(shopUiMissingNote);
 
   useEffect(() => {
     if (!previewRunCode) setLiveDeskProbe(null);
@@ -1739,7 +1740,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="shop-ui"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no currency switcher or Add to Cart. Chat cannot add those until they appear on the desk.
+                          {shopUiMissingNote}
                         </div>
                       ) : null}
 
