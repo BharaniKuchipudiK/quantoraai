@@ -13,6 +13,8 @@ type ModelLike = {
   pricingKind?: string;
   specialty?: string;
   description?: string;
+  /** Declared by the provider catalogue, never inferred from the id. */
+  vision?: boolean;
   quality?: { sampleSize?: number; score?: number } | null;
 };
 
@@ -71,16 +73,43 @@ export function selectModelsForTurn(input: SelectModelsInput): RoutingDecision {
   }
 
   if (input.hasImages) {
-    const gemini = models.find((model) => typeof model.id === 'string' && model.id.startsWith('gemini') && model.available !== false);
+    const ready = models.filter((model) => typeof model?.id === 'string' && model.available !== false);
+    const isGemini = (id: string) => id.startsWith('gemini');
+    const gemini = ready.find((model) => isGemini(model.id));
+    /*
+     * A vision turn used to have exactly ONE viable route.
+     *
+     * The primary was forced to Gemini, and the fallbacks came from
+     * rankFreeModels - which filters to FREE models. But the only models that
+     * DECLARE vision are the discovered flagships, and those are paid, so they
+     * could never appear as a rung. Downstream, capabilitiesFor drops any route
+     * that does not declare vision, which emptied the rest of the chain too.
+     *
+     * So attaching an image reduced the whole ladder to Gemini alone, and if
+     * Gemini was unhealthy the turn died - on a deployment paying for a
+     * vision-capable flagship that was answering fine on every other turn.
+     *
+     * Vision capability is read from the catalogue (see discoverAnthropicFlagships),
+     * never inferred from the id: a model earns a rung here by declaring it.
+     */
+    const visionCapable = ready.filter((model) => model.vision === true && !isGemini(model.id));
+    const paidVisionRungs = input.allowPaid ? visionCapable.map((model) => model.id) : [];
+    const freeVisionRungs = rankFreeModels(ready, input.message, input.arenaPrefs)
+      .filter((model) => !isGemini(model.id) && model.vision === true)
+      .map((model) => model.id);
+    const fallbackModelIds = [...new Set([...paidVisionRungs, ...freeVisionRungs])];
+
+    // Gemini stays the default when it exists: it is fast and reliably finishes.
+    // A declared vision model only becomes primary when there is no Gemini at all,
+    // which is the case that used to 503 outright.
+    const primaryModelId = gemini?.id || fallbackModelIds[0] || 'gemini-flash-latest';
     return {
-      primaryModelId: gemini?.id || 'gemini-flash-latest',
-      fallbackModelIds: rankFreeModels(models, input.message, input.arenaPrefs)
-        .filter((model) => !model.id.startsWith('gemini') && model.available !== false)
-        .map((model) => model.id),
+      primaryModelId,
+      fallbackModelIds: fallbackModelIds.filter((id) => id !== primaryModelId),
       reason: 'vision',
-      provider: 'gemini',
+      provider: isGemini(primaryModelId) ? 'gemini' : 'openrouter',
       hasVisionSupport: true,
-      selectionSource: gemini ? 'vision_default' : 'fallback_default',
+      selectionSource: (gemini || fallbackModelIds.length) ? 'vision_default' : 'fallback_default',
     };
   }
 
