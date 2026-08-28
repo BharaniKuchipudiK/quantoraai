@@ -2,6 +2,7 @@ import { extractContextFromAssistantText } from './session-context.js';
 import { extractChoicesFromAssistantText, stripPartialAssistantMarkers } from './studio-choices.js';
 import { extractContinuesFromAssistantText } from './studio-continues.js';
 import { polishOfficeUiCopy } from './office-ui-copy.js';
+import { stripPlanMarker } from './build-job.js';
 
 const CLEAR_WORKSPACE_MARKER = /<clear-workspace\s*\/?\s*>/gi;
 const PARTIAL_CLEAR_WORKSPACE_MARKER = /<clear-workspace[^>]*$/i;
@@ -67,7 +68,9 @@ export function formatConversationalProse(text) {
  */
 export function sanitizeAssistantStream(text) {
   const partialSafe = stripPartialAssistantMarkers(typeof text === 'string' ? text : '');
-  return polishOfficeUiCopy(stripClearWorkspaceMarker(partialSafe));
+  // The build plan is metadata like every other marker — the steps are rendered
+  // as a checklist, not pasted into the reply as raw JSON.
+  return stripPlanMarker(polishOfficeUiCopy(stripClearWorkspaceMarker(partialSafe)));
 }
 
 /**
@@ -86,7 +89,7 @@ export function normalizeAssistantResponse(text) {
   const { displayText, choiceSet } = extractChoicesFromAssistantText(afterContinues);
 
   return {
-    displayText: formatConversationalProse(polishOfficeUiCopy(displayText)),
+    displayText: stripPlanMarker(formatConversationalProse(polishOfficeUiCopy(displayText))),
     choiceSet,
     continueSet,
     contextUpdate,

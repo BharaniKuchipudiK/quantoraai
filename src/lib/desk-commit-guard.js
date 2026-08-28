@@ -116,3 +116,73 @@ export function deskCommitRegressesPreview(before = {}, after = {}) {
   if (looksTruncatedHtml(entry)) return { reject: true, reason: 'incoming-entry-truncated' };
   return { reject: true, reason: 'incoming-entry-not-runnable' };
 }
+
+/**
+ * Local modules a file imports that are not on the desk.
+ *
+ * WHY THIS EXISTS
+ *
+ * A scheduling board was committed as three files: App.jsx, main.jsx, and a
+ * Scheduler.jsx that had been cut off mid-write at two lines — an import of
+ * `./JobPanel` and nothing else. JobPanel was never written. Preview said
+ * "Missing local preview module", and the chat said:
+ *
+ *   "The model hit the 175s limit, but Preview is already proved on the desk."
+ *
+ * Proved. Over a project that could not start.
+ *
+ * Whether a page RENDERS needs a browser. Whether every module it imports was
+ * actually written does not — it is a fact about files we are already holding.
+ * The cheap half of the check was simply never done.
+ */
+const LOCAL_IMPORT = /(?:^|\n)\s*(?:import\s[\s\S]*?from\s*|import\s*|export\s[\s\S]*?from\s*)['"](\.\.?\/[^'"]+)['"]/g;
+const RESOLVE_EXTS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.css', '/index.js', '/index.jsx'];
+
+function normalizeJoin(fromPath, spec) {
+  const base = String(fromPath).split('/').slice(0, -1);
+  const parts = String(spec).split('/');
+  for (const part of parts) {
+    if (part === '.' || part === '') continue;
+    if (part === '..') base.pop();
+    else base.push(part);
+  }
+  return base.join('/');
+}
+
+export function findMissingLocalImports(vfs = {}) {
+  const files = vfs && typeof vfs === 'object' ? vfs : {};
+  const present = new Set(Object.keys(files));
+  const missing = [];
+  for (const path of Object.keys(files)) {
+    if (!/\.(jsx?|tsx?|mjs)$/i.test(path)) continue;
+    const entry = files[path];
+    const text = typeof entry === 'string' ? entry : String(entry?.content ?? entry?.code ?? '');
+    const re = new RegExp(LOCAL_IMPORT.source, 'g');
+    let match;
+    while ((match = re.exec(text)) !== null) {
+      const target = normalizeJoin(path, match[1]);
+      const found = RESOLVE_EXTS.some((ext) => present.has(`${target}${ext}`));
+      if (!found) missing.push({ from: path, spec: match[1] });
+    }
+  }
+  return missing;
+}
+
+/**
+ * Can this desk possibly start?
+ *
+ * Not "does it look good" — only that nothing it imports is absent. A false
+ * here is a fact, so it is safe to block a success claim on. A true is not a
+ * promise the page renders, and callers must not read it as one.
+ */
+export function deskCanStart(vfs = {}) {
+  return findMissingLocalImports(vfs).length === 0;
+}
+
+/** What to tell the user, naming the file and the import. */
+export function describeMissingImports(missing = []) {
+  if (!missing.length) return '';
+  const shown = missing.slice(0, 3).map((m) => `\`${m.spec}\` (imported by ${m.from})`);
+  const more = missing.length > 3 ? ` and ${missing.length - 3} more` : '';
+  return `Preview cannot start — ${shown.join(', ')}${more} ${missing.length === 1 ? 'was' : 'were'} never written. The turn ran out before finishing them.`;
+}

@@ -60,6 +60,8 @@ import { selectModelsForTurn } from "../../src/lib/communication/routing/select-
 import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
 import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-outcome-routing.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
+import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
+import { briefNeedsJob } from "../../src/lib/build-job.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
@@ -89,19 +91,44 @@ const TOTAL_CHAT_BUDGET_MS = 165_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
+/*
+ * What the platform may route to when it is spending its own credit.
+ *
+ * The comment below used to sit above eight PINNED ids and apply to none of
+ * them. Anthropic was held to the rule; gpt-4o-mini, gemma-2-9b-it,
+ * llama-3.3-70b-instruct, qwen-2.5-coder-32b and deepseek-chat were not, and
+ * every one of them is a generation or two behind — none appears anywhere in
+ * OpenRouter's current top twenty by usage.
+ *
+ * That mattered beyond staleness: this set is not the model PICKER's list, so
+ * the platform was choosing models it never showed anybody. A person watched
+ * gpt-4o-mini answer a question about their build and went looking for it in
+ * the menu, where it has never been.
+ *
+ * The replacements are chosen from live usage rather than reputation. DeepSeek
+ * V4 Flash carries 12.5T tokens a week on OpenRouter — real production volume
+ * on long jobs, which is the only signal that predicts finishing a build — at
+ * $0.12/Mtok against roughly $12 for a flagship. GLM 5.3 Flash and Gemini 3.7
+ * Flash are the next rungs, then GPT-5.6 Luna.
+ */
 const FEATURED_SERVER_MODELS = new Set([
+  // Rung 0 — direct to Google, costs no OpenRouter credit at all.
   "gemini-flash-latest",
-  // Anthropic flagships are NOT listed here: the id moves, and a stale one is a
-  // route that 404s at the provider. They are discovered from the live catalogue
-  // and approved in isApprovedServerModel below.
+  // Rung 1 — the cheap workhorses. Ranked by measured usage, not by name.
+  "deepseek/deepseek-v4-flash-0731",
+  "z-ai/glm-5.3-flash",
+  // Rung 2 — stronger, still an order of magnitude under a flagship.
+  "openai/gpt-5.6-luna",
+  "google/gemini-3.7-flash",
+  // Free rungs, kept because a free route that works is worth more than a cheap
+  // one that does not.
   "nvidia/nemotron-3-super-120b-a12b:free",
-  "nvidia/nemotron-3-super:free",
   "openai/gpt-oss-120b:free",
-  "deepseek/deepseek-chat",
-  "qwen/qwen-2.5-coder-32b-instruct",
-  "meta-llama/llama-3.3-70b-instruct",
-  "google/gemma-2-9b-it",
-  "openai/gpt-4o-mini",
+  // Anthropic flagships are still NOT listed: the id moves, and a stale one is
+  // a route that 404s at the provider. They are discovered from the live
+  // catalogue and approved in isApprovedServerModel below. That rule now
+  // applies to every id here — nothing pinned that the catalogue does not
+  // serve, which is what the eight removed ids violated.
 ]);
 
 function emitBuildProgress(sse: SseWriter, enabled: boolean, beat: { t: number }) {
@@ -717,6 +744,18 @@ export default async function handler(req: any, res: any) {
       cognitiveLevel,
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
+      /*
+       * Phase 04: a build too big for one reply is planned instead of attempted.
+       *
+       * Only on a FIRST build turn — never while refining, and never once a job
+       * is already running, or every follow-up would re-plan instead of taking
+       * the next step. `hasVFS` stands in for "there is already a desk here".
+       */
+      needsJobPlan: effectiveBuildMode
+        && !isRefine
+        && !honorGuided
+        && briefNeedsJob(message, { vfs: req.body?.hasVFS ? { placeholder: 1 } : {} })
+        && !req.body?.buildJobActive,
       guided: honorGuided,
       refineMode: isRefine,
       featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
@@ -885,6 +924,20 @@ export default async function handler(req: any, res: any) {
                 ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.'
                 : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
         reason,
+        /*
+         * When there is no credential at all, the user has a handle: their own
+         * Gemini or OpenRouter key, pasted into the Vault, works immediately
+         * and needs no redeploy. The prose above names the server variables —
+         * which only the operator can set — so without this a signed-in user
+         * reads a wall where they are actually standing at a door.
+         *
+         * Only for missingCredentials. An unhealthy route is not something a
+         * user key fixes, and offering a handle that changes nothing would be
+         * the crueller lie.
+         */
+        ...(missingCredentials
+          ? { door: describeDoors(doorsBlocking(['own_provider_key']), { ask: 'this' }) }
+          : {}),
         // Lets the desk state the cause without another round of guesswork.
         providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),

@@ -5,6 +5,7 @@ import {
   buildDeskContextPacket,
   chipsFromDeskProbes,
   codingTurnRequestFields,
+  describeMissingShopUi,
   deskChecksRegressed,
   formatDeskContextForPrompt,
   mergeLiveDeskProbe,
@@ -436,3 +437,83 @@ test('scientific calculator jobs require sin/cos on Preview', () => {
   assert.equal(packet.checks.find((row) => row.id === 'calc-scientific').state, 'unverified');
 });
 
+
+/*
+ * FIXTURES FROM A REAL FAILING SCREEN (Kaapi Bharat storefront).
+ *
+ * One screen showed, at the same time:
+ *   ok  Currency switcher is on Preview
+ *   ok  1 catalog item
+ *   fix Add to Cart missing from Preview
+ *   fix Add to Cart missing from Preview      <- printed twice
+ *   "Preview still has no currency switcher or Add to Cart"
+ *
+ * Three separate defects, all of the same kind: the platform stating
+ * something about itself that its own evidence contradicted.
+ */
+
+test('the shop-UI warning never names a control that is present', () => {
+  // Exactly the screenshot: currency IS on Preview, cart is not.
+  assert.equal(
+    describeMissingShopUi({ shop: true, hasCart: false, hasCurrency: true }),
+    'Preview still has no Add to Cart. Chat cannot add that until it appears on the desk.',
+  );
+  assert.equal(
+    describeMissingShopUi({ shop: true, hasCart: true, hasCurrency: false }),
+    'Preview still has no currency switcher. Chat cannot add that until it appears on the desk.',
+  );
+  assert.match(
+    describeMissingShopUi({ shop: true, hasCart: false, hasCurrency: false }),
+    /Add to Cart or currency switcher/,
+  );
+  // Nothing missing → no warning at all, not an empty accusation.
+  assert.equal(describeMissingShopUi({ shop: true, hasCart: true, hasCurrency: true }), '');
+  assert.equal(describeMissingShopUi({ shop: false }), '');
+  assert.equal(describeMissingShopUi(null), '');
+});
+
+test('a catalog that renders 1 of 18 is a failure, not a green "1 catalog item"', () => {
+  const packet = {
+    facts: { shop: true, catalogCount: 18, hasCart: true, hasCurrency: true },
+    checks: [{ id: 'catalog' }],
+  };
+  const merged = mergeLiveDeskProbe(packet, { catalogCount: 1 });
+  const catalog = merged.checks.find((check) => check.id === 'catalog');
+  assert.equal(catalog.ok, false, 'a shortfall must not pass');
+  assert.equal(catalog.label, 'Only 1 of 18 catalog items reached Preview');
+  assert.ok(merged.failed.includes('catalog'));
+});
+
+test('a catalog that renders everything still passes', () => {
+  const packet = {
+    facts: { shop: true, catalogCount: 18, hasCart: true, hasCurrency: true },
+    checks: [{ id: 'catalog' }],
+  };
+  const merged = mergeLiveDeskProbe(packet, { catalogCount: 18 });
+  const catalog = merged.checks.find((check) => check.id === 'catalog');
+  assert.equal(catalog.ok, true);
+  assert.equal(catalog.label, '18 catalog items');
+});
+
+test('a missing Add to Cart is reported once, not twice', () => {
+  const packet = {
+    facts: { shop: true, catalogCount: 3, hasCart: false, hasCurrency: true },
+    checks: [{ id: 'catalog' }],
+  };
+  const merged = mergeLiveDeskProbe(packet, { hasCart: false, bagIncremented: false });
+  const cartRows = merged.checks.filter((check) => /Add to Cart missing/i.test(check.label || ''));
+  assert.equal(cartRows.length, 1, 'the same sentence must not appear under two ids');
+  assert.equal(merged.checks.some((check) => check.id === 'cart-click'), false,
+    'there is no click to report when there is no control');
+});
+
+test('a present Add to Cart that does not increment is still reported', () => {
+  const packet = {
+    facts: { shop: true, catalogCount: 3, hasCart: true, hasCurrency: true },
+    checks: [{ id: 'catalog' }],
+  };
+  const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: false });
+  const click = merged.checks.find((check) => check.id === 'cart-click');
+  assert.equal(click.ok, false);
+  assert.equal(click.label, 'Add to Cart did not increment the bag');
+});

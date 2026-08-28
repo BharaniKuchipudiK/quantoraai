@@ -111,7 +111,16 @@ test('routes without usable credentials are not planned', async () => {
     geminiAvailable: false,
     openRouterAvailable: true,
   });
-  assert.deepEqual(routes.map((route) => route.id), ['deepseek/deepseek-chat']);
+  /*
+   * The cheap OpenRouter route is always offered alongside whatever was asked
+   * for. That is the ladder: a $0.12 route that finishes is worth more than one
+   * more attempt at a model the registry has nothing good to say about.
+   */
+  assert.deepEqual(
+    routes.map((route) => route.id),
+    ['deepseek/deepseek-chat', 'deepseek/deepseek-v4-flash-0731'],
+  );
+  assert.ok(routes.every((route) => route.gateway === 'openrouter'), 'no Gemini route without a Gemini credential');
 });
 
 test('BYOK quota circuits are partitioned without exposing the credential', async () => {
@@ -383,4 +392,66 @@ test('a model whose name merely contains "batch" as a word part still routes', a
     openRouterAvailable: true,
   });
   assert.equal(routes[0]?.id, 'vendor/batchelor-7b');
+});
+
+test('INVARIANT: a credentialed gateway is never left out of the plan', async () => {
+  /*
+   * The failure this closes, from PR #319: the last resort was injected only
+   * when the pool was COMPLETELY empty, and only for Gemini. So when the
+   * registry marked every Gemini row offline but left an OpenRouter row
+   * standing, the pool was non-empty, nothing was injected, and Gemini was
+   * absent — the client painting "no healthy AI route" for a gateway whose
+   * credential was sitting right there.
+   */
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    models: [
+      { id: 'gemini-flash-latest', available: false, lifecycle: 'unavailable' },
+    ],
+  });
+  const gateways = new Set(routes.map((route) => route.gateway));
+  assert.ok(gateways.has('gemini'), 'a credentialed Gemini is reachable even when its registry row says otherwise');
+  assert.ok(gateways.has('openrouter'), 'and so is OpenRouter');
+  /*
+   * Coverage is the invariant, NOT position. The caller asked for nemotron and
+   * nothing has shown it to be dead, so it stays first: injecting a last resort
+   * must never silently swap out the model a person chose. The zero-cost
+   * gateway earns its place as the first fallback, not as a demotion of the
+   * primary.
+   */
+  assert.equal(routes[0].id, 'nvidia/nemotron-3-super-120b-a12b:free', 'the chosen primary is not demoted by an injection');
+  assert.equal(routes[1].gateway, 'gemini', 'the zero-cost gateway is the first thing tried after it');
+});
+
+test('an injected Gemini leads when the primary itself is unusable', async () => {
+  /*
+   * Same fixture, except the primary is the row the registry marks dead. With
+   * nothing of the caller's own left to honour, the free gateway leads.
+   */
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'gemini-flash-latest',
+    fallbackModelIds: [],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    models: [
+      { id: 'gemini-flash-latest', available: false, lifecycle: 'unavailable' },
+    ],
+  });
+  assert.ok(routes.length >= 1);
+  assert.equal(routes[0].gateway, 'gemini', 'the zero-cost last resort is tried before the paid one');
+});
+
+test('a gateway with no credential is never injected', async () => {
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'gemini-flash-latest',
+    geminiAvailable: true,
+    openRouterAvailable: false,
+  });
+  assert.ok(routes.length >= 1);
+  assert.ok(
+    routes.every((route) => route.gateway === 'gemini'),
+    'no OpenRouter route may appear without an OpenRouter credential',
+  );
 });

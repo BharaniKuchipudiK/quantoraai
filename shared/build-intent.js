@@ -1,3 +1,4 @@
+import { requestIsAnalysisNotBuild } from '../src/lib/request-kind.js';
 /**
  * When should Studio generate a runnable artifact vs run website intake?
  *
@@ -8,7 +9,25 @@
 const QUESTION_PREFIX = /^(how|what|why|when|where|which|who|should|can you explain|explain|is |are |does |do |tell me|help me understand)/i;
 
 const BUILD_VERB = /\b(build|create|make|generate|design|develop|code|prototype|clone|scaffold)\b/i;
-const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone|agent|bot|crawler|automation|organizer|script|service|workflow|extension|plugin|macos|ios|desktop)\b/i;
+/*
+ * The vocabulary of software people actually pay to have built.
+ *
+ * The original list was consumer-shaped — website, landing page, calculator,
+ * portfolio, game — so six of eight real business asks were NOT recognised as
+ * builds at all:
+ *
+ *   "Build a production scheduling board"   missed
+ *   "Build a shift scheduler for my cafe"   missed
+ *   "Build a booking system for my salon"   missed
+ *   "Build an inventory management screen"  missed
+ *   "Build a CRM for my agency"             missed
+ *   "Build a kanban board for my team"      missed
+ *
+ * That is why the Coding Desk looked like it only did calculators and coffee
+ * shops: those were the only nouns it could hear. A verb is still required
+ * alongside, so the broader list cannot turn ordinary conversation into a build.
+ */
+const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone|agent|bot|crawler|automation|organizer|script|service|workflow|extension|plugin|macos|ios|desktop|board|scheduler|schedule|planner|system|screen|portal|console|admin|panel|crm|erp|inventory|roster|rota|timeline|kanban|gantt|booking|checkout|catalogue|catalog|directory|wizard|viewer|table|chart|map|feed|inbox|queue|pipeline|report|invoice|quote|ledger|calendar|marketplace|storefront|builder|manager|monitor|analyzer|analyser)\b/i;
 
 const SPECIFIED_TOOL = /\b(calculator|calc\b|todo(?:s| list)?|to-do list|timer|stopwatch|pomodoro|counter|unit converter|tip calculator|bmi(?: calculator)?|quiz|flash ?cards?|notepad|markdown editor|tic-?tac-?toe|snake(?: game)?|pong|weather (?:app|widget)|password generator|color picker|habit tracker|kanban|clock|alarm|notes app|drawing (?:app|pad)|whiteboard|kanban board)\b/i;
 
@@ -33,6 +52,19 @@ export function resolveIsCodingRequest(text, {
 } = {}) {
   if (refineDesk) return true;
   if (isSpecifiedRunnableTool(text)) return true;
+  /*
+   * A request for judgement is not a request for software.
+   *
+   * A board decision paper — "determine whether we should proceed", "identify
+   * at least 12 contradictions", "produce a decision paper" — was routed here
+   * because the phrase "Create a portfolio showing CONTINUE, ACCELERATE" (a
+   * TABLE in a document) matched a build verb and a build noun. The model then
+   * emitted native iOS files, Preview died, and the reply offered travel chips.
+   *
+   * Checked BEFORE detectBuildIntent, because the whole point is that the
+   * noun-match is what gets it wrong.
+   */
+  if (requestIsAnalysisNotBuild(text)) return false;
   if (detectBuildIntent(text)) return true;
   if (!codingDeskOpen || !text || typeof text !== 'string') return false;
   const t = text.trim();
@@ -71,6 +103,9 @@ export function resolveEffectiveBuildMode({
   const toolBuild = isSpecifiedRunnableTool(message);
   if (explicitAsk && !toolBuild) return false;
   if (explicitBuild || toolBuild) return true;
+  // A person who pressed Build gets a build (handled above). Everyone else asking
+  // for analysis gets analysis, rather than a preview that cannot exist.
+  if (requestIsAnalysisNotBuild(message)) return false;
   return Boolean(buildMode);
 }
 

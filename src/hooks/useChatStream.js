@@ -18,7 +18,10 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
+import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
+import { deskCanStart, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -240,6 +243,8 @@ export function useChatStream({
   updateActiveSession,
   onCodingTurnExecute = null,
   onCodingTurnProved = null,
+  onDeskRename = null,
+  buildJob = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
@@ -621,6 +626,44 @@ export function useChatStream({
 
     let effectiveArenaMode = arenaMode;
     const deskFiles = Boolean(isWorkspaceMode && vfs && Object.keys(vfs).length > 0);
+
+    /*
+     * A RENAME IS A FIND AND REPLACE. IT NEVER GOES TO A MODEL.
+     *
+     * "can you rename or rebrand this as Hiran's Coffee" used to be sent as a
+     * full regeneration: re-emit all 970 lines of index.html to change a
+     * string. It hit the 175s ceiling and produced nothing — no rename, no
+     * site, and a charge for the attempt.
+     *
+     * The answer is derivable from files already in hand, so it is computed
+     * here in milliseconds. It cannot time out, cannot redesign the page it was
+     * asked to rename, and cannot drop the other 969 lines.
+     *
+     * A refusal short-circuits too. When the current name cannot be derived,
+     * asking one question is a better turn than spending three minutes letting
+     * a model guess which string to swap.
+     */
+    if (deskFiles && typeof onDeskRename === 'function') {
+      const renameAsk = detectRenameRequest(visibleUserText);
+      if (renameAsk) {
+        const plan = planDeskRename({ vfs, html: canvasCode || '', newName: renameAsk.newName });
+        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan)) : false;
+        if (!plan.ok || applied) {
+          if (!stillCurrent()) return;
+          updateActiveMessages(prev => [...prev, {
+            id: createMessageId('ai'),
+            sender: 'ai',
+            text: describeDeskRename(plan),
+            // Not an error — a refusal here is a question, and the desk is intact.
+            isError: false,
+          }]);
+          setIsGenerating(false);
+          return;
+        }
+        // The commit was rejected (a broken VFS guard upstream). Fall through to
+        // the model rather than reporting a rename that did not land.
+      }
+    }
     const hasCodingWorkspace = deskFiles
       || Boolean(isWorkspaceMode)
       || Boolean(codingDeskOpen)
@@ -828,7 +871,21 @@ export function useChatStream({
       }]);
     }
 
-    const messageForRequest = text.trim() || 'I have attached an image. Describe what you see and help me with it.';
+    /*
+     * "continue" on a running job means TAKE THE NEXT STEP.
+     *
+     * Sent as the bare word it is nearly meaningless several turns after the
+     * plan: the model no longer has the goal in view and re-reads the whole
+     * project. nextStepBrief restates the goal and names the exact files the
+     * step owes, which is also what marks it done — so the instruction and the
+     * proof are the same list.
+     */
+    const resumingJob = buildJob
+      && !buildJobIsComplete(buildJob)
+      && /^\s*(continue|next|next step|go on|carry on|keep going)\b[\s.!]*$/i.test(text);
+    const messageForRequest = resumingJob
+      ? nextStepBrief(buildJob)
+      : (text.trim() || 'I have attached an image. Describe what you see and help me with it.');
 
     const requestBodyFor = (model) => ({
       message: messageForRequest,
@@ -842,9 +899,34 @@ export function useChatStream({
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
+      /*
+       * Ask the essentials before writing a thousand lines.
+       *
+       * shouldStartGuidedBuild existed, was exported, was tested — and had NO
+       * caller. Nothing ever put `guidedBuild` in this body, so the server's
+       * shouldHonorGuidedBuild was permanently false, the BUILD CHOICE
+       * TEMPLATES were never added to the system prompt, and the conversation
+       * engine's `clarify / guided_intake` factor never fired.
+       *
+       * The visible cost: "help me build a website for my coffee shop" went
+       * straight to a 970-line storefront under an invented brand name, and
+       * the reply had to admit mid-paragraph that the name was a placeholder
+       * and the shipping terms were assumed. One question first is cheaper
+       * than a rebuild, for the user and for the credit meter.
+       */
+      guidedBuild: shouldStartGuidedBuild({
+        text: visibleUserText,
+        hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+        isWorkspace: hasCodingWorkspace,
+        studioMode: refineDesk ? 'build' : 'ask',
+        isVisionQuestion: attachedImages.length > 0,
+      }),
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,
+      // A job already running means the next turn takes a STEP. Without this,
+      // every follow-up on a big build would re-plan instead of advancing.
+      buildJobActive: Boolean(buildJob && !buildJobIsComplete(buildJob)),
       ...(isCodingRequest ? {
         qualityHints: {
           fileCount: vfsFileCountForHints,
@@ -1220,13 +1302,27 @@ export function useChatStream({
                   const why = artifactFailed
                     ? (streamedError.message || 'Build artifact failed')
                     : (streamedError?.message || 'no healthy AI route');
+                  /*
+                   * Never claim "proved" over a desk that cannot start.
+                   *
+                   * A scheduling board was committed with a Scheduler.jsx cut
+                   * off after two import lines and a JobPanel that was never
+                   * written. Preview said "Missing local preview module"; the
+                   * chat said the page was proved and waiting. Whether a page
+                   * RENDERS needs a browser — whether every module it imports
+                   * exists is a fact about files already in hand.
+                   */
+                  const missingImports = findMissingLocalImports(deskProof.vfs || {});
                   updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                     ...m,
                     text: withBuildTruth(
-                      `${why}, but Preview is already proved on the desk `
-                      + `(${deskProof.evidence.photos || 0} catalog photos`
-                      + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
-                      + 'Open Coding desk — the page is there.',
+                      missingImports.length
+                        ? `${why}. ${describeMissingImports(missingImports)} Ask me to finish `
+                          + `${missingImports.length === 1 ? 'that file' : 'those files'} and the rest of the build stays as it is.`
+                        : `${why}, but Preview is already proved on the desk `
+                          + `(${deskProof.evidence.photos || 0} catalog photos`
+                          + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                          + 'Open Coding desk — the page is there.',
                       deskProof,
                     ),
                     isError: false,
@@ -1607,10 +1703,12 @@ export function useChatStream({
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   text: withBuildTruth(
-                    `${why}, but Preview is already proved on the desk `
-                    + `(${deskProof.evidence.photos || 0} catalog photos`
-                    + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
-                    + 'Open Coding desk — the page is there.',
+                    deskCanStart(deskProof.vfs || {})
+                      ? `${why}, but Preview is already proved on the desk `
+                        + `(${deskProof.evidence.photos || 0} catalog photos`
+                        + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                        + 'Open Coding desk — the page is there.'
+                      : `${why}. ${describeMissingImports(findMissingLocalImports(deskProof.vfs || {}))}`,
                     deskProof,
                   ),
                   isError: false,

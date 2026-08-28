@@ -130,6 +130,21 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   const warmingStartedAtRef = useRef(null);
   const lastWarmingCodeRef = useRef('');
   const embedModeRef = useRef('blob');
+  /**
+   * A page can leave the embed WITHOUT iframe.src changing: `location.href='/'`
+   * navigates the frame while the src ATTRIBUTE stays on /preview/embed.html.
+   * The harness therefore pings; silence past a grace window is the only signal
+   * the parent has that the frame is gone.
+   */
+  const lastPreviewAliveAtRef = useRef(0);
+  const previewHtmlPushedAtRef = useRef(0);
+  /**
+   * Background tabs throttle setInterval hard (seconds to a minute), so a hidden
+   * tab starves the heartbeat and would look identical to an escaped frame.
+   * Judge the heartbeat only while visible, and restart the clock on the way
+   * back so the first tick after wake never convicts on throttled silence.
+   */
+  const becameVisibleAtRef = useRef(0);
 
   const iframeRef = useRef(null);
   const currentCodeRef = useRef(currentCode);
@@ -234,16 +249,23 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   }, []);
 
+  const remountPreviewShell = useCallback(() => {
+    embedReadyRef.current = false;
+    setEmbedReady(false);
+    setStatus('running');
+    setWarmingFailed(false);
+    setLastError(null);
+    previewHtmlPushedAtRef.current = 0;
+    lastPreviewAliveAtRef.current = 0;
+    setRemountNonce((value) => value + 1);
+  }, []);
+
   /** Shell ready only if the iframe is still on /preview/embed.html (or blob). */
   const handleEmbedFrameLoad = useCallback(() => {
     const src = iframeRef.current?.src || embedSrc || '';
     if (!isPreviewEmbedFrameSrc(src)) {
       // Navigated onto the SPA → X-Frame-Options: DENY → "quantoraai.app refused to connect".
-      embedReadyRef.current = false;
-      setEmbedReady(false);
-      setStatus('running');
-      setLastError(null);
-      setRemountNonce((value) => value + 1);
+      remountPreviewShell();
       return;
     }
     if (!embedReadyRef.current) {
@@ -254,7 +276,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setStatus((prev) => (prev === 'failed' ? 'running' : prev));
     const html = currentCodeRef.current;
     if (html) pushHtmlToEmbedRef.current?.(html);
-  }, [embedSrc]);
+  }, [embedSrc, remountPreviewShell]);
 
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
@@ -266,28 +288,55 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       preparedHtml = injectShopCommerceUi(preparedHtml).html;
     }
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
+    previewHtmlPushedAtRef.current = Date.now();
+    lastPreviewAliveAtRef.current = Date.now();
   }, []);
   const pushHtmlToEmbedRef = useRef(pushHtmlToEmbed);
   pushHtmlToEmbedRef.current = pushHtmlToEmbed;
 
   // If generated HTML escapes onto the SPA, XFO DENY shows "refused to connect"
-  // and onLoad may never fire — poll and remount the shell.
+  // and onLoad may never fire — watch the src AND the harness heartbeat.
   useEffect(() => {
     if (headless || wcUrl || !embedReady) return undefined;
+    const GRACE_MS = 1600;
+    const SILENCE_MS = 2000;
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        becameVisibleAtRef.current = Date.now();
+        // Throttled ticks during the hidden stretch are not evidence of death.
+        lastPreviewAliveAtRef.current = Date.now();
+      }
+    };
     const tick = () => {
       const frame = iframeRef.current;
       const src = frame?.src || '';
-      if (!src || isPreviewEmbedFrameSrc(src)) return;
-      embedReadyRef.current = false;
-      setEmbedReady(false);
-      setStatus('running');
-      setWarmingFailed(false);
-      setRemountNonce((value) => value + 1);
+      if (src && !isPreviewEmbedFrameSrc(src)) {
+        remountPreviewShell();
+        return;
+      }
+      // Only the heartbeat can see an in-frame navigation, and only a visible
+      // tab keeps honest time. Convicting a hidden tab would remount the
+      // preview under a user who merely switched away, discarding whatever
+      // they had typed into it.
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const pushedAt = previewHtmlPushedAtRef.current;
+      if (!pushedAt || !currentCodeRef.current) return;
+      if (Date.now() - pushedAt < GRACE_MS) return;
+      if (Date.now() - becameVisibleAtRef.current < SILENCE_MS) return;
+      const lastAlive = lastPreviewAliveAtRef.current;
+      if (lastAlive && Date.now() - lastAlive > SILENCE_MS) remountPreviewShell();
     };
+    if (typeof document !== 'undefined') {
+      becameVisibleAtRef.current = Date.now();
+      document.addEventListener('visibilitychange', onVisibility);
+    }
     const id = setInterval(tick, 400);
     tick();
-    return () => clearInterval(id);
-  }, [embedReady, headless, wcUrl]);
+    return () => {
+      clearInterval(id);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [embedReady, headless, wcUrl, remountPreviewShell]);
 
   useEffect(() => {
     setCurrentCode(code || '');
@@ -532,9 +581,14 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       const d = e.data;
       if (!d || d.__quantora !== true) return;
 
+      if (d.kind === 'preview-alive') {
+        lastPreviewAliveAtRef.current = Date.now();
+        return;
+      }
       if (d.kind === 'embed-ready') {
         embedReadyRef.current = true;
         setEmbedReady(true);
+        lastPreviewAliveAtRef.current = Date.now();
         if (currentCodeRef.current) pushHtmlToEmbedRef.current?.(currentCodeRef.current);
         return;
       }

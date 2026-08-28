@@ -389,20 +389,29 @@ export default function App() {
   // like "deepseek-coder-v2" gets a 400 Bad Request from OpenRouter. Keep this
   // in sync with api/models.js so the app behaves identically whether or not
   // the registry endpoint responds.
+  /*
+   * The offline fallback, and nothing more.
+   *
+   * This carried eight ids marked `available: true` that nobody had verified —
+   * gpt-4o-mini, gemma-2-9b-it, llama-3.3-70b-instruct, qwen-2.5-coder-32b,
+   * deepseek-chat — all a generation or two behind and none of them served by
+   * the registry this file's own comment says to stay in sync with. It said
+   * "keep this in sync with api/models.js"; the server listed two, this listed
+   * eight, and the difference was presented to people as a menu of working
+   * models.
+   *
+   * It is now exactly the routes the server vouches for. A model missing from a
+   * fallback list costs somebody one refresh. A model that is listed and dead
+   * costs them a build and tells them nothing about why.
+   */
   const fallbackModels = [
     { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Primary Quantora route — Google, independent of OpenRouter', badge: 'Recommended', provider: 'Google', available: true, pricingKind: 'free-tier' },
-    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'OpenRouter Free', provider: 'NVIDIA', available: true, pricingKind: 'free' },
-    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', specialty: 'Open-weight reasoning and coding fallback', badge: 'Free Fallback', provider: 'OpenAI', available: true, pricingKind: 'free' },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'DeepSeek', available: true, pricingKind: 'paid' },
-    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'Qwen', available: true, pricingKind: 'paid' },
-    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Open Source', provider: 'Meta', available: true, pricingKind: 'paid' },
-    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'Google', available: true, pricingKind: 'paid' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', specialty: 'General Assistant & Fast Queries', badge: 'Fast', provider: 'OpenAI', available: true, pricingKind: 'paid' },
-    // No hardcoded Anthropic entry: the id moves (claude-3.5-sonnet ->
-    // claude-sonnet-5 ...), and a stale one listed here as available:true is a
-    // model the picker offers but the provider no longer serves. Anthropic routes
-    // are discovered from the live catalogue and arrive via /api/models.
-    { id: 'meta-llama/llama-3-70b-instruct', name: 'Llama 3 70B', specialty: 'Open-source powerhouse with zero filters.', badge: 'UPDATED', provider: 'Meta', available: true, pricingKind: 'free' }
+    { id: 'deepseek/deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash', specialty: 'Fast, very low cost, long context — the everyday build route', badge: 'Best value', provider: 'DeepSeek', available: true, pricingKind: 'paid' },
+    { id: 'z-ai/glm-5.3-flash', name: 'GLM 5.3 Flash', specialty: 'Low cost with vision and long context', badge: 'Low cost', provider: 'Z.ai', available: true, pricingKind: 'paid' },
+    { id: 'openai/gpt-5.6-luna', name: 'GPT-5.6 Luna', specialty: 'Stronger reasoning when a cheaper route falls short', badge: 'Step up', provider: 'OpenAI', available: true, pricingKind: 'paid' },
+    { id: 'google/gemini-3.7-flash', name: 'Gemini 3.7 Flash', specialty: 'Long context and vision via OpenRouter', badge: 'Vision', provider: 'Google', available: true, pricingKind: 'paid' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Free reasoning and coding route', badge: 'Free', provider: 'NVIDIA', available: true, pricingKind: 'free' },
+    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', specialty: 'Open-weight free fallback', badge: 'Free', provider: 'OpenAI', available: true, pricingKind: 'free' },
   ];
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);

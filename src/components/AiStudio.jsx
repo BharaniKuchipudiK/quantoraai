@@ -1,4 +1,5 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
@@ -30,7 +31,9 @@ import {
   readGithubApiJson,
 } from '../lib/github-import.js';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
-import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
+import { describePatchFailures } from '../lib/diff-patcher.js';
+import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
@@ -514,6 +517,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [codingDeskOpen, setCodingDeskOpen] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  // Which session this saver last ran for, and the live session id a deferred
+  // write re-checks against. Refs, because both are read inside a timer.
+  const deskSaveSessionRef = useRef(null);
+  const activeSessionIdRef = useRef(null);
   const [deskReview, setDeskReview] = useState([]);
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
@@ -531,6 +538,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, []);
   const [deskJob, setDeskJob] = useState(null);
   const [liveDeskProbe, setLiveDeskProbe] = useState(null);
+  /*
+   * Edits the model asked for that could not be applied to the file.
+   * The reply describes what it INTENDED to change; this says what actually
+   * landed. Without it a two-part edit where one part missed reads as a
+   * complete success over a half-changed build.
+   */
+  const [patchNote, setPatchNote] = useState('');
+  /*
+   * Phase 04. A build too large for one reply becomes a job: a goal and steps,
+   * each naming the files it must leave behind. Steps go green only when those
+   * files exist on the desk — never because a turn said so.
+   */
+  const [buildJob, setBuildJob] = useState(null);
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -728,8 +748,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setDeskJob(restored.job || null);
   }, [activeSessionId, studioDomain, chatSessions]);
 
+  activeSessionIdRef.current = activeSessionId;
+
   useEffect(() => {
     if (!canAutoOpenCodeWorkspace(studioDomain)) return;
+    /*
+     * A desk belongs to the chat that built it.
+     *
+     * This save is debounced 400ms and its effect re-runs when activeSessionId
+     * changes — so on a chat switch it used to build a snapshot from the
+     * PREVIOUS chat's files and write it to whichever session was active when
+     * the timer fired. The new chat then restored it: you opened a fresh chat,
+     * typed a brief, and the desk beside you force-opened somebody else's
+     * build, persisted into your session record.
+     *
+     * Two guards. Skip the pass on which the session changed, because the files
+     * in state are the outgoing chat's and its own desk was already saved.
+     * And re-check at fire time, because the session can change inside the
+     * debounce window.
+     */
+    const target = resolveDeskSaveTarget({
+      activeSessionId,
+      lastSeenSession: deskSaveSessionRef.current,
+    });
+    deskSaveSessionRef.current = target.nextSeen;
+    if (!target.save) return;
+
     const built = buildStudioDeskSnapshot({
       vfs,
       workspaceCode,
@@ -739,7 +783,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       job: deskJob,
     });
     if (!built.ok) return;
+    const sessionAtBuild = activeSessionId;
     const timer = setTimeout(() => {
+      if (!deferredWriteStillValid({ sessionAtBuild, sessionNow: activeSessionIdRef.current })) return;
       updateActiveSession({ desk: built.snapshot });
     }, 400);
     return () => clearTimeout(timer);
@@ -827,6 +873,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
     const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
+    // A plan turn starts the job; every other turn re-judges it against the
+    // files that now exist, so a step can also go BACK to not-done if its file
+    // is later emptied. The job describes the desk, not the history of claims.
+    const proposed = readPlanMarker(rawText);
+    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
+    setPatchNote((assembled.patchFailures || [])
+      .map((failure) => describePatchFailures(failure.result, failure.filepath))
+      .filter(Boolean)
+      .join('\n\n'));
     if (assembled.rejected) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
     const skillPlan = planFromMessageSnapshot(lastAi?.codingTurnPlan, {
@@ -1126,6 +1182,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(true);
   }, [vfs, deskJob, activeSessionId, commitDeskVfs]);
 
+  /*
+   * Commit a deterministic rename. Returns whether the desk actually took it,
+   * so the caller reports a rename only when one happened — a "Renamed X to Y"
+   * message over an unchanged desk is the exact class of claim this codebase
+   * keeps having to delete.
+   */
+  const onDeskRename = useCallback((nextVfs) => {
+    if (!nextVfs || !Object.keys(nextVfs).length) return false;
+    if (!commitDeskVfs(nextVfs)) return false;
+    const entry = pickPreviewEntry(nextVfs);
+    if (entry) setWorkspaceCode(entry);
+    setWorkspaceActiveTab('preview');
+    return true;
+  }, [commitDeskVfs]);
+
   const onCodingTurnProved = useCallback((verdict) => {
     if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
     // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
@@ -1163,6 +1234,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession,
     onCodingTurnExecute,
     onCodingTurnProved,
+    onDeskRename,
+    buildJob,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -1422,8 +1495,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const photosMissing = Boolean(previewRunCode)
     && deskPacket?.facts?.shop
     && (!deskPacket.facts.hasPhotos || deskPacket.facts.hasDistinctPhotos === false);
-  const shopUiMissing = Boolean(deskPacket?.facts?.shop)
-    && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
+  // Name only what is actually absent — see describeMissingShopUi.
+  const shopUiMissingNote = describeMissingShopUi(deskPacket?.facts);
+  const shopUiMissing = Boolean(shopUiMissingNote);
 
   useEffect(() => {
     if (!previewRunCode) setLiveDeskProbe(null);
@@ -1708,7 +1782,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="shop-ui"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no currency switcher or Add to Cart. Chat cannot add those until they appear on the desk.
+                          {shopUiMissingNote}
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (
+                        <div
+                          data-quantora-build-job="true"
+                          style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+                        >
+                          {describeBuildJob(buildJob)}
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (
+                        <div
+                          data-quantora-preview-honesty="patch"
+                          style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}
+                        >
+                          {patchNote}
                         </div>
                       ) : null}
 

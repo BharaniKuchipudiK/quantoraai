@@ -1,6 +1,6 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
-import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
+import { parseVFSWithReport, isolateHtmlDocument } from './vfs-parser.js';
 import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview, vfsAssetToDataUri } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
@@ -149,9 +149,12 @@ function extractUnfencedHtml(rawText) {
 export function assembleStudioPreview(rawText, currentVfs = {}) {
   if (!rawText || typeof rawText !== 'string') return { vfs: {}, code: '' };
 
-  const vfs = parseVFSFromMarkdown(rawText, currentVfs);
+  // patchFailures rides along so the turn can say which edits did not land.
+  // Dropping it here is how a half-applied edit used to reach the user wearing
+  // a sentence that claimed the whole thing worked.
+  const { vfs, patchFailures } = parseVFSWithReport(rawText, currentVfs);
   if (Object.keys(vfs).length > 0) {
-    return { vfs, code: pickPreviewEntry(vfs) };
+    return { vfs, code: pickPreviewEntry(vfs), patchFailures };
   }
 
   const html = extractUnfencedHtml(rawText);
@@ -159,10 +162,11 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
     return {
       vfs: { 'index.html': { content: html, language: 'html' } },
       code: html,
+      patchFailures,
     };
   }
 
-  return { vfs: {}, code: '' };
+  return { vfs: {}, code: '', patchFailures };
 }
 
 /**
@@ -231,6 +235,9 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
     previewChanged: !hadProject || previewChanged,
     job: nextJob,
     scaleNote: ensured.scaleNote || '',
+    // Edits the model asked for that could not be applied. The turn must say so
+    // rather than commit what landed and describe what was asked.
+    patchFailures: assembled.patchFailures || [],
   };
 }
 

@@ -2,16 +2,51 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, previewShellIsWarming } from './studio-partner-status.js';
 
-test('while generating, names the work and the wait instead of a silent spinner', () => {
+/*
+ * "Hang tight — it appears in Preview when it can run" was the same sentence at
+ * 5 seconds and at 3 minutes, so a person could not tell a healthy turn from
+ * one about to die. The wait is still named; it is now named with what is
+ * ACTUALLY happening. Expectation updated deliberately, not loosened.
+ */
+test('while generating, names the work and the observed phase', () => {
   const status = resolveStudioPartnerStatus({
     isGenerating: true,
     generatingLabel: 'Building your preview…',
     elapsedSec: 8,
     hasPreview: false,
+    activeModelName: 'Gemini 3 Flash',
   });
   assert.match(status.now, /preview/i);
-  assert.match(status.next, /Hang tight/);
+  assert.match(status.next, /Reaching Gemini 3 Flash/);
   assert.match(status.next, /0:08/);
+  assert.equal(status.stalled, false);
+});
+
+test('a turn with nothing coming back says so, and offers a way out', () => {
+  const status = resolveStudioPartnerStatus({
+    isGenerating: true,
+    generatingLabel: 'Building your preview…',
+    elapsedSec: 70,
+    hasPreview: false,
+    activeModelName: 'Nemotron 3 Super 120B',
+    turnBudgetSec: 175,
+  });
+  assert.match(status.next, /No output from Nemotron 3 Super 120B after 1:10/);
+  assert.equal(status.stalled, true);
+  assert.ok(status.actions.length > 0, 'a stalled turn must offer something to DO');
+});
+
+test('files being written are named as they land', () => {
+  const status = resolveStudioPartnerStatus({
+    isGenerating: true,
+    generatingLabel: 'Building your preview…',
+    elapsedSec: 40,
+    hasPreview: false,
+    streamedBytes: 129000,
+    streamedPaths: ['index.html', 'products.json'],
+  });
+  assert.match(status.next, /Writing index\.html, products\.json/);
+  assert.match(status.next, /126\.0 KB/);
 });
 
 test('an Office preview does not invite Vercel publish', () => {
@@ -101,6 +136,9 @@ test('the build clock counts past a minute', () => {
     generatingLabel: 'Building your preview…',
     elapsedSec,
     hasPreview: false,
+    // Bytes present so the line is a streaming phase rather than a stall
+    // notice; the clock itself is what this test is about.
+    streamedBytes: 2048,
   }).next.match(/\d+:\d\d/)?.[0];
 
   assert.equal(at(59), '0:59');
