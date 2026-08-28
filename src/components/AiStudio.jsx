@@ -554,6 +554,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Steps taken without being asked. Reset when a new plan starts; capped so an
   // agent loop can never become an open tap.
   const autoStepsRef = useRef(0);
+  // The job as the loop last saw it. Read outside React state so the
+  // auto-advance decision never sits inside an updater that can run twice.
+  const buildJobRef = useRef(null);
   const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
@@ -884,32 +887,39 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (proposed) {
       autoStepsRef.current = 0;
       autoPauseRef.current = '';
-      setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
-    } else {
-      setBuildJob((prev) => {
-        if (!prev) return prev;
-        const next = advanceBuildJob(prev, assembled.vfs || vfs);
-        /*
-         * Take the next step without being asked — this is what turns one
-         * 175-second shot into several short ones. Every stop condition lives
-         * in shouldAutoAdvanceJob, and the one that matters is NO PROGRESS: a
-         * step that delivered no new file will not deliver one on a retry, so
-         * repeating it is a charge with a known outcome.
-         */
-        const verdict = shouldAutoAdvanceJob({
-          job: next,
-          previousJob: prev,
-          autoStepsUsed: autoStepsRef.current,
-          lastTurnFailed: Boolean(assembled.rejected),
-        });
-        autoPauseRef.current = verdict.advance ? '' : verdict.reason;
-        if (verdict.advance) {
-          autoStepsRef.current += 1;
-          // After paint, so the step just finished is on screen before the next starts.
-          setTimeout(() => handleSendMessageRef.current?.(nextStepBrief(next)), 0);
-        }
-        return next;
+      buildJobRef.current = advanceBuildJob(proposed, assembled.vfs || vfs);
+      setBuildJob(buildJobRef.current);
+    } else if (buildJobRef.current) {
+      /*
+       * Decided OUTSIDE the state updater on purpose.
+       *
+       * The first version ran this inside setBuildJob's updater, which React
+       * may invoke twice (StrictMode, and any re-render it decides to retry).
+       * An updater that schedules a send and increments a counter therefore
+       * sends the step twice and charges for it twice — an agent loop is
+       * exactly the wrong place to put a side effect that can run again.
+       */
+      const previous = buildJobRef.current;
+      const next = advanceBuildJob(previous, assembled.vfs || vfs);
+      buildJobRef.current = next;
+      setBuildJob(next);
+
+      // Every stop condition lives in shouldAutoAdvanceJob. The one that
+      // matters is NO PROGRESS: a step that delivered no new file will not
+      // deliver one on a retry, so repeating it is a charge with a known
+      // outcome.
+      const verdict = shouldAutoAdvanceJob({
+        job: next,
+        previousJob: previous,
+        autoStepsUsed: autoStepsRef.current,
+        lastTurnFailed: Boolean(assembled.rejected),
       });
+      autoPauseRef.current = verdict.advance ? '' : verdict.reason;
+      if (verdict.advance) {
+        autoStepsRef.current += 1;
+        // After paint, so the step just finished is on screen before the next starts.
+        setTimeout(() => handleSendMessageRef.current?.(nextStepBrief(next)), 0);
+      }
     }
     setPatchNote((assembled.patchFailures || [])
       .map((failure) => describePatchFailures(failure.result, failure.filepath))
