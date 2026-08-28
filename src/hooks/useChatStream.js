@@ -1265,6 +1265,9 @@ export function useChatStream({
 
           // Proof Control Plane owns success — skills + repair + evidence, not chat claims.
           let codingProof = null;
+          // A failed proof annotates the turn; it never replaces it. See below.
+          let proofNote = '';
+          let proofChips = [];
           if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain)) {
             const assembled = assembleStudioPreview(currentText, vfs || {});
             const seedVfs = {
@@ -1284,28 +1287,28 @@ export function useChatStream({
                 onCodingTurnProved(codingProof, turnPlan);
               } catch { /* desk apply is best-effort */ }
             }
+            /*
+             * A failed proof is a NOTE, never a replacement.
+             *
+             * This branch used to overwrite the assistant message with the failure
+             * copy and return, which skipped the entire path that renders the build.
+             * A complete, working page the gate simply did not recognise - anything
+             * without a <!DOCTYPE, or React the runtime detector missed - was deleted
+             * before the user ever saw it, and the text that replaced it talked about
+             * catalog photos and Add to Cart whatever had been asked for.
+             *
+             * The model's output is the user's work. The gate may annotate it. It may
+             * not destroy it. Verification that hides the thing it cannot verify is
+             * not verification, it is censorship with extra steps.
+             */
             if (!codingTurnMayClaimSuccess(codingProof)) {
-              const failText = proofFailureCopy(codingProof, turnPlan);
-              const chips = (shopIntakeAsk?.chips || turnPlan.interrupt?.chips || []).map((chip) => ({
+              proofNote = proofFailureCopy(codingProof, turnPlan);
+              proofChips = (shopIntakeAsk?.chips || turnPlan.interrupt?.chips || []).map((chip) => ({
                 id: chip.id,
                 label: chip.label,
                 value: chip.value,
                 priority: chip.priority,
               }));
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: failText,
-                isError: true,
-                executionStatus: null,
-                codingProof: {
-                  ok: false,
-                  gaps: codingProof.gaps,
-                  evidence: codingProof.evidence,
-                  status: codingProof.status,
-                },
-                ...(chips.length ? { continueSet: { items: chips } } : {}),
-              } : m));
-              return;
             }
           }
 
@@ -1340,19 +1343,33 @@ export function useChatStream({
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: withTravelDegradedNotice(displayWithIntake, travelDegraded),
+            text: proofNote
+              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${proofNote}`.trim()
+              : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
             ...(codingProof ? {
+              // The real verdict. This was hardcoded to pass, which was true only
+              // because a failure returned before reaching here. Now that a failed
+              // proof lands with its build, it must report what it actually found.
               codingProof: {
-                ok: true,
-                gaps: [],
+                ok: Boolean(codingProof.ok),
+                gaps: codingProof.gaps || [],
                 evidence: codingProof.evidence,
-                status: 'pass',
+                status: codingProof.status,
                 repaired: codingProof.repaired,
               },
             } : {}),
             ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
-            ...(mergedContinueSet ? { continueSet: mergedContinueSet } : {}),
+            ...((mergedContinueSet || proofChips.length) ? {
+              continueSet: {
+                items: [
+                  ...(mergedContinueSet?.items || []),
+                  ...proofChips.filter(
+                    (chip) => !(mergedContinueSet?.items || []).some((item) => item.id === chip.id),
+                  ),
+                ],
+              },
+            } : {}),
             ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
             correlationId: responseCorrelationId,
             ...(travelPlaces ? { travelPlaces } : {}),

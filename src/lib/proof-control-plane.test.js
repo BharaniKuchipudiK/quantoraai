@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import { planCodingTurn } from './coding-turn-planner.js';
 import {
@@ -107,12 +109,48 @@ test('React App.jsx VFS proves for ordinary coding builds', () => {
   assert.equal(verdict.ok, true, verdict.detail);
 });
 
-test('proof failure copy names gaps without claiming done', () => {
+test('proof failure copy names the gaps and never claims the turn is done', () => {
   const copy = proofFailureCopy({
     gaps: ['at least 10 loadable catalog photos'],
     detail: 'proof failed',
-  }, { intakeAccept: { catalogTarget: 10 } });
-  assert.match(copy, /will not claim/i);
+  }, { intent: { kind: 'shop_build' }, intakeAccept: { catalogTarget: 10, expanded: true } });
+  assert.match(copy, /did not pass/i);
   assert.match(copy, /catalog photos/i);
   assert.doesNotMatch(copy, /Verified|runs clean/i);
+});
+
+test('a non-shop build is never answered with catalog photos and Add to Cart', () => {
+  /*
+   * This copy used to be written as REPLACEMENT text for the entire turn, and it
+   * talked about catalog photos and Add to Cart whatever had been asked for. A
+   * storage-hygiene dashboard came back as advice about a shop, with the real
+   * build deleted before anyone saw it. Shop wording belongs to shop turns only.
+   */
+  const copy = proofFailureCopy({
+    gaps: ['runnable Preview (HTML or React VFS)'],
+    detail: 'no runnable entry',
+  }, { intent: { kind: 'app_build' } });
+  assert.doesNotMatch(copy, /catalog photo|Add to Cart|Start with/i);
+  assert.match(copy, /runnable Preview/i);
+  // The note must say the build survived. That sentence is the whole difference
+  // between "your work was hidden" and "I could not verify your work".
+  assert.match(copy, /exactly what the model produced|Nothing was replaced/i);
+});
+
+test('INVARIANT: a failed proof never replaces the model output', () => {
+  /*
+   * The regression that cost a week: useChatStream assigned the failure copy
+   * straight onto the message text and returned, skipping the path that renders
+   * the build. The gate may annotate a turn. It may not delete it.
+   */
+  const hook = readFileSync(
+    path.join(import.meta.dirname, '..', 'hooks', 'useChatStream.js'),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    hook,
+    /text:\s*failText/,
+    'the proof failure copy must be appended as a note, never assigned as the message text',
+  );
+  assert.match(hook, /proofNote/, 'the failure copy should reach the turn as a note');
 });
