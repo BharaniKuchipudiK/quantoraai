@@ -22,7 +22,10 @@ function fmt(n: number, dp = 2): string {
 
 function asOfLine(source: string, asOf: string): string {
   const date = asOf.slice(0, 10);
-  return `As of ${date} · source: ${source}. This is a stored, sourced figure — not a model estimate.`;
+  // "stored" was true when every figure came from the ingested table. FX is now
+  // answered live first, so the word would be false half the time — and the
+  // sentence exists to be trusted. "Real" carries the same promise for both.
+  return `As of ${date} · source: ${source}. This is a real, sourced figure — not a model estimate.`;
 }
 
 /** Resolve base→quote from a direct row, or invert a quote→base row. */
@@ -54,7 +57,7 @@ export function fxLookupResult(
     return {
       resolved: false,
       stale: false,
-      text: `I don't have a stored **${base}→${quote}** rate yet. Quantora only quotes rates it has ingested from a real source (the ECB feed) — it will not invent one. Run the **Market Data Ingestion** workflow to populate FX, then ask again.`,
+      text: `I don't have a stored **${base}→${quote}** rate, and the live ECB feed didn't answer either. Quantora quotes only rates it holds from a real source — it will not invent one. Try again in a moment; if it keeps failing, run the **Market Data Ingestion** workflow to refill FX.`,
     };
   }
 

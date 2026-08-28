@@ -33,3 +33,109 @@ test("does not intercept a non-POST request", async () => {
   );
   assert.equal(handled, false);
 });
+
+/*
+ * FX answers live first, store second.
+ *
+ * Conversion used to be answerable only from the Supabase table that the Market
+ * Data Ingestion workflow fills, and that workflow never ran on a schedule — so
+ * the stored rate aged past the four-day staleness window and the desk refused
+ * every conversion until somebody clicked "Run workflow" by hand. Two
+ * independent paths now, and these tests hold that line.
+ */
+
+/** Collects the SSE text the gateway streams, so the answer can be read back. */
+function capturingRes() {
+  const chunks: string[] = [];
+  return {
+    chunks,
+    writeHead() {},
+    setHeader() {},
+    write(chunk: string) { chunks.push(chunk); },
+    end() {},
+    status() { return this; },
+    json() { return this; },
+    text() {
+      return chunks
+        .map((c) => { try { return JSON.parse(c.replace(/^data: /, "").trim())?.text; } catch { return null; } })
+        .filter(Boolean)
+        .join("");
+    },
+  };
+}
+
+function withFetch(handler: typeof fetch) {
+  const original = global.fetch;
+  global.fetch = handler;
+  return () => { global.fetch = original; };
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+test("FX: a live ECB rate answers the turn with no store involved", async () => {
+  const restore = withFetch((async () => new Response(
+    JSON.stringify({ date: today(), rates: { SGD: 1.3421 } }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  )) as typeof fetch);
+  try {
+    const res = capturingRes();
+    const handled = await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "convert 100 USD to SGD" }, headers: {} },
+      res,
+    );
+    assert.equal(handled, true);
+    assert.match(res.text(), /1 USD = 1\.3421 SGD/);
+    assert.match(res.text(), /100\.00 USD = 134\.21 SGD/);
+  } finally {
+    restore();
+  }
+});
+
+test("INVARIANT: with no store configured, a live rate still answers", async () => {
+  // Before the live path this turn was refused outright with "market data isn't
+  // connected on this deployment yet" — a real refusal on a deployment that
+  // needed no credential to answer, since the ECB feed is free and keyless.
+  const savedUrl = process.env.SUPABASE_URL;
+  const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const restore = withFetch((async () => new Response(
+    JSON.stringify({ date: today(), rates: { INR: 87.42 } }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  )) as typeof fetch);
+  try {
+    const res = capturingRes();
+    await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "USD to INR" }, headers: {} },
+      res,
+    );
+    assert.match(res.text(), /1 USD = 87\.4200 INR/);
+    assert.doesNotMatch(res.text(), /isn't connected/);
+  } finally {
+    restore();
+    if (savedUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = savedUrl;
+    if (savedKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey;
+  }
+});
+
+test("FX: a dead live feed refuses honestly rather than inventing a rate", async () => {
+  // With no store and no live answer there is nothing to quote. The one thing
+  // that must never happen is a number appearing anyway.
+  const savedUrl = process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_URL;
+  const restore = withFetch((async () => { throw new Error("ECONNRESET"); }) as typeof fetch);
+  try {
+    const res = capturingRes();
+    const handled = await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "USD to INR" }, headers: {} },
+      res,
+    );
+    assert.equal(handled, true);
+    assert.match(res.text(), /don't have a stored/);
+    assert.doesNotMatch(res.text(), /1 USD = \d/);
+  } finally {
+    restore();
+    if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
+  }
+});
