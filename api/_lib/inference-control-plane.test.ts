@@ -343,3 +343,44 @@ test('a retired model stays filtered out even when it is still listed', async ()
   });
   assert.equal(routes.filter((route) => route.id === 'vendor/retired-model').length, 0);
 });
+
+test('a batch endpoint is never routed to, whichever way it arrives', async () => {
+  /*
+   * Batch variants are asynchronous - they accept a job and answer later - so a
+   * turn routed to one never replies. They are a trap because they are CHEAP:
+   * google/gemini-3.7-flash:batch lists at $0.94 against $1.88 for the model
+   * that can actually stream, so choosing on price picks the broken one.
+   *
+   * discoverAnthropicFlagships already filtered them, which left every other
+   * entrance unguarded - an operator approving one, a pinned id, a curated row.
+   */
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'google/gemini-3.7-flash:batch',
+    fallbackModelIds: ['anthropic/claude-opus-5:batch', 'vendor/model-batch'],
+    models: [
+      { id: 'google/gemini-3.7-flash:batch', vision: true, pricingKind: 'paid' },
+      { id: 'anthropic/claude-opus-5:batch', pricingKind: 'paid' },
+      { id: 'vendor/model-batch', pricingKind: 'paid' },
+    ],
+    requiredCapabilities: ['text'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+  });
+  assert.equal(
+    routes.filter((r) => /batch/i.test(r.id)).length, 0,
+    'no batch endpoint may be planned as a route, primary or fallback',
+  );
+});
+
+test('a model whose name merely contains "batch" as a word part still routes', async () => {
+  // The guard must not eat a legitimate id. Only a :batch or -batch suffix.
+  const routes = await planInferenceRoutes({
+    primaryModelId: 'vendor/batchelor-7b',
+    fallbackModelIds: [],
+    models: [{ id: 'vendor/batchelor-7b', pricingKind: 'paid' }],
+    requiredCapabilities: ['text'],
+    geminiAvailable: false,
+    openRouterAvailable: true,
+  });
+  assert.equal(routes[0]?.id, 'vendor/batchelor-7b');
+});
