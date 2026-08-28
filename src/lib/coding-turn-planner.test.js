@@ -96,3 +96,11 @@ test('svg_only lesson prefers deterministic shop skills on agree', () => {
   assert.equal(plan.runSkillsFirst, true);
   assert.equal(plan.hints.preferDeterministicShopSkills, true);
 });
+
+/*
+ * The capability-door tests that lived here are gone with the code they
+ * covered. They passed while no production caller ever supplied the options
+ * they exercised, which made them a green light over a path users could never
+ * reach. The doors are now tested where they are actually used, against the
+ * gateway that knows a capability is missing.
+ */

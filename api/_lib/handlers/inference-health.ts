@@ -5,6 +5,7 @@ import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-
 import { fetchApiGatewayKey } from '../../autocomplete.js';
 import { authenticateAdminRequest } from '../admin-auth.js';
 import { probeGemini } from '../gemini-probe.js';
+import { probeOpenRouter } from '../openrouter-probe.js';
 
 /**
  * Resolve the Gemini credential the way the chat path does — environment
@@ -66,6 +67,44 @@ export default async function handler(req: any, res: any) {
     // Always 200: the report itself carries the verdict, and a non-2xx would
     // make a curl pipeline discard the only useful part of the answer.
     return res.status(200).json({ probe: 'gemini', ...report });
+  }
+
+  /*
+   * The OpenRouter probe.
+   *
+   * `openRouterConfigured` below is produced by resolveOpenRouterEnvKey, which
+   * checks the SHAPE OF A STRING. A revoked key, a key with no credit left, a
+   * key from a deleted account and a key that works all report `true`
+   * identically — the same defect that was found and fixed for Gemini earlier
+   * the same day, left in place for the other provider.
+   *
+   * /auth/key answers it for real, for free, without spending a token, and
+   * returns the account's usage against its limit — so an exhausted balance
+   * becomes a fact instead of an inference drawn from a wall of failed turns.
+   * Generation is opt-in with ?generate=1&model=<id>, because that one costs
+   * money.
+   */
+  if (String(req.query?.probe || '') === 'openrouter') {
+    const failure = await authenticateAdminRequest(req);
+    if (failure) return res.status(failure.status).json({ ok: false, error: failure.error });
+
+    const envKey = resolveOpenRouterEnvKey();
+    let key: string | null = envKey || null;
+    let source: string | null = envKey ? 'env:OPENROUTER_API_KEY' : null;
+    if (!key) {
+      try {
+        const viaGateway = await fetchApiGatewayKey('OPENROUTER');
+        if (viaGateway) { key = String(viaGateway).trim(); source = 'supabase-api-gateway'; }
+      } catch { /* unreachable gateway and no key are the same thing from here */ }
+    }
+
+    const report = await probeOpenRouter({
+      key,
+      source,
+      model: typeof req.query?.model === 'string' && req.query.model ? req.query.model : null,
+      generate: String(req.query?.generate ?? '0') === '1',
+    });
+    return res.status(200).json({ probe: 'openrouter', ...report });
   }
 
   const openRouterHint = openRouterEnvPublicHint();

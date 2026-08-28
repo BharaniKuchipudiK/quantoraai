@@ -34,6 +34,7 @@ import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
 import {
   proveCodingTurn,
   codingTurnMayClaimSuccess,
@@ -162,10 +163,47 @@ async function persistPclContinuity({
   }
 }
 
+/**
+ * What went wrong, in terms the person reading it can act on.
+ *
+ * This used to collapse every failure into "The AI gateway could not complete
+ * the request with X" — a sentence that is true of a dead key, an empty
+ * balance, an oversize prompt, a rate limit and an upstream outage alike, and
+ * useful for none of them. `status` was accepted as an argument and then
+ * thrown away, and the payload arrives as `{}` whenever the error body is not
+ * JSON, so the generic line was what people actually saw.
+ *
+ * Debugging it then took a screenshot and an investigation. The status was
+ * sitting right there the whole time.
+ *
+ * A server-provided message still wins, because it knows more than a status
+ * code does. When there is none, say which code came back and what that class
+ * of failure means — above all whether retrying can possibly help.
+ */
 function responseErrorMessage(status, payload, modelName) {
   if (status === 401 && payload?.requiresAuth) return payload.error || 'Please sign in to continue.';
-  if (status === 429) return payload?.error || 'Too many requests. Please try again shortly.';
-  return payload?.error || `The AI gateway could not complete the request with ${modelName || 'the selected model'}.`;
+  if (payload?.error) return payload.error;
+
+  const who = modelName || 'the selected model';
+  if (status === 401 || status === 403) {
+    return `${who} refused the request as unauthorised (HTTP ${status}). That is the provider credential on this deployment, not your prompt — retrying will not clear it.`;
+  }
+  if (status === 402) {
+    return `${who} needs provider credit this deployment does not have (HTTP 402). Top up the provider account, or paste your own key under Privacy Vault → Session-only provider keys.`;
+  }
+  if (status === 404) {
+    return `${who} is not being served under that name (HTTP 404) — the model id is stale, not your prompt.`;
+  }
+  if (status === 413) {
+    return `This turn is too large for ${who} (HTTP 413). Shorten the message or send fewer images.`;
+  }
+  if (status === 429) {
+    return `${who} is rate limiting this deployment (HTTP 429). Waiting a minute usually clears it; a free-tier model hits this fastest.`;
+  }
+  if (status >= 500) {
+    return `${who} is failing upstream (HTTP ${status}) — the provider, not your prompt. Another model will usually work right now.`;
+  }
+  return `${who} could not complete the request (HTTP ${status}).`;
 }
 
 function activeStudioDomain(chatSessions, activeSessionId) {
@@ -432,7 +470,24 @@ export function useChatStream({
     const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
     let targetModel = pinnedOrOverride;
 
-    const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    /*
+     * The transcript has to FIT, not just be short enough by count.
+     *
+     * The server caps history at 100 items and nothing capped its size, while a
+     * Coding Desk turn carries the whole HTML document it built. A few pages, or
+     * one page with inline data-URI images, and the request body passes the
+     * platform's limit — where it is rejected BEFORE the function runs, so there
+     * is no handler to write a JSON error and nothing in any log. The browser
+     * reads a non-JSON body, the payload becomes {}, and every model appears to
+     * fail at once, including one that talks straight to Google.
+     *
+     * Worse, retrying made it worse: each attempt added turns, and the only
+     * escape was to start a new chat and lose the work.
+     */
+    const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    const historyBudget = budgetHistory(filteredMessages);
+    const cleanMessages = historyBudget.history;
+    const historyNotice = describeHistoryBudget(historyBudget);
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
     const currentOfficeArtifact = activeOfficeArtifact(messages);
@@ -1433,8 +1488,13 @@ export function useChatStream({
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: proofNote
-              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${proofNote}`.trim()
+            /*
+             * The trim notice rides with the other turn notes, never alone and
+             * never silent: a platform that quietly forgets a conversation
+             * leaves somebody wondering why it stopped remembering.
+             */
+            text: (proofNote || historyNotice)
+              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${[historyNotice, proofNote].filter(Boolean).join('\n\n')}`.trim()
               : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
             ...(codingProof ? {

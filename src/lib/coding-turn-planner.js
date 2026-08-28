@@ -238,6 +238,18 @@ export function planCodingTurn({
     && !intakeAccept.expanded
   );
 
+  /*
+   * Capability doors are NOT decided here.
+   *
+   * A door path lived in this function and no production caller ever passed it
+   * anything, so `doorsBlocking` returned empty on every real turn and not one
+   * of the messages could reach a user. It was a mechanism in the wrong layer:
+   * the planner would have had to GUESS which capabilities an ask needs, while
+   * the gateways that serve those asks already KNOW when a capability is
+   * missing — the market-data gateway checks the store before it answers.
+   *
+   * So the doors live at the refusal sites, where the knowledge is.
+   */
   if (interrupt?.blockModel || forceInterrupt || (skillsMissing.length > 0 && intent.kind === 'shop_oversize')) {
     const partner = interrupt || {
       kind: 'shop-catalog-oversize',
