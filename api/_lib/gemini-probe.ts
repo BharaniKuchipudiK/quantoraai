@@ -49,7 +49,7 @@ export type GeminiKeyShape = {
   source: string | null;
   length: number;
   last4: string;
-  looksLikeGoogleKey: boolean;
+  matchesKnownKeyFormat: boolean;
   looksRedacted: boolean;
 };
 
@@ -95,7 +95,13 @@ export function describeKeyShape(key: string | null | undefined, source: string 
     source: value ? source : null,
     length: value.length,
     last4: value.length >= 4 ? value.slice(-4) : '',
-    looksLikeGoogleKey: /^AIza[\w-]{10,}$/.test(value),
+    /*
+     * A FORMAT HINT, never a verdict. Google issues keys in more than one
+     * shape and adds new ones without announcement: a key that fails this test
+     * listed 53 models and streamed a complete answer. Whether a key works is
+     * decided by Google, and only ever by Google.
+     */
+    matchesKnownKeyFormat: /^AIza[\w-]{10,}$/.test(value),
     looksRedacted: value.length > 0 && REDACTION_PLACEHOLDER.test(value),
   };
 }
@@ -342,12 +348,25 @@ export function verdictFor(key: GeminiKeyShape, list: GeminiListResult, generate
   if (key.looksRedacted) {
     return `The Gemini key here is a redaction placeholder, not a key (${key.length} chars ending ${key.last4}). Nothing was ever sent to Google.`;
   }
-  if (!key.looksLikeGoogleKey) {
-    return `The Gemini key does not have the shape of a Google API key (${key.length} chars ending ${key.last4}, expected to start AIza). It is probably the wrong secret in the right variable.`;
-  }
+  /*
+   * EVIDENCE OUTRANKS THE HEURISTIC, ALWAYS.
+   *
+   * The shape check used to sit HERE, above the results, and it returned "this
+   * is not a Google API key" over a report showing 53 models listed and a
+   * complete streamed answer beside it. The heuristic was stale — Google issues
+   * key formats this pattern has never seen — and because it ran first, it
+   * overrode two live proofs from Google itself.
+   *
+   * That is the same defect as reporting a truncated stream as a success, only
+   * inverted: a rule about what an answer OUGHT to look like, placed above the
+   * answer. The format may now only ever explain a failure, never declare one.
+   */
   if (!list.ok) {
+    const shapeHint = key.matchesKnownKeyFormat
+      ? ''
+      : ` The key also does not match any Google key format this probe knows (${key.length} chars ending ${key.last4}), so the wrong secret in the right variable is worth ruling out — though that pattern is a hint, not proof.`;
     if (list.status === 400 || list.status === 403) {
-      return `Google rejected the key when merely listing models (HTTP ${list.status}: ${list.error}). Listing consumes no quota, so this is the credential or the project — not billing and not the code.`;
+      return `Google rejected the key when merely listing models (HTTP ${list.status}: ${list.error}). Listing consumes no quota, so this is the credential or the project — not billing and not the code.${shapeHint}`;
     }
     if (list.status === 429) {
       return 'Google is rate limiting this key at the listing call, before any generation. The project is over quota.';
