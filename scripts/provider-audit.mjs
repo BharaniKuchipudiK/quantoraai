@@ -108,8 +108,16 @@ const geminiKey = usable(process.env.GEMINI_API_KEY) || usable(fromFile.GEMINI_A
 const orKey = usable(process.env.OPENROUTER_API_KEY) || usable(fromFile.OPENROUTER_API_KEY);
 const tail = (k) => (k ? `…${String(k).slice(-4)}` : 'not found');
 
-if (!geminiKey && !orKey) {
-  console.error('No API keys found.\n');
+/*
+ * A missing key is not a reason to stop.
+ *
+ * The OpenRouter catalogue is PUBLIC - prices, context windows and vision flags
+ * are readable with no credential at all, and that listing is the whole point of
+ * a first run. Only the Gemini listing and --test need a real key. Refusing to
+ * run without one threw away the free answer along with the paid one.
+ */
+if (!geminiKey && !orKey && doTest) {
+  console.error('--test needs a real key, and none was found.\n');
   if (redactedNames.length) {
     console.error(`${envFilesSeen.join(' and ')} contains ${redactedNames.join(' and ')}, but the`);
     console.error('value is a placeholder, not the key. Vercel does not export the value of an');
@@ -143,6 +151,15 @@ if (!geminiKey && !orKey) {
   console.error('    export GEMINI_API_KEY=your-google-key');
   console.error('    export OPENROUTER_API_KEY=your-openrouter-key');
   process.exit(2);
+}
+
+/** Printed once at the top so a keyless run is never mistaken for a full one. */
+function keyNotes() {
+  if (redactedNames.length) {
+    line(`  ${redactedNames.join(' and ')} in ${envFilesSeen.join('/')} is a PLACEHOLDER, not the key.`);
+    line('  Vercel does not export the value of an env var marked Sensitive.');
+    line('  The public catalogue below still works; Gemini listing and --test do not.');
+  }
 }
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -205,7 +222,12 @@ async function checkOpenRouterKey() {
 
 /** The public OpenRouter catalogue, with real prices. */
 async function listOpenRouter() {
-  const res = await fetch(`${OR_BASE}/models`, { headers: { Authorization: `Bearer ${orKey}` } });
+  // Send no Authorization at all when there is no usable key: `Bearer null`
+  // is a malformed credential and gets rejected, where no header is simply
+  // an anonymous read of a public catalogue.
+  const res = await fetch(`${OR_BASE}/models`, {
+    headers: orKey ? { Authorization: `Bearer ${orKey}` } : {},
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const rows = (await res.json()).data || [];
   return rows.map((m) => ({
@@ -373,8 +395,9 @@ function extract(raw) {
 async function main() {
   const candidates = [];
   rule('KEYS FOUND');
-  line(`  Google       ${geminiKey ? 'yes  ' + tail(geminiKey) : 'NO - Gemini section will be skipped'}`);
-  line(`  OpenRouter   ${orKey ? 'yes  ' + tail(orKey) : 'NO - OpenRouter section will be skipped'}`);
+  line(`  Google       ${geminiKey ? 'yes  ' + tail(geminiKey) : 'no  — Gemini listing needs one'}`);
+  line(`  OpenRouter   ${orKey ? 'yes  ' + tail(orKey) : 'no  — catalogue is public, so it still lists'}`);
+  keyNotes();
 
   if (geminiKey) {
     rule('GOOGLE — what your paid key can actually reach');
@@ -397,10 +420,10 @@ async function main() {
     rule('GOOGLE — skipped (GEMINI_API_KEY not set)');
   }
 
-  if (orKey) {
+  {
     rule('OPENROUTER — catalogue, cheapest capable first');
     try {
-      const auth = await checkOpenRouterKey();
+      const auth = orKey ? await checkOpenRouterKey() : { ok: false, why: 'no key present' };
       line(auth.ok
         ? `  key OK${auth.label ? ` (${auth.label})` : ''}${auth.usage != null ? ` · $${Number(auth.usage).toFixed(2)} used` : ''}`
         : `  KEY NOT ACCEPTED — ${auth.why}. The listing below is the PUBLIC catalogue and`
@@ -423,8 +446,6 @@ async function main() {
     } catch (error) {
       line(`  FAILED to list: ${error.message}`);
     }
-  } else {
-    rule('OPENROUTER — skipped (OPENROUTER_API_KEY not set)');
   }
 
   if (!doTest) {
