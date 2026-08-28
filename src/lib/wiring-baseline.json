@@ -8,6 +8,7 @@
   "api/_lib/office-generation-budget.js::officeWorstCaseGenerationMs",
   "api/_lib/office-provider-contract.js::runProviderFailover",
   "api/_lib/office-semantic-loop.js::runOfficeSemanticLoop",
+  "api/_lib/paid-route-gate.ts::resetPaidRouteCache",
   "api/_lib/pcl-advisor-intelligence.ts::AdvisorDomainRegistry",
   "api/_lib/pcl-advisor-intelligence.ts::formatPclAdvisorContract",
   "api/_lib/provider-resilience.ts::resetProviderResilienceState",

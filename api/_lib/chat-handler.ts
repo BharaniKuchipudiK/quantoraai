@@ -62,6 +62,7 @@ import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-ou
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { briefNeedsJob } from "../../src/lib/build-job.js";
+import { paidRouteAllowed } from "./paid-route-gate.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
@@ -848,10 +849,21 @@ export default async function handler(req: any, res: any) {
       return [...merged.values()];
     })();
 
+    /*
+     * The brake. Read the provider's own meter before offering a paid rung.
+     *
+     * The whole cost-control subsystem — recordModelSpend, readMonthlySpend,
+     * canOfferPaidLastResort, decidePaidSpend — was written, tested and called
+     * by nothing, so this platform could not see its spend or refuse a paid
+     * call when the float was gone. It fails closed: a meter that cannot be
+     * read is a refusal, never an assumption of zero.
+     */
+    const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       models: routePlanningModels,
+      paidLastResortAllowed: paidVerdict.allowed,
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
         : [...textCapabilities],
