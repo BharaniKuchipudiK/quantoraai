@@ -4,6 +4,7 @@ import { type StudioDomain } from "../studio-domains.js";
 import { inferStudioDomain } from "../studio-domain-inference.js";
 import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
 import { detectBuildIntent } from "../../../shared/build-intent.js";
+import { normalizeStudyRequestContext, type StudyRequestContext } from "../study-adaptive-learning.js";
 
 export type CommunicationRequest = {
   message: string;
@@ -24,6 +25,7 @@ export type CommunicationRequest = {
   buildMode: boolean;
   guidedBuild: boolean;
   featureSuggest: boolean;
+  studyContext: StudyRequestContext | null;
 };
 
 function hasLiveCodingDeskPacket(deskContext: unknown): boolean {
@@ -78,5 +80,6 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     buildMode,
     guidedBuild: body?.guidedBuild === true,
     featureSuggest: body?.featureSuggest === true,
+    studyContext: normalizeStudyRequestContext(body?.studyContext, studioDomain),
   };
 }
