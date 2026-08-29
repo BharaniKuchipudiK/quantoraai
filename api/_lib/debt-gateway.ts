@@ -52,7 +52,7 @@ export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  if (!intent.debts.length || intent.extraMonthly === null) {
+  if (!intent.debts.length || (intent.extraMonthly === null && intent.statedIncome === null)) {
     /*
      * Same defect as the savings gateway: parseDebtIntent reports matched:true on
      * the trigger word alone, so "how does debt affect my credit score?" consumed
@@ -63,7 +63,18 @@ export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
     return false;
   }
 
-  const comparison = comparePayoff(intent.debts, intent.extraMonthly);
+  /*
+   * A stated income is a constraint, not a budget. When the minimums exceed it
+   * the simulator says so and formatDebtPlan prints the shortfall instead of a
+   * payoff date — the one answer that is both derivable and true for someone
+   * whose obligations are larger than their income.
+   */
+  /*
+   * With debts and an income but no stated extra, "nothing on top of the
+   * minimums" is the right reading — and it is the reading that lets the
+   * shortfall check below fire for the person who most needs it.
+   */
+  const comparison = comparePayoff(intent.debts, intent.extraMonthly ?? 0, intent.statedIncome);
   sendStream(res, requestId, formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums }));
   return true;
 }
