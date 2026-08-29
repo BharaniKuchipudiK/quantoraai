@@ -247,3 +247,76 @@ test('a clean page produces no repair account at all', () => {
   assert.equal(repair.changed, false);
   assert.equal(describeRepair(repair), '');
 });
+
+// ------------------------------------------------------------- interaction --
+
+/*
+ * The passes have to survive each other on ONE page.
+ *
+ * repairDeadLinks addresses the document by offset; every other pass matches on
+ * strings. An earlier version ran the offset pass third, reasoning that the
+ * passes before it rewrite hrefs "in place" — false, since "#faq" becoming
+ * "#faq-section" is four characters longer and shifts everything after it.
+ * Nothing covered two passes firing on one page, so nothing caught it.
+ */
+test('a page needing several kinds of repair at once gets all of them', () => {
+  const page = [
+    '<!DOCTYPE html><html><body>',
+    '<nav><a href="#faq">Questions</a> <a href="#">Pricing</a></nav>',
+    '<section id="faq-section"><h2>FAQ</h2></section>',
+    '<section id="pricing">',
+    '<table><tr><th>Item</th><th>Price</th></tr>',
+    '<tr><td>A</td><td>1200</td></tr><tr><td>B</td><td>800</td></tr>',
+    '<tr><td>Total</td><td>1900</td></tr></table>',
+    '</section>',
+    '</body></html>',
+  ].join('\n');
+
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.match(repair.html, /href="#faq-section"/, 'the broken anchor was retargeted');
+  assert.match(repair.html, /<a href="#pricing">Pricing<\/a>/, 'the dead link was connected');
+  assert.match(repair.html, /<td>Total<\/td><td>2000<\/td>/, 'the total was corrected');
+  assert.deepEqual(inspectBuildTruth(repair.html).findings, [], 'and the page is genuinely clean');
+});
+
+// ------------------------------------------------------------- file links --
+
+/*
+ * NOTE ON SCOPE: findBrokenLinks only scans <a> tags, so a broken <link href>
+ * stylesheet or <script src> is never detected in the first place. That is a
+ * Phase 01 detection gap, recorded here rather than widened inside a repair
+ * change — it would move finding counts across every build on the platform.
+ */
+test('a link is pointed at the file of that name the build shipped', () => {
+  const page = '<!DOCTYPE html><html><body><a href="assets/guide.html">Guide</a></body></html>';
+  const files = ['index.html', 'guide.html'];
+  const repair = repairBuild(page, inspectBuildTruth(page, { files }).findings, { files });
+  assert.match(repair.html, /href="guide\.html"/, 'the wrong directory was corrected');
+  assert.equal(repair.fixes.length, 1);
+  assert.match(repair.fixes[0].what, /the file of that name this build shipped/);
+});
+
+test('a near-miss on the NAME itself is refused, not guessed', () => {
+  // "guid.html" against "guide.html" is a typo somebody may have meant either
+  // way. Picking one is the guess this module exists not to make.
+  const page = '<!DOCTYPE html><html><body><a href="guid.html">Guide</a></body></html>';
+  const files = ['index.html', 'guide.html'];
+  const repair = repairBuild(page, inspectBuildTruth(page, { files }).findings, { files });
+  assert.equal(repair.fixes.length, 0);
+  assert.match(repair.refusals[0].why, /creating a page nobody asked for/);
+});
+
+test('two shipped files sharing a basename are ambiguous, so refused', () => {
+  const page = '<!DOCTYPE html><html><body><a href="docs/notes.md">Notes</a></body></html>';
+  const files = ['index.html', 'a/notes.md', 'b/notes.md'];
+  const repair = repairBuild(page, inspectBuildTruth(page, { files }).findings, { files });
+  assert.equal(repair.fixes.length, 0, 'two candidates is a guess');
+  assert.equal(repair.refusals.length, 1);
+});
+
+test('a file link is refused exactly once, not by two passes', () => {
+  const page = '<!DOCTYPE html><html><body><a href="about.html">About</a></body></html>';
+  const files = ['index.html'];
+  const repair = repairBuild(page, inspectBuildTruth(page, { files }).findings, { files });
+  assert.equal(repair.refusals.length, 1, 'one mistake must not be reported as two');
+});

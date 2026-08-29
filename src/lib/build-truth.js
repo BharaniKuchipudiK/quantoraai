@@ -269,7 +269,9 @@ export function findBrokenLinks(html, { files = [] } = {}) {
       if (path && !known.has(path)) {
         findings.push({
           kind: 'broken-link',
-          data: { file: path },
+          // `target` is the raw href as written. The repair pass needs the
+          // string that is actually in the document, not the normalised path.
+          data: { file: path, target },
           what: `"${target}" points at a file that wasn't built.`,
           where: match[0].slice(0, 120),
         });

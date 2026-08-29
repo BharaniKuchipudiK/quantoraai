@@ -40,6 +40,18 @@
  * to single hyphens, so `pricing`, `Pricing`, `pricing-section` and `our_pricing`
  * become comparable without becoming interchangeable.
  */
+/** A literal string, safe to drop into a RegExp. */
+function escapeForRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Kept as one string because two paths now reach it: the file link that names
+ * nothing this build shipped, and the one whose basename is ambiguous. A person
+ * reading the account should not be able to tell which branch produced it.
+ */
+export const MISSING_FILE_REFUSAL = 'it points at a file, and creating a page nobody asked for is not a repair';
+
 function slug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -83,11 +95,10 @@ export function repairAnchors(html, findings) {
 
   for (const finding of findings) {
     if (finding.kind !== 'broken-link') continue;
+    // A file reference is repairFileLinks' to judge. Refusing it here too would
+    // report one mistake as two.
     const target = finding.data?.anchor;
-    if (!target) {
-      refusals.push({ finding, why: 'it points at a file, and creating a page nobody asked for is not a repair' });
-      continue;
-    }
+    if (!target) continue;
     const resolved = resolveAnchor(target, ids);
     if (!resolved) {
       refusals.push({
@@ -134,6 +145,64 @@ export function refuseUnfixable(findings) {
   return findings
     .filter((finding) => why[finding.kind])
     .map((finding) => ({ finding, why: why[finding.kind] }));
+}
+
+/**
+ * Point a link at the file of that name the build actually shipped.
+ *
+ * The blanket refusal — "creating a page nobody asked for is not a repair" —
+ * is right about a link to a page that does not exist, and stays. It was also
+ * catching a different case: <link href="assets/styles.css"> in a build whose
+ * one stylesheet is styles.css. Nothing is missing there; the path is wrong,
+ * and the file it means is sitting in the same build.
+ *
+ * The rule is deliberately narrow: the referenced BASENAME must match exactly
+ * one shipped file. A wrong directory is derivable. A near-miss on the name
+ * itself is not — "style.css" against "styles.css" is a typo somebody may have
+ * meant either way, and picking one is the guess this module refuses to make.
+ */
+export function repairFileLinks(html, findings, files = []) {
+  const source = String(html || '');
+  const shipped = (files || []).map(String);
+  const basename = (value) => String(value || '').split(/[\\/]/).pop().toLowerCase();
+  const fixes = [];
+  const refusals = [];
+  let out = source;
+
+  for (const finding of findings) {
+    if (finding.kind !== 'broken-link') continue;
+    const { file, target } = finding.data || {};
+    if (!file || !target) continue;
+
+    const wanted = basename(file);
+    const matches = wanted ? shipped.filter((path) => basename(path) === wanted) : [];
+    if (matches.length !== 1) {
+      refusals.push({ finding, why: MISSING_FILE_REFUSAL });
+      continue;
+    }
+    const resolved = matches[0];
+    if (resolved === target) {
+      refusals.push({ finding, why: MISSING_FILE_REFUSAL });
+      continue;
+    }
+    /*
+     * Every reference carrying this exact href moves together, which is what
+     * repairAnchors already does for a shared broken anchor: they are the same
+     * mistake written twice, not two decisions.
+     */
+    const before = out;
+    out = out.replace(
+      new RegExp(`(\\s(?:href|src)\\s*=\\s*["'])${escapeForRegExp(target)}(["'])`, 'gi'),
+      `$1${resolved}$2`,
+    );
+    if (out === before) {
+      refusals.push({ finding, why: MISSING_FILE_REFUSAL });
+      continue;
+    }
+    fixes.push({ finding, what: `Pointed "${target}" at "${resolved}", the file of that name this build shipped.` });
+  }
+
+  return { html: out, fixes, refusals };
 }
 
 /**
@@ -249,22 +318,32 @@ export function repairTotals(html, findings) {
  * is claiming to have finished, which is the failure this whole line of work
  * exists to stop.
  */
-export function repairBuild(html, findings = []) {
-  const anchors = repairAnchors(html, findings);
+export function repairBuild(html, findings = [], { files = [] } = {}) {
   /*
-   * Dead links run against the ANCHOR-REPAIRED html on purpose: the offsets in
-   * a dead-control finding were measured on the original source, and anchor
-   * repair only ever rewrites an href's value in place, never the length of a
-   * tag it did not touch. Reordering these two would break that.
+   * ORDER MATTERS, and only for one reason.
+   *
+   * repairDeadLinks is the single pass that addresses the document by OFFSET —
+   * a dead-control finding carries `at` and `length` measured against the
+   * source as inspected. Every other pass matches on strings or on the finding
+   * itself, so their results do not depend on running order.
+   *
+   * That makes the offset pass go first, on the pristine html. An earlier
+   * version ran it third, on the reasoning that the passes before it rewrite
+   * hrefs "in place" — which is false: "#faq" becoming "#faq-section" is four
+   * characters longer, and every offset after it in the document shifts. The
+   * order below is the fix, not a preference.
    */
-  const deadLinks = repairDeadLinks(anchors.html, findings);
-  const totals = repairTotals(deadLinks.html, findings);
+  const deadLinks = repairDeadLinks(html, findings);
+  const anchors = repairAnchors(deadLinks.html, findings);
+  const fileLinks = repairFileLinks(anchors.html, findings, files);
+  const totals = repairTotals(fileLinks.html, findings);
   return {
     html: totals.html,
     changed: totals.html !== String(html || ''),
-    fixes: [...anchors.fixes, ...deadLinks.fixes, ...totals.fixes],
+    fixes: [...anchors.fixes, ...fileLinks.fixes, ...deadLinks.fixes, ...totals.fixes],
     refusals: [
       ...anchors.refusals,
+      ...fileLinks.refusals,
       ...deadLinks.refusals,
       ...totals.refusals,
       ...refuseUnfixable(findings),
