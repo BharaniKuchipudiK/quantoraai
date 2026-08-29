@@ -3368,7 +3368,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   activeSessionId={activeSessionId}
                   conversationContext={conversationContext}
                   messages={messages}
-                  updateActiveSession={updateActiveSession}
                   isLight={isLight}
                   textColor={textColor}
                   subtextColor={subtextColor}

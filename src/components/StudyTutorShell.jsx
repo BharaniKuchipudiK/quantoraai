@@ -1,15 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import { gradeStudyCheck, studyCheckOutcomeFact } from '../lib/study-tutor-brief.js';
-import { studyLessonAsk, studyQuizAsk } from '../lib/study-learning-resources.js';
-import { miniPracticeFor } from '../lib/study-practice-desk.js';
+import { studyLessonAsk, studyPracticeAsk, studyQuizAsk } from '../lib/study-learning-resources.js';
 
 /**
  * Conversation-first Study shell.
  *
- * One compact learning beat: topic, honest state, three actions, and only the
- * currently-active practice/check expanded below. There is no second dashboard
- * behind this surface; richer work belongs in the conversation when requested.
+ * One compact learning beat: topic, evidence state, and three actions. Only a
+ * server-issued check expands here; richer work belongs in the conversation.
  */
 export default function StudyTutorShell({
   brief,
@@ -18,23 +15,15 @@ export default function StudyTutorShell({
   subtextColor,
   onAsk,
   onSend,
-  onCheckOutcome,
-  onEvidence,
   assessment,
   onRequestAssessment,
   onSubmitAssessment,
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [activity, setActivity] = useState(null);
-  const [localResult, setLocalResult] = useState(null);
 
   const topic = brief?.label || 'this topic';
-  const check = brief?.check || null;
-  const practice = useMemo(() => miniPracticeFor(brief?.conceptId, topic), [brief?.conceptId, topic]);
   const gaps = brief?.gaps || [];
-  const competencies = brief?.competencies || [];
-  const encouragement = brief?.encouragement || { glyph: '📗', text: 'One idea. Then one check.' };
-  const progress = brief?.progress || { caption: 'No fake score. A filled bar only after a real check.' };
   const verifiedResult = assessment?.result || null;
 
   const askOrSend = (text) => {
@@ -43,30 +32,16 @@ export default function StudyTutorShell({
   };
 
   const requestCheck = async () => {
-    setLocalResult(null);
     setActivity('check');
     if (onRequestAssessment) {
       const outcome = await onRequestAssessment();
       if (!outcome?.fallback) return;
-      setActivity('local-check');
-      return;
-    }
-    if (check) {
-      setActivity('local-check');
+      askOrSend(studyQuizAsk(topic));
+      setActivity(null);
       return;
     }
     askOrSend(studyQuizAsk(topic));
     setActivity(null);
-  };
-
-  const submitLocal = (optionId) => {
-    if (!check || localResult) return;
-    const graded = gradeStudyCheck(check, optionId);
-    if (!graded) return;
-    setLocalResult(graded);
-    if (graded.evidence) onEvidence?.(graded.evidence);
-    const fact = studyCheckOutcomeFact(topic, graded.correct);
-    if (fact) onCheckOutcome?.(fact);
   };
 
   const actionStyle = (primary = false) => ({
@@ -163,12 +138,6 @@ export default function StudyTutorShell({
               </strong>
               <span style={{ color: subtextColor, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>· {stateLabel}</span>
             </div>
-            <div
-              data-quantora-study-gaps="true"
-              style={{ color: subtextColor, fontSize: '0.70rem', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              Next: {brief?.next || 'One check, then decide the next move.'}
-            </div>
           </div>
 
           <button type="button" title="Close Study focus" aria-label="Close Study focus" onClick={() => setDismissed(true)} style={iconButtonStyle}>
@@ -178,7 +147,7 @@ export default function StudyTutorShell({
 
         <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap', marginTop: '7px' }}>
           <button type="button" onClick={() => askOrSend(studyLessonAsk(topic))} style={actionStyle(false)}>Explain</button>
-          <button type="button" onClick={() => setActivity('practice')} style={actionStyle(false)}>Practice</button>
+          <button type="button" onClick={() => askOrSend(studyPracticeAsk(topic))} style={actionStyle(false)}>Practice</button>
           <button
             type="button"
             aria-label="Test me on this"
@@ -189,33 +158,6 @@ export default function StudyTutorShell({
             {assessment?.status === 'loading' ? 'Preparing…' : assessment?.status === 'grading' ? 'Checking…' : 'Check'}
           </button>
         </div>
-
-        <div style={{ marginTop: '7px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', color: subtextColor, fontSize: '0.68rem' }}>
-          <span data-quantora-study-encouragement="true">{encouragement.glyph} {encouragement.text}</span>
-          <span aria-hidden="true">·</span>
-          <span>{verifiedResult?.correct ? 'Verified evidence recorded.' : progress.caption}</span>
-          <span data-quantora-study-competencies="true" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <span data-quantora-study-competency-active={competencies.length ? 'true' : 'false'}>
-              {competencies.length ? `${competencies.length} skill signal${competencies.length === 1 ? '' : 's'}` : 'Skills not checked'}
-            </span>
-          </span>
-        </div>
-
-        {activity === 'practice' ? (
-          <div
-            data-quantora-study-inline-activity="practice"
-            style={{ marginTop: '9px', padding: '10px 11px', borderRadius: '11px', background: isLight ? '#f8fafc' : 'rgba(2,6,23,0.34)', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.18)' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-              <strong style={{ color: textColor, fontSize: '0.78rem' }}>{practice.title}</strong>
-              <button type="button" aria-label="Close practice" onClick={() => setActivity(null)} style={iconButtonStyle}><X size={14} /></button>
-            </div>
-            <div style={{ color: subtextColor, fontSize: '0.75rem', lineHeight: 1.45 }}>{practice.setup}</div>
-            <ol style={{ color: textColor, fontSize: '0.75rem', lineHeight: 1.45, margin: '6px 0 0', paddingLeft: '18px' }}>
-              {practice.questions.slice(0, 3).map((question) => <li key={question}>{question}</li>)}
-            </ol>
-          </div>
-        ) : null}
 
         {activity === 'check' && assessment?.item ? (
           <div
@@ -246,8 +188,7 @@ export default function StudyTutorShell({
                 data-quantora-study-verified-result={assessment.result.correct ? 'correct' : 'incorrect'}
                 style={{ marginTop: '8px', color: assessment.result.correct ? (isLight ? '#047857' : '#6ee7b7') : (isLight ? '#9f1239' : '#fb7185'), fontSize: '0.75rem', lineHeight: 1.45 }}
               >
-                {assessment.result.correct ? 'Verified response recorded — the evidence ledger, not self-report, now informs mastery.' : 'Verified gap recorded — repair this idea, then try a changed example.'}
-                {assessment.result.explanation ? ` ${assessment.result.explanation}` : ''}
+                {assessment.result.explanation || stateLabel}
               </div>
             ) : null}
             {assessment?.error ? <div style={{ marginTop: '6px', color: isLight ? '#9f1239' : '#fb7185', fontSize: '0.72rem' }}>{assessment.error}</div> : null}
@@ -266,31 +207,6 @@ export default function StudyTutorShell({
           </div>
         ) : null}
 
-        {activity === 'local-check' && check ? (
-          <div
-            data-quantora-study-inline-activity="check"
-            style={{ marginTop: '9px', padding: '10px 11px', borderRadius: '11px', background: isLight ? '#fff7ed' : 'rgba(124,45,18,0.18)', border: isLight ? '1px solid #fed7aa' : '1px solid rgba(251,146,60,0.25)' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-              <strong style={{ color: textColor, fontSize: '0.78rem' }}>{check.prompt}</strong>
-              <button type="button" aria-label="Close check" onClick={() => setActivity(null)} style={iconButtonStyle}><X size={14} /></button>
-            </div>
-            <div style={{ display: 'grid', gap: '6px', marginTop: '8px' }}>
-              {(check.options || []).map((option) => (
-                <button
-                  type="button"
-                  key={option.id}
-                  disabled={Boolean(localResult)}
-                  onClick={() => submitLocal(option.id)}
-                  style={{ ...actionStyle(false), textAlign: 'left', borderRadius: '10px', width: '100%' }}
-                >
-                  {option.text}
-                </button>
-              ))}
-            </div>
-            {localResult ? <div style={{ marginTop: '8px', color: subtextColor, fontSize: '0.75rem', lineHeight: 1.45 }}>{localResult.message}</div> : null}
-          </div>
-        ) : null}
       </section>
 
     </div>

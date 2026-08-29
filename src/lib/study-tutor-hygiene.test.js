@@ -9,7 +9,6 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const TUTOR_UI_MODULES = [
   'src/components/StudyTutorShell.jsx',
   'src/lib/study-tutor-brief.js',
-  'src/lib/study-practice-desk.js',
   'src/lib/study-learning-resources.js',
   'src/lib/study-syllabus-overlay.js',
 ];
@@ -66,10 +65,12 @@ test('Study assessment responses are generation-guarded across topic and session
   );
 });
 
-test('Study never exposes a local check while a verified check is loading or failing', () => {
+test('Study keeps contextual tutoring prose out of the persistent UI layer', () => {
   const shell = fs.readFileSync(path.join(root, 'src/components/StudyTutorShell.jsx'), 'utf8');
-  assert.match(shell, /setActivity\('local-check'\)/);
-  assert.match(shell, /activity === 'local-check' && check/);
+  const brief = fs.readFileSync(path.join(root, 'src/lib/study-tutor-brief.js'), 'utf8');
+  assert.doesNotMatch(shell, /brief\?\.next|encouragement|progress\.caption|miniPracticeFor|local-check|gradeStudyCheck/);
+  assert.doesNotMatch(brief, /encouragement|nextBeat|deriveSessionCheck|Quick honesty check|No fake score/);
+  assert.match(shell, /askOrSend\(studyPracticeAsk\(topic\)\)/);
+  assert.match(shell, /askOrSend\(studyQuizAsk\(topic\)\)/);
   assert.match(shell, /activity === 'check' && assessment\?\.status === 'error'/);
-  assert.doesNotMatch(shell, /activity === 'check' && !assessment\?\.item && check/);
 });

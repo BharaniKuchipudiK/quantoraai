@@ -27,6 +27,10 @@ export function studyQuizAsk(topic) {
   return `Quiz me on ${String(topic || 'this idea').trim()} with 3 short questions. Wait for my answers. Do not give the answers first. If I miss one, repair the foundation, then re-check.`;
 }
 
+export function studyPracticeAsk(topic) {
+  return `Give me one short practice problem on ${String(topic || 'this idea').trim()}. Use the current conversation and my learning context. Wait for my attempt before explaining or grading it.`;
+}
+
 export function studyFlashcardAsk(topic) {
   return `Make 6 flashcards for ${String(topic || 'this idea').trim()}. Front = a recall prompt. Back = a one-sentence answer. Number them. Then ask me to say the first one out loud.`;
 }
