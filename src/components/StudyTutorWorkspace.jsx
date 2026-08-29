@@ -1,23 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import StudyTutorBoard from './StudyTutorBoard.jsx';
-import { getChatDisplayText } from '../lib/build-communication.js';
+import StudyTutorShell from './StudyTutorShell.jsx';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import {
-  createStudyEvidenceEventKey,
   gradeStudyAssessment,
-  recordStudySelfConfidenceEvidence,
   requestStudyAssessment,
 } from '../lib/study-evidence-client.js';
 
 /**
  * Persistent Study feature boundary. It is intentionally a sibling of the chat
  * feed, so streaming a new message cannot unmount an in-progress learner task.
+ * The rendered shell is compact by default; rich learning activities expand
+ * only when the learner asks for them.
  */
 export default function StudyTutorWorkspace({
   activeSessionId,
   conversationContext,
   messages,
-  updateActiveSession,
   isLight,
   textColor,
   subtextColor,
@@ -30,43 +28,10 @@ export default function StudyTutorWorkspace({
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
   );
-  const lessonText = useMemo(() => {
-    const lastAiMessage = [...(messages || [])].reverse()
-      .find((message) => message.sender === 'ai' && message.type !== 'greeting');
-    return getChatDisplayText(lastAiMessage?.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '');
-  }, [messages]);
-
   useEffect(() => {
     assessmentGeneration.current += 1;
     setAssessment({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
   }, [activeSessionId, brief?.conceptId]);
-
-  const handleCheckOutcome = useCallback((fact) => {
-    const line = String(fact || '').trim();
-    if (!line) return;
-    const facts = conversationContext?.facts || [];
-    if (facts.some((row) => String(row).toLowerCase() === line.toLowerCase())) return;
-    updateActiveSession({
-      conversationContext: {
-        ...(conversationContext || {}),
-        facts: [...facts, line],
-      },
-    });
-  }, [conversationContext, updateActiveSession]);
-
-  const handleEvidence = useCallback((evidence) => {
-    if (evidence?.kind !== 'self_confidence' || !brief?.conceptId || !activeSessionId) return;
-    void recordStudySelfConfidenceEvidence({
-      eventKey: createStudyEvidenceEventKey({ sessionId: activeSessionId, conceptId: brief.conceptId }),
-      conceptId: brief.conceptId,
-      conceptLabel: brief.label,
-      sessionId: activeSessionId,
-      selfConfidence: evidence.selfConfidence,
-    }).catch((error) => {
-      // Storage failure never blocks practice and never becomes a local pass.
-      if (!error?.requiresAuth) console.warn('Study evidence sync failed:', error?.message || error);
-    });
-  }, [activeSessionId, brief?.conceptId, brief?.label]);
 
   const handleRequestAssessment = useCallback(async () => {
     if (!brief?.conceptId || !activeSessionId) return { fallback: true };
@@ -108,17 +73,14 @@ export default function StudyTutorWorkspace({
 
   if (!brief?.active) return null;
   return (
-    <StudyTutorBoard
+    <StudyTutorShell
       key={`${activeSessionId}:${brief.conceptId}`}
       brief={brief}
       isLight={isLight}
       textColor={textColor}
       subtextColor={subtextColor}
-      lessonText={lessonText}
       onAsk={onAsk}
       onSend={onSend}
-      onCheckOutcome={handleCheckOutcome}
-      onEvidence={handleEvidence}
       assessment={assessment}
       onRequestAssessment={handleRequestAssessment}
       onSubmitAssessment={handleSubmitAssessment}

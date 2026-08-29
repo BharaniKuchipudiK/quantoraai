@@ -81,6 +81,7 @@ import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
+import { sessionHandoverLabel } from '../lib/session-continuity.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -284,6 +285,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     messages,
     updateActiveMessages,
     handleCreateNewChat,
+    handleCreateHandoverChat,
     handleCreateAdvisorChat,
     handleDeleteChat,
     handleMoveChatToProject,
@@ -2030,6 +2032,48 @@ Paused — ${autoPauseRef.current}.`
                             </div>
                           )}
                         </div>
+                        {msg.sessionContinuity && !msg.sessionContinuityDismissed ? (
+                          <div
+                            data-quantora-session-continuity="true"
+                            style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px' }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleCreateHandoverChat(msg.sessionContinuity)}
+                              title={sessionHandoverLabel(msg.sessionContinuity)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '7px',
+                                maxWidth: 'min(100%, 420px)',
+                                padding: '7px 11px',
+                                borderRadius: '999px',
+                                border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.4)',
+                                background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.1)',
+                                color: isLight ? '#9a3412' : '#fdba74',
+                                cursor: 'pointer',
+                                fontSize: '0.76rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              <Link2 size={13} aria-hidden="true" />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {sessionHandoverLabel(msg.sessionContinuity)}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateActiveMessages((prev) => prev.map((item) => (
+                                item.id === msg.id ? { ...item, sessionContinuityDismissed: true } : item
+                              )))}
+                              title="Dismiss"
+                              aria-label="Dismiss"
+                              style={{ ...iconBtn, color: subtextColor }}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ) : null}
                         {continueSet?.items?.length > 0 && (
                           <div data-quantora-study-syllabus={studySyllabusSet && msg.id === latestAiId ? 'true' : undefined}>
                           <StudioInlineSuggestions
@@ -2210,7 +2254,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {
@@ -3360,7 +3404,6 @@ Paused — ${autoPauseRef.current}.`
                   activeSessionId={activeSessionId}
                   conversationContext={conversationContext}
                   messages={messages}
-                  updateActiveSession={updateActiveSession}
                   isLight={isLight}
                   textColor={textColor}
                   subtextColor={subtextColor}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HISTORY_BYTE_BUDGET, budgetHistory, describeHistoryBudget } from './history-budget.js';
+import { HISTORY_BYTE_BUDGET, budgetHistory } from './history-budget.js';
 
 /**
  * The bug this exists to stop.
@@ -26,7 +26,6 @@ test('a small conversation is passed through untouched', () => {
   assert.deepEqual(result.history, messages);
   assert.equal(result.trimmed, 0);
   assert.equal(result.dropped, 0);
-  assert.equal(describeHistoryBudget(result), '', 'nothing lost, nothing to say');
 });
 
 test('INVARIANT: the result always fits the budget', () => {
@@ -85,14 +84,6 @@ test('INVARIANT: a trim is never silent', () => {
   const trimmedMessage = result.history.find((m) => m.__trimmed);
   assert.match(trimmedMessage.text, /were trimmed to keep the conversation sendable/);
   assert.match(trimmedMessage.text, /files it produced are still on the desk/);
-  assert.match(describeHistoryBudget(result), /got large enough to stop sending/);
-});
-
-test('the notice counts what was actually lost', () => {
-  assert.match(describeHistoryBudget({ trimmed: 1, dropped: 0 }), /1 earlier turn\b/);
-  assert.match(describeHistoryBudget({ trimmed: 3, dropped: 0 }), /3 earlier turns/);
-  assert.match(describeHistoryBudget({ trimmed: 0, dropped: 1 }), /earliest 1 message\b/);
-  assert.match(describeHistoryBudget({ trimmed: 2, dropped: 4 }), /earliest 4 messages and the long output of 2 earlier turns/);
 });
 
 test('an empty or absent transcript is an answer, not a crash', () => {

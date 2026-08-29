@@ -125,8 +125,13 @@ export function budgetHistory(messages = [], { maxBytes = HISTORY_BYTE_BUDGET } 
 /**
  * What to tell the person, when anything was lost.
  *
- * Silence here would be the platform quietly forgetting their conversation and
- * letting them wonder why it stopped remembering.
+ * This was deleted on the reasoning that the handover chip now carries
+ * continuity. The chip is an OFFER — "start a fresh session" — shown once and
+ * then suppressed until pressure worsens, and its label never mentions that
+ * anything was dropped. A fact and an offer are different things: the fact that
+ * part of their conversation is no longer being sent has to be reported every
+ * time it happens, or the platform is quietly forgetting and letting somebody
+ * wonder why it stopped remembering.
  */
 export function describeHistoryBudget({ trimmed = 0, dropped = 0 } = {}) {
   if (!trimmed && !dropped) return '';
@@ -135,3 +140,4 @@ export function describeHistoryBudget({ trimmed = 0, dropped = 0 } = {}) {
   if (trimmed) parts.push(`the long output of ${trimmed} earlier turn${trimmed === 1 ? '' : 's'}`);
   return `This conversation got large enough to stop sending, so I left out ${parts.join(' and ')}. Everything built is still on the desk — only the transcript was shortened.`;
 }
+

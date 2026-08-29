@@ -22,8 +22,6 @@ function sseBody(text) {
 }
 
 await page.addInitScript(() => {
-  // Regression contract: a user's neutral-Studio welcome preference must never
-  // suppress a specialist workspace's own welcome/capability surface.
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_active_specialist_domain');
 });
@@ -231,69 +229,39 @@ try {
   await visible(page.locator('[data-quantora-message-fork="true"]').last(), 'Study response footer is missing Fork Chat.');
 
   const board = page.locator('[data-quantora-study-board="true"]').first();
-  await visible(board, 'Study answered about a concept but showed no tutor board.');
-  await visible(
-    board.getByText("Newton's laws", { exact: false }).first(),
-    'Tutor board did not name the concept the student asked about.',
-  );
-  await visible(
-    board.locator('[data-quantora-study-encouragement="true"]').first(),
-    'Tutor board has no encouragement chrome from session signals.',
-  );
-  await visible(
-    board.locator('[data-quantora-study-gaps="true"]').first(),
-    'Tutor board has no gap list chrome.',
-  );
-  await visible(
-    board.locator('[data-quantora-study-competencies="true"]').first(),
-    'Tutor board has no exam-competency vocabulary chrome.',
-  );
-  await visible(
-    board.getByText('No fake score. A filled bar only after a real check.', { exact: true }),
-    'Tutor board implied progress before the student passed any check.',
-  );
-  await visible(
-    board.locator('[data-quantora-study-competency-active="false"]').first(),
-    'Tutor board claimed exam competencies before this session tagged any.',
-  );
-  if (await board.getByRole('button', { name: 'The wall pushes back on you with an equal force', exact: true }).count()) {
-    throw new Error('Tutor board still ships a hardcoded lesson check.');
-  }
+  await visible(board, 'Study answered about a concept but showed no tutor focus.');
+  await visible(board.getByText("Newton's laws", { exact: false }).first(), 'Tutor focus did not name the concept the student asked about.');
+  await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Compact Study focus has no Explain action.');
+  await visible(board.getByRole('button', { name: 'Practice', exact: true }), 'Compact Study focus has no Practice action.');
+  await visible(board.getByRole('button', { name: 'Test me on this', exact: true }), 'Compact Study focus has no Check action.');
+  await hidden(board.getByRole('button', { name: 'More', exact: true }), 'Legacy Tutor Board More action is still present.');
+
+  const focusHeight = await board.evaluate((node) => Math.round(node.getBoundingClientRect().height));
+  if (focusHeight > 180) throw new Error(`Collapsed Study focus is still too tall (${focusHeight}px).`);
+
+  // The first synthetic topic has no reviewed server assessment. The fallback
+  // should continue in conversation and must never manufacture local mastery.
   await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
-  const honesty = board.getByRole('button', { name: /I can explain Newton's laws without looking/i }).first();
-  await visible(honesty, 'Tutor board offered no session honesty check after Test me on this.');
-  await honesty.click();
-  await visible(
-    board.getByText(/Confidence noted — mastery is still unverified/i).first(),
-    'Tutor board did not record self-confidence without claiming mastery.',
-  );
-  await hidden(
-    board.getByText(/Marked checked for this session/i).first(),
-    'Tutor board treated self-confidence as verified mastery.',
-  );
+  await page.waitForTimeout(250);
+  await hidden(board.locator('[data-quantora-study-verified-check="true"]').first(), 'Unmapped Study topic rendered a fake verified check.');
+  await hidden(board.locator('[data-quantora-study-verified-result]').first(), 'Unmapped Study topic rendered a fake verified result.');
 
   await textarea.fill('Teach me motion graphs');
   await textarea.press('Enter');
-  await visible(
-    board.getByText('motion graphs', { exact: false }).first(),
-    'Tutor board did not switch to the mapped motion-graphs concept.',
-  );
+  await visible(board.getByText('motion graphs', { exact: false }).first(), 'Tutor focus did not switch to the mapped motion-graphs concept.');
   await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
   const verifiedCheck = board.locator('[data-quantora-study-verified-check="true"]').first();
   await visible(verifiedCheck, 'Mapped Study concept did not receive a server-graded check.');
-  await visible(
-    verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }),
-    'Server-issued Study prompt was not rendered.',
-  );
+  await visible(verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }), 'Server-issued Study prompt was not rendered.');
   await verifiedCheck.getByRole('button', { name: 'Velocity', exact: true }).click();
-  await visible(
-    board.locator('[data-quantora-study-verified-result="correct"]').first(),
-    'Correct server-graded Study result was not rendered.',
-  );
-  await visible(
-    board.getByText(/evidence ledger, not self-report, now informs mastery/i).first(),
-    'Tutor board did not distinguish verified evidence from self-report.',
-  );
+  await visible(board.locator('[data-quantora-study-verified-result="correct"]').first(), 'Correct server-graded Study result was not rendered.');
+  await visible(board.getByText(/slope is change in displacement divided by change in time/i).first(), 'Verified Study explanation was not rendered.');
+
+  await board.getByRole('button', { name: 'Close Study focus', exact: true }).click();
+  const reopen = board.getByRole('button', { name: /Reopen Study focus/i }).first();
+  await visible(reopen, 'Closing Study focus did not leave a reversible reopen chip.');
+  await reopen.click();
+  await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Reopening Study focus did not restore primary actions.');
 
   console.log('Study media browser gate passed.');
 } catch (error) {

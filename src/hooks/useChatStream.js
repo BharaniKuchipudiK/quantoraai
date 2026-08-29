@@ -40,6 +40,11 @@ import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-t
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
 import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
 import {
+  assessSessionContinuity,
+  createSessionHandoverContract,
+  shouldOfferSessionHandover,
+} from '../lib/session-continuity.js';
+import {
   proveCodingTurn,
   codingTurnMayClaimSuccess,
   proofFailureCopy,
@@ -493,7 +498,15 @@ export function useChatStream({
     const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
     const historyBudget = budgetHistory(filteredMessages);
     const cleanMessages = historyBudget.history;
+    // The FACT that history was shortened, reported every time it happens. The
+    // handover chip is the offer to start fresh; it is shown once and never says
+    // anything was dropped, so it cannot stand in for this.
     const historyNotice = describeHistoryBudget(historyBudget);
+    const continuityTranscript = [...filteredMessages, { sender: 'user', text: visibleUserText }];
+    const continuityPressure = assessSessionContinuity({
+      messages: continuityTranscript,
+      historyResult: historyBudget,
+    });
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
     const currentOfficeArtifact = activeOfficeArtifact(messages);
@@ -777,6 +790,16 @@ export function useChatStream({
         ...(turnDomain && turnDomain !== studioDomain ? { studioDomain: turnDomain } : {}),
       });
     }
+    const sessionContinuity = shouldOfferSessionHandover(messages, continuityPressure)
+      ? createSessionHandoverContract({
+        sourceSessionId: activeSessionId,
+        projectId: sessionContext?.projectId || turnContext?.projectId || null,
+        studioDomain: turnDomain,
+        conversationContext: turnContext,
+        messages: continuityTranscript,
+        pressure: continuityPressure,
+      })
+      : null;
 
     const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
     /*
@@ -1637,6 +1660,7 @@ export function useChatStream({
                 userAsked: shopIntakeAsk.userAsked,
               },
             } : {}),
+            ...(sessionContinuity ? { sessionContinuity } : {}),
           } : m));
           if (typeof updateActiveSession === 'function' && (normalized.contextUpdate || intakeFacts.length)) {
             updateActiveSession({
