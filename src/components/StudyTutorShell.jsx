@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
-import StudyTutorBoard from './StudyTutorBoard.jsx';
+import { X } from 'lucide-react';
 import { gradeStudyCheck, studyCheckOutcomeFact } from '../lib/study-tutor-brief.js';
 import { studyLessonAsk, studyQuizAsk } from '../lib/study-learning-resources.js';
 import { miniPracticeFor } from '../lib/study-practice-desk.js';
@@ -8,9 +7,9 @@ import { miniPracticeFor } from '../lib/study-practice-desk.js';
 /**
  * Conversation-first Study shell.
  *
- * The old Tutor Board remains available behind More, but it no longer owns the
- * screen. The default surface is one compact learning beat: topic, honest state,
- * three actions, and only the currently-active practice/check expanded below.
+ * One compact learning beat: topic, honest state, three actions, and only the
+ * currently-active practice/check expanded below. There is no second dashboard
+ * behind this surface; richer work belongs in the conversation when requested.
  */
 export default function StudyTutorShell({
   brief,
@@ -24,9 +23,7 @@ export default function StudyTutorShell({
   assessment,
   onRequestAssessment,
   onSubmitAssessment,
-  lessonText = '',
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [activity, setActivity] = useState(null);
   const [localResult, setLocalResult] = useState(null);
@@ -167,9 +164,6 @@ export default function StudyTutorShell({
             </div>
           </div>
 
-          <button type="button" title={expanded ? 'Collapse Study focus' : 'More Study tools'} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} style={iconButtonStyle}>
-            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
           <button type="button" title="Close Study focus" aria-label="Close Study focus" onClick={() => setDismissed(true)} style={iconButtonStyle}>
             <X size={16} />
           </button>
@@ -186,9 +180,6 @@ export default function StudyTutorShell({
             style={{ ...actionStyle(true), opacity: ['loading', 'grading'].includes(assessment?.status) ? 0.55 : 1 }}
           >
             {assessment?.status === 'loading' ? 'Preparing…' : assessment?.status === 'grading' ? 'Checking…' : 'Check'}
-          </button>
-          <button type="button" onClick={() => setExpanded((value) => !value)} style={actionStyle(false)}>
-            {expanded ? 'Less' : 'More'}
           </button>
         </div>
 
@@ -283,24 +274,6 @@ export default function StudyTutorShell({
         ) : null}
       </section>
 
-      {expanded ? (
-        <div style={{ marginTop: '9px' }} data-quantora-study-focus-detail="true">
-          <StudyTutorBoard
-            brief={brief}
-            isLight={isLight}
-            textColor={textColor}
-            subtextColor={subtextColor}
-            lessonText={lessonText}
-            onAsk={onAsk}
-            onSend={onSend}
-            onCheckOutcome={onCheckOutcome}
-            onEvidence={onEvidence}
-            assessment={assessment}
-            onRequestAssessment={onRequestAssessment}
-            onSubmitAssessment={onSubmitAssessment}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

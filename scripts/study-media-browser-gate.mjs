@@ -240,7 +240,7 @@ try {
   await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Compact Study focus has no Explain action.');
   await visible(board.getByRole('button', { name: 'Practice', exact: true }), 'Compact Study focus has no Practice action.');
   await visible(board.getByRole('button', { name: 'Test me on this', exact: true }), 'Compact Study focus has no Check action.');
-  await hidden(board.locator('[data-quantora-study-focus-detail="true"]').first(), 'Advanced Tutor Board is expanded by default.');
+  await hidden(board.getByRole('button', { name: 'More', exact: true }), 'Legacy Tutor Board More action is still present.');
 
   const focusHeight = await board.evaluate((node) => Math.round(node.getBoundingClientRect().height));
   if (focusHeight > 180) throw new Error(`Collapsed Study focus is still too tall (${focusHeight}px).`);

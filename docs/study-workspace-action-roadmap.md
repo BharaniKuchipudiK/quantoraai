@@ -24,7 +24,7 @@
 ### Implemented on the isolated branch
 
 - Added `StudyTutorShell`: compact default Study surface.
-- Existing `StudyTutorBoard` is preserved behind **More** instead of occupying the screen permanently.
+- Removed the legacy `StudyTutorBoard` from the live render path; its history remains recoverable in Git.
 - Topic + honest state + next move stay visible.
 - Primary learner moves are **Explain / Practice / Check**.
 - **Close** collapses Study focus to a single reopen chip.
@@ -38,7 +38,7 @@
 
 - Conversation remains the dominant surface.
 - Collapsed Study focus must remain under 180 px in the browser gate; visual target is smaller where viewport permits.
-- Maximum 3 primary learning actions; `More` is secondary navigation.
+- Exactly 3 primary learning actions; there is no secondary dashboard behind **More**.
 - Every expanded activity has a close/collapse control.
 - Existing verified-assessment semantics remain intact: self-confidence is not mastery.
 - Study browser gate, typecheck, build and wiring gate must be green before merge is considered.

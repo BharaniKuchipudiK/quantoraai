@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StudyTutorShell from './StudyTutorShell.jsx';
-import { getChatDisplayText } from '../lib/build-communication.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import {
   createStudyEvidenceEventKey,
@@ -32,12 +31,6 @@ export default function StudyTutorWorkspace({
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
   );
-  const lessonText = useMemo(() => {
-    const lastAiMessage = [...(messages || [])].reverse()
-      .find((message) => message.sender === 'ai' && message.type !== 'greeting');
-    return getChatDisplayText(lastAiMessage?.text?.replace(/<!--\s*quantora-[\s\S]*?-->/g, '') || '');
-  }, [messages]);
-
   useEffect(() => {
     assessmentGeneration.current += 1;
     setAssessment({ status: 'idle', item: null, attemptId: '', result: null, error: '' });
@@ -116,7 +109,6 @@ export default function StudyTutorWorkspace({
       isLight={isLight}
       textColor={textColor}
       subtextColor={subtextColor}
-      lessonText={lessonText}
       onAsk={onAsk}
       onSend={onSend}
       onCheckOutcome={handleCheckOutcome}
