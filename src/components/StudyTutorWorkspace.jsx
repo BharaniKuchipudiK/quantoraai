@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import StudyTutorBoard from './StudyTutorBoard.jsx';
+import StudyTutorShell from './StudyTutorShell.jsx';
 import { getChatDisplayText } from '../lib/build-communication.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import {
@@ -12,6 +12,8 @@ import {
 /**
  * Persistent Study feature boundary. It is intentionally a sibling of the chat
  * feed, so streaming a new message cannot unmount an in-progress learner task.
+ * The rendered shell is compact by default; rich learning activities expand
+ * only when the learner asks for them.
  */
 export default function StudyTutorWorkspace({
   activeSessionId,
@@ -108,7 +110,7 @@ export default function StudyTutorWorkspace({
 
   if (!brief?.active) return null;
   return (
-    <StudyTutorBoard
+    <StudyTutorShell
       key={`${activeSessionId}:${brief.conceptId}`}
       brief={brief}
       isLight={isLight}
