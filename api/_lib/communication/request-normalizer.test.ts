@@ -87,6 +87,14 @@ test("explicit Study workspace stays Study even if the user mentions a trip", ()
   assert.equal(request.studioDomain, "education");
 });
 
+test("Study learner context is accepted only inside the Study workspace", () => {
+  const studyContext = { conceptKey: "physics.motion", conceptLabel: "Motion" };
+  assert.deepEqual(normalizeCommunicationRequest({ studioDomain: "education", message: "Continue", studyContext }).studyContext, studyContext);
+  for (const studioDomain of ["finance", "research", "travel", null]) {
+    assert.equal(normalizeCommunicationRequest({ studioDomain, message: "Continue", studyContext }).studyContext, null);
+  }
+});
+
 test("explicit Travel workspace stays Travel even if the user asks to study", () => {
   const request = normalizeCommunicationRequest({
     studioDomain: "travel",
