@@ -197,11 +197,20 @@ export function findDeadControls(html, { scripts = null } = {}) {
     // Named in a script? Then something reaches for it.
     if (namedInCode(tagSource, joined)) continue;
 
+    const label = labelFor(source, match.index, tag, tagSource);
     findings.push({
       kind: 'dead-control',
+      /*
+       * Structured, for the same reason broken-link carries data: a repair pass
+       * that regexes the English back out of `what` is parsing its own output,
+       * and breaks the moment the wording improves. `at` and `length` locate
+       * the exact occurrence, so two identical dead links are two findings the
+       * repair can tell apart.
+       */
+      data: { tag, label, at: match.index, length: match[0].length },
       what: tag === 'a'
-        ? `The link "${labelFor(source, match.index, tag, tagSource)}" doesn't go anywhere.`
-        : `The button "${labelFor(source, match.index, tag, tagSource)}" doesn't do anything when clicked.`,
+        ? `The link "${label}" doesn't go anywhere.`
+        : `The button "${label}" doesn't do anything when clicked.`,
       where: match[0].slice(0, 120),
     });
   }

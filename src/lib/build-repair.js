@@ -125,14 +125,78 @@ export function repairAnchors(html, findings) {
  * business we know nothing about, would each read as success and be worse than
  * the honest report.
  */
+export const DEAD_CONTROL_REFUSAL = 'nothing on the page says what it should do, and a button that looks wired but is not would be worse than one that plainly is not';
+
 export function refuseUnfixable(findings) {
   const why = {
-    'dead-control': 'nothing on the page says what it should do, and a button that looks wired but is not would be worse than one that plainly is not',
     'placeholder-content': 'replacing it means writing copy or choosing a photo nobody asked for, and this platform does not invent either',
   };
   return findings
     .filter((finding) => why[finding.kind])
     .map((finding) => ({ finding, why: why[finding.kind] }));
+}
+
+/**
+ * Point a dead nav link at the section it plainly names.
+ *
+ * WHY THIS IS REPAIRABLE AND THE REST OF dead-control IS NOT
+ *
+ * The blanket refusal said "nothing on the page says what it should do". For a
+ * "Buy now" button with no handler that is true, and it stays refused — a cart
+ * is not derivable from a build.
+ *
+ * But a landing page whose nav reads <a href="#">Pricing</a> above a real
+ * <section id="pricing"> is a different case entirely: the page says exactly
+ * what the link should do, twice, in its own markup. The label names the
+ * destination and the destination already exists. Nothing is invented — the
+ * link is connected to something the build already shipped, which is the same
+ * move repairAnchors makes, resolved from the label instead of the href.
+ *
+ * Buttons are never touched, only <a>. A button's behaviour lives in code
+ * nobody wrote, and there is no honest way to derive it from a label.
+ *
+ * Occurrences are rewritten back-to-front so an earlier fix cannot shift the
+ * offsets of a later one, and two identical dead links stay two separate
+ * repairs rather than one applied twice.
+ */
+export function repairDeadLinks(html, findings) {
+  const source = String(html || '');
+  const ids = [...source.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
+  const fixes = [];
+  const refusals = [];
+  const edits = [];
+
+  for (const finding of findings) {
+    if (finding.kind !== 'dead-control') continue;
+    const { tag, label, at, length } = finding.data || {};
+    if (tag !== 'a' || typeof at !== 'number' || typeof length !== 'number') {
+      refusals.push({ finding, why: DEAD_CONTROL_REFUSAL });
+      continue;
+    }
+    const resolved = resolveAnchor(label, ids);
+    if (!resolved) {
+      // Ambiguity is refused exactly as it is for anchors: two candidates is a
+      // guess, and a guess on somebody's page is what this module exists to stop.
+      refusals.push({ finding, why: DEAD_CONTROL_REFUSAL });
+      continue;
+    }
+    const tagSource = source.slice(at, at + length);
+    const rewritten = /\shref\s*=\s*["'][^"']*["']/i.test(tagSource)
+      ? tagSource.replace(/\shref\s*=\s*["'][^"']*["']/i, ` href="#${resolved}"`)
+      : tagSource.replace(/^<a/i, `<a href="#${resolved}"`);
+    if (rewritten === tagSource) {
+      refusals.push({ finding, why: DEAD_CONTROL_REFUSAL });
+      continue;
+    }
+    edits.push({ at, length, rewritten });
+    fixes.push({ finding, what: `Pointed the "${label}" link at the "${resolved}" section, which is what it named.` });
+  }
+
+  let out = source;
+  for (const edit of edits.sort((a, b) => b.at - a.at)) {
+    out = out.slice(0, edit.at) + edit.rewritten + out.slice(edit.at + edit.length);
+  }
+  return { html: out, fixes, refusals };
 }
 
 /**
@@ -187,12 +251,24 @@ export function repairTotals(html, findings) {
  */
 export function repairBuild(html, findings = []) {
   const anchors = repairAnchors(html, findings);
-  const totals = repairTotals(anchors.html, findings);
+  /*
+   * Dead links run against the ANCHOR-REPAIRED html on purpose: the offsets in
+   * a dead-control finding were measured on the original source, and anchor
+   * repair only ever rewrites an href's value in place, never the length of a
+   * tag it did not touch. Reordering these two would break that.
+   */
+  const deadLinks = repairDeadLinks(anchors.html, findings);
+  const totals = repairTotals(deadLinks.html, findings);
   return {
     html: totals.html,
     changed: totals.html !== String(html || ''),
-    fixes: [...anchors.fixes, ...totals.fixes],
-    refusals: [...anchors.refusals, ...totals.refusals, ...refuseUnfixable(findings)],
+    fixes: [...anchors.fixes, ...deadLinks.fixes, ...totals.fixes],
+    refusals: [
+      ...anchors.refusals,
+      ...deadLinks.refusals,
+      ...totals.refusals,
+      ...refuseUnfixable(findings),
+    ],
   };
 }
 

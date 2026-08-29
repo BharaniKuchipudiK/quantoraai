@@ -142,15 +142,85 @@ test('INVARIANT: a dead control and invented copy are always refused', () => {
    * Both refusals are the product's promise showing up where it costs
    * something. A button that looks wired and is not would read as success; so
    * would copy written about a business we know nothing about.
+   *
+   * Asserted through repairBuild, which is the guarantee that actually matters.
+   * A dead BUTTON has no derivable destination and must stay refused however
+   * the internals are split up; asserting refuseUnfixable directly would pass
+   * even if repairBuild stopped calling it.
    */
-  const findings = [
-    { kind: 'dead-control', what: 'The button "Buy now" doesn\'t do anything when clicked.' },
-    { kind: 'placeholder-content', what: 'The page contains Lorem ipsum filler text.' },
-  ];
-  const refusals = refuseUnfixable(findings);
-  assert.equal(refusals.length, 2);
-  assert.match(refusals[0].why, /worse than one that plainly is not/);
-  assert.match(refusals[1].why, /does not invent/);
+  const page = [
+    '<!DOCTYPE html><html><body>',
+    '<button>Buy now</button>',
+    '<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do.</p>',
+    '</body></html>',
+  ].join('\n');
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.deepEqual(repair.fixes, [], 'nothing here is derivable from the build');
+  const why = repair.refusals.map((refusal) => refusal.why).join('\n');
+  assert.match(why, /worse than one that plainly is not/);
+  assert.match(why, /does not invent/);
+});
+
+/*
+ * The blanket dead-control refusal used to cover this too, and it was wrong.
+ * A nav that reads <a href="#">Pricing</a> above a real <section id="pricing">
+ * says exactly what the link should do, twice, in the build's own markup.
+ */
+test('a dead link is pointed at the section its own label names', () => {
+  const page = [
+    '<!DOCTYPE html><html><body>',
+    '<nav><a href="#">Pricing</a></nav>',
+    '<section id="pricing"><h2>Pricing</h2></section>',
+    '</body></html>',
+  ].join('\n');
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.match(repair.html, /<a href="#pricing">Pricing<\/a>/);
+  assert.equal(repair.fixes.length, 1);
+  assert.match(repair.fixes[0].what, /Pointed the "Pricing" link at the "pricing" section/);
+  assert.equal(repair.refusals.length, 0);
+  // The proof, per this file's rule: re-run the checks, do not trust the report.
+  assert.deepEqual(inspectBuildTruth(repair.html).findings, [], 'the control is genuinely alive now');
+});
+
+test('a dead link naming nothing on the page stays refused', () => {
+  const page = '<!DOCTYPE html><html><body><a href="#">Careers</a><section id="pricing">x</section></body></html>';
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.equal(repair.fixes.length, 0, 'a section nobody wrote is not a repair');
+  assert.equal(repair.refusals.length, 1);
+});
+
+test('an ambiguous dead link is refused rather than guessed', () => {
+  const page = [
+    '<!DOCTYPE html><html><body>',
+    '<a href="#">Plans</a>',
+    '<section id="plans">a</section><section id="plans">b</section>',
+    '</body></html>',
+  ].join('\n');
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.equal(repair.fixes.length, 0, 'two candidates is a guess');
+  assert.equal(repair.refusals.length, 1);
+});
+
+test('a dead BUTTON is never repaired from its label', () => {
+  const page = '<!DOCTYPE html><html><body><button>Pricing</button><section id="pricing">x</section></body></html>';
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.equal(repair.fixes.length, 0, 'a button\'s behaviour is not derivable from a label');
+  assert.match(repair.html, /<button>Pricing<\/button>/, 'the button is left exactly as written');
+});
+
+test('two identical dead links are both repaired, not one repaired twice', () => {
+  const page = [
+    '<!DOCTYPE html><html><body>',
+    '<nav><a href="#">Pricing</a></nav>',
+    '<section id="pricing">x</section>',
+    '<footer><a href="#">Pricing</a></footer>',
+    '</body></html>',
+  ].join('\n');
+  const repair = repairBuild(page, inspectBuildTruth(page).findings);
+  assert.equal(repair.fixes.length, 2);
+  assert.equal((repair.html.match(/href="#pricing"/g) || []).length, 2, 'both occurrences are connected');
+  assert.doesNotMatch(repair.html, /<a href="#">/, 'no dead link is left behind');
+  assert.deepEqual(inspectBuildTruth(repair.html).findings, [], 'neither link is still dead');
 });
 
 test('INVARIANT: refusals are never dropped from the account', () => {
