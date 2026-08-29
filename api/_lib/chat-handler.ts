@@ -67,6 +67,12 @@ import { TRAVEL_CONVERSATION_MODEL_ID } from "./travel-model-routing.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
+import {
+  applyStudyCapabilityRouting,
+  formatStudyCognitiveDirective,
+  interpretStudyTurn,
+  publicStudyCognitiveMetadata,
+} from './study-cognitive-routing.js';
 
 const PREVIEW_HTML_RECOVERY = `
 
@@ -677,7 +683,7 @@ export default async function handler(req: any, res: any) {
       routingCatalog,
       outcomeSignalsForTask(qualitySummaryRows, taskCategory),
     );
-    const modelRouting = selectModelsForTurn({
+    const baseModelRouting = selectModelsForTurn({
       models: routingModels,
       message,
       explicitModelId: typeof modelId === "string" ? modelId : null,
@@ -697,6 +703,22 @@ export default async function handler(req: any, res: any) {
       // session, no BYOK) has no effective key, so they still stay on Gemini.
       allowPaid: Boolean(effectiveOpenRouterKey),
       qualityHints,
+    });
+    const studyInterpretation = interpretStudyTurn({
+      studioDomain: normalizedStudioDomain,
+      message,
+      history: boundedHistory,
+      hasImages: visionImages.length > 0,
+    });
+    if (studyInterpretation) {
+      dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
+    }
+    const modelRouting = applyStudyCapabilityRouting({
+      interpretation: studyInterpretation,
+      baseDecision: baseModelRouting,
+      models: routingModels,
+      explicitModelSelected: !autoModelRequest,
+      hasImages: visionImages.length > 0,
     });
     // Diagnostic isolation switch: set QUANTORA_FORCE_OPENROUTER=1 to take Gemini
     // out of the picture entirely for coding/build turns and route straight to an
@@ -779,7 +801,7 @@ export default async function handler(req: any, res: any) {
       userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
       lastMessage: message,
       history: boundedHistory
-    }) + navigatorDirective + (visionImages.length
+    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
     let finalSystemPrompt = finalSystemPromptBase;
@@ -798,6 +820,7 @@ export default async function handler(req: any, res: any) {
             usedFallback: Boolean(fallbackFrom),
           }),
           routing: modelRouting,
+          ...(studyInterpretation ? { studyCognitiveRouting: publicStudyCognitiveMetadata(studyInterpretation) } : {}),
           communicationRequest: {
             studioMode: communicationRequest.studioMode,
             studioDomain: communicationRequest.studioDomain,
