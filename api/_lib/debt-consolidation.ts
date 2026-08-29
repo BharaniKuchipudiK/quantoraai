@@ -118,8 +118,19 @@ export function aprToFitPayment(principal: number, months: number, payment: numb
   if (!(principal > 0) || !(months > 0) || !(payment > 0)) return null;
   if (payment < principal / months) return null; // even a 0% loan costs more than this
   let lo = 0;
-  let hi = 100;
-  if (paymentForTerm(principal, hi, months) < payment) return null;
+  /*
+   * The cap is the answer, not a failure.
+   *
+   * This used to return null when even a loan at the cap fit inside the
+   * payment — the same value it returns when the payment is too small to
+   * amortise at ANY rate. Two opposite situations answering identically, and a
+   * caller reading "null" as "nothing fits" would tell somebody with plenty of
+   * headroom that their consolidation is infeasible. It is a bound either way:
+   * "no higher than 100%" is true, and no real consolidation offer is above it.
+   */
+  const hiCap = 100;
+  let hi = hiCap;
+  if (paymentForTerm(principal, hiCap, months) <= payment) return hiCap;
   for (let i = 0; i < 60; i += 1) {
     const mid = (lo + hi) / 2;
     if (paymentForTerm(principal, mid, months) > payment) hi = mid;

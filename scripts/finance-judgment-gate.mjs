@@ -18,10 +18,38 @@
 // Run under tsx (see package.json) so the TypeScript engines import directly —
 // this drives the SAME modules production serves, not a re-implementation.
 const { FINANCE_SCENARIOS } = await import('./judgment/finance-scenarios.mjs');
+
+/*
+ * THIS ORDER MIRRORS api/pipeline.ts, and it has to.
+ *
+ * The gate originally drove two gateways directly. Then the crisis strategist
+ * landed and was wired AHEAD of the payoff gateway, which meant the turn the
+ * gate was built to protect — someone whose obligations exceed their income —
+ * would be answered by an engine the gate never called. It would have gone on
+ * passing while testing the wrong code.
+ *
+ * A judgment gate that does not route the way production routes is measuring a
+ * path no user takes. If a gateway is added to the pipeline, add it here.
+ */
+const { handleAffordabilityDecision } = await import('../api/_lib/chat-decision-gateway.ts');
+const { handleFxAnalytics } = await import('../api/_lib/fx-analytics-gateway.ts');
+const { handleMarketDataLookup } = await import('../api/_lib/market-data-gateway.ts');
+const { handleDebtCrisis } = await import('../api/_lib/debt-crisis-gateway.ts');
 const { handleDebtPlan } = await import('../api/_lib/debt-gateway.ts');
 const { handleSavingsGoal } = await import('../api/_lib/savings-gateway.ts');
+const { handleFinancialProfile } = await import('../api/_lib/financial-profile-gateway.ts');
+const { handleFinanceAdvisor } = await import('../api/_lib/finance-advisor-gateway.ts');
 
-const GATEWAYS = [handleDebtPlan, handleSavingsGoal];
+const GATEWAYS = [
+  handleAffordabilityDecision,
+  handleFxAnalytics,
+  handleMarketDataLookup,
+  handleDebtCrisis,
+  handleDebtPlan,
+  handleSavingsGoal,
+  handleFinancialProfile,
+  handleFinanceAdvisor,
+];
 
 /** Collects what a gateway streamed, and refuses to be written to twice. */
 function recorder() {

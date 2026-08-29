@@ -85,6 +85,17 @@ export const FINANCE_SCENARIOS = [
     mustSay: [/is \*\*worse\*\* than what you already pay/, /breathing room with interest/],
   },
   {
+    id: 'debt/crisis-gateway-must-not-block-a-signed-out-answer',
+    why: 'The crisis strategist is wired ahead of the payoff gateway and needs a session and a store. Consuming the turn handed a signed-out user "Sign in to continue" for a question the platform answers from the message alone.',
+    domain: 'finance',
+    message:
+      'I can consolidate at 9% over 7 years. My debts: $400,000 at 4% (min $18,000) and $60,000 at 24% (min $7,000). I earn $15,000 a month.',
+    declared: { minimums: 25000, income: 15000 },
+    answers: true,
+    mustSay: [/Consolidating/],
+    mustNotSay: [/Sign in to continue/],
+  },
+  {
     id: 'debt/isolation-non-finance-domain',
     why: 'A Finance engine must never answer a Coding or Travel turn.',
     domain: 'travel',

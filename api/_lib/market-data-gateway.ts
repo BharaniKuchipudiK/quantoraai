@@ -28,6 +28,7 @@ import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js"
 import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
+import { guardFinanceGateway } from "./finance-gateway-guard.js";
 
 const MARKET_DATA_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -49,7 +50,11 @@ function sendStream(res: any, requestId: string, text: string, deterministic = t
   res.end();
 }
 
-export async function handleMarketDataLookup(req: any, res: any): Promise<boolean> {
+export function handleMarketDataLookup(req: any, res: any): Promise<boolean> {
+  return guardFinanceGateway("market-data-lookup", res, () => runMarketDataLookup(req, res));
+}
+
+async function runMarketDataLookup(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   // Isolation gate: Finance workspace only.
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;

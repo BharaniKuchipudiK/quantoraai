@@ -67,3 +67,13 @@ test("aprToFitPayment inverts paymentForTerm", () => {
   // No rate is low enough when even 0% costs more than the payment.
   assert.equal(aprToFitPayment(100000, 12, 500), null);
 });
+
+test("a payment that fits at any realistic rate returns the cap, not null", () => {
+  // Null is reserved for "the payment cannot amortise this at all". Reusing it
+  // for "everything fits" would make a caller report infeasible to someone with
+  // room to spare — the two answers must never look the same.
+  const roomToSpare = aprToFitPayment(10000, 60, 9000);
+  assert.equal(roomToSpare, 100);
+  const tooSmall = aprToFitPayment(10000, 60, 50);
+  assert.equal(tooSmall, null);
+});
