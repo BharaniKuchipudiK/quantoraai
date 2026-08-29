@@ -1,162 +1,134 @@
-# Quantora Study Tutor Workspace — Action Roadmap & UX Redesign Pipeline
+# Quantora Study Workspace — Action Roadmap
 
-> Planning only. This branch must not change application code, SQL, APIs, environment variables, Main, or Production.
+> Isolated Draft PR only. No Main merge, Production deployment, DB migration, environment change, or pricing change is authorised by this branch.
 
 ## North Star
 
-Conversation first. Learning controls stay available without taking over the screen. Every Study feature must earn its space, produce evidence, or move the learner forward.
+**Conversation first.** Cards and chips introduce the next learning move; they do not become permanent dashboards that hide the lesson.
 
 ## Delivery pipeline
 
-| Phase | Focus | Exit gate |
+| Phase | Work | Exit gate |
 |---|---|---|
-| P0 | Plan & isolate | Roadmap approved. Planning PR remains Draft. No application code touched. |
-| P1 | UX shell | Conversation-first layout passes UX gates and existing Study tests. |
-| P2 | Attachments + PDF | Clipboard image, file upload, PDF ingest/export have real browser tests and clear failure states. |
-| P3 | Learning intelligence | Canonical concept resolver + learning map + advisor candidate are wired; Study orphans reduced. |
-| P4 | Verified assessments | Issue → answer → evidence → mastery → next action works in a real integration test. |
-| P5 | Visual intelligence | Deterministic visuals verified; generated images only behind explicit budget/policy. |
-| P6 | Security + reliability | Durable rate limits, media hygiene, provider failover and production observability. |
-
-**Decision:** start with P1. Do not add another Study feature until the conversation-first shell is fixed.
+| P1 | Conversation-first UX | Compact focus shell, closable activities, compact Study action palette, existing assessment flow passes. |
+| P2 | Attachments + PDF | Clipboard image, image/file hygiene, PDF ingest and print-to-PDF work end-to-end. |
+| P3 | Learning intelligence | Canonical concepts + learning map + advisor candidate wired; Study orphans reduced. |
+| P4 | Verified assessment | Issue → answer → evidence → mastery → next action passes a real integration test. |
+| P5 | Visual intelligence | Deterministic STEM first; generated visuals only when pedagogically useful and budget-authorised. |
+| P6 | Reliability/security | Durable rate limits, provider failover, media trust and production observability. |
 
 ---
 
-## P1 — Immediate UX redesign
+## P1 — UX implementation now in this Draft PR
 
-### Current problems
+### Default Study surface
 
-- The Study Board behaves like a second application inside the conversation.
-- The board is too tall and pushes lesson history out of view.
-- Status is repeated in multiple places.
-- Too many action chips are always visible.
-- The current `This Topic` menu is too large and blocks content.
-- Interactive diagrams take permanent space even after the learning beat is over.
+- One compact **Focus shell** instead of the giant permanent Tutor Board.
+- Topic + honest state + next move stay visible.
+- Only **Explain / Practice / Check** are primary actions.
+- **More** opens the existing advanced Tutor Board on demand.
+- **Close** collapses Study focus to a single reopen chip.
+- Practice/checks open as small inline activity cards and can be closed.
+- The large visual/FBD no longer owns the default screen; it remains available in expanded detail.
 
-### Proposed UX: Conversation-First Focus System
+### `This Topic` redesign
 
-Replace the giant persistent card with three layers:
-
-1. **Focus Bar** — 44–56 px high. Topic, state, next action, Open Focus.
-2. **Focus Rail** — 280–320 px. Learning map, evidence, secondary actions. Collapsible on desktop; bottom sheet on smaller screens.
-3. **Inline Learning Card** — only the activity happening now: diagram, quiz, worked example. It lives in chronological chat and collapses when finished.
-
-Replace the large `This Topic` menu with a **Topic Action Palette**:
-
-- max 320×360 px
-- anchored popover
-- scrollable
-- keyboard accessible
-- closes on selection or Escape
-- New topic, Explain, Practice, Quiz, Flashcards, More
-
-### What the Newton screen should become
-
-- Compact top bar: `Newton's Laws • Not checked yet • Next: one check`.
-- Lesson stays in the conversation.
-- FBD appears only when pedagogically useful or explicitly opened.
-- Under the visual: one concise explanation + one primary CTA: `Try a check`.
-- Always-visible actions: **Explain • Practice • Check**.
-- Move Plan / Real world / Flashcards / Notes / Schedule / I got this wrong behind **More** or into Focus Rail.
-- Hide competency metadata by default.
-- Completed quiz/diagram collapses into a short summary strip with `Review` / `Try another`.
+- Replace tall navigation-card treatment with a compact **Study action palette**.
+- ~292 px wide; two-column action grid.
+- New Topic remains full-width.
+- Explain / Flashcards / Quiz / Icebreaker become concise action tiles.
+- Explicit close button.
+- Palette closes immediately after an action is selected.
+- No decorative radio circles and no long subtitle stack blocking the conversation.
 
 ### P1 acceptance gates
 
-- On 1440×900 desktop, collapsed Study controls consume **≤64 px vertically**.
 - Conversation remains the dominant surface.
-- No Study popover/panel hides the top lesson content by default.
-- Maximum **3 primary Study actions** visible at once.
-- Only the current question/activity is expanded.
-- Completed activities auto-collapse and can be reopened.
-- Desktop = side rail; tablet/mobile = bottom sheet; no horizontal overflow.
-- Keyboard navigation, Escape behavior, ARIA roles/labels, and visible focus states work.
-- Existing verified assessment issue/grade flow and Study lesson streaming still pass.
+- Compact default Study chrome stays close to one message-row height before wrapping.
+- Maximum 3 primary learning actions; `More` is secondary navigation.
+- Every expanded activity has a close/collapse control.
+- Existing verified-assessment semantics remain intact: self-confidence is not mastery.
+- Study browser gate, typecheck, build and wiring gate must be green before merge is considered.
 
-### First implementation sprint — exact scope
+---
 
-1. Extract Study Board sections into components without changing behavior.
-2. Build collapsed Focus Bar and desktop Focus Rail.
-3. Replace large `This Topic` popover with compact action palette.
-4. Collapse visible actions to Explain / Practice / Check + More.
-5. Make visual lab and completed assessment collapsible.
-6. Add responsive bottom-sheet behavior for narrow screens.
-7. Add accessibility + browser regression tests.
-8. **Do not touch PDF, image generation, mastery logic, or database in this sprint.**
+## Study AI model policy — proposed next backend slice
+
+### Finding
+
+Study currently inherits the generic model-selection path. The selector does **not receive `studioDomain`**, so ordinary Study turns can be ranked like generic free-model traffic. That is commercially attractive on paper but not reliable enough: free OpenRouter endpoints have already produced 429s/timeouts in production.
+
+### Target routing
+
+| Study workload | Primary | Fallback | Escalation |
+|---|---|---|---|
+| Normal text tutoring | **DeepSeek V4 Flash 0731** | Gemini Flash | GPT-5.6 Luna |
+| Screenshot / image question | **Gemini Flash** | declared vision-capable route | GPT-5.6 Luna where capability permits |
+| Explicit Deep Think / hard derivation | **GPT-5.6 Luna** | DeepSeek V4 Flash | Gemini Flash |
+| Premium rescue | spend-gated only | Claude Sonnet only when justified | BYOK for repeated premium use |
+
+### Commercial rule
+
+- **Do not make free Nemotron/GPT-OSS endpoints the Study primary.** They may be opportunistic, never the reliability foundation.
+- Prefer DeepSeek V4 Flash for normal text: strong long-context/tool capability at very low OpenRouter cost.
+- Use Gemini deliberately for vision and as a different-provider failure domain; do not burn the paid Google allowance on every text turn.
+- Use Luna only when the task deserves a stronger reasoning rung.
+- Claude is rescue, not normal Study traffic.
+- User-facing UX should remain **Auto / Fast / Deep**, not a hotel menu of model brands.
+
+### STUDY-MODEL-01 implementation gate
+
+Do **not** add an unwired Study routing helper. The proper change is to pass the normalized Study domain into the authoritative model selector, add domain-aware routing tests, and preserve explicit user model selection. Ship this as a separate backend-focused change after the P1 UX branch is green.
 
 ---
 
 ## P2 — Attachments + PDF
 
-| ID | Priority | Action | Exit criterion |
+| ID | Priority | Action | Done when |
 |---|---|---|---|
-| STUDY-MEDIA-01 | P0 | Add clipboard image paste | Cmd/Ctrl+V screenshot becomes an attachment preview and sends correctly. |
-| STUDY-MEDIA-02 | P0 | Unify attachment picker | One obvious Attach control for image/PDF; remove duplicate paperclips. |
-| STUDY-MEDIA-03 | P0 | Server-normalize images | Magic-byte validation, byte/dimension limits, decode/re-encode, EXIF removed. |
-| STUDY-PDF-01 | P0 | Implement PDF ingestion | PDF pages/text become Study context with page references; unsupported PDFs fail clearly. |
-| STUDY-PDF-02 | P1 | Add zero-cost PDF export | Study notes/lesson print cleanly to PDF using print-first path. |
-
----
+| STUDY-MEDIA-01 | P0 | Clipboard image paste | Cmd/Ctrl+V screenshot previews and sends correctly. |
+| STUDY-MEDIA-02 | P0 | One attachment control | Image/PDF selection is obvious; duplicate attachment affordances removed. |
+| STUDY-MEDIA-03 | P0 | Media hygiene | Magic bytes, size/dimension limits, decode/re-encode and EXIF stripping. |
+| STUDY-PDF-01 | P0 | PDF ingestion | Extracted text/pages become Study context with page references. |
+| STUDY-PDF-02 | P1 | PDF export | Clean print stylesheet supports browser Save as PDF at near-zero platform cost. |
 
 ## P3 — Learning intelligence
 
-| ID | Priority | Action | Exit criterion |
-|---|---|---|---|
-| STUDY-INT-01 | P0 | Resolve session topics to canonical concept IDs | Known topics stop living only as `session.<slug>`. |
-| STUDY-INT-02 | P0 | Wire `buildStudyLearningMap` | Learner state uses verified/emerging/misconception/insufficient evidence accurately. |
-| STUDY-INT-03 | P0 | Wire `buildStudyAdvisorCandidate` | Next beat uses evidence + prerequisite leverage, not only string facts. |
-| STUDY-INT-04 | P1 | Remove duplicate curriculum pilot source of truth | One canonical seed path; no TS + SQL drift. |
-| STUDY-INT-05 | P1 | Replace fragile string-prefix state | Versioned typed Study session state drives behavior. |
+| ID | Priority | Action |
+|---|---|---|
+| STUDY-INT-01 | P0 | Resolve known topics to canonical concept IDs. |
+| STUDY-INT-02 | P0 | Wire `buildStudyLearningMap`. |
+| STUDY-INT-03 | P0 | Wire `buildStudyAdvisorCandidate`. |
+| STUDY-INT-04 | P1 | Remove duplicate curriculum seed truth. |
+| STUDY-INT-05 | P1 | Replace string-prefix session state with versioned typed Study state. |
 
-### Orphan decisions
+## P4 — Verified assessments
 
-| Capability | Decision |
-|---|---|
-| `buildStudyLearningMap` | Wire |
-| `buildStudyAdvisorCandidate` | Wire |
-| `buildStudyCurriculumBridge` | Wire later after canonical resolver |
-| `normalizeStudyItemBlueprint` | Wire with P4 if assessment expansion proceeds |
-| `studyItemReleaseDecision` | Wire with P4 if enforced in release workflow |
-| `buildStudyCurriculumPilot2026` | Remove or make canonical; do not keep duplicate truth |
-| legacy browser pass prefix | Remove after migration |
-
----
-
-## P4 — Verified assessment
-
-| ID | Priority | Action | Exit criterion |
-|---|---|---|---|
-| STUDY-ASSMT-01 | P0 | Create true learner E2E assessment test | Issue → answer → evidence → mastery update → next action verified against integration DB. |
-| STUDY-ASSMT-02 | P1 | Expand reviewed assessment bank | Coverage grows by curriculum priority without unreviewed answer keys. |
-| STUDY-ASSMT-03 | P1 | Enforce blueprint/release governance or remove it | No important governance engine remains orphaned. |
-
----
+- Real integration test: issue → answer → evidence → mastery → next action.
+- Expand reviewed item bank by curriculum priority.
+- Wire assessment blueprint/release governance or delete the unused path.
 
 ## P5 — Visual intelligence
 
-| ID | Priority | Action | Exit criterion |
-|---|---|---|---|
-| STUDY-VIS-01 | P1 | Introduce `StudyVisualService` | Chooses SVG/graph/FBD/template/generated visual by pedagogical need. |
-| STUDY-VIS-02 | P1 | Keep deterministic STEM visuals first | Physics/math geometry invariants are unit-tested; no visually plausible wrong diagrams. |
-| STUDY-VIS-03 | P2 | Add realistic image generation behind budget gate | Generated visual receives minimal pedagogical context only, never the user's entire memory. |
+- Deterministic graph/FBD/geometry first.
+- Unit-test scientific geometry/invariants.
+- Generated realistic/full-body visuals only when the lesson needs them and the budget gate approves them.
+- Send the image model only minimal pedagogical context, never the learner's entire memory.
 
----
+## P6 — Reliability and security
 
-## P6 — Security + reliability
-
-| ID | Priority | Action | Exit criterion |
-|---|---|---|---|
-| STUDY-SEC-01 | P0 | Move Study API limits to durable shared limiter | Limits hold across Vercel instances and cold starts. |
-| STUDY-SEC-02 | P1 | Restrict/proxy remote Study figures | Arbitrary tracking image hosts are not loaded without validation policy. |
-| STUDY-REL-01 | P0 | Add provider-health-aware Study routing | Provider 429/timeout does not silently kill the learner turn. |
+- Durable shared limiter for Study APIs.
+- Restrict/proxy remote Study figures.
+- Provider-health-aware Study routing.
+- Keep global AI spend protection above all workspace entitlements.
 
 ---
 
 ## Branch / PR guardrails
 
 - Branch: `plan/study-workspace-roadmap-ux-redesign`
+- PR: Draft #359
 - Base: `main`
-- PR: Draft
-- This PR is **documentation only**.
-- Forbidden in this PR: React/TypeScript/SQL/API changes, migrations, environment variables, deployments, Production writes, auto-merge.
-- P1 implementation starts only after roadmap approval and should use a new implementation branch unless explicitly approved otherwise.
+- Current authorised code scope: **P1 Study UX only**.
+- Not authorised here: DB/SQL, PDF backend, image generation, model-router backend changes, provider keys, Production deployment or merge.
+- Main and Production remain untouched until CI + preview review + explicit approval.
