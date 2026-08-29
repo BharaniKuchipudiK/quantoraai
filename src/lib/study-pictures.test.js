@@ -83,3 +83,32 @@ test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
 });
+
+test('a caption about the instruction earns no diagram', () => {
+  // The tutor prompt describes the picture tag, and the model sometimes
+  // captions the tag rather than the subject. There is no diagram of that, and
+  // drawing decorative shapes for it is the placeholder content this platform
+  // refuses to ship in anyone else's build.
+  for (const caption of [
+    'Opening a study idea with an icebreaker and visual tag',
+    'one sentence about this idea',
+    'A picture tag for this idea',
+    'placeholder scene',
+  ]) {
+    assert.equal(studyVisualKind(caption), null, caption);
+  }
+});
+
+test('a caption naming a real subject still earns its diagram', () => {
+  assert.equal(studyVisualKind('Free-body diagram of a block on a table'), 'physics-motion');
+  assert.equal(studyVisualKind('Solving for the unknown on both sides'), 'algebra-balance');
+  assert.equal(studyVisualKind('The nucleus inside a plant cell'), 'biology-cell');
+  assert.equal(studyVisualKind('Atoms joined by a covalent bond'), 'chemistry-bond');
+  assert.equal(studyVisualKind('Slope of a distance-time graph'), 'graph');
+  assert.equal(studyVisualKind('How temperature leads to pressure'), 'concept-relationship');
+});
+
+test('a caption naming no subject at all draws nothing', () => {
+  assert.equal(studyVisualKind('Here is something interesting'), null);
+  assert.equal(studyVisualKind(''), null);
+});
