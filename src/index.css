@@ -2394,12 +2394,21 @@ body {
   letter-spacing: -0.02em;
 }
 
+/*
+ * These values had never rendered — the attribute they hang off was set for the
+ * first time alongside this change — so they were design nobody had read. Tuned
+ * for reading rather than for chat: a lesson is prose a learner works through,
+ * not a message they skim.
+ */
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose,
 html[data-quantora-domain="education"] .app-shell--studio .study-lesson {
   font-family: var(--font-study-body);
-  font-size: 1.05rem;
-  line-height: 1.5;
-  max-width: 40rem;
+  font-size: 1.06rem;
+  /* 1.5 is chat spacing. Continuous prose wants air between the lines. */
+  line-height: 1.72;
+  letter-spacing: 0.003em;
+  /* ~66 characters: the measure long-form reading is comfortable at. */
+  max-width: 34rem;
 }
 
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose h1,
@@ -2415,8 +2424,31 @@ html[data-quantora-domain="education"] .app-shell--studio .study-lesson h3 {
 }
 
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose p {
-  line-height: 1.5 !important;
-  margin: 0 0 0.5rem;
+  line-height: 1.72 !important;
+  /* Paragraphs are the unit of an idea here, so they get real separation. */
+  margin: 0 0 1.05em;
+}
+
+/* A lead paragraph opens the idea; the eye needs somewhere to land first. */
+html[data-quantora-domain="education"] .app-shell--studio .study-lesson > p:first-of-type {
+  font-size: 1.12rem;
+  line-height: 1.62;
+  color: inherit;
+}
+
+/* Bold inside a lesson marks the term being taught — give it real weight. */
+html[data-quantora-domain="education"] .app-shell--studio .study-lesson strong {
+  font-weight: 800;
+}
+
+html[data-quantora-domain="education"] .app-shell--studio .study-lesson ul,
+html[data-quantora-domain="education"] .app-shell--studio .study-lesson ol {
+  margin: 0 0 1.05em;
+  padding-left: 1.25rem;
+}
+
+html[data-quantora-domain="education"] .app-shell--studio .study-lesson li {
+  margin-bottom: 0.4em;
 }
 
 html[data-quantora-domain="education"] .app-shell--studio .ai-studio-thread {

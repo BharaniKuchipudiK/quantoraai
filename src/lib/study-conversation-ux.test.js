@@ -7,11 +7,26 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('the vague Your turn banner is replaced by an embedded answer affordance', () => {
+test('the lesson never renders a second composer', () => {
+  /*
+   * This first replaced a vague "Your turn" banner with an embedded input, then
+   * the input itself had to go. It was a plain field calling the same send path
+   * as the composer at the bottom of the screen, with none of its capabilities
+   * — no attachment, no voice, no enhance — and two inputs on one screen is an
+   * ambiguity, not a convenience.
+   */
   const markdown = read('src/components/StudyMarkdown.jsx');
-  assert.match(markdown, /data-quantora-study-answer-affordance="embedded"/);
-  assert.match(markdown, /aria-label="Answer the tutor question"/);
+  assert.doesNotMatch(markdown, /data-quantora-study-answer-affordance/);
+  assert.doesNotMatch(markdown, /<input|<form/);
   assert.doesNotMatch(markdown, /data-quantora-study-your-turn|Your turn — tap or type/);
+});
+
+test('the question is anchored in the composer, and only when one was asked', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  // The prompt tells the tutor to END with "Write your attempt", so matching
+  // that phrase put an answer field under lessons that had asked nothing.
+  assert.match(studio, /studyAwaitsAnswer\(/);
+  assert.match(studio, /awaitingStudyAnswer \? 'Write your answer to the question above/);
 });
 
 test('incorrect resolution offers repair choices without punitive red failure styling', () => {
