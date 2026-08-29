@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import StudyTutorBoard from './StudyTutorBoard.jsx';
 import { gradeStudyCheck, studyCheckOutcomeFact } from '../lib/study-tutor-brief.js';
 import { studyLessonAsk, studyQuizAsk } from '../lib/study-learning-resources.js';
-import { miniPracticeFor, studyMiniPracticeAsk } from '../lib/study-practice-desk.js';
+import { miniPracticeFor } from '../lib/study-practice-desk.js';
 
 /**
  * Conversation-first Study shell.
@@ -177,16 +177,7 @@ export default function StudyTutorShell({
 
         <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap', marginTop: '7px' }}>
           <button type="button" onClick={() => askOrSend(studyLessonAsk(topic))} style={actionStyle(false)}>Explain</button>
-          <button
-            type="button"
-            onClick={() => {
-              setActivity('practice');
-              askOrSend(studyMiniPracticeAsk(topic, practice));
-            }}
-            style={actionStyle(false)}
-          >
-            Practice
-          </button>
+          <button type="button" onClick={() => setActivity('practice')} style={actionStyle(false)}>Practice</button>
           <button
             type="button"
             aria-label="Test me on this"
@@ -201,7 +192,6 @@ export default function StudyTutorShell({
           </button>
         </div>
 
-        {/* Preserve the evidence language in a compact form; cognition stays visible without becoming a dashboard. */}
         <div style={{ marginTop: '7px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', color: subtextColor, fontSize: '0.68rem' }}>
           <span data-quantora-study-encouragement="true">{encouragement.glyph} {encouragement.text}</span>
           <span aria-hidden="true">·</span>
