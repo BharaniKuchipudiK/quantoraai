@@ -278,6 +278,43 @@ export function findBrokenLinks(html, { files = [] } = {}) {
       }
     }
   }
+  
+  /*
+   * A STYLESHEET THAT WAS NEVER BUILT IS A BROKEN LINK.
+   *
+   * This function scanned <a> only, so <link href="styles.css"> and
+   * <script src="app.js"> pointing at files the build never produced were
+   * invisible — the page renders unstyled or inert and every check passed. The
+   * one defect a person notices first was the one nothing looked for.
+   *
+   * Only RELATIVE paths are judged. An absolute "/api/preview-image?u=..." is a
+   * server route, not a file in this build, and the VFS does not describe it;
+   * judging those would flag every proxied photo on every shop page. A remote
+   * URL is skipped for the reason the <a> scan skips it — no network calls, no
+   * guessing about a host we have not contacted.
+   */
+  if (known.size) {
+    for (const match of source.matchAll(/<(link|script|img|source)\b([^>]*)>/gi)) {
+      const tag = match[1].toLowerCase();
+      const raw = tag === 'link' ? attr(match[2], 'href') : attr(match[2], 'src');
+      if (raw === null) continue;
+      const target = raw.trim();
+      if (!target || DEAD_HREF.test(target)) continue;
+      if (/^(?:https?:|mailto:|tel:|data:|blob:|\/\/)/i.test(target)) continue;
+      // Absolute paths are routes, not build outputs. See above.
+      if (target.startsWith('/')) continue;
+
+      const path = target.split(/[?#]/)[0].replace(/^\.\//, '');
+      if (!path || known.has(path)) continue;
+      findings.push({
+        kind: 'broken-link',
+        data: { file: path, target },
+        what: `"${target}" points at a file that wasn't built.`,
+        where: match[0].slice(0, 120),
+      });
+    }
+  }
+
   return { checked: true, reason: null, findings };
 }
 

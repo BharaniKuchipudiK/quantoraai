@@ -282,10 +282,10 @@ test('a page needing several kinds of repair at once gets all of them', () => {
 // ------------------------------------------------------------- file links --
 
 /*
- * NOTE ON SCOPE: findBrokenLinks only scans <a> tags, so a broken <link href>
- * stylesheet or <script src> is never detected in the first place. That is a
- * Phase 01 detection gap, recorded here rather than widened inside a repair
- * change — it would move finding counts across every build on the platform.
+ * This repair existed before anything could reach it for stylesheets:
+ * findBrokenLinks scanned <a> only, so a broken <link href> was never detected
+ * and never arrived here. Detection was widened separately; the case below is
+ * that pairing working end to end.
  */
 test('a link is pointed at the file of that name the build shipped', () => {
   const page = '<!DOCTYPE html><html><body><a href="assets/guide.html">Guide</a></body></html>';
@@ -319,4 +319,23 @@ test('a file link is refused exactly once, not by two passes', () => {
   const files = ['index.html'];
   const repair = repairBuild(page, inspectBuildTruth(page, { files }).findings, { files });
   assert.equal(repair.refusals.length, 1, 'one mistake must not be reported as two');
+});
+
+test('a stylesheet in the wrong directory is now detected AND repaired', () => {
+  const page = '<!DOCTYPE html><html><head><link rel="stylesheet" href="assets/styles.css"></head><body>x</body></html>';
+  const files = ['index.html', 'styles.css'];
+  const found = inspectBuildTruth(page, { files }).findings;
+  assert.equal(found.length, 1, 'detection reaches the stylesheet at all');
+
+  const repair = repairBuild(page, found, { files });
+  assert.match(repair.html, /href="styles\.css"/, 'and the wrong path is corrected');
+  assert.deepEqual(inspectBuildTruth(repair.html, { files }).findings, [], 'the page is clean on re-inspection');
+});
+
+test('a stylesheet that genuinely was not built stays refused', () => {
+  const page = '<!DOCTYPE html><html><head><link rel="stylesheet" href="theme.css"></head><body>x</body></html>';
+  const files = ['index.html', 'styles.css'];
+  const repair = repairBuild(page, inspectBuildTruth(page, { files }).findings, { files });
+  assert.equal(repair.fixes.length, 0, 'writing a stylesheet nobody asked for is not a repair');
+  assert.match(repair.refusals[0].why, /creating a page nobody asked for/);
 });
