@@ -227,41 +227,6 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
       };
     }
   }
-  /*
-   * A TURN THAT CHANGED NOTHING HANDS BACK THE DESK, NOT AN EMPTY MAP.
-   *
-   * Returning {} made every caller responsible for remembering didUpdate, and
-   * one of them got it wrong in a way that reads as correct:
-   *
-   *     advanceBuildJob(proposed, assembled.vfs || vfs)
-   *
-   * `{}` is truthy, so that fallback never fired. Plain chat in a build session
-   * handed the job planner an empty desk and it judged every step against no
-   * files at all. The guard looked like protection and was not.
-   *
-   * The rejection path a few lines up already returns currentVfs for exactly
-   * this reason. This makes the quiet path agree with it, so `.vfs` is always
-   * the desk as it stands and no caller has to remember anything.
-   *
-   * didUpdate and reopenDesk are unchanged: nothing was built, nothing is
-   * claimed, and the desk does not reopen on plain chat.
-   */
-  if (!didUpdate) {
-    return {
-      vfs: currentVfs,
-      code: pickPreviewEntry(currentVfs) || code,
-      didUpdate: false,
-      reopenDesk: false,
-      rejected: false,
-      needsWebEntry: false,
-      previewChanged: !hadProject,
-      job: nextJob,
-      scaleNote: ensured.scaleNote || '',
-      patchFailures: assembled.patchFailures || [],
-      emptyFenceKept: assembled.emptyFenceKept || [],
-    };
-  }
-
   return {
     vfs,
     code,

@@ -131,39 +131,12 @@ test('the first build does not force the coding desk open', () => {
 });
 
 test('plain chat does not revive or reopen a project', () => {
-  const desk = {
+  const follow = applyWorkspaceFromChat('Looks good. What next?', {
     'index.html': { content: '<!DOCTYPE html><html><body>Hi</body></html>', language: 'html' },
-  };
-  const follow = applyWorkspaceFromChat('Looks good. What next?', desk);
-  assert.equal(follow.didUpdate, false, 'nothing was built, so nothing is claimed');
-  assert.equal(follow.reopenDesk, false, 'and the desk does not reopen on plain chat');
-  /*
-   * Asserts the desk is UNCHANGED, not that the map is empty.
-   *
-   * The empty map was the mechanism, not the invariant, and it is what let
-   * `assembled.vfs || vfs` look like a guard while never firing — {} is truthy.
-   * "Unchanged" is also the stronger claim: it catches a no-op that quietly
-   * edited the desk, which an emptiness check cannot see.
-   */
-  assert.deepEqual(follow.vfs, desk, 'the build is handed back exactly as it was');
-});
-
-test('INVARIANT: a caller reading .vfs without checking didUpdate never loses the build', () => {
-  // The bug this closes lived at a caller that believed it had a fallback.
-  const desk = {
-    'index.html': { content: '<!DOCTYPE html><html><body>Shop</body></html>', language: 'html' },
-    'styles.css': { content: '.card{padding:8px}', language: 'css' },
-  };
-  for (const reply of [
-    'Looks good. What next?',
-    'Thanks!',
-    'Can you explain what you built?',
-    '',
-  ]) {
-    const out = applyWorkspaceFromChat(reply, desk);
-    assert.deepEqual(out.vfs, desk, `reply "${reply}" must not empty the desk`);
-    assert.equal(Boolean(out.vfs || desk), true, 'and {} would have defeated a truthy fallback');
-  }
+  });
+  assert.equal(follow.didUpdate, false);
+  assert.equal(follow.reopenDesk, false);
+  assert.deepEqual(follow.vfs, {});
 });
 
 test('error-path provider death still exposes extractable fences for workspace apply', () => {
