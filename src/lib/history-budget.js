@@ -121,17 +121,3 @@ export function budgetHistory(messages = [], { maxBytes = HISTORY_BYTE_BUDGET } 
 
   return { history: working, trimmed, dropped, bytes };
 }
-
-/**
- * What to tell the person, when anything was lost.
- *
- * Silence here would be the platform quietly forgetting their conversation and
- * letting them wonder why it stopped remembering.
- */
-export function describeHistoryBudget({ trimmed = 0, dropped = 0 } = {}) {
-  if (!trimmed && !dropped) return '';
-  const parts = [];
-  if (dropped) parts.push(`the earliest ${dropped} message${dropped === 1 ? '' : 's'}`);
-  if (trimmed) parts.push(`the long output of ${trimmed} earlier turn${trimmed === 1 ? '' : 's'}`);
-  return `This conversation got large enough to stop sending, so I left out ${parts.join(' and ')}. Everything built is still on the desk — only the transcript was shortened.`;
-}

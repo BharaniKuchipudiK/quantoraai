@@ -7,9 +7,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const TUTOR_UI_MODULES = [
-  'src/components/StudyTutorBoard.jsx',
+  'src/components/StudyTutorShell.jsx',
   'src/lib/study-tutor-brief.js',
-  'src/lib/study-practice-desk.js',
   'src/lib/study-learning-resources.js',
   'src/lib/study-syllabus-overlay.js',
 ];
@@ -35,19 +34,25 @@ test('Study tutor UI modules do not hard-wire famous chapter titles', () => {
   }
 });
 
-test('Study tutor board is a persistent workspace sibling, not mounted under the latest message', () => {
+test('Study tutor focus is a persistent workspace sibling, not mounted under the latest message', () => {
   const source = fs.readFileSync(path.join(root, 'src/components/AiStudio.jsx'), 'utf8');
   const workspace = fs.readFileSync(path.join(root, 'src/components/StudyTutorWorkspace.jsx'), 'utf8');
   const feedIndex = source.indexOf('{renderedChatFeed}');
   const boardIndex = source.indexOf('<StudyTutorWorkspace');
-  assert.ok(feedIndex >= 0 && boardIndex > feedIndex, 'Study board must render after the chat feed');
+  assert.ok(feedIndex >= 0 && boardIndex > feedIndex, 'Study focus must render after the chat feed');
   assert.equal(
     source.includes("studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active"),
     false,
-    'Study board must not be keyed to the latest AI message',
+    'Study focus must not be keyed to the latest AI message',
   );
   assert.match(workspace, /key=\{`\$\{activeSessionId\}:\$\{brief\.conceptId\}`\}/);
   assert.match(source, /lazy\(\(\) => import\('\.\/StudyTutorWorkspace\.jsx'\)\)/);
+});
+
+test('Study tutor focus has no hidden legacy board or More dashboard', () => {
+  const shell = fs.readFileSync(path.join(root, 'src/components/StudyTutorShell.jsx'), 'utf8');
+  assert.doesNotMatch(shell, /StudyTutorBoard|data-quantora-study-focus-detail/);
+  assert.doesNotMatch(shell, />\s*(?:More|Less)\s*</);
 });
 
 test('Study assessment responses are generation-guarded across topic and session changes', () => {
@@ -58,4 +63,14 @@ test('Study assessment responses are generation-guarded across topic and session
     (workspace.match(/assessmentGeneration\.current !== generation/g) || []).length >= 3,
     'issue and grade continuations must reject stale responses',
   );
+});
+
+test('Study keeps contextual tutoring prose out of the persistent UI layer', () => {
+  const shell = fs.readFileSync(path.join(root, 'src/components/StudyTutorShell.jsx'), 'utf8');
+  const brief = fs.readFileSync(path.join(root, 'src/lib/study-tutor-brief.js'), 'utf8');
+  assert.doesNotMatch(shell, /brief\?\.next|encouragement|progress\.caption|miniPracticeFor|local-check|gradeStudyCheck/);
+  assert.doesNotMatch(brief, /encouragement|nextBeat|deriveSessionCheck|Quick honesty check|No fake score/);
+  assert.match(shell, /askOrSend\(studyPracticeAsk\(topic\)\)/);
+  assert.match(shell, /askOrSend\(studyQuizAsk\(topic\)\)/);
+  assert.match(shell, /activity === 'check' && assessment\?\.status === 'error'/);
 });

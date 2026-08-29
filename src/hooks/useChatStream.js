@@ -38,7 +38,12 @@ import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
-import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
+import { budgetHistory } from '../lib/history-budget.js';
+import {
+  assessSessionContinuity,
+  createSessionHandoverContract,
+  shouldOfferSessionHandover,
+} from '../lib/session-continuity.js';
 import {
   proveCodingTurn,
   codingTurnMayClaimSuccess,
@@ -493,7 +498,11 @@ export function useChatStream({
     const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
     const historyBudget = budgetHistory(filteredMessages);
     const cleanMessages = historyBudget.history;
-    const historyNotice = describeHistoryBudget(historyBudget);
+    const continuityTranscript = [...filteredMessages, { sender: 'user', text: visibleUserText }];
+    const continuityPressure = assessSessionContinuity({
+      messages: continuityTranscript,
+      historyResult: historyBudget,
+    });
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
     const currentOfficeArtifact = activeOfficeArtifact(messages);
@@ -777,6 +786,16 @@ export function useChatStream({
         ...(turnDomain && turnDomain !== studioDomain ? { studioDomain: turnDomain } : {}),
       });
     }
+    const sessionContinuity = shouldOfferSessionHandover(messages, continuityPressure)
+      ? createSessionHandoverContract({
+        sourceSessionId: activeSessionId,
+        projectId: sessionContext?.projectId || turnContext?.projectId || null,
+        studioDomain: turnDomain,
+        conversationContext: turnContext,
+        messages: continuityTranscript,
+        pressure: continuityPressure,
+      })
+      : null;
 
     const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
     /*
@@ -1596,13 +1615,10 @@ export function useChatStream({
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            /*
-             * The trim notice rides with the other turn notes, never alone and
-             * never silent: a platform that quietly forgets a conversation
-             * leaves somebody wondering why it stopped remembering.
-             */
-            text: (proofNote || historyNotice)
-              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${[historyNotice, proofNote].filter(Boolean).join('\n\n')}`.trim()
+            // User-facing continuity is carried by the structured handover chip;
+            // do not append fixed assistant prose when history pressure rises.
+            text: proofNote
+              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${proofNote}`.trim()
               : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
             ...(codingProof ? {
@@ -1638,6 +1654,7 @@ export function useChatStream({
                 userAsked: shopIntakeAsk.userAsked,
               },
             } : {}),
+            ...(sessionContinuity ? { sessionContinuity } : {}),
           } : m));
           if (typeof updateActiveSession === 'function' && (normalized.contextUpdate || intakeFacts.length)) {
             updateActiveSession({
