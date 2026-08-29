@@ -61,17 +61,6 @@ export function activeOfficeArtifactKind(messages = []) {
   return artifact?.kind || artifact?.format || null;
 }
 
-export function countOfficeBriefSignals(text = '') {
-  const value = String(text || '');
-  return [
-    DOCUMENT_ARCHETYPE.test(value),
-    PRESENTER_SIGNAL.test(value),
-    EXECUTIVE_AUDIENCE.test(value) || ACADEMIC_AUDIENCE.test(value),
-    PURPOSE_SIGNAL.test(value),
-    EVIDENCE_SIGNAL.test(value),
-  ].filter(Boolean).length;
-}
-
 async function interpretOfficeTurn({ text, messages, officeKind, activeArtifact, priorBriefing }) {
   try {
     const history = (Array.isArray(messages) ? messages : []).slice(-10).map((message) => ({

@@ -436,14 +436,6 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
   return { vfs: withDesk.vfs, wrote: true, path };
 }
 
-export function extractHtmlFromResponse(rawText) {
-  const { vfs, code } = assembleStudioPreview(rawText);
-  const htmlFile = vfs['index.html']?.content
-    || Object.entries(vfs).find(([name]) => /\.html$/i.test(name))?.[1]?.content;
-  if (htmlFile) return String(htmlFile).trim();
-  return isHtmlDocument(code) ? String(code).trim() : '';
-}
-
 export function extractRunnableCode(rawText) {
   const { code } = assembleStudioPreview(rawText);
   if (code) return code;
@@ -483,16 +475,6 @@ export function canOpenStudioPreviewPane(rawText, currentVfs = {}) {
 
 export function hasPreviewableContent(rawText) {
   return canOpenStudioPreviewPane(rawText);
-}
-
-export function preparePreviewHtml(rawText, imageMap = new Map()) {
-  const assembled = assembleStudioPreview(rawText);
-  let html = extractHtmlFromResponse(rawText) || assembled.code;
-  if (!html || !isHtmlDocument(html)) return '';
-  if (imageMap.size) {
-    for (const [token, dataUrl] of imageMap) html = html.split(token).join(dataUrl);
-  }
-  return prepareCodeForPreview(html, assembled.vfs);
 }
 
 export function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {

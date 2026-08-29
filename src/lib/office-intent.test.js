@@ -6,7 +6,6 @@ import {
   detectOfficeIntent,
   officeKindFromTool,
   isPresentationIntent,
-  isOfficeIntent,
   rememberOfficeToolSelection,
   sanitizeOfficeFilename,
   looksLikeWebBuildRequest,
@@ -50,14 +49,6 @@ test('does NOT false-positive on non-office uses of similar words', () => {
 test('only user turns count, not assistant echoes', () => {
   clearOfficeToolSelection();
   assert.equal(detectOfficeIntent({ messages: [{ sender: 'ai', text: 'here is your powerpoint' }] }), null);
-});
-
-test('isPresentationIntent / isOfficeIntent convenience', () => {
-  clearOfficeToolSelection();
-  assert.equal(isPresentationIntent([{ sender: 'user', text: 'presentation on climate' }]), true);
-  assert.equal(isPresentationIntent([{ sender: 'user', text: 'a react todo app' }]), false);
-  assert.equal(isOfficeIntent({ messages: [{ sender: 'user', text: 'an excel budget' }] }), true);
-  assert.equal(isOfficeIntent({ messages: [{ sender: 'user', text: 'a coffee shop website' }] }), false);
 });
 
 test('sanitizeOfficeFilename strips extension/path/unsafe chars', () => {

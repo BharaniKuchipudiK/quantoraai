@@ -137,11 +137,6 @@ export function isPresentationIntent(messages = []) {
   return detectOfficeIntent({ messages }) === OFFICE_KIND.POWERPOINT;
 }
 
-/** Any office artifact at all (presentation/sheet/doc/pdf). */
-export function isOfficeIntent(opts) {
-  return detectOfficeIntent(opts) !== null;
-}
-
 /** Safe file base name for a download (no extension, no path/unsafe chars). */
 export function sanitizeOfficeFilename(name, fallback = 'quantora-document') {
   const base = String(name || '')

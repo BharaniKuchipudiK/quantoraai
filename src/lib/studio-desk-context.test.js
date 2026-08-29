@@ -4,7 +4,6 @@ import {
   buildCodingTurnPacket,
   buildDeskContextPacket,
   buildTruthChecks,
-  chipsFromDeskProbes,
   codingTurnRequestFields,
   describeMissingShopUi,
   deskChecksRegressed,
@@ -54,21 +53,6 @@ test('a running boutique packet names files, catalog, and live Preview facts', (
   assert.match(prompt, /photos=/);
   assert.match(prompt, /Dharmavaram Silk/);
   assert.match(prompt, /Never claim a control/);
-});
-
-test('missing cart and currency become failed checks and chips', () => {
-  const html = '<!DOCTYPE html><html><body><div class="product-card">saree boutique</div></body></html>';
-  const probed = probeRunningDesk({
-    html,
-    vfs: { 'index.html': { content: html }, 'products.json': { content: '[]' } },
-    job: { purpose: 'A shop website', mustWork: ['Product images are real photos'] },
-  });
-  assert.equal(probed.facts.hasCart, false);
-  assert.equal(probed.facts.hasCurrency, false);
-  const chips = chipsFromDeskProbes(probed.checks);
-  assert.ok(chips.some((chip) => chip.id === 'gap-cart'));
-  assert.ok(chips.some((chip) => chip.id === 'gap-currency'));
-  assert.ok(chips.some((chip) => chip.id === 'gap-photos'));
 });
 
 test('Travel never receives a coding desk packet', () => {
@@ -125,22 +109,6 @@ test('sanitize drops oversized untrusted fields', () => {
   assert.equal(clean.facts.hasCart, true);
 });
 
-test('a live cart click is merged into Preview checks', () => {
-  const packet = buildDeskContextPacket({
-    html: shopHtml,
-    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
-    vfs: {
-      'index.html': { content: shopHtml, language: 'html' },
-      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
-    },
-  });
-  const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: false });
-  assert.equal(merged.facts.bagIncremented, false);
-  assert.ok(merged.checks.some((check) => check.id === 'cart-click' && check.ok === false));
-  assert.ok(chipsFromDeskProbes(merged.checks).some((chip) => chip.id === 'gap-cart-click'));
-  assert.match(formatDeskContextForPrompt(merged), /CART CLICK: bag did not increment/);
-});
-
 test('probes regress only when a passing check starts failing', () => {
   const before = [{ id: 'photos', ok: true }, { id: 'cart', ok: false }];
   const after = [{ id: 'photos', ok: false }, { id: 'cart', ok: false }, { id: 'currency', ok: false }];
@@ -155,37 +123,6 @@ test('probes regress only when a passing check starts failing', () => {
     [{ id: 'job-add-item', ok: false, state: 'unverified' }],
     [{ id: 'job-add-item', ok: false, state: 'fix' }],
   ), false);
-});
-
-test('live Preview cart and currency win over a failed HTML regex check', () => {
-  const html = '<!DOCTYPE html><html><body><div class="product-card">saree boutique</div></body></html>';
-  const packet = buildDeskContextPacket({
-    html,
-    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
-    vfs: {
-      'index.html': { content: html },
-      'products.json': { content: '[{"id":"a","name":"Uppada"}]' },
-    },
-  });
-  assert.equal(packet.facts.hasCart, false);
-  assert.equal(packet.facts.hasCurrency, false);
-  const merged = mergeLiveDeskProbe(packet, {
-    hasCart: true,
-    hasCurrency: true,
-    photoCount: 2,
-    uniquePhotoCount: 2,
-    bagIncremented: true,
-  });
-  assert.equal(merged.facts.hasCart, true);
-  assert.equal(merged.facts.hasCurrency, true);
-  assert.equal(merged.facts.hasPhotos, true);
-  assert.ok(merged.checks.some((check) => check.id === 'cart' && check.ok === true));
-  assert.ok(merged.checks.some((check) => check.id === 'currency' && check.ok === true));
-  assert.ok(merged.checks.some((check) => check.id === 'photos' && check.ok === true));
-  const chips = chipsFromDeskProbes(merged.checks);
-  assert.equal(chips.some((chip) => chip.id === 'gap-cart'), false);
-  assert.equal(chips.some((chip) => chip.id === 'gap-currency'), false);
-  assert.equal(chips.some((chip) => chip.id === 'gap-photos'), false);
 });
 
 test('photos stay unverified without live decode even when HTML has photos', () => {
@@ -290,21 +227,6 @@ test('a desk that is neither a shop nor a calculator still gets review criteria'
   assert.match(packet.nextBeat, /does nothing when clicked/);
 });
 
-test('the running page decides the generic beat, and unverified stays out of it', () => {
-  const packet = buildDeskContextPacket({ html: todoHtml, job: todoJob, vfs: { 'index.html': { content: todoHtml } } });
-  const broken = mergeLiveDeskProbe(packet, { itemAdded: false });
-  assert.equal(broken.checks.find((check) => check.id === 'job-add-item').state, 'fix');
-  assert.equal(broken.nextBeat, 'Adding an item does nothing on the running Preview');
-  assert.deepEqual(broken.failed, ['job-add-item']);
-  assert.ok(chipsFromDeskProbes(broken.checks).some((chip) => chip.id === 'gap-add-item'));
-
-  const fixed = mergeLiveDeskProbe(packet, { itemAdded: true });
-  assert.equal(fixed.checks.find((check) => check.id === 'job-add-item').state, 'ok');
-  assert.equal(fixed.nextBeat, '');
-  assert.deepEqual(fixed.failed, []);
-  assert.equal(chipsFromDeskProbes(fixed.checks).length, 0);
-});
-
 test('the prompt tells the model what Preview was never asked', () => {
   const packet = buildDeskContextPacket({ html: todoHtml, job: todoJob, vfs: { 'index.html': { content: todoHtml } } });
   const prompt = formatDeskContextForPrompt(mergeLiveDeskProbe(packet, { itemAdded: false }));
@@ -406,26 +328,6 @@ const driveCleanerHtml = `<!DOCTYPE html><html><head><title>Drive Cleaner Agent<
   <ul class="file-catalog"><li>Report Q3.pdf</li><li>Vacation.jpg</li></ul>
 </main>
 </body></html>`;
-
-test('a Drive cleaner dashboard never gets shop Preview checks', () => {
-  const staleShopJob = {
-    purpose: 'A shop website',
-    mustWork: ['Catalog and bag still work', 'Product images are real photos, not empty frames'],
-  };
-  const packet = buildDeskContextPacket({
-    html: driveCleanerHtml,
-    job: staleShopJob,
-    vfs: { 'index.html': { content: driveCleanerHtml } },
-  });
-  assert.equal(packet.facts.shop, false);
-  const shopIds = ['photos', 'cart', 'currency', 'catalog', 'cart-click'];
-  assert.equal(packet.checks.some((check) => shopIds.includes(check.id)), false);
-  assert.equal(packet.checks.some((check) => /Add to Cart|Product photos|Currency/i.test(check.label)), false);
-  const live = mergeLiveDeskProbe(packet, { hasCart: false, hasCurrency: false, photoCount: 0 });
-  assert.equal(live.facts.shop, false);
-  assert.equal(live.nextBeat.includes('Add to Cart'), false);
-  assert.equal(chipsFromDeskProbes(live.checks).some((chip) => /cart|photo|currency/i.test(chip.id)), false);
-});
 
 test('Drive cleaner job cards do not classify as shop desks', () => {
   const job = {

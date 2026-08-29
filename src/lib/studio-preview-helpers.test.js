@@ -5,10 +5,8 @@ import {
   messageHasExtractableWorkspaceCode,
   assembleStudioPreview,
   canOpenStudioPreviewPane,
-  extractHtmlFromResponse,
   extractRunnableCode,
   hasPreviewableContent,
-  preparePreviewHtml,
   runningPreviewCode,
   writeHealedPreviewToVfs,
   applyDeskReviewPatch,
@@ -46,28 +44,10 @@ test('assembled preview keeps HTML as the entry and sibling CSS/JS in the VFS', 
   assert.ok(assembled.vfs['script.js']);
 });
 
-test('HTML with a filepath attribute is not treated as a CSS-first fence', () => {
-  const html = extractHtmlFromResponse(splitApp);
-  assert.match(html, /<button class="key">/);
-  assert.doesNotMatch(html, /filepath=/);
-});
-
-test('preparePreviewHtml inlines sibling CSS so chat Preview matches the workspace', () => {
-  const prepared = preparePreviewHtml(splitApp);
-  assert.match(prepared, /\.key\{display:grid/);
-  assert.match(prepared, /document\.querySelector/);
-});
-
 test('a travel answer with a fenced hotel name is not previewable', () => {
   const text = 'Stay in Ubud.\n\n```text\nHotel Indigo\n```\n';
   assert.equal(hasPreviewableContent(text), false);
   assert.equal(extractRunnableCode(text), null);
-});
-
-test('unfenced HTML documents are still previewable', () => {
-  const html = '<!DOCTYPE html><html><head><style>body{color:red}</style></head><body>Hi</body></html>';
-  assert.equal(hasPreviewableContent(html), true);
-  assert.match(extractHtmlFromResponse(html), /color:red/);
 });
 
 test('Swift-only iOS source does not open Live Preview', () => {

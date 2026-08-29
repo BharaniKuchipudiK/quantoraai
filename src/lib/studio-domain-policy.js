@@ -95,6 +95,3 @@ export function canExplicitlyPreviewCode(domain) {
   return studioDomainPolicy(domain).explicitCodePreview === true;
 }
 
-export function canUseMediaCanvas(domain) {
-  return studioDomainPolicy(domain).mediaCanvas === true;
-}

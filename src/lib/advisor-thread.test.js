@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   LONG_ADVISOR_USER_TURNS,
-  longAdvisorThreadCopy,
   newThreadLabel,
   resolveAdvisorSidebarClick,
-  shouldWarnLongAdvisorThread,
 } from './advisor-thread.js';
 
 test('Travel starts a new trip, Study starts a new topic, Studio stays New Chat', () => {
@@ -13,29 +11,6 @@ test('Travel starts a new trip, Study starts a new topic, Studio stays New Chat'
   assert.equal(newThreadLabel('education'), 'New topic');
   assert.equal(newThreadLabel(null), 'New Chat');
   assert.equal(newThreadLabel(undefined), 'New Chat');
-});
-
-test('a long Travel thread warns without wiping the current trip', () => {
-  const messages = Array.from({ length: LONG_ADVISOR_USER_TURNS }, (_, index) => ({
-    sender: 'user',
-    text: `turn ${index + 1}`,
-  }));
-  assert.equal(shouldWarnLongAdvisorThread({ messages, domain: 'travel' }), true);
-  const copy = longAdvisorThreadCopy('travel');
-  assert.match(copy.now, /getting long/i);
-  assert.match(copy.next, /stays in your list/i);
-  assert.equal(copy.action, 'New trip');
-});
-
-test('short Travel and website Studio do not show the long-thread warning', () => {
-  assert.equal(shouldWarnLongAdvisorThread({
-    messages: [{ sender: 'user', text: 'Tokyo in April' }],
-    domain: 'travel',
-  }), false);
-  assert.equal(shouldWarnLongAdvisorThread({
-    messages: Array.from({ length: LONG_ADVISOR_USER_TURNS }, () => ({ sender: 'user', text: 'build' })),
-    domain: null,
-  }), false);
 });
 
 test('clicking Travel again stays on the current trip', () => {

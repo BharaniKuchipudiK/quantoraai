@@ -97,10 +97,3 @@ export function normalizeAssistantResponse(text) {
   };
 }
 
-/**
- * Defensive display sanitizer for historical messages written before the
- * normalization boundary existed.
- */
-export function getAssistantDisplayText(text) {
-  return normalizeAssistantResponse(text).displayText;
-}
