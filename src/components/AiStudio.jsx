@@ -891,8 +891,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
      * shouldAutoAdvanceJob and its stop conditions stay in build-job.js, tested.
      */
     const proposed = readPlanMarker(rawText);
-    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
-    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
+    /*
+     * `assembled.vfs || vfs` was not a fallback: {} is truthy, so it never
+     * fired and a no-op turn judged every job step against an empty desk.
+     * applyWorkspaceFromChat now returns the desk as it stands whether or not
+     * the turn changed it, so there is nothing left to fall back to.
+     */
+    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs) : prev));
     setPatchNote([
       ...(assembled.patchFailures || [])
         .map((failure) => describePatchFailures(failure.result, failure.filepath)),
