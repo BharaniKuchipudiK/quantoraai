@@ -155,32 +155,6 @@ export function previewHtmlHasRealPhotos(html = '') {
   return new RegExp(String.raw`<img\b[^>]*\bsrc\s*=\s*["']${RELIABLE_IMG_SRC}`, 'i').test(String(html || ''));
 }
 
-/**
- * Guaranteed no-network placeholder — used ONLY as the final <img onerror> guard
- * so a viewer never sees a broken-image icon if every photo host is unreachable.
- * It is not a "real photo" and never counts as one; it is the safety net beneath
- * the real proxied photograph.
- */
-function svgFallbackPhoto(index = 0) {
-  const [from, to] = SHOP_PHOTO_PALETTE[index % SHOP_PHOTO_PALETTE.length];
-  const id = `quantora-photo-${index + 1}`;
-  const label = `Product ${index + 1}`;
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="${label}">`,
-    `<defs><linearGradient id="${id}-g" x1="0" y1="0" x2="1" y2="1">`,
-    `<stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/>`,
-    `</linearGradient></defs>`,
-    `<rect width="1200" height="800" fill="url(#${id}-g)"/>`,
-    `<rect x="72" y="72" width="1056" height="656" rx="28" fill="rgba(255,255,255,0.14)"/>`,
-    `<circle cx="220" cy="220" r="64" fill="rgba(255,255,255,0.22)"/>`,
-    `<text x="600" y="410" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="56">${label}</text>`,
-    `<text x="600" y="470" text-anchor="middle" fill="rgba(255,255,255,0.75)" font-family="system-ui,sans-serif" font-size="28">${id}</text>`,
-    `</svg>`,
-  ].join('');
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-
 const INJECTED_PHOTO_MARK = 'data-quantora-shop-photo="true"';
 const INJECTED_PHOTO_RE = /<img\b[^>]*data-quantora-shop-photo="true"[^>]*>/gi;
 const INJECTED_CARD_RE = /<(?:article|div)[^>]*data-quantora-shop-card="true"[^>]*>[\s\S]*?<\/(?:article|div)>/gi;
@@ -228,38 +202,6 @@ export function uniqueShopPhotoIds(html = '') {
     return _;
   });
   return ids;
-}
-
-function productCardRe() {
-  return /<(article|div|li)([^>]*class=["'][^"']*\b(?:product-card|product-item|product-tile|saree-card)\b[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi;
-}
-
-/**
- * Ensure an <img> carries the onerror→svg guard, so a proxied photo that cannot
- * reach its host (e.g. a preview server without the /api/preview-image function)
- * degrades to a self-contained placeholder instead of a broken-image icon.
- */
-function ensurePhotoGuard(tag, guardIndex = 0) {
-  if (/\bonerror\s*=/i.test(tag)) return tag;
-  const guard = svgFallbackPhoto(guardIndex);
-  return tag.replace(/<img\b/i, `<img onerror="this.onerror=null;this.src='${guard}'"`);
-}
-
-function rewriteCardPhoto(inner, used) {
-  let first = true;
-  return String(inner || '').replace(/<img\b[^>]*>/gi, (tag) => {
-    if (!new RegExp(String.raw`\bsrc\s*=\s*["']${ANY_IMG_SRC}`, 'i').test(tag)) return tag;
-    if (!first) return tag;
-    first = false;
-    const src = (tag.match(/\bsrc\s*=\s*["']([^"']+)/i) || [])[1] || '';
-    const id = photoIdentity(src);
-    if (isReliablePreviewPhotoSrc(src) && id && !used.has(id)) {
-      used.add(id);
-      return tag;
-    }
-    const swapped = tag.replace(/\bsrc\s*=\s*["'][^"']*["']/, `src="${nextUnusedShopPhoto(used)}"`);
-    return ensurePhotoGuard(swapped, used.size);
-  });
 }
 
 function isTinyDecorativeSvg(svg) {
