@@ -82,6 +82,7 @@ import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
+import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -320,6 +321,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Derive current session and messages
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
   const domainPolicy = studioDomainPolicy(studioDomain);
+
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
 
   /*
@@ -1061,6 +1063,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [missionDismissedFor, setMissionDismissedFor] = useState(null);
   const missionDismissed = missionDismissedFor === activeSessionId;
 
+
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
@@ -1545,6 +1548,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
+
+  /*
+   * Study used to put a second input under the lesson whenever the tutor said
+   * "Write your attempt" — a phrase the prompt tells it to end with, so the box
+   * appeared under lessons that had asked nothing. The question now anchors
+   * itself in the composer that was always there, and only when a question was
+   * genuinely asked.
+   *
+   * Declared HERE, after lastAiMessage. It was 487 lines above it, which is a
+   * temporal dead zone: const is hoisted but not initialised, so every render
+   * threw a ReferenceError and the whole studio went blank. Lint did not see
+   * it, the build did not see it, and no unit test renders this component.
+   */
+  const awaitingStudyAnswer = studioDomain === 'education'
+    && !isGenerating
+    && studyAwaitsAnswer(lastAiMessage?.text || '');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const previewAssemblyKey = previewAssemblyFingerprint(vfs);
@@ -1822,8 +1841,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}
-                            answerEnabled={lastAiMessage?.id === msg.id && !isActiveGenerating}
-                            onAnswer={(answer) => handleSendMessage(answer)}
                           />
                         ) : (
                           <ReactMarkdown
@@ -3797,7 +3814,7 @@ Paused — ${autoPauseRef.current}.`
                   e.target.style.height = 'auto';
                 }
               }}
-              placeholder={domainPolicy.placeholder}
+              placeholder={awaitingStudyAnswer ? 'Write your answer to the question above…' : domainPolicy.placeholder}
               style={{
                 width: '100%',
                 background: 'transparent',
