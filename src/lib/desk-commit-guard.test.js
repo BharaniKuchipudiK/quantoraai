@@ -6,6 +6,7 @@ import {
   describeMissingImports,
   findMissingLocalImports,
   looksTruncatedHtml,
+  describeDeskEvidence,
   vfsIsRunnablePreview,
 } from './desk-commit-guard.js';
 
@@ -160,4 +161,23 @@ test('package imports are not local files and are never flagged', () => {
 test('a plain HTML desk has no module graph to check', () => {
   assert.equal(deskCanStart({ 'index.html': { content: '<!DOCTYPE html><html><body><h1>Hi</h1></body></html>' } }), true);
   assert.equal(deskCanStart({}), true, 'an empty desk is not a broken one');
+});
+
+/*
+ * From a live session: a CALCULATOR that failed mid-turn was told Preview was
+ * proved "(0 catalog photos)". Photos are shop evidence. On a calculator the
+ * count is not a fact about the build, and printing it made a working page read
+ * as deficient.
+ */
+test('a build with no shop evidence says nothing about catalog photos', () => {
+  assert.equal(describeDeskEvidence({ photos: 0, hasCart: false }), '');
+  assert.equal(describeDeskEvidence({}), '');
+  assert.equal(describeDeskEvidence(), '');
+});
+
+test('real shop evidence is still reported, and counted correctly', () => {
+  assert.equal(describeDeskEvidence({ photos: 12 }), ' (12 catalog photos)');
+  assert.equal(describeDeskEvidence({ photos: 1 }), ' (1 catalog photo)');
+  assert.equal(describeDeskEvidence({ photos: 12, hasCart: true }), ' (12 catalog photos, Add to Cart)');
+  assert.equal(describeDeskEvidence({ photos: 0, hasCart: true }), ' (Add to Cart)');
 });
