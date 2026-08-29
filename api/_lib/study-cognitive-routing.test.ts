@@ -66,3 +66,47 @@ test('does not override explicit model choices or vision routing', () => {
   assert.strictEqual(applyStudyCapabilityRouting({ interpretation, baseDecision, explicitModelSelected: true }), baseDecision);
   assert.strictEqual(applyStudyCapabilityRouting({ interpretation, baseDecision, hasImages: true }), baseDecision);
 });
+
+/*
+ * A routing decision must not contradict itself.
+ *
+ * The reroute recomputed `provider` from the new primary and let
+ * `hasVisionSupport` ride through from the old one, so a swap across gateways
+ * produced an object describing two different models at once.
+ */
+test('a rerouted decision describes one model, not two', () => {
+  const base = {
+    primaryModelId: 'gemini-flash-latest',
+    fallbackModelIds: ['deepseek/deepseek-r1'],
+    reason: 'base',
+    provider: 'gemini' as const,
+    hasVisionSupport: true,
+    selectionSource: 'base',
+  };
+  const interpretation = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'Derive the Lagrangian and prove the theorem rigorously',
+  });
+  assert.ok(interpretation, 'an advanced Study turn is interpreted');
+
+  const routed = applyStudyCapabilityRouting({
+    interpretation,
+    baseDecision: base,
+    models: [
+      { id: 'gemini-flash-latest' },
+      { id: 'deepseek/deepseek-r1' },
+    ],
+  });
+
+  // Whether or not this particular turn reorders, the two fields must agree.
+  assert.equal(
+    routed.hasVisionSupport,
+    routed.primaryModelId.startsWith('gemini'),
+    'the vision flag must describe the primary the decision actually names',
+  );
+  assert.equal(
+    routed.provider,
+    routed.primaryModelId.startsWith('gemini') ? 'gemini' : 'openrouter',
+    'and so must the provider',
+  );
+});
