@@ -23,7 +23,7 @@ import {
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
-import { deskCanStart, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
+import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -41,6 +41,11 @@ import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
 import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
+import {
+  assessSessionContinuity,
+  createSessionHandoverContract,
+  shouldOfferSessionHandover,
+} from '../lib/session-continuity.js';
 import {
   proveCodingTurn,
   codingTurnMayClaimSuccess,
@@ -495,7 +500,15 @@ export function useChatStream({
     const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
     const historyBudget = budgetHistory(filteredMessages);
     const cleanMessages = historyBudget.history;
+    // The FACT that history was shortened, reported every time it happens. The
+    // handover chip is the offer to start fresh; it is shown once and never says
+    // anything was dropped, so it cannot stand in for this.
     const historyNotice = describeHistoryBudget(historyBudget);
+    const continuityTranscript = [...filteredMessages, { sender: 'user', text: visibleUserText }];
+    const continuityPressure = assessSessionContinuity({
+      messages: continuityTranscript,
+      historyResult: historyBudget,
+    });
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
     const currentOfficeArtifact = activeOfficeArtifact(messages);
@@ -785,6 +798,16 @@ export function useChatStream({
         ...(turnDomain && turnDomain !== studioDomain ? { studioDomain: turnDomain } : {}),
       });
     }
+    const sessionContinuity = shouldOfferSessionHandover(messages, continuityPressure)
+      ? createSessionHandoverContract({
+        sourceSessionId: activeSessionId,
+        projectId: sessionContext?.projectId || turnContext?.projectId || null,
+        studioDomain: turnDomain,
+        conversationContext: turnContext,
+        messages: continuityTranscript,
+        pressure: continuityPressure,
+      })
+      : null;
 
     const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
     /*
@@ -815,8 +838,9 @@ export function useChatStream({
     for (const item of attachments || []) {
       const url = item?.dataUrl;
       // No dataUrl at all: a non-image file, or one the reader already rejected.
+      // The reader knows which; trust it over guessing 'unsupported' for both.
       if (typeof url !== 'string' || !url.startsWith('data:image/')) {
-        excluded.push({ name: item?.name, reason: 'unsupported' });
+        excluded.push({ name: item?.name, reason: item?.excludedReason || 'unsupported' });
         continue;
       }
       if (deliverableImages.length >= MAX_ATTACHED_IMAGES) {
@@ -1328,9 +1352,8 @@ export function useChatStream({
                       missingImports.length
                         ? `${why}. ${describeMissingImports(missingImports)} Ask me to finish `
                           + `${missingImports.length === 1 ? 'that file' : 'those files'} and the rest of the build stays as it is.`
-                        : `${why}, but Preview is already proved on the desk `
-                          + `(${deskProof.evidence.photos || 0} catalog photos`
-                          + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                        : `${why}, but Preview is already proved on the desk`
+                          + `${describeDeskEvidence(deskProof.evidence)}. `
                           + 'Open Coding desk — the page is there.',
                       deskProof,
                     ),
@@ -1647,6 +1670,7 @@ export function useChatStream({
                 userAsked: shopIntakeAsk.userAsked,
               },
             } : {}),
+            ...(sessionContinuity ? { sessionContinuity } : {}),
           } : m));
           if (typeof updateActiveSession === 'function' && (normalized.contextUpdate || intakeFacts.length)) {
             updateActiveSession({
@@ -1713,9 +1737,8 @@ export function useChatStream({
                   ...m,
                   text: withBuildTruth(
                     deskCanStart(deskProof.vfs || {})
-                      ? `${why}, but Preview is already proved on the desk `
-                        + `(${deskProof.evidence.photos || 0} catalog photos`
-                        + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                      ? `${why}, but Preview is already proved on the desk`
+                        + `${describeDeskEvidence(deskProof.evidence)}. `
                         + 'Open Coding desk — the page is there.'
                       : `${why}. ${describeMissingImports(findMissingLocalImports(deskProof.vfs || {}))}`,
                     deskProof,

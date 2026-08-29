@@ -133,6 +133,19 @@ export function applyStudyCapabilityRouting(input: { interpretation: StudyCognit
     primaryModelId,
     fallbackModelIds: ordered.slice(1),
     provider: primaryModelId.startsWith('gemini') ? 'gemini' : 'openrouter',
+    /*
+     * Recomputed from the NEW primary, like `provider` directly above and like
+     * every site in select-models.ts that builds a decision.
+     *
+     * Spreading baseDecision carried the old primary's vision flag through a
+     * swap that changed the primary, leaving one object whose `provider`
+     * described the new model and whose `hasVisionSupport` described the old
+     * one. Nothing can act on it today — a turn carrying images returns early
+     * and never reroutes — but a decision that contradicts itself is one
+     * careless reader away from being wrong, and chat-handler already reads
+     * and writes this field.
+     */
+    hasVisionSupport: primaryModelId.startsWith('gemini'),
     reason: interpretation.requiresVerification ? 'study_verification' : 'study_depth',
     selectionSource: 'study_capability_route',
   };

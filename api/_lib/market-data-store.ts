@@ -158,6 +158,23 @@ export async function readLatestFxRate(base: string, quote: string): Promise<FxR
   return rows[0] || null;
 }
 
+/** FX history for base→quote in [from, to] (ISO dates), oldest first. Used by
+ *  the historical analytics turn to describe a series — never to invent one. */
+export async function readFxHistory(
+  base: string,
+  quote: string,
+  from: string,
+  to: string,
+): Promise<FxRate[]> {
+  if (!base || !quote || !from || !to) return [];
+  return readRows<FxRate>(
+    `fx_rates?select=*&base_currency=eq.${encodeURIComponent(base)}` +
+      `&quote_currency=eq.${encodeURIComponent(quote)}` +
+      `&rate_date=gte.${encodeURIComponent(from)}&rate_date=lte.${encodeURIComponent(to)}` +
+      `&order=rate_date.asc&limit=20000`,
+  );
+}
+
 /** Most recent fundamentals snapshot for one instrument, or null. */
 export async function readLatestFundamentals(instrumentId: string): Promise<Fundamental | null> {
   if (!instrumentId) return null;

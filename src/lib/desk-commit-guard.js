@@ -186,3 +186,23 @@ export function describeMissingImports(missing = []) {
   const more = missing.length > 3 ? ` and ${missing.length - 3} more` : '';
   return `Preview cannot start — ${shown.join(', ')}${more} ${missing.length === 1 ? 'was' : 'were'} never written. The turn ran out before finishing them.`;
 }
+
+/**
+ * Desk evidence, said only when there is some.
+ *
+ * A calculator that failed mid-turn was told Preview was proved "(0 catalog
+ * photos)". Photos and a cart are SHOP evidence; on a calculator the count is
+ * not a fact about the build, it is a fact about the wrong question. Printing
+ * it unconditionally turned a working page into one that reads as deficient.
+ *
+ * Returns a parenthetical to append, or an empty string when this build has no
+ * shop evidence to report — which is not a gap, it is a different kind of page.
+ */
+export function describeDeskEvidence(evidence = {}) {
+  const photos = Number(evidence?.photos) || 0;
+  const parts = [];
+  if (photos > 0) parts.push(`${photos} catalog photo${photos === 1 ? '' : 's'}`);
+  if (evidence?.hasCart) parts.push('Add to Cart');
+  return parts.length ? ` (${parts.join(', ')})` : '';
+}
+

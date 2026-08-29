@@ -331,6 +331,48 @@ function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
   };
 }
 
+/**
+ * Create a reversible child session from bounded continuity state.
+ *
+ * THE DESK TRAVELS. The transcript is what got too big — the build never did.
+ *
+ * Without this the chip was a one-click way to lose your work: a handover
+ * session had no `desk`, so restoreStudioDeskSnapshot returned null and the
+ * Coding Desk opened empty. The chip is domain-agnostic and fires hardest in
+ * Coding, where every turn carries a full HTML document and the byte budget
+ * goes first — so it appeared most often exactly where abandoning the build
+ * cost the most, labelled only "New chat · <goal>".
+ *
+ * That is the trap the history-budget notice was written to warn about:
+ * "the only escape — start a new chat and lose the work — is the one thing
+ * nobody is told." Carrying the snapshot means there is nothing to warn about.
+ * The old session keeps its own copy either way; nothing is moved, only copied.
+ */
+export function makeHandoverSession({ contract, projectId, defaultGreetingMsg, sourceSession = null } = {}) {
+  if (contract?.kind !== 'session_handover' || !contract?.sourceSessionId || !projectId) return null;
+  const domain = normalizeStudioDomain(contract.studioDomain);
+  const session = makeSession(projectId, defaultGreetingMsg, domain);
+  const goal = String(contract?.summary?.goal || '').trim();
+  const desk = sourceSession && sourceSession.id === String(contract.sourceSessionId)
+    ? sourceSession.desk
+    : null;
+  return {
+    ...session,
+    ...(goal ? { title: goal.slice(0, 80) } : {}),
+    ...(desk ? { desk } : {}),
+    conversationContext: contract.context || {},
+    parentSessionId: String(contract.sourceSessionId),
+    handover: {
+      version: contract.version,
+      id: contract.id,
+      sourceSessionId: String(contract.sourceSessionId),
+      createdAt: contract.createdAt,
+      summary: contract.summary || {},
+      deskCarried: Boolean(desk),
+    },
+  };
+}
+
 function createProjectId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `project-${crypto.randomUUID()}`;
@@ -640,7 +682,7 @@ export function useStudioSession({ user, selectedModel }) {
     });
     setActiveSessionId(newSession.id);
     return newSession.id;
-  }, [activeProject.id, defaultGreetingMsg]);
+  }, [activeProject.id, allChatSessions, defaultGreetingMsg]);
 
   const handleCreateNewChat = useCallback(() => {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
@@ -650,6 +692,26 @@ export function useStudioSession({ user, selectedModel }) {
       return updated;
     });
     setActiveSessionId(newSession.id);
+  }, [activeProject.id, defaultGreetingMsg]);
+
+  const handleCreateHandoverChat = useCallback((contract) => {
+    const newSession = makeHandoverSession({
+      contract,
+      // A handover may not move data across projects. The active project owns it.
+      projectId: activeProject.id,
+      defaultGreetingMsg,
+      // The build comes with it. Looked up rather than passed in, so the caller
+      // cannot hand over a desk belonging to a different session.
+      sourceSession: allChatSessions.find((item) => item.id === contract?.sourceSessionId) || null,
+    });
+    if (!newSession) return null;
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+    return newSession.id;
   }, [activeProject.id, defaultGreetingMsg]);
 
   const openAdvisorWorkspace = useCallback((domain) => {
@@ -863,6 +925,7 @@ export function useStudioSession({ user, selectedModel }) {
     setStudioDomain,
     recordListeningSignal,
     handleCreateNewChat,
+    handleCreateHandoverChat,
     handleCreateAdvisorChat,
     openAdvisorWorkspace,
     forkChatFromMessage,

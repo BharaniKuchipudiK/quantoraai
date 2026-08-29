@@ -1,4 +1,10 @@
-const MAX_FACTS = 16;
+/**
+ * How many facts a session context carries. Exported because the handover
+ * packet has to size itself against this — a handover that trims below the
+ * capacity of the thing receiving it throws away room that exists.
+ */
+export const SESSION_CONTEXT_FACT_LIMIT = 16;
+const MAX_FACTS = SESSION_CONTEXT_FACT_LIMIT;
 const MAX_FIELD_LEN = 280;
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;
 const CTX_START = /<!--\s*quantora-ctx:/i;

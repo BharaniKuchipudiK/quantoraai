@@ -17,6 +17,7 @@ import {
   Search,
   Sparkles,
   Table,
+  X,
 } from 'lucide-react';
 import { rememberOfficeToolSelection } from '../lib/office-intent.js';
 import { studioToolsMenuGroups } from '../lib/studio-tools-menu.js';
@@ -50,6 +51,7 @@ export default function StudioToolsMenu({
   anchorRef = null,
 }) {
   const [pos, setPos] = useState({ left: 16, bottom: 88 });
+  const compactStudy = studioDomain === 'education';
 
   useLayoutEffect(() => {
     if (!isOpen || typeof window === 'undefined') return undefined;
@@ -57,7 +59,7 @@ export default function StudioToolsMenu({
       const node = anchorRef?.current;
       if (!node) return;
       const rect = node.getBoundingClientRect();
-      const width = 320;
+      const width = compactStudy ? 292 : 320;
       const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
       setPos({
         left,
@@ -67,7 +69,7 @@ export default function StudioToolsMenu({
     place();
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
-  }, [isOpen, anchorRef]);
+  }, [isOpen, anchorRef, compactStudy]);
 
   if (!isOpen || typeof document === 'undefined') return null;
 
@@ -84,6 +86,7 @@ export default function StudioToolsMenu({
   const selectTool = (toolId) => {
     rememberOfficeToolSelection(toolId);
     onSelectTool(toolId);
+    if (compactStudy) onClose?.();
   };
 
   const HoverItem = ({ item }) => {
@@ -136,14 +139,44 @@ export default function StudioToolsMenu({
           </div>
           <span style={{ fontSize: '0.75rem', color: subtextColor }}>{item.subtitle}</span>
         </div>
-        <div style={{
-          width: '18px',
-          height: '18px',
-          borderRadius: '50%',
-          border: `2px solid ${isLight ? '#cbd5e1' : '#64748b'}`,
-          boxSizing: 'border-box',
-        }} />
       </div>
+    );
+  };
+
+  const StudyAction = ({ item }) => {
+    const Icon = ICONS[item.icon] || Sparkles;
+    const isNew = item.id === 'new-topic';
+    return (
+      <button
+        type="button"
+        data-quantora-plus-item={item.id}
+        title={item.subtitle}
+        onClick={() => selectTool(item.id)}
+        style={{
+          gridColumn: isNew ? '1 / -1' : 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '9px',
+          minHeight: isNew ? '42px' : '54px',
+          padding: '9px 10px',
+          borderRadius: '12px',
+          border: isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(148,163,184,0.18)',
+          background: isNew
+            ? (isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)')
+            : (isLight ? '#fff' : 'rgba(255,255,255,0.035)'),
+          color: textColor,
+          cursor: 'pointer',
+          textAlign: 'left',
+          fontFamily: 'inherit',
+        }}
+      >
+        <span style={{ display: 'inline-flex', width: '24px', height: '24px', borderRadius: '8px', alignItems: 'center', justifyContent: 'center', background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.12)', flex: '0 0 auto' }}>
+          <Icon size={15} color={isLight ? '#c2410c' : '#fdba74'} />
+        </span>
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: '0.80rem', fontWeight: 750, lineHeight: 1.15 }}>{item.title}</span>
+        </span>
+      </button>
     );
   };
 
@@ -160,27 +193,46 @@ export default function StudioToolsMenu({
       <div
         data-quantora-studio-tools-menu="true"
         data-quantora-plus-domain={studioDomain || 'studio'}
+        role={compactStudy ? 'dialog' : undefined}
+        aria-label={compactStudy ? 'Study actions' : undefined}
         style={{
           position: 'fixed',
           left: pos.left,
           bottom: pos.bottom,
-          width: '320px',
-          maxHeight: 'min(70vh, 520px)',
+          width: compactStudy ? '292px' : '320px',
+          maxHeight: compactStudy ? 'min(52vh, 340px)' : 'min(70vh, 520px)',
           overflowY: 'auto',
           background: bg,
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
           border,
-          borderRadius: '20px',
+          borderRadius: compactStudy ? '16px' : '20px',
           boxShadow: shadow,
           zIndex: 40001,
-          padding: '16px 8px',
+          padding: compactStudy ? '10px' : '16px 8px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '16px',
+          gap: compactStudy ? '9px' : '16px',
         }}
       >
-        {groups.map((group) => (
+        {compactStudy ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '30px', padding: '0 2px 0 4px' }}>
+              <div style={{ color: textColor, fontSize: '0.80rem', fontWeight: 800 }}>Study actions</div>
+              <button
+                type="button"
+                aria-label="Close Study actions"
+                onClick={onClose}
+                style={{ border: 'none', background: 'transparent', color: subtextColor, width: '30px', height: '30px', borderRadius: '9px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px' }}>
+              {(groups[0]?.items || []).map((item) => <StudyAction key={item.id} item={item} />)}
+            </div>
+          </>
+        ) : groups.map((group) => (
           <div key={group.heading}>
             <div style={{
               fontSize: '0.7rem',
@@ -192,9 +244,7 @@ export default function StudioToolsMenu({
               {group.heading}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {group.items.map((item) => (
-                <HoverItem key={item.id} item={item} />
-              ))}
+              {group.items.map((item) => <HoverItem key={item.id} item={item} />)}
             </div>
           </div>
         ))}

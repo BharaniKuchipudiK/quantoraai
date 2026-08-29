@@ -13,9 +13,10 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseDebtIntent } from "./debt-intent.js";
-import { comparePayoff, formatDebtPlan } from "./debt-payoff.js";
+import { composeDebtTurn } from "./debt-conversation.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
+import { guardFinanceGateway } from "./finance-gateway-guard.js";
 
 const DEBT_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -37,7 +38,11 @@ function sendStream(res: any, requestId: string, text: string): void {
   res.end();
 }
 
-export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
+export function handleDebtPlan(req: any, res: any): Promise<boolean> {
+  return guardFinanceGateway("debt-plan", res, () => runDebtPlan(req, res));
+}
+
+async function runDebtPlan(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;
   const intent = parseDebtIntent(req.body?.message);
@@ -52,18 +57,16 @@ export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  if (!intent.debts.length || intent.extraMonthly === null) {
-    /*
-     * Same defect as the savings gateway: parseDebtIntent reports matched:true on
-     * the trigger word alone, so "how does debt affect my credit score?" consumed
-     * the turn and returned a demand for balances and APRs, every time, with no
-     * way through to the model. The planner still needs real numbers — it simply
-     * must not end the turn to say so.
-     */
-    return false;
-  }
+  /*
+   * Same defect as the savings gateway: parseDebtIntent reports matched:true on
+   * the trigger word alone, so "how does debt affect my credit score?" consumed
+   * the turn and returned a demand for balances and APRs, every time, with no
+   * way through to the model. composeDebtTurn returns null on anything it cannot
+   * answer from arithmetic, and the turn stays a conversation.
+   */
+  const move = composeDebtTurn(intent);
+  if (!move) return false;
 
-  const comparison = comparePayoff(intent.debts, intent.extraMonthly);
-  sendStream(res, requestId, formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums }));
+  sendStream(res, requestId, move.text);
   return true;
 }
