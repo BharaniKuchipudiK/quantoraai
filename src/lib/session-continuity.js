@@ -137,6 +137,22 @@ export function createSessionHandoverContract({
 }
 
 export function shouldOfferSessionHandover(messages = [], pressure = null) {
+  /*
+   * PRESSURE FIRST, and the reason this line has to be here.
+   *
+   * Without it this returned TRUE for a brand-new chat on turn one: no prior
+   * offers means the `offers` list is empty, `.some()` is false, `previous` is
+   * undefined, and the function falls through to `return true`. It is only
+   * harmless today because createSessionHandoverContract re-checks
+   * recommendHandover and returns null.
+   *
+   * That is two functions where the second enforces the invariant and the
+   * first — exported, and named as though it IS the decision — does not. Any
+   * caller trusting the name offers somebody a fresh session before they have
+   * typed anything.
+   */
+  if (!pressure?.recommendHandover) return false;
+
   const offers = (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.sessionContinuity);
   if (offers.some((message) => !message.sessionContinuityDismissed)) return false;

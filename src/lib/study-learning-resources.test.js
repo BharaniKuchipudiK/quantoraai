@@ -19,7 +19,13 @@ test('Study asks stay context-aware and fail closed on invented media', () => {
   assert.doesNotMatch(studyIcebreakerAsk('Algebra'), /apple-tree|book-table|truck-car/);
   assert.doesNotMatch(studyLessonAsk('Algebra'), /all three laws|apple-tree/);
   assert.match(studyLessonAsk("Newton's laws"), /ONE idea|one idea/i);
-  assert.match(studyLessonAsk("Newton's laws"), /current conversation/i);
+  /*
+   * The invariant is the BINDING — the ask must tie itself to the conversation
+   * in progress — not the words it uses to say so. This pinned the exact phrase
+   * "current conversation" and broke when the lesson ask was reworded to "THIS
+   * conversation", which says the same thing twice and more firmly.
+   */
+  assert.match(studyLessonAsk("Newton's laws"), /(?:this|current) conversation/i);
   assert.match(studyLessonAsk("Newton's laws"), /Do not invent a specific YouTube/i);
   assert.match(studyQuizAsk("Newton's laws"), /current conversation/i);
   assert.match(studyPracticeAsk("Newton's laws"), /current conversation/i);

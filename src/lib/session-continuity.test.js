@@ -74,13 +74,47 @@ test('handover carries bounded meaning, unresolved intent, and no transcript bul
   assert.equal(sessionHandoverLabel(contract), 'New topic · Master Newton laws');
 });
 
+/*
+ * Fixtures carry recommendHandover because every real pressure object does —
+ * assessSessionContinuity always sets it. Omitting it let these cases pass
+ * while the function was answering a question nobody had asked yet.
+ */
+const under = (metrics) => ({ recommendHandover: true, level: 'handover_recommended', metrics });
+
 test('an unresolved offer suppresses duplicate handover chips', () => {
-  assert.equal(shouldOfferSessionHandover([{ sessionContinuity: { id: 'h1' } }]), false);
+  assert.equal(shouldOfferSessionHandover([{ sessionContinuity: { id: 'h1' } }], under({})), false);
   const dismissed = [{
     sessionContinuity: { id: 'h1', trigger: { metrics: { pressureRatio: 0.85, trimmedItems: 0, droppedItems: 0 } } },
     sessionContinuityDismissed: true,
   }];
-  assert.equal(shouldOfferSessionHandover(dismissed, { metrics: { pressureRatio: 0.9 } }), false);
-  assert.equal(shouldOfferSessionHandover(dismissed, { metrics: { pressureRatio: 0.96 } }), true);
-  assert.equal(shouldOfferSessionHandover(dismissed, { metrics: { pressureRatio: 0.9, droppedItems: 1 } }), true);
+  assert.equal(shouldOfferSessionHandover(dismissed, under({ pressureRatio: 0.9 })), false);
+  assert.equal(shouldOfferSessionHandover(dismissed, under({ pressureRatio: 0.96 })), true);
+  assert.equal(shouldOfferSessionHandover(dismissed, under({ pressureRatio: 0.9, droppedItems: 1 })), true);
+});
+
+/*
+ * The bug this closes: with no prior offers the function fell straight through
+ * to `return true`, so a brand-new chat qualified for a handover chip on turn
+ * one. It was masked only because createSessionHandoverContract re-checks.
+ */
+test('INVARIANT: nothing is offered before pressure is observed', () => {
+  assert.equal(shouldOfferSessionHandover([], null), false, 'a fresh chat is not a candidate');
+  assert.equal(shouldOfferSessionHandover([], { recommendHandover: false, level: 'stable' }), false);
+  assert.equal(shouldOfferSessionHandover([], { recommendHandover: false, level: 'watch' }), false);
+  assert.equal(shouldOfferSessionHandover([], under({})), true, 'and it is offered once pressure is real');
+});
+
+test('the offer agrees with what assessSessionContinuity actually measured', () => {
+  // Bound to the real assessor rather than a hand-made object, so the two
+  // cannot drift apart the way the gate and the policy did.
+  const quiet = assessSessionContinuity({ messages: [{ sender: 'user', text: 'hi' }] });
+  assert.equal(quiet.recommendHandover, false);
+  assert.equal(shouldOfferSessionHandover([], quiet), false);
+
+  const trimmed = assessSessionContinuity({
+    messages: [{ sender: 'user', text: 'hi' }],
+    historyResult: { trimmed: 2, dropped: 0 },
+  });
+  assert.equal(trimmed.recommendHandover, true);
+  assert.equal(shouldOfferSessionHandover([], trimmed), true);
 });

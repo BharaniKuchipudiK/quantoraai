@@ -38,7 +38,7 @@ import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
-import { budgetHistory } from '../lib/history-budget.js';
+import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
 import {
   assessSessionContinuity,
   createSessionHandoverContract,
@@ -498,6 +498,10 @@ export function useChatStream({
     const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
     const historyBudget = budgetHistory(filteredMessages);
     const cleanMessages = historyBudget.history;
+    // The FACT that history was shortened, reported every time it happens. The
+    // handover chip is the offer to start fresh; it is shown once and never says
+    // anything was dropped, so it cannot stand in for this.
+    const historyNotice = describeHistoryBudget(historyBudget);
     const continuityTranscript = [...filteredMessages, { sender: 'user', text: visibleUserText }];
     const continuityPressure = assessSessionContinuity({
       messages: continuityTranscript,
@@ -1615,10 +1619,13 @@ export function useChatStream({
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            // User-facing continuity is carried by the structured handover chip;
-            // do not append fixed assistant prose when history pressure rises.
-            text: proofNote
-              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${proofNote}`.trim()
+            /*
+             * The trim notice rides with the other turn notes, never alone and
+             * never silent: a platform that quietly forgets a conversation
+             * leaves somebody wondering why it stopped remembering.
+             */
+            text: (proofNote || historyNotice)
+              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${[historyNotice, proofNote].filter(Boolean).join('\n\n')}`.trim()
               : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
             ...(codingProof ? {
