@@ -70,6 +70,19 @@ function recentUserIntents(messages) {
     .slice(-MAX_RECENT_INTENTS);
 }
 
+function handoverContextFacts(facts, intents) {
+  const seen = new Set();
+  const merged = [];
+  for (const value of [...facts, ...intents]) {
+    const clean = boundedText(value, MAX_INTENT_CHARS);
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(clean);
+  }
+  return merged;
+}
+
 /**
  * A bounded, non-conversational handover packet. Presentation copy is omitted
  * on purpose: UI may render these fields, while an intelligence layer may later
@@ -88,7 +101,13 @@ export function createSessionHandoverContract({
   const normalized = normalizeSessionContext(conversationContext);
   const facts = (normalized.facts || []).slice(-MAX_HANDOVER_FACTS);
   const intents = recentUserIntents(messages);
-  const context = normalizeSessionContext({ ...normalized, facts });
+  // SessionContext is the actual seed for the child chat. Keep recent unresolved
+  // user directions there as well as in summary, otherwise a handover can display
+  // the right intent while the next model never receives it.
+  const context = normalizeSessionContext({
+    ...normalized,
+    facts: handoverContextFacts(facts, intents),
+  });
 
   return Object.freeze({
     version: SESSION_CONTINUITY_VERSION,
