@@ -22,6 +22,7 @@ export default function FinanceBoard({ brief, isLight, textColor, subtextColor, 
       type="button"
       onClick={() => use(action.prompt)}
       title={action.prompt}
+      data-quantora-finance-action={action.id}
       style={{
         border: isLight ? '1px solid #99f6e4' : '1px solid rgba(45,212,191,0.45)',
         background: isLight ? '#f0fdfa' : 'rgba(45,212,191,0.12)',
@@ -39,6 +40,7 @@ export default function FinanceBoard({ brief, isLight, textColor, subtextColor, 
 
   return (
     <div
+      data-quantora-finance-board="true"
       style={{
         marginTop: '10px',
         border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.25)',
