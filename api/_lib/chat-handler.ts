@@ -73,6 +73,11 @@ import {
   interpretStudyTurn,
   publicStudyCognitiveMetadata,
 } from './study-cognitive-routing.js';
+import {
+  formatStudyAdaptiveDirective,
+  loadStudyLearnerModel,
+  publicStudyAdaptiveMetadata,
+} from './study-adaptive-learning.js';
 
 const PREVIEW_HTML_RECOVERY = `
 
@@ -470,6 +475,7 @@ export default async function handler(req: any, res: any) {
       featureSuggest,
       isRefine: requestedRefine,
       hasPreviewCode,
+      studyContext,
     } = communicationRequest;
     const isRefine = !advisorBlocksPreviewBuild(normalizedStudioDomain)
       && (requestedRefine || (hasPreviewCode && shouldRefineRunningDesk({
@@ -635,13 +641,19 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const [authoritativeOutcome, authoritativeProjectContext] = await Promise.all([
+    const [authoritativeOutcome, authoritativeProjectContext, adaptiveStudyLearnerModel] = await Promise.all([
       activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
         ? readOutcomeState(activeSessionUser.sub, normalizedSessionId)
         : Promise.resolve(null),
       activeSessionUser && projectId && isProjectStoreConfigured()
         ? readProjectContext(activeSessionUser.sub, projectId)
         : Promise.resolve(null),
+      loadStudyLearnerModel({
+        studioDomain: normalizedStudioDomain,
+        userSub: activeSessionUser?.sub || null,
+        memoryConsented,
+        studyContext,
+      }),
     ]);
     const [registryModels, qualitySummaryRows, liveCatalog] = await Promise.all([
       readModelRegistryCached(),
@@ -801,7 +813,7 @@ export default async function handler(req: any, res: any) {
       userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
       lastMessage: message,
       history: boundedHistory
-    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + (visionImages.length
+    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + formatStudyAdaptiveDirective(adaptiveStudyLearnerModel) + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
     let finalSystemPrompt = finalSystemPromptBase;
@@ -821,6 +833,7 @@ export default async function handler(req: any, res: any) {
           }),
           routing: modelRouting,
           ...(studyInterpretation ? { studyCognitiveRouting: publicStudyCognitiveMetadata(studyInterpretation) } : {}),
+          ...(adaptiveStudyLearnerModel ? { studyAdaptiveLearning: publicStudyAdaptiveMetadata(adaptiveStudyLearnerModel) } : {}),
           communicationRequest: {
             studioMode: communicationRequest.studioMode,
             studioDomain: communicationRequest.studioDomain,

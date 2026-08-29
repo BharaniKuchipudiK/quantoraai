@@ -9,6 +9,8 @@ import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assi
 import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
 import { mergeStudySyllabusFromText } from '../lib/study-syllabus-overlay.js';
+import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import { buildStudyAdaptiveRequestContext } from '../lib/study-adaptive-request.js';
 import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
 import { applyPclContinuityToOutcomeState } from '../lib/pcl-outcome-sync.js';
 import {
@@ -771,6 +773,12 @@ export function useChatStream({
       visibleUserText,
       turnDomain,
     );
+    const studyBriefForRequest = turnDomain === 'education'
+      ? deriveStudyTutorBrief({
+          conversationContext: turnContext,
+          messages: [...messages, { sender: 'user', text: visibleUserText }],
+        })
+      : null;
     if (typeof updateActiveSession === 'function') {
       updateActiveSession({
         conversationContext: turnContext,
@@ -898,6 +906,7 @@ export function useChatStream({
       sessionContext: turnContext,
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
+      ...buildStudyAdaptiveRequestContext({ studioDomain: turnDomain, brief: studyBriefForRequest }),
       buildMode: isCodingRequest,
       /*
        * Ask the essentials before writing a thousand lines.
