@@ -5,6 +5,7 @@ import {
   createSessionHandoverContract,
   sessionHandoverLabel,
   shouldOfferSessionHandover,
+  describeSessionHandover,
 } from './session-continuity.js';
 
 const user = (text) => ({ sender: 'user', text });
@@ -59,7 +60,13 @@ test('handover carries bounded meaning, unresolved intent, and no transcript bul
   assert.equal(contract.kind, 'session_handover');
   assert.equal(contract.sourceSessionId, 'session-study');
   assert.equal(contract.studioDomain, 'education');
-  assert.equal(contract.summary.facts.length, 8);
+  // Facts and intents share the receiving session's capacity. Taking 8 of 16
+  // here threw away half the context for no reason the child session imposed.
+  assert.equal(contract.summary.facts.length, 13);
+  assert.equal(contract.summary.facts.length + contract.summary.recentIntents.length, 16);
+  // Nothing is silently lost on the way in: everything the packet claims to
+  // carry is actually in the context the next chat receives.
+  for (const fact of contract.summary.facts) assert.ok(contract.context.facts.includes(fact), fact);
   assert.deepEqual(contract.summary.recentIntents, [
     'Challenge my second-law explanation',
     'Then revisit free-body diagrams',
@@ -117,4 +124,34 @@ test('the offer agrees with what assessSessionContinuity actually measured', () 
   });
   assert.equal(trimmed.recommendHandover, true);
   assert.equal(shouldOfferSessionHandover([], trimmed), true);
+});
+
+test('a handover says what it carries before it carries it', () => {
+  const pressure = assessSessionContinuity({
+    messages: Array.from({ length: 90 }, (_, i) => user(`turn ${i}`)),
+    historyResult: { trimmed: 0, dropped: 4 },
+  });
+  const contract = createSessionHandoverContract({
+    sourceSessionId: 'session-finance',
+    studioDomain: 'finance',
+    conversationContext: {
+      goal: 'Clear the card debt',
+      facts: ['Debt: 5,000 at 19.99% APR, minimum 150/month', 'Monthly income stated: 4,000'],
+    },
+    messages: [user('What if I consolidate?')],
+    pressure,
+    createdAt: 1,
+  });
+
+  const preview = describeSessionHandover(contract);
+  assert.equal(preview.carried, preview.lines.length);
+  assert.ok(preview.lines.some((line) => /Goal: Clear the card debt/.test(line)));
+  assert.ok(preview.lines.some((line) => /19\.99% APR/.test(line)));
+  assert.ok(preview.lines.some((line) => /You asked: What if I consolidate\?/.test(line)));
+  // The reason names what already happened to this chat, not a vague warning.
+  assert.match(preview.reason, /4 older turns/);
+
+  const quiet = describeSessionHandover({ summary: {}, trigger: { metrics: {} } });
+  assert.equal(quiet.carried, 0);
+  assert.match(quiet.reason, /close to the size/);
 });

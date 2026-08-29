@@ -830,8 +830,9 @@ export function useChatStream({
     for (const item of attachments || []) {
       const url = item?.dataUrl;
       // No dataUrl at all: a non-image file, or one the reader already rejected.
+      // The reader knows which; trust it over guessing 'unsupported' for both.
       if (typeof url !== 'string' || !url.startsWith('data:image/')) {
-        excluded.push({ name: item?.name, reason: 'unsupported' });
+        excluded.push({ name: item?.name, reason: item?.excludedReason || 'unsupported' });
         continue;
       }
       if (deliverableImages.length >= MAX_ATTACHED_IMAGES) {
