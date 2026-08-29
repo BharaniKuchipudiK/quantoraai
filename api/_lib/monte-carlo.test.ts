@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { simulateGoalProbability } from "./monte-carlo.js";
+import { simulateGoalProbability, requiredMonthlyForConfidence, CONFIDENCE_TARGET_PCT } from "./monte-carlo.js";
 
 const BASE = {
   goal: 1_000_000,
@@ -35,6 +35,22 @@ test("an already-met goal is a certainty; an impossible one is near zero", () =>
   assert.equal(simulateGoalProbability({ ...BASE, goal: 0 }).probabilityPct, 100);
   const impossible = simulateGoalProbability({ ...BASE, goal: 1e12, monthlyContribution: 1, current: 0 });
   assert.ok(impossible.probabilityPct < 1);
+});
+
+test("solves for the contribution that reaches the confidence target when short", () => {
+  const short = { ...BASE, monthlyContribution: 1_000 }; // well under the goal
+  const needed = requiredMonthlyForConfidence(short);
+  assert.ok(needed !== null, "a reachable target returns a figure");
+  assert.ok(needed! > short.monthlyContribution, "it asks for more than the current pace");
+  // And that figure clears the bar at the fidelity the solver used (400 paths).
+  assert.ok(
+    simulateGoalProbability({ ...short, monthlyContribution: needed!, paths: 400 }).probabilityPct >= CONFIDENCE_TARGET_PCT,
+  );
+});
+
+test("returns null when the current pace already clears the target", () => {
+  const strong = { ...BASE, monthlyContribution: 50_000, goal: 100_000 };
+  assert.equal(requiredMonthlyForConfidence(strong), null);
 });
 
 test("bounds heavy/garbage inputs instead of hanging or throwing", () => {

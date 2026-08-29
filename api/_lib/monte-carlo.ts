@@ -58,6 +58,44 @@ function percentile(sorted: number[], p: number): number {
   return Number(sorted[idx].toFixed(2));
 }
 
+// A "healthy" planning confidence — the bar the solver aims to clear. Not a
+// guarantee; planners commonly treat ~80% of scenarios succeeding as on-track.
+export const CONFIDENCE_TARGET_PCT = 80;
+
+/**
+ * Smallest monthly contribution that lifts the goal-probability to `targetPct`,
+ * or null when the current pace already clears it (nothing to raise) or no
+ * reachable contribution gets there within the horizon. Deterministic: with a
+ * fixed seed, raising the contribution raises every path's ending balance, so
+ * probability is monotonic and a binary search is valid. Uses a lighter path
+ * count so the solve stays cheap on the request path.
+ */
+export function requiredMonthlyForConfidence(
+  base: MonteCarloInputs,
+  targetPct: number = CONFIDENCE_TARGET_PCT,
+): number | null {
+  const probAt = (monthly: number): number =>
+    simulateGoalProbability({ ...base, monthlyContribution: monthly, paths: 400 }).probabilityPct;
+
+  const start = Math.max(0, base.monthlyContribution);
+  if (probAt(start) >= targetPct) return null; // already on track — nothing to add
+
+  let lo = start;
+  let hi = Math.max(start * 2, start + 1000);
+  for (let i = 0; i < 20 && probAt(hi) < targetPct; i += 1) {
+    hi *= 2;
+    if (hi > 1e9) return null; // unreachable within any sane contribution
+  }
+  if (probAt(hi) < targetPct) return null;
+
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (probAt(mid) >= targetPct) hi = mid;
+    else lo = mid;
+  }
+  return Number(hi.toFixed(0));
+}
+
 export function simulateGoalProbability(inputs: MonteCarloInputs): MonteCarloResult {
   const paths = Math.min(MAX_PATHS, Math.max(100, Math.floor(inputs.paths ?? 1000)));
   const months = Math.min(MAX_MONTHS, Math.max(1, Math.floor(inputs.horizonMonths)));

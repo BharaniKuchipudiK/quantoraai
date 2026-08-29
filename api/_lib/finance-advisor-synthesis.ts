@@ -21,7 +21,12 @@ import {
   PROFILE_SET_HINTS,
 } from "./financial-profile.js";
 import type { BalanceSheet } from "./financial-balance-sheet.js";
-import { simulateGoalProbability, type MonteCarloResult } from "./monte-carlo.js";
+import {
+  simulateGoalProbability,
+  requiredMonthlyForConfidence,
+  CONFIDENCE_TARGET_PCT,
+  type MonteCarloResult,
+} from "./monte-carlo.js";
 
 // A liability at or above this APR is worth clearing before investing — a
 // guaranteed saved rate almost always beats an assumed market return.
@@ -61,6 +66,7 @@ export type AdvisoryPlan = {
   allocation: { growth: number; defensive: number } | null;
   projection: SavingsProjection | null;
   monteCarlo: MonteCarloResult | null; // goal-probability across many scenarios
+  monteCarloTargetMonthly: number | null; // contribution that reaches ~target confidence (when short)
   notes: string[]; // balance-sheet-derived cautions, grounded in stored figures
 };
 
@@ -99,7 +105,7 @@ export function buildAdvisoryPlan(
 ): AdvisoryPlan {
   const missing = missingProfileFields(profile);
   if (missing.length || !profile.riskTolerance) {
-    return { complete: false, missing, profile, assumedReturnPct: null, allocation: null, projection: null, monteCarlo: null, notes: [] };
+    return { complete: false, missing, profile, assumedReturnPct: null, allocation: null, projection: null, monteCarlo: null, monteCarloTargetMonthly: null, notes: [] };
   }
 
   const assumedReturnPct = ASSUMED_RETURN_PCT[profile.riskTolerance];
@@ -116,14 +122,20 @@ export function buildAdvisoryPlan(
 
   // Odds of reaching the goal across many return paths — the honest read on a
   // single-point projection. Seeded, so the probability is reproducible.
-  const monteCarlo = simulateGoalProbability({
+  const mcInputs = {
     goal: profile.goalAmount!,
     current,
     monthlyContribution: profile.monthlyInvestable!,
     horizonMonths: months,
     annualReturnPct: assumedReturnPct,
     annualVolPct: ASSUMED_VOL_PCT[profile.riskTolerance],
-  });
+  };
+  const monteCarlo = simulateGoalProbability(mcInputs);
+
+  // When the odds are short of a healthy bar, solve for the contribution that
+  // would get there — the "you'd need to save $X" a real planner states.
+  const monteCarloTargetMonthly =
+    monteCarlo.probabilityPct < CONFIDENCE_TARGET_PCT ? requiredMonthlyForConfidence(mcInputs) : null;
 
   return {
     complete: true,
@@ -133,6 +145,7 @@ export function buildAdvisoryPlan(
     allocation,
     projection,
     monteCarlo,
+    monteCarloTargetMonthly,
     notes: balanceSheetNotes(profile, options.balanceSheet),
   };
 }
@@ -171,11 +184,15 @@ export function formatAdvisoryPlan(plan: AdvisoryPlan): string {
         : "");
 
   const mc = plan.monteCarlo;
+  const lift = plan.monteCarloTargetMonthly !== null
+    ? `To lift the odds to about ${CONFIDENCE_TARGET_PCT}%, raise your contribution to roughly **${money(plan.monteCarloTargetMonthly, p.monthlyCurrency)}/month**.`
+    : null;
   const odds = mc
     ? [
         "",
         "**2. The odds, across 1,000 scenarios**",
         `Reaching your goal in **${mc.probabilityPct}%** of ${mc.paths.toLocaleString("en-US")} simulated return paths. Typical (median) ending balance **${money(mc.p50, cur)}**; a tough decade (bottom 10%) still lands near **${money(mc.p10, cur)}**, a strong one (top 10%) near **${money(mc.p90, cur)}**.`,
+        ...(lift ? [lift] : []),
         `_A range beats a single number: it shows the uncertainty, not a promise. Built on the labeled ${plan.assumedReturnPct}% return / ${ASSUMED_VOL_PCT[p.riskTolerance!]}% volatility assumptions — not a prediction._`,
       ]
     : [];

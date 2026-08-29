@@ -42,6 +42,9 @@ test("the plan reports goal-probability across scenarios (Monte Carlo)", () => {
   assert.match(text, /The odds, across 1,000 scenarios/);
   assert.match(text, /1,000 simulated return paths/);
   assert.match(text, /a range beats a single number/i);
+  // This profile is short of the goal, so it should solve for the contribution.
+  assert.ok(plan.monteCarloTargetMonthly !== null);
+  assert.match(text, /raise your contribution to roughly/i);
 });
 
 test("the plan states a required monthly when the pace falls short", () => {
