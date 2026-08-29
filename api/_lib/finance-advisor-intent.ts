@@ -15,6 +15,10 @@ const ADVICE_PATTERNS: RegExp[] = [
   /\b(?:investment|financial|retirement|wealth)\s+plan\b/i,
   /\bplan\s+my\s+(?:retirement|finances|future|wealth)\b/i,
   /\bbuild\s+(?:me\s+)?a\s+portfolio\b/i,
+  // Goal-probability questions — the Monte Carlo headline.
+  /\b(?:odds|chance|chances|probability|likelihood|how\s+likely)\b[^.]*\b(?:goal|reach|hit|retire|target|there)\b/i,
+  /\bwill\s+i\s+(?:reach|hit|make|have\s+enough\s+for)\s+(?:my\s+)?(?:goal|target|retirement)\b/i,
+  /\bam\s+i\s+on\s+track\b/i,
 ];
 
 export type AdviceIntent = { matched: boolean };

@@ -17,6 +17,18 @@ test("matches open requests for a plan or guidance", () => {
   }
 });
 
+test("matches goal-probability questions (Monte Carlo trigger)", () => {
+  for (const m of [
+    "what are my chances of hitting my goal?",
+    "what's the probability I reach my target?",
+    "will I reach my retirement goal?",
+    "am I on track?",
+    "how likely am I to get there",
+  ]) {
+    assert.equal(parseAdviceIntent(m).matched, true, m);
+  }
+});
+
 test("does not fire on a concrete calculation the specific engines own", () => {
   assert.equal(parseAdviceIntent("Convert 1000 USD to SGD").matched, false);
   assert.equal(parseAdviceIntent("Can I afford SGD 3,000?").matched, false);
