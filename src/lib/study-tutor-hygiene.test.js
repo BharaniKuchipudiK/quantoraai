@@ -59,3 +59,62 @@ test('Study assessment responses are generation-guarded across topic and session
     'issue and grade continuations must reject stale responses',
   );
 });
+
+/*
+ * WHICHEVER component is showing Study results has to render this.
+ *
+ * The first version read StudyTutorBoard.jsx by path. PR #359 replaces that
+ * board with StudyTutorShell.jsx, so on the merge that lands second this test
+ * would have thrown ENOENT — a crash that says a file is missing, not that a
+ * feature lost its renderer. Worse, had the path simply been updated, the
+ * server would have gone on returning a next move that nothing displayed.
+ *
+ * So the assertion is on the CAPABILITY, not on a filename: some Study result
+ * component renders the server's line, and no Study component computes the
+ * learner model in the browser.
+ */
+const STUDY_RESULT_COMPONENTS = [
+  'src/components/StudyTutorBoard.jsx',
+  'src/components/StudyTutorShell.jsx',
+];
+
+test('Study next move is rendered from the server learner model, not inferred in the browser', () => {
+  const present = STUDY_RESULT_COMPONENTS
+    .map((relative) => [relative, path.join(root, relative)])
+    .filter(([, full]) => fs.existsSync(full))
+    .map(([relative, full]) => [relative, fs.readFileSync(full, 'utf8')]);
+
+  assert.ok(present.length, `no Study result component exists: ${STUDY_RESULT_COMPONENTS.join(', ')}`);
+
+  /*
+   * The chain, not its punctuation. Pinning `assessment.result.learnerModel?...`
+   * with plain dots failed against a component reaching the same field through
+   * optional chaining — pinning an exact expression is the same mistake as
+   * pinning exact prose.
+   */
+  const RENDERS_SERVER_MOVE = /learnerModel[?.\s]*nextLearningMove[?.\s]*learnerFacingText/;
+  const renders = present.filter(([, source]) => RENDERS_SERVER_MOVE.test(source));
+  assert.ok(
+    renders.length,
+    `The server returns a next learning move and no Study component renders it. `
+    + `Port the learnerFacingText line into: ${present.map(([relative]) => relative).join(', ')}`,
+  );
+
+  /*
+   * IMPORTED OR CALLED, not merely mentioned.
+   *
+   * A raw substring check counts a COMMENT as a violation — the same flaw the
+   * wiring gate had before it learned to skip comments and strings, where a
+   * docblock cleared the very symbol it documented. Naming the server function
+   * in a comment is how a reader learns where mastery is decided; importing or
+   * calling it in the browser is the thing that must never happen.
+   */
+  const COMPUTES_LOCALLY = /\bimport\b[^;]*\bbuildStudyLearnerModel\b|\bbuildStudyLearnerModel\s*\(/;
+  for (const [relative, source] of present) {
+    assert.equal(
+      COMPUTES_LOCALLY.test(source),
+      false,
+      `${relative} computes the learner model in the browser; the server decides mastery`,
+    );
+  }
+});

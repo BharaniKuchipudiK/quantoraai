@@ -460,6 +460,11 @@ export default function StudyTutorBoard({
                   ? 'A likely misconception was recorded for targeted repair.'
                   : 'This independently graded attempt was added to your evidence history.'}
               </div>
+              {assessment.result.learnerModel?.nextLearningMove?.learnerFacingText ? (
+                <div data-quantora-study-next-learning-move="true" style={{ marginTop: '4px', color: subtextColor }}>
+                  {assessment.result.learnerModel.nextLearningMove.learnerFacingText}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -147,6 +147,8 @@ test("grade trusts the atomic server result, records evidence, and saves a provi
     assert.equal(state.body.score, 1);
     assert.equal(state.body.evidenceKind, "assessment_item");
     assert.equal(state.body.mastery.status, "provisional");
+    assert.equal(state.body.learnerModel.understanding.state, "emerging");
+    assert.equal(state.body.learnerModel.nextLearningMove.type, "vary_evidence");
     assert.equal(savedEstimate.user_sub, "learner-1");
     assert.equal(savedEstimate.status, "provisional");
     assert.equal(savedEstimate.evidence_count, 1);
