@@ -31,6 +31,18 @@ export function studyPracticeAsk(topic) {
   return `Give me one short practice problem on ${String(topic || 'this idea').trim()}. Use the current conversation and my learning context. Wait for my attempt before explaining or grading it.`;
 }
 
+export function studyAnotherExampleAsk(topic) {
+  return `Show one short, different worked example for ${String(topic || 'this idea').trim()} that directly repairs the misconception in my last answer. Contrast the mistaken idea with the correct one, then ask one fresh question and wait.`;
+}
+
+export function studyUsefulReferenceAsk(topic) {
+  return `Recommend one genuinely useful reference for the exact gap we just found in ${String(topic || 'this idea').trim()}. Use a verified link already available in this session; otherwise give one precise search objective instead of inventing a URL.`;
+}
+
+export function studyNextQuestionAsk(topic) {
+  return `That question is complete. Ask one new, non-repeating question on ${String(topic || 'this idea').trim()} that checks transfer rather than the same wording. Wait for my attempt.`;
+}
+
 export function studyFlashcardAsk(topic) {
   return `Create a small set of recall flashcards for ${String(topic || 'this idea').trim()} using only concepts supported by the current conversation. Keep each front focused and each back concise, then let me work through them interactively.`;
 }
