@@ -187,14 +187,6 @@ async function cachedRead<T>(key: string, ttlMs: number, load: () => Promise<T>)
   return value;
 }
 
-/** Latest bar for one instrument, absorbed by the TTL cache on warm instances. */
-export function readLatestPriceCached(
-  instrumentId: string,
-  ttlMs: number = DEFAULT_TTL_MS,
-): Promise<PriceBar | null> {
-  return cachedRead(`price:${instrumentId}`, ttlMs, () => readLatestPrice(instrumentId));
-}
-
 /** Latest FX rate for base→quote, absorbed by the TTL cache. */
 export function readLatestFxRateCached(
   base: string,

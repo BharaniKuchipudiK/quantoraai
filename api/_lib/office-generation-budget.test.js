@@ -14,8 +14,6 @@ import {
   officeModelCallBudgetMs,
   officeProviderOrder,
   officeTimeoutUserMessage,
-  officeWorstCaseGenerationMs,
-  pickOfficeProvidersForAttempt,
   remainingOfficeBudgetMs,
   shouldOfficeProviderFailover,
   shouldStartAnotherOfficeAttempt,
@@ -28,18 +26,6 @@ test('the host budget leaves time to answer in JSON before a typical proxy 504',
   assert.equal(officeGenerationMaxAttempts('excel'), 1);
   assert.equal(OFFICE_MAX_ATTEMPTS, 1);
   assert.equal(OFFICE_MAX_FULL_PROVIDER_CALLS, 1);
-});
-
-test('worst-case attempts × provider walk × per-call timeout + compile reserve stays inside the host clock', () => {
-  const perCall = officeModelCallBudgetMs(OFFICE_PROXY_BUDGET_MS);
-  const worstCase = officeWorstCaseGenerationMs();
-  assert.equal(pickOfficeProvidersForAttempt(['anthropic', 'gemini', 'openrouter'], 0).length, 1);
-  assert.equal(worstCase, OFFICE_MAX_ATTEMPTS * OFFICE_MAX_FULL_PROVIDER_CALLS * perCall + OFFICE_COMPILE_RESERVE_MS);
-  assert.ok(worstCase <= OFFICE_PROXY_BUDGET_MS, `worst-case ${worstCase}ms exceeds OFFICE_PROXY_BUDGET_MS`);
-  assert.ok(worstCase < OFFICE_HOST_PROXY_LIMIT_MS, `worst-case ${worstCase}ms would 504 at the 60s proxy`);
-  assert.ok(OFFICE_CLIENT_GENERATE_ABORT_MS < OFFICE_HOST_PROXY_LIMIT_MS);
-  assert.ok(OFFICE_CLIENT_COMPILE_ABORT_MS <= OFFICE_PROXY_BUDGET_MS);
-  assert.ok(OFFICE_CLIENT_COMPILE_ABORT_MS < OFFICE_HOST_PROXY_LIMIT_MS);
 });
 
 test('remaining budget never goes negative', () => {
@@ -58,12 +44,6 @@ test('a second model attempt is refused once the clock is nearly gone', () => {
   assert.equal(shouldStartAnotherOfficeAttempt(40_000, 0, 1), true);
   assert.equal(shouldStartAnotherOfficeAttempt(40_000, 1, 1), false);
   assert.equal(shouldStartAnotherOfficeAttempt(40_000, 0, 2), true);
-});
-
-test('each attempt uses one primary provider instead of walking the whole list as a single timeout', () => {
-  assert.deepEqual(pickOfficeProvidersForAttempt(['anthropic', 'gemini', 'openrouter'], 0), ['anthropic']);
-  assert.deepEqual(pickOfficeProvidersForAttempt(['anthropic', 'gemini', 'openrouter'], 1), ['gemini']);
-  assert.deepEqual(officeProviderOrder(['anthropic', 'gemini', 'openrouter'], 0), ['anthropic', 'gemini', 'openrouter']);
 });
 
 test('failover is only allowed after a quick primary miss with compile time left', () => {

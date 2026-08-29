@@ -238,16 +238,3 @@ export function evaluateAffordability({
   };
 }
 
-export function formatAffordabilityDecisionForPrompt(decision: AffordabilityDecision): string {
-  if (decision.verdict === "insufficient_data") {
-    return `\n\nAFFORDABILITY DECISION (deterministic; do not override with model intuition)\n- Verdict: insufficient data\n- Missing: ${decision.missing.join(", ") || "required financial inputs"}\n- Rule: ask only for the missing material input(s); do not invent affordability.`;
-  }
-
-  return `\n\nAFFORDABILITY DECISION (deterministic; do not override with model intuition)\n` +
-    `- Verdict: ${decision.verdict}\n` +
-    `- Proposed cost: ${decision.currency} ${decision.proposedCost.toFixed(2)}\n` +
-    `- Safe discretionary spend: ${decision.currency} ${decision.safeSpend!.toFixed(2)}\n` +
-    `- Headroom after proposal: ${decision.currency} ${decision.headroom!.toFixed(2)}\n` +
-    `- Horizon end: ${decision.horizonEnd.slice(0, 10)}\n` +
-    `Explain the answer using the underlying cash, commitments and reserve. Never present portfolio value or market gains as spendable cash unless they are explicitly represented as liquid cash.`;
-}

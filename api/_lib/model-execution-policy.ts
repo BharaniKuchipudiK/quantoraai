@@ -32,48 +32,6 @@ function providerOf(modelId: string): 'gemini' | 'openrouter' {
 }
 
 /**
- * One turn gets at most two model attempts. Never enumerate every model a key
- * can see: quota exhaustion on one request must not become a provider-wide
- * retry storm. Normal Studio turns may use a low-cost emergency OpenRouter
- * fallback; Travel tool turns stay on Gemini because the current tool schema is
- * attached to Gemini and cross-provider fallback would silently remove tools.
- */
-export function modelAttemptsForTurn(input: {
-  primaryModelId: string;
-  fallbackModelIds?: string[];
-  travelToolsEnabled?: boolean;
-}): ModelAttempt[] {
-  const primary = String(input.primaryModelId || '').trim();
-  if (!primary) return [];
-  const primaryProvider = providerOf(primary);
-  const attempts: ModelAttempt[] = [{ id: primary, provider: primaryProvider, reason: 'primary' }];
-
-  const qualifiedFallback = QUALIFIED_OPENROUTER_FALLBACKS[primary];
-  const rawCandidates = [
-    GEMINI_STABLE_FALLBACK,
-    ...(qualifiedFallback ? [qualifiedFallback] : []),
-    ...(input.fallbackModelIds || []),
-  ]
-    .map((candidate) => String(candidate || '').trim())
-    .filter(Boolean);
-
-  const candidates = [
-    ...rawCandidates.filter((candidate) => providerOf(candidate) !== primaryProvider),
-    ...rawCandidates.filter((candidate) => providerOf(candidate) === primaryProvider),
-  ];
-
-  for (const candidate of candidates) {
-    if (attempts.some((attempt) => attempt.id === candidate)) continue;
-    const provider = providerOf(candidate);
-    if (input.travelToolsEnabled && provider !== 'gemini') continue;
-    attempts.push({ id: candidate, provider, reason: 'fallback' });
-    if (attempts.length >= MAX_MODEL_ATTEMPTS) break;
-  }
-
-  return attempts;
-}
-
-/**
  * The provider REJECTED the credential (401/403) or refused it for billing (402).
  * This is not a transient condition: every retry fails identically until a human
  * changes the key. Telling the user to "retry in a moment" turned a one-line
