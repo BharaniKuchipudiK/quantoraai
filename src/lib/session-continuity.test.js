@@ -33,7 +33,7 @@ test('actual trimming always recommends handover', () => {
   assert.ok(pressure.reasons.includes('history_trimmed'));
 });
 
-test('handover carries bounded meaning, not the transcript or UI prose', () => {
+test('handover carries bounded meaning, unresolved intent, and no transcript bulk', () => {
   const messages = [
     user('Start Newton laws'),
     ai('x'.repeat(100_000)),
@@ -65,6 +65,9 @@ test('handover carries bounded meaning, not the transcript or UI prose', () => {
     'Then revisit free-body diagrams',
     'Use a pulley example',
   ]);
+  assert.ok(contract.context.facts.includes('Challenge my second-law explanation'));
+  assert.ok(contract.context.facts.includes('Then revisit free-body diagrams'));
+  assert.ok(contract.context.facts.includes('Use a pulley example'));
   assert.equal(JSON.stringify(contract).includes('x'.repeat(1000)), false, 'assistant transcript bulk must not cross sessions');
   assert.equal('text' in contract, false, 'contract owns state, not scripted assistant speech');
   assert.equal('label' in contract.action, false, 'UI wording is not embedded in the platform contract');
