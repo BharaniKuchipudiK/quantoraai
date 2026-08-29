@@ -34,6 +34,16 @@ test("a complete profile produces a grounded feasibility result", () => {
   assert.match(text, /60% growth assets \/ 40% defensive/);
 });
 
+test("the plan reports goal-probability across scenarios (Monte Carlo)", () => {
+  const plan = buildAdvisoryPlan(COMPLETE, { current: 50_000 });
+  assert.ok(plan.monteCarlo, "a complete plan carries a Monte Carlo result");
+  assert.ok(plan.monteCarlo!.probabilityPct >= 0 && plan.monteCarlo!.probabilityPct <= 100);
+  const text = formatAdvisoryPlan(plan);
+  assert.match(text, /The odds, across 1,000 scenarios/);
+  assert.match(text, /1,000 simulated return paths/);
+  assert.match(text, /a range beats a single number/i);
+});
+
 test("the plan states a required monthly when the pace falls short", () => {
   const tight: FinancialProfile = { ...COMPLETE, monthlyInvestable: 200 };
   const plan = buildAdvisoryPlan(tight, { current: 0 });

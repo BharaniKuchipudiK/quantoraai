@@ -21,6 +21,7 @@ import {
   PROFILE_SET_HINTS,
 } from "./financial-profile.js";
 import type { BalanceSheet } from "./financial-balance-sheet.js";
+import { simulateGoalProbability, type MonteCarloResult } from "./monte-carlo.js";
 
 // A liability at or above this APR is worth clearing before investing — a
 // guaranteed saved rate almost always beats an assumed market return.
@@ -44,6 +45,14 @@ const ALLOCATION: Record<RiskTolerance, { growth: number; defensive: number }> =
   aggressive: { growth: 80, defensive: 20 },
 };
 
+// LABELED annualized volatility per risk mix — the spread the Monte Carlo draws
+// from. Planning assumptions, not a claim about any particular future.
+const ASSUMED_VOL_PCT: Record<RiskTolerance, number> = {
+  conservative: 6,
+  moderate: 11,
+  aggressive: 16,
+};
+
 export type AdvisoryPlan = {
   complete: boolean;
   missing: string[];
@@ -51,6 +60,7 @@ export type AdvisoryPlan = {
   assumedReturnPct: number | null;
   allocation: { growth: number; defensive: number } | null;
   projection: SavingsProjection | null;
+  monteCarlo: MonteCarloResult | null; // goal-probability across many scenarios
   notes: string[]; // balance-sheet-derived cautions, grounded in stored figures
 };
 
@@ -89,17 +99,30 @@ export function buildAdvisoryPlan(
 ): AdvisoryPlan {
   const missing = missingProfileFields(profile);
   if (missing.length || !profile.riskTolerance) {
-    return { complete: false, missing, profile, assumedReturnPct: null, allocation: null, projection: null, notes: [] };
+    return { complete: false, missing, profile, assumedReturnPct: null, allocation: null, projection: null, monteCarlo: null, notes: [] };
   }
 
   const assumedReturnPct = ASSUMED_RETURN_PCT[profile.riskTolerance];
   const allocation = ALLOCATION[profile.riskTolerance];
+  const current = Math.max(0, options.current ?? 0);
+  const months = profile.horizonYears! * 12;
   const projection = projectSavings({
     goal: profile.goalAmount!,
-    current: Math.max(0, options.current ?? 0),
+    current,
     monthly: profile.monthlyInvestable!,
     annualRatePct: assumedReturnPct,
-    months: profile.horizonYears! * 12,
+    months,
+  });
+
+  // Odds of reaching the goal across many return paths — the honest read on a
+  // single-point projection. Seeded, so the probability is reproducible.
+  const monteCarlo = simulateGoalProbability({
+    goal: profile.goalAmount!,
+    current,
+    monthlyContribution: profile.monthlyInvestable!,
+    horizonMonths: months,
+    annualReturnPct: assumedReturnPct,
+    annualVolPct: ASSUMED_VOL_PCT[profile.riskTolerance],
   });
 
   return {
@@ -109,6 +132,7 @@ export function buildAdvisoryPlan(
     assumedReturnPct,
     allocation,
     projection,
+    monteCarlo,
     notes: balanceSheetNotes(profile, options.balanceSheet),
   };
 }
@@ -146,22 +170,33 @@ export function formatAdvisoryPlan(plan: AdvisoryPlan): string {
         ? ` Reaching it on time would take about **${money(proj.requiredMonthly, p.monthlyCurrency)}/month**.`
         : "");
 
+  const mc = plan.monteCarlo;
+  const odds = mc
+    ? [
+        "",
+        "**2. The odds, across 1,000 scenarios**",
+        `Reaching your goal in **${mc.probabilityPct}%** of ${mc.paths.toLocaleString("en-US")} simulated return paths. Typical (median) ending balance **${money(mc.p50, cur)}**; a tough decade (bottom 10%) still lands near **${money(mc.p10, cur)}**, a strong one (top 10%) near **${money(mc.p90, cur)}**.`,
+        `_A range beats a single number: it shows the uncertainty, not a promise. Built on the labeled ${plan.assumedReturnPct}% return / ${ASSUMED_VOL_PCT[p.riskTolerance!]}% volatility assumptions — not a prediction._`,
+      ]
+    : [];
+
   return [
     `**A plan for your ${money(p.goalAmount!, cur)} goal over ${p.horizonYears} years** (${p.riskTolerance} risk)`,
     "",
     "**1. Where the pace lands**",
     feasibility,
     `_Assumption: ${plan.assumedReturnPct}% / yr nominal return for a ${p.riskTolerance} mix — a planning assumption, not a forecast._`,
+    ...odds,
     "",
-    "**2. A starting framework for that risk & horizon**",
+    "**3. A starting framework for that risk & horizon**",
     `- Roughly **${alloc.growth}% growth assets / ${alloc.defensive}% defensive** as a starting split to discuss and tailor.`,
     "- Keep an emergency buffer separate from this goal, and revisit the mix as the horizon shortens.",
     "",
-    "**3. Sequence that usually pays first**",
+    "**4. Sequence that usually pays first**",
     "- Clear any high-interest debt before investing — a guaranteed saved interest rate beats an assumed market return.",
     "- Automate the monthly contribution so the plan runs without willpower.",
     ...(plan.notes.length
-      ? ["", "**4. From your balance sheet, I'd flag first**", ...plan.notes.map((n) => `- ${n}`)]
+      ? ["", "**5. From your balance sheet, I'd flag first**", ...plan.notes.map((n) => `- ${n}`)]
       : []),
     "",
     DISCLAIMER,
