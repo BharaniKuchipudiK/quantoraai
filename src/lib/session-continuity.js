@@ -1,14 +1,21 @@
 import { HISTORY_BYTE_BUDGET } from './history-budget.js';
-import { normalizeSessionContext } from './session-context.js';
+import { normalizeSessionContext, SESSION_CONTEXT_FACT_LIMIT } from './session-context.js';
 
 export const SESSION_CONTINUITY_VERSION = 1;
 export const SESSION_MESSAGE_LIMIT = 100;
 export const CONTEXT_PRESSURE_WATCH_RATIO = 0.7;
 export const CONTEXT_PRESSURE_HANDOVER_RATIO = 0.85;
 
-const MAX_HANDOVER_FACTS = 8;
 const MAX_RECENT_INTENTS = 3;
 const MAX_INTENT_CHARS = 280;
+
+/*
+ * Facts and intents share one budget, because they end up in one list. Taking
+ * eight facts here — half of what the child session can hold — quietly halved
+ * what survived a handover, and the loss was invisible: the packet looked
+ * complete because it was never compared against the capacity receiving it.
+ */
+const MAX_HANDOVER_FACTS = SESSION_CONTEXT_FACT_LIMIT - MAX_RECENT_INTENTS;
 
 function serializedBytes(value) {
   try { return JSON.stringify(value).length; } catch { return 0; }
@@ -183,4 +190,32 @@ export function sessionHandoverLabel(contract) {
       ? 'New trip'
       : 'New chat';
   return focus ? `${action} · ${focus}` : action;
+}
+
+/**
+ * What a handover would actually carry, as lines a person can read before they
+ * agree to it. The chip used to be one click with no preview: the work moved
+ * and the user never saw the packet, which is the opposite of keeping a human
+ * in the loop on their own conversation.
+ */
+export function describeSessionHandover(contract) {
+  const summary = contract?.summary || {};
+  const lines = [];
+  if (summary.goal) lines.push(`Goal: ${summary.goal}`);
+  if (summary.understanding) lines.push(`Where things stand: ${summary.understanding}`);
+  for (const fact of summary.facts || []) lines.push(fact);
+  for (const intent of summary.recentIntents || []) lines.push(`You asked: ${intent}`);
+
+  const metrics = contract?.trigger?.metrics || {};
+  const dropped = Number(metrics.droppedItems) || 0;
+  const trimmed = Number(metrics.trimmedItems) || 0;
+  return {
+    lines,
+    carried: lines.length,
+    // Said plainly, because a handover offered after a trim means the current
+    // chat has ALREADY lost detail — that is the reason to move, not a footnote.
+    reason: dropped || trimmed
+      ? `This chat has grown past what one request can carry, so ${dropped ? `${dropped} older turn${dropped === 1 ? '' : 's'}` : 'older detail'} ${dropped ? 'were' : 'was'} already shortened to keep it working.`
+      : 'This chat is close to the size where older turns start getting shortened.',
+  };
 }

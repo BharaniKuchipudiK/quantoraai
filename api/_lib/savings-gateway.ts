@@ -11,6 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import { parseSavingsIntent } from "./savings-goal-intent.js";
 import { projectSavings, formatSavingsPlan } from "./savings-goal.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
@@ -73,6 +74,41 @@ export async function handleSavingsGoal(req: any, res: any): Promise<boolean> {
     annualRatePct: intent.annualRatePct,
     months: intent.months,
   };
-  sendStream(res, requestId, formatSavingsPlan(inputs, projectSavings(inputs)));
+  /*
+   * A deterministic gateway returns out of api/pipeline.ts before the
+   * conversation engine runs, so an answer that carries no follow-ups ends the
+   * turn outright. The next moves offered here are the ones this engine can
+   * actually compute — never an open invitation to a model that would have to
+   * invent the numbers.
+   */
+  const projection = projectSavings(inputs);
+  sendStream(res, requestId, withNextMoves({
+    text: formatSavingsPlan(inputs, projection),
+    question: projection.onTrack ? "Want to press on this?" : "What should I work out next?",
+    moves: [
+      {
+        id: "savings_sooner",
+        title: "What gets me there sooner",
+        description: "Raise the monthly and see the new date",
+        value: "What would it take to reach that goal sooner? I'll tell you what I could raise the monthly amount to.",
+      },
+      {
+        id: "savings_rate",
+        title: "What if the return is worse",
+        description: "Test the plan against a lower rate",
+        value: "What happens to this plan if the return is lower than assumed?",
+      },
+      {
+        id: "savings_pause",
+        title: "What if I have to stop for a while",
+        description: "Test a break in contributions",
+        value: "What happens to this plan if I have to stop contributing for a few months?",
+      },
+    ],
+    facts: [
+      `Savings goal: ${intent.goal} in ${intent.months} months`,
+      `Saving ${intent.monthly}/month from ${intent.current}, ${intent.annualRatePct}% assumed return`,
+    ],
+  }));
   return true;
 }

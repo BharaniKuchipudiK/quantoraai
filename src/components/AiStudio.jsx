@@ -81,7 +81,7 @@ import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
-import { sessionHandoverLabel } from '../lib/session-continuity.js';
+import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -1014,8 +1014,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         size: (file.size / 1024).toFixed(1) + ' KB',
         type: file.type.includes('image') ? 'image' : 'file'
       };
-      if (!file.type.includes('image') || file.size > 3 * 1024 * 1024) {
-        resolve(base);
+      /*
+       * Carry WHY there is no dataUrl. Without it a 4MB photo arrived at the
+       * send path indistinguishable from a spreadsheet, and the user was told
+       * "I can read images (PNG/JPG), but not holiday.png" — which is both
+       * wrong and unactionable, when the true answer is "that one is too big,
+       * send a smaller copy".
+       */
+      if (!file.type.includes('image')) {
+        resolve({ ...base, excludedReason: 'unsupported' });
+        return;
+      }
+      if (file.size > 3 * 1024 * 1024) {
+        resolve({ ...base, excludedReason: 'size' });
         return;
       }
       const reader = new FileReader();
@@ -1030,6 +1041,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const removeAttachment = (index) => {
     setAttachments(prev => prev.filter((_, i) => i !== index));
   };
+
+  /*
+   * A handover moves the conversation to a fresh chat. Firing that on one click
+   * meant the person never saw what travelled with them, and could not tell a
+   * complete handover from a lossy one until they were already in the new chat
+   * with no way back. The chip now opens what it would carry; only the second
+   * click commits.
+   */
+  const [pendingHandover, setPendingHandover] = useState(null);
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
@@ -2041,7 +2061,9 @@ Paused — ${autoPauseRef.current}.`
                           >
                             <button
                               type="button"
-                              onClick={() => handleCreateHandoverChat(msg.sessionContinuity)}
+                              onClick={() => setPendingHandover(
+                                pendingHandover?.id === msg.sessionContinuity.id ? null : msg.sessionContinuity,
+                              )}
                               title={sessionHandoverLabel(msg.sessionContinuity)}
                               style={{
                                 display: 'inline-flex',
@@ -2074,6 +2096,85 @@ Paused — ${autoPauseRef.current}.`
                             >
                               <X size={13} />
                             </button>
+                          </div>
+                        ) : null}
+                        {msg.sessionContinuity
+                          && !msg.sessionContinuityDismissed
+                          && pendingHandover?.id === msg.sessionContinuity.id ? (
+                          <div
+                            data-quantora-handover-preview="true"
+                            style={{
+                              marginTop: '8px',
+                              padding: '12px 14px',
+                              borderRadius: '12px',
+                              border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.3)',
+                              background: isLight ? '#fffbf5' : 'rgba(249,115,22,0.06)',
+                              fontSize: '0.8rem',
+                              color: textColor,
+                              lineHeight: 1.55,
+                            }}
+                          >
+                            <div style={{ color: subtextColor, marginBottom: '8px' }}>
+                              {describeSessionHandover(pendingHandover).reason}
+                            </div>
+                            {describeSessionHandover(pendingHandover).carried > 0 ? (
+                              <>
+                                <div style={{ fontWeight: 700, marginBottom: '6px' }}>
+                                  This is what moves to the new chat:
+                                </div>
+                                <ul style={{ margin: '0 0 10px', paddingLeft: '18px' }}>
+                                  {describeSessionHandover(pendingHandover).lines.map((line, i) => (
+                                    <li key={i} style={{ marginBottom: '3px' }}>{line}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            ) : (
+                              <div style={{ marginBottom: '10px' }}>
+                                Nothing has been recorded to carry across yet — the new chat would start empty.
+                                Everything above stays in this one.
+                              </div>
+                            )}
+                            <div style={{ color: subtextColor, marginBottom: '10px' }}>
+                              This chat stays exactly as it is. Nothing here is deleted.
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const contract = pendingHandover;
+                                  setPendingHandover(null);
+                                  handleCreateHandoverChat(contract);
+                                }}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: '999px',
+                                  border: 'none',
+                                  background: '#f97316',
+                                  color: '#fff',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Start the new chat
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingHandover(null)}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: '999px',
+                                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                                  background: 'transparent',
+                                  color: subtextColor,
+                                  fontSize: '0.76rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Keep going here
+                              </button>
+                            </div>
                           </div>
                         ) : null}
                         {continueSet?.items?.length > 0 && (

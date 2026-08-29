@@ -68,6 +68,12 @@ import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
 import {
+  applyFinanceStabilityRouting,
+  formatFinanceDirective,
+  interpretFinanceTurn,
+  publicFinanceRoutingMetadata,
+} from "./finance-model-routing.js";
+import {
   applyStudyCapabilityRouting,
   formatStudyCognitiveDirective,
   interpretStudyTurn,
@@ -713,12 +719,33 @@ export default async function handler(req: any, res: any) {
     if (studyInterpretation) {
       dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
     }
-    const modelRouting = applyStudyCapabilityRouting({
-      interpretation: studyInterpretation,
-      baseDecision: baseModelRouting,
+    /*
+     * Finance is the mirror image of Study. Study escalates for depth; Finance
+     * prefers stability and refuses to escalate onto a paid route, because the
+     * deterministic engines already produced whatever was worth producing. The
+     * two interpretations are mutually exclusive by domain, so they compose by
+     * running in sequence — each returns the decision untouched for the other's
+     * workspace.
+     */
+    const financeInterpretation = interpretFinanceTurn({
+      studioDomain: normalizedStudioDomain,
+      message,
+      history: boundedHistory,
+    });
+    if (financeInterpretation) {
+      dynamicTemperature = Math.min(dynamicTemperature, financeInterpretation.temperatureCeiling);
+    }
+    const modelRouting = applyFinanceStabilityRouting({
+      interpretation: financeInterpretation,
+      baseDecision: applyStudyCapabilityRouting({
+        interpretation: studyInterpretation,
+        baseDecision: baseModelRouting,
+        models: routingModels,
+        explicitModelSelected: !autoModelRequest,
+        hasImages: visionImages.length > 0,
+      }),
       models: routingModels,
       explicitModelSelected: !autoModelRequest,
-      hasImages: visionImages.length > 0,
     });
     // Diagnostic isolation switch: set QUANTORA_FORCE_OPENROUTER=1 to take Gemini
     // out of the picture entirely for coding/build turns and route straight to an
@@ -801,7 +828,7 @@ export default async function handler(req: any, res: any) {
       userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
       lastMessage: message,
       history: boundedHistory
-    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + (visionImages.length
+    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + formatFinanceDirective(financeInterpretation) + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
     let finalSystemPrompt = finalSystemPromptBase;
@@ -821,6 +848,7 @@ export default async function handler(req: any, res: any) {
           }),
           routing: modelRouting,
           ...(studyInterpretation ? { studyCognitiveRouting: publicStudyCognitiveMetadata(studyInterpretation) } : {}),
+          ...(financeInterpretation ? { financeRouting: publicFinanceRoutingMetadata(financeInterpretation) } : {}),
           communicationRequest: {
             studioMode: communicationRequest.studioMode,
             studioDomain: communicationRequest.studioDomain,
