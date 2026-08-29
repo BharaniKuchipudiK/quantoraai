@@ -1,4 +1,10 @@
-import { studyFlashcardAsk, studyIcebreakerAsk, studyLessonAsk, studyQuizAsk } from './study-learning-resources.js';
+import {
+  studyApplicationAsk,
+  studyFlashcardAsk,
+  studyIcebreakerAsk,
+  studyNotesAsk,
+  studyPlanAsk,
+} from './study-learning-resources.js';
 import { withStudySyllabusAsk } from './study-syllabus-overlay.js';
 import {
   travelAttractionsAsk,
@@ -28,10 +34,6 @@ const STUDIO_OFFICE = [
   { id: 'PDF', title: 'PDF', subtitle: 'Create & edit PDFs', icon: 'pdf', badge: 'Beta', iconColor: '#ef4444' },
 ];
 
-function itemIds(groups) {
-  return groups.flatMap((group) => group.items.map((item) => item.id));
-}
-
 /**
  * Plus-menu catalog. Travel and Study never share items.
  * Studio keeps Search / Office. Picking Travel opens the Travel advisor — it does not stay in Studio chat.
@@ -58,11 +60,12 @@ export function studioToolsMenuGroups(studioDomain, topic = '') {
       {
         heading: 'THIS TOPIC',
         items: [
-          { id: 'new-topic', title: 'New topic', subtitle: 'Start fresh. This thread stays in the list.', icon: 'plus' },
-          { id: 'study-icebreaker', title: 'Icebreaker', subtitle: 'A true hook, then pause — then we teach.', icon: 'spark' },
-          { id: 'study-explain', title: 'Explain', subtitle: 'Teach this topic with a picture, then wait.', icon: 'book' },
-          { id: 'study-flashcards', title: 'Flashcards', subtitle: 'Flip to recall. Not a website preview.', icon: 'cards' },
-          { id: 'study-quiz', title: 'Quiz', subtitle: 'Real checks. No leaderboard. I wait for you.', icon: 'quiz' },
+          { id: 'new-topic', title: 'New topic', subtitle: 'Start a fresh Study thread.', icon: 'plus' },
+          { id: 'study-icebreaker', title: 'Icebreaker', subtitle: 'Open the idea with one context-aware hook.', icon: 'spark' },
+          { id: 'study-flashcards', title: 'Flashcards', subtitle: 'Recall from what this conversation established.', icon: 'cards' },
+          { id: 'study-apply', title: 'Apply', subtitle: 'Use the idea in a relevant real situation.', icon: 'spark' },
+          { id: 'study-plan', title: 'Plan', subtitle: 'Choose the next useful learning steps.', icon: 'route' },
+          { id: 'study-notes', title: 'Notes', subtitle: 'Summarize established ideas and open gaps.', icon: 'word' },
         ],
       },
     ];
@@ -116,9 +119,10 @@ export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '',
     'travel-attractions': travelAttractionsAsk(),
     'travel-itinerary': travelItineraryAsk(),
     'study-icebreaker': withStudySyllabusAsk(studyIcebreakerAsk(topic), overlay),
-    'study-explain': withStudySyllabusAsk(studyLessonAsk(topic || 'this idea'), overlay),
     'study-flashcards': withStudySyllabusAsk(studyFlashcardAsk(topic || 'this idea'), overlay),
-    'study-quiz': withStudySyllabusAsk(studyQuizAsk(topic || 'this idea'), overlay),
+    'study-apply': withStudySyllabusAsk(studyApplicationAsk(topic || 'this idea'), overlay),
+    'study-plan': withStudySyllabusAsk(studyPlanAsk(topic || 'this idea'), overlay),
+    'study-notes': withStudySyllabusAsk(studyNotesAsk(topic || 'this idea'), overlay),
   };
 
   if (Object.prototype.hasOwnProperty.call(prompts, id)) {
@@ -126,4 +130,3 @@ export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '',
   }
   return { kind: STUDIO_PLUS_ACTION.PROMPT, text: '' };
 }
-
