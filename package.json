@@ -29,7 +29,8 @@
     "test:stress": "node scripts/stress/pipeline-stress.mjs",
     "verify": "node scripts/verify.mjs",
     "test:claims": "node scripts/capability-claims-gate.mjs",
-    "test:dead-controls": "node scripts/platform-dead-control-gate.mjs"
+    "test:dead-controls": "node scripts/platform-dead-control-gate.mjs",
+    "test:judgment": "tsx scripts/finance-judgment-gate.mjs"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",
