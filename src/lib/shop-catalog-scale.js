@@ -126,16 +126,6 @@ export function shopIntakeSessionFacts(assessment) {
   ];
 }
 
-export function shopCatalogTargetSize(text = '', existingCount = 0) {
-  const assessment = assessShopBuildAsk(text);
-  if (assessment.oversize) {
-    return assessment.proposedCatalogSize;
-  }
-  const asked = assessment.imageAskCount;
-  const base = asked || existingCount || SHOP_CATALOG_DEFAULT;
-  return Math.min(SHOP_CATALOG_CAP, Math.max(SHOP_PHOTO_FLOOR, base));
-}
-
 export function shopCatalogWasCapped(text = '') {
   return assessShopBuildAsk(text).oversize;
 }

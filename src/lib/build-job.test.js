@@ -156,3 +156,18 @@ test('stepIsProved refuses a step with nothing to prove', () => {
   assert.equal(stepIsProved({ produces: [] }, {}), false);
   assert.equal(stepIsProved(null, {}), false);
 });
+
+/*
+ * AUTO-ADVANCE: THE STOP CONDITIONS ARE THE FEATURE.
+ *
+ * Turning one 175-second shot into several short ones is the point. A loop that
+ * cannot stop is worse than no loop — it spends real money producing nothing,
+ * on a platform running against a $100 float.
+ */
+const twoStep = () => createBuildJob({
+  goal: 'A scheduler',
+  steps: [
+    { title: 'Data', produces: ['src/data.js'] },
+    { title: 'Grid', produces: ['src/Grid.jsx'] },
+  ],
+});

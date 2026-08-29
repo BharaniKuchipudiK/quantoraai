@@ -8,12 +8,13 @@ import {
   stripInjectedShopPhotos,
   proxyRemoteShopImages,
   proxyRemoteCatalogImages,
-  SHOP_CATALOG_CAP,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, jobClearlyNotShop, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
 import { buildStudioJobCard, isStudioProductSwitch } from './studio-job-card.js';
-import { shopCatalogScaleNote } from './shop-catalog-scale.js';
+// SHOP_CATALOG_CAP from its own module rather than through preview-images:
+// re-exporting a constant through an unrelated file hides the dependency.
+import { SHOP_CATALOG_CAP, shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
 const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
@@ -435,14 +436,6 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
   return { vfs: withDesk.vfs, wrote: true, path };
 }
 
-export function extractHtmlFromResponse(rawText) {
-  const { vfs, code } = assembleStudioPreview(rawText);
-  const htmlFile = vfs['index.html']?.content
-    || Object.entries(vfs).find(([name]) => /\.html$/i.test(name))?.[1]?.content;
-  if (htmlFile) return String(htmlFile).trim();
-  return isHtmlDocument(code) ? String(code).trim() : '';
-}
-
 export function extractRunnableCode(rawText) {
   const { code } = assembleStudioPreview(rawText);
   if (code) return code;
@@ -482,16 +475,6 @@ export function canOpenStudioPreviewPane(rawText, currentVfs = {}) {
 
 export function hasPreviewableContent(rawText) {
   return canOpenStudioPreviewPane(rawText);
-}
-
-export function preparePreviewHtml(rawText, imageMap = new Map()) {
-  const assembled = assembleStudioPreview(rawText);
-  let html = extractHtmlFromResponse(rawText) || assembled.code;
-  if (!html || !isHtmlDocument(html)) return '';
-  if (imageMap.size) {
-    for (const [token, dataUrl] of imageMap) html = html.split(token).join(dataUrl);
-  }
-  return prepareCodeForPreview(html, assembled.vfs);
 }
 
 export function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {

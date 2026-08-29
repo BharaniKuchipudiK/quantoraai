@@ -363,27 +363,6 @@ export function injectPreviewHarness(html) {
   return bundle + safe;
 }
 
-/** True when Preview should paint this string as an HTML document (not React source). */
-export function isHtmlPreviewDocument(code = '') {
-  return /<!DOCTYPE html>|<html[\s>]/i.test(String(code || ''));
-}
-
-/**
- * Build a complete srcDoc for Coding Desk HTML Preview.
- * Caller prepares HTML (images, shop UI). This locks harness + CSP.
- * Contract: desk has HTML → this string is what the iframe shows.
- */
-export function buildPreviewSrcDoc(preparedHtml = '') {
-  let doc = injectPreviewHarness(String(preparedHtml || ''));
-  if (!/http-equiv=["']?Content-Security-Policy/i.test(doc)) {
-    const meta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_RELAXED_CSP}">`;
-    if (/<head[^>]*>/i.test(doc)) doc = doc.replace(/<head[^>]*>/i, (m) => m + meta);
-    else if (/<html[^>]*>/i.test(doc)) doc = doc.replace(/<html[^>]*>/i, (m) => `${m}<head>${meta}</head>`);
-    else doc = meta + doc;
-  }
-  return doc;
-}
-
 function looksLikeReactSource(source = '') {
   const text = String(source || '');
   return /(?:from\s+['\"]react['\"]|import\s+React\b|useState\s*\(|useEffect\s*\(|export\s+default\s+(?:function|class)|ReactDOM\.createRoot\s*\(|createRoot\s*\(|<[A-Z][A-Za-z0-9_.:-]*(?:\s|\/?>))/m.test(text);
@@ -619,10 +598,6 @@ export function decidePreviewTrustStatus({
   if (isHonestPreviewFailurePage(assembledHtml)) return 'failed';
   if (!assembledPreviewHasUsableCss(assembledHtml) || styledCheckOk === false) return 'degraded';
   return 'clean';
-}
-
-export function usesTailwindCdn(html) {
-  return /cdn\.tailwindcss\.com/i.test(String(html || ''));
 }
 
 export function isCriticalResourceError(message) {

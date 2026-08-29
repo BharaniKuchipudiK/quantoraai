@@ -6,6 +6,7 @@ import { fetchApiGatewayKey } from '../../autocomplete.js';
 import { authenticateAdminRequest } from '../admin-auth.js';
 import { probeGemini } from '../gemini-probe.js';
 import { probeOpenRouter } from '../openrouter-probe.js';
+import { paidRouteAllowed } from "../paid-route-gate.js";
 
 /**
  * Resolve the Gemini credential the way the chat path does — environment
@@ -125,6 +126,18 @@ export default async function handler(req: any, res: any) {
     circuitStore: providerCircuitStore,
   });
   const circuitStore = getProviderCircuitStoreHealth();
+  /*
+   * Spend, where the operator can see it without asking anyone.
+   *
+   * The meter existed and was read by nothing, so the only way to know what
+   * this platform had spent was to log in to OpenRouter. A budget nobody can
+   * see is the same as no budget — the figures come from the provider, not
+   * from our own arithmetic.
+   */
+  // The gateway key when the env has none, so the figure reflects the key that
+  // would actually be charged.
+  const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
+  const paid = await paidRouteAllowed(spendKey);
 
   return res.status(summary.ready ? 200 : 503).json({
     ready: summary.ready,
@@ -137,6 +150,13 @@ export default async function handler(req: any, res: any) {
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     routeCount: summary.routeCount,
     usedLastResort: summary.usedLastResort,
+    spend: {
+      paidRoutesAllowed: paid.allowed,
+      reason: paid.reason,
+      spentUsd: paid.spentUsd,
+      limitUsd: paid.limitUsd,
+      remainingUsd: paid.remainingUsd,
+    },
     circuitStore,
   });
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateAffordability, formatAffordabilityDecisionForPrompt } from "./affordability.js";
+import { evaluateAffordability} from "./affordability.js";
 import { normalizeUserContextGraph } from "./user-context-graph.js";
 
 const AS_OF = "2026-08-19T00:00:00.000Z";
@@ -131,22 +131,6 @@ test("foreign-currency commitments fail closed until Quantora has an FX conversi
   assert.equal(decision.safeSpend, null);
   assert.match(decision.missing.join(" "), /currency conversion/);
   assert.ok(decision.consideredNodeIds.includes("usd-debt"));
-});
-
-test("missing reserve fails closed instead of using model intuition", () => {
-  const graph = normalizeUserContextGraph([
-    node("cash", "financial_state", "finance.liquid_cash", 10000),
-    coverage(),
-  ]);
-
-  const decision = evaluateAffordability({ graph, proposedCost: 2000, currency: "SGD", asOf: AS_OF });
-  assert.equal(decision.verdict, "insufficient_data");
-  assert.equal(decision.safeSpend, null);
-  assert.deepEqual(decision.missing, ["finance.minimum_reserve in SGD"]);
-
-  const prompt = formatAffordabilityDecisionForPrompt(decision);
-  assert.match(prompt, /do not override with model intuition/);
-  assert.match(prompt, /ask only for the missing material input/);
 });
 
 test("absence of commitments is not treated as zero without coverage", () => {

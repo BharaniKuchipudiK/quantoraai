@@ -8,9 +8,8 @@ import { assessPartnerInterrupt } from './studio-partner-interrupt.js';
 import {
   SHOP_INTAKE_CATALOG_SIZE,
   expandShopIntakeAccept,
-  shopCatalogTargetSize,
 } from './shop-catalog-scale.js';
-import { injectMissingShopPhotos, countRealPreviewPhotos } from './preview-images.js';
+import { countRealPreviewPhotos } from './preview-images.js';
 import { injectShopCommerceUi, previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
 import { resolveCodingTurnOutcome } from './coding-outcome-spine.js';
 
@@ -31,19 +30,27 @@ test('proof: oversize ask interrupts before any model turn', () => {
   assert.ok(interrupt.chips.some((c) => /Agree|Start with/i.test(c.label)));
 });
 
-test('proof: agree expands to a 10-photo brief, then Preview gets real photos + cart', () => {
+/*
+ * This used to assert that agreeing to "start with 10" made Preview show ten
+ * real photos. Those photos were picsum stock injected by the platform — the
+ * fabrication path that produced the "Statue of Liberty / Shop 6 ₹3,050" build,
+ * and the reason ensureShopPhotosInVfs refuses to do it.
+ *
+ * The stock pool is now deleted, so the honest behaviour is what is pinned: the
+ * brief still expands to a capped catalog target, the commerce UI is still
+ * added, and a shell the model shipped with no images shows NO photos rather
+ * than ten invented ones.
+ */
+test('proof: agree expands to a 10-item brief, and Preview gains cart without invented photos', () => {
   const agree = expandShopIntakeAccept('start with 10', [FOX]);
   assert.equal(agree.expanded, true);
   assert.equal(agree.catalogTarget, SHOP_INTAKE_CATALOG_SIZE);
-  assert.equal(shopCatalogTargetSize(agree.text), SHOP_INTAKE_CATALOG_SIZE);
 
-  const photos = injectMissingShopPhotos(FOX_SHELL, { brief: agree.text });
-  assert.ok(photos.injected);
-  assert.ok(countRealPreviewPhotos(photos.html) >= SHOP_INTAKE_CATALOG_SIZE);
-
-  const shop = injectShopCommerceUi(photos.html);
+  const shop = injectShopCommerceUi(FOX_SHELL);
   assert.ok(shop.changed || previewHtmlHasAddToCartControl(shop.html));
   assert.ok(previewHtmlHasAddToCartControl(shop.html));
+  assert.equal(countRealPreviewPhotos(shop.html), 0,
+    'a shell with no images must stay empty rather than be stocked with fakes');
 });
 
 test('proof: if the turn still dies, outcome spine offers a next move — not Connection Error only', () => {

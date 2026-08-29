@@ -127,6 +127,3 @@ export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '',
   return { kind: STUDIO_PLUS_ACTION.PROMPT, text: '' };
 }
 
-export function studioPlusCatalogIds(studioDomain) {
-  return itemIds(studioToolsMenuGroups(studioDomain));
-}

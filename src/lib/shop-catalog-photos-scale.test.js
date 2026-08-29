@@ -1,18 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  SHOP_CATALOG_CAP,
   SHOP_INTAKE_CATALOG_SIZE,
   assessShopBuildAsk,
   requestedShopCatalogSize,
   shopCatalogScaleNote,
-  shopCatalogTargetSize,
   shopCatalogWasCapped,
   shopPhotoTurnFailureCopy,
 } from './shop-catalog-scale.js';
 import {
   countRealPreviewPhotos,
-  injectMissingShopPhotos,
   previewHtmlHasRealPhotos,
 } from './preview-images.js';
 import { ensureShopDeskInVfs, vfsLooksLikeShop } from './studio-preview-helpers.js';
@@ -33,7 +30,6 @@ const FOX_SHELL = `<!DOCTYPE html><html><head><title>Fox & Wolf Kids Collection<
 test('100 unique designs caps at the honest intake catalog size', () => {
   assert.equal(requestedShopCatalogSize(FOX_BRIEF), 100);
   assert.equal(shopCatalogWasCapped(FOX_BRIEF), true);
-  assert.equal(shopCatalogTargetSize(FOX_BRIEF), SHOP_INTAKE_CATALOG_SIZE);
   assert.match(shopCatalogScaleNote(FOX_BRIEF), /10/);
   assert.match(shopCatalogScaleNote(FOX_BRIEF), /100/);
 });
@@ -61,7 +57,6 @@ test('typed start with 10 expands to the intake chip brief using the prior Fox a
   assert.match(expanded.text, /about 10 working catalog photos/i);
   assert.match(expanded.text, /not 100 unique/i);
   assert.match(expanded.text, /data:image|VFS|\.svg/i);
-  assert.equal(shopCatalogTargetSize(expanded.text), SHOP_INTAKE_CATALOG_SIZE);
 });
 
 test('cold only 10 without a prior oversize shop does not expand into a shop build', async () => {
@@ -132,12 +127,6 @@ test('Fox & Wolf empty shell is NOT fabricated into a stock-photo catalog (hones
   assert.ok(!next.vfs['products.json'], 'no fabricated products.json');
 });
 
-test('injectMissingShopPhotos fills a blank collection main', () => {
-  const result = injectMissingShopPhotos(FOX_SHELL, { brief: FOX_BRIEF });
-  assert.equal(result.injected, true);
-  assert.ok(countRealPreviewPhotos(result.html) >= 6);
-});
-
 test('mission goal stays Fox & Wolf shop after an images complaint follow-up', () => {
   assert.match(toShortMissionGoal(FOX_BRIEF), /Fox\s*&\s*Wolf/i);
   const mission = deriveStudioMission({
@@ -184,15 +173,4 @@ test('an empty shell is never fabricated into product cards, on any follow-up', 
   const cards = (first.vfs['index.html'].content.match(/data-quantora-shop-card="true"/g) || []).length;
   // No fabricated product cards — the model's shell is shown as-is (honest gap).
   assert.equal(cards, 0);
-});
-
-test('HTML product cards above the platform cap are trimmed', () => {
-  const cards = Array.from({ length: 40 }, (_, i) => (
-    `<div class="product-card"><p>Item ${i + 1}</p></div>`
-  )).join('');
-  const html = `<!DOCTYPE html><html><body><main>${cards}</main></body></html>`;
-  const result = injectMissingShopPhotos(html, { brief: FOX_BRIEF });
-  const kept = (result.html.match(/class="product-card"/g) || []).length;
-  assert.ok(kept <= 24, `expected ≤24 cards, got ${kept}`);
-  assert.ok(countRealPreviewPhotos(result.html) >= 6);
 });

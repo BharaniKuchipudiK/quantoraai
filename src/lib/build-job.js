@@ -200,3 +200,5 @@ export function briefNeedsJob(brief = '', { vfs = {} } = {}) {
   const existingFiles = Object.keys(vfs || {}).length;
   return surfaces > 0 && (parts > 0 || bullets >= 3 || text.length > 400 || existingFiles >= 4);
 }
+
+

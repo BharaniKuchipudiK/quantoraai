@@ -46,34 +46,6 @@ export function normalizeStudioGitCommitMessage(message) {
   return value;
 }
 
-/**
- * Fixed argv lists only. User text is never interpolated into a shell string.
- */
-export function studioGitArgv(action, message) {
-  const kind = normalizeStudioGitAction(action);
-  if (kind === 'init') {
-    return [
-      ['git', 'init'],
-      ['git', 'config', 'user.email', 'desk@quantora.local'],
-      ['git', 'config', 'user.name', 'Quantora coding desk'],
-    ];
-  }
-  if (kind === 'status') {
-    return [['git', 'status', '--short', '--branch']];
-  }
-  if (kind === 'diff') {
-    return [
-      ['git', '--no-pager', 'diff'],
-      ['git', '--no-pager', 'diff', '--cached'],
-    ];
-  }
-  const commitMessage = normalizeStudioGitCommitMessage(message);
-  return [
-    ['git', 'add', '-A'],
-    ['git', 'commit', '-m', commitMessage],
-  ];
-}
-
 /** The panel must show a diff as a diff, so added and removed lines are told apart. */
 export function classifyDeskGitLine(line = '') {
   const text = String(line || '');

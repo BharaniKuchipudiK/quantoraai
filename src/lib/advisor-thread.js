@@ -10,29 +10,6 @@ export function newThreadLabel(domain) {
   return 'New Chat';
 }
 
-export function longAdvisorThreadCopy(domain) {
-  if (domain === 'travel') {
-    return {
-      now: 'This trip is getting long.',
-      next: 'Start a new trip, or keep going and I may forget early details. This trip stays in your list.',
-      action: 'New trip',
-    };
-  }
-  if (domain === 'education') {
-    return {
-      now: 'This topic is getting long.',
-      next: 'Start a new topic, or keep going and I may forget earlier checks. This topic stays in your list.',
-      action: 'New topic',
-    };
-  }
-  return null;
-}
-
-export function shouldWarnLongAdvisorThread({ messages = [], domain = null } = {}) {
-  if (domain !== 'travel' && domain !== 'education') return false;
-  return countUserTurns(messages) >= LONG_ADVISOR_USER_TURNS;
-}
-
 /**
  * Clicking Travel/Study in the sidebar should open that desk, not spawn a
  * blank thread every time. New trip / New topic is the explicit fresh start.

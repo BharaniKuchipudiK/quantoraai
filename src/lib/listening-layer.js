@@ -144,14 +144,4 @@ export function mergeSessionListeningSignals(session, type, payload) {
   };
 }
 
-/**
- * Outcome-gap signals are instructions for the next model turn only. The
- * caller sends its current snapshot with the request, then persists this
- * filtered list so an already-addressed omission cannot steer later turns.
- */
-export function consumeOneShotListeningSignals(signals = []) {
-  if (!Array.isArray(signals)) return [];
-  return signals.filter((signal) => signal?.type !== QUANTORA_EVENTS.OUTCOME_GAP_DETECTED);
-}
-
 export { humanSignalLabel, MAX_SIGNALS };

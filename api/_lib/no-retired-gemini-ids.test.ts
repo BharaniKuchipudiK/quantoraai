@@ -56,3 +56,25 @@ test('INVARIANT: no served code pins a Gemini version id', () => {
     'reach Gemini through a maintained alias or the live catalogue, never a pinned version:\n  ' + offenders.join('\n  '),
   );
 });
+
+/*
+ * TRAVEL'S MODEL MUST STAY APPROVED.
+ *
+ * gpt-4o-mini was removed from FEATURED_SERVER_MODELS in a roster cleanup while
+ * TRAVEL_CONVERSATION_MODEL_ID still named it, which broke Travel for everyone:
+ * every travel turn answered "The model 'Quantora Travel Advisor' is not
+ * approved for Quantora-managed usage yet." Nothing tied the two together, so
+ * nothing caught it.
+ */
+test('the travel conversation model is in the approved server roster', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { TRAVEL_CONVERSATION_MODEL_ID } = await import('./travel-model-routing.js');
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  const featured = handler.slice(
+    handler.indexOf('FEATURED_SERVER_MODELS = new Set(['),
+    handler.indexOf(']);', handler.indexOf('FEATURED_SERVER_MODELS = new Set([')),
+  );
+  const named = featured.includes('TRAVEL_CONVERSATION_MODEL_ID')
+    || featured.includes(`"${TRAVEL_CONVERSATION_MODEL_ID}"`);
+  assert.ok(named, `Travel routes to ${TRAVEL_CONVERSATION_MODEL_ID}, which the approved roster does not list.`);
+});

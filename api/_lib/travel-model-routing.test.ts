@@ -146,3 +146,49 @@ test("TRAVEL_DEGRADED_DIRECTIVE tells the model not to invent live fares", () =>
   assert.match(TRAVEL_DEGRADED_DIRECTIVE, /Do not invent live fares/i);
   assert.match(TRAVEL_DEGRADED_DIRECTIVE, /temporarily unavailable/i);
 });
+
+/*
+ * A SCHEDULING BOARD WAS ANSWERED BY THE TRAVEL ADVISOR.
+ *
+ * "days" and "nights" were travel signals on their own, so:
+ *
+ *   "A horizontal timeline (14 days, one column per day)... show the total
+ *    project duration in days"
+ *
+ * routed to Travel. It is also why a build was offered "Add dates / itinerary"
+ * chips. And because TRAVEL_CONVERSATION_MODEL_ID had just been dropped from
+ * the approved roster, the turn died outright:
+ *
+ *   Request failed: The model "Quantora Travel Advisor" is not approved.
+ */
+test('a build that mentions days is not a travel turn', () => {
+  const scheduler = 'A horizontal timeline (14 days, one column per day) with a row per bench. '
+    + 'Compute the critical path and show the total project duration in days.';
+  assert.equal(hasTravelConversationContext({ message: scheduler }), false);
+  assert.equal(hasTravelConversationContext({ message: 'Build a production scheduling board with a 14 day timeline' }), false);
+  assert.equal(hasTravelConversationContext({ message: 'Give the team 3 days to review' }), false);
+});
+
+test('real travel is still travel', () => {
+  for (const message of [
+    'Find me flights to Singapore',
+    'Plan a trip to Kyoto',
+    '7 nights in Bali with a beach resort',
+    'Show hotel availability for next month',
+    'Do I need a visa for Japan?',
+  ]) {
+    assert.equal(hasTravelConversationContext({ message }), true, `missed travel: ${message}`);
+  }
+});
+
+test('a build is never hijacked to travel, whatever words it uses', () => {
+  // Someone asking for a runnable artifact wants the Coding Desk. Routing it to
+  // a travel model produces an answer about itineraries and no code.
+  const body = { message: 'Build a hotel booking site with flight search', buildMode: true };
+  assert.equal(shouldPreferTravelConversationProvider(body), false);
+  assert.equal(shouldPreferTravelConversationProvider({ ...body, buildMode: false, taskCategory: 'coding' }), false);
+});
+
+test('an explicit travel domain is still honoured', () => {
+  assert.equal(hasTravelConversationContext({ studioDomain: 'travel', message: 'what next?' }), true);
+});

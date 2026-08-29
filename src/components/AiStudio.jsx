@@ -551,6 +551,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * files exist on the desk — never because a turn said so.
    */
   const [buildJob, setBuildJob] = useState(null);
+  // Steps taken without being asked. Reset when a new plan starts; capped so an
+  // agent loop can never become an open tap.
+  const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -876,6 +879,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // A plan turn starts the job; every other turn re-judges it against the
     // files that now exist, so a step can also go BACK to not-done if its file
     // is later emptied. The job describes the desk, not the history of claims.
+    /*
+     * Auto-advance is REVERTED here, not debugged in place.
+     *
+     * It broke the desk-job browser gate — the Preview stopped rendering — and
+     * the same PR carries the fix for a live Travel outage. Holding a
+     * production fix hostage to a feature is the wrong trade, so the loop comes
+     * out and goes back in on its own PR with that gate passing first.
+     *
+     * shouldAutoAdvanceJob and its stop conditions stay in build-job.js, tested.
+     */
     const proposed = readPlanMarker(rawText);
     if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
     else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
@@ -1791,6 +1804,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
                         >
                           {describeBuildJob(buildJob)}
+                          {autoPauseRef.current && !buildJobIsComplete(buildJob)
+                            ? `
+
+Paused — ${autoPauseRef.current}.`
+                            : ''}
                         </div>
                       ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (

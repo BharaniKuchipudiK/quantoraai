@@ -10,14 +10,8 @@ import {
   PREVIEW_TAILWIND_PROBE_ID,
   pickPreviewEntry,
   prepareCodeForPreview,
-  usesTailwindCdn,
   decidePreviewTrustStatus,
 } from './preview-utils.js';
-
-test('detects Tailwind CDN usage', () => {
-  assert.equal(usesTailwindCdn('<script src="https://cdn.tailwindcss.com"></script>'), true);
-  assert.equal(usesTailwindCdn('<style>body{color:red}</style>'), false);
-});
 
 test('injects harness into head', () => {
   const html = '<!DOCTYPE html><html><head><title>x</title></head><body></body></html>';
@@ -178,36 +172,6 @@ test('path embed URL can cache-bust remounts', async () => {
   assert.equal(isPreviewEmbedFrameSrc('blob:https://quantoraai.app/abc'), true);
   assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/'), false);
   assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/desk'), false);
-});
-
-test('harness strips base/refresh that yank the iframe onto the SPA', async () => {
-  const { injectPreviewHarness, buildPreviewSrcDoc, isHtmlPreviewDocument } = await import('./preview-utils.js');
-  const out = injectPreviewHarness(`<!DOCTYPE html><html><head>
-<base href="https://quantoraai.app/">
-<meta http-equiv="refresh" content="0;url=/">
-</head><body><h1>Shop</h1><a href="/">Home</a><a href=/>Root</a>
-<link href=/styles.css rel="stylesheet">
-<form action="/"><button type="submit">Go</button></form>
-<form action=/><button type="submit">Bare</button></form>
-<script>location.href='/'</script></body></html>`);
-  assert.doesNotMatch(out, /<base\s+href=/i);
-  assert.doesNotMatch(out, /http-equiv=["']?refresh/i);
-  assert.doesNotMatch(out, /<a\s+href=["']\/["']/i);
-  assert.doesNotMatch(out, /href=\/(?=[\s>])/i);
-  assert.doesNotMatch(out, /action=["']\/["']/i);
-  assert.doesNotMatch(out, /action=\/(?=[\s>])/i);
-  // The unquoted-slash rewrite must not eat a real relative path.
-  assert.match(out, /href=\/styles\.css/i);
-  assert.match(out, /preview-alive/);
-  assert.match(out, /Preview blocked form navigation/);
-  assert.doesNotMatch(out, /<script>location\.href\s*=\s*['"]\/['"]/i);
-  assert.match(out, /Preview blocked navigation/);
-  assert.match(out, /Object\.defineProperty\(window\.location, 'href'/);
-  assert.equal(isHtmlPreviewDocument('<!DOCTYPE html><html><body>x</body></html>'), true);
-  assert.equal(isHtmlPreviewDocument('export default function App(){return 1}'), false);
-  const srcDoc = buildPreviewSrcDoc('<!DOCTYPE html><html><head></head><body><h1>Hi</h1></body></html>');
-  assert.match(srcDoc, /Content-Security-Policy/);
-  assert.match(srcDoc, /<h1>Hi<\/h1>/);
 });
 
 test('still ignores opaque script errors', () => {

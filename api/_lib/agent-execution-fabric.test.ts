@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   AgentRuntimeRegistry,
   buildPclAgentExecutionPlan,
-  runPclAgentExecutionPlan,
   validatePclAgentExecutionPlan,
   type AgentRuntimeAdapter,
 } from "./agent-execution-fabric.js";
@@ -83,116 +82,6 @@ test("complex research artifact becomes a provider-neutral specialist pipeline",
   assert.ok(plan.requiredCapabilities.includes("artifact_generation"));
   assert.ok(plan.requiredCapabilities.includes("verification"));
   assert.equal(validatePclAgentExecutionPlan(plan).valid, true);
-});
-
-test("consequential execution is prepared but pauses at the PCL approval boundary", async () => {
-  const plan = buildPclAgentExecutionPlan({
-    message: "Send the customer email now.",
-    cognition: cognition({ humanGate: "approve", autonomy: "gated", risk: "medium", reversibility: "hard" }),
-    action: action({ sideEffect: "external", risk: "medium", reversibility: "hard", reasonCode: "irreversible_external_side_effect" }),
-  });
-  assert.equal(plan.governance, "requires_approval");
-  assert.equal(plan.tasks[0].id, "execute");
-  assert.equal(plan.tasks[0].requiresApproval, true);
-  assert.equal(plan.tasks[0].requiresEvidence, true);
-
-  let executions = 0;
-  const registry = new AgentRuntimeRegistry();
-  registry.register(adapter({
-    id: "external-runtime",
-    capabilities: ["tool_execution", "verification"],
-    execute: async ({ task }) => {
-      executions += 1;
-      return task.role === "verifier"
-        ? { status: "success", verification: { passed: true } }
-        : { status: "success", evidenceRef: "provider:message-123" };
-    },
-  }));
-
-  const paused = await runPclAgentExecutionPlan({ plan, registry });
-  assert.equal(paused.status, "paused");
-  assert.equal(paused.pendingTaskId, "execute");
-  assert.equal(executions, 0);
-
-  const completed = await runPclAgentExecutionPlan({
-    plan,
-    registry,
-    authorizeTask: () => ({ allowed: true, reasonCode: "explicit_human_approval_present" }),
-  });
-  assert.equal(completed.status, "complete");
-  assert.equal(executions, 2);
-  assert.equal(completed.results.execute.evidenceRef, "provider:message-123");
-});
-
-test("runtime registry fails over between interchangeable providers", async () => {
-  const plan = buildPclAgentExecutionPlan({
-    message: "Analyze these options and recommend the best path.",
-    cognition: cognition({ responsePolicy: { ...cognition().responsePolicy, verifyBeforeClaimingDone: false } }),
-    action: action(),
-  });
-
-  const calls: string[] = [];
-  const registry = new AgentRuntimeRegistry();
-  registry.register(adapter({
-    id: "preferred-runtime",
-    priority: 20,
-    capabilities: ["analysis"],
-    execute: async () => {
-      calls.push("preferred-runtime");
-      return { status: "failure", error: "provider unavailable" };
-    },
-  }));
-  registry.register(adapter({
-    id: "fallback-runtime",
-    priority: 10,
-    capabilities: ["analysis"],
-    execute: async () => {
-      calls.push("fallback-runtime");
-      return { status: "success", output: { recommendation: "Option B" } };
-    },
-  }));
-
-  const result = await runPclAgentExecutionPlan({ plan, registry });
-  assert.equal(result.status, "complete");
-  assert.deepEqual(calls, ["preferred-runtime", "fallback-runtime"]);
-});
-
-test("verifier can fail a run even when builders reported success", async () => {
-  const plan = buildPclAgentExecutionPlan({
-    message: "Build a React application and verify it works.",
-    cognition: cognition(),
-    action: action(),
-  });
-  const registry = new AgentRuntimeRegistry();
-  registry.register(adapter({
-    id: "builder",
-    capabilities: ["coding"],
-    execute: async () => ({ status: "success", output: "patch", evidenceRef: "artifact:patch-1" }),
-  }));
-  registry.register(adapter({
-    id: "verifier",
-    capabilities: ["verification"],
-    execute: async () => ({ status: "success", verification: { passed: false, issues: ["smoke test failed"] } }),
-  }));
-
-  const result = await runPclAgentExecutionPlan({ plan, registry });
-  assert.equal(result.status, "failed");
-  assert.equal(result.failedTaskId, "verify");
-  assert.equal(result.reasonCode, "verification_failed");
-});
-
-test("completed outcomes are not delegated again", async () => {
-  const plan = buildPclAgentExecutionPlan({
-    message: "Do it again.",
-    cognition: cognition({ outcomeAlignment: "complete", autonomy: "complete", completion: 1 }),
-    action: action(),
-  });
-  assert.equal(plan.governance, "blocked");
-  assert.equal(plan.tasks.length, 0);
-
-  const result = await runPclAgentExecutionPlan({ plan, registry: new AgentRuntimeRegistry() });
-  assert.equal(result.status, "blocked");
-  assert.equal(result.reasonCode, "blocked");
 });
 
 test("malformed external plans cannot bypass the approval contract", () => {

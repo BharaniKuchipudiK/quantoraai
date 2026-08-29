@@ -47,11 +47,6 @@ export function getChatDisplayText(rawText = '', { artifactHtml = '' } = {}) {
   return rawText;
 }
 
-export function isFeatureSuggestionRequest(text = '') {
-  return /\b(suggest\s+(?:one|a)\s+(?:high-impact\s+)?feature|add a feature|what feature|feature to add)\b/i.test(text)
-    && !/\b(yes,?\s*build|go ahead|implement|add it|do it|build it)\b/i.test(text);
-}
-
 export function isExplicitArtifactProceed(text = '') {
   return /\b(yes,?\s*build|go ahead|implement|add it|do it|build it|build that|ship it|make it live|update the site)\b/i.test(text);
 }

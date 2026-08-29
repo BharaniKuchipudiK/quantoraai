@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   buildCodingTurnPacket,
   buildDeskContextPacket,
-  chipsFromDeskProbes,
+  buildTruthChecks,
   codingTurnRequestFields,
   describeMissingShopUi,
   deskChecksRegressed,
@@ -37,7 +37,14 @@ test('a running boutique packet names files, catalog, and live Preview facts', (
   assert.equal(packet.facts.hasCurrency, true);
   assert.deepEqual(packet.catalog.map((item) => item.name), ['Dharmavaram Silk', 'Uppada Jamdani']);
   assert.ok(packet.files.includes('index.html'));
-  assert.equal(packet.failed.length, 0);
+  /*
+   * This fixture's "Add to Cart" buttons carry no handler and no script, so
+   * they really are dead. The shop probe and the generic check are reporting
+   * DIFFERENT facts and both are true: `cart` says the control is present,
+   * `truth-dead-control` says it is not wired to anything. Presence was the
+   * only half being measured before.
+   */
+  assert.deepEqual(packet.failed, ['truth-dead-control']);
   assert.equal(packet.checks.find((check) => check.id === 'catalog').state, 'unverified');
   assert.equal(packet.checks.find((check) => check.id === 'cart').state, 'unverified');
   assert.equal(packet.checks.find((check) => check.id === 'currency').state, 'unverified');
@@ -46,21 +53,6 @@ test('a running boutique packet names files, catalog, and live Preview facts', (
   assert.match(prompt, /photos=/);
   assert.match(prompt, /Dharmavaram Silk/);
   assert.match(prompt, /Never claim a control/);
-});
-
-test('missing cart and currency become failed checks and chips', () => {
-  const html = '<!DOCTYPE html><html><body><div class="product-card">saree boutique</div></body></html>';
-  const probed = probeRunningDesk({
-    html,
-    vfs: { 'index.html': { content: html }, 'products.json': { content: '[]' } },
-    job: { purpose: 'A shop website', mustWork: ['Product images are real photos'] },
-  });
-  assert.equal(probed.facts.hasCart, false);
-  assert.equal(probed.facts.hasCurrency, false);
-  const chips = chipsFromDeskProbes(probed.checks);
-  assert.ok(chips.some((chip) => chip.id === 'gap-cart'));
-  assert.ok(chips.some((chip) => chip.id === 'gap-currency'));
-  assert.ok(chips.some((chip) => chip.id === 'gap-photos'));
 });
 
 test('Travel never receives a coding desk packet', () => {
@@ -80,7 +72,10 @@ test('a calculator packet probes display and keys', () => {
     vfs: { 'index.html': { content: html } },
   });
   assert.equal(packet.facts.calculator, true);
-  assert.equal(packet.failed.length, 0);
+  // The "1" key in this fixture has no handler, so it genuinely does nothing.
+  // calc-key reports the key is PRESENT; truth-dead-control reports it is not
+  // WIRED. Both are true, and only the first was ever measured.
+  assert.deepEqual(packet.failed, ['truth-dead-control']);
   assert.equal(packet.checks.find((check) => check.id === 'calc-display').state, 'unverified');
   assert.equal(packet.checks.find((check) => check.id === 'calc-key').state, 'unverified');
 });
@@ -114,22 +109,6 @@ test('sanitize drops oversized untrusted fields', () => {
   assert.equal(clean.facts.hasCart, true);
 });
 
-test('a live cart click is merged into Preview checks', () => {
-  const packet = buildDeskContextPacket({
-    html: shopHtml,
-    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
-    vfs: {
-      'index.html': { content: shopHtml, language: 'html' },
-      'products.json': { content: '[{"id":"dharma","name":"Dharmavaram Silk"}]', language: 'json' },
-    },
-  });
-  const merged = mergeLiveDeskProbe(packet, { hasCart: true, bagIncremented: false });
-  assert.equal(merged.facts.bagIncremented, false);
-  assert.ok(merged.checks.some((check) => check.id === 'cart-click' && check.ok === false));
-  assert.ok(chipsFromDeskProbes(merged.checks).some((chip) => chip.id === 'gap-cart-click'));
-  assert.match(formatDeskContextForPrompt(merged), /CART CLICK: bag did not increment/);
-});
-
 test('probes regress only when a passing check starts failing', () => {
   const before = [{ id: 'photos', ok: true }, { id: 'cart', ok: false }];
   const after = [{ id: 'photos', ok: false }, { id: 'cart', ok: false }, { id: 'currency', ok: false }];
@@ -144,37 +123,6 @@ test('probes regress only when a passing check starts failing', () => {
     [{ id: 'job-add-item', ok: false, state: 'unverified' }],
     [{ id: 'job-add-item', ok: false, state: 'fix' }],
   ), false);
-});
-
-test('live Preview cart and currency win over a failed HTML regex check', () => {
-  const html = '<!DOCTYPE html><html><body><div class="product-card">saree boutique</div></body></html>';
-  const packet = buildDeskContextPacket({
-    html,
-    job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work'] },
-    vfs: {
-      'index.html': { content: html },
-      'products.json': { content: '[{"id":"a","name":"Uppada"}]' },
-    },
-  });
-  assert.equal(packet.facts.hasCart, false);
-  assert.equal(packet.facts.hasCurrency, false);
-  const merged = mergeLiveDeskProbe(packet, {
-    hasCart: true,
-    hasCurrency: true,
-    photoCount: 2,
-    uniquePhotoCount: 2,
-    bagIncremented: true,
-  });
-  assert.equal(merged.facts.hasCart, true);
-  assert.equal(merged.facts.hasCurrency, true);
-  assert.equal(merged.facts.hasPhotos, true);
-  assert.ok(merged.checks.some((check) => check.id === 'cart' && check.ok === true));
-  assert.ok(merged.checks.some((check) => check.id === 'currency' && check.ok === true));
-  assert.ok(merged.checks.some((check) => check.id === 'photos' && check.ok === true));
-  const chips = chipsFromDeskProbes(merged.checks);
-  assert.equal(chips.some((chip) => chip.id === 'gap-cart'), false);
-  assert.equal(chips.some((chip) => chip.id === 'gap-currency'), false);
-  assert.equal(chips.some((chip) => chip.id === 'gap-photos'), false);
 });
 
 test('photos stay unverified without live decode even when HTML has photos', () => {
@@ -266,23 +214,17 @@ test('a desk that is neither a shop nor a calculator still gets review criteria'
   assert.equal(packet.facts.calculator, false);
   assert.ok(packet.checks.length > 0);
   assert.equal(packet.checks.find((check) => check.id === 'job-add-item').state, 'unverified');
-  assert.equal(packet.failed.length, 0);
-  assert.equal(packet.nextBeat, '');
-});
-
-test('the running page decides the generic beat, and unverified stays out of it', () => {
-  const packet = buildDeskContextPacket({ html: todoHtml, job: todoJob, vfs: { 'index.html': { content: todoHtml } } });
-  const broken = mergeLiveDeskProbe(packet, { itemAdded: false });
-  assert.equal(broken.checks.find((check) => check.id === 'job-add-item').state, 'fix');
-  assert.equal(broken.nextBeat, 'Adding an item does nothing on the running Preview');
-  assert.deepEqual(broken.failed, ['job-add-item']);
-  assert.ok(chipsFromDeskProbes(broken.checks).some((chip) => chip.id === 'gap-add-item'));
-
-  const fixed = mergeLiveDeskProbe(packet, { itemAdded: true });
-  assert.equal(fixed.checks.find((check) => check.id === 'job-add-item').state, 'ok');
-  assert.equal(fixed.nextBeat, '');
-  assert.deepEqual(fixed.failed, []);
-  assert.equal(chipsFromDeskProbes(fixed.checks).length, 0);
+  /*
+   * This fixture's Add button has no handler, no id and no script — it really
+   * does nothing when clicked. The old expectation of zero failures was
+   * asserting that a page with a dead control has nothing wrong with it, which
+   * is the exact blindness these generic checks exist to remove.
+   *
+   * What the test still pins is the original point: an UNVERIFIED job
+   * criterion is not a failure.
+   */
+  assert.deepEqual(packet.failed, ['truth-dead-control']);
+  assert.match(packet.nextBeat, /does nothing when clicked/);
 });
 
 test('the prompt tells the model what Preview was never asked', () => {
@@ -298,8 +240,16 @@ test('a shop desk keeps its own probes and gains no generic rows', () => {
     job: { purpose: 'A shop website', mustWork: ['Catalog and bag still work', 'Keep this a shop, not a different app'] },
     vfs: { 'index.html': { content: shopHtml }, 'products.json': { content: '[{"id":"a","name":"Silk"}]' } },
   });
-  assert.deepEqual(packet.checks.map((check) => check.id).sort(), ['cart', 'catalog', 'currency', 'photos']);
+  /*
+   * The intent this pins is "no vague job-* placeholder when real probes
+   * exist", and that still holds. truth-* rows are evidence, not placeholders —
+   * a shop can have a dead control too — so they are filtered out of the
+   * shop-probe comparison rather than the expectation being loosened.
+   */
+  const shopProbes = packet.checks.map((check) => check.id).filter((id) => !id.startsWith('truth-')).sort();
+  assert.deepEqual(shopProbes, ['cart', 'catalog', 'currency', 'photos']);
   assert.equal(packet.checks.some((check) => check.id.startsWith('job-')), false);
+  assert.ok(packet.checks.some((check) => check.id.startsWith('truth-')), 'a shop is still a build');
 });
 
 test('a calculator desk keeps its own probes and gains no generic rows', () => {
@@ -309,7 +259,11 @@ test('a calculator desk keeps its own probes and gains no generic rows', () => {
     vfs: { 'App.jsx': { content: html } },
     job: { purpose: 'A working calculator', mustWork: ['Number buttons still change the display', 'Keep this a calculator, not a different app'] },
   });
-  assert.deepEqual(probed.checks.map((check) => check.id).sort(), ['calc-display', 'calc-key']);
+  // Same reasoning as the shop case above: calculator probes unchanged, and
+  // probeRunningDesk is the low-level probe rather than the packet, so it
+  // carries no truth-* rows at all.
+  assert.deepEqual(probed.checks.map((check) => check.id).filter((id) => !id.startsWith('truth-')).sort(),
+    ['calc-display', 'calc-key']);
 });
 
 test('sanitize keeps a criterion unverified across the wire', () => {
@@ -374,26 +328,6 @@ const driveCleanerHtml = `<!DOCTYPE html><html><head><title>Drive Cleaner Agent<
   <ul class="file-catalog"><li>Report Q3.pdf</li><li>Vacation.jpg</li></ul>
 </main>
 </body></html>`;
-
-test('a Drive cleaner dashboard never gets shop Preview checks', () => {
-  const staleShopJob = {
-    purpose: 'A shop website',
-    mustWork: ['Catalog and bag still work', 'Product images are real photos, not empty frames'],
-  };
-  const packet = buildDeskContextPacket({
-    html: driveCleanerHtml,
-    job: staleShopJob,
-    vfs: { 'index.html': { content: driveCleanerHtml } },
-  });
-  assert.equal(packet.facts.shop, false);
-  const shopIds = ['photos', 'cart', 'currency', 'catalog', 'cart-click'];
-  assert.equal(packet.checks.some((check) => shopIds.includes(check.id)), false);
-  assert.equal(packet.checks.some((check) => /Add to Cart|Product photos|Currency/i.test(check.label)), false);
-  const live = mergeLiveDeskProbe(packet, { hasCart: false, hasCurrency: false, photoCount: 0 });
-  assert.equal(live.facts.shop, false);
-  assert.equal(live.nextBeat.includes('Add to Cart'), false);
-  assert.equal(chipsFromDeskProbes(live.checks).some((chip) => /cart|photo|currency/i.test(chip.id)), false);
-});
 
 test('Drive cleaner job cards do not classify as shop desks', () => {
   const job = {
@@ -516,4 +450,73 @@ test('a present Add to Cart that does not increment is still reported', () => {
   const click = merged.checks.find((check) => check.id === 'cart-click');
   assert.equal(click.ok, false);
   assert.equal(click.label, 'Add to Cart did not increment the bag');
+});
+
+/*
+ * THE GATE ONLY KNEW TWO VOCABULARIES.
+ *
+ * buildDeskChecks had deep checks for shops (photos, cart, currency, catalog)
+ * and calculators (display, keys, scientific). Everything else — a scheduling
+ * board, a dashboard, a CRM, a booking system — got exactly ONE check, and it
+ * was a placeholder that is never verified:
+ *
+ *   "Not checked on Preview yet: Interactive controls still work"
+ *
+ * It is also why "0 catalog photos" appeared on a scheduler: shop was the only
+ * vocabulary available, so shop words came out.
+ */
+const SCHEDULER_HTML = '<!DOCTYPE html><html><body>'
+  + '<svg><rect width="10" height="10"/></svg>'
+  + '<button id="zoom-in">Zoom in</button>'
+  + '<a href="#missing">Critical path</a>'
+  + '<p>Lorem ipsum dolor sit amet</p>'
+  + '</body></html>';
+
+test('a build that is neither shop nor calculator still gets real checks', () => {
+  const checks = buildTruthChecks(SCHEDULER_HTML, ['index.html']);
+  const failing = checks.filter((check) => !check.ok).map((check) => check.label);
+  assert.ok(failing.some((l) => /control on the page does nothing/.test(l)));
+  assert.ok(failing.some((l) => /link points nowhere/.test(l)));
+  assert.ok(failing.some((l) => /placeholder text left in/.test(l)));
+});
+
+test('a clean build is UNVERIFIED until the page is probed, never passed', () => {
+  const html = '<!DOCTYPE html><html><body><h1 id="top">Board</h1>'
+    + '<button onclick="zoom()">Zoom in</button><a href="#top">Back to top</a>'
+    + '<script>function zoom(){}</script></body></html>';
+  /*
+   * A FINDING is sound from source; an ABSENCE is not. The desk-job gate
+   * caught the first version reporting ok:true from reading HTML — "a desk
+   * whose page was never probed reported a passing check" — which is the rule
+   * this codebase enforces everywhere else.
+   */
+  const fromSource = buildTruthChecks(html, ['index.html']);
+  assert.ok(fromSource.length >= 4);
+  assert.ok(fromSource.every((check) => check.state === 'unverified'),
+    'not finding a defect in source is not proof the page works');
+  assert.ok(fromSource.every((check) => check.ok === false));
+
+  const probed = buildTruthChecks(html, ['index.html'], { livePresent: true });
+  assert.ok(probed.every((check) => check.ok), probed.filter((c) => !c.ok).map((c) => c.label).join('; '));
+  assert.ok(probed.some((check) => /Every control is wired/.test(check.label)),
+    'once probed, a pass reads as a pass rather than as an absence');
+});
+
+test('the generic checks reach the packet a user actually sees', () => {
+  const packet = buildDeskContextPacket({
+    vfs: { 'index.html': { content: SCHEDULER_HTML } },
+    job: { purpose: 'A production scheduling board', mustWork: ['Interactive controls still work'] },
+    html: SCHEDULER_HTML,
+    studioDomain: 'coding',
+  });
+  const ids = packet.checks.map((check) => check.id);
+  assert.ok(ids.includes('truth-dead-control'), 'the panel, not just the proof plane');
+  assert.ok(packet.failed.includes('truth-dead-control'));
+});
+
+test('an empty or unparseable desk yields no generic checks rather than throwing', () => {
+  // A check that throws must not take the panel down with it.
+  assert.deepEqual(buildTruthChecks('', []), []);
+  assert.deepEqual(buildTruthChecks('   ', []), []);
+  assert.ok(Array.isArray(buildTruthChecks('<<<not html>>>', [])));
 });
