@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVFSWithReport } from './vfs-parser.js';
+import { parseVFSWithReport, describeEmptyFenceKept } from './vfs-parser.js';
 
 /*
  * The files-only wrapper is gone. It survived one commit with no production
@@ -167,4 +167,54 @@ test('a full-document reply still works after the patch reordering', () => {
   const { vfs, patchFailures } = parseVFSWithReport(reply, {});
   assert.deepEqual(patchFailures, []);
   assert.match(vfs['index.html'].content, /<h1>Fresh<\/h1>/);
+});
+
+/*
+ * The stress harness caught this: a reply carrying an empty ```css fence for an
+ * existing stylesheet blanked it, the desk committed, and the page rendered
+ * unstyled with nothing said. Silent data loss in the one thing the user has.
+ */
+test('an empty fence keeps the existing file instead of blanking it', () => {
+  const current = { 'styles.css': { content: '.product-card{padding:8px}', language: 'css' } };
+  const reply = 'Updated the styles.\n\n```css filepath="styles.css"\n\n```';
+  const { vfs, emptyFenceKept } = parseVFSWithReport(reply, current);
+  assert.equal(vfs['styles.css']?.content, undefined, 'a lone empty fence is not a build');
+  assert.deepEqual(emptyFenceKept, ['styles.css'], 'the near-miss is reported, never silent');
+});
+
+test('a truncated reply keeps the emptied file and still lands the good block', () => {
+  const current = {
+    'index.html': { content: '<!DOCTYPE html><html><body><h1>Shop</h1></body></html>', language: 'html' },
+    'styles.css': { content: '.card{padding:8px}', language: 'css' },
+  };
+  const reply = 'Here you go.\n\n```html filepath="index.html"\n<!DOCTYPE html><html><body><h1>Shop v2</h1></body></html>\n```\n\n```css filepath="styles.css"\n   \n```';
+  const { vfs, emptyFenceKept } = parseVFSWithReport(reply, current);
+  assert.equal(vfs['styles.css'].content, '.card{padding:8px}', 'the stylesheet survives');
+  assert.match(vfs['index.html'].content, /Shop v2/, 'the block that had content still lands');
+  assert.deepEqual(emptyFenceKept, ['styles.css']);
+});
+
+test('an empty fence for a file that does not exist yet is not reported', () => {
+  const reply = 'Starting.\n\n```css filepath="styles.css"\n\n```\n\n```html filepath="index.html"\n<!DOCTYPE html><html><body><h1>New</h1></body></html>\n```';
+  const { vfs, emptyFenceKept } = parseVFSWithReport(reply, {});
+  assert.deepEqual(emptyFenceKept, [], 'nothing was destroyed, so there is nothing to warn about');
+  assert.match(vfs['index.html'].content, /<h1>New<\/h1>/);
+});
+
+test('a whitespace-only file can still be replaced', () => {
+  const current = { 'styles.css': { content: '   \n', language: 'css' } };
+  const reply = '```css filepath="styles.css"\n.a{color:red}\n```';
+  const { vfs, emptyFenceKept } = parseVFSWithReport(reply, current);
+  assert.equal(vfs['styles.css'].content.trim(), '.a{color:red}');
+  assert.deepEqual(emptyFenceKept, []);
+});
+
+test('the empty-fence note names the file and says what was kept', () => {
+  assert.equal(describeEmptyFenceKept([]), '');
+  const one = describeEmptyFenceKept(['styles.css']);
+  assert.match(one, /styles\.css/);
+  assert.match(one, /kept/);
+  const two = describeEmptyFenceKept(['styles.css', 'script.js']);
+  assert.match(two, /styles\.css, script\.js/);
+  assert.match(two, /files were kept/);
 });

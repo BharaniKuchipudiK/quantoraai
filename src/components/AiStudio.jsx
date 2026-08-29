@@ -33,6 +33,7 @@ import {
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
+import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
@@ -892,10 +893,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const proposed = readPlanMarker(rawText);
     if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
     else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
-    setPatchNote((assembled.patchFailures || [])
-      .map((failure) => describePatchFailures(failure.result, failure.filepath))
-      .filter(Boolean)
-      .join('\n\n'));
+    setPatchNote([
+      ...(assembled.patchFailures || [])
+        .map((failure) => describePatchFailures(failure.result, failure.filepath)),
+      // An empty fence keeps the file rather than blanking it. Saying so is the
+      // whole point: a silent keep is as confusing as the silent delete was.
+      describeEmptyFenceKept(assembled.emptyFenceKept),
+    ].filter(Boolean).join('\n\n'));
     if (assembled.rejected) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
     const skillPlan = planFromMessageSnapshot(lastAi?.codingTurnPlan, {
