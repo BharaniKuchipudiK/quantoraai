@@ -21,30 +21,23 @@
 
 ## P1 — UX implementation now in this Draft PR
 
-### Default Study surface
+### Implemented on the isolated branch
 
-- One compact **Focus shell** instead of the giant permanent Tutor Board.
+- Added `StudyTutorShell`: compact default Study surface.
+- Existing `StudyTutorBoard` is preserved behind **More** instead of occupying the screen permanently.
 - Topic + honest state + next move stay visible.
-- Only **Explain / Practice / Check** are primary actions.
-- **More** opens the existing advanced Tutor Board on demand.
+- Primary learner moves are **Explain / Practice / Check**.
 - **Close** collapses Study focus to a single reopen chip.
-- Practice/checks open as small inline activity cards and can be closed.
-- The large visual/FBD no longer owns the default screen; it remains available in expanded detail.
-
-### `This Topic` redesign
-
-- Replace tall navigation-card treatment with a compact **Study action palette**.
-- ~292 px wide; two-column action grid.
-- New Topic remains full-width.
-- Explain / Flashcards / Quiz / Icebreaker become concise action tiles.
-- Explicit close button.
-- Palette closes immediately after an action is selected.
-- No decorative radio circles and no long subtitle stack blocking the conversation.
+- Practice/checks expand only when invoked and each has a close control.
+- Practice opens locally; merely opening a card does not spend another model call.
+- `This Topic` is now a compact two-column Study action palette with explicit close and auto-close after selection.
+- Existing verified-assessment semantics remain unchanged.
+- Study browser gate now asserts compact default height, closability, fallback honesty check and verified server check.
 
 ### P1 acceptance gates
 
 - Conversation remains the dominant surface.
-- Compact default Study chrome stays close to one message-row height before wrapping.
+- Collapsed Study focus must remain under 180 px in the browser gate; visual target is smaller where viewport permits.
 - Maximum 3 primary learning actions; `More` is secondary navigation.
 - Every expanded activity has a close/collapse control.
 - Existing verified-assessment semantics remain intact: self-confidence is not mastery.
@@ -52,11 +45,11 @@
 
 ---
 
-## Study AI model policy — proposed next backend slice
+## Study AI model policy — reviewed; backend change deliberately deferred
 
 ### Finding
 
-Study currently inherits the generic model-selection path. The selector does **not receive `studioDomain`**, so ordinary Study turns can be ranked like generic free-model traffic. That is commercially attractive on paper but not reliable enough: free OpenRouter endpoints have already produced 429s/timeouts in production.
+Study currently inherits the generic model-selection path. The authoritative selector does **not receive `studioDomain`**, so ordinary Study turns can be ranked like generic free-model traffic. That is commercially attractive on paper but not reliable enough: free OpenRouter endpoints have already produced 429s/timeouts in production.
 
 ### Target routing
 
@@ -78,7 +71,7 @@ Study currently inherits the generic model-selection path. The selector does **n
 
 ### STUDY-MODEL-01 implementation gate
 
-Do **not** add an unwired Study routing helper. The proper change is to pass the normalized Study domain into the authoritative model selector, add domain-aware routing tests, and preserve explicit user model selection. Ship this as a separate backend-focused change after the P1 UX branch is green.
+Do **not** add an unwired Study routing helper. The proper backend change is to pass the normalized Study domain into the authoritative model selector, add domain-aware routing tests, preserve explicit user model selection, and expose route reasons in telemetry. Ship this as a separate backend-focused change after P1 UX is green and reviewed.
 
 ---
 
