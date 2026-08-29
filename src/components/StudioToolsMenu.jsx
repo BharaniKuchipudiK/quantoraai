@@ -86,8 +86,7 @@ export default function StudioToolsMenu({
   const selectTool = (toolId) => {
     rememberOfficeToolSelection(toolId);
     onSelectTool(toolId);
-    // A command palette should get out of the way once the learner chooses.
-    onClose?.();
+    if (compactStudy) onClose?.();
   };
 
   const HoverItem = ({ item }) => {
@@ -176,7 +175,6 @@ export default function StudioToolsMenu({
         </span>
         <span style={{ minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: '0.80rem', fontWeight: 750, lineHeight: 1.15 }}>{item.title}</span>
-          {isNew ? <span style={{ display: 'block', marginTop: '2px', color: subtextColor, fontSize: '0.67rem' }}>Start fresh; keep this thread.</span> : null}
         </span>
       </button>
     );
@@ -220,10 +218,7 @@ export default function StudioToolsMenu({
         {compactStudy ? (
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '30px', padding: '0 2px 0 4px' }}>
-              <div>
-                <div style={{ color: textColor, fontSize: '0.80rem', fontWeight: 800 }}>Study actions</div>
-                <div style={{ color: subtextColor, fontSize: '0.66rem', marginTop: '1px' }}>Pick one move. The menu closes after selection.</div>
-              </div>
+              <div style={{ color: textColor, fontSize: '0.80rem', fontWeight: 800 }}>Study actions</div>
               <button
                 type="button"
                 aria-label="Close Study actions"
