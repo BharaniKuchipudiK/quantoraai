@@ -13,7 +13,7 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseDebtIntent } from "./debt-intent.js";
-import { comparePayoff, formatDebtPlan } from "./debt-payoff.js";
+import { composeDebtTurn } from "./debt-conversation.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 
@@ -52,29 +52,16 @@ export async function handleDebtPlan(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  if (!intent.debts.length || (intent.extraMonthly === null && intent.statedIncome === null)) {
-    /*
-     * Same defect as the savings gateway: parseDebtIntent reports matched:true on
-     * the trigger word alone, so "how does debt affect my credit score?" consumed
-     * the turn and returned a demand for balances and APRs, every time, with no
-     * way through to the model. The planner still needs real numbers — it simply
-     * must not end the turn to say so.
-     */
-    return false;
-  }
+  /*
+   * Same defect as the savings gateway: parseDebtIntent reports matched:true on
+   * the trigger word alone, so "how does debt affect my credit score?" consumed
+   * the turn and returned a demand for balances and APRs, every time, with no
+   * way through to the model. composeDebtTurn returns null on anything it cannot
+   * answer from arithmetic, and the turn stays a conversation.
+   */
+  const move = composeDebtTurn(intent);
+  if (!move) return false;
 
-  /*
-   * A stated income is a constraint, not a budget. When the minimums exceed it
-   * the simulator says so and formatDebtPlan prints the shortfall instead of a
-   * payoff date — the one answer that is both derivable and true for someone
-   * whose obligations are larger than their income.
-   */
-  /*
-   * With debts and an income but no stated extra, "nothing on top of the
-   * minimums" is the right reading — and it is the reading that lets the
-   * shortfall check below fire for the person who most needs it.
-   */
-  const comparison = comparePayoff(intent.debts, intent.extraMonthly ?? 0, intent.statedIncome);
-  sendStream(res, requestId, formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums }));
+  sendStream(res, requestId, move.text);
   return true;
 }

@@ -88,8 +88,10 @@ test("a stated income is a constraint, not payment capacity", async () => {
   assert.equal(handled, true);
   const text = res.text();
   assert.doesNotMatch(text, /Debt-free in/);
-  assert.match(text, /shortfall/);
-  assert.match(text, /10000\.00/);
+  assert.match(text, /shortfall of \*\*10,000 every month\*\*/);
+  // And it leaves the conversation open rather than ending the turn.
+  assert.match(text, /<quantora-modal>/);
+  assert.match(text, /quantora-ctx/);
 });
 
 test("a plan with real payment capacity still computes", async () => {

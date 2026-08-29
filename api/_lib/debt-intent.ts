@@ -11,6 +11,7 @@
  */
 
 import type { Debt } from "./debt-payoff.js";
+import type { ConsolidationOffer } from "./debt-consolidation.js";
 
 export type DebtIntent = {
   matched: boolean;
@@ -19,6 +20,8 @@ export type DebtIntent = {
   assumedMinimums: boolean;
   /** A monthly figure the user named as money coming IN, never as payment capacity. */
   statedIncome: number | null;
+  /** A consolidation offer on the table: a rate and a term to test, not to assume. */
+  offer: ConsolidationOffer | null;
 };
 
 const TRIGGER = /\b(debt|debts|pay ?off|payoff|consolidat\w*|snowball|avalanche)\b/i;
@@ -81,8 +84,46 @@ function defaultMinimum(balance: number): number {
   return Number(Math.max(25, balance * 0.02).toFixed(2));
 }
 
+/*
+ * "consolidate at 9% over 5 years" / "a 7.5% loan for 60 months". The rate must
+ * be attached to a consolidation word, not to any of the debts already parsed —
+ * "$5,000 at 19.99%" is a debt, and reading it as an offer would have the desk
+ * test the problem against itself.
+ */
+const OFFER_RE = /\b(?:consolidat\w*|refinanc\w*|one\s+loan|single\s+loan|personal\s+loan|balance\s+transfer)\b[^.!?]{0,80}?([0-9]+(?:\.[0-9]+)?)\s*%[^.!?]{0,60}?\b(?:over|for|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(years?|yrs?|months?|mos?)\b/i;
+const OFFER_RE_REVERSED = /\b(?:consolidat\w*|refinanc\w*|one\s+loan|single\s+loan|personal\s+loan|balance\s+transfer)\b[^.!?]{0,80}?([0-9]+(?:\.[0-9]+)?)\s*(years?|yrs?|months?|mos?)[^.!?]{0,60}?\b(?:at|@)\s*([0-9]+(?:\.[0-9]+)?)\s*%/i;
+
+function toMonths(value: number, unit: string): number {
+  return /^y/i.test(unit) ? Math.round(value * 12) : Math.round(value);
+}
+
+function parseOffer(message: string, debts: Debt[]): ConsolidationOffer | null {
+  let apr: number | null = null;
+  let months: number | null = null;
+
+  const forward = message.match(OFFER_RE);
+  if (forward) {
+    apr = num(forward[1]);
+    const term = num(forward[2]);
+    if (term !== null) months = toMonths(term, forward[3]);
+  } else {
+    const reversed = message.match(OFFER_RE_REVERSED);
+    if (reversed) {
+      const term = num(reversed[1]);
+      if (term !== null) months = toMonths(term, reversed[2]);
+      apr = num(reversed[3]);
+    }
+  }
+
+  if (apr === null || months === null || months <= 0) return null;
+  // An "offer" identical to a debt already on the table is that debt being
+  // restated, not a new loan to test.
+  if (debts.some((d) => d.apr === apr)) return null;
+  return { apr, months };
+}
+
 export function parseDebtIntent(message: unknown): DebtIntent {
-  const empty: DebtIntent = { matched: false, debts: [], extraMonthly: null, assumedMinimums: false, statedIncome: null };
+  const empty: DebtIntent = { matched: false, debts: [], extraMonthly: null, assumedMinimums: false, statedIncome: null, offer: null };
   if (typeof message !== "string" || !message.trim()) return empty;
   if (!TRIGGER.test(message)) return empty;
 
@@ -121,5 +162,5 @@ export function parseDebtIntent(message: unknown): DebtIntent {
 
   // "matched" means the user clearly asked for a debt plan (trigger fired); the
   // gateway decides whether the extracted numbers are enough to compute one.
-  return { matched: true, debts, extraMonthly, assumedMinimums, statedIncome };
+  return { matched: true, debts, extraMonthly, assumedMinimums, statedIncome, offer: parseOffer(message, debts) };
 }
