@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   deskCanStart,
   deskCommitRegressesPreview,
@@ -180,4 +183,32 @@ test('real shop evidence is still reported, and counted correctly', () => {
   assert.equal(describeDeskEvidence({ photos: 1 }), ' (1 catalog photo)');
   assert.equal(describeDeskEvidence({ photos: 12, hasCart: true }), ' (12 catalog photos, Add to Cart)');
   assert.equal(describeDeskEvidence({ photos: 0, hasCart: true }), ' (Add to Cart)');
+});
+
+/*
+ * A GUARD THAT {} DEFEATS MUST NOT COME BACK.
+ *
+ * `advanceBuildJob(proposed, assembled.vfs || vfs)` reads as a fallback and is
+ * not one: {} is truthy, so it never fired and a turn that built nothing handed
+ * the job planner an empty desk.
+ *
+ * This is asserted at source level because the call sits inside a React effect
+ * with no seam to test through, and because the real risk is a MERGE. Three
+ * branches carry the old line — it rode along with a cherry-picked fix — and
+ * resolving that conflict the wrong way reinstates the bug with every unit test
+ * still green. This is the thing that goes red instead.
+ */
+test('INVARIANT: the job planner is never handed a desk chosen by truthiness', () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const studio = fs.readFileSync(path.join(root, 'src/components/AiStudio.jsx'), 'utf8');
+  assert.doesNotMatch(
+    studio,
+    /advanceBuildJob\([^)]*\|\|/,
+    'advanceBuildJob is being given a desk via ||, which {} defeats — select on didUpdate instead',
+  );
+  assert.match(
+    studio,
+    /assembled\.didUpdate \? assembled\.vfs :/,
+    'the desk handed to the job planner must be chosen by didUpdate',
+  );
 });
