@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseBestFreeModel, chooseBestDeckModel, classifyTask, rankFreeModels } from './model-routing.js';
+import { chooseBestFreeModel, classifyTask, rankFreeModels } from './model-routing.js';
 
 const models = [
   { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier', specialty: 'Fast multimodal chat' },
@@ -18,21 +18,6 @@ test('auto select never chooses a paid or unavailable model', () => {
   const choice = chooseBestFreeModel(models, 'Build a React application');
   assert.equal(choice.model.id, 'nvidia/nemotron-3-super:free');
   assert.equal(choice.task, 'coding');
-});
-
-test('deck routing picks the strongest design model over a fast flash model', () => {
-  const deckModels = [
-    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
-    { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', available: true, pricingKind: 'paid' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', available: true, pricingKind: 'paid' },
-  ];
-  assert.equal(chooseBestDeckModel(deckModels).id, 'anthropic/claude-sonnet');
-});
-
-test('deck routing skips unavailable models and tolerates empty input', () => {
-  assert.equal(chooseBestDeckModel([]), null);
-  const only = [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' }];
-  assert.equal(chooseBestDeckModel(only).id, 'gemini-flash-latest'); // best available, even if weak
 });
 
 test('general requests prefer a qualified non-Gemini free route while Gemini stays optional', () => {

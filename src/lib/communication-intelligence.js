@@ -26,13 +26,6 @@ export function learnFromChipSelection(context, { label, value, domain = null } 
   });
 }
 
-/** Record when the user dismisses suggestions — avoid repeating the same nudge style. */
-export function learnFromDismissedSuggestions(context, type = 'suggestions') {
-  return mergeSessionContext(context, {
-    facts: [`${PREFERENCE_PREFIX} dismissed ${type} — stay concise; don't repeat the same callout.`],
-  });
-}
-
 /** Build a compact hint block from recent listening signals for the model. */
 export function formatListeningSignalsForPrompt(signals = []) {
   if (!Array.isArray(signals) || !signals.length) return '';
@@ -47,23 +40,6 @@ export function formatListeningSignalsForPrompt(signals = []) {
     '- If they hid suggestions, keep going without re-offering the same chips.',
     '- If they chose a chip, treat that path as confirmed intent.',
   ].join('\n');
-}
-
-/** Suppress repetitive proactive nudges after dismissals or duplicate context. */
-export function shouldSuppressProactiveNudge(nudge, { listeningSignals = [], conversationContext = {} } = {}) {
-  if (!nudge?.text) return true;
-
-  const dismissedRecently = listeningSignals.some(
-    (s) => s.type === QUANTORA_EVENTS.CHOICE_DOCK_DISMISSED,
-  );
-  if (dismissedRecently && nudge.type !== 'site_ready') return true;
-
-  const facts = (conversationContext.facts || []).join(' ').toLowerCase();
-  if (facts.includes('dismissed suggestions') && /plan is below|booking links/i.test(nudge.text)) {
-    return true;
-  }
-
-  return false;
 }
 
 /** Infer domain stage gaps from memory — feeds continue chip enrichment. */

@@ -14,6 +14,14 @@
  */
 
 import { type Debt, comparePayoff, type PayoffComparison } from "./debt-payoff.js";
+/*
+ * The arithmetic lives in ONE place. This file shipped its own amortizedPayment
+ * and maxRateForPayment, line-for-line equivalent to paymentForTerm and
+ * aprToFitPayment — two consolidation engines that could disagree with each
+ * other about the same person's money, in the same workspace. Whichever
+ * answered first would have been the truth of that turn.
+ */
+import { aprToFitPayment, paymentForTerm, type ConsolidationOffer } from "./debt-consolidation.js";
 import { finiteNonNeg, safeMoney } from "./finance-safe.js";
 
 // Hard ceiling on how many liabilities the simulator will chew through, so an
@@ -27,7 +35,14 @@ export type CrisisInputs = {
   currency: string;
 };
 
-export type ConsolidationOffer = { ratePct: number; termMonths: number };
+/*
+ * One name, one shape. This file exported its own ConsolidationOffer
+ * ({ratePct, termMonths}) while debt-consolidation.ts exported another
+ * ({apr, months}) — the same concept, the same workspace, two types a reader
+ * would reasonably assume were one. Re-exported here so the existing importers
+ * keep working without a second definition existing anywhere.
+ */
+export type { ConsolidationOffer } from "./debt-consolidation.js";
 
 export type CrisisSeverity = "manageable" | "tight" | "shortfall" | "critical";
 
@@ -44,32 +59,6 @@ export type CrisisAssessment = {
 };
 
 /** Standard amortized monthly payment for a loan. */
-export function amortizedPayment(principal: number, aprPct: number, months: number): number {
-  if (months <= 0) return principal;
-  const r = aprPct / 100 / 12;
-  if (r === 0) return Number((principal / months).toFixed(2));
-  const pay = (principal * r) / (1 - (1 + r) ** -months);
-  return Number(pay.toFixed(2));
-}
-
-/**
- * Highest APR whose amortized payment still fits `payment` over `months`, or null
- * when even a 0% loan over that term needs more than `payment` (principal too big
- * for the budget/term — the honest "this doesn't fit" signal).
- */
-export function maxRateForPayment(principal: number, payment: number, months: number): number | null {
-  if (months <= 0 || payment <= 0) return null;
-  if (amortizedPayment(principal, 0, months) > payment) return null; // can't even cover principal
-  let lo = 0;
-  let hi = 200;
-  for (let i = 0; i < 60; i += 1) {
-    const mid = (lo + hi) / 2;
-    if (amortizedPayment(principal, mid, months) > payment) hi = mid;
-    else lo = mid;
-  }
-  return Number(lo.toFixed(2));
-}
-
 /** Coerce arbitrary inputs to sane, bounded, finite debts — defense in depth. */
 export function sanitizeDebts(debts: Debt[]): Debt[] {
   return (Array.isArray(debts) ? debts : [])
@@ -119,10 +108,10 @@ export function analyzeConsolidation(assessment: CrisisAssessment, offer?: Conso
   const { totalBalance, availableForDebt } = assessment;
   if (totalBalance <= 0) return { kind: "infeasible", termMonths: 0, ratePct: null, payment: null, fitsBudget: false, note: "No balances to consolidate." };
 
-  const ratePct = Math.min(finiteNonNeg(offer?.ratePct), 200);
-  const termMonths = Math.min(Math.max(Math.round(finiteNonNeg(offer?.termMonths)), 0), 600);
+  const ratePct = Math.min(finiteNonNeg(offer?.apr), 200);
+  const termMonths = Math.min(Math.max(Math.round(finiteNonNeg(offer?.months)), 0), 600);
   if (offer && termMonths > 0) {
-    const payment = amortizedPayment(totalBalance, ratePct, termMonths);
+    const payment = paymentForTerm(totalBalance, ratePct, termMonths);
     return {
       kind: "offer",
       termMonths,
@@ -135,7 +124,7 @@ export function analyzeConsolidation(assessment: CrisisAssessment, offer?: Conso
 
   // No offer: solve for what fits. Prefer the shortest term that fits the budget.
   for (const termMonths of [36, 48, 60, 84]) {
-    const maxRate = availableForDebt > 0 ? maxRateForPayment(totalBalance, availableForDebt, termMonths) : null;
+    const maxRate = availableForDebt > 0 ? aprToFitPayment(totalBalance, termMonths, availableForDebt) : null;
     if (maxRate !== null) {
       return {
         kind: "fit-to-budget",
@@ -148,7 +137,7 @@ export function analyzeConsolidation(assessment: CrisisAssessment, offer?: Conso
     }
   }
   // Even a 0% loan over 7 years exceeds the budget → structural, not a rate problem.
-  const floorPayment = amortizedPayment(totalBalance, 0, 84);
+  const floorPayment = paymentForTerm(totalBalance, 0, 84);
   return {
     kind: "infeasible",
     termMonths: 84,

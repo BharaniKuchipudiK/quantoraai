@@ -7,6 +7,7 @@ import { recordProductEvent, recordPublishedSite } from './_lib/store.js';
 import { getRequestGeo } from './_lib/geo.js';
 import { ownedProjectName } from './_lib/publish-policy.js';
 import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
+import { describeDoors, doorsBlocking } from "../src/lib/capability-doors.js";
 
 const MAX_DEPLOYMENT_CHARS = 1_000_000;
 
@@ -68,7 +69,19 @@ export default async function handler(req: any, res: any) {
 
     const vercelToken = await fetchApiGatewayKey('VERCEL');
     if (!vercelToken) {
-      return res.status(503).json({ error: "Publishing is not configured yet. Add VERCEL_ACCESS_TOKEN to the API Gateway." });
+      /*
+       * A capability door, not a dead end. "Add VERCEL_ACCESS_TOKEN to the API
+       * Gateway" is accurate and useless to the person this platform is for:
+       * it names a variable without saying where the token comes from, where it
+       * goes, or how they would know it worked. The door carries the steps and
+       * the verification; the plain sentence stays as `error` so existing
+       * clients keep rendering something.
+       */
+      return res.status(503).json({
+        error: "Publishing is not configured yet. Add VERCEL_ACCESS_TOKEN to the API Gateway.",
+        door: describeDoors(doorsBlocking(["deploy_to_web"]), { ask: "and publish this" }),
+        reason: "door-closed",
+      });
     }
 
     const payload = {

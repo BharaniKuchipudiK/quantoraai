@@ -1,7 +1,7 @@
 import { applyCors } from "../rate-limit.js";
-import { getSessionUser } from "../session.js";
-import { isAdminUser } from "../store.js";
-import { requireActiveSession } from "../authz.js";
+import { clearSessionCookie, getSessionUser } from "../session.js";
+import { isAdminUser, readStoredUser } from "../store.js";
+import { providerLabel } from "../auth-privacy.js";
 
 /*
  * Who is signed in on this request.
@@ -19,19 +19,31 @@ export default async function handler(req: any, res: any) {
 
   const sessionUser = getSessionUser(req);
 
-  // A signed-out visitor is a normal state, not an error.
   res.setHeader("Cache-Control", "no-store");
   if (!sessionUser) {
     return res.status(200).json({ user: null });
   }
 
-  const auth = await requireActiveSession(req, res);
-  if (!auth.ok) return;
-  const isAdmin = auth.value.storedUser.is_admin === true || await isAdminUser(sessionUser.sub) === true;
+  const [stored, isAdminFlag] = await Promise.all([
+    readStoredUser(sessionUser.sub),
+    isAdminUser(sessionUser.sub),
+  ]);
+
+  if (stored?.blocked_at) {
+    clearSessionCookie(res);
+    return res.status(403).json({
+      error: stored.blocked_reason || "This account has been suspended.",
+      sessionRevoked: true,
+    });
+  }
+
   return res.status(200).json({
     user: {
-      ...auth.value.sessionUser,
-      isAdmin: isAdmin === true,
+      name: sessionUser.name || stored?.name || "Creator",
+      email: sessionUser.email,
+      picture: sessionUser.picture || stored?.picture || "",
+      authProvider: providerLabel(stored?.auth_provider),
+      isAdmin: stored?.is_admin === true || isAdminFlag === true,
     },
   });
 }

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   activeOfficeArtifactKind,
   activeOfficeBriefingKind,
-  countOfficeBriefSignals,
   officeBriefingContext,
   shouldGenerateOfficeNow,
   OFFICE_CONTINUE_VALUE,
@@ -32,13 +31,6 @@ test('semantic intent can deliberately fast-track a first-turn Office build', as
     messages: [],
   }));
   assert.equal(result, true);
-});
-
-test('a fully specified first-turn brief still gets one human approval checkpoint', async () => {
-  const text = 'As a senior project manager, prepare a QBR for the CIO and executive leadership to secure approval. Use the attached KPIs and financial data.';
-  assert.ok(countOfficeBriefSignals(text) >= 5);
-  const result = await withFetchResult({ office: { action: 'create', kind: 'powerpoint', skipBriefing: false, confidence: 0.99 } }, () => shouldGenerateOfficeNow({ text, officeKind: 'powerpoint', messages: [] }));
-  assert.equal(result, false);
 });
 
 test('Continue UI value deterministically hands the approved briefing to Office generation', async () => {

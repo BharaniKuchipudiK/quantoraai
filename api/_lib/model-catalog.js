@@ -2,53 +2,24 @@ const OPENROUTER_CATALOG_URL = 'https://openrouter.ai/api/v1/models';
 const GEMINI_CATALOG_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const FETCH_TIMEOUT_MS = 4_000;
 
-export const CURATED_MODELS = [
-  {
-    id: 'google/gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    provider: 'Google',
-    description: 'Fast multimodal reasoning for complex logic and general tasks.',
-    contextWindow: '1M',
-    tag: 'MULTIMODAL',
-    icon: 'sparkles',
-  },
-  {
-    id: 'deepseek/deepseek-chat',
-    name: 'DeepSeek V3',
-    provider: 'DeepSeek',
-    description: 'Open-weights logic, math and coding powerhouse.',
-    contextWindow: '64k',
-    tag: 'OPEN',
-    icon: 'cpu',
-  },
-  {
-    id: 'qwen/qwen-2.5-coder-32b-instruct',
-    name: 'Qwen 2.5 Coder 32B',
-    provider: 'Qwen',
-    description: 'Code synthesis and UI generation specialist.',
-    contextWindow: '128k',
-    tag: 'CODING',
-    icon: 'brain',
-  },
-  {
-    id: 'meta-llama/llama-3.3-70b-instruct',
-    name: 'Llama 3.3 70B',
-    provider: 'Meta',
-    description: 'Highly capable open-source instruction following.',
-    contextWindow: '128k',
-    tag: 'OPEN',
-    icon: 'database',
-  },
-  {
-    id: 'openai/gpt-4o-mini',
-    name: 'GPT-4o Mini',
-    provider: 'OpenAI',
-    description: 'General assistant tuned for fast, low-cost queries.',
-    contextWindow: '128k',
-    tag: 'FAST',
-    icon: 'zap',
-  },
-];
+/*
+ * Deliberately empty.
+ *
+ * This was a hand-written list of models (Gemini 2.5 Flash, Qwen 2.5 Coder,
+ * GPT-4o Mini, Llama 3.3, DeepSeek V3) frozen at the time it was typed. Vendors
+ * ship successors constantly, so the list aged into a menu of superseded options
+ * that the picker still offered - and a hardcoded id is exactly what caused the
+ * retired-Anthropic-model outage: the router selects it, the provider rejects it,
+ * and the turn silently degrades.
+ *
+ * Every route is now DISCOVERED instead of named:
+ *   - DIRECT_MODELS  - the two first-party defaults, verified by their own gateway
+ *   - discoverAnthropicFlagships() - read from the live provider catalogue
+ *   - the approved model registry - operator-curated, checked for liveness
+ *
+ * Keep it empty. Adding an id here reintroduces the defect.
+ */
+export const CURATED_MODELS = [];
 
 export const DIRECT_MODELS = [
   {
@@ -74,6 +45,140 @@ export const DIRECT_MODELS = [
     icon: 'cpu',
   },
 ];
+
+/**
+ * Discover the paid flagship coders that OpenRouter ACTUALLY lists right now.
+ *
+ * A hardcoded slug is how the Coding Desk ended up routing to a model id that
+ * no longer exists: the router picked it, OpenRouter 404'd the unknown id, and
+ * the turn silently fell back to a cheap coder that truncates. Model ids move
+ * (claude-3.5-sonnet -> claude-sonnet-4.x -> claude-sonnet-5 ...), so the
+ * flagship is READ from the live catalogue instead of named in code.
+ *
+ * Ranked newest-first: on this vendor the newer Sonnet/Opus is the stronger
+ * coder, and "newest listed" keeps working after the next rename with no edit.
+ * Haiku-tier is excluded — it carries the vendor name without the completion
+ * reliability that makes a flagship worth escalating to.
+ */
+export function discoverAnthropicFlagships(catalog, { limit = 3 } = {}) {
+  if (!catalog) return [];
+  const rows = [];
+  for (const model of catalog.values()) {
+    const id = String(model?.id || '');
+    if (!/^anthropic\//i.test(id)) continue;
+    if (!/sonnet|opus/i.test(id)) continue;
+    if (isFreeModel(model)) continue;
+    /*
+     * A batch endpoint is asynchronous - it accepts a job and returns later - so
+     * it cannot serve a streaming chat turn. Offering it in the picker is
+     * offering a route that will never stream a reply.
+     */
+    if (/batch/i.test(id) || /batch/i.test(String(model?.name || ''))) continue;
+    rows.push(model);
+  }
+  rows.sort((left, right) => (Number(right?.created) || 0) - (Number(left?.created) || 0));
+
+  /*
+   * Keep ONE entry per model family. A vendor ships variants of the same model
+   * (":fast", ":thinking", dated snapshots), and counting each against the limit
+   * let three Opus 5 variants fill every slot and push Sonnet 5 out of the list
+   * entirely - the reported "still no Sonnet". Families first, variants never at
+   * the cost of a different model.
+   */
+  const familyOf = (id) => String(id).split(':')[0].replace(/-\d{8}$/, '');
+  const bestPerFamily = new Map();
+  for (const model of rows) {
+    const family = familyOf(model.id);
+    if (!bestPerFamily.has(family)) bestPerFamily.set(family, model);
+  }
+
+  return [...bestPerFamily.values()].slice(0, limit).map((model) => ({
+    id: model.id,
+    name: model.name || model.id,
+    provider: 'Anthropic',
+    // Read from the catalogue's declared modalities, never inferred from the id:
+    // routing uses this to keep an image turn on the model the user picked.
+    vision: Array.isArray(model?.architecture?.input_modalities)
+      ? model.architecture.input_modalities.includes('image')
+      : undefined,
+    description: model.description
+      || 'Paid flagship coder discovered from the live OpenRouter catalogue. Writes complete, non-truncated builds.',
+    contextWindow: formatContext(model.context_length),
+    pricingKind: 'paid',
+    tag: 'CODING',
+    icon: 'brain',
+    available: true,
+  }));
+}
+
+/*
+ * The everyday roster: cheap, reliable routes we WANT offered when the provider
+ * actually lists them.
+ *
+ * This is a PREFERENCE, not a catalogue. CURATED_MODELS above is deliberately
+ * empty because a hardcoded id is what caused the retired-model outage — the
+ * router picks it, the provider rejects it, the turn silently degrades. So
+ * these are ids we look FOR in the live catalogue, exactly as Anthropic
+ * flagships are discovered. An id that no longer exists simply does not appear:
+ * nothing 404s, and the picker never advertises a route that is not there.
+ *
+ * Ordered cheapest-first. Costs per user-month at 20 builds, measured against a
+ * $100 OpenRouter float: DeepSeek V4 Flash $1.02, GLM 5.3 Flash $2.13,
+ * GPT-5.6 Luna $10.20. Opus-class is $102 and is deliberately NOT here — it
+ * stays a deliberate escalation, not an everyday default.
+ */
+export const FEATURED_ROSTER_IDS = Object.freeze([
+  'deepseek/deepseek-v4-flash-0731',
+  'z-ai/glm-5.3-flash',
+  'openai/gpt-5.6-luna',
+]);
+
+/**
+ * Resolve the roster against the live catalogue.
+ *
+ * Codex caught the gap this closes: the roster lived only in an approval
+ * allowlist and a transient client fallback, so `/api/models` never returned
+ * it and the four new routes vanished from the picker the moment the real
+ * response arrived. Approving a model and OFFERING it are different things.
+ */
+export function discoverFeaturedRoster(catalog) {
+  if (!catalog) return [];
+  const rows = [];
+  for (const id of FEATURED_ROSTER_IDS) {
+    const model = catalog.get(id);
+    if (!model) continue;
+    rows.push({
+      id: model.id,
+      name: model.name || model.id,
+      provider: String(model.id).split('/')[0] || 'OpenRouter',
+      // Declared by the catalogue, never inferred from the id — routing uses
+      // this to keep an image turn on the model the user actually picked.
+      vision: Array.isArray(model?.architecture?.input_modalities)
+        ? model.architecture.input_modalities.includes('image')
+        : undefined,
+      description: model.description
+        || 'Everyday coding route, discovered from the live OpenRouter catalogue.',
+      contextWindow: formatContext(model.context_length),
+      pricingKind: isFreeModel(model) ? 'free' : 'paid',
+      tag: 'CODING',
+      icon: 'sparkles',
+      available: true,
+    });
+  }
+  return rows;
+}
+
+const CATALOG_TTL_MS = 10 * 60 * 1000;
+let catalogCache = { at: 0, value: null };
+
+/** Catalogue read on the chat path: cached so a build turn adds no per-request fetch. */
+export async function fetchOpenRouterCatalogCached() {
+  const now = Date.now();
+  if (catalogCache.value && now - catalogCache.at < CATALOG_TTL_MS) return catalogCache.value;
+  const fresh = await fetchOpenRouterCatalog();
+  if (fresh) catalogCache = { at: now, value: fresh };
+  return fresh || catalogCache.value;
+}
 
 export async function fetchOpenRouterCatalog() {
   const controller = new AbortController();

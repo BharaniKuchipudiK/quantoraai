@@ -19,6 +19,7 @@ import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 import { isUserContextStoreConfigured, readUserContextGraph } from "./user-context-store.js";
 import { guardFinanceGateway } from "./finance-gateway-guard.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import { parseDebtCrisisIntent } from "./debt-crisis-intent.js";
 import { readBalanceSheet } from "./financial-balance-sheet.js";
 import { buildCrisisPlan, formatCrisisPlan } from "./debt-crisis.js";
@@ -58,14 +59,29 @@ async function runDebtCrisis(req: any, res: any): Promise<boolean> {
     return true;
   }
 
+  /*
+   * NEITHER OF THESE MAY END THE TURN.
+   *
+   * This gateway is wired ahead of the payoff gateway so a "consolidate" ask is
+   * not captured as a point payoff. That ordering also means it is the first
+   * thing a consolidation question meets — and it needs a session and a
+   * configured store, because it reads the balance sheet the user built.
+   *
+   * The payoff gateway behind it needs neither: it answers from the numbers in
+   * the message. So consuming the turn here handed a signed-out user "Sign in
+   * to continue" for a question the platform could already answer without an
+   * account, and did answer before this gateway existed.
+   *
+   * Falling through costs nothing and touches no personal data — the turn goes
+   * to the engine that can serve it from what the user typed. This is the same
+   * rule the savings and payoff gateways each learned the hard way: declining
+   * to RUN is not a reason to end the TURN.
+   */
+  if (!getSessionUser(req) || !isUserContextStoreConfigured()) return false;
+
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return true;
   const sub = auth.value.sessionUser!.sub;
-
-  if (!isUserContextStoreConfigured()) {
-    res.status(503).json({ error: "Quantora personal context is not configured on this deployment yet.", requestId });
-    return true;
-  }
 
   const bs = readBalanceSheet(await readUserContextGraph(sub));
 
@@ -94,7 +110,52 @@ async function runDebtCrisis(req: any, res: any): Promise<boolean> {
     { incomeMonthly: bs.incomeMonthly!, essentialExpenses: bs.expensesMonthly!, debts, currency },
     { offer: intent.offer || undefined },
   );
+  /*
+   * The plan ended by asking the reader to "tell me a direction (A, B, C, or
+   * D)" — in prose, with nothing on the next turn able to parse a bare "A".
+   * Human-in-the-loop in intent, a dead end in practice: a deterministic
+   * gateway returns out of api/pipeline.ts before the conversation engine runs,
+   * so the follow-ups have to travel with the answer.
+   *
+   * Each option below is a whole sentence the platform can actually act on,
+   * because it is what gets posted as the user's next message.
+   */
+  const a = plan.assessment;
+  const highest = a.highestApr ? `${a.highestApr.name} at ${a.highestApr.apr}%` : "the highest-rate debt";
   // Minimums are always estimated for now (the balance sheet doesn't store them yet).
-  sendStream(res, requestId, formatCrisisPlan(plan, { assumedMinimums: true }));
+  sendStream(res, requestId, withNextMoves({
+    text: formatCrisisPlan(plan, { assumedMinimums: true }),
+    question: "Which direction do you want to take?",
+    moves: [
+      {
+        id: "crisis_consolidate",
+        title: "A — Model a consolidation",
+        description: "Give me a rate and term and I'll test it against your gap",
+        value: "Model a consolidation loan against my situation — I'll give you the rate and the term I've been offered.",
+      },
+      {
+        id: "crisis_attack",
+        title: "B — Attack it as it stands",
+        description: "Payoff order without consolidating",
+        value: "Show me the payoff order if I don't consolidate and just attack these debts as they stand.",
+      },
+      {
+        id: "crisis_gap",
+        title: "C — Work on the gap",
+        description: "Where the shortfall could close",
+        value: "Work through where the gap could close — walk me through my income and essentials.",
+      },
+      {
+        id: "crisis_negotiate",
+        title: "D — Negotiate",
+        description: `What to say to ${highest}`,
+        value: `What should I say when I call the lender for ${highest} to ask for a hardship rate?`,
+      },
+    ],
+    facts: [
+      `Monthly income ${a.incomeMonthly}, essentials ${a.essentialExpenses}, available for debt ${a.availableForDebt} ${currency}`.trim(),
+      `Total debt ${a.totalBalance} across ${debts.length} liabilit${debts.length === 1 ? "y" : "ies"}; minimums ${a.totalMinPayments}; severity ${a.severity}`,
+    ],
+  }));
   return true;
 }

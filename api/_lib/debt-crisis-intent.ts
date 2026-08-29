@@ -7,7 +7,7 @@
  * (rate + term) out of the message when the user names one.
  */
 
-import type { ConsolidationOffer } from "./debt-crisis.js";
+import type { ConsolidationOffer } from "./debt-consolidation.js";
 
 const CRISIS_PATTERNS: RegExp[] = [
   /\bconsolidat(?:e|ion|ing)\b/i,
@@ -33,7 +33,7 @@ export function parseConsolidationOffer(message: string): ConsolidationOffer | n
   const termMonths = unit.startsWith("y") ? n * 12 : n;
   if (!Number.isFinite(ratePct) || ratePct < 0 || ratePct > 200) return null;
   if (!Number.isFinite(termMonths) || termMonths <= 0 || termMonths > 600) return null;
-  return { ratePct, termMonths };
+  return { apr: ratePct, months: termMonths };
 }
 
 export function parseDebtCrisisIntent(message: unknown): DebtCrisisIntent {

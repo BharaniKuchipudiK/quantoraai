@@ -2,7 +2,24 @@ export const TRAVEL_CONVERSATION_MODEL_ID = "openai/gpt-4o-mini";
 export const TRAVEL_CONVERSATION_MODEL_NAME = "Quantora Travel Advisor";
 
 const LIVE_TRAVEL_TOOL_INTENT = /\b(?:book|booking|reserve|reservation|live\s+(?:flight|fare|hotel|rate|availability)|(?:find|search|show|check)\s+(?:me\s+)?(?:live\s+)?(?:flights?|fares?|hotels?|hotel\s+rates?)|flight\s+(?:prices?|fares?|options?)|hotel\s+(?:availability|prices?|rates?))\b/i;
-const TRAVEL_CONTEXT_SIGNAL = /\b(?:travel|trip|holiday|vacation|destination|flight|fare|airport|hotel|resort|beach|itinerary|visa|passport|departure|departing|arrival|nights?|days?|bali|kyoto|tokyo|singapore|sin|dps|kix|tyo)\b/i;
+/*
+ * Travel words only. "days" and "nights" used to be in this list on their own,
+ * which meant ANY prompt containing them was routed to the Travel Advisor:
+ *
+ *   "A horizontal timeline (14 days, one column per day)... show the total
+ *    project duration in days"
+ *
+ * That is a production scheduling board, and it was answered by a travel model
+ * — which is also why a build got offered "Add dates / itinerary" chips.
+ *
+ * A duration is only a travel signal NEXT TO a travel noun ("3 nights in
+ * Bali"), so it is handled by TRAVEL_DURATION below rather than on its own.
+ * Bare city codes went the same way: "sin" matched inside ordinary prose.
+ */
+const TRAVEL_CONTEXT_SIGNAL = /\b(?:travel(?:ling|ing)?|trips?|holidays?|vacations?|destinations?|flights?|airfares?|airports?|hotels?|resorts?|itinerar(?:y|ies)|visas?|passports?|layovers?|boarding pass|bali|kyoto)\b/i;
+
+/** A duration counts only when a travel word is nearby. */
+const TRAVEL_DURATION = /\b\d+\s*(?:nights?|days?)\b[^.\n]{0,40}\b(?:in|at|to|around|across)\b[^.\n]{0,30}\b(?:[A-Z][a-z]+|beach|island|resort|city)\b/;
 
 function textOf(message: any): string {
   if (!message) return "";
@@ -20,7 +37,7 @@ export function hasTravelConversationContext(body: any): boolean {
     ...(Array.isArray(body?.history) ? body.history.slice(-8).map(textOf) : []),
   ].filter(Boolean).join("\n");
 
-  return TRAVEL_CONTEXT_SIGNAL.test(transcript);
+  return TRAVEL_CONTEXT_SIGNAL.test(transcript) || TRAVEL_DURATION.test(transcript);
 }
 
 export function isLiveTravelToolTurn(body: any): boolean {
@@ -42,6 +59,12 @@ export function shouldPreferTravelConversationProvider(
   // Explicit BYOK (header-resolved or legacy body flag in tests) opts out of
   // server-owned Travel conversation routing.
   if (!hasTravelConversationContext(body) || body?.userKey || options?.hasGeminiByok) return false;
+  /*
+   * A build is never a travel turn. Even if travel words appear, someone asking
+   * for a runnable artifact wants the Coding Desk — hijacking it to a travel
+   * model produces an answer about itineraries and no code.
+   */
+  if (body?.buildMode === true || body?.taskCategory === "coding") return false;
   return body?.modelId !== TRAVEL_CONVERSATION_MODEL_ID;
 }
 

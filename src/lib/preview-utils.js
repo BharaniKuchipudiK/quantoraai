@@ -11,8 +11,9 @@ export const PREVIEW_RELAXED_CSP =
  * SECURITY INVARIANT — untrusted generated code must NEVER get `allow-same-origin`.
  * The embed host is served from the app's own origin (or a blob/data URL that
  * inherits it). Granting `allow-same-origin` there would let generated code read
- * the app's `localStorage` — which holds the user's Gemini / OpenRouter API keys —
- * and exfiltrate them. Without it the frame runs in an opaque origin and cannot
+ * the app's browser storage and exfiltrate private workspace data. Provider
+ * credentials are memory-only, but opaque-origin isolation remains mandatory.
+ * Without it the frame runs in an opaque origin and cannot
  * touch app storage; the preview still works because HTML is delivered by
  * `postMessage` + `document.write`, neither of which needs same-origin.
  *
@@ -102,10 +103,49 @@ export function getPreviewEmbedPathUrl(cacheBust = '') {
   return `${PREVIEW_EMBED_PATH}${bust}`;
 }
 
+/**
+ * True when the iframe is still on the Preview shell (path or blob), not the
+ * main app. Loading quantoraai.app in an iframe hits X-Frame-Options: DENY →
+ * Chrome "refused to connect" while status says Verifying.
+ */
+export function isPreviewEmbedFrameSrc(src = '') {
+  const value = String(src || '').trim();
+  if (!value) return false;
+  if (value === 'about:srcdoc') return true;
+  if (value.startsWith('blob:')) return true;
+  try {
+    const url = new URL(value, typeof window !== 'undefined' ? window.location?.origin : 'https://quantoraai.app');
+    return url.pathname === PREVIEW_EMBED_PATH || url.pathname.endsWith('/preview/embed.html');
+  } catch {
+    return /\/preview\/embed\.html(?:\?|#|$)/i.test(value);
+  }
+}
+
 /** Blob embeds cannot set CORP — under COEP (Coding Desk) they never load. */
 export function canUseBlobPreviewEmbed() {
   if (typeof window === 'undefined') return true;
   return window.crossOriginIsolated !== true;
+}
+
+/**
+ * What the Preview status chip should claim once the page is running.
+ *
+ * "Running without a thrown error" and "passing the quality bar" are two
+ * different facts, and the chip used to show the first while printing the
+ * second's number beside it — hence the contradictory
+ * "Verified — runs clean · 65/100" (the pass bar is 80). A build that scored
+ * below the bar is reported as needing work, not as verified.
+ *
+ * @param {{ qualityReport?: {score?: number, passed?: boolean}|null, attempt?: number }} [opts]
+ * @returns {'needs-work'|'ran-clean'|'verified'|'verified-autofixed'}
+ */
+export function previewVerdict({ qualityReport = null, attempt = 0 } = {}) {
+  if (qualityReport && qualityReport.passed === false) return 'needs-work';
+  const scored = qualityReport && Number.isFinite(qualityReport.score);
+  // Ran without errors, but the verifier has not returned yet — do not claim
+  // a verdict the quality check has not actually given.
+  if (!scored) return 'ran-clean';
+  return attempt > 0 ? 'verified-autofixed' : 'verified';
 }
 
 export const PREVIEW_TAILWIND_PROBE_ID = '__quantora_tailwind_probe';
@@ -117,6 +157,76 @@ export const PREVIEW_TAILWIND_PROBE =
 // Harness injected into generated HTML inside the preview iframe document.
 export const PREVIEW_ERROR_HARNESS = `<script>(function(){
   function report(p){ try{ parent.postMessage(Object.assign({__quantora:true}, p), '*'); }catch(e){} }
+  // Model HTML often does location.href='/' or a document base pointing at the app.
+  // That navigates the iframe to the SPA, which sends X-Frame-Options: DENY → refused to connect.
+  function allowNav(u) {
+    var s = String(u == null ? '' : u);
+    if (!s || s === '#' || s.indexOf('#') === 0) return true;
+    if (s.indexOf('blob:') === 0) return true;
+    if (s.indexOf('/preview/embed.html') !== -1) return true;
+    // Block app root / desk / any absolute app URL — those are XFO DENY.
+    if (s === '/' || s === '/desk' || s === '/desk/' || s.indexOf('/desk?') === 0) return false;
+    try {
+      var abs = new URL(s, window.location.href);
+      if (/quantoraai\\.app$/i.test(abs.hostname) && abs.pathname.indexOf('/preview/') !== 0) return false;
+      if (abs.origin === window.location.origin && abs.pathname.indexOf('/preview/') !== 0
+        && (abs.pathname === '/' || abs.pathname.indexOf('/desk') === 0 || abs.pathname.indexOf('/studio') === 0)) {
+        return false;
+      }
+    } catch (urlErr) {}
+    return true;
+  }
+  try {
+    var _assign = window.location.assign.bind(window.location);
+    var _replace = window.location.replace.bind(window.location);
+    window.location.assign = function(u){ if (allowNav(u)) return _assign(u); report({ kind:'error', message:'Preview blocked navigation: ' + u }); };
+    window.location.replace = function(u){ if (allowNav(u)) return _replace(u); report({ kind:'error', message:'Preview blocked navigation: ' + u }); };
+  } catch (navErr) {}
+  try {
+    var hrefDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+    if (hrefDesc && hrefDesc.set && hrefDesc.get) {
+      Object.defineProperty(window.location, 'href', {
+        configurable: true,
+        enumerable: true,
+        get: function(){ return hrefDesc.get.call(window.location); },
+        set: function(u){
+          if (allowNav(u)) return hrefDesc.set.call(window.location, u);
+          report({ kind:'error', message:'Preview blocked navigation: ' + u });
+        }
+      });
+    }
+  } catch (hrefErr) {}
+  document.addEventListener('submit', function(e) {
+    // A static preview has no server. EVERY default form submission is a
+    // navigation that destroys the running page, so cancel the default and let
+    // the page's own submit handler (which capture-phase preventDefault does
+    // not stop) do the real work. Only an escaping action is worth reporting.
+    var f = e.target;
+    if (!f || f.tagName !== 'FORM') return;
+    e.preventDefault();
+    var action = f.getAttribute('action');
+    if (action == null || action === '' || action === '#') return;
+    if (!allowNav(action)) {
+      report({ kind:'error', message:'Preview blocked form navigation: ' + action });
+    }
+  }, true);
+  // The parent cannot trust iframe.src after an in-frame navigation: the src
+  // ATTRIBUTE stays on /preview/embed.html while the frame is somewhere else.
+  // A heartbeat is the only signal that distinguishes a live page from a dead
+  // one. Do not ping on pagehide/beforeunload — those also fire for navigations
+  // allowNav permits, and would report a healthy page as escaped.
+  try {
+    setInterval(function(){ report({ kind:'preview-alive' }); }, 700);
+  } catch (aliveErr) {}
+  document.addEventListener('click', function(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (!allowNav(href) || href === '/' || href === '' || /^https?:\\/\\/[^/]*quantoraai\\.app\\/?$/i.test(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
   window.addEventListener('error', function(e){
     var t = e && e.target;
     if (t && t !== window && (t.tagName || t.nodeType === 1)) {
@@ -228,7 +338,25 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
 })();<\/script>`;
 
 export function injectPreviewHarness(html) {
-  const safe = html || '';
+  let safe = String(html || '');
+  // Drop escapes that yank the iframe onto the main app (XFO DENY → refused to connect).
+  safe = safe.replace(/<base\b[^>]*>/gi, '');
+  safe = safe.replace(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/gi, '');
+  // Neutralize root/app links that leave the Preview shell.
+  safe = safe.replace(/\bhref\s*=\s*(["'])\/\1/gi, 'href="#"');
+  safe = safe.replace(/\bhref\s*=\s*(["'])\/desk\/?\1/gi, 'href="#"');
+  safe = safe.replace(/\bhref\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'href="#"');
+  // Unquoted href=/ is common in model HTML. The lookahead keeps href=/styles.css
+  // intact — only a bare slash followed by whitespace or '>' is the escape hatch.
+  safe = safe.replace(/\bhref\s*=\s*\/(?=[\s>])/gi, 'href="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])\/\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])\/desk\/?\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*(["'])https?:\/\/(?:www\.)?quantoraai\.app\/?\1/gi, 'action="#"');
+  safe = safe.replace(/\baction\s*=\s*\/(?=[\s>])/gi, 'action="#"');
+  safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/\1/gi, '/* preview nav blocked */ void 0');
+  safe = safe.replace(/\blocation\.href\s*=\s*(['"])\/desk\/?\1/gi, '/* preview nav blocked */ void 0');
+  safe = safe.replace(/\b(?:window\s*\.\s*|document\s*\.\s*)?location\s*\.\s*href\s*=\s*[^;]+;?/gi, 'void 0;');
+  safe = safe.replace(/\b(?:window\s*\.\s*)?location\s*=\s*['"][^'"]*['"]\s*;?/gi, 'void 0;');
   const bundle = PREVIEW_ERROR_HARNESS + PREVIEW_TAILWIND_PROBE;
   if (/<head[^>]*>/i.test(safe)) return safe.replace(/<head[^>]*>/i, (m) => m + bundle);
   if (/<html[^>]*>/i.test(safe)) return safe.replace(/<html[^>]*>/i, (m) => m + '<head>' + bundle + '</head>');
@@ -470,10 +598,6 @@ export function decidePreviewTrustStatus({
   if (isHonestPreviewFailurePage(assembledHtml)) return 'failed';
   if (!assembledPreviewHasUsableCss(assembledHtml) || styledCheckOk === false) return 'degraded';
   return 'clean';
-}
-
-export function usesTailwindCdn(html) {
-  return /cdn\.tailwindcss\.com/i.test(String(html || ''));
 }
 
 export function isCriticalResourceError(message) {

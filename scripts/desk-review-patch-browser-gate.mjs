@@ -42,10 +42,27 @@ await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
 });
 
+// Deterministic 1x1 PNG so photo probes never depend on a live network fetch.
+// The desk proxies the model's remote image to /api/preview-image; without an
+// image response here the <img> cannot decode, so the photos probe regressed
+// after "Review this" whenever CI's outbound network to the image host was slow
+// — a flake unrelated to the code under test. Serve a real image instead.
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+// Serve a real image for the same-origin proxy AND the raw remote host, so the
+// preview decodes deterministically both before and after Review.
+await page.route('https://images.unsplash.com/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1x1 }));
+
 await page.route('**/api/**', async (route) => {
   const request = route.request();
   const path = new URL(request.url()).pathname;
 
+  if (path === '/api/preview-image') {
+    return route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1x1 });
+  }
   if (path === '/api/auth/session') {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
       user: { sub: 'desk-review-patch-user', name: 'Review Patcher', email: 'review-patch@quantora.test', picture: null, isAdmin: false },
@@ -117,7 +134,11 @@ try {
   await visible(
     page.locator('[data-quantora-desk-probe="photos"][data-quantora-desk-probe-ok="true"]').first(),
     'Review this regressed a passing photos probe.',
-    8_000,
+    // After "Review this" the desk re-applies the patch and re-decodes the proxied
+    // photo, so the probe briefly flips not-ok before settling back. Give it the
+    // same window as the cart-click assertion above (15s) so a slow CI re-decode
+    // is not mistaken for a real regression — the 8s window flaked under load.
+    15_000,
   );
 
   const reviewed = await visibleFrame('.product-card', 12_000);

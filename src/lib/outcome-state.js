@@ -10,19 +10,6 @@ function dedupe(items, key) {
   });
 }
 
-export function outcomeStateToConversationContext(state) {
-  if (!state || typeof state !== 'object') return {};
-  return normalizeSessionContext({
-    goal: state.goal?.statement,
-    understanding: state.understanding?.statement,
-    facts: [
-      ...(state.decisions || []).map((item) => item.value),
-      ...(state.constraints || []).filter((item) => item.confidence >= 0.8).map((item) => item.value),
-      ...(state.assumptions || []).filter((item) => item.status === 'confirmed').map((item) => item.value),
-    ],
-  });
-}
-
 /**
  * Translate legacy UI notes into the trusted schema. Model-authored notes stay
  * inferred. Only direct user answers, choices, or edits set confirmed=true.

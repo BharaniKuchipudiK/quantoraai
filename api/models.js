@@ -10,6 +10,8 @@
 import {
   CURATED_MODELS,
   DIRECT_MODELS,
+  discoverFeaturedRoster,
+  discoverAnthropicFlagships,
   catalogCreatedAt,
   fetchOpenRouterCatalog,
   formatContext,
@@ -17,6 +19,8 @@ import {
   providerFromId,
 } from './_lib/model-catalog.js';
 import { readModelQualitySummary, readModelRegistry } from './_lib/model-store.js';
+import { overallOutcomeSignals } from '../shared/model-outcome-routing.js';
+import { rankAdminDashboardModels } from '../shared/model-dashboard-ranking.js';
 import { isAuthorizedModelScan, scanModelCatalog } from './_lib/model-scanner.js';
 import { purgeOldTelemetry } from './_lib/store.js';
 
@@ -53,29 +57,6 @@ function candidateFromLive(model, stored) {
   };
 }
 
-function aggregateQuality(rows) {
-  const result = new Map();
-  for (const row of rows) {
-    const current = result.get(row.model_id) || { successes: 0, failures: 0, helpful: 0, notHelpful: 0, fallbacks: 0 };
-    current.successes += Number(row.successful_responses) || 0;
-    current.failures += Number(row.failed_responses) || 0;
-    current.helpful += Number(row.helpful_votes) || 0;
-    current.notHelpful += Number(row.not_helpful_votes) || 0;
-    current.fallbacks += Number(row.fallback_rescues) || 0;
-    result.set(row.model_id, current);
-  }
-  for (const quality of result.values()) {
-    const reliabilitySamples = quality.successes + quality.failures;
-    const feedbackSamples = quality.helpful + quality.notHelpful;
-    const reliability = reliabilitySamples ? quality.successes / reliabilitySamples : null;
-    const usefulness = feedbackSamples ? quality.helpful / feedbackSamples : null;
-    quality.sampleSize = reliabilitySamples;
-    quality.score = reliabilitySamples >= 5
-      ? Math.round(100 * ((reliability ?? 0.5) * 0.7 + (usefulness ?? reliability ?? 0.5) * 0.3))
-      : null;
-  }
-  return result;
-}
 
 export default async function handler(req, res) {
   if (req.method && req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -101,10 +82,54 @@ export default async function handler(req, res) {
     readModelQualitySummary(),
   ]);
   const stored = new Map(storedRows.map((row) => [row.id, row]));
-  const quality = aggregateQuality(qualityRows);
+  const quality = overallOutcomeSignals(qualityRows);
   const fetchedAt = new Date().toISOString();
-  const models = DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null }));
-  const dashboardModels = DIRECT_MODELS.map((model) => ({
+  /*
+   * Anthropic flagships are not in CURATED_MODELS (their ids move, and a stale
+   * one is a route the provider rejects), so they are read from the live
+   * catalogue here exactly as the chat router reads them. Without this the
+   * router could reach Claude on Auto while the picker never listed it — the
+   * model was selectable by the platform but invisible to the user.
+   */
+  const flagships = discoverAnthropicFlagships(catalog).map((model) => ({
+    ...model,
+    quality: quality.get(model.id) || null,
+  }));
+  // The everyday roster, resolved against the SAME live catalogue. Without this
+  // the picker only ever showed the two DIRECT_MODELS and the Anthropic
+  // flagships, so every roster change was invisible to the person choosing.
+  const roster = discoverFeaturedRoster(catalog).map((model) => ({
+    ...model,
+    quality: quality.get(model.id) || null,
+  }));
+  const models = [
+    ...DIRECT_MODELS.map((model) => ({ ...model, quality: quality.get(model.id) || null })),
+    ...flagships,
+    ...roster,
+  ];
+  const dashboardModels = [
+    ...flagships.map((model) => ({
+      ...model,
+      status: 'available',
+      health: 'listed',
+      event: 'listed',
+      isNew: false,
+      isUpdated: false,
+      approved: true,
+      selectable: true,
+      category: 'featured',
+    })),
+  ].concat(roster.map((model) => ({
+    ...model,
+    status: 'available',
+    health: 'listed',
+    event: 'listed',
+    isNew: false,
+    isUpdated: false,
+    approved: true,
+    selectable: true,
+    category: 'featured',
+  }))).concat(DIRECT_MODELS.map((model) => ({
     ...model,
     quality: quality.get(model.id) || null,
     status: 'available',
@@ -115,7 +140,7 @@ export default async function handler(req, res) {
     approved: true,
     selectable: true,
     category: 'featured',
-  }));
+  })));
 
   for (const curated of CURATED_MODELS) {
     const live = catalog ? catalog.get(curated.id) : undefined;
@@ -129,7 +154,18 @@ export default async function handler(req, res) {
       contextWindow: live?.context_length ? formatContext(live.context_length, curated.contextWindow) : curated.contextWindow,
       pricingKind,
     };
-    models.push(model);
+    /*
+     * A model the provider no longer lists is not a choice - picking it produces
+     * a 404 at the gateway and a silent downgrade. It used to be shown greyed
+     * with "No longer listed by OpenRouter", which still cluttered the picker
+     * with dead options (the reported stale Gemini 2.5 Flash). Keep it out of the
+     * user-facing list entirely; the admin dashboard below still records it as
+     * retired so the change is visible to an operator.
+     *
+     * Only when the catalogue itself was unreachable (available defaults true)
+     * do we keep listing, so a fetch timeout cannot empty the picker.
+     */
+    if (available) models.push(model);
     dashboardModels.push({
       ...model,
       status: available ? 'available' : 'offline',
@@ -192,6 +228,11 @@ export default async function handler(req, res) {
     dashboardIds.add(row.id);
   }
 
+  // Surface the strongest measured performers first within each category group,
+  // so the dashboard (and the free-models shortlist derived from it) leads with
+  // what has actually earned it rather than raw discovery order.
+  const rankedDashboardModels = rankAdminDashboardModels(dashboardModels);
+
   const summary = {
     available: dashboardModels.filter((model) => model.status === 'available').length,
     free: dashboardModels.filter((model) => (model.pricingKind === 'free' || model.pricingKind === 'free-tier') && model.status !== 'retired').length,
@@ -205,14 +246,14 @@ export default async function handler(req, res) {
     models,
     source: catalog ? 'live' : 'fallback',
     catalogSize: catalog ? catalog.size : 0,
-    freeModelsAvailable: dashboardModels.filter((model) => model.category === 'approved').slice(0, 25),
+    freeModelsAvailable: rankedDashboardModels.filter((model) => model.category === 'approved').slice(0, 25),
     fetchedAt,
     dashboard: {
       source: catalog ? 'live' : 'fallback',
       catalogSize: catalog ? catalog.size : 0,
       fetchedAt,
       summary,
-      models: dashboardModels,
+      models: rankedDashboardModels,
     },
   });
 }

@@ -70,3 +70,60 @@ test("a React routing error page fails the runnable-preview check", () => {
   assert.equal(checkById(checks, "runnable-preview")?.ok, false);
   assert.equal(checkById(checks, "runnable-preview")?.critical, true);
 });
+
+test("a coffee shop landing page is not scored as an online store", () => {
+  // The reported failure: "one-page site for a coffee shop" matched a bare
+  // \bshop\b, attached a CRITICAL >=10-photo catalog check, capped the score at
+  // 45 (bar is 80) and made the build permanently unpassable.
+  const brief = 'a one-page site for a coffee shop called "Ember & Oak" - hero, a 3-item menu with prices, and hours';
+  const checks = heuristicChecks(GOOD, brief);
+  assert.equal(checkById(checks, "feat-cart"), undefined, "a cafe menu is not a checkout");
+  assert.equal(checkById(checks, "feat-photos"), undefined, "no catalog was requested");
+});
+
+test("generic venue and product nouns do not imply e-commerce", () => {
+  for (const brief of [
+    "a landing page for a book store",
+    "a page describing our product",
+    "a barber shop website with opening hours",
+  ]) {
+    const checks = heuristicChecks(GOOD, brief);
+    assert.equal(checkById(checks, "feat-photos"), undefined, `should not demand a catalog: ${brief}`);
+  }
+});
+
+test("a real catalog brief still gets the CRITICAL product photo bar", () => {
+  const empty = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>Aaranya</title><style>body{font-family:Inter}</style></head><body><header><nav></nav></header><main><h1>Aaranya</h1><svg></svg><button class="add-to-cart">Add to bag</button></main><footer></footer></body></html>`;
+  const checks = heuristicChecks(empty, "an e-commerce storefront with a product catalogue of sarees");
+  assert.equal(checkById(checks, "feat-photos")?.ok, false);
+  assert.equal(checkById(checks, "feat-photos")?.critical, true, "a genuine catalog must still be capped");
+});
+
+test("commerce without a catalog is checked but not capped", () => {
+  // Selling a subscription has a checkout but no product shots to prove.
+  const checks = heuristicChecks(GOOD, "a page to sell a subscription with a checkout");
+  assert.ok(checkById(checks, "feat-cart"), "checkout still demands a cart");
+  assert.equal(checkById(checks, "feat-photos")?.critical, false, "no catalog => not critical");
+});
+
+test("a real shop job card still imposes the CRITICAL photo bar", () => {
+  // Guards the fix itself: narrowing the brief regexes must not let a genuine
+  // shop turn through unchecked. This is the job card from the reported
+  // boutique session, formatted exactly as verifyBuild judges it.
+  const brief = [
+    "A shop website",
+    "A shop website. Catalog and bag still work. At least 10 loadable catalog photos. Add to Cart on Preview",
+  ].join("\n");
+  const empty = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>Aaranya</title><style>body{font:16px Inter}</style></head><body><header><nav></nav></header><main><h1>Aaranya</h1><svg></svg></main><footer></footer></body></html>`;
+  const checks = heuristicChecks(empty, brief);
+  assert.ok(checkById(checks, "feat-cart"), "a shop job card must still demand a cart");
+  assert.equal(checkById(checks, "feat-photos")?.ok, false);
+  assert.equal(checkById(checks, "feat-photos")?.critical, true);
+});
+
+test("catalog and catalogue spellings are both recognised", () => {
+  for (const word of ["catalog", "catalogue"]) {
+    const checks = heuristicChecks(GOOD, `an online store with a product ${word}`);
+    assert.equal(checkById(checks, "feat-photos")?.critical, true, `"${word}" should be a catalog brief`);
+  }
+});

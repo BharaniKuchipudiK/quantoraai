@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldCheck, Lock, Server, CheckCircle2, UserCheck, AlertTriangle } from 'lucide-react';
+import SessionProviderKeysCard from './SessionProviderKeysCard.jsx';
 
 export default function PrivacyVault({ user, isLight }) {
   const textColor = isLight ? '#0f172a' : '#ffffff';
@@ -111,16 +112,18 @@ export default function PrivacyVault({ user, isLight }) {
             <div style={{ background: itemBg, padding: '14px', borderRadius: '12px' }}>
               <div>
                 <span style={{ fontSize: '0.9rem', fontWeight: '600', color: textColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Server size={16} color="#0284c7" /> Bring-your-own-key (Claude 3.5 & GPT-4o)
+                  <Server size={16} color="#0284c7" /> Bring-your-own-key
                 </span>
                 <p style={{ fontSize: '0.75rem', color: subtextColor, margin: '2px 0 0 0' }}>
-                  Paste your <strong>OpenRouter</strong>, <strong>Anthropic (Claude 3.5 Sonnet)</strong>, or <strong>OpenAI</strong> API key in the top nav to unlock stable office generation. BYOK keys stay only in in-memory state for the current browser tab. They are never written to localStorage or sent to Quantora's backend permanently.
+                  Add a <strong>Gemini</strong> or <strong>OpenRouter</strong> key below. Keys stay only in memory for this browser tab, are attached to provider requests through Quantora, and are never written to localStorage.
                 </p>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <SessionProviderKeysCard isLight={isLight} />
 
 
     </div>

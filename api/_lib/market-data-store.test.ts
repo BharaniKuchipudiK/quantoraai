@@ -5,7 +5,6 @@ process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
 
 const {
-  readLatestPriceCached,
   readLatestPrice,
   readFxHistory,
   clearMarketDataCache,
@@ -34,51 +33,6 @@ const BAR = {
   source: "marketstack",
   as_of: "2026-08-21T20:00:00Z",
 };
-
-test("readLatestPriceCached hits the store once, then serves from cache within TTL", async () => {
-  clearMarketDataCache();
-  const fetchMock = mockFetch([BAR]);
-  try {
-    const a = await readLatestPriceCached("AAPL.US");
-    const b = await readLatestPriceCached("AAPL.US");
-    const c = await readLatestPriceCached("AAPL.US");
-    assert.deepEqual(a, BAR);
-    assert.deepEqual(c, BAR);
-    assert.equal(fetchMock.count(), 1, "three reads -> one network call");
-    assert.equal(b, a);
-  } finally {
-    fetchMock.restore();
-    clearMarketDataCache();
-  }
-});
-
-test("a zero TTL always refetches (cache disabled)", async () => {
-  clearMarketDataCache();
-  const fetchMock = mockFetch([BAR]);
-  try {
-    await readLatestPriceCached("AAPL.US", 0);
-    await readLatestPriceCached("AAPL.US", 0);
-    assert.equal(fetchMock.count(), 2, "zero TTL -> a call every time");
-  } finally {
-    fetchMock.restore();
-    clearMarketDataCache();
-  }
-});
-
-test("an empty result is not cached (a momentary miss must not stick)", async () => {
-  clearMarketDataCache();
-  const fetchMock = mockFetch([]);
-  try {
-    const first = await readLatestPriceCached("NOPE.US");
-    const second = await readLatestPriceCached("NOPE.US");
-    assert.equal(first, null);
-    assert.equal(second, null);
-    assert.equal(fetchMock.count(), 2, "empty read -> re-fetched, never cached");
-  } finally {
-    fetchMock.restore();
-    clearMarketDataCache();
-  }
-});
 
 test("readLatestPrice returns the single most recent bar, or null", async () => {
   const fetchMock = mockFetch([BAR]);

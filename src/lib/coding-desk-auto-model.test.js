@@ -4,6 +4,7 @@ import {
   CODING_DESK_AUTO_MODEL_ID,
   activeModelsForRouting,
   isCodingDeskAutoSelection,
+  rankCodingDeskFallbacks,
   resolveCodingDeskModel,
   shouldEscalateCodingDeskModel,
 } from './coding-desk-auto-model.js';
@@ -33,7 +34,9 @@ test('ordinary coding turns stay on Gemini', () => {
   assert.equal(choice.reason, 'default_gemini');
 });
 
-test('refine / probe-failure turns escalate to the best free coding model', () => {
+test('refine / probe-failure turns STAY on fast Gemini rather than a slow unproven free coder', () => {
+  // Escalating a free-tier build to a queued *:free coder is what blew past the
+  // 135s deadline and triggered the fake "proved on the desk". Gemini finishes.
   const refine = resolveCodingDeskModel({
     task: 'coding',
     message: 'Fix the preview',
@@ -41,8 +44,9 @@ test('refine / probe-failure turns escalate to the best free coding model', () =
     availableModels: ACTIVE,
     allowPaid: false,
   });
-  assert.equal(refine.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
-  assert.equal(refine.escalated, true);
+  assert.equal(refine.modelId, 'gemini-flash-latest');
+  assert.equal(refine.escalated, false);
+  assert.equal(refine.reason, 'stay_gemini_unproven_free');
 
   const probe = resolveCodingDeskModel({
     task: 'coding',
@@ -51,10 +55,10 @@ test('refine / probe-failure turns escalate to the best free coding model', () =
     qualityHints: { probeFailure: true },
     allowPaid: false,
   });
-  assert.equal(probe.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(probe.modelId, 'gemini-flash-latest');
 });
 
-test('complex architecture asks escalate once at request start', () => {
+test('complex asks still flag escalation, but stay on Gemini without a paid coder', () => {
   assert.equal(shouldEscalateCodingDeskModel({
     message: 'Design the architecture for a multi-file production app',
   }), true);
@@ -64,8 +68,52 @@ test('complex architecture asks escalate once at request start', () => {
     availableModels: ACTIVE,
     allowPaid: false,
   });
+  // No paid coder and no proven free coder → the fast reliable default wins.
+  assert.equal(choice.modelId, 'gemini-flash-latest');
+  assert.equal(choice.escalated, false);
+});
+
+test('shop / e-commerce builds stay on the fast reliable default, not a slow free coder', () => {
+  for (const message of [
+    'build a shop website for my coffee shop',
+    'create an online store to sell my sarees',
+    'make an e-commerce site with a product catalog',
+  ]) {
+    assert.equal(shouldEscalateCodingDeskModel({ message }), true, message);
+  }
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'build a shop website for my coffee shop',
+    availableModels: ACTIVE,
+    allowPaid: false,
+  });
+  // The shop build now runs on Gemini (fast, finishes in time, writes the real
+  // rich page) instead of escalating to a free coder that times out.
+  assert.equal(choice.modelId, 'gemini-flash-latest');
+  // A plain brochure/portfolio ask still stays on the fast default.
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'build a simple about page' }), false);
+});
+
+test('a free coder that has EARNED it on measured outcomes is still escalated to', () => {
+  const withProven = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
+    {
+      id: 'proven/coder:free',
+      name: 'Proven Coder',
+      available: true,
+      pricingKind: 'free',
+      specialty: 'coder',
+      quality: { sampleSize: 50, score: 0.9 },
+    },
+  ];
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'build a shop website for my coffee shop',
+    availableModels: withProven,
+    allowPaid: false,
+  });
+  assert.equal(choice.modelId, 'proven/coder:free');
   assert.equal(choice.escalated, true);
-  assert.equal(choice.modelId, 'nvidia/nemotron-3-super-120b-a12b:free');
 });
 
 test('free Studio without keys never auto-picks paid-only models', () => {
@@ -88,6 +136,38 @@ test('BYOK may escalate to a paid coding specialist already in Active', () => {
   });
   assert.equal(choice.modelId, 'qwen/qwen-2.5-coder-32b-instruct');
   assert.equal(choice.escalated, true);
+});
+
+test('a paid FLAGSHIP is preferred over a cheap "coder" specialist when escalating', () => {
+  // The disease: an agent build escalated but picked qwen-2.5-coder (a cheap paid
+  // coder), which truncated to a 22-line HTML and rendered a blank preview. A
+  // flagship (Claude Sonnet) writes the complete file, so when paid is allowed it
+  // must win the escalation over a model whose only edge is the word "coder".
+  const withFlagship = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', available: true, pricingKind: 'paid', specialty: 'Code Synthesis' },
+    { id: 'anthropic/claude-sonnet-5', name: 'Claude Sonnet 5', available: true, pricingKind: 'paid', specialty: 'Flagship coder' },
+  ];
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'Build an AI agent that connects to my Google Drive and crawls the entire drive',
+    availableModels: withFlagship,
+    allowPaid: true,
+  });
+  assert.equal(choice.modelId, 'anthropic/claude-sonnet-5');
+  assert.equal(choice.escalated, true);
+});
+
+test('a mini/lite flagship variant never beats a real coder on the flagship bonus', () => {
+  // gpt-4o-mini carries a flagship name but not the completion reliability — it
+  // must not steal the escalation from qwen on the flagship boost.
+  const choice = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'Refactor the entire codebase architecture',
+    availableModels: ACTIVE,
+    allowPaid: true,
+  });
+  assert.equal(choice.modelId, 'qwen/qwen-2.5-coder-32b-instruct');
 });
 
 test('unavailable stronger models fall back to Gemini instead of inventing ids', () => {
@@ -129,11 +209,93 @@ test('activeModelsForRouting keeps featured models and drops unapproved registry
   assert.ok(ids.includes('good/coder-approved'));
   assert.equal(ids.includes('evil/coder-unapproved'), false);
   assert.equal(ids.includes('gone/coder'), false);
+  // good/coder-approved is an approved but UNPROVEN free model — a refine turn
+  // keeps the fast Gemini default rather than escalating to it (it must earn the
+  // escalation on measured outcomes first).
   const escalate = resolveCodingDeskModel({
     task: 'coding',
     refineMode: true,
     availableModels: models,
     allowPaid: false,
   });
-  assert.equal(escalate.modelId, 'good/coder-approved');
+  assert.equal(escalate.modelId, 'gemini-flash-latest');
+  assert.equal(escalate.escalated, false);
+});
+
+test('failover ranks fast reliable Gemini AHEAD of an unproven slow free coder (the 135s ghost)', () => {
+  // The regression that caused 135s timeouts + fake "proved on the desk":
+  // a paid coder primary whose FIRST fallback was the slow *:free coder.
+  const chain = rankCodingDeskFallbacks(ACTIVE, {
+    primaryId: 'qwen/qwen-2.5-coder-32b-instruct',
+    allowPaid: true,
+  });
+  const geminiAt = chain.indexOf('gemini-flash-latest');
+  const nemotronAt = chain.indexOf('nvidia/nemotron-3-super-120b-a12b:free');
+  assert.ok(geminiAt >= 0, 'Gemini must be in the failover chain');
+  assert.ok(geminiAt < nemotronAt, 'fast reliable Gemini must fail over before the unproven slow free coder');
+});
+
+test('Gemini is always retained as the last-resort failover, even off an empty catalog', () => {
+  const chain = rankCodingDeskFallbacks([], { primaryId: 'qwen/qwen-2.5-coder-32b-instruct', allowPaid: true });
+  assert.ok(chain.includes('gemini-flash-latest'));
+});
+
+test('anonymous/free sessions keep a free-only failover set (no paid coder)', () => {
+  const chain = rankCodingDeskFallbacks(ACTIVE, { primaryId: 'gemini-flash-latest', allowPaid: false });
+  assert.ok(!chain.includes('qwen/qwen-2.5-coder-32b-instruct'), 'no paid coder for a keyless session');
+  assert.ok(!chain.includes('openai/gpt-4o-mini'));
+});
+
+test('LEARNING: a free coder that EARNS a trusted record climbs ahead of Gemini on merit', () => {
+  // Not hardwired: the prior only holds until real outcomes exist. Give the free
+  // coder a strong measured record and it must overtake Gemini's default prior.
+  const withOutcomes = ACTIVE.map((model) =>
+    model.id === 'nvidia/nemotron-3-super-120b-a12b:free'
+      ? { ...model, quality: { sampleSize: 40, score: 96 } }
+      : model,
+  );
+  const chain = rankCodingDeskFallbacks(withOutcomes, {
+    primaryId: 'qwen/qwen-2.5-coder-32b-instruct',
+    allowPaid: true,
+  });
+  const geminiAt = chain.indexOf('gemini-flash-latest');
+  const nemotronAt = chain.indexOf('nvidia/nemotron-3-super-120b-a12b:free');
+  assert.ok(nemotronAt < geminiAt, 'a proven free coder earns its place ahead of the default prior');
+});
+
+test('INVARIANT: an unproven paid coder never passes a PROVEN Gemini in the failover chain', () => {
+  // Regression guard (Codex P2): once Gemini crosses the trust threshold its
+  // prior must remain a floor, so an unproven paid endpoint cannot leapfrog a
+  // measured-successful Gemini without earning outcomes of its own.
+  const models = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier', quality: { sampleSize: 6, score: 92 } },
+    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder', available: true, pricingKind: 'paid' },
+  ];
+  const chain = rankCodingDeskFallbacks(models, { primaryId: 'deepseek/deepseek-chat', allowPaid: true });
+  const g = chain.indexOf('gemini-flash-latest');
+  const q = chain.indexOf('qwen/qwen-2.5-coder-32b-instruct');
+  assert.ok(g >= 0 && q >= 0, 'both models present in the chain');
+  assert.ok(g < q, 'proven Gemini must fail over before an unproven paid coder');
+});
+
+test('agent / integration / backend asks escalate off the fast default', () => {
+  // The "connect to my Google Drive, crawl all files, find duplicates, organize"
+  // ask ran on Gemini Flash and hit the 135s wall because the old keyword regex
+  // did not see it as complex. Intent-based signals now escalate it up front.
+  const drive = 'I want to build an AI agent that connects to my Google Drive, crawl through all the files, list large files not touched in a year, find duplicate and redundant files, and help organize them into folders';
+  assert.equal(shouldEscalateCodingDeskModel({ message: drive }), true);
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'Build a Slack bot that posts standup reminders' }), true);
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'Build a scraper that indexes documents' }), true);
+  assert.equal(shouldEscalateCodingDeskModel({ message: 'Connect to the Stripe API and sync payments to a database' }), true);
+});
+
+test('ordinary small builds still stay on the fast Gemini default', () => {
+  for (const message of [
+    'Build a calculator',
+    'Build me a simple portfolio website',
+    'Build a todo list with React',
+    'build a simple about page',
+  ]) {
+    assert.equal(shouldEscalateCodingDeskModel({ message }), false, message);
+  }
 });

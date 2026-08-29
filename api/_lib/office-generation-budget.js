@@ -45,10 +45,6 @@ export function officeProviderOrder(available = [], attemptIndex = 0) {
   return [list[start], ...list.filter((_, index) => index !== start)];
 }
 
-export function pickOfficeProvidersForAttempt(available = [], attemptIndex = 0) {
-  return officeProviderOrder(available, attemptIndex).slice(0, OFFICE_MAX_FULL_PROVIDER_CALLS);
-}
-
 export function shouldOfficeProviderFailover({
   providersTried = 0,
   firstElapsedMs = Number.POSITIVE_INFINITY,
@@ -58,24 +54,6 @@ export function shouldOfficeProviderFailover({
   if (providersTried >= 2) return false;
   if (firstElapsedMs > OFFICE_FAST_FAILOVER_MS) return false;
   return remainingMs >= OFFICE_COMPILE_RESERVE_MS + OFFICE_MIN_MODEL_CALL_MS;
-}
-
-/**
- * Worst-case host time if every full provider call burns its per-call timeout.
- * Fast failover after a quick primary miss is not a full call and must not
- * be used to hide a 3-provider serial walk.
- */
-export function officeWorstCaseGenerationMs({
-  attempts = Math.max(
-    officeGenerationMaxAttempts('powerpoint'),
-    officeGenerationMaxAttempts('word'),
-    officeGenerationMaxAttempts('excel'),
-  ),
-  providersPerAttempt = pickOfficeProvidersForAttempt(['anthropic', 'gemini', 'openrouter'], 0).length,
-  perCallTimeoutMs = officeModelCallBudgetMs(OFFICE_PROXY_BUDGET_MS),
-  compileReserveMs = OFFICE_COMPILE_RESERVE_MS,
-} = {}) {
-  return attempts * providersPerAttempt * perCallTimeoutMs + compileReserveMs;
 }
 
 export function officeTimeoutUserMessage() {

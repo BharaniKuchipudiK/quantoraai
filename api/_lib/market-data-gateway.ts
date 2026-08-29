@@ -1,9 +1,10 @@
 /**
  * Deterministic market-data gateway (ADR-025, P2) — the Finance analog of
  * handleAffordabilityDecision. On a Finance turn that asks for an FX rate or a
- * stock quote, it answers from the stored, sourced market data (or refuses when
- * the data is missing/stale) BEFORE the language model runs, so the figure is
- * grounded, not hallucinated.
+ * stock quote, it answers from real, sourced market data — the live ECB feed
+ * for FX, the ingested table for everything else — or refuses when the data is
+ * missing or stale, BEFORE the language model runs, so the figure is grounded
+ * and not hallucinated.
  *
  * Isolation: it returns false immediately unless the turn is studioDomain
  * 'finance' AND carries a market-data lookup intent. Every other domain and
@@ -14,13 +15,17 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseMarketDataIntent, isFxIntent, isPriceIntent } from "./market-data-intent.js";
-import { fxLookupResult, priceLookupResult } from "./market-data-lookup.js";
+import { fxLookupResult, freshestFxRate, priceLookupResult } from "./market-data-lookup.js";
 import {
+  isBarStale,
   isMarketDataStoreConfigured,
   readLatestFxRate,
   readLatestPrice,
   readInstrument,
 } from "./market-data-store.js";
+import { liveFxRate } from "./market-data/frankfurter-provider.js";
+import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 import { guardFinanceGateway } from "./finance-gateway-guard.js";
@@ -65,19 +70,103 @@ async function runMarketDataLookup(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  if (!isMarketDataStoreConfigured()) {
-    sendStream(
-      res,
-      requestId,
-      "Market data isn't connected on this deployment yet, so I can't quote a real figure — and I won't guess one. Once the market-data store is configured and the ingestion has run, I'll answer from stored, sourced data.",
-    );
+  /*
+   * FX is answered LIVE first, and from the store only if the live call fails.
+   *
+   * Answering from the store alone made conversion depend on a workflow that
+   * has never run on a schedule: the stored rate ages past the four-day window
+   * and the desk refuses every conversion until somebody clicks "Run workflow".
+   * That is a feature that breaks every four days by construction, and it is
+   * what "the real time conversion is no longer happening" looks like.
+   *
+   * Two independent paths now. Frankfurter is free and keyless and serves the
+   * same ECB reference rates the ingestion pulls, so the two sources cannot
+   * disagree about what a rate IS — only about how recent it is, and the live
+   * one is always at least as recent. Note this runs BEFORE the store-not-
+   * configured refusal below, because FX no longer needs a store at all.
+   */
+  if (isFxIntent(intent)) {
+    const storeReady = isMarketDataStoreConfigured();
+    const live = await liveFxRate(intent.base, intent.quote);
+
+    /*
+     * "The feed answered" and "the answer is usable" are two different facts,
+     * and the freshness rule decides the second one further down. Treating a
+     * live row as success the moment it arrives let a stale one MASK a usable
+     * stored rate: the store was never read, and the turn was refused with a
+     * good answer sitting in the database. Same shape as every other defect
+     * this codebase has had — a rule about what an answer ought to be, standing
+     * in for checking it.
+     *
+     * So the store is consulted whenever the live row would be refused, and the
+     * freshest of the two wins.
+     */
+    const liveUsable = Boolean(live) && !isBarStale({ as_of: live!.as_of });
+    const stored = storeReady && !liveUsable ? await readLatestFxRate(intent.base, intent.quote) : null;
+    const direct = freshestFxRate(live, stored);
+
+    // The inverse row is a third candidate, not a consolation prize for a
+    // missing direct one: a stale base→quote must not shadow a fresh quote→base.
+    const directUsable = Boolean(direct) && !isBarStale({ as_of: direct!.as_of });
+    const inverse = storeReady && !directUsable ? await readLatestFxRate(intent.quote, intent.base) : null;
+
+    /*
+     * The rate answers the question, and the question after it is nearly always
+     * "what about the other direction" or "what about a different amount".
+     * Offering those keeps a working capability from ending the turn — the FX
+     * path is the one Finance feature that runs end to end, so a dead end here
+     * is the most expensive one in the workspace.
+     */
+    const rate = fxLookupResult(intent, direct, inverse);
+    sendStream(res, requestId, withNextMoves({
+      text: rate.text,
+      question: "Anything else on this rate?",
+      moves: [
+        {
+          id: "fx_invert",
+          title: `Show me ${intent.quote} to ${intent.base}`,
+          description: "The same rate, the other way round",
+          value: `What is the ${intent.quote} to ${intent.base} rate?`,
+        },
+        {
+          id: "fx_amount",
+          title: "Convert a different amount",
+          description: "Same pair, another figure",
+          value: `Convert a different amount from ${intent.base} to ${intent.quote} — I'll give you the number.`,
+        },
+      ],
+      facts: [`Asked for ${intent.base} to ${intent.quote}`],
+    }));
     return true;
   }
 
-  if (isFxIntent(intent)) {
-    const direct = await readLatestFxRate(intent.base, intent.quote);
-    const inverse = direct ? null : await readLatestFxRate(intent.quote, intent.base);
-    sendStream(res, requestId, fxLookupResult(intent, direct, inverse).text);
+  if (!isMarketDataStoreConfigured()) {
+    /*
+     * This one must NOT fall through. Every other refusal in this file consumes
+     * the turn precisely so an unsourced figure is never produced; letting an
+     * FX/quote question reach the LLM instead invites an invented rate stated as
+     * fact. Refusing and saying so is the correct answer here, not a dead end -
+     * the reply names the reason and does not pretend a number exists.
+     */
+    /*
+     * A door, not a dead end.
+     *
+     * This used to say market data "isn't connected on this deployment yet" and
+     * stop — accurate, and useless to the person holding it, who could have
+     * fixed it in two minutes if anybody had said which two minutes. It is the
+     * same failure as the FX bug this file shipped for weeks: a refusal that is
+     * technically correct and practically abandoning.
+     *
+     * The doors live here rather than in the planner because THIS is where the
+     * platform knows: it has just checked the store and found nothing. A
+     * planner would have had to guess.
+     */
+    sendStream(
+      res,
+      requestId,
+      describeDoors(doorsBlocking(["market_prices"]), { ask: "this" })
+        || "Market data isn't connected on this deployment yet, and I won't guess a figure.",
+    );
     return true;
   }
 

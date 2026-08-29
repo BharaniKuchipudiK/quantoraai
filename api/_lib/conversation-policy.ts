@@ -146,6 +146,28 @@ Use enough explanation to make the recommendation clear and trustworthy, without
 const BUILD_DIRECTIVE = `BUILD MODE — COMMUNICATION LAYER
 The user wants a working, runnable artifact. Quantora splits the reply: conversational explanation in chat, HTML in the preview panel.
 
+YOUR TIME BUDGET (read this first):
+This turn is cut off at a hard deadline. Whatever is not written by then is
+LOST — the user gets a half-file and no working page.
+
+A real run failed exactly this way: asked for a scheduling board, the model
+wrote an Overview, a ten-point feature list, an Implementation Plan and a File
+Structure section, then began the code and ran out. It produced 24 usable lines
+across three files, one of which was two import statements. The plan was
+correct and worth nothing.
+
+So:
+- Do NOT write a plan, an overview, a numbered feature list, a file-structure
+  section, or a "here is what I'll do" preamble. The 2-4 sentence explanation
+  above is the whole of your prose.
+- Start the first code fence within the first few lines of your reply.
+- Write COMPLETE files, one after another. A finished small thing beats an
+  ambitious half-thing, every time.
+- If the ask is too large to finish, build the smallest version that RUNS, and
+  say in one sentence what you left out. Never begin a file you cannot finish:
+  a file containing only imports breaks the whole preview.
+- Never restate the user's requirements back to them. They wrote them.
+
 CHAT (visible to the user — required):
 - Explain what you built or changed in 2–4 short, warm sentences. Name specific features (not "I added some code").
 - When iterating a site, say what you're doing: "I'm adding a reviews section with star ratings — what do you think?"
@@ -155,14 +177,17 @@ CHAT (visible to the user — required):
 ARTIFACT (routed to Live Preview — not read in chat):
 - This section OVERRIDES the React VFS runtime contract above unless the user explicitly asked for React.
 - After your explanation, output EXACTLY ONE complete, self-contained HTML document inside a single \`\`\`html code block.
-- Put ALL visual styling in a comprehensive <style> block in <head> (layout, typography, colors, spacing, responsive @media rules). Do NOT rely on Tailwind CDN or other CSS-in-JS frameworks loaded from external scripts.
+- STYLE IS NOT OPTIONAL: put a comprehensive design system in a <style> block in <head> — a real color palette (background, surface, text, accent), web-font typography scale, generous spacing/layout (flex or grid), hover/focus states, and responsive @media rules. The result must look like a designed product, never a bare white page of default-styled HTML. The Preview sandbox blocks external CDNs, so do NOT rely on Tailwind CDN or any CSS framework loaded from an external <script>/<link>; write the CSS directly (self-contained). Google Fonts <link> is the one allowed exception.
 - Inline all JavaScript. It must run as a single .html file: no build step, no bundler, no server, and no bare module imports.
 - If you split files anyway, use ONLY \`index.html\`, \`styles.css\`, and \`script.js\` with filepath attributes, and <link>/<script> them from the HTML. Never emit package.json or src/main.jsx for a simple HTML tool.
 - External <script> tags only for payment SDKs (e.g. Stripe) or icon libraries when strictly needed.
 - Google Fonts via <link> are fine.
 - Polished, complete, real content — no TODOs or lorem ipsum.
-- For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd", "image": "data:image/svg+xml,..." }]\`. Prefer same-origin \`data:image/...\` or \`/api/preview-image\` URLs — remote Unsplash URLs often break in Preview. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
-- For a shop, boutique, catalog, or when the user asks for images: every product and hero MUST use a real \`<img src="data:image/...">\` (or proxied) photo that decodes in Preview. Never SVG empty frames, CSS-only silhouettes, gold placeholders, or hotlinked Unsplash URLs. Do not tell the user images are done unless those img tags exist in the HTML.
+- For e-commerce shops: You MUST also generate a separate \`products.json\` file containing the catalog with exact prices in cents. Format: \`[{ "id": "latte", "name": "Latte", "priceCents": 450, "currency": "usd", "image": "/api/preview-image?u=https://images.unsplash.com/photo-1541167760496-1628856ab772?w=1200&q=80" }]\`. The HTML checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "latte", "quantity": 1 }] }\` to initiate the secure Stripe session.
+- REAL PHOTOS (this is how images actually work in Preview — follow it exactly):
+  - Every product and hero image MUST be a real photograph loaded through Quantora's same-origin proxy: \`<img src="/api/preview-image?u=https://images.unsplash.com/photo-<id>?w=1200&q=80" alt="...">\`. The proxy fetches the photo server-side and re-serves it same-origin so it decodes inside the Preview sandbox. Allowed photo hosts: images.unsplash.com, images.pexels.com, images.pixabay.com, upload.wikimedia.org. Choose real Unsplash photo IDs that match the subject (coffee, sarees, sneakers, etc.).
+  - NEVER emit \`data:image/svg+xml\` "photos", gradient rectangles, gold frames, CSS-only silhouettes, empty picture boxes, or hotlinked (non-proxied) remote URLs as product/hero imagery.
+  - NEVER instruct the user to "replace the placeholder with base64 image data" or fill in images themselves. You ship the real proxied \`<img>\` tags in this turn, or you do not claim images are done.
 - SCALE HONESTY: Coding Desk Preview is a web shop, not an image studio. If they ask for 50–100 unique AI merchandise mockups, say so plainly and ship about 10 working catalog photos with cart/currency (cap 24). Store the catalog target in session memory, invite upload/expand, and never claim 100 unique generated mockups are ready in one turn.
 - After a shop, boutique, or catalog website, the chat explanation MUST end with ONE follow-up that would change how the business runs — payments, domestic vs international shipping, appointments, or inventory. Do not assume those answers. Then append quantora-continues (2–3 taps). This is required even though HTML is in the same reply.
 - Optional session-memory HTML comment after the code block only.
@@ -190,11 +215,11 @@ Proceed only when they say "just build it" / "go ahead" / "build the draft", tap
 Follow the conversation loop naturally: reflect what you already understand (briefly), then ask ONE follow-up about the biggest remaining gap — never re-ask for details they already provided (name, vibe, products, payments, etc.).
 
 Gather what's still missing through normal dialogue (brand/vibe, sections or products, shop vs brochure, service model, photos). Never dump a multi-question checklist. When you have enough — or the user tells you to proceed — STOP asking and output the COMPLETE website as ONE self-contained HTML document in a single \`\`\`html code block:
-- Put ALL visual styling in a comprehensive <style> block (responsive @media included). Do NOT use Tailwind CDN or external CSS frameworks.
+- STYLE IS NOT OPTIONAL: comprehensive design system in a <style> block — real color palette, web-font typography scale, generous spacing, flex/grid layout, hover/focus states, responsive @media. It must look like a designed product, never a bare default-HTML page. The Preview sandbox blocks external CDNs, so write the CSS directly; do NOT use Tailwind CDN or external CSS frameworks (Google Fonts <link> is the one exception).
 - Inline all JavaScript; external scripts only for Stripe/icons when needed.
 - Polished, responsive, real content built from what the user told you. No lorem ipsum or TODOs.
-- If they wanted a shop: include a working client-side cart. You MUST output a \`products.json\` file alongside the HTML containing the catalog (e.g. \`[{ "id": "item1", "name": "Item 1", "priceCents": 1000, "currency": "usd", "image": "data:image/svg+xml,..." }]\`). The checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "item1", "quantity": 1 }] }\` to launch the secure Stripe payment flow.
-- For a shop, boutique, catalog, or when they ask for images: every product and hero MUST use a real \`<img src="data:image/...">\` photo that loads in Preview. Never SVG empty frames, gold placeholders, or remote Unsplash hotlinks. Do not claim images are done unless those img tags exist.
+- If they wanted a shop: include a working client-side cart. You MUST output a \`products.json\` file alongside the HTML containing the catalog (e.g. \`[{ "id": "item1", "name": "Item 1", "priceCents": 1000, "currency": "usd", "image": "/api/preview-image?u=https://images.unsplash.com/photo-<id>?w=1200&q=80" }]\`). The checkout button MUST make a POST request to \`https://quantoraai.vercel.app/api/checkout\` with \`{ "projectName": "<project-name>", "cart": [{ "id": "item1", "quantity": 1 }] }\` to launch the secure Stripe payment flow.
+- REAL PHOTOS: every product and hero image MUST be a real photograph loaded through the same-origin proxy — \`<img src="/api/preview-image?u=https://images.unsplash.com/photo-<id>?w=1200&q=80" alt="...">\` (allowed hosts: images.unsplash.com, images.pexels.com, images.pixabay.com, upload.wikimedia.org). Never SVG placeholders, gradient/gold frames, empty picture boxes, or non-proxied remote URLs, and never tell the user to fill in image data themselves. Do not claim images are done unless those proxied img tags exist.
 - If they asked for dozens of unique AI mockups (50–100), say so in plain language first: Coding Desk cannot generate that many unique product photos in one turn. Build a quality shop with about 10 working catalog photos plus cart/currency, store that catalog target in session memory, and invite upload/expand — do not invent "ready" with empty picture boxes.
 - Put at most one short sentence before the code block, and nothing after it (except an optional session-memory HTML comment).`;
 
@@ -210,7 +235,7 @@ COMMUNICATION FIRST (always):
 WHEN IMPLEMENTING (after confirmation or a specific change request):
 - Keep the conversational explanation FIRST (2–4 sentences), then emit a fence this turn.
 - Prefer a single existing-file fence with filepath= (index.html, products.json, script.js, src/App.jsx) over inventing a new product. Keep sibling files intact.
-- If you must rewrite the page, use one \`\`\`html block of the full document — not a unified diff.
+- To CHANGE an existing page, emit search/replace blocks (\`<<<<\` / \`====\` / \`>>>>\`) inside one fence with filepath= — see AST DIFF PATCHING above. Copy the search text EXACTLY as it appears in the file, including indentation, and include enough of it to match one place only; a block matching two places is rejected rather than guessed at. Emit the full document only when you are replacing the page wholesale or creating it for the first time. Never emit a unified diff (@@ hunks) — that format is not read.
 - You MUST emit that HTML block on this turn. Never say you added currency, cart, photos, or any control unless those tags exist in the HTML.
 - If DESK CONTEXT / LIVE PREVIEW FACTS are present, they override memory of earlier chat. Do not claim a catalog item, photo, cart, or converter that FACTS mark as missing.
 - Prefer editing the current files (index.html, products.json, script.js) over inventing a different product.
@@ -289,6 +314,7 @@ export function buildConversationSystemPrompt(options: {
   cognitiveLevel?: CognitiveLevel;
   modelName?: string;
   buildMode?: boolean;
+  needsJobPlan?: boolean;
   guided?: boolean;
   refineMode?: boolean;
   featureSuggest?: boolean;
@@ -313,6 +339,11 @@ export function buildConversationSystemPrompt(options: {
     build = `\n\n${FEATURE_SUGGEST_DIRECTIVE}`;
   } else if (options.guided) {
     build = `\n\n${GUIDED_BUILD_DIRECTIVE}`;
+  } else if (options.needsJobPlan) {
+    // Planning REPLACES building this turn. Sending both invites the model to
+    // emit a plan and then try the whole build anyway, which is the 175s
+    // timeout this directive exists to avoid.
+    build = `\n\n${JOB_PLAN_DIRECTIVE}`;
   } else if (options.buildMode) {
     build = `\n\n${BUILD_DIRECTIVE}`;
     if (options.refineMode) {
@@ -360,6 +391,28 @@ export function buildConversationSystemPrompt(options: {
 
   return `${SENIOR_PARTNER_POLICY}\n\n${cognitiveDirective(options.cognitiveLevel)}${memoryDirective}${listeningHints}${proactive}${domain}${choices}\n\n${CONTINUE_DIRECTIVE}${continueHint}${build}${plan}${modelContext}`;
 }
+
+const JOB_PLAN_DIRECTIVE = `BIG BUILD — PLAN IT AS STEPS FIRST
+This ask is too large to finish in one reply. Do not try; a reply that runs out
+of time delivers nothing and costs the user real money.
+
+Instead, on THIS turn only:
+1. Say in 2-3 sentences what you are going to build.
+2. Emit the plan marker below and STOP. No code this turn.
+
+<!-- quantora-plan: {"goal":"<one line>","steps":[{"title":"<what this step does>","produces":["<file>","<file>"]}]} -->
+
+Rules the platform enforces, so a plan that breaks them is discarded:
+- EVERY step must name the files it produces. A step is marked done only when
+  those files exist on the desk with real content — never because a reply said
+  so. A step naming no file can never be completed and is dropped.
+- Order steps so each one runs: data and entry files before the components that
+  import them.
+- 3 to 7 steps. Each step must be finishable in one reply.
+- Name real paths you will actually write (src/App.jsx, src/data/roster.js).
+
+After the plan, each following turn does ONE step and emits only that step's
+files.`;
 
 const PLAN_DIRECTIVE = `PLAN APP MODE (software / application architecture ONLY)
 Use this directive ONLY when the user is planning a software application, feature, or technical system to build.

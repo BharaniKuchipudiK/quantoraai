@@ -7,6 +7,9 @@ import { isPublishedSiteOwner } from './_lib/store.js';
 import { normalizeDomainName } from './_lib/publish-policy.js';
 import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
 
+/** Google-maintained alias for the current Flash model. A pinned id rots. */
+const GEMINI_FLASH = "gemini-flash-latest";
+
 const MAX_CONTEXT_CHARS = 10_000;
 const REQUESTS_PER_MINUTE = 20;
 
@@ -132,7 +135,17 @@ CONTEXT:
 ${context || 'A modern web application'}`;
 
     const response = await client.models.generateContent({
-      model: "gemini-1.5-flash",
+      /*
+       * gemini-flash-latest, not a pinned version.
+       *
+       * This was pinned to Flash 1.5, a model Google no longer serves: the
+       * production key's catalogue lists 53 Gemini models and that is not among
+       * them, so every call from here has been a 404 dressed up as a generic
+       * failure. The alias is the same one the rest of the codebase uses and
+       * Google keeps it pointed at a current model, so it cannot rot the way a
+       * pinned id does.
+       */
+      model: GEMINI_FLASH,
       contents: [{ role: "user", parts: [{ text: prompt }] }]
     });
     

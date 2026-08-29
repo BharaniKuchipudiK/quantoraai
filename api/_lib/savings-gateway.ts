@@ -11,6 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import { parseSavingsIntent } from "./savings-goal-intent.js";
 import { projectSavings, formatSavingsPlan } from "./savings-goal.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
@@ -57,12 +58,18 @@ async function runSavingsGoal(req: any, res: any): Promise<boolean> {
   }
 
   if (intent.goal === null || intent.months === null || intent.monthly === null) {
-    sendStream(
-      res,
-      requestId,
-      "I can project a savings goal, but I need three things explicitly: the **target amount**, the **timeframe**, and how much you can **save each month** (a starting balance and expected return are optional) — for example: *“save $20,000 in 3 years, I have $2,000 now and can put away $400/month at 4%”*. I won't assume the numbers.",
-    );
-    return true;
+    /*
+     * The trigger is the bare word "save", so "how can I save on taxes?" and
+     * "should I save or invest?" match it. Consuming the turn here answered every
+     * one of them with the same demand for three numbers, streamed as the
+     * assistant, and the model was never called — the user could not escape it by
+     * rephrasing, because rephrasing still contains "save".
+     *
+     * The projection needs explicit numbers, so it correctly declines to run. But
+     * declining to RUN is not a reason to end the TURN: fall through to chat, which
+     * can answer the question or ask for the numbers conversationally.
+     */
+    return false;
   }
 
   const inputs = {
@@ -72,6 +79,41 @@ async function runSavingsGoal(req: any, res: any): Promise<boolean> {
     annualRatePct: intent.annualRatePct,
     months: intent.months,
   };
-  sendStream(res, requestId, formatSavingsPlan(inputs, projectSavings(inputs)));
+  /*
+   * A deterministic gateway returns out of api/pipeline.ts before the
+   * conversation engine runs, so an answer that carries no follow-ups ends the
+   * turn outright. The next moves offered here are the ones this engine can
+   * actually compute — never an open invitation to a model that would have to
+   * invent the numbers.
+   */
+  const projection = projectSavings(inputs);
+  sendStream(res, requestId, withNextMoves({
+    text: formatSavingsPlan(inputs, projection),
+    question: projection.onTrack ? "Want to press on this?" : "What should I work out next?",
+    moves: [
+      {
+        id: "savings_sooner",
+        title: "What gets me there sooner",
+        description: "Raise the monthly and see the new date",
+        value: "What would it take to reach that goal sooner? I'll tell you what I could raise the monthly amount to.",
+      },
+      {
+        id: "savings_rate",
+        title: "What if the return is worse",
+        description: "Test the plan against a lower rate",
+        value: "What happens to this plan if the return is lower than assumed?",
+      },
+      {
+        id: "savings_pause",
+        title: "What if I have to stop for a while",
+        description: "Test a break in contributions",
+        value: "What happens to this plan if I have to stop contributing for a few months?",
+      },
+    ],
+    facts: [
+      `Savings goal: ${intent.goal} in ${intent.months} months`,
+      `Saving ${intent.monthly}/month from ${intent.current}, ${intent.annualRatePct}% assumed return`,
+    ],
+  }));
   return true;
 }

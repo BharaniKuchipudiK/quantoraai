@@ -31,6 +31,38 @@ const KIND_PATTERNS = [
   [OFFICE_KIND.PDF, /\b(pdf)\b/i],
 ];
 
+/*
+ * A request for a WEB build cancels any older Office intent.
+ *
+ * The bug this closes: detection used to join EVERY user message in the thread
+ * and return the first pattern that matched anywhere. One "presentation" early
+ * in a long chat turned every later turn into a PowerPoint turn — permanently.
+ * A later "build a one-page site" was generated as HTML and then compiled as a
+ * deck, producing "this is not a website and must not be published" and
+ * host-time failures on a PPTX nobody asked for.
+ */
+const WEB_BUILD_RE = /\b(website|web ?site|web ?app|web ?page|landing page|one[\s-]?pager?|one[\s-]?page site|single[\s-]?page|html file|storefront|frontend layout|site for)\b/i;
+
+/*
+ * How many recent user turns may still carry Office intent forward. A briefing
+ * exchange ("make a deck about X" → questions → "yes, focus on Q3") must keep
+ * working, so intent is not strictly last-message-only — but it is bounded, and
+ * a web-build request stops the lookback immediately.
+ */
+const OFFICE_INTENT_LOOKBACK = 4;
+
+function matchOfficeKind(text) {
+  for (const [kind, re] of KIND_PATTERNS) {
+    if (re.test(text)) return kind;
+  }
+  return null;
+}
+
+/** True when this text asks for a web page/app rather than an Office file. */
+export function looksLikeWebBuildRequest(text = '') {
+  return WEB_BUILD_RE.test(String(text || ''));
+}
+
 /** Map a Tools-menu selection (e.g. "PowerPoint", "Excel") to an office kind. */
 export function officeKindFromTool(tool) {
   switch (String(tool || '').toLowerCase()) {
@@ -80,14 +112,22 @@ export function detectOfficeIntent({ selectedTool = null, messages = [] } = {}) 
     return explicit;
   }
 
-  const userText = (Array.isArray(messages) ? messages : [])
+  // Walk the most recent user turns newest-first, within a bounded window.
+  // Never join the whole thread: that made Office intent sticky for the life of
+  // the conversation and hijacked later website builds.
+  const userTexts = (Array.isArray(messages) ? messages : [])
     .filter((m) => m && m.sender === 'user' && typeof m.text === 'string')
-    .map((m) => m.text)
-    .join('\n');
-  if (!userText) return null;
+    .map((m) => m.text);
+  if (!userTexts.length) return null;
 
-  for (const [kind, re] of KIND_PATTERNS) {
-    if (re.test(userText)) return kind;
+  const window = userTexts.slice(-OFFICE_INTENT_LOOKBACK).reverse();
+  for (const text of window) {
+    // Office wins inside a single message ("a presentation about our website"):
+    // the artifact noun is the explicit ask.
+    const kind = matchOfficeKind(text);
+    if (kind) return kind;
+    // A newer web-build request cancels any older Office intent behind it.
+    if (looksLikeWebBuildRequest(text)) return null;
   }
   return null;
 }
@@ -95,11 +135,6 @@ export function detectOfficeIntent({ selectedTool = null, messages = [] } = {}) 
 /** Back-compat convenience: is this a slide-deck conversation? */
 export function isPresentationIntent(messages = []) {
   return detectOfficeIntent({ messages }) === OFFICE_KIND.POWERPOINT;
-}
-
-/** Any office artifact at all (presentation/sheet/doc/pdf). */
-export function isOfficeIntent(opts) {
-  return detectOfficeIntent(opts) !== null;
 }
 
 /** Safe file base name for a download (no extension, no path/unsafe chars). */

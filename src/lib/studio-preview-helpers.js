@@ -1,20 +1,20 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
-import { parseVFSFromMarkdown, isolateHtmlDocument } from './vfs-parser.js';
+import { parseVFSWithReport, isolateHtmlDocument } from './vfs-parser.js';
 import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview, vfsAssetToDataUri } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
-  injectMissingShopPhotos,
-  injectProductCatalogImages,
-  scaffoldShopCatalogJson,
   countRealPreviewPhotos,
   stripInjectedShopPhotos,
-  SHOP_CATALOG_CAP,
+  proxyRemoteShopImages,
+  proxyRemoteCatalogImages,
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
-import { deskChecksRegressed, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
-import { buildStudioJobCard, jobNeedsProductPhotos } from './studio-job-card.js';
-import { shopCatalogScaleNote } from './shop-catalog-scale.js';
+import { deskChecksRegressed, jobClearlyNotShop, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
+import { buildStudioJobCard, isStudioProductSwitch } from './studio-job-card.js';
+// SHOP_CATALOG_CAP from its own module rather than through preview-images:
+// re-exporting a constant through an unrelated file hides the dependency.
+import { SHOP_CATALOG_CAP, shopCatalogScaleNote } from './shop-catalog-scale.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
 const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
@@ -108,19 +108,10 @@ export function wireVfsShopImagesIntoDesk(vfs = {}, options = {}) {
         }
       }
     } catch { /* keep */ }
-  } else if (htmlPath && assets.length) {
-    const brand = String(next[htmlPath]?.content || '').match(/<title>([^<]{2,80})<\/title>/i)?.[1]
-      || 'Collection';
-    const products = assets.slice(0, Math.min(assets.length, SHOP_CATALOG_CAP)).map((asset, i) => ({
-      id: `item-${i + 1}`,
-      name: `${String(brand).trim().slice(0, 40)} ${i + 1}`,
-      priceCents: (1800 + i * 250) * 100,
-      currency: 'inr',
-      image: asset.uri,
-    }));
-    next['products.json'] = { content: `${JSON.stringify(products, null, 2)}\n`, language: 'json' };
-    changed = true;
   }
+  // NOTE: we deliberately do NOT fabricate a products.json when the model shipped
+  // image files but no catalog. Inventing named/priced products is fabrication;
+  // an honest empty catalog is shown instead.
 
   void brief;
   return { vfs: next, changed };
@@ -159,9 +150,12 @@ function extractUnfencedHtml(rawText) {
 export function assembleStudioPreview(rawText, currentVfs = {}) {
   if (!rawText || typeof rawText !== 'string') return { vfs: {}, code: '' };
 
-  const vfs = parseVFSFromMarkdown(rawText, currentVfs);
+  // patchFailures rides along so the turn can say which edits did not land.
+  // Dropping it here is how a half-applied edit used to reach the user wearing
+  // a sentence that claimed the whole thing worked.
+  const { vfs, patchFailures, emptyFenceKept } = parseVFSWithReport(rawText, currentVfs);
   if (Object.keys(vfs).length > 0) {
-    return { vfs, code: pickPreviewEntry(vfs) };
+    return { vfs, code: pickPreviewEntry(vfs), patchFailures, emptyFenceKept };
   }
 
   const html = extractUnfencedHtml(rawText);
@@ -169,10 +163,12 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
     return {
       vfs: { 'index.html': { content: html, language: 'html' } },
       code: html,
+      patchFailures,
+      emptyFenceKept,
     };
   }
 
-  return { vfs: {}, code: '' };
+  return { vfs: {}, code: '', patchFailures, emptyFenceKept };
 }
 
 /**
@@ -189,7 +185,10 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
  */
 export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, options = {}) {
   const brief = typeof options === 'string' ? options : String(options?.brief || '');
-  const assembled = assembleStudioPreview(rawText, currentVfs);
+  // Shop → landing (or any new product): do not merge Latte/products.json into Nimbus.
+  const switchingProduct = isStudioProductSwitch(brief, job);
+  const assembleBase = switchingProduct ? {} : currentVfs;
+  const assembled = assembleStudioPreview(rawText, assembleBase);
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
   );
@@ -210,8 +209,9 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
   const onlyNativeSidecars = changedPaths.length > 0
     && changedPaths.every((path) => isNativeSidecarPath(path));
   const needsWebEntry = Boolean(hadProject && didUpdate && onlyNativeSidecars && !previewChanged);
-  // Dropping a leftover boutique catalog is an intentional product switch.
-  if (hadProject && didUpdate && previewChanged && !purged.changed) {
+  // Dropping a leftover boutique catalog is an intentional product switch —
+  // never reject the new product for losing old shop/calc checks.
+  if (hadProject && didUpdate && previewChanged && !purged.changed && !switchingProduct) {
     const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job: nextJob });
     const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job: nextJob });
     if (deskChecksRegressed(before.checks, after.checks)) {
@@ -237,6 +237,11 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
     previewChanged: !hadProject || previewChanged,
     job: nextJob,
     scaleNote: ensured.scaleNote || '',
+    // Edits the model asked for that could not be applied. The turn must say so
+    // rather than commit what landed and describe what was asked.
+    patchFailures: assembled.patchFailures || [],
+    // Files an empty fence tried to blank. The turn must say so.
+    emptyFenceKept: assembled.emptyFenceKept || [],
   };
 }
 
@@ -340,32 +345,31 @@ export function applyDeskReviewPatch(vfs = {}, job = null, options = {}) {
 export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
   if (!vfsLooksLikeShop(vfs, job)) return { vfs, changed: false };
   const brief = String(options?.brief || '');
+  // Honest desk: make the MODEL'S OWN images load in Preview — never fabricate.
+  //  1) wire the model's own image FILES (foxwolf_*.svg, etc.) in as data-URIs;
+  //  2) proxy the model's own allowed REMOTE image URLs (Unsplash/Pexels/…) to
+  //     the same-origin preview proxy so they load and count as real photos.
+  // We never inject stock photos or scaffold a fabricated catalog: a shop the
+  // model shipped without images shows an honest empty/partial catalog, not a
+  // picsum-stocked fake (the "Statue of Liberty / Shop 6 ₹3,050" regression).
   const wired = wireVfsShopImagesIntoDesk(vfs, { brief });
   const next = { ...wired.vfs };
   let changed = wired.changed;
+
   const htmlPath = pickPreviewEntryPath(next);
-  if (htmlPath && next[htmlPath] && typeof next[htmlPath].content === 'string') {
-    const result = injectMissingShopPhotos(next[htmlPath].content, { brief });
-    if (result.html !== next[htmlPath].content) {
-      next[htmlPath] = { ...next[htmlPath], content: result.html };
+  if (htmlPath && typeof next[htmlPath]?.content === 'string') {
+    const proxied = proxyRemoteShopImages(next[htmlPath].content);
+    if (proxied !== next[htmlPath].content) {
+      next[htmlPath] = { ...next[htmlPath], content: proxied };
       changed = true;
     }
   }
-  if (next['products.json'] && typeof next['products.json'].content === 'string') {
-    const catalog = injectProductCatalogImages(next['products.json'].content, { brief });
+  if (typeof next['products.json']?.content === 'string') {
+    const catalog = proxyRemoteCatalogImages(next['products.json'].content);
     if (catalog.changed) {
       next['products.json'] = { ...next['products.json'], content: catalog.text };
       changed = true;
     }
-  } else if (htmlPath && next[htmlPath]?.content) {
-    const brand = String(next[htmlPath].content).match(/<title>([^<]{2,80})<\/title>/i)?.[1]
-      || String(next[htmlPath].content).match(/<h1[^>]*>([^<]{2,80})<\/h1>/i)?.[1]
-      || 'Collection';
-    next['products.json'] = {
-      content: scaffoldShopCatalogJson({ brief, brand }),
-      language: 'json',
-    };
-    changed = true;
   }
   return { vfs: next, changed };
 }
@@ -373,40 +377,10 @@ export function ensureShopPhotosInVfs(vfs = {}, job = null, options = {}) {
 /** Photos, currency, and Add to Cart belong on the running desk, not only in chat. */
 export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
   const brief = String(options?.brief || '');
-  let seed = { ...(vfs || {}) };
-  let seededHtml = false;
-  // SVG-only merchandise dumps are not a shop. Seed a real HTML desk when the job
-  // requires product photos and there is no runnable HTML page yet.
-  if (jobNeedsProductPhotos(job) && !pickPreviewEntryPath(seed)) {
-    const purpose = String(job?.purpose || '').trim();
-    const hay = `${brief}\n${purpose}\n${Object.keys(seed).join('\n')}`;
-    const ampBrand = hay.match(/\b([A-Za-z][\w']*\s*&\s*[A-Za-z][\w']*)(?:\s+Kids)?\b/i);
-    const gluedBrand = hay.match(/fox\s*[_&-]?\s*wolf/i);
-    let title = '';
-    if (ampBrand) {
-      title = `${ampBrand[1].replace(/\s+/g, ' ').trim()}${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
-    } else if (gluedBrand) {
-      title = `Fox & Wolf${/\bkids?\b/i.test(hay) ? ' Kids' : ''} Shop`;
-    } else if (purpose && !/^a\s+shop\b/i.test(purpose)) {
-      title = purpose;
-    } else {
-      title = 'Shop';
-    }
-    seed = {
-      ...seed,
-      'index.html': {
-        content: (
-          `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
-          + `<title>${title}</title></head><body>`
-          + `<header><nav>Shop</nav><h1>${title}</h1></header>`
-          + `<main class="product-catalog" data-quantora-shop-catalog="true" style="min-height:60vh;background:#fff;padding:24px"></main>`
-          + `<footer>${title}</footer></body></html>`
-        ),
-        language: 'html',
-      },
-    };
-    seededHtml = true;
-  }
+  const seed = { ...(vfs || {}) };
+  // Never seed a fabricated storefront. If the model shipped no runnable HTML,
+  // the desk stays honest (empty) rather than inventing a "Shop" page.
+  const seededHtml = false;
   if (!vfsLooksLikeShop(seed, job)) return purgeStaleShopArtifacts(seed, job);
   const withPhotos = ensureShopPhotosInVfs(seed, job, { brief });
   if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;
@@ -465,19 +439,21 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
   return { vfs: withDesk.vfs, wrote: true, path };
 }
 
-export function extractHtmlFromResponse(rawText) {
-  const { vfs, code } = assembleStudioPreview(rawText);
-  const htmlFile = vfs['index.html']?.content
-    || Object.entries(vfs).find(([name]) => /\.html$/i.test(name))?.[1]?.content;
-  if (htmlFile) return String(htmlFile).trim();
-  return isHtmlDocument(code) ? String(code).trim() : '';
-}
-
 export function extractRunnableCode(rawText) {
   const { code } = assembleStudioPreview(rawText);
   if (code) return code;
   if (isInlineReactRuntimeCode(rawText)) return String(rawText).trim();
   return null;
+}
+
+/**
+ * Error / provider-dead turns often still carry partial fences. Those must land
+ * in Files + Preview — do not bare-return on isError when extractable code exists.
+ */
+export function messageHasExtractableWorkspaceCode(rawText, currentVfs = {}) {
+  if (!rawText || typeof rawText !== 'string') return false;
+  if (extractRunnableCode(rawText)) return true;
+  return canOpenStudioPreviewPane(rawText, currentVfs);
 }
 
 const BROWSER_ENTRY = /(?:^|\/)(?:index\.html|presentation\.html|App\.jsx|App\.tsx|src\/App\.jsx|src\/App\.tsx|src\/main\.jsx|src\/main\.tsx)$/i;
@@ -502,16 +478,6 @@ export function canOpenStudioPreviewPane(rawText, currentVfs = {}) {
 
 export function hasPreviewableContent(rawText) {
   return canOpenStudioPreviewPane(rawText);
-}
-
-export function preparePreviewHtml(rawText, imageMap = new Map()) {
-  const assembled = assembleStudioPreview(rawText);
-  let html = extractHtmlFromResponse(rawText) || assembled.code;
-  if (!html || !isHtmlDocument(html)) return '';
-  if (imageMap.size) {
-    for (const [token, dataUrl] of imageMap) html = html.split(token).join(dataUrl);
-  }
-  return prepareCodeForPreview(html, assembled.vfs);
 }
 
 export function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {

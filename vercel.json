@@ -25,6 +25,10 @@
         {
           "key": "Cross-Origin-Resource-Policy",
           "value": "cross-origin"
+        },
+        {
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "require-corp"
         }
       ]
     },
@@ -50,7 +54,7 @@
         },
         {
           "key": "X-Frame-Options",
-          "value": "DENY"
+          "value": "SAMEORIGIN"
         },
         {
           "key": "X-Content-Type-Options",
@@ -66,7 +70,7 @@
         },
         {
           "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
+          "value": "credentialless"
         },
         {
           "key": "Cross-Origin-Opener-Policy",
@@ -87,7 +91,7 @@
         },
         {
           "key": "X-Frame-Options",
-          "value": "DENY"
+          "value": "SAMEORIGIN"
         },
         {
           "key": "X-Content-Type-Options",
@@ -103,7 +107,7 @@
         },
         {
           "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
+          "value": "credentialless"
         },
         {
           "key": "Cross-Origin-Opener-Policy",
@@ -198,6 +202,34 @@
       "destination": "/api/auth?route=logout"
     },
     {
+      "source": "/api/auth/signup",
+      "destination": "/api/auth?route=signup"
+    },
+    {
+      "source": "/api/auth/login",
+      "destination": "/api/auth?route=login"
+    },
+    {
+      "source": "/api/auth/password-reset-request",
+      "destination": "/api/auth?route=password-reset-request"
+    },
+    {
+      "source": "/api/auth/password-reset-confirm",
+      "destination": "/api/auth?route=password-reset-confirm"
+    },
+    {
+      "source": "/api/auth/github",
+      "destination": "/api/auth?route=github"
+    },
+    {
+      "source": "/api/auth/github/callback",
+      "destination": "/api/auth?route=github-callback"
+    },
+    {
+      "source": "/api/auth/providers",
+      "destination": "/api/auth?route=providers"
+    },
+    {
       "source": "/api/admin/feedback",
       "destination": "/api/admin?route=feedback"
     },
@@ -210,7 +242,7 @@
       "destination": "/api/admin?route=models"
     },
     {
-      "source": "/((?!api/.*|preview/.*|monaco/.*).*)",
+      "source": "/((?!api/.*|preview/.*|monaco/.*|robots.txt|sitemap.xml).*)",
       "destination": "/index.html"
     }
   ]

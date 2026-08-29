@@ -352,22 +352,3 @@ export function publicAdvisorSummary(assessment: PclAdvisorAssessment) {
   };
 }
 
-/**
- * Compact provider-neutral policy block for the conversational model. This is
- * advice state, not hidden reasoning: it exposes only bounded conclusions and
- * evidence references produced by the domain adapter.
- */
-export function formatPclAdvisorContract(assessment: PclAdvisorAssessment): string {
-  const gapById = new Map(assessment.gaps.map((item) => [item.id, item]));
-  const recommended = assessment.interventions.find((item) => item.id === assessment.recommendedInterventionId) || null;
-  const rootGaps = assessment.gaps.filter((item) => item.rootCause).slice(0, 4);
-  const rootText = rootGaps.length
-    ? rootGaps.map((item) => `${item.label} [${item.severity}; confidence ${item.confidence}]`).join(" | ")
-    : "None confirmed";
-  const recommendation = recommended
-    ? `${recommended.label}; expected benefit ${recommended.expectedBenefit}; verification: ${recommended.verificationCriteria.slice(0, 3).join(" | ") || "domain evidence required"}`
-    : "No intervention is sufficiently grounded yet; gather missing evidence rather than guessing.";
-  const linked = recommended?.gapIds.map((id) => gapById.get(id)?.label).filter(Boolean).join(" | ") || "None";
-
-  return `\n\nPCL ADVISOR INTELLIGENCE (use silently; never expose internal scoring machinery)\nVersion: ${assessment.version}\nDomain: ${assessment.domain}\nTarget outcome: ${assessment.target.label}\nCurrent state: ${assessment.currentStateSummary}\nRoot gaps: ${rootText}\nRecommended next intervention: ${recommendation}\nAddresses: ${linked}\nBehavior:\n- Advise toward the target outcome, not toward activity for activity's sake.\n- Explain the highest-value gap in human terms before recommending the next move.\n- Prefer root-cause and dependency-leverage interventions over repeatedly treating symptoms.\n- Never invent a gap, mastery level, confidence, provider result, or completed improvement that is not supported by evidence.\n- If evidence is insufficient, recommend the smallest diagnostic step that would resolve the uncertainty.\n- After an intervention, verify whether the state improved before claiming progress.\n- PCL governance remains authoritative for risk, approval and side effects.`;
-}

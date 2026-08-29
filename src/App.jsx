@@ -6,17 +6,23 @@ import Footer from './components/Footer';
 import { createJourneyNode } from './lib/build-journey';
 import {
   homeHrefForTab,
+  hasOAuthReturnPending,
   isIsolatedStudioPath,
   isolatedStudioHref,
+  stashAfterAuthStudio,
   stashStudioPrefill,
   tabFromLocation,
+  takeAfterAuthStudio,
   takeStudioPrefill,
+  clearOAuthReturnPending,
 } from './lib/studio-isolation.js';
+import AuthModal from './components/AuthModal';
+import { authModalOverlayStyle } from './lib/auth-modal-styles.js';
 import {
-  authGoogleWellStyle,
-  authModalCardStyle,
-  authModalOverlayStyle,
-} from './lib/auth-modal-styles.js';
+  clearPasswordResetToken,
+  peekPasswordResetToken,
+  stashPasswordResetToken,
+} from './lib/password-reset.js';
 
 /*
  * The heavy surfaces load on demand.
@@ -60,9 +66,8 @@ const PrivacyVault = lazyWithReload(() => import('./components/PrivacyVault'));
 const AdminDashboard = lazyWithReload(() => import('./components/AdminDashboard'));
 const ModelDashboard = lazyWithReload(() => import('./components/ModelDashboard'));
 const WelcomeHub = lazyWithReload(() => import('./components/WelcomeHub'));
-import { QuantoraFullLogoSvg } from './components/QuantoraLogoSvg';
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from './lib/coding-desk-auto-model.js';
 // import { Analytics } from '@vercel/analytics/react';
 // import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -111,13 +116,25 @@ export default function App() {
   ));
   const [showAuthModal, setShowAuthModal] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return new URLSearchParams(window.location.search).has('signin');
+    const params = new URLSearchParams(window.location.search);
+    return params.has('signin') || params.has('reset') || Boolean(peekPasswordResetToken());
   });
-  const [themeMode, setThemeMode] = useState('dark'); // 'light' | 'dark' | 'system'
-
-  const [showCustomAccountInput, setShowCustomAccountInput] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [customEmail, setCustomEmail] = useState('');
+  const [authResetToken, setAuthResetToken] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const fromUrl = new URLSearchParams(window.location.search).get('reset') || '';
+    if (fromUrl) {
+      stashPasswordResetToken(fromUrl);
+      return fromUrl;
+    }
+    return peekPasswordResetToken();
+  });
+  const [themeMode, setThemeMode] = useState(() => {
+    try {
+      const saved = typeof window !== 'undefined' && window.localStorage.getItem('quantora_theme_mode');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+    } catch (e) { /* ignore */ }
+    return 'dark';
+  }); // 'light' | 'dark' | 'system'
 
   // Compute effective theme (Light / Dark / System OS match)
   const getEffectiveTheme = () => {
@@ -134,15 +151,79 @@ export default function App() {
   useEffect(() => {
     try {
       document.documentElement.setAttribute('data-theme', effectiveTheme);
-      document.body.style.background = isLight ? '#fdfbf7' : '#070913';
+      document.documentElement.style.colorScheme = effectiveTheme;
+      document.body.style.background = isLight ? '#ffffff' : '#070913';
       document.body.style.color = isLight ? '#0f172a' : '#ffffff';
     } catch (e) {
       console.error(e);
     }
   }, [effectiveTheme, isLight]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('quantora_theme_mode', themeMode);
+    } catch (e) { /* ignore */ }
+  }, [themeMode]);
+
   const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+  const [authFinishing, setAuthFinishing] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'success') return true;
+    return hasOAuthReturnPending();
+  });
   const [loginError, setLoginError] = useState('');
+  const buildGoogleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  const [authProviders, setAuthProviders] = useState({
+    google: Boolean(buildGoogleClientId),
+    github: false,
+    email: false,
+    passwordReset: true,
+    googleClientId: buildGoogleClientId || null,
+  });
+  const [providersLoaded, setProvidersLoaded] = useState(Boolean(buildGoogleClientId));
+  const googleClientId = (authProviders.googleClientId || buildGoogleClientId || '').trim();
+
+  const clearAuthQueryParams = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    ['signin', 'reset', 'auth', 'message', 'next'].forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  const finishAuth = useCallback((newUser) => {
+    const next = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('next')
+      : '';
+    const resumeStudio = takeAfterAuthStudio();
+    clearOAuthReturnPending();
+    clearPasswordResetToken();
+    setAuthResetToken('');
+    setUser(newUser);
+    setShowAuthModal(false);
+    setAuthFinishing(false);
+    clearAuthQueryParams();
+    if (next === isolatedStudioHref() || resumeStudio) {
+      setAuthFinishing(true);
+      window.location.assign(isolatedStudioHref());
+      return;
+    }
+    setActiveTab('hub');
+  }, [clearAuthQueryParams]);
+
+  const mapSessionUser = useCallback((data) => {
+    if (!data?.user) return null;
+    return {
+      name: data.user.name || 'Creator',
+      email: data.user.email,
+      avatar: data.user.picture
+        || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
+      authProvider: data.user.authProvider || 'Signed in',
+      tier: 'Indie Creator ($0 / mo)',
+      joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      isAdmin: data.user.isAdmin === true,
+    };
+  }, []);
 
   /*
    * Restore an existing session by asking the server, not by trusting a cached
@@ -151,33 +232,93 @@ export default function App() {
    * and the app treats the visitor as signed out.
    */
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('reset')) return;
+    url.searchParams.delete('reset');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/session')
+    fetch('/api/auth/providers', { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (!data) {
+          setAuthProviders((prev) => ({
+            ...prev,
+            github: prev.github,
+            email: prev.email || true,
+          }));
+          return;
+        }
+        setAuthProviders({
+          google: data.google === true || Boolean(buildGoogleClientId),
+          github: data.github === true,
+          email: data.email === true,
+          passwordReset: data.passwordReset !== false,
+          googleClientId: data.googleClientId || buildGoogleClientId || null,
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setProvidersLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, [buildGoogleClientId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    const oauthReturn = params.get('auth') === 'success';
+    const oauthError = params.get('auth') === 'error';
+
+    if (oauthReturn) {
+      setAuthFinishing(true);
+      setShowAuthModal(false);
+      clearOAuthReturnPending();
+      clearAuthQueryParams();
+    } else if (oauthError) {
+      clearOAuthReturnPending();
+      setLoginError(decodeURIComponent(params.get('message') || 'Sign-in failed.'));
+      setShowAuthModal(true);
+      clearAuthQueryParams();
+    }
+
+    fetch('/api/auth/session', { credentials: 'same-origin' })
       .then((res) => (res.ok ? res.json() : { user: null }))
       .then((data) => {
         if (cancelled) return;
-        if (data?.user) {
-          setUser({
-            name: data.user.name || 'Creator',
-            email: data.user.email,
-            avatar: data.user.picture
-              || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.name || 'Creator')}&background=f97316&color=ffffff&bold=true`,
-            authProvider: 'Google OAuth 2.0 (Verified)',
-            tier: 'Indie Creator ($0 / mo)',
-            joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-            isAdmin: data.user.isAdmin === true,
-          });
-        } else {
-          // No valid server session — clear any leftover local profile.
-          try { localStorage.removeItem('quantora_user'); } catch (e) {}
+        const mapped = mapSessionUser(data);
+        if (mapped) {
+          if (oauthReturn) {
+            finishAuth(mapped);
+            return;
+          }
+          setUser(mapped);
+          return;
+        }
+        if (oauthReturn) {
+          setLoginError('GitHub sign-in could not be completed. Try again.');
+          setShowAuthModal(true);
+          setAuthFinishing(false);
+          return;
+        }
+        try { localStorage.removeItem('quantora_user'); } catch (e) {}
+      })
+      .catch(() => {
+        if (!cancelled && oauthReturn) {
+          setLoginError('GitHub sign-in could not be completed. Try again.');
+          setShowAuthModal(true);
+          setAuthFinishing(false);
         }
       })
-      .catch(() => {})
       .finally(() => {
         if (!cancelled) setSessionReady(true);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [clearAuthQueryParams, finishAuth, mapSessionUser]);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
@@ -187,6 +328,7 @@ export default function App() {
       // Send the raw credential token to our secure backend for verification
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential: credentialResponse.credential })
       });
@@ -198,33 +340,13 @@ export default function App() {
 
       // Backend cryptographically verified the token and returned the secure profile
       const newUser = await res.json();
-
-      /*
-       * The server has verified the token and set an HttpOnly session cookie.
-       * The profile below is display data only — it is deliberately NOT the
-       * proof of identity. Storing it in localStorage is fine for showing a
-       * name and avatar; what matters is that no server route trusts it.
-       */
-      setUser(newUser);
-      setShowAuthModal(false);
-      const next = typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('next')
-        : '';
-      if (next === isolatedStudioHref()) {
-        window.location.assign(isolatedStudioHref());
-        return;
-      }
-      setActiveTab('hub');
+      finishAuth(newUser);
     } catch (error) {
       console.error("Error during secure login:", error);
       setLoginError(error.message || 'Failed to verify account securely.');
     } finally {
       setIsVerifyingLogin(false);
     }
-  };
-
-  const handleGoogleError = () => {
-    console.log('Google Login Failed');
   };
 
   const handleTabChange = (tabName) => {
@@ -258,6 +380,7 @@ export default function App() {
       setStudioPrefill({ id: Date.now(), text: prompt.trim() });
       stashStudioPrefill(prompt.trim());
     }
+    if (!user) stashAfterAuthStudio();
     handleTabChange('studio');
   };
 
@@ -266,17 +389,29 @@ export default function App() {
   // like "deepseek-coder-v2" gets a 400 Bad Request from OpenRouter. Keep this
   // in sync with api/models.js so the app behaves identically whether or not
   // the registry endpoint responds.
+  /*
+   * The offline fallback, and nothing more.
+   *
+   * This carried eight ids marked `available: true` that nobody had verified —
+   * gpt-4o-mini, gemma-2-9b-it, llama-3.3-70b-instruct, qwen-2.5-coder-32b,
+   * deepseek-chat — all a generation or two behind and none of them served by
+   * the registry this file's own comment says to stay in sync with. It said
+   * "keep this in sync with api/models.js"; the server listed two, this listed
+   * eight, and the difference was presented to people as a menu of working
+   * models.
+   *
+   * It is now exactly the routes the server vouches for. A model missing from a
+   * fallback list costs somebody one refresh. A model that is listed and dead
+   * costs them a build and tells them nothing about why.
+   */
   const fallbackModels = [
     { id: 'gemini-flash-latest', name: 'Gemini Flash', specialty: 'Primary Quantora route — Google, independent of OpenRouter', badge: 'Recommended', provider: 'Google', available: true, pricingKind: 'free-tier' },
-    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Complex Planning, Analysis & Coding', badge: 'OpenRouter Free', provider: 'NVIDIA', available: true, pricingKind: 'free' },
-    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', specialty: 'Open-weight reasoning and coding fallback', badge: 'Free Fallback', provider: 'OpenAI', available: true, pricingKind: 'free' },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', specialty: 'Logic, Math & Quantum Algorithms', badge: 'Logic Master', provider: 'DeepSeek', available: true, pricingKind: 'paid' },
-    { id: 'qwen/qwen-2.5-coder-32b-instruct', name: 'Qwen 2.5 Coder 32B', specialty: 'Code Synthesis & UI Generation', badge: 'Best for Coding', provider: 'Qwen', available: true, pricingKind: 'paid' },
-    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', specialty: 'Creative Writing & General Knowledge', badge: 'Open Source', provider: 'Meta', available: true, pricingKind: 'paid' },
-    { id: 'google/gemma-2-9b-it', name: 'Gemma 2 9B', specialty: 'Fast Reasoning & Spec Planning', badge: 'Ultra Fast', provider: 'Google', available: true, pricingKind: 'paid' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', specialty: 'General Assistant & Fast Queries', badge: 'Fast', provider: 'OpenAI', available: true, pricingKind: 'paid' },
-    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', specialty: 'Ultra-fast coding via OpenRouter integration.', badge: 'HOT', provider: 'Anthropic', available: true, pricingKind: 'paid' },
-    { id: 'meta-llama/llama-3-70b-instruct', name: 'Llama 3 70B', specialty: 'Open-source powerhouse with zero filters.', badge: 'UPDATED', provider: 'Meta', available: true, pricingKind: 'free' }
+    { id: 'deepseek/deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash', specialty: 'Fast, very low cost, long context — the everyday build route', badge: 'Best value', provider: 'DeepSeek', available: true, pricingKind: 'paid' },
+    { id: 'z-ai/glm-5.3-flash', name: 'GLM 5.3 Flash', specialty: 'Low cost with vision and long context', badge: 'Low cost', provider: 'Z.ai', available: true, pricingKind: 'paid' },
+    { id: 'openai/gpt-5.6-luna', name: 'GPT-5.6 Luna', specialty: 'Stronger reasoning when a cheaper route falls short', badge: 'Step up', provider: 'OpenAI', available: true, pricingKind: 'paid' },
+    { id: 'google/gemini-3.7-flash', name: 'Gemini 3.7 Flash', specialty: 'Long context and vision via OpenRouter', badge: 'Vision', provider: 'Google', available: true, pricingKind: 'paid' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', specialty: 'Free reasoning and coding route', badge: 'Free', provider: 'NVIDIA', available: true, pricingKind: 'free' },
+    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', specialty: 'Open-weight free fallback', badge: 'Free', provider: 'OpenAI', available: true, pricingKind: 'free' },
   ];
 
   const [availableModels, setAvailableModels] = useState(fallbackModels);
@@ -301,11 +436,20 @@ export default function App() {
     if (dynamicModels.length === 0) return;
     setAvailableModels(dynamicModels);
     if (data.dashboard) setModelDashboard(data.dashboard);
+    /*
+     * A degraded listing must not silently un-pin the user's model. Anthropic
+     * flagships are discovered from the live provider catalogue, so a 4s fetch
+     * timeout returns a list without them (source: 'fallback') — and resetting on
+     * that would drop a pinned Claude back to Auto for a transient network blip,
+     * which reads exactly like "the model disappeared from the list again".
+     * Only reset when the listing is authoritative and the model is genuinely gone.
+     */
+    const listingIsAuthoritative = data.source !== 'fallback';
     setSelectedModel((current) => {
       if (isCodingDeskAutoSelection(current)) return CODING_DESK_AUTO_MODEL;
       const stillExists = dynamicModels.find((d) => d.id === current?.id);
       if (stillExists) return stillExists;
-      return CODING_DESK_AUTO_MODEL;
+      return listingIsAuthoritative ? CODING_DESK_AUTO_MODEL : current;
     });
   }, []);
 
@@ -352,6 +496,8 @@ export default function App() {
       window.location.assign(`/?signin=1&next=${encodeURIComponent(isolatedStudioHref())}`);
       return;
     }
+    const storedReset = peekPasswordResetToken();
+    if (storedReset) setAuthResetToken(storedReset);
     setShowAuthModal(true);
   };
 
@@ -380,9 +526,7 @@ export default function App() {
   const shouldLoadVercelTelemetry = typeof window !== 'undefined'
     && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
-  return (
-    <ErrorBoundary>
-      <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "731238912-mock.apps.googleusercontent.com"}>
+  const appShell = (
     <div
       className={`app-shell${isStudioShell ? ' app-shell--studio' : ''}${isFramedShell ? ' app-shell--framed' : ''}${isWorkspaceShell ? ' app-shell--workspace' : ''}`}
       data-quantora-isolated-desk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname) ? 'true' : 'false'}
@@ -393,12 +537,12 @@ export default function App() {
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
-      background: 'transparent',
+      background: activeTab === 'landing' ? (isLight ? '#ffffff' : '#0a0a0a') : 'transparent',
       color: isLight ? '#0f172a' : '#ffffff',
       transition: 'background 0.3s ease, color 0.3s ease'
     }}>
-      {/* Ambient background — see AuroraBackground for why this replaced the canvas */}
-      <AuroraBackground theme={effectiveTheme} />
+      {/* Aurora only inside the app — landing is flat black/white */}
+      {activeTab !== 'landing' && <AuroraBackground theme={effectiveTheme} />}
 
       {/* Main View Router */}
       {activeTab === 'landing' ? (
@@ -410,6 +554,7 @@ export default function App() {
           availableModels={availableModels}
           themeMode={themeMode}
           setThemeMode={setThemeMode}
+          isLight={isLight}
         />
       ) : (
         <>
@@ -533,97 +678,58 @@ export default function App() {
         </>
       )}
 
+      {/* Signing-in overlay — GitHub return and Google verify */}
+      {(authFinishing || isVerifyingLogin) && (
+        <div
+          data-quantora-auth-modal="true"
+          style={authModalOverlayStyle()}
+          role="status"
+          aria-live="polite"
+          aria-label="Signing in"
+        >
+          <p style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>
+            Signing you in…
+          </p>
+        </div>
+      )}
+
       {/* Google OAuth Modal — isolated so landing filters cannot hide the iframe */}
       {showAuthModal && (
-        <div data-quantora-auth-modal="true" style={authModalOverlayStyle()}>
-          <div style={authModalCardStyle(isLight)}>
-            <button
-              onClick={() => {
-                setShowAuthModal(false);
-                setShowCustomAccountInput(false);
-              }}
-              style={{
-                position: 'absolute',
-                top: '24px',
-                right: '24px',
-                background: isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)',
-                border: 'none',
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                fontSize: '1.2rem',
-                color: isLight ? '#64748b' : '#a1a1aa',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s'
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.15)'}
-              onMouseLeave={e => e.currentTarget.style.background = isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)'}
-            >
-              ✕
-            </button>
-
-            <p style={{ fontSize: '1.1rem', color: isLight ? '#64748b' : '#a1a1aa', margin: '0 0 16px 0', fontWeight: '400' }}>
-              Welcome to
-            </p>
-            <h2 style={{ fontSize: '3.2rem', fontWeight: '700', margin: '0 0 24px 0', color: isLight ? '#0f172a' : '#ffffff', letterSpacing: '-0.04em', lineHeight: '1.1' }}>
-              quantora/ai
-            </h2>
-            <p style={{ fontSize: '1.1rem', color: isLight ? '#475569' : '#d4d4d8', margin: '0 0 40px 0' }}>
-              Sign in with Google
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-              {isVerifyingLogin ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#a1a1aa', fontSize: '1rem', fontWeight: '500' }}>
-                  <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
-                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                  </svg>
-                  Cryptographically verifying with Google...
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
-                  {loginError && (
-                    <div style={{ color: '#ef4444', fontSize: '0.9rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px' }}>
-                      {loginError}
-                    </div>
-                  )}
-                  {/* Google Login Component using a dynamic pill button matching the aesthetic */}
-                  {!(typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) ? (
-                  <div style={authGoogleWellStyle()}>
-                  <GoogleLogin
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    shape="pill"
-                    theme="outline"
-                    text="signin_with"
-                    size="large"
-                  />
-                  </div>
-                  ) : (
-                    <p style={{ color: '#a1a1aa' }}>Sign in from the home page so Google Sign-In can open.</p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <AuthModal
+          isLight={isLight}
+          onClose={() => {
+            setShowAuthModal(false);
+            setLoginError('');
+            clearAuthQueryParams();
+          }}
+          onGoogleSuccess={handleGoogleSuccess}
+          onSuccess={finishAuth}
+          resetToken={authResetToken}
+          externalError={loginError}
+          googleEnabled={authProviders.google && Boolean(googleClientId)}
+          githubEnabled={authProviders.github}
+          oauthReady={providersLoaded}
+          passwordResetEnabled={authProviders.passwordReset !== false}
+          isolatedDesk={typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)}
+        />
       )}
 
       {/* Global Footer — hidden in Studio for maximum conversation real estate (Cursor-style) */}
       {!isStudioShell && (
-        <Footer
-          isLight={themeMode === 'light'}
-          activeTab={activeTab}
-          handleTabChange={handleTabChange}
-        />
+        <Footer isLight={isLight} />
       )}
       {/* {shouldLoadVercelTelemetry && <Analytics />} */}
       {/* {shouldLoadVercelTelemetry && <SpeedInsights />} */}
     </div>
-    </GoogleOAuthProvider>
+  );
+
+  return (
+    <ErrorBoundary>
+      {googleClientId ? (
+        <GoogleOAuthProvider clientId={googleClientId}>{appShell}</GoogleOAuthProvider>
+      ) : (
+        appShell
+      )}
     </ErrorBoundary>
   );
 }

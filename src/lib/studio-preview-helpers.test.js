@@ -2,12 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applyWorkspaceFromChat,
+  messageHasExtractableWorkspaceCode,
   assembleStudioPreview,
   canOpenStudioPreviewPane,
-  extractHtmlFromResponse,
   extractRunnableCode,
   hasPreviewableContent,
-  preparePreviewHtml,
   runningPreviewCode,
   writeHealedPreviewToVfs,
   applyDeskReviewPatch,
@@ -45,28 +44,10 @@ test('assembled preview keeps HTML as the entry and sibling CSS/JS in the VFS', 
   assert.ok(assembled.vfs['script.js']);
 });
 
-test('HTML with a filepath attribute is not treated as a CSS-first fence', () => {
-  const html = extractHtmlFromResponse(splitApp);
-  assert.match(html, /<button class="key">/);
-  assert.doesNotMatch(html, /filepath=/);
-});
-
-test('preparePreviewHtml inlines sibling CSS so chat Preview matches the workspace', () => {
-  const prepared = preparePreviewHtml(splitApp);
-  assert.match(prepared, /\.key\{display:grid/);
-  assert.match(prepared, /document\.querySelector/);
-});
-
 test('a travel answer with a fenced hotel name is not previewable', () => {
   const text = 'Stay in Ubud.\n\n```text\nHotel Indigo\n```\n';
   assert.equal(hasPreviewableContent(text), false);
   assert.equal(extractRunnableCode(text), null);
-});
-
-test('unfenced HTML documents are still previewable', () => {
-  const html = '<!DOCTYPE html><html><head><style>body{color:red}</style></head><body>Hi</body></html>';
-  assert.equal(hasPreviewableContent(html), true);
-  assert.match(extractHtmlFromResponse(html), /color:red/);
 });
 
 test('Swift-only iOS source does not open Live Preview', () => {
@@ -158,6 +139,24 @@ test('plain chat does not revive or reopen a project', () => {
   assert.deepEqual(follow.vfs, {});
 });
 
+test('error-path provider death still exposes extractable fences for workspace apply', () => {
+  const partial = [
+    'Building the boutique…',
+    '',
+    '```html filepath="index.html"',
+    '<!DOCTYPE html><html><body><h1>Saree Boutique</h1>',
+    '<button type="button">Add to Cart</button></body></html>',
+    '```',
+    '',
+    'The connection to the model died before Preview was ready.',
+  ].join('\n');
+  assert.equal(messageHasExtractableWorkspaceCode(partial), true);
+  assert.equal(messageHasExtractableWorkspaceCode('⚠️ no healthy AI route'), false);
+  const assembled = applyWorkspaceFromChat(partial, {});
+  assert.equal(assembled.didUpdate, true);
+  assert.match(assembled.vfs['index.html'].content, /Saree Boutique/);
+});
+
 test('Preview runs the project entry, not the file open in the editor', () => {
   const vfs = {
     'index.html': { content: '<!DOCTYPE html><html><body><h1>Live</h1></body></html>', language: 'html' },
@@ -178,14 +177,18 @@ test('a healed HTML page writes into index.html and does not overwrite React sou
   assert.match(next.vfs['App.jsx'].content, /Old/);
 });
 
-test('healing a boutique writes real photos, not gold frames', () => {
+test('healing a boutique with no product images does NOT fabricate stock photos (honest gap)', () => {
   const vfs = {
     'index.html': { content: '<!DOCTYPE html><html><body><p>old</p></body></html>', language: 'html' },
     'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
   };
   const healed = '<!DOCTYPE html><html><body><main><div class="hero">Kanjeevaram</div></main></body></html>';
   const next = writeHealedPreviewToVfs(vfs, healed);
-  assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
+  // The model shipped no images. We never inject fabricated stock photos to mask
+  // that: the healed page keeps the model's real content, honest gap and all.
+  assert.match(next.vfs['index.html'].content, /Kanjeevaram/);
+  assert.doesNotMatch(next.vfs['index.html'].content, /picsum\.photos/);
+  assert.doesNotMatch(next.vfs['index.html'].content, /data-quantora-shop-photo="true"/);
 });
 
 test('broken-photo asks are not treated as semantic catalog edits', () => {
@@ -195,7 +198,7 @@ test('broken-photo asks are not treated as semantic catalog edits', () => {
   assert.equal(userAskedForBrokenPreviewPhotos('replace photos with blue dresses'), false);
 });
 
-test('a chat that only talks still gets shop photos when the desk already has a boutique', () => {
+test('a talk-only turn never fabricates stock photos onto a boutique desk', () => {
   assert.equal(userAskedForPreviewPhotos('no images .. please fix'), true);
   const before = {
     'index.html': {
@@ -205,9 +208,11 @@ test('a chat that only talks still gets shop photos when the desk already has a 
     'products.json': { content: '[{"id":"a","name":"Silk"}]', language: 'json' },
   };
   const next = ensureShopPhotosInVfs(before);
-  assert.equal(next.changed, true);
-  assert.match(next.vfs['index.html'].content, /data:image\/svg\+xml/);
-  assert.match(next.vfs['products.json'].content, /data:image\/svg\+xml/);
+  // The model shipped no image FILES to wire in, so nothing changes — and we
+  // never inject picsum stock photos or a fabricated catalog to fill the gap.
+  assert.equal(next.changed, false);
+  assert.doesNotMatch(next.vfs['index.html'].content, /picsum\.photos/);
+  assert.doesNotMatch(next.vfs['products.json'].content, /picsum\.photos/);
 });
 
 test('currency and Add to Cart land on the boutique desk, not only in chat', () => {

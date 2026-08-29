@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   formatConversationalProse,
-  getAssistantDisplayText,
   normalizeAssistantResponse,
   sanitizeAssistantStream,
 } from './assistant-response-normalizer.js';
@@ -55,10 +54,4 @@ test('long plain prose is broken into readable conversational paragraphs', () =>
 test('structured markdown is never auto-reformatted', () => {
   const markdown = `# Recommendation\n\n- Keep the gateway\n- Preserve provider neutrality\n\n${'A'.repeat(450)}`;
   assert.equal(formatConversationalProse(markdown), markdown);
-});
-
-test('defensively cleans historical Arena responses', () => {
-  const leakedArenaText = `${visibleAnswer}\n\n${continues}\n${context}`;
-  assert.equal(getAssistantDisplayText(leakedArenaText), visibleAnswer);
-  assert.doesNotMatch(getAssistantDisplayText(leakedArenaText), /quantora-(continues|ctx)/);
 });

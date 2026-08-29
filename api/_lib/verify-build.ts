@@ -2,6 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { stripDataUris } from "./model-payload.js";
 import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
 import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
+// Commerce intent lives in ONE place — see src/lib/commerce-intent.js for why.
+import { briefWantsOnlineSelling, briefWantsProductCatalog } from "../../src/lib/commerce-intent.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -87,16 +89,19 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
   }
 
   // Feature checks — only when the brief asks for the capability.
-  if (/\b(shop|store|cart|checkout|buy|sell|product|boutique|ecommerce|e-commerce)\b/.test(b)) {
+  if (briefWantsOnlineSelling(b)) {
     const hasCart = has(/add[\s-]?to[\s-]?cart|data-quantora-checkout|quantoraCheckout|\bcart\b/i, src);
     checks.push({ id: "feat-cart", label: "Shopping cart / checkout present", ok: hasCart, weight: 3, detail: hasCart ? undefined : "Brief asks to sell, but no cart/checkout was built" });
     const hasPhoto = imgTags.some((tag) => /\bsrc\s*=\s*["'](data:image\/|https?:\/\/|\/api\/preview-image)/i.test(tag));
+    // Critical only for a real catalog brief: capping the score on a page that
+    // was never meant to show product shots makes it impossible to pass.
+    const catalogBrief = briefWantsProductCatalog(b);
     checks.push({
       id: "feat-photos",
       label: "Product photos are real images",
       ok: hasPhoto,
       weight: 3,
-      critical: true,
+      critical: catalogBrief,
       detail: hasPhoto ? undefined : "Brief asks for a catalog, but product images are missing",
     });
   }

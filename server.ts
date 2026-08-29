@@ -16,12 +16,15 @@ import {
   shouldPreferTravelConversationProvider,
 } from "./api/_lib/travel-model-routing.js";
 import { readByokCredentials } from "./api/_lib/byok-credentials.js";
+import { resolveOpenRouterEnvKey } from "./api/_lib/openrouter-key.js";
 import deploy from "./api/deploy.js";
 import domains from "./api/domains.js";
 import enhance from "./api/enhance.js";
 import generateOffice from "./api/generate-office.js";
 import models from "./api/models.js";
 import pipeline from "./api/pipeline.js";
+import studyEvidence from "./api/study-evidence.js";
+import studyAssessment from "./api/study-assessment.js";
 
 dotenv.config();
 
@@ -102,6 +105,30 @@ async function startServer() {
     req.query = { ...(req.query || {}), route: "logout" };
     return auth(req, res);
   });
+  route("all", "/api/auth/signup", (req, res) => {
+    req.query = { ...(req.query || {}), route: "signup" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/login", (req, res) => {
+    req.query = { ...(req.query || {}), route: "login" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/password-reset-request", (req, res) => {
+    req.query = { ...(req.query || {}), route: "password-reset-request" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/password-reset-confirm", (req, res) => {
+    req.query = { ...(req.query || {}), route: "password-reset-confirm" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/github", (req, res) => {
+    req.query = { ...(req.query || {}), route: "github" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/github/callback", (req, res) => {
+    req.query = { ...(req.query || {}), route: "github-callback" };
+    return auth(req, res);
+  });
   route("all", "/api/chat", async (req, res) => {
     if (await handleAffordabilityDecision(req, res)) return;
 
@@ -111,7 +138,7 @@ async function startServer() {
     })) {
       const signedIn = Boolean(getSessionUser(req));
       const byok = readByokCredentials(req);
-      let openRouterAvailable = Boolean(byok.openRouter || (signedIn && process.env.OPENROUTER_API_KEY));
+      let openRouterAvailable = Boolean(byok.openRouter || (signedIn && resolveOpenRouterEnvKey()));
       if (!openRouterAvailable && signedIn) {
         try {
           openRouterAvailable = Boolean(await fetchApiGatewayKey("OPENROUTER"));
@@ -137,6 +164,8 @@ async function startServer() {
     return pipeline(req, res);
   });
   route("all", "/api/models", models);
+  route("all", "/api/study-evidence", studyEvidence);
+  route("all", "/api/study-assessment", studyAssessment);
   route("all", "/api/admin/models", (req, res) => {
     req.query = { ...(req.query || {}), route: "models" };
     return admin(req, res);

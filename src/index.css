@@ -2087,7 +2087,7 @@ body {
   pointer-events: none;
 }
 
-.aurora-bg.is-light { background: #fdfbf7; }   /* warm off-white, not clinical white */
+.aurora-bg.is-light { background: #ffffff; }
 .aurora-bg.is-dark  { background: #070913; }
 
 .aurora-blob {
@@ -2416,7 +2416,25 @@ html[data-quantora-domain="education"] .app-shell--studio .study-lesson h3 {
 
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose p {
   line-height: 1.5 !important;
-  margin: 0 0 0.7rem;
+  margin: 0 0 0.5rem;
+}
+
+html[data-quantora-domain="education"] .app-shell--studio .ai-studio-thread {
+  gap: 12px !important;
+}
+
+.study-resolution--correct {
+  animation: study-answer-settle 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes study-answer-settle {
+  0% { opacity: 0; transform: translateY(5px) scale(0.985); }
+  65% { transform: translateY(-1px) scale(1.005); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-resolution--correct { animation: none; }
 }
 
 /* Google Sign-In iframe must not inherit dark color-scheme or landing filters. */

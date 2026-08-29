@@ -45,13 +45,30 @@ export function simulatePayoff(
   debts: Debt[],
   extraMonthly: number,
   strategy: PayoffStrategy,
+  affordableMonthly?: number | null,
 ): PayoffResult {
   const base: PayoffResult = {
     strategy, feasible: false, months: 0, totalInterest: 0, totalPaid: 0, order: [],
   };
   if (!debts.length) return { ...base, feasible: true };
 
-  const budget = debts.reduce((sum, d) => sum + Math.max(0, d.minPayment), 0) + Math.max(0, extraMonthly);
+  const minimums = debts.reduce((sum, d) => sum + Math.max(0, d.minPayment), 0);
+  /*
+   * The simulation's budget is every minimum plus whatever is put on top, which
+   * quietly assumes the minimums are payable at all. For most people they are.
+   * For someone whose obligations exceed their income they are not, and that is
+   * precisely the person who most needs a true answer — so when the caller can
+   * say what is actually affordable, a shortfall ends the simulation instead of
+   * producing a payoff date that assumes money the user does not have.
+   */
+  if (typeof affordableMonthly === "number" && Number.isFinite(affordableMonthly) && affordableMonthly < minimums - CENT) {
+    return {
+      ...base,
+      reason: `the minimum payments total ${minimums.toFixed(2)} a month against ${affordableMonthly.toFixed(2)} available — a shortfall of ${(minimums - affordableMonthly).toFixed(2)} every month`,
+    };
+  }
+
+  const budget = minimums + Math.max(0, extraMonthly);
   if (budget <= 0) return { ...base, reason: "No monthly budget to apply." };
 
   const balances = debts.map((d) => Math.max(0, d.balance));
@@ -80,9 +97,9 @@ export function simulatePayoff(
         pool -= pay;
       }
     }
-    if (pool < -CENT) {
-      return { ...base, months, totalInterest, reason: "The minimum payments alone exceed the monthly budget." };
-    }
+    // No affordability check here: budget is defined as every minimum plus the
+    // extra, so the pool cannot go negative. Unaffordable minimums are caught
+    // once, above, where a caller-supplied figure makes the question answerable.
 
     // 3) Direct the remaining pool at the target debt(s) by strategy.
     for (const i of orderIndices(balances, debts, strategy)) {
@@ -121,9 +138,13 @@ export type PayoffComparison = {
   interestSaved: number; // avalanche vs snowball interest gap (>=0), 0 if either infeasible
 };
 
-export function comparePayoff(debts: Debt[], extraMonthly: number): PayoffComparison {
-  const avalanche = simulatePayoff(debts, extraMonthly, "avalanche");
-  const snowball = simulatePayoff(debts, extraMonthly, "snowball");
+export function comparePayoff(
+  debts: Debt[],
+  extraMonthly: number,
+  affordableMonthly?: number | null,
+): PayoffComparison {
+  const avalanche = simulatePayoff(debts, extraMonthly, "avalanche", affordableMonthly);
+  const snowball = simulatePayoff(debts, extraMonthly, "snowball", affordableMonthly);
 
   let recommended: PayoffStrategy | null = null;
   let interestSaved = 0;
@@ -162,6 +183,22 @@ export function formatDebtPlan(
 
   if (!recommended) {
     const reason = avalanche.reason || snowball.reason || "the numbers don't support a payoff plan";
+    const shortfall = /shortfall/.test(reason);
+    /*
+     * Two different refusals. "The budget only covers interest" is answered by
+     * paying more. A shortfall is not: telling someone whose payments already
+     * exceed their income to pay more is the advice that made them ask. Say what
+     * the gap is, and point at the levers that actually move it.
+     */
+    if (shortfall) {
+      return [
+        `I won't give you a payoff date from these numbers, because ${reason}.`,
+        "",
+        "A payoff schedule would have to assume money that isn't there, so any date I printed would be wrong.",
+        "",
+        "What moves a gap this shape is the payment, not the plan: a longer term or a consolidation at a lower rate lowers the monthly minimum, and a lender or credit counsellor can restructure what a calculator cannot. Tell me the terms you're offered and I'll compute whether they actually close the gap.",
+      ].join("\n");
+    }
     return `I can't build a payoff plan from these numbers: **${reason}**. If the monthly budget only covers interest, the balances never clear — increase the amount you can put toward the debt, and I'll recompute.`;
   }
 

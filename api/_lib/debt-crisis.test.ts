@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { aprToFitPayment, paymentForTerm } from "./debt-consolidation.js";
 import {
-  amortizedPayment,
-  maxRateForPayment,
   assessCrisis,
   analyzeConsolidation,
   buildCrisisPlan,
@@ -12,17 +11,23 @@ import {
 } from "./debt-crisis.js";
 import type { Debt } from "./debt-payoff.js";
 
-test("amortizedPayment matches the standard loan formula", () => {
-  assert.equal(amortizedPayment(12000, 0, 12), 1000, "0% -> principal/months");
-  const p = amortizedPayment(25000, 12, 60);
+/*
+ * This file used to carry its own amortizedPayment and maxRateForPayment,
+ * duplicating debt-consolidation.ts. The functions are gone; these assertions
+ * are not, because what they pin is still true and now cross-checks the one
+ * surviving engine against the expectations this strategist was built on.
+ */
+test("the shared amortising payment matches the standard loan formula", () => {
+  assert.equal(paymentForTerm(12000, 0, 12), 1000, "0% -> principal/months");
+  const p = paymentForTerm(25000, 12, 60);
   assert.ok(Math.abs(p - 556.11) < 1, `~556/mo, got ${p}`);
 });
 
-test("maxRateForPayment finds a fitting rate, or null when nothing fits", () => {
-  const rate = maxRateForPayment(25000, 600, 60);
+test("the shared rate solver finds a fitting rate, or null when nothing fits", () => {
+  const rate = aprToFitPayment(25000, 60, 600);
   assert.ok(rate !== null && rate > 0 && rate < 20, `a plausible max rate, got ${rate}`);
   // Payment can't even cover principal over the term -> no rate works.
-  assert.equal(maxRateForPayment(25000, 100, 36), null);
+  assert.equal(aprToFitPayment(25000, 36, 100), null);
 });
 
 const DEBTS: Debt[] = [
@@ -49,7 +54,7 @@ test("assessCrisis classifies severity and the monthly gap", () => {
 
 test("analyzeConsolidation models a concrete offer and a budget-fit", () => {
   const a = assessCrisis({ incomeMonthly: 8000, essentialExpenses: 6500, debts: DEBTS, currency: "SGD" });
-  const offer = analyzeConsolidation(a, { ratePct: 10, termMonths: 60 });
+  const offer = analyzeConsolidation(a, { apr: 10, months: 60 });
   assert.equal(offer.kind, "offer");
   assert.ok(offer.payment && offer.payment > 0);
 
@@ -90,7 +95,7 @@ test("survives adversarial and heavy input without throwing or leaking NaN/Infin
   };
   let text = "";
   assert.doesNotThrow(() => {
-    const plan = buildCrisisPlan(garbage, { offer: { ratePct: Infinity, termMonths: 999999 } as any });
+    const plan = buildCrisisPlan(garbage, { offer: { apr: Infinity, months: 999999 } as any });
     text = formatCrisisPlan(plan, { assumedMinimums: true });
   });
   assert.doesNotMatch(text, /NaN|Infinity|undefined/);

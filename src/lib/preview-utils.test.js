@@ -10,14 +10,8 @@ import {
   PREVIEW_TAILWIND_PROBE_ID,
   pickPreviewEntry,
   prepareCodeForPreview,
-  usesTailwindCdn,
   decidePreviewTrustStatus,
 } from './preview-utils.js';
-
-test('detects Tailwind CDN usage', () => {
-  assert.equal(usesTailwindCdn('<script src="https://cdn.tailwindcss.com"></script>'), true);
-  assert.equal(usesTailwindCdn('<style>body{color:red}</style>'), false);
-});
 
 test('injects harness into head', () => {
   const html = '<!DOCTYPE html><html><head><title>x</title></head><body></body></html>';
@@ -170,10 +164,14 @@ test('embed shell posts embed-ready more than once', () => {
 });
 
 test('path embed URL can cache-bust remounts', async () => {
-  const { getPreviewEmbedPathUrl, canUseBlobPreviewEmbed } = await import('./preview-utils.js');
+  const { getPreviewEmbedPathUrl, canUseBlobPreviewEmbed, isPreviewEmbedFrameSrc } = await import('./preview-utils.js');
   assert.equal(getPreviewEmbedPathUrl(), '/preview/embed.html');
   assert.match(getPreviewEmbedPathUrl('3-0'), /\?r=3-0$/);
   assert.equal(typeof canUseBlobPreviewEmbed(), 'boolean');
+  assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/preview/embed.html?r=1'), true);
+  assert.equal(isPreviewEmbedFrameSrc('blob:https://quantoraai.app/abc'), true);
+  assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/'), false);
+  assert.equal(isPreviewEmbedFrameSrc('https://quantoraai.app/desk'), false);
 });
 
 test('still ignores opaque script errors', () => {
@@ -187,8 +185,9 @@ test('embed shell html includes relaxed csp and postMessage bridge', () => {
 
 // SECURITY REGRESSION GUARD — do not weaken. Untrusted generated code runs in
 // the default (no wcUrl) preview path; if it ever gains `allow-same-origin` it
-// can read the app's localStorage API keys. These assertions fail the build if
-// that protection is removed.
+// can read the app's browser storage. Provider keys are memory-only, but private
+// workspace data still requires this isolation. These assertions fail the build
+// if that protection is removed.
 test('preview sandbox denies allow-same-origin to untrusted generated code', () => {
   const sandbox = buildPreviewSandbox({ trustedRuntimeUrl: null });
   assert.doesNotMatch(sandbox, /allow-same-origin/, 'untrusted embed must be opaque-origin');
@@ -217,4 +216,17 @@ test('a CSS patch is never trusted as a clean preview', () => {
 test('unstyled assembled HTML is degraded, not clean', () => {
   const html = '<!DOCTYPE html><html><body><button>7</button></body></html>';
   assert.equal(decidePreviewTrustStatus({ assembledHtml: html }), 'degraded');
+});
+
+test('previewVerdict never calls a sub-bar build "verified"', async () => {
+  const { previewVerdict } = await import('./preview-utils.js');
+  // The reported contradiction: "Verified — runs clean · 65/100" (bar is 80).
+  assert.equal(previewVerdict({ qualityReport: { score: 65, passed: false } }), 'needs-work');
+  assert.equal(previewVerdict({ qualityReport: { score: 45, passed: false }, attempt: 2 }), 'needs-work');
+  // Passing builds still read as verified.
+  assert.equal(previewVerdict({ qualityReport: { score: 92, passed: true } }), 'verified');
+  assert.equal(previewVerdict({ qualityReport: { score: 92, passed: true }, attempt: 1 }), 'verified-autofixed');
+  // Ran without errors but no score yet — claim only what is known.
+  assert.equal(previewVerdict({ qualityReport: null }), 'ran-clean');
+  assert.equal(previewVerdict(), 'ran-clean');
 });

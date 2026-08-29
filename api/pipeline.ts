@@ -43,7 +43,14 @@ import {
 const RATE_LIMIT_PER_MINUTE = 15;
 const FEEDBACK_RATE_LIMIT_PER_MINUTE = 5;
 const FEEDBACK_MAX_CHARS = 500;
-const PIPELINE_MODEL_ID = process.env.QUANTORA_PIPELINE_MODEL_ID || "gemini-3.5-flash";
+/*
+ * The maintained alias, not a pinned version. This said gemini-3.5-flash, which
+ * the production key still happens to serve — but so did the two ids in
+ * autocomplete and domains until Google retired them, and a retired id 404s in
+ * a way that looks exactly like a broken credential. The override stays for
+ * anyone who needs to pin deliberately.
+ */
+const PIPELINE_MODEL_ID = process.env.QUANTORA_PIPELINE_MODEL_ID || "gemini-flash-latest";
 const MAX_PIPELINE_MODEL_OUTPUT_CHARS = 200_000;
 const MAX_REPAIR_INPUT_CHARS = 24_000;
 

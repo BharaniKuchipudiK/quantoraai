@@ -18,6 +18,8 @@ export type InferenceRoute = {
   circuitKey: string;
   domainCircuitKey: string;
   circuit: 'closed' | 'open';
+  /** True only for the reserved paid rescue rung. Never a free route. */
+  paid?: boolean;
 };
 
 export type InferenceModelLike = {
@@ -27,6 +29,8 @@ export type InferenceModelLike = {
   lifecycle?: string;
   health?: string;
   pricingKind?: string;
+  /** Declared by the provider catalogue; not inferred from the id. */
+  vision?: boolean;
 };
 
 export type InferencePlanInput = {
@@ -43,14 +47,73 @@ export type InferencePlanInput = {
   requestPartition?: string;
   circuitStore?: Pick<AtomicProviderCircuitStore, 'get'>;
   now?: number;
+  /**
+   * A paid model to hold in reserve as the FINAL rung, reached only after the
+   * free ladder is exhausted. Present only when the account has opted in with a
+   * configured ceiling and the spend meter currently permits paid routing — the
+   * caller decides that from the ledger, so this plane never spends on its own.
+   */
+  paidLastResortModelId?: string;
+  paidLastResortAllowed?: boolean;
 };
 
 const GEMINI_STABLE = 'gemini-flash-latest';
-const OPENROUTER_LOW_COST = 'deepseek/deepseek-chat';
+/*
+ * The cheapest route worth falling back to. This pointed at deepseek-chat, a
+ * V3-era id, while deepseek/deepseek-v4-flash-0731 carries 12.5T tokens a week
+ * on OpenRouter at $0.12/Mtok — the most-used low-cost model there, and a
+ * hundredth the price of a flagship.
+ */
+const OPENROUTER_LOW_COST = 'deepseek/deepseek-v4-flash-0731';
 const NEMOTRON_SUPER = 'nvidia/nemotron-3-super-120b-a12b:free';
-const MAX_INFERENCE_ATTEMPTS = 2;
-const MAX_PRIMARY_BUILD_ATTEMPT_MS = 65_000;
-const RESERVED_INDEPENDENT_FALLBACK_MS = 45_000;
+/*
+ * How many models one turn may try. Two meant a free-quota 429 plus one
+ * unlucky fallback ended the turn with "the model is busy" while other healthy
+ * routes sat unused. The wall-clock budget, the circuit breaker and the
+ * failed-quota-domain skip are what prevent a retry storm — not this count.
+ */
+const MAX_INFERENCE_ATTEMPTS = 4;
+/*
+ * The single largest constraint on build quality. At 65s a flagship model was
+ * cut off part-way through a multi-file page: the tokens were generated and
+ * billed, then discarded, and the turn degraded to a weaker fallback. Raised so
+ * the chosen model gets a window it can actually finish in, while still leaving
+ * a build-viable rung behind it.
+ */
+const MAX_PRIMARY_BUILD_ATTEMPT_MS = 110_000;
+/* An attempt below this has no realistic chance of producing a build. */
+const MIN_VIABLE_ATTEMPT_MS = 20_000;
+/*
+ * A multi-file build (a page plus its catalogue, styles and scripts) does not
+ * come back in 20s on any model. Splitting a 120s turn across four rungs handed
+ * out 60s/20s/20s/20s: the primary was cut off mid-file and the three rungs
+ * behind it could not finish either, so the whole budget was spent producing
+ * truncated output and the turn ended at the client's deadline. Every heavy
+ * build failed the same way, for arithmetic reasons rather than model quality.
+ *
+ * So a BUILD turn plans only as many rungs as the budget can actually fund at a
+ * build-viable size. Fewer, real attempts beat four doomed ones.
+ */
+export const MIN_VIABLE_BUILD_ATTEMPT_MS = 45_000;
+
+/*
+ * Two rungs, not three. Every extra rung is reserved out of the PRIMARY's window,
+ * and the primary is the attempt most likely to succeed - a third rung cost it
+ * 35s (110s -> 75s) to buy a third try that only runs after two real attempts
+ * already failed. One full-length attempt at the best model plus one real
+ * fallback is the better trade.
+ */
+const MAX_BUILD_RUNGS = 2;
+
+/** How many build rungs the remaining wall-clock can fund at a viable size. */
+export function maxViableBuildAttempts(
+  totalBudgetMs: number,
+  minAttemptMs: number = MIN_VIABLE_BUILD_ATTEMPT_MS,
+) {
+  const budget = Math.max(0, Math.floor(totalBudgetMs));
+  const floorMs = Math.max(1, Math.floor(minAttemptMs));
+  return Math.max(1, Math.min(MAX_BUILD_RUNGS, Math.floor(budget / floorMs)));
+}
 const COST_RANK: Record<InferenceCostClass, number> = { free: 0, low: 1, standard: 2, unknown: 3 };
 
 const MODEL_ID_ALIASES: Record<string, string> = {
@@ -71,10 +134,24 @@ export function canonicalizeModelId(modelId: string): string {
  * A build route cannot consume the entire turn before an independent fallback
  * gets a chance. The final attempt receives whatever remains.
  */
-export function inferenceAttemptBudgetMs(totalRemainingMs: number, attemptsRemaining: number) {
+export function inferenceAttemptBudgetMs(
+  totalRemainingMs: number,
+  attemptsRemaining: number,
+  { minAttemptMs = MIN_VIABLE_ATTEMPT_MS }: { minAttemptMs?: number } = {},
+) {
   const remaining = Math.max(0, Math.floor(totalRemainingMs));
   if (attemptsRemaining <= 1) return remaining;
-  return Math.max(0, Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - RESERVED_INDEPENDENT_FALLBACK_MS));
+  const MIN_VIABLE_ATTEMPT_MS = Math.max(1, Math.floor(minAttemptMs));
+  /*
+   * Reserve a viable minimum for EACH remaining attempt, not a fixed amount for
+   * one. The old fixed reserve left the tail of a four-rung ladder with 15s and
+   * then 5s - and the last rung is the reserved PAID rescue, so a naive reserve
+   * set the paid last-resort up to fail. This attempt takes a generous slice but
+   * never eats into the minimum the rungs behind it need.
+   */
+  const reserveForRest = (attemptsRemaining - 1) * MIN_VIABLE_ATTEMPT_MS;
+  const slice = Math.min(MAX_PRIMARY_BUILD_ATTEMPT_MS, remaining - reserveForRest);
+  return Math.max(0, Math.min(remaining, Math.max(slice, MIN_VIABLE_ATTEMPT_MS)));
 }
 
 function safeLabel(value: string, fallback: string) {
@@ -92,9 +169,17 @@ function upstreamProviderFor(modelId: string, registry?: InferenceModelLike) {
   return safeLabel(fromId || registry?.provider || 'unknown', 'unknown').toLowerCase();
 }
 
-function capabilitiesFor(modelId: string): InferenceCapability[] {
+function capabilitiesFor(modelId: string, registry?: InferenceModelLike): InferenceCapability[] {
   if (gatewayFor(modelId) === 'gemini') return ['text', 'code', 'vision', 'travel-tools'];
-  return ['text', 'code'];
+  /*
+   * Vision used to be granted to Gemini alone, so attaching an image to a turn on
+   * an explicitly pinned OpenRouter model filtered that model out: the turn either
+   * silently rerouted to Gemini (ignoring the user's choice) or 503'd when no
+   * Gemini credential existed. Plenty of OpenRouter models are multimodal, so read
+   * the capability from the catalogue that says so rather than inferring it from
+   * the vendor prefix. Absent that signal we stay conservative and omit vision.
+   */
+  return registry?.vision ? ['text', 'code', 'vision'] : ['text', 'code'];
 }
 
 function costClassFor(modelId: string, registry?: InferenceModelLike): InferenceCostClass {
@@ -126,9 +211,22 @@ async function describeRoute(
   const gateway = gatewayFor(modelId);
   if (gateway === 'gemini' && !input.geminiAvailable) return null;
   if (gateway === 'openrouter' && !input.openRouterAvailable) return null;
+  /*
+   * A batch endpoint is ASYNCHRONOUS: it accepts a job and answers later, so it
+   * can never stream a chat turn. Routing to one produces a turn that simply
+   * never replies.
+   *
+   * These are a trap because they are cheap - a provider's `:batch` variant can
+   * list at half the price of the same model, so anyone choosing on price picks
+   * the one that cannot work. The Anthropic discovery path already filtered
+   * them, which left every OTHER way into the router unguarded: an operator
+   * approving one in the registry, a pinned id, a curated entry. This is the
+   * chokepoint all routes pass through, so it belongs here.
+   */
+  if (/[:-]batch\b/i.test(modelId)) return null;
 
   const model = registry.get(modelId);
-  const capabilities = capabilitiesFor(modelId);
+  const capabilities = capabilitiesFor(modelId, model);
   const required = input.requiredCapabilities || ['text'];
   if (required.some((capability) => !capabilities.includes(capability))) return null;
 
@@ -184,18 +282,66 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
   const described = (await Promise.all(ids.map((id, index) => describeRoute(id, index === 0 ? 'primary' : 'fallback', input, registry))))
     .filter((route): route is InferenceRoute => Boolean(route))
     .filter((route) => route.health !== 'offline');
-  if (!described.length) return [];
 
-  const live = described.filter((route) => route.circuit !== 'open');
+  // Active list empty/unhealthy can mark every catalog row offline — including
+  // gemini-flash-latest. Coding Desk Auto must still get one last-resort Gemini
+  // attempt when credentials exist (otherwise "no healthy AI route" spine).
+  /*
+   * Every gateway with a credential gets a way in, not just Gemini.
+   *
+   * The old form only injected a last resort when the pool was COMPLETELY
+   * empty, and only for Gemini. So when the Active list marked the Gemini rows
+   * offline but left something unusable on OpenRouter, the pool was non-empty,
+   * nothing was injected, and Flash died alone — the client painting "no
+   * healthy AI route" while a perfectly good OpenRouter credential sat unused.
+   *
+   * A gateway that is credentialed and unrepresented now gets one stable route
+   * appended. Registry health cannot veto it: an empty registry means health
+   * "unknown", which is not the same as offline, and treating an absent record
+   * as a dead provider is the same mistake as reading a key's shape as proof it
+   * works.
+   */
+  let poolDescribed = described;
+  const hasGateway = (gateway: InferenceGateway) => poolDescribed.some((route) => route.gateway === gateway);
+  const emptyRegistry = new Map<string, InferenceModelLike>();
+
+  /*
+   * Gemini goes to the FRONT, the OpenRouter fallback to the back.
+   *
+   * Not arbitrary: Gemini is direct to Google on the operator's own plan and
+   * costs no OpenRouter credit at all, so when both are only reachable as last
+   * resorts, the free one is tried first. The old code expressed the same
+   * preference by REPLACING the pool with the Gemini route; appending it would
+   * have quietly demoted the zero-cost gateway below a paid one.
+   */
+  if (input.geminiAvailable && !hasGateway('gemini')) {
+    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, emptyRegistry);
+    if (lastResort && lastResort.health !== 'offline') poolDescribed = [lastResort, ...poolDescribed];
+  }
+  if (input.openRouterAvailable && !hasGateway('openrouter')) {
+    const lastResort = await describeRoute(OPENROUTER_LOW_COST, 'fallback', input, emptyRegistry);
+    if (lastResort && lastResort.health !== 'offline') poolDescribed = [...poolDescribed, lastResort];
+  }
+  if (!poolDescribed.length) return [];
+
+  const live = poolDescribed.filter((route) => route.circuit !== 'open');
   // An open circuit must not leave Studio with zero routes. Use a last-resort
   // executable path (prefer a different gateway) so two OpenRouter 429s cannot
   // strand a signed-in user with "No executable model was selected."
-  const pool = live.length ? live : described;
+  const pool = live.length ? live : poolDescribed;
 
   const selected = pool.find((route) => route.id === primary && route.circuit !== 'open')
     || pool.find((route) => route.circuit !== 'open')
     || pool.find((route) => route.gateway === 'gemini')
     || pool[0];
+  // The caller (select-models) hands fallbacks pre-ordered by measured
+  // finish-reliability. Preserve that order as a tiebreaker so a reliable
+  // fallback the router put first is not demoted purely because a less reliable
+  // one is cheaper. Operational resilience still leads — failure-domain
+  // independence from the primary and circuit/health come first, so a same-domain
+  // fallback (likely to fail with the primary) still yields to an independent one.
+  const reliabilityRank = new Map(ids.map((id, index) => [id, index]));
+  const rankOf = (route: InferenceRoute) => (reliabilityRank.has(route.id) ? reliabilityRank.get(route.id)! : Number.MAX_SAFE_INTEGER);
   const rest = pool.filter((route) => route.id !== selected.id).sort((left, right) => {
     const leftIndependent = left.failureDomain !== selected.failureDomain ? 1 : 0;
     const rightIndependent = right.failureDomain !== selected.failureDomain ? 1 : 0;
@@ -203,10 +349,37 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     const leftKnown = left.health === 'available' ? 1 : 0;
     const rightKnown = right.health === 'available' ? 1 : 0;
     if (leftKnown !== rightKnown) return rightKnown - leftKnown;
+    const leftRank = rankOf(left);
+    const rightRank = rankOf(right);
+    if (leftRank !== rightRank) return leftRank - rightRank;
     return COST_RANK[left.costClass] - COST_RANK[right.costClass];
   });
 
-  return [selected, ...rest].slice(0, MAX_INFERENCE_ATTEMPTS).map((route, index) => ({
+  const freeLadder = [selected, ...rest];
+
+  // Reserve the last rung for a paid rescue when the account has opted in and
+  // the meter permits it. The free ladder always runs first and takes every
+  // slot but one; paid is only ever reached after free is exhausted, and is
+  // never sticky because the caller re-decides `paidLastResortAllowed` each turn.
+  const paidId = canonicalizeModelId(input.paidLastResortModelId || '');
+  const wantsPaid = Boolean(
+    paidId
+    && input.paidLastResortAllowed === true
+    && !freeLadder.some((route) => route.id === paidId),
+  );
+  let paidRoute: InferenceRoute | null = null;
+  if (wantsPaid) {
+    const described = await describeRoute(paidId, 'fallback', input, registry);
+    if (described && described.health !== 'offline' && described.circuit !== 'open') {
+      paidRoute = { ...described, paid: true };
+    }
+  }
+
+  const freeSlots = paidRoute ? Math.max(1, MAX_INFERENCE_ATTEMPTS - 1) : MAX_INFERENCE_ATTEMPTS;
+  const ladder = freeLadder.slice(0, freeSlots);
+  if (paidRoute) ladder.push(paidRoute);
+
+  return ladder.map((route, index) => ({
     ...route,
     reason: index === 0 && route.id === primary ? 'primary' : 'fallback',
   }));

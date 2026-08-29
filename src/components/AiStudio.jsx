@@ -1,6 +1,7 @@
-import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForBrokenPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
-import { countRealPreviewPhotos } from '../lib/preview-images.js';
+import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
@@ -14,7 +15,7 @@ import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
-import { assessShopBuildAsk, shopPhotoTurnFailureCopy } from '../lib/shop-catalog-scale.js';
+import { assessShopBuildAsk, shopPhotoTurnFailureCopy, messageLooksLikeShopBuild } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
@@ -30,9 +31,12 @@ import {
   readGithubApiJson,
 } from '../lib/github-import.js';
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
-import { buildDeskContextPacket, mergeLiveDeskProbe } from '../lib/studio-desk-context.js';
+import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
+import { describePatchFailures } from '../lib/diff-patcher.js';
+import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
+import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
-import { diffVfsReview } from '../lib/studio-file-review.js';
+import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -47,10 +51,8 @@ import {
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
-import { setClientSecret } from '../lib/client-secrets.js';
-import { runCodingTurnSkills, planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
-import { rememberCodingTurnLesson } from '../lib/coding-turn-memory.js';
-import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
+import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { useStudioSession } from '../hooks/useStudioSession.js';
 import {
@@ -68,8 +70,6 @@ import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
-import StudyTutorBoard from './StudyTutorBoard.jsx';
-import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import FinanceBoard from './FinanceBoard.jsx';
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
@@ -81,6 +81,7 @@ import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
+import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -91,6 +92,7 @@ import {
 } from '../lib/studio-split-layout.js';
 
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
+const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -276,12 +278,14 @@ const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim(
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const {
+    storageFault,
     chatSessions,
     activeSessionId,
     setActiveSessionId,
     messages,
     updateActiveMessages,
     handleCreateNewChat,
+    handleCreateHandoverChat,
     handleCreateAdvisorChat,
     handleDeleteChat,
     handleMoveChatToProject,
@@ -516,9 +520,43 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [codingDeskOpen, setCodingDeskOpen] = useState(false);
   const [workspaceCode, setWorkspaceCode] = useState('');
   const [vfs, setVfs] = useState({});
+  // Which session this saver last ran for, and the live session id a deferred
+  // write re-checks against. Refs, because both are read inside a timer.
+  const deskSaveSessionRef = useRef(null);
+  const activeSessionIdRef = useRef(null);
   const [deskReview, setDeskReview] = useState([]);
+  const vfsRef = useRef({});
+  useEffect(() => { vfsRef.current = vfs; }, [vfs]);
+  const commitDeskVfs = useCallback((nextVfs) => {
+    if (!nextVfs || typeof nextVfs !== 'object') return false;
+    const before = vfsRef.current || {};
+    // Never let a broken/truncated turn overwrite a working preview. A failed
+    // edit must leave the last working page intact, not destroy it. Returns
+    // whether the commit was accepted so callers can gate their follow-up state.
+    if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
+    setDeskReview((prev) => mergeDeskReview(prev, before, nextVfs));
+    vfsRef.current = nextVfs;
+    setVfs(nextVfs);
+    return true;
+  }, []);
   const [deskJob, setDeskJob] = useState(null);
   const [liveDeskProbe, setLiveDeskProbe] = useState(null);
+  /*
+   * Edits the model asked for that could not be applied to the file.
+   * The reply describes what it INTENDED to change; this says what actually
+   * landed. Without it a two-part edit where one part missed reads as a
+   * complete success over a half-changed build.
+   */
+  const [patchNote, setPatchNote] = useState('');
+  /*
+   * Phase 04. A build too large for one reply becomes a job: a goal and steps,
+   * each naming the files it must leave behind. Steps go green only when those
+   * files exist on the desk — never because a turn said so.
+   */
+  const [buildJob, setBuildJob] = useState(null);
+  // Steps taken without being asked. Reset when a new plan starts; capped so an
+  // agent loop can never become an open tap.
+  const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
@@ -573,6 +611,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
   }, [vfs, deskJob]);
 
+  // Make the model's OWN shop images load in Preview: wire its image files in as
+  // data-URIs and proxy the remote image URLs it chose. This never fabricates
+  // products or injects stock photos — a shop the model shipped without images
+  // stays an honest empty catalog (no "instant fake shop").
   useEffect(() => {
     if (!vfsLooksLikeShop(vfs, deskJob)) return;
     const brief = [...messages].reverse().find((m) => m?.sender === 'user' && m.text)?.text || '';
@@ -639,7 +681,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [splitMobile, filesWidthPx]);
 
   const startNewChat = useCallback(() => {
+    // A new chat starts blank — clear every preview surface up front instead of
+    // relying on the session-change effect, which never reset the Canvas
+    // (canvasOpen/canvasCode). Without this the old, often-broken Preview stayed
+    // on the right after "New Chat".
     setCodingDeskOpen(false);
+    setCanvasOpen(false);
+    setCanvasCode('');
+    setIsWorkspaceMode(false);
+    setVfs({});
+    vfsRef.current = {};
+    setWorkspaceCode('');
+    setDeskReview([]);
+    setDeskJob(null);
+    setPreviewRunStatus('');
+    setLiveDeskProbe(null);
     handleCreateNewChat();
   }, [handleCreateNewChat]);
 
@@ -662,8 +718,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCodingDeskOpen(false);
       setIsWorkspaceMode(false);
       setDeskReview([]);
+      vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
+      setCanvasOpen(false);
+      setCanvasCode('');
+      setLiveDeskProbe(null);
       return;
     }
     const session = chatSessions.find((item) => item.id === activeSessionId);
@@ -675,11 +735,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setIsWorkspaceMode(false);
       setLastProcessedMessageId(null);
       setDeskReview([]);
+      vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
+      setCanvasOpen(false);
+      setCanvasCode('');
+      setLiveDeskProbe(null);
       return;
     }
     setVfs(restored.vfs);
+    vfsRef.current = restored.vfs || {};
     setWorkspaceCode(restored.workspaceCode);
     setWorkspaceActiveTab('preview');
     setIsWorkspaceMode(true);
@@ -689,8 +754,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setDeskJob(restored.job || null);
   }, [activeSessionId, studioDomain, chatSessions]);
 
+  activeSessionIdRef.current = activeSessionId;
+
   useEffect(() => {
     if (!canAutoOpenCodeWorkspace(studioDomain)) return;
+    /*
+     * A desk belongs to the chat that built it.
+     *
+     * This save is debounced 400ms and its effect re-runs when activeSessionId
+     * changes — so on a chat switch it used to build a snapshot from the
+     * PREVIOUS chat's files and write it to whichever session was active when
+     * the timer fired. The new chat then restored it: you opened a fresh chat,
+     * typed a brief, and the desk beside you force-opened somebody else's
+     * build, persisted into your session record.
+     *
+     * Two guards. Skip the pass on which the session changed, because the files
+     * in state are the outgoing chat's and its own desk was already saved.
+     * And re-check at fire time, because the session can change inside the
+     * debounce window.
+     */
+    const target = resolveDeskSaveTarget({
+      activeSessionId,
+      lastSeenSession: deskSaveSessionRef.current,
+    });
+    deskSaveSessionRef.current = target.nextSeen;
+    if (!target.save) return;
+
     const built = buildStudioDeskSnapshot({
       vfs,
       workspaceCode,
@@ -700,7 +789,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       job: deskJob,
     });
     if (!built.ok) return;
+    const sessionAtBuild = activeSessionId;
     const timer = setTimeout(() => {
+      if (!deferredWriteStillValid({ sessionAtBuild, sessionNow: activeSessionIdRef.current })) return;
       updateActiveSession({ desk: built.snapshot });
     }, 400);
     return () => clearTimeout(timer);
@@ -788,6 +879,43 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
     const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
+    // A plan turn starts the job; every other turn re-judges it against the
+    // files that now exist, so a step can also go BACK to not-done if its file
+    // is later emptied. The job describes the desk, not the history of claims.
+    /*
+     * Auto-advance is REVERTED here, not debugged in place.
+     *
+     * It broke the desk-job browser gate — the Preview stopped rendering — and
+     * the same PR carries the fix for a live Travel outage. Holding a
+     * production fix hostage to a feature is the wrong trade, so the loop comes
+     * out and goes back in on its own PR with that gate passing first.
+     *
+     * shouldAutoAdvanceJob and its stop conditions stay in build-job.js, tested.
+     */
+    const proposed = readPlanMarker(rawText);
+    /*
+     * `assembled.vfs || vfs` was not a fallback. `{}` is truthy, so it never
+     * fired once: a turn that built nothing handed the job planner an empty
+     * desk and every step was judged against no files at all.
+     *
+     * Checked explicitly here rather than fixed in applyWorkspaceFromChat.
+     * Making the no-op return the desk instead of {} looks obviously right and
+     * broke the desk review gate — proveCodingTurn runs with allowRepair over
+     * `assembled.vfs`, and the emptiness is how that path knows this turn
+     * produced nothing. The stress harness calls it a hazard rather than a
+     * defect for exactly that reason, and the producer-side change is a
+     * separate piece of work with every consumer audited.
+     */
+    const deskForJob = assembled.didUpdate ? assembled.vfs : vfs;
+    if (proposed) setBuildJob(advanceBuildJob(proposed, deskForJob));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, deskForJob) : prev));
+    setPatchNote([
+      ...(assembled.patchFailures || [])
+        .map((failure) => describePatchFailures(failure.result, failure.filepath)),
+      // An empty fence keeps the file rather than blanking it. Saying so is the
+      // whole point: a silent keep is as confusing as the silent delete was.
+      describeEmptyFenceKept(assembled.emptyFenceKept),
+    ].filter(Boolean).join('\n\n'));
     if (assembled.rejected) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
     const skillPlan = planFromMessageSnapshot(lastAi?.codingTurnPlan, {
@@ -802,23 +930,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         : ['preview_html'],
       messageForModel: brief,
     };
-    const skilled = runCodingTurnSkills({
+    const proved = proveCodingTurn({
       plan: skillPlan,
       vfs: assembled.vfs,
       job: assembled.job || deskJob,
       brief,
+      allowRepair: true,
+      sessionId: activeSessionId,
     });
-    const finalVfs = skilled.changed ? skilled.vfs : assembled.vfs;
-    if (assembled.code || skilled.changed) {
+    const finalVfs = proved.vfs;
+    if (assembled.code || proved.evidence.hasHtml || Object.keys(finalVfs).length > 0) {
       setCanvasVfs(finalVfs);
       setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        if (Object.keys(finalVfs).length > 0) {
+        // Route through the guard: a truncated/broken turn must not overwrite a
+        // working desk, and downstream state must not adopt a rejected VFS.
+        const accepted = Object.keys(finalVfs).length > 0
+          && !deskCommitRegressesPreview(vfsRef.current || {}, finalVfs).reject;
+        if (accepted) {
           setDeskReview(diffVfsReview(vfs, finalVfs));
+          vfsRef.current = finalVfs;
           setVfs(finalVfs);
           if (assembled.job) setDeskJob(assembled.job);
+          setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         }
-        setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         setWorkspaceActiveTab('preview');
         setCodingDeskOpen(true);
         setIsWorkspaceMode(true);
@@ -879,8 +1014,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         size: (file.size / 1024).toFixed(1) + ' KB',
         type: file.type.includes('image') ? 'image' : 'file'
       };
-      if (!file.type.includes('image') || file.size > 3 * 1024 * 1024) {
-        resolve(base);
+      /*
+       * Carry WHY there is no dataUrl. Without it a 4MB photo arrived at the
+       * send path indistinguishable from a spreadsheet, and the user was told
+       * "I can read images (PNG/JPG), but not holiday.png" — which is both
+       * wrong and unactionable, when the true answer is "that one is too big,
+       * send a smaller copy".
+       */
+      if (!file.type.includes('image')) {
+        resolve({ ...base, excludedReason: 'unsupported' });
+        return;
+      }
+      if (file.size > 3 * 1024 * 1024) {
+        resolve({ ...base, excludedReason: 'size' });
         return;
       }
       const reader = new FileReader();
@@ -895,6 +1041,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const removeAttachment = (index) => {
     setAttachments(prev => prev.filter((_, i) => i !== index));
   };
+
+  /*
+   * A handover moves the conversation to a fresh chat. Firing that on one click
+   * meant the person never saw what travelled with them, and could not tell a
+   * complete handover from a lossy one until they were already in the new chat
+   * with no way back. The chip now opens what it would carry; only the second
+   * click commits.
+   */
+  const [pendingHandover, setPendingHandover] = useState(null);
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
@@ -1019,8 +1174,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   };
 
-  const [keyInputValue, setKeyInputValue] = useState('');
-  const [lastPrompt, setLastPrompt] = useState('');
+  const [, setLastPrompt] = useState('');
 
   // Intelligent Router Logic — Auto Mode switches silently; never interrupt with a Switch pill.
   useEffect(() => {
@@ -1043,24 +1197,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [inputText, selectedModel, availableModels]);
 
-  const saveKeyAndRetry = (keyType) => {
-    if (!keyInputValue.trim()) return;
-    if (keyType === 'gemini') {
-      const value = keyInputValue.trim();
-      localStorage.setItem('geminiApiKey', value);
-      setClientSecret('gemini', value);
-    } else {
-      const value = keyInputValue.trim();
-      localStorage.setItem('openRouterApiKey', value);
-      setClientSecret('openrouter', value);
-    }
-    setKeyInputValue('');
-    updateActiveMessages(prev => prev.filter(m => !m.isKeyPrompt));
-    if (lastPrompt) {
-      handleSendMessage(lastPrompt);
-    }
-  };
-
   const handlePushToDream = (msg) => {
     if (!setDreamNodes || !dreamNodes) return;
     const newNode = {
@@ -1078,23 +1214,55 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const onCodingTurnExecute = useCallback((plan) => {
-    if (!plan?.runSkillsFirst) return;
-    const result = runCodingTurnSkills({
+    if (!plan?.runSkillsFirst && !plan?.intent?.kind?.startsWith('shop')) return;
+    const verdict = proveCodingTurn({
       plan,
       vfs,
       job: deskJob,
       brief: plan.messageForModel || plan.displayUserText || '',
+      allowRepair: true,
+      sessionId: activeSessionId,
     });
-    if (!result.changed && !result.proof.hasHtml) return;
-    const nextVfs = result.vfs;
-    setDeskReview(diffVfsReview(vfs, nextVfs));
-    setVfs(nextVfs);
+    if (!verdict.vfs || (!verdict.ok && !verdict.evidence?.hasHtml && !Object.keys(verdict.vfs).length)) return;
+    const nextVfs = verdict.vfs;
+    // Gate all follow-up state on acceptance: a rejected (broken/truncated) VFS
+    // must not set workspaceCode or be shown as this turn's result.
+    if (!commitDeskVfs(nextVfs)) return;
     const entry = pickPreviewEntry(nextVfs);
     if (entry) setWorkspaceCode(entry);
     setWorkspaceActiveTab('preview');
     setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
-  }, [vfs, deskJob]);
+  }, [vfs, deskJob, activeSessionId, commitDeskVfs]);
+
+  /*
+   * Commit a deterministic rename. Returns whether the desk actually took it,
+   * so the caller reports a rename only when one happened — a "Renamed X to Y"
+   * message over an unchanged desk is the exact class of claim this codebase
+   * keeps having to delete.
+   */
+  const onDeskRename = useCallback((nextVfs) => {
+    if (!nextVfs || !Object.keys(nextVfs).length) return false;
+    if (!commitDeskVfs(nextVfs)) return false;
+    const entry = pickPreviewEntry(nextVfs);
+    if (entry) setWorkspaceCode(entry);
+    setWorkspaceActiveTab('preview');
+    return true;
+  }, [commitDeskVfs]);
+
+  const onCodingTurnProved = useCallback((verdict) => {
+    if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
+    // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
+    // open) — only when the commit was actually accepted.
+    if (!commitDeskVfs(verdict.vfs)) return;
+    const entry = pickPreviewEntry(verdict.vfs);
+    if (entry) {
+      setWorkspaceCode(entry);
+      setWorkspaceActiveTab('preview');
+      setCodingDeskOpen(true);
+      setIsWorkspaceMode(true);
+    }
+  }, [commitDeskVfs]);
 
   const { handleSendMessage: streamSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
@@ -1118,6 +1286,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     conversationContext,
     updateActiveSession,
     onCodingTurnExecute,
+    onCodingTurnProved,
+    onDeskRename,
+    buildJob,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -1131,12 +1302,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     ? studySyllabusContinueSet(conversationContext?.goal || '')
     : null;
 
-  // The board only earns its place once a real concept is on the table, so an
-  // empty Study desk cannot show a progress bar for nothing.
-  const studyTutorBrief = React.useMemo(
-    () => (studioDomain === 'education' ? deriveStudyTutorBrief({ conversationContext, messages }) : null),
-    [studioDomain, conversationContext, messages],
-  );
   const financeBrief = React.useMemo(
     () => (studioDomain === 'finance' ? deriveFinanceBrief({ messages }) : null),
     [studioDomain, messages],
@@ -1153,25 +1318,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setWorkspaceCorrelationId(null);
     setWorkspaceGoldenTransaction(null);
-    if (Object.keys(assembled.vfs).length > 0) {
-      setDeskReview(diffVfsReview(vfs, assembled.vfs));
-      setVfs(assembled.vfs);
+    // Guard this write path too: a truncated fence still contains <!DOCTYPE, so a
+    // timed-out message's code must not overwrite a working desk. If rejected,
+    // keep the working page and just open the desk on it.
+    const candidateVfs = Object.keys(assembled.vfs).length > 0
+      ? assembled.vfs
+      : { 'index.html': { content: html, language: 'html' } };
+    if (!deskCommitRegressesPreview(vfsRef.current || {}, candidateVfs).reject) {
+      setDeskReview(diffVfsReview(vfs, candidateVfs));
+      vfsRef.current = candidateVfs;
+      setVfs(candidateVfs);
       setDeskJob((prev) => buildStudioJobCard({
         brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-        vfs: assembled.vfs,
+        vfs: candidateVfs,
         existing: prev,
       }));
-    } else {
-      const next = { 'index.html': { content: html, language: 'html' } };
-      setDeskReview(diffVfsReview(vfs, next));
-      setVfs(next);
-      setDeskJob((prev) => buildStudioJobCard({
-        brief: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-        vfs: next,
-        existing: prev,
-      }));
+      setWorkspaceCode(html);
     }
-    setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
     setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
@@ -1286,8 +1449,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const deskFileCount = Object.keys(vfs || {}).length;
     if ((userAskedForShopDeskFix(textToSend) || userAskedForDeskReview(textToSend)) && deskFileCount) {
       const patched = applyDeskReviewPatch(vfs, deskJob, { brief: textToSend });
-      if (patched.changed && !patched.rejected) {
+      if (patched.changed && !patched.rejected
+        && !deskCommitRegressesPreview(vfsRef.current || {}, patched.vfs).reject) {
         setDeskReview(diffVfsReview(vfs, patched.vfs));
+        vfsRef.current = patched.vfs;
         setVfs(patched.vfs);
         const code = pickPreviewEntry(patched.vfs);
         if (code) setWorkspaceCode(code);
@@ -1302,11 +1467,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         && !patched.rejected
         && !userAskedForSemanticPhotoEdit(textToSend)
       ) {
-        const html = pickPreviewEntry(patched.vfs) || '';
-        const photoCount = countRealPreviewPhotos(html);
-        const brokenPhotoAsk = userAskedForBrokenPreviewPhotos(textToSend);
-        const canShortCircuit = patched.changed || (brokenPhotoAsk && photoCount > 0);
-        if (canShortCircuit) {
+        // Short-circuit ONLY when the deterministic patch actually changed the
+        // desk. It used to also fire on "the images are broken" whenever the HTML
+        // still contained <img> tags — but countRealPreviewPhotos counts TAGS, not
+        // whether they decode. A page full of <img> elements that all fail to load
+        // therefore answered "already has loadable product photos" and returned
+        // WITHOUT EVER CALLING THE MODEL, so every follow-up replayed the same
+        // canned line and the user could never reach the AI to get it fixed.
+        // When we changed nothing we have nothing to report: fall through to the
+        // model so a real repair can happen.
+        if (patched.changed) {
           const trimmed = String(textToSend || '').trim();
           if (!overrideText) setInputText('');
           updateActiveMessages((prev) => [
@@ -1315,9 +1485,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             {
               id: Date.now() + 1,
               sender: 'ai',
-              text: patched.changed
-                ? 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.'
-                : 'Shop desk already has loadable product photos. Hard-refresh Preview if the old Unsplash URLs are still cached in the iframe.',
+              text: 'Patched Preview with product photos (same-origin data URIs), cart, and currency. Hard-refresh Preview if the iframe still shows broken remote images.',
             },
           ]);
           setAttachments([]);
@@ -1380,8 +1548,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const photosMissing = Boolean(previewRunCode)
     && deskPacket?.facts?.shop
     && (!deskPacket.facts.hasPhotos || deskPacket.facts.hasDistinctPhotos === false);
-  const shopUiMissing = Boolean(deskPacket?.facts?.shop)
-    && (!deskPacket.facts.hasCart || !deskPacket.facts.hasCurrency);
+  // Name only what is actually absent — see describeMissingShopUi.
+  const shopUiMissingNote = describeMissingShopUi(deskPacket?.facts);
+  const shopUiMissing = Boolean(shopUiMissingNote);
 
   useEffect(() => {
     if (!previewRunCode) setLiveDeskProbe(null);
@@ -1643,6 +1812,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}
+                            answerEnabled={lastAiMessage?.id === msg.id && !isActiveGenerating}
+                            onAnswer={(answer) => handleSendMessage(answer)}
                           />
                         ) : (
                           <ReactMarkdown
@@ -1666,7 +1837,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           data-quantora-preview-honesty="shop-ui"
                           style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45 }}
                         >
-                          Preview still has no currency switcher or Add to Cart. Chat cannot add those until they appear on the desk.
+                          {shopUiMissingNote}
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (
+                        <div
+                          data-quantora-build-job="true"
+                          style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+                        >
+                          {describeBuildJob(buildJob)}
+                          {autoPauseRef.current && !buildJobIsComplete(buildJob)
+                            ? `
+
+Paused — ${autoPauseRef.current}.`
+                            : ''}
+                        </div>
+                      ) : null}
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (
+                        <div
+                          data-quantora-preview-honesty="patch"
+                          style={{ marginTop: '10px', fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}
+                        >
+                          {patchNote}
                         </div>
                       ) : null}
 
@@ -1862,6 +2054,129 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </div>
                           )}
                         </div>
+                        {msg.sessionContinuity && !msg.sessionContinuityDismissed ? (
+                          <div
+                            data-quantora-session-continuity="true"
+                            style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px' }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setPendingHandover(
+                                pendingHandover?.id === msg.sessionContinuity.id ? null : msg.sessionContinuity,
+                              )}
+                              title={sessionHandoverLabel(msg.sessionContinuity)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '7px',
+                                maxWidth: 'min(100%, 420px)',
+                                padding: '7px 11px',
+                                borderRadius: '999px',
+                                border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.4)',
+                                background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.1)',
+                                color: isLight ? '#9a3412' : '#fdba74',
+                                cursor: 'pointer',
+                                fontSize: '0.76rem',
+                                fontWeight: 700,
+                              }}
+                            >
+                              <Link2 size={13} aria-hidden="true" />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {sessionHandoverLabel(msg.sessionContinuity)}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateActiveMessages((prev) => prev.map((item) => (
+                                item.id === msg.id ? { ...item, sessionContinuityDismissed: true } : item
+                              )))}
+                              title="Dismiss"
+                              aria-label="Dismiss"
+                              style={{ ...iconBtn, color: subtextColor }}
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ) : null}
+                        {msg.sessionContinuity
+                          && !msg.sessionContinuityDismissed
+                          && pendingHandover?.id === msg.sessionContinuity.id ? (
+                          <div
+                            data-quantora-handover-preview="true"
+                            style={{
+                              marginTop: '8px',
+                              padding: '12px 14px',
+                              borderRadius: '12px',
+                              border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.3)',
+                              background: isLight ? '#fffbf5' : 'rgba(249,115,22,0.06)',
+                              fontSize: '0.8rem',
+                              color: textColor,
+                              lineHeight: 1.55,
+                            }}
+                          >
+                            <div style={{ color: subtextColor, marginBottom: '8px' }}>
+                              {describeSessionHandover(pendingHandover).reason}
+                            </div>
+                            {describeSessionHandover(pendingHandover).carried > 0 ? (
+                              <>
+                                <div style={{ fontWeight: 700, marginBottom: '6px' }}>
+                                  This is what moves to the new chat:
+                                </div>
+                                <ul style={{ margin: '0 0 10px', paddingLeft: '18px' }}>
+                                  {describeSessionHandover(pendingHandover).lines.map((line, i) => (
+                                    <li key={i} style={{ marginBottom: '3px' }}>{line}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            ) : (
+                              <div style={{ marginBottom: '10px' }}>
+                                Nothing has been recorded to carry across yet — the new chat would start empty.
+                                Everything above stays in this one.
+                              </div>
+                            )}
+                            <div style={{ color: subtextColor, marginBottom: '10px' }}>
+                              This chat stays exactly as it is. Nothing here is deleted.
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const contract = pendingHandover;
+                                  setPendingHandover(null);
+                                  handleCreateHandoverChat(contract);
+                                }}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: '999px',
+                                  border: 'none',
+                                  background: '#f97316',
+                                  color: '#fff',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Start the new chat
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingHandover(null)}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: '999px',
+                                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                                  background: 'transparent',
+                                  color: subtextColor,
+                                  fontSize: '0.76rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Keep going here
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                         {continueSet?.items?.length > 0 && (
                           <div data-quantora-study-syllabus={studySyllabusSet && msg.id === latestAiId ? 'true' : undefined}>
                           <StudioInlineSuggestions
@@ -1912,29 +2227,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           />
                           </div>
                         )}
-                        {studioDomain === 'education' && msg.id === latestAiId && studyTutorBrief?.active ? (
-                          <StudyTutorBoard
-                            brief={studyTutorBrief}
-                            isLight={isLight}
-                            textColor={textColor}
-                            subtextColor={subtextColor}
-                            lessonText={cleanText}
-                            onAsk={(text) => setInputText(text)}
-                            onSend={(text) => handleSendMessage(text)}
-                            onCheckOutcome={(fact) => {
-                              const line = String(fact || '').trim();
-                              if (!line) return;
-                              const facts = conversationContext?.facts || [];
-                              if (facts.some((row) => String(row).toLowerCase() === line.toLowerCase())) return;
-                              updateActiveSession({
-                                conversationContext: {
-                                  ...(conversationContext || {}),
-                                  facts: [...facts, line],
-                                },
-                              });
-                            }}
-                          />
-                        ) : null}
                         {studioDomain === 'finance' && msg.id === latestAiId && financeBrief?.active ? (
                           <FinanceBoard
                             brief={financeBrief}
@@ -2065,7 +2357,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, keyInputValue, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, studyTutorBrief, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {
@@ -2135,7 +2427,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           return;
         }
 
-        if (lastMsg.isError) {
+        // Provider-dead / stream errors: apply extractable fences when present.
+        // Otherwise prove existing desk Files (shop/coding) so Preview can still land.
+        const errorHasExtractableCode = lastMsg.isError
+          && messageHasExtractableWorkspaceCode(lastMsg.text, vfs);
+        if (lastMsg.isError && !errorHasExtractableCode) {
+          const userBrief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
+          const skillPlan = planFromMessageSnapshot(lastMsg.codingTurnPlan, {
+            messageForModel: userBrief,
+            displayUserText: userBrief,
+          });
+          if (skillPlan?.isCodingTurn || messageLooksLikeShopBuild(userBrief)) {
+            const proved = proveCodingTurn({
+              plan: skillPlan || {
+                mode: 'execute',
+                isCodingTurn: true,
+                intent: { kind: 'shop_build' },
+                skillsRequired: ['preview_html', 'shop_catalog_photos', 'shop_commerce_ui'],
+                messageForModel: userBrief,
+              },
+              vfs,
+              job: deskJob,
+              brief: userBrief,
+              allowRepair: true,
+              sessionId: activeSessionId,
+            });
+            if (proved?.vfs && Object.keys(proved.vfs).length && commitDeskVfs(proved.vfs)) {
+              const entry = pickPreviewEntry(proved.vfs);
+              if (entry) setWorkspaceCode(entry);
+              setWorkspaceActiveTab('preview');
+              setIsWorkspaceMode(true);
+              setCodingDeskOpen(true);
+            }
+            return;
+          }
           const keepWorkspace = shouldKeepWorkspaceForPrompt({
             prompt: messages.length >= 2 ? messages[messages.length - 2].text : '',
             hasWorkspace: isWorkspaceMode || canvasOpen,
@@ -2145,6 +2470,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             setIsWorkspaceMode(false);
             setCanvasOpen(false);
           }
+          return;
+        }
+
+        // Proof Control Plane already rejected this turn — do not open as success.
+        // Exception: error turns with extractable fences still land the partial workspace.
+        if (lastMsg.codingProof && lastMsg.codingProof.ok === false && !errorHasExtractableCode) {
           return;
         }
 
@@ -2165,38 +2496,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
             : ['preview_html'],
           messageForModel: userBrief,
         };
-        const skilled = runCodingTurnSkills({
+        const proved = proveCodingTurn({
           plan: skillPlan,
           vfs: assembled.vfs,
           job: assembled.job || deskJob,
           brief: userBrief,
+          allowRepair: true,
+          sessionId: activeSessionId,
         });
-        const parsedVfs = skilled.changed ? skilled.vfs : assembled.vfs;
-        if (
-          skillPlan.intent?.kind?.startsWith('shop')
-          && skilled.proof
-          && skilled.proof.hasHtml
-          && skilled.proof.photos < 1
-        ) {
-          rememberCodingTurnLesson(activeSessionId, {
-            kind: lessonKindFromOutcome({ outcomeKind: 'svg_only' }),
-            detail: 'shop desk landed without loadable catalog photos',
-            intentKind: skillPlan.intent?.kind,
-          });
-        }
+        const parsedVfs = proved.vfs;
         const previewable = canOpenStudioPreviewPane(lastMsg.text, vfs)
           || /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code || '')
           || assembled.needsWebEntry === true
-          || skilled.proof.hasHtml;
+          || proved.evidence.hasHtml;
 
-        if (!previewable) {
+        if (!previewable || (skillPlan.intent?.kind?.startsWith('shop') && !codingTurnMayClaimSuccess(proved))) {
           const userPrompt = messages.length >= 2 ? messages[messages.length - 2].text : '';
-          if (vfsLooksLikeShop(vfs, deskJob)) {
-            const ensured = ensureShopDeskInVfs(vfs, deskJob, { brief: userBrief || userPrompt });
-            if (ensured.changed) {
-              setDeskReview(diffVfsReview(vfs, ensured.vfs));
-              setVfs(ensured.vfs);
-              setWorkspaceCode(pickPreviewEntry(ensured.vfs));
+          if (vfsLooksLikeShop(vfs, deskJob) || proved.evidence.hasHtml) {
+            if (proved.vfs && Object.keys(proved.vfs).length && commitDeskVfs(proved.vfs)) {
+              setWorkspaceCode(pickPreviewEntry(proved.vfs));
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
               setCodingDeskOpen(true);
@@ -2216,39 +2534,41 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
 
         if (Object.keys(parsedVfs).length > 0) {
-           const shopVfs = ensureShopDeskInVfs(parsedVfs, assembled.job || deskJob, { brief: userBrief }).vfs;
-           setDeskReview(diffVfsReview(vfs, shopVfs));
-           setVfs(shopVfs);
-           setDeskJob((prev) => {
-             const base = assembled.job || buildStudioJobCard({
-               brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-               vfs: shopVfs,
-               existing: prev,
+           const shopVfs = proved.vfs;
+           // Only adopt job/correlation/"parsed"/workspaceCode when the commit is
+           // accepted — a rejected (truncated) VFS must not be reported as parsed
+           // or shown as this turn's result while the desk keeps the prior page.
+           if (commitDeskVfs(shopVfs)) {
+             setDeskJob((prev) => {
+               const base = assembled.job || buildStudioJobCard({
+                 brief: userBrief || [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+                 vfs: shopVfs,
+                 existing: prev,
+               });
+               if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
+                 return {
+                   ...base,
+                   purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
+                   mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
+                 };
+               }
+               return base;
              });
-             if (assembled.needsWebEntry && /scientific/i.test(userBrief || '')) {
-               return {
-                 ...base,
-                 purpose: /scientific/i.test(base.purpose || '') ? base.purpose : 'A scientific calculator',
-                 mustWork: Array.from(new Set([...(base.mustWork || []), 'Scientific keys (sin/cos) appear on Preview'])),
-               };
-             }
-             return base;
-           });
-           setWorkspaceCorrelationId(lastMsg.correlationId || null);
-           setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
-           void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
-             transaction: lastMsg.goldenTransaction || null,
-             fileCount: Object.keys(parsedVfs).length,
-             detailCode: 'runnable-files-present',
-           });
-           setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
+             setWorkspaceCorrelationId(lastMsg.correlationId || null);
+             setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+             void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+               transaction: lastMsg.goldenTransaction || null,
+               fileCount: Object.keys(parsedVfs).length,
+               detailCode: 'runnable-files-present',
+             });
+             setWorkspaceCode(pickPreviewEntry(shopVfs) || assembled.code || pickPreviewEntry(parsedVfs));
+           }
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
            if (assembled.reopenDesk) setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
               if (code) {
-              setWorkspaceCode(code);
               const isHtml = /<!DOCTYPE html>|<html[\s>]/i.test(code);
               const seedPath = detectSlideDeck(messages) ? 'presentation.html' : (isHtml ? 'index.html' : 'App.jsx');
               const seedVfs = { [seedPath]: { content: code, language: detectSlideDeck(messages) || isHtml ? 'html' : 'jsx' } };
@@ -2258,16 +2578,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 existing: deskJob,
               });
               const nextVfs = ensureShopDeskInVfs(seedVfs, nextJob, { brief: userBrief }).vfs;
-              setDeskReview(diffVfsReview(vfs, nextVfs));
-              setVfs(nextVfs);
-              setDeskJob(nextJob);
-              setWorkspaceCorrelationId(lastMsg.correlationId || null);
-              setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
-              void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
-                transaction: lastMsg.goldenTransaction || null,
-                fileCount: 1,
-                detailCode: 'single-runnable-file',
-              });
+              // Only show the code / record it parsed / adopt the job when the
+              // guard accepts the write — otherwise the desk keeps the prior page.
+              if (commitDeskVfs(nextVfs)) {
+                setWorkspaceCode(code);
+                setDeskJob(nextJob);
+                setWorkspaceCorrelationId(lastMsg.correlationId || null);
+                setWorkspaceGoldenTransaction(lastMsg.goldenTransaction || null);
+                void recordClientBoundary(lastMsg.correlationId, 'artifact.vfs', 'parsed', {
+                  transaction: lastMsg.goldenTransaction || null,
+                  fileCount: 1,
+                  detailCode: 'single-runnable-file',
+                });
+              }
               setWorkspaceActiveTab('preview');
               setIsWorkspaceMode(true);
            } else {
@@ -2285,7 +2608,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         }
       }
     }
-  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen]);
+  }, [isGenerating, messages, lastProcessedMessageId, studioDomain, vfs, isWorkspaceMode, canvasOpen, commitDeskVfs, deskJob, activeSessionId]);
 
   const hasUserTurn = messages.some((message) => message.sender === 'user');
   const generatingStatus = lastAiMessage?.executionStatus?.label;
@@ -2366,6 +2689,43 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       overflow: 'hidden',
       transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
     }}>
+      {/*
+        Browser storage is full or unreadable. Saving is degraded RIGHT NOW, and
+        the consequence lands later — on refresh — so it has to be stated while
+        the user can still act. 'evicted' means the conversation was kept by
+        dropping desk snapshots: the chats are safe, the builds are not.
+        Absolutely positioned so the shell's flex row is untouched.
+      */}
+      {storageFault ? (
+        <div
+          role="status"
+          data-quantora-storage-fault={storageFault.kind}
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            maxWidth: 'min(680px, 92%)',
+            padding: '9px 14px',
+            borderRadius: 10,
+            fontSize: '0.82rem',
+            lineHeight: 1.45,
+            border: '1px solid rgba(249,115,22,0.45)',
+            background: isLight ? '#fff7ed' : 'rgba(120,53,15,0.92)',
+            color: isLight ? '#7c2d12' : '#fed7aa',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
+          }}
+        >
+          {storageFault.kind === 'evicted'
+            ? `Browser storage was full. Your chats were kept, but ${storageFault.deskSnapshotsDropped || 1} saved Coding desk build${(storageFault.deskSnapshotsDropped || 1) === 1 ? ' was' : 's were'} dropped to make room — they will not survive a refresh. Publish or download anything you need.`
+            : storageFault.kind === 'corrupt'
+              ? 'Saved chats could not be read, so a fresh session was started. The previous data was kept aside rather than overwritten.'
+              : storageFault.kind === 'quota'
+                ? 'Browser storage is full, so new messages are no longer being saved. Delete an old chat to free space before refreshing.'
+                : 'This browser is blocking local storage, so new messages are not being saved. Private browsing or a site-data setting is the usual cause — deleting chats will not help.'}
+        </div>
+      ) : null}
       {/* Left Navigation Sidebar — New Chat + footer stay; Chat History is the scroll region. */}
       <div
         data-quantora-studio-sidebar="true"
@@ -3140,6 +3500,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
           /* Active Chat Thread */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
             {renderedChatFeed}
+            {studioDomain === 'education' ? (
+              <Suspense fallback={null}>
+                <StudyTutorWorkspace
+                  key={activeSessionId}
+                  activeSessionId={activeSessionId}
+                  conversationContext={conversationContext}
+                  messages={messages}
+                  isLight={isLight}
+                  textColor={textColor}
+                  subtextColor={subtextColor}
+                  onAsk={(text) => setInputText(text)}
+                  onSend={(text) => handleSendMessage(text)}
+                />
+              </Suspense>
+            ) : null}
             {pclIntercept && (
               <div className="animate-slide-up" style={{ 
                 margin: '20px 0', 
@@ -3868,7 +4243,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                   height: '32px',
                   borderRadius: '50%',
                   cursor: inputText.trim() ? 'pointer' : 'default',
-                  display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   transition: 'all 0.2s ease'
@@ -3979,6 +4353,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                 onClose={() => setCanvasOpen(false)}
                 user={user}
                 onRequireAuth={onOpenAuth}
+                turnBusy={isGenerating}
                 isPresentationIntent={detectSlideDeck(messages)}
                 officeKind={detectOfficeIntent({ messages })}
                 allowPublish={canOfferVercelPublish({
@@ -4161,6 +4536,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       user={user}
                       onRequireAuth={onOpenAuth}
                       vfs={vfs}
+                      turnBusy={isGenerating}
                       onVerificationStatusChange={setPreviewRunStatus}
                       jobCard={deskJob}
                       onHealedPreview={handleHealedPreview}

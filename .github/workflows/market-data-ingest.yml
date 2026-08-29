@@ -4,14 +4,21 @@ name: Market Data Ingestion (Finance)
 # ECB FX via Frankfurter and the SEC EDGAR equity universe. Isolated: it only
 # writes market_* tables in Supabase and touches no application code path.
 #
-# Runs on a daily schedule and on demand. Requires the repository secrets
-# SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Settings -> Secrets and variables
-# -> Actions); without them the job is a safe no-op.
+# The daily schedule is ON. It was left commented out pending the repository
+# secrets SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, and those have been set
+# since at least 2026-08-24 - the run on 2026-08-26 wrote 7,650 FX rows and
+# 10,388 instruments, so the precondition was met days before anyone noticed.
+# Until now this had run five times, every one of them by hand, which meant the
+# stored rate aged past the four-day staleness window and the Finance desk
+# refused every conversion in between.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 5 * * 1-5"   # 05:30 UTC on weekdays, after ECB publishes reference rates
+    # 17:30 UTC on weekdays — after the ECB publishes reference rates (~16:00
+    # CET). The old 05:30 would have refreshed to the PREVIOUS day's rate every
+    # morning, which is a day behind for anyone asking before the afternoon.
+    - cron: "30 17 * * 1-5"
 
 permissions:
   contents: read

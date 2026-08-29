@@ -18,9 +18,12 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
+import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
+import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
+import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
-import { buildCodingDeskScaffoldReply } from '../lib/coding-desk-scaffold.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
@@ -35,6 +38,18 @@ import { planCodingTurn } from '../lib/coding-turn-planner.js';
 import { resolveCodingTurnOutcome } from '../lib/coding-outcome-spine.js';
 import { rememberCodingTurnLesson, readCodingTurnLessons } from '../lib/coding-turn-memory.js';
 import { lessonKindFromOutcome } from '../lib/coding-turn-lesson-kinds.js';
+import { budgetHistory, describeHistoryBudget } from '../lib/history-budget.js';
+import {
+  assessSessionContinuity,
+  createSessionHandoverContract,
+  shouldOfferSessionHandover,
+} from '../lib/session-continuity.js';
+import {
+  proveCodingTurn,
+  codingTurnMayClaimSuccess,
+  proofFailureCopy,
+  buildTruthNote,
+} from '../lib/proof-control-plane.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
 import {
   correlationHeaders,
@@ -51,8 +66,43 @@ import {
 } from '../lib/chat-turn-safety.js';
 
 const MIN_ATTEMPT_BUDGET_MS = 20_000;
-const CHAT_TURN_DEADLINE_MS = 90_000;
-const BUILD_TURN_DEADLINE_MS = 135_000;
+/*
+ * Both client deadlines must OUTLAST the server's own budget
+ * (TOTAL_CHAT_BUDGET_MS, 165s), so a slow turn ends with the server's specific
+ * error rather than the browser hanging up on a request that was still working.
+ *
+ * This was 90s while the server was allowed 165s, so any chat turn over a minute
+ * and a half was aborted by the client mid-flight - tokens generated, billed and
+ * discarded, reported as "Request timed out". A flagship answering over a long
+ * conversation crosses 90s routinely.
+ *
+ * The build path was fixed in #347 and given a release gate; the chat path has
+ * the identical relationship and had no gate, so it kept the bug. The gate now
+ * covers both (see dom-cleanup.test.js).
+ */
+/**
+ * Success copy with what does not work on the page appended to it.
+ *
+ * "Preview is proved" means a runnable page exists. It does not mean anything
+ * on that page works, and there are four separate branches that can declare it
+ * — the normal completion, a skills-seeded desk, and two error-recovery paths
+ * where the desk was already proved. Three of them originally skipped the
+ * build-truth note, so on exactly the turns where the platform was most eager
+ * to report success, it was quietest about the dead controls.
+ *
+ * One helper rather than four copies, so the next success branch cannot omit it
+ * by being written somewhere else.
+ */
+function withBuildTruth(copy, proof) {
+  const note = buildTruthNote(proof);
+  return note ? `${copy}\n\n${note}` : copy;
+}
+
+const CHAT_TURN_DEADLINE_MS = 175_000;
+// Must stay ABOVE the server's TOTAL_CHAT_BUDGET_MS (165s) or the client aborts a
+// turn the server is still working on — the user sees a dead spinner and the
+// server's honest failure never arrives.
+const BUILD_TURN_DEADLINE_MS = 175_000;
 
 function buildApprovedOfficeGenerationPrompt(text, sessionContext, activeArtifact = null) {
   const parts = [String(text || '').trim()];
@@ -122,10 +172,47 @@ async function persistPclContinuity({
   }
 }
 
+/**
+ * What went wrong, in terms the person reading it can act on.
+ *
+ * This used to collapse every failure into "The AI gateway could not complete
+ * the request with X" — a sentence that is true of a dead key, an empty
+ * balance, an oversize prompt, a rate limit and an upstream outage alike, and
+ * useful for none of them. `status` was accepted as an argument and then
+ * thrown away, and the payload arrives as `{}` whenever the error body is not
+ * JSON, so the generic line was what people actually saw.
+ *
+ * Debugging it then took a screenshot and an investigation. The status was
+ * sitting right there the whole time.
+ *
+ * A server-provided message still wins, because it knows more than a status
+ * code does. When there is none, say which code came back and what that class
+ * of failure means — above all whether retrying can possibly help.
+ */
 function responseErrorMessage(status, payload, modelName) {
   if (status === 401 && payload?.requiresAuth) return payload.error || 'Please sign in to continue.';
-  if (status === 429) return payload?.error || 'Too many requests. Please try again shortly.';
-  return payload?.error || `The AI gateway could not complete the request with ${modelName || 'the selected model'}.`;
+  if (payload?.error) return payload.error;
+
+  const who = modelName || 'the selected model';
+  if (status === 401 || status === 403) {
+    return `${who} refused the request as unauthorised (HTTP ${status}). That is the provider credential on this deployment, not your prompt — retrying will not clear it.`;
+  }
+  if (status === 402) {
+    return `${who} needs provider credit this deployment does not have (HTTP 402). Top up the provider account, or paste your own key under Privacy Vault → Session-only provider keys.`;
+  }
+  if (status === 404) {
+    return `${who} is not being served under that name (HTTP 404) — the model id is stale, not your prompt.`;
+  }
+  if (status === 413) {
+    return `This turn is too large for ${who} (HTTP 413). Shorten the message or send fewer images.`;
+  }
+  if (status === 429) {
+    return `${who} is rate limiting this deployment (HTTP 429). Waiting a minute usually clears it; a free-tier model hits this fastest.`;
+  }
+  if (status >= 500) {
+    return `${who} is failing upstream (HTTP ${status}) — the provider, not your prompt. Another model will usually work right now.`;
+  }
+  return `${who} could not complete the request (HTTP ${status}).`;
 }
 
 function activeStudioDomain(chatSessions, activeSessionId) {
@@ -160,6 +247,9 @@ export function useChatStream({
   conversationContext,
   updateActiveSession,
   onCodingTurnExecute = null,
+  onCodingTurnProved = null,
+  onDeskRename = null,
+  buildJob = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
@@ -327,23 +417,39 @@ export function useChatStream({
     setIsGenerating(true);
 
     try {
-      const modRes = await fetch('/api/moderate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text.trim() })
-      });
+      /*
+       * Sending an attachment with no typed text is allowed (the send button
+       * enables on attachments alone), but /api/moderate rejects an empty prompt
+       * with 400. Every non-ok status mapped to the same "try again in a moment"
+       * copy, so attaching a screenshot and pressing send failed permanently and
+       * blamed a transient outage. Screen a text-only prompt; with no text there
+       * is nothing for the text classifier to read.
+       */
+      const promptToScreen = text.trim();
+      const modRes = promptToScreen
+        ? await fetch('/api/moderate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: promptToScreen })
+          })
+        : null;
       if (!stillCurrent()) return;
-      if (!modRes.ok) {
+      if (modRes && !modRes.ok) {
+        // 413 is deterministic (the prompt is too long) — retrying cannot clear
+        // it, so say that instead of implying the service is briefly down.
+        const tooLong = modRes.status === 413;
         updateActiveMessages(prev => [...prev, {
           id: createMessageId('ai'),
           sender: 'ai',
-          text: '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
+          text: tooLong
+            ? '⚠️ **This message is too long to send.** Shorten it — or remove the attached page context — and try again.'
+            : '⚠️ **Safety check unavailable.** Quantora could not reach the moderation service, so this turn was not sent. Please try again in a moment.',
           isError: true
         }]);
         setIsGenerating(false);
         return;
       }
-      const modData = await modRes.json().catch(() => ({}));
+      const modData = modRes ? await modRes.json().catch(() => ({})) : {};
       if (!stillCurrent()) return;
       if (modData.flagged) {
         updateActiveMessages(prev => [...prev, {
@@ -375,7 +481,32 @@ export function useChatStream({
     const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);
     let targetModel = pinnedOrOverride;
 
-    const cleanMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    /*
+     * The transcript has to FIT, not just be short enough by count.
+     *
+     * The server caps history at 100 items and nothing capped its size, while a
+     * Coding Desk turn carries the whole HTML document it built. A few pages, or
+     * one page with inline data-URI images, and the request body passes the
+     * platform's limit — where it is rejected BEFORE the function runs, so there
+     * is no handler to write a JSON error and nothing in any log. The browser
+     * reads a non-JSON body, the payload becomes {}, and every model appears to
+     * fail at once, including one that talks straight to Google.
+     *
+     * Worse, retrying made it worse: each attempt added turns, and the only
+     * escape was to start a new chat and lose the work.
+     */
+    const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    const historyBudget = budgetHistory(filteredMessages);
+    const cleanMessages = historyBudget.history;
+    // The FACT that history was shortened, reported every time it happens. The
+    // handover chip is the offer to start fresh; it is shown once and never says
+    // anything was dropped, so it cannot stand in for this.
+    const historyNotice = describeHistoryBudget(historyBudget);
+    const continuityTranscript = [...filteredMessages, { sender: 'user', text: visibleUserText }];
+    const continuityPressure = assessSessionContinuity({
+      messages: continuityTranscript,
+      historyResult: historyBudget,
+    });
     const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
 
     const currentOfficeArtifact = activeOfficeArtifact(messages);
@@ -508,6 +639,44 @@ export function useChatStream({
 
     let effectiveArenaMode = arenaMode;
     const deskFiles = Boolean(isWorkspaceMode && vfs && Object.keys(vfs).length > 0);
+
+    /*
+     * A RENAME IS A FIND AND REPLACE. IT NEVER GOES TO A MODEL.
+     *
+     * "can you rename or rebrand this as Hiran's Coffee" used to be sent as a
+     * full regeneration: re-emit all 970 lines of index.html to change a
+     * string. It hit the 175s ceiling and produced nothing — no rename, no
+     * site, and a charge for the attempt.
+     *
+     * The answer is derivable from files already in hand, so it is computed
+     * here in milliseconds. It cannot time out, cannot redesign the page it was
+     * asked to rename, and cannot drop the other 969 lines.
+     *
+     * A refusal short-circuits too. When the current name cannot be derived,
+     * asking one question is a better turn than spending three minutes letting
+     * a model guess which string to swap.
+     */
+    if (deskFiles && typeof onDeskRename === 'function') {
+      const renameAsk = detectRenameRequest(visibleUserText);
+      if (renameAsk) {
+        const plan = planDeskRename({ vfs, html: canvasCode || '', newName: renameAsk.newName });
+        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan)) : false;
+        if (!plan.ok || applied) {
+          if (!stillCurrent()) return;
+          updateActiveMessages(prev => [...prev, {
+            id: createMessageId('ai'),
+            sender: 'ai',
+            text: describeDeskRename(plan),
+            // Not an error — a refusal here is a question, and the desk is intact.
+            isError: false,
+          }]);
+          setIsGenerating(false);
+          return;
+        }
+        // The commit was rejected (a broken VFS guard upstream). Fall through to
+        // the model rather than reporting a rename that did not land.
+      }
+    }
     const hasCodingWorkspace = deskFiles
       || Boolean(isWorkspaceMode)
       || Boolean(codingDeskOpen)
@@ -524,7 +693,18 @@ export function useChatStream({
       studioDomain,
       live: liveDeskProbe,
     });
-    const isCodingRequest = resolveIsCodingRequest(text, {
+    /*
+     * Same rule as the planner, applied to the streaming path: a follow-up in a
+     * build session is work on the build, not a fresh chat turn. Without this
+     * the desk, the Preview and the whole proof path fall away mid-conversation.
+     */
+    const buildSessionActive = isBuildSessionActive({
+      priorUserMessages: messages.filter((m) => m.sender === 'user').map((m) => m.text),
+      codingDeskOpen: Boolean(codingDeskOpen),
+      hasDeskFiles: Object.keys(vfs || {}).length > 0,
+      isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
+    });
+    const isCodingRequest = turnBelongsToBuild({ text, buildSessionActive }) || resolveIsCodingRequest(text, {
       codingDeskOpen: Boolean(codingDeskOpen),
       refineDesk,
     });
@@ -610,10 +790,130 @@ export function useChatStream({
         ...(turnDomain && turnDomain !== studioDomain ? { studioDomain: turnDomain } : {}),
       });
     }
+    const sessionContinuity = shouldOfferSessionHandover(messages, continuityPressure)
+      ? createSessionHandoverContract({
+        sourceSessionId: activeSessionId,
+        projectId: sessionContext?.projectId || turnContext?.projectId || null,
+        studioDomain: turnDomain,
+        conversationContext: turnContext,
+        messages: continuityTranscript,
+        pressure: continuityPressure,
+      })
+      : null;
 
     const vfsFileCountForHints = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
+    /*
+     * The server has accepted vision input all along (attachedImages: data-URI
+     * strings, max 4 - see the request normalizer); the client simply never sent
+     * them, so an attached screenshot was read, encoded, displayed in the
+     * composer, and then dropped. Forward them.
+     *
+     * An attachment-only send also has empty `text`, which /api/chat rejects with
+     * "Message string is required" - so skipping the moderation call alone just
+     * moved that dead end one hop. Give the turn a real instruction instead, and
+     * only when an image is actually attached and being delivered.
+     */
+    /*
+     * The wire budget, not the file-picker's budget. A base64 data URI is ~4/3 the
+     * size of the file it encodes, so the uploader's 3MB-per-file ceiling produces
+     * a ~4.2M-character string - already past this cap on its own. Anything the cap
+     * excludes must be REPORTED, never dropped in silence: the earlier version
+     * broke out of the loop on the first oversized image, which also discarded
+     * every smaller image queued behind it, and the turn then went to the model
+     * describing an image it had never been sent.
+     */
+    const MAX_ATTACHED_IMAGE_CHARS = 3_500_000; // keeps the JSON body under Vercel's 4.5MB limit
+    const MAX_ATTACHED_IMAGES = 4;
+    const deliverableImages = [];
+    const excluded = [];
+    let attachedChars = 0;
+    for (const item of attachments || []) {
+      const url = item?.dataUrl;
+      // No dataUrl at all: a non-image file, or one the reader already rejected.
+      // The reader knows which; trust it over guessing 'unsupported' for both.
+      if (typeof url !== 'string' || !url.startsWith('data:image/')) {
+        excluded.push({ name: item?.name, reason: item?.excludedReason || 'unsupported' });
+        continue;
+      }
+      if (deliverableImages.length >= MAX_ATTACHED_IMAGES) {
+        excluded.push({ name: item?.name, reason: 'count' });
+        continue;
+      }
+      // Skip this one and keep going - a later, smaller image can still fit.
+      if (attachedChars + url.length > MAX_ATTACHED_IMAGE_CHARS) {
+        excluded.push({ name: item?.name, reason: 'size' });
+        continue;
+      }
+      attachedChars += url.length;
+      deliverableImages.push(url);
+    }
+    const attachedImages = deliverableImages;
+
+    const namesOf = (list) => list.map((entry) => entry.name).filter(Boolean).join(', ');
+    const tooLarge = excluded.filter((entry) => entry.reason === 'size');
+    const unsupported = excluded.filter((entry) => entry.reason === 'unsupported');
+    const overCount = excluded.filter((entry) => entry.reason === 'count');
+
+    /*
+     * Nothing to send: an attachment-only turn where every attachment was excluded
+     * would otherwise post an empty message that /api/chat rejects with "Message
+     * string is required" - a dead end with the moderation error suppressed, so
+     * nothing explained it. Say which file was excluded and why.
+     */
+    if (!text.trim() && !attachedImages.length) {
+      const explanation = tooLarge.length
+        ? `${namesOf(tooLarge) || 'That image'} is too large to send once encoded — images need to be roughly 2.5MB or smaller. Try a smaller copy, or tell me what you need and I will help.`
+        : unsupported.length
+          ? `I can read images (PNG/JPG), but not ${namesOf(unsupported) || 'that file'} — describe what you need and I will help.`
+          : 'Add a message so I know what you would like me to do.';
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: explanation,
+        isError: true,
+      }]);
+      setIsGenerating(false);
+      return;
+    }
+
+    /*
+     * The turn IS going ahead, but not with everything that was attached. Saying so
+     * up front is the difference between a partial answer and a wrong one: without
+     * it the model answers about the images it received while the composer shows
+     * the ones it did not.
+     */
+    if (excluded.length) {
+      const parts = [];
+      if (tooLarge.length) parts.push(`${namesOf(tooLarge) || 'one image'} (too large once encoded)`);
+      if (unsupported.length) parts.push(`${namesOf(unsupported) || 'one file'} (not a readable image)`);
+      if (overCount.length) parts.push(`${namesOf(overCount) || 'the rest'} (only ${MAX_ATTACHED_IMAGES} images per turn)`);
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: `Heads up — I could not send ${parts.join(' and ')}. I am answering on what did go through.`,
+        isError: true,
+      }]);
+    }
+
+    /*
+     * "continue" on a running job means TAKE THE NEXT STEP.
+     *
+     * Sent as the bare word it is nearly meaningless several turns after the
+     * plan: the model no longer has the goal in view and re-reads the whole
+     * project. nextStepBrief restates the goal and names the exact files the
+     * step owes, which is also what marks it done — so the instruction and the
+     * proof are the same list.
+     */
+    const resumingJob = buildJob
+      && !buildJobIsComplete(buildJob)
+      && /^\s*(continue|next|next step|go on|carry on|keep going)\b[\s.!]*$/i.test(text);
+    const messageForRequest = resumingJob
+      ? nextStepBrief(buildJob)
+      : (text.trim() || 'I have attached an image. Describe what you see and help me with it.');
+
     const requestBodyFor = (model) => ({
-      message: text,
+      message: messageForRequest,
+      attachedImages,
       modelId: model.id,
       modelName: model.name,
       history: cleanMessages,
@@ -623,9 +923,34 @@ export function useChatStream({
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
       buildMode: isCodingRequest,
+      /*
+       * Ask the essentials before writing a thousand lines.
+       *
+       * shouldStartGuidedBuild existed, was exported, was tested — and had NO
+       * caller. Nothing ever put `guidedBuild` in this body, so the server's
+       * shouldHonorGuidedBuild was permanently false, the BUILD CHOICE
+       * TEMPLATES were never added to the system prompt, and the conversation
+       * engine's `clarify / guided_intake` factor never fired.
+       *
+       * The visible cost: "help me build a website for my coffee shop" went
+       * straight to a 970-line storefront under an invented brand name, and
+       * the reply had to admit mid-paragraph that the name was a placeholder
+       * and the shipping terms were assumed. One question first is cheaper
+       * than a rebuild, for the user and for the credit meter.
+       */
+      guidedBuild: shouldStartGuidedBuild({
+        text: visibleUserText,
+        hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+        isWorkspace: hasCodingWorkspace,
+        studioMode: refineDesk ? 'build' : 'ask',
+        isVisionQuestion: attachedImages.length > 0,
+      }),
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,
+      // A job already running means the next turn takes a STEP. Without this,
+      // every follow-up on a big build would re-plan instead of advancing.
+      buildJobActive: Boolean(buildJob && !buildJobIsComplete(buildJob)),
       ...(isCodingRequest ? {
         qualityHints: {
           fileCount: vfsFileCountForHints,
@@ -800,13 +1125,29 @@ export function useChatStream({
         if (!stillCurrent()) return;
         const controller = new AbortController();
         abortControllerRef.current = controller;
+        /*
+         * What the model actually streamed before anything went wrong.
+         *
+         * `currentText` lives inside the read loop, so the outer catch could not
+         * see it and overwrote the message with the error copy - throwing away a
+         * page that was most of the way built. That is the same deletion the proof
+         * gate used to do, and it is worse here: those tokens were generated and
+         * billed. Three sites further down already append the outcome to the
+         * partial instead of replacing it; the catch was the one that could not,
+         * for want of a variable in the right scope.
+         */
+        let streamedSoFar = '';
         // The deadline covers the whole turn, so a second attempt inherits what
         // is left of it rather than doubling how long the person waits.
         const attemptBudgetMs = Math.max(
           MIN_ATTEMPT_BUDGET_MS,
           turnDeadlineMs - (Date.now() - turnStartedAt),
         );
-        const timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
+        /*
+         * Phase 1 - TRANSPORT. Armed before fetch so a request that cannot even
+         * reach the server still ends.
+         */
+        let timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
 
         try {
           const res = await fetch('/api/chat', {
@@ -819,6 +1160,21 @@ export function useChatStream({
               turnAttempt: attempt,
             })
           });
+          /*
+           * Phase 2 - SERVER PROCESSING. Re-armed the moment response headers
+           * arrive, because that is when the server's own clock starts.
+           *
+           * The two wall clocks are NOT directly comparable: this one began
+           * before fetch, TOTAL_CHAT_BUDGET_MS begins inside the handler after
+           * the body lands. Now that the composer sends multi-megabyte images, a
+           * slow upload could eat the margin and abort a turn the server had
+           * only just begun - the same inversion this whole change exists to
+           * remove, arriving through the transport instead of the constant.
+           * Restarting here makes the comparison apples to apples whatever the
+           * upload cost.
+           */
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
           if (!stillCurrent()) return;
           const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
 
@@ -893,6 +1249,7 @@ export function useChatStream({
               }
               if (parsed.text) {
                 currentText += parsed.text;
+                streamedSoFar = currentText;
                 if (!stillCurrent()) return;
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
@@ -936,19 +1293,74 @@ export function useChatStream({
           }
 
           if (streamedError) {
+            // A failed build is NOT rewritten into an authored dashboard. This
+            // branch used to substitute a hand-written HTML shell for the model's
+            // missing output, flip isError to false, and hand back a page whose
+            // "Run sample organize pass" button reported "12 files grouped, 3
+            // duplicates flagged" — counts invented in the template. The user was
+            // shown a working product built by nobody, told nothing had failed,
+            // and outcome metrics recorded a success. Fall through to the honest
+            // failure paths below instead. The flag is still read by those paths
+            // to word the real error.
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
-            if (artifactFailed && isCodingRequest && codingDeskOpen && !advisorBlocksPreviewBuild(turnDomain)) {
-              const scaffolded = buildCodingDeskScaffoldReply(visibleUserText);
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: scaffolded,
-                isError: false,
-                executionStatus: null,
-                deskScaffolded: true,
-              } : m));
-              return;
-            }
             if (isCodingRequest) {
+              // Model route died mid-stream — still prove skills-seeded desk.
+              if (turnPlan?.isCodingTurn) {
+                const deskProof = proveCodingTurn({
+                  plan: turnPlan,
+                  vfs: vfs || {},
+                  job: deskJob,
+                  brief: turnPlan.messageForModel || visibleUserText,
+                  allowRepair: true,
+                  sessionId: activeSessionId,
+                });
+                const thisTurnOwnedDesk = Boolean(
+                  turnPlan.runSkillsFirst
+                  || deskProof.repaired
+                  || (Array.isArray(deskProof.ran) && deskProof.ran.length > 0),
+                );
+                if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
+                  if (typeof onCodingTurnProved === 'function') {
+                    try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                  }
+                  const why = artifactFailed
+                    ? (streamedError.message || 'Build artifact failed')
+                    : (streamedError?.message || 'no healthy AI route');
+                  /*
+                   * Never claim "proved" over a desk that cannot start.
+                   *
+                   * A scheduling board was committed with a Scheduler.jsx cut
+                   * off after two import lines and a JobPanel that was never
+                   * written. Preview said "Missing local preview module"; the
+                   * chat said the page was proved and waiting. Whether a page
+                   * RENDERS needs a browser — whether every module it imports
+                   * exists is a fact about files already in hand.
+                   */
+                  const missingImports = findMissingLocalImports(deskProof.vfs || {});
+                  updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                    ...m,
+                    text: withBuildTruth(
+                      missingImports.length
+                        ? `${why}. ${describeMissingImports(missingImports)} Ask me to finish `
+                          + `${missingImports.length === 1 ? 'that file' : 'those files'} and the rest of the build stays as it is.`
+                        : `${why}, but Preview is already proved on the desk`
+                          + `${describeDeskEvidence(deskProof.evidence)}. `
+                          + 'Open Coding desk — the page is there.',
+                      deskProof,
+                    ),
+                    isError: false,
+                    executionStatus: null,
+                    codingProof: {
+                      ok: true,
+                      gaps: [],
+                      evidence: deskProof.evidence,
+                      status: 'pass',
+                      repaired: deskProof.repaired,
+                    },
+                  } : m));
+                  return;
+                }
+              }
               const providerOutcome = resolveCodingTurnOutcome({
                 kind: 'provider-dead',
                 errorMessage: artifactFailed
@@ -1020,13 +1432,59 @@ export function useChatStream({
             return;
           }
 
-          // Coding Desk build turns must land files. A chat-only plan is not success.
+          // Coding Desk build turns must land files OR already-proved skills on the desk.
           // Advisor domains (Study flashcards, Travel, etc.) intentionally stay chat.
           if (
             isCodingRequest
             && !advisorBlocksPreviewBuild(turnDomain)
             && !assembleStudioPreview(currentText).code
           ) {
+            const shopOwned = Boolean(
+              turnPlan?.isCodingTurn
+              && (turnPlan.intent?.kind?.startsWith('shop') || turnPlan.shop || turnPlan.intakeAccept?.expanded),
+            );
+            // Skills-first may already have proved a shop on the desk while the model
+            // returned prose — prove that VFS before declaring no-preview.
+            if (turnPlan?.isCodingTurn) {
+              const seededProof = proveCodingTurn({
+                plan: turnPlan,
+                vfs: vfs || {},
+                job: deskJob,
+                brief: turnPlan.messageForModel || visibleUserText,
+                allowRepair: true,
+                sessionId: activeSessionId,
+              });
+              if (codingTurnMayClaimSuccess(seededProof)) {
+                if (typeof onCodingTurnProved === 'function') {
+                  try { onCodingTurnProved(seededProof, turnPlan); } catch { /* ignore */ }
+                }
+                const okCopy = shopOwned
+                  ? (
+                    `Preview is proved on the desk `
+                    + `(${seededProof.evidence.photos} catalog photos`
+                    + `${seededProof.evidence.hasCart ? ', Add to Cart' : ''}).`
+                  )
+                  : 'Preview is proved on the desk — open Coding desk to run it.';
+                const okCopyWithTruth = withBuildTruth(okCopy, seededProof);
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  text: currentText
+                    ? `${sanitizeAssistantStream(currentText)}\n\n${okCopyWithTruth}`
+                    : okCopyWithTruth,
+                  isError: false,
+                  executionStatus: null,
+                  codingProof: {
+                    ok: true,
+                    gaps: [],
+                    evidence: seededProof.evidence,
+                    status: 'pass',
+                    repaired: seededProof.repaired,
+                  },
+                  correlationId: responseCorrelationId,
+                } : m));
+                return;
+              }
+            }
             const recovery = resolveTurnRecovery({
               attempt,
               code: 'BUILD_ARTIFACT_CONTRACT',
@@ -1036,19 +1494,8 @@ export function useChatStream({
               announceRecovery(recovery.notice);
               continue;
             }
-            const scaffolded = codingDeskOpen
-              ? buildCodingDeskScaffoldReply(visibleUserText)
-              : null;
-            if (scaffolded) {
-              updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
-                ...m,
-                text: scaffolded,
-                isError: false,
-                executionStatus: null,
-                deskScaffolded: true,
-              } : m));
-              return;
-            }
+            // No authored scaffold here either: a build that produced no files is
+            // reported as the failure it is, via resolveCodingTurnOutcome below.
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
@@ -1059,7 +1506,13 @@ export function useChatStream({
                   intentKind: turnPlan.intent?.kind,
                 });
                 return {
-                  text: outcome.text,
+                  // Same rule as the other paths: a turn that produced no FILES
+                  // may still have produced words, and showing them is not the
+                  // fabrication the comment above guards against - it is the
+                  // opposite. Only the platform's own invented content is banned.
+                  text: currentText
+                    ? `${sanitizeAssistantStream(currentText)}\n\n${outcome.text}`
+                    : outcome.text,
                   isError: outcome.isError,
                   executionStatus: null,
                   ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
@@ -1067,6 +1520,72 @@ export function useChatStream({
               })(),
             } : m));
             return;
+          }
+
+          // Proof Control Plane owns success — skills + repair + evidence, not chat claims.
+          let codingProof = null;
+          // A failed proof annotates the turn; it never replaces it. See below.
+          let proofNote = '';
+          let proofChips = [];
+          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain)) {
+            const assembled = assembleStudioPreview(currentText, vfs || {});
+            const seedVfs = {
+              ...(vfs || {}),
+              ...(assembled.vfs || {}),
+            };
+            codingProof = proveCodingTurn({
+              plan: turnPlan,
+              vfs: seedVfs,
+              job: deskJob,
+              brief: turnPlan.messageForModel || visibleUserText,
+              allowRepair: true,
+              sessionId: activeSessionId,
+            });
+            if (typeof onCodingTurnProved === 'function') {
+              try {
+                onCodingTurnProved(codingProof, turnPlan);
+              } catch { /* desk apply is best-effort */ }
+            }
+            /*
+             * A failed proof is a NOTE, never a replacement.
+             *
+             * This branch used to overwrite the assistant message with the failure
+             * copy and return, which skipped the entire path that renders the build.
+             * A complete, working page the gate simply did not recognise - anything
+             * without a <!DOCTYPE, or React the runtime detector missed - was deleted
+             * before the user ever saw it, and the text that replaced it talked about
+             * catalog photos and Add to Cart whatever had been asked for.
+             *
+             * The model's output is the user's work. The gate may annotate it. It may
+             * not destroy it. Verification that hides the thing it cannot verify is
+             * not verification, it is censorship with extra steps.
+             */
+            if (!codingTurnMayClaimSuccess(codingProof)) {
+              proofNote = proofFailureCopy(codingProof, turnPlan);
+              proofChips = (shopIntakeAsk?.chips || turnPlan.interrupt?.chips || []).map((chip) => ({
+                id: chip.id,
+                label: chip.label,
+                value: chip.value,
+                priority: chip.priority,
+              }));
+            }
+
+            /*
+             * What does not work in the page, whether or not proof passed.
+             *
+             * This is the one that matters to the person who cannot read the
+             * source. Proof passing means there is a runnable file; it says
+             * nothing about whether the buttons on it do anything. A page with
+             * twelve dead buttons passes proof today, looks finished, and is
+             * found out by clicking.
+             *
+             * Appended AFTER the proof note and never in place of it: the two
+             * answer different questions - "could I verify this?" and "what is
+             * wrong with it?" - and a turn can need both. Like every other note
+             * here it is added to the build, never substituted for it.
+             */
+            const truthNote = buildTruthNote(codingProof);
+            if (truthNote) proofNote = proofNote ? `${proofNote}\n\n${truthNote}` : truthNote;
           }
 
           const normalized = normalizeAssistantResponse(currentText);
@@ -1100,10 +1619,38 @@ export function useChatStream({
           if (!stillCurrent()) return;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: withTravelDegradedNotice(displayWithIntake, travelDegraded),
+            /*
+             * The trim notice rides with the other turn notes, never alone and
+             * never silent: a platform that quietly forgets a conversation
+             * leaves somebody wondering why it stopped remembering.
+             */
+            text: (proofNote || historyNotice)
+              ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${[historyNotice, proofNote].filter(Boolean).join('\n\n')}`.trim()
+              : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
+            ...(codingProof ? {
+              // The real verdict. This was hardcoded to pass, which was true only
+              // because a failure returned before reaching here. Now that a failed
+              // proof lands with its build, it must report what it actually found.
+              codingProof: {
+                ok: Boolean(codingProof.ok),
+                gaps: codingProof.gaps || [],
+                evidence: codingProof.evidence,
+                status: codingProof.status,
+                repaired: codingProof.repaired,
+              },
+            } : {}),
             ...(normalized.choiceSet ? { choiceSet: normalized.choiceSet } : {}),
-            ...(mergedContinueSet ? { continueSet: mergedContinueSet } : {}),
+            ...((mergedContinueSet || proofChips.length) ? {
+              continueSet: {
+                items: [
+                  ...(mergedContinueSet?.items || []),
+                  ...proofChips.filter(
+                    (chip) => !(mergedContinueSet?.items || []).some((item) => item.id === chip.id),
+                  ),
+                ],
+              },
+            } : {}),
             ...(normalized.clearWorkspace ? { clearWorkspace: true } : {}),
             correlationId: responseCorrelationId,
             ...(travelPlaces ? { travelPlaces } : {}),
@@ -1114,6 +1661,7 @@ export function useChatStream({
                 userAsked: shopIntakeAsk.userAsked,
               },
             } : {}),
+            ...(sessionContinuity ? { sessionContinuity } : {}),
           } : m));
           if (typeof updateActiveSession === 'function' && (normalized.contextUpdate || intakeFacts.length)) {
             updateActiveSession({
@@ -1153,6 +1701,52 @@ export function useChatStream({
               shopIntakeAsk.oversize
               || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
             );
+            // Model died — keep desk only when THIS turn seeded/repaired it.
+            // Do not call a prior Preview a success for a timed-out refine.
+            if (turnPlan?.isCodingTurn && !stopped) {
+              const deskProof = proveCodingTurn({
+                plan: turnPlan,
+                vfs: vfs || {},
+                job: deskJob,
+                brief: turnPlan.messageForModel || visibleUserText,
+                allowRepair: true,
+                sessionId: activeSessionId,
+              });
+              const thisTurnOwnedDesk = Boolean(
+                turnPlan.runSkillsFirst
+                || deskProof.repaired
+                || (Array.isArray(deskProof.ran) && deskProof.ran.length > 0),
+              );
+              if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
+                if (typeof onCodingTurnProved === 'function') {
+                  try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                }
+                const why = timedOut
+                  ? `The model hit the ${Math.round(turnDeadlineMs / 1000)}s limit`
+                  : (error.message || 'The model route failed');
+                updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+                  ...m,
+                  text: withBuildTruth(
+                    deskCanStart(deskProof.vfs || {})
+                      ? `${why}, but Preview is already proved on the desk`
+                        + `${describeDeskEvidence(deskProof.evidence)}. `
+                        + 'Open Coding desk — the page is there.'
+                      : `${why}. ${describeMissingImports(findMissingLocalImports(deskProof.vfs || {}))}`,
+                    deskProof,
+                  ),
+                  isError: false,
+                  executionStatus: null,
+                  codingProof: {
+                    ok: true,
+                    gaps: [],
+                    evidence: deskProof.evidence,
+                    status: 'pass',
+                    repaired: deskProof.repaired,
+                  },
+                } : m));
+                return;
+              }
+            }
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
               turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
@@ -1178,20 +1772,30 @@ export function useChatStream({
             }
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
-              text: outcome.text,
+              // Keep the build and explain what stopped it, the way the three
+              // sites above already do. A page that got 90% of the way is worth
+              // more than a sentence saying it did not arrive.
+              text: streamedSoFar
+                ? `${sanitizeAssistantStream(streamedSoFar)}\n\n${outcome.text}`
+                : outcome.text,
               isError: outcome.isError,
               executionStatus: null,
               ...(outcome.continueSet ? { continueSet: outcome.continueSet } : {}),
             } : m));
             return;
           }
+          const failureNote = stopped
+            ? '⚠️ **Generation Stopped**'
+            : timedOut
+              ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
+              : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
-            text: stopped
-              ? '⚠️ **Generation Stopped**'
-              : timedOut
-                ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
-                : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`,
+            // Stopping a turn - by timeout, by Stop, or by a dead connection -
+            // must not erase what already arrived.
+            text: streamedSoFar
+              ? `${sanitizeAssistantStream(streamedSoFar)}\n\n${failureNote}`
+              : failureNote,
             isError: true,
             executionStatus: null,
           } : m));

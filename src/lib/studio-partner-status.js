@@ -2,6 +2,7 @@
  * Partner-status copy for Studio: what just happened, and what to do next.
  * This is the Cursor-style "human progress" line — not a chatbot spinner.
  */
+import { describeTurnPhase, stalledTurnActions } from './turn-progress.js';
 
 export function previewShellIsWarming(previewRunStatus = '') {
   const value = typeof previewRunStatus === 'string'
@@ -30,10 +31,25 @@ export function resolveStudioPartnerStatus({
   shopIntake = null,
   shopTurnFailureCopy = '',
   previewRunStatus = '',
+  // Observed signals for the progress line. Absent ones simply narrow what it
+  // can say; none of them are inferred from elapsed time.
+  streamedBytes = 0,
+  streamedPaths = [],
+  previewCompiling = false,
+  previewHealing = false,
+  activeModelName = '',
+  turnBudgetSec = 0,
 } = {}) {
   void photosMissing;
   void shopUiMissing;
-  const clock = `0:${String(Math.max(0, Number(elapsedSec) || 0)).padStart(2, '0')}`;
+  /*
+   * The minute used to be a literal zero, so the clock could not count past 59:
+   * a 110s build rendered "0:110" and a full turn "0:165". It stayed invisible
+   * while every build died inside a minute; now that the primary attempt gets
+   * 110s and the turn 165s, it is on screen for the whole wait.
+   */
+  const totalSec = Math.max(0, Math.floor(Number(elapsedSec) || 0));
+  const clock = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'
     || studioDomain === 'finance'
@@ -55,11 +71,28 @@ export function resolveStudioPartnerStatus({
         next: `Building about ${shopIntake.proposedCatalogSize || 10} working catalog photos — not the full unique-image ask. ${clock}`,
       };
     }
+    /*
+     * The old copy was the same sentence at 5 seconds and at 3 minutes, so a
+     * person could not tell a healthy turn from one about to die. Every line
+     * below is backed by something observed: bytes, files, the compiler.
+     */
+    const phase = describeTurnPhase({
+      elapsedSec: totalSec,
+      bytes: streamedBytes,
+      filePaths: streamedPaths,
+      previewCompiling,
+      previewHealing,
+      modelName: activeModelName,
+      budgetSec: turnBudgetSec,
+    });
     return {
       now: generatingLabel || 'Working on a result you can actually use…',
-      next: hasPreview
-        ? `Preview stays open while this updates. ${clock}`
-        : `Hang tight — it appears in Preview when it can run. ${clock}`,
+      next: phase.line,
+      phase: phase.phase,
+      stalled: phase.stalled,
+      // Offered only once the wait has stopped being normal, so a person has
+      // something to DO other than keep watching a clock.
+      actions: phase.stalled ? stalledTurnActions({ hasPreview, isBuild: !lifeDomain }) : [],
     };
   }
 

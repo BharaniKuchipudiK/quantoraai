@@ -13,6 +13,7 @@ import {
   syncRemoteProjectSessions,
 } from '../lib/project-store.js';
 import { compactOfficeMessages } from '../lib/office-session-state.js';
+import { compactSupersededBuilds } from '../lib/session-code-budget.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
 import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, isCannedProjectDescription } from '../lib/studio-mission.js';
 
@@ -102,6 +103,71 @@ function persistProjects(projects) {
   }
 }
 
+const CORRUPT_BACKUP_KEY = `${STORAGE_KEY}_corrupt`;
+
+/**
+ * Storage faults were console-only, so losing your chats looked identical to
+ * nothing happening. This holds the last fault so the UI can say so plainly.
+ * `kind`: 'corrupt' | 'quota' | 'write' | 'evicted' (evicted = recovered by
+ * dropping regenerable desk snapshots, history intact).
+ */
+let storageFault = null;
+const storageFaultListeners = new Set();
+
+export function readStudioStorageFault() {
+  return storageFault;
+}
+
+/** Subscribe so the fault reaches React state; a module variable alone is invisible. */
+export function subscribeStudioStorageFault(listener) {
+  if (typeof listener !== 'function') return () => {};
+  storageFaultListeners.add(listener);
+  return () => storageFaultListeners.delete(listener);
+}
+
+function publishStorageFault() {
+  for (const listener of storageFaultListeners) {
+    try { listener(storageFault); } catch { /* a bad listener must not break persistence */ }
+  }
+}
+
+function noteStorageFault(kind, error, extra = {}) {
+  storageFault = { kind, at: Date.now(), message: String(error?.message || error || ''), ...extra };
+  if (kind !== 'evicted') console.error('Studio session storage fault:', kind, error);
+  publishStorageFault();
+  return storageFault;
+}
+
+function clearStorageFault() {
+  if (!storageFault) return;
+  /*
+   * A 'corrupt' notice reports something that already happened and points at the
+   * backup key. The very next message writes successfully, so clearing on
+   * success would erase it a second later — before the user could read it. Only
+   * live degradations ('quota', 'write', 'evicted') are cleared by a good write.
+   */
+  if (storageFault.kind === 'corrupt') return;
+  storageFault = null;
+  publishStorageFault();
+}
+
+/** DOMException name/code varies by browser; match the ones that mean "full". */
+function isQuotaError(error) {
+  const name = String(error?.name || '');
+  return name === 'QuotaExceededError'
+    || name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    || Number(error?.code) === 22
+    || Number(error?.code) === 1014;
+}
+
+/** Copy an unparseable blob aside before anything overwrites it. */
+function preserveCorruptSessionBlob() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) localStorage.setItem(CORRUPT_BACKUP_KEY, raw);
+  } catch { /* storage unavailable — nothing further to protect */ }
+}
+
 function loadSessions(defaultGreeting) {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -116,7 +182,14 @@ function loadSessions(defaultGreeting) {
       }
     }
   } catch (e) {
-    console.error(e);
+    /*
+     * A corrupt blob used to be swallowed here and replaced with a single empty
+     * "New Chat" — and the next persistSessions then overwrote the only copy of
+     * the salvageable bytes. Keep the raw string under a backup key first so the
+     * history is recoverable, and record the fault so it is not silent.
+     */
+    preserveCorruptSessionBlob();
+    noteStorageFault('corrupt', e);
   }
   return [{
     id: 'session-1',
@@ -129,15 +202,75 @@ function loadSessions(defaultGreeting) {
   }];
 }
 
+/**
+ * Chat history is irreplaceable; a desk snapshot is a regenerable build artifact
+ * that can reach MAX_STUDIO_DESK_CHARS (800k chars, ~1.6MB UTF-16) per session.
+ * Three or four coding sessions therefore exhausted the ~5MB origin budget, and
+ * because the quota error was swallowed, EVERY later save silently no-opped —
+ * the user refreshed and found their chats reverted or gone.
+ *
+ * So on a quota failure, shed desk snapshots oldest-first and retry rather than
+ * giving up: the builds can be rebuilt, the conversation cannot. Only when even
+ * a desk-free write fails is the fault recorded for the UI to surface.
+ */
 function persistSessions(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  /*
+   * Fold superseded builds before writing, not after the quota throws.
+   *
+   * Measured on a 5-turn storefront session (a 970-line index.html): 774 KB
+   * stored, of which 645 KB was the same page repeated in chat history and
+   * only 129 KB was the desk snapshot. Six such sessions exhausted the origin,
+   * and the eviction below then dropped a build the user still wanted.
+   *
+   * The newest build keeps its code verbatim — Preview replays it and it
+   * matches the desk. Older copies leave a marker naming the file and its
+   * size, because a transcript that silently loses a code block is the same
+   * defect as a proof gate that silently claimed a pass. Same fixture after
+   * folding: 43 sessions fit instead of 6.
+   */
+  const compact = list.map((session) => ({
+    ...session,
+    messages: compactSupersededBuilds(compactOfficeMessages(session.messages || [])).messages,
+  }));
+
   try {
-    const compact = (Array.isArray(sessions) ? sessions : []).map((session) => ({
-      ...session,
-      messages: compactOfficeMessages(session.messages || []),
-    }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
+    clearStorageFault();
+    return true;
   } catch (e) {
-    console.error(e);
+    if (!isQuotaError(e)) {
+      noteStorageFault('write', e);
+      return false;
+    }
+
+    // Oldest first: the desk you are working in now is the last to be shed.
+    const order = compact
+      .map((session, index) => ({ index, createdAt: Number(session?.createdAt) || 0 }))
+      .sort((left, right) => left.createdAt - right.createdAt || left.index - right.index);
+
+    const trimmed = compact.map((session) => ({ ...session }));
+    let shed = 0;
+    for (const { index } of order) {
+      // `desk: null` is an empty desk, not a snapshot: deleting it frees nothing,
+      // inflates the reported count, and wastes a retry.
+      if (!trimmed[index]?.desk) continue;
+      delete trimmed[index].desk;
+      shed += 1;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+        noteStorageFault('evicted', null, { deskSnapshotsDropped: shed });
+        return true;
+      } catch (retryError) {
+        if (!isQuotaError(retryError)) {
+          noteStorageFault('write', retryError);
+          return false;
+        }
+      }
+    }
+
+    noteStorageFault('quota', e, { deskSnapshotsDropped: shed });
+    return false;
   }
 }
 
@@ -198,6 +331,48 @@ function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
   };
 }
 
+/**
+ * Create a reversible child session from bounded continuity state.
+ *
+ * THE DESK TRAVELS. The transcript is what got too big — the build never did.
+ *
+ * Without this the chip was a one-click way to lose your work: a handover
+ * session had no `desk`, so restoreStudioDeskSnapshot returned null and the
+ * Coding Desk opened empty. The chip is domain-agnostic and fires hardest in
+ * Coding, where every turn carries a full HTML document and the byte budget
+ * goes first — so it appeared most often exactly where abandoning the build
+ * cost the most, labelled only "New chat · <goal>".
+ *
+ * That is the trap the history-budget notice was written to warn about:
+ * "the only escape — start a new chat and lose the work — is the one thing
+ * nobody is told." Carrying the snapshot means there is nothing to warn about.
+ * The old session keeps its own copy either way; nothing is moved, only copied.
+ */
+export function makeHandoverSession({ contract, projectId, defaultGreetingMsg, sourceSession = null } = {}) {
+  if (contract?.kind !== 'session_handover' || !contract?.sourceSessionId || !projectId) return null;
+  const domain = normalizeStudioDomain(contract.studioDomain);
+  const session = makeSession(projectId, defaultGreetingMsg, domain);
+  const goal = String(contract?.summary?.goal || '').trim();
+  const desk = sourceSession && sourceSession.id === String(contract.sourceSessionId)
+    ? sourceSession.desk
+    : null;
+  return {
+    ...session,
+    ...(goal ? { title: goal.slice(0, 80) } : {}),
+    ...(desk ? { desk } : {}),
+    conversationContext: contract.context || {},
+    parentSessionId: String(contract.sourceSessionId),
+    handover: {
+      version: contract.version,
+      id: contract.id,
+      sourceSessionId: String(contract.sourceSessionId),
+      createdAt: contract.createdAt,
+      summary: contract.summary || {},
+      deskCarried: Boolean(desk),
+    },
+  };
+}
+
 function createProjectId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `project-${crypto.randomUUID()}`;
@@ -230,6 +405,8 @@ export function useStudioSession({ user, selectedModel }) {
     () => loadProjects()[0]?.id || DEFAULT_PROJECT_ID,
   );
   const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg));
+  const [storageFault, setStorageFault] = useState(() => readStudioStorageFault());
+  useEffect(() => subscribeStudioStorageFault(setStorageFault), []);
   const [activeSessionId, setActiveSessionId] = useState(() => allChatSessions[0]?.id || 'session-1');
   const [remoteProjectContext, setRemoteProjectContext] = useState(null);
   const accountKey = user?.sub || user?.email || null;
@@ -505,7 +682,7 @@ export function useStudioSession({ user, selectedModel }) {
     });
     setActiveSessionId(newSession.id);
     return newSession.id;
-  }, [activeProject.id, defaultGreetingMsg]);
+  }, [activeProject.id, allChatSessions, defaultGreetingMsg]);
 
   const handleCreateNewChat = useCallback(() => {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
@@ -515,6 +692,26 @@ export function useStudioSession({ user, selectedModel }) {
       return updated;
     });
     setActiveSessionId(newSession.id);
+  }, [activeProject.id, defaultGreetingMsg]);
+
+  const handleCreateHandoverChat = useCallback((contract) => {
+    const newSession = makeHandoverSession({
+      contract,
+      // A handover may not move data across projects. The active project owns it.
+      projectId: activeProject.id,
+      defaultGreetingMsg,
+      // The build comes with it. Looked up rather than passed in, so the caller
+      // cannot hand over a desk belonging to a different session.
+      sourceSession: allChatSessions.find((item) => item.id === contract?.sourceSessionId) || null,
+    });
+    if (!newSession) return null;
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+    return newSession.id;
   }, [activeProject.id, defaultGreetingMsg]);
 
   const openAdvisorWorkspace = useCallback((domain) => {
@@ -702,6 +899,13 @@ export function useStudioSession({ user, selectedModel }) {
   }, [activeProject.id, activeSessionId, defaultGreetingMsg, projects]);
 
   return {
+    /*
+     * Surfaced so the UI can say that saving degraded. 'evicted' means the quota
+     * recovery dropped regenerable desk snapshots to keep the conversation - the
+     * builds are gone from storage and will not survive a refresh, so the user
+     * has to be told rather than discovering it later.
+     */
+    storageFault,
     chatSessions,
     setChatSessions: setAllChatSessions,
     activeSessionId,
@@ -721,6 +925,7 @@ export function useStudioSession({ user, selectedModel }) {
     setStudioDomain,
     recordListeningSignal,
     handleCreateNewChat,
+    handleCreateHandoverChat,
     handleCreateAdvisorChat,
     openAdvisorWorkspace,
     forkChatFromMessage,
@@ -738,3 +943,6 @@ export function useStudioSession({ user, selectedModel }) {
     projectResume,
   };
 }
+
+/** Test-only handle on the storage internals; not part of the hook's API. */
+export const __testables = { persistSessions, loadSessions };

@@ -4,6 +4,8 @@
  * Never invent models; only choose from the Active / available list.
  */
 
+import { MIN_OUTCOME_SAMPLES, outcomeRoutingAdjust } from './model-outcome-routing.js';
+
 export const CODING_DESK_AUTO_MODEL_ID = 'auto';
 
 export const CODING_DESK_AUTO_MODEL = {
@@ -60,7 +62,23 @@ const FREE_KINDS = new Set(['free', 'free-tier']);
 
 const COMPLEX_ASK = /\b(architect(?:ure|ural)?|system\s+design|complex|multi-?file|refactor\s+(?:the\s+)?entire|migrate|large[\s-]?scale|production[\s-]?ready|enterprise|codebase)\b/i;
 const MULTI_FILE_ASK = /\b(?:across|all)\s+files?\b|\bmultiple\s+files?\b|\bentire\s+(?:app|project|codebase)\b/i;
+// A shop/e-commerce build must satisfy the real-photo + cart + styling contract —
+// too much for a weak default model, so escalate to a capable coder up front.
+const SHOP_BUILD_ASK = /\b(shop|store|storefront|e-?commerce|boutique|catalog(?:ue)?|marketplace)\b|\bsell(?:ing)?\s+online\b/i;
+// An "AI agent", a backend/integration, an OAuth/API connection, or crawling/
+// automation over an external service is far heavier than a static page — the
+// fast default routinely blows the build deadline on these. Escalate up front.
+const AGENT_OR_INTEGRATION_ASK = /\b(a\s?i\.?\s*agent|agent\s+that|autonomous|automat(?:e|es|ed|ion|ing)|integrat(?:e|es|ed|ion|ing)|connect(?:s|ed|ing)?\s+to|o\s?auth|api\s+(?:key|integration|call|endpoint)|webhook|back-?end|server-?side|micro-?service|database|data\s+pipeline|crawl(?:s|ing)?|scrap(?:e|er|ers|ing)|index(?:es|ing)?\s+(?:files|documents|data)|google\s+drive|dropbox|gmail|outlook|slack|notion|airtable|salesforce)\b/i;
 const CODING_SPECIALIST = /coder|nemotron|deepseek|gpt-oss|qwen|claude|sonnet|gpt-?4|gpt-?5|opus/i;
+
+// A long request that strings together several distinct deliverables is a bigger
+// build than the fast default reliably finishes in one turn — route it up front.
+function looksLikeBigMultiPartAsk(text = '') {
+  const t = String(text || '');
+  if (t.length < 240) return false;
+  const requirements = (t.match(/\b(list|find|organi[sz]e|categori[sz]e|detect|dedup(?:e|licate)?|generate|create|build|connect|crawl|sort|filter|remove|delete|move|summari[sz]e|analy[sz]e|sync|schedule|track)\b/gi) || []).length;
+  return requirements >= 3;
+}
 
 export function isCodingDeskAutoSelection(modelOrId) {
   if (modelOrId == null) return true;
@@ -103,12 +121,29 @@ function codingStrength(model, { allowPaid = false } = {}) {
   if (/claude|sonnet|opus|gpt-?4|gpt-?5/.test(hay)) score += 28;
   if (/llama[^a-z]*3\.[13]|mistral[^a-z]*large|grok/.test(hay)) score += 16;
   if (/gemini|flash/.test(hay)) score -= 8;
-  if (model.quality?.sampleSize >= 5 && Number.isFinite(model.quality?.score)) {
-    score += Math.max(0, Math.min(12, model.quality.score / 8));
-  }
+  // Measured reality overrides the name guess as evidence accumulates: a model
+  // that actually succeeds is promoted, one that keeps failing is demoted.
+  // Fail-safe — no trustworthy signal contributes 0 (see model-outcome-routing).
+  score += outcomeRoutingAdjust(model.quality);
   if (allowPaid && !isFreeReady(model) && /coder|claude|sonnet|deepseek|qwen/.test(hay)) score += 10;
+  // A paid FLAGSHIP (Claude/GPT-4+/GPT-5 class) writes COMPLETE builds; a cheap
+  // "coder" specialist truncates. The literal word "coder" alone scores +48, so
+  // without this a weak coder outranks a flagship. When paid is allowed, give a
+  // genuine flagship the decisive edge — but never a mini/lite/haiku variant,
+  // which carries a flagship name without the completion reliability.
+  if (
+    allowPaid
+    && !isFreeReady(model)
+    && /claude|sonnet|opus|gpt-?4|gpt-?5/.test(hay)
+    && !/mini|nano|lite|haiku|flash|small|tiny|\b\d{1,2}b\b/.test(hay)
+  ) score += 40;
   if (!allowPaid && isFreeReady(model)) score += 4;
   return score;
+}
+
+function hasTrustedOutcome(model) {
+  return Number(model?.quality?.sampleSize) >= MIN_OUTCOME_SAMPLES
+    && Number.isFinite(model?.quality?.score);
 }
 
 function pickStrongCoding(models, { allowPaid = false } = {}) {
@@ -117,11 +152,72 @@ function pickStrongCoding(models, { allowPaid = false } = {}) {
     if (allowPaid) return true;
     return isFreeReady(model);
   });
-  const specialists = pool.filter((model) => CODING_SPECIALIST.test(`${model.id} ${model.name} ${model.specialty || ''}`));
-  const ranked = (specialists.length ? specialists : pool)
+  // Name specialists are the usual contenders, but a model with a trustworthy
+  // measured record earns a seat at the table even without "coder" in its name —
+  // otherwise the name gate would hide a proven performer before evidence is read.
+  const contenders = pool.filter((model) =>
+    CODING_SPECIALIST.test(`${model.id} ${model.name} ${model.specialty || ''}`)
+    || hasTrustedOutcome(model),
+  );
+  const ranked = (contenders.length ? contenders : pool)
     .map((model, index) => ({ model, index, score: codingStrength(model, { allowPaid }) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
   return ranked[0]?.model || null;
+}
+
+/**
+ * How reliably a model FINISHES a coding turn in time — the objective for a
+ * failover pick (which differs from `codingStrength`, whose objective is raw
+ * coding power for the PRIMARY pick).
+ *
+ * Measured reality leads: `outcomeRoutingAdjust` promotes a model that actually
+ * succeeds and demotes one that keeps stalling, and contributes 0 until there
+ * is trustworthy evidence. Only while a model is still UNPROVEN do we seed a
+ * finish-reliability prior — the one place a name matters, and only until real
+ * outcomes replace it:
+ *   - Gemini reliably finishes fast, inside the build deadline → strong prior.
+ *   - A paid coder generally finishes → mild prior.
+ *   - An unproven free coder (e.g. a queued `*:free`) is the model that blew the
+ *     135s deadline and triggered the fake "proved on the desk" → negative prior.
+ * Swap the catalog tomorrow and this still does the right thing, because the
+ * order is driven by evidence + a finish prior, never by hardcoded identity.
+ */
+function fallbackFinishReliability(model, { allowPaid = false } = {}) {
+  // Identity prior — the finish-reliability floor, the one place a name matters.
+  const id = String(model?.id || '');
+  let prior;
+  if (id.startsWith('gemini')) prior = 20;                    // reliably finishes fast, in-deadline
+  else if (allowPaid && !isFreeReady(model)) prior = 12;      // a paid coder generally finishes
+  else prior = -6;                                            // unproven free coder: the deadline risk
+  // Measured reality ADDS on top (never replaces the prior): a model that
+  // actually finishes climbs, one that stalls sinks; 0 until there is trustworthy
+  // evidence. Keeping the prior as a floor preserves the invariant — an UNPROVEN
+  // paid model (12) can never pass proven Gemini (20 + its measured lift); a coder
+  // only overtakes Gemini by EARNING enough measured merit to exceed that floor.
+  return prior + outcomeRoutingAdjust(model?.quality);
+}
+
+/**
+ * Order the failover candidates for a Coding Desk turn by finish-reliability,
+ * NOT by model name. Gemini free-tier is always kept as the last-resort safety
+ * net; a paid coder can only rank ahead of it by EARNING it on measured
+ * outcomes, never by default. Anonymous/free sessions keep a free-only failover
+ * set (allowPaid=false); a session with a usable key may also fail over to
+ * another paid coder when the evidence says it is the more reliable finisher.
+ */
+export function rankCodingDeskFallbacks(availableModels = [], { primaryId = '', allowPaid = false } = {}) {
+  const pool = readyModels(availableModels).filter((model) => {
+    if (model.id === primaryId) return false;
+    return allowPaid ? true : isFreeReady(model);
+  });
+  const ranked = pool
+    .map((model, index) => ({ id: model.id, index, score: fallbackFinishReliability(model, { allowPaid }) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((entry) => entry.id);
+  if (primaryId !== 'gemini-flash-latest' && !ranked.includes('gemini-flash-latest')) {
+    ranked.push('gemini-flash-latest');
+  }
+  return ranked;
 }
 
 /**
@@ -139,6 +235,12 @@ export function shouldEscalateCodingDeskModel({
   if (qualityHints?.shopImageOversize) return true;
   const text = String(message || '');
   if (COMPLEX_ASK.test(text) || MULTI_FILE_ASK.test(text)) return true;
+  if (SHOP_BUILD_ASK.test(text)) return true;
+  // Agent/backend/integration builds and long multi-part asks are heavy enough
+  // that the fast default tends to time out — escalate to a stronger coder so
+  // the turn has a real chance of finishing, instead of a 135s dead spinner.
+  if (AGENT_OR_INTEGRATION_ASK.test(text)) return true;
+  if (looksLikeBigMultiPartAsk(text)) return true;
   const fileCount = Number(qualityHints?.fileCount) || 0;
   if (hasVFS && (fileCount >= 5 || text.length >= 2500)) return true;
   return false;
@@ -206,6 +308,23 @@ export function resolveCodingDeskModel({
       model: gemini,
       modelId: geminiId,
       reason: 'escalate_unavailable_stay_gemini',
+      escalated: false,
+      selectionSource: 'coding_desk_auto',
+    };
+  }
+
+  // Do NOT leave the fast, reliable Gemini default for an UNPROVEN FREE model.
+  // A free non-Gemini coder (e.g. a queued `*:free` model) is routinely slower
+  // than Gemini and blew past the 135s build deadline — which then triggered the
+  // "inject canned photos + claim proved on the desk" fallback. Gemini finishes
+  // in time and writes the real rich page. Only escalate away from it to a PAID
+  // capable coder, or to a free model that has actually earned it on measured
+  // outcomes (not the fabricated "proved-on-dead" successes).
+  if (!allowPaid && isFreeReady(stronger) && !hasTrustedOutcome(stronger)) {
+    return {
+      model: gemini,
+      modelId: geminiId,
+      reason: 'stay_gemini_unproven_free',
       escalated: false,
       selectionSource: 'coding_desk_auto',
     };

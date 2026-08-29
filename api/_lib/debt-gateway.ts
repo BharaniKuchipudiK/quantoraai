@@ -13,7 +13,7 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseDebtIntent } from "./debt-intent.js";
-import { comparePayoff, formatDebtPlan } from "./debt-payoff.js";
+import { composeDebtTurn } from "./debt-conversation.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 import { guardFinanceGateway } from "./finance-gateway-guard.js";
@@ -57,16 +57,16 @@ async function runDebtPlan(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  if (!intent.debts.length || intent.extraMonthly === null) {
-    sendStream(
-      res,
-      requestId,
-      "I can build a debt-payoff plan, but I need the numbers explicitly. Give me each debt as **balance at APR%** (with a minimum if you have it) and the amount you can put toward debt each month — for example: *“$5,000 at 19.99% (min $150) and $3,000 at 24%, $600/month”*. I won't guess balances or rates.",
-    );
-    return true;
-  }
+  /*
+   * Same defect as the savings gateway: parseDebtIntent reports matched:true on
+   * the trigger word alone, so "how does debt affect my credit score?" consumed
+   * the turn and returned a demand for balances and APRs, every time, with no
+   * way through to the model. composeDebtTurn returns null on anything it cannot
+   * answer from arithmetic, and the turn stays a conversation.
+   */
+  const move = composeDebtTurn(intent);
+  if (!move) return false;
 
-  const comparison = comparePayoff(intent.debts, intent.extraMonthly);
-  sendStream(res, requestId, formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums }));
+  sendStream(res, requestId, move.text);
   return true;
 }

@@ -149,7 +149,13 @@ export function getSessionUser(req: any): SessionUser | null {
   return readSessionToken(cookies[SESSION_COOKIE]);
 }
 
-function cookieAttributes(maxAge: number): string {
+export const OAUTH_STATE_COOKIE = "quantora_github_oauth_state";
+
+function isSecureCookieRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+}
+
+export function cookieAttributes(maxAge: number): string {
   /*
    * HttpOnly   — script cannot read it, so an XSS bug cannot exfiltrate the
    *              session the way it could with a token in localStorage.
@@ -159,24 +165,41 @@ function cookieAttributes(maxAge: number): string {
    *              the state-changing endpoints while keeping normal navigation
    *              working.
    */
-  const isProduction = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
   return [
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-    isProduction ? "Secure" : "",
+    isSecureCookieRuntime() ? "Secure" : "",
     `Max-Age=${maxAge}`,
   ]
     .filter(Boolean)
     .join("; ");
 }
 
+export function appendSetCookie(res: any, cookie: string): void {
+  const prev = typeof res.getHeader === "function" ? res.getHeader("Set-Cookie") : undefined;
+  if (!prev) {
+    res.setHeader("Set-Cookie", cookie);
+    return;
+  }
+  const list = Array.isArray(prev) ? prev.map(String) : [String(prev)];
+  res.setHeader("Set-Cookie", [...list, cookie]);
+}
+
 export function setSessionCookie(res: any, token: string): void {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${token}; ${cookieAttributes(SESSION_TTL_SECONDS)}`);
+  appendSetCookie(res, `${SESSION_COOKIE}=${token}; ${cookieAttributes(SESSION_TTL_SECONDS)}`);
 }
 
 export function clearSessionCookie(res: any): void {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; ${cookieAttributes(0)}`);
+  appendSetCookie(res, `${SESSION_COOKIE}=; ${cookieAttributes(0)}`);
+}
+
+export function oauthStateCookie(value: string, maxAge = 600): string {
+  return `${OAUTH_STATE_COOKIE}=${encodeURIComponent(value)}; ${cookieAttributes(maxAge)}`;
+}
+
+export function clearOAuthStateCookie(): string {
+  return `${OAUTH_STATE_COOKIE}=; ${cookieAttributes(0)}`;
 }
 
 /* Convenience for generating a SESSION_SECRET during setup. */

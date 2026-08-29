@@ -23,11 +23,11 @@ test("does not fire on ordinary finance chat or a plain payoff line", () => {
 });
 
 test("pulls a concrete consolidation offer out of the message", () => {
-  assert.deepEqual(parseConsolidationOffer("consolidate at 10.5% over 60 months"), { ratePct: 10.5, termMonths: 60 });
-  assert.deepEqual(parseConsolidationOffer("a loan at 8% for 5 years"), { ratePct: 8, termMonths: 60 });
+  assert.deepEqual(parseConsolidationOffer("consolidate at 10.5% over 60 months"), { apr: 10.5, months: 60 });
+  assert.deepEqual(parseConsolidationOffer("a loan at 8% for 5 years"), { apr: 8, months: 60 });
   assert.equal(parseConsolidationOffer("consolidate my debts please"), null, "no rate/term -> no offer");
 
   const withOffer = parseDebtCrisisIntent("consolidate my debt at 9% over 48 months");
   assert.equal(withOffer.matched, true);
-  assert.deepEqual(withOffer.offer, { ratePct: 9, termMonths: 48 });
+  assert.deepEqual(withOffer.offer, { apr: 9, months: 48 });
 });
