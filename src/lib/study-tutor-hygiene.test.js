@@ -65,3 +65,11 @@ test('Study assessment responses are generation-guarded across topic and session
     'issue and grade continuations must reject stale responses',
   );
 });
+
+test('Study never exposes a local check while a verified check is loading or failing', () => {
+  const shell = fs.readFileSync(path.join(root, 'src/components/StudyTutorShell.jsx'), 'utf8');
+  assert.match(shell, /setActivity\('local-check'\)/);
+  assert.match(shell, /activity === 'local-check' && check/);
+  assert.match(shell, /activity === 'check' && assessment\?\.status === 'error'/);
+  assert.doesNotMatch(shell, /activity === 'check' && !assessment\?\.item && check/);
+});

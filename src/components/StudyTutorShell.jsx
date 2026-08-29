@@ -48,8 +48,15 @@ export default function StudyTutorShell({
     if (onRequestAssessment) {
       const outcome = await onRequestAssessment();
       if (!outcome?.fallback) return;
+      setActivity('local-check');
+      return;
     }
-    if (!check) askOrSend(studyQuizAsk(topic));
+    if (check) {
+      setActivity('local-check');
+      return;
+    }
+    askOrSend(studyQuizAsk(topic));
+    setActivity(null);
   };
 
   const submitLocal = (optionId) => {
@@ -247,7 +254,19 @@ export default function StudyTutorShell({
           </div>
         ) : null}
 
-        {activity === 'check' && !assessment?.item && check ? (
+        {activity === 'check' && assessment?.status === 'error' ? (
+          <div
+            role="status"
+            aria-live="polite"
+            data-quantora-study-inline-activity="check-error"
+            style={{ marginTop: '9px', padding: '10px 11px', borderRadius: '11px', background: isLight ? '#fff7ed' : 'rgba(124,45,18,0.18)', border: isLight ? '1px solid #fed7aa' : '1px solid rgba(251,146,60,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}
+          >
+            <span style={{ color: subtextColor, fontSize: '0.75rem', lineHeight: 1.45 }}>{assessment.error}</span>
+            <button type="button" aria-label="Close check" onClick={() => setActivity(null)} style={iconButtonStyle}><X size={14} /></button>
+          </div>
+        ) : null}
+
+        {activity === 'local-check' && check ? (
           <div
             data-quantora-study-inline-activity="check"
             style={{ marginTop: '9px', padding: '10px 11px', borderRadius: '11px', background: isLight ? '#fff7ed' : 'rgba(124,45,18,0.18)', border: isLight ? '1px solid #fed7aa' : '1px solid rgba(251,146,60,0.25)' }}
