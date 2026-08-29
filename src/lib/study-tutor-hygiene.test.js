@@ -51,7 +51,20 @@ test('Study tutor focus is a persistent workspace sibling, not mounted under the
 
 test('Study tutor focus has no hidden legacy board or More dashboard', () => {
   const shell = fs.readFileSync(path.join(root, 'src/components/StudyTutorShell.jsx'), 'utf8');
-  assert.doesNotMatch(shell, /StudyTutorBoard|data-quantora-study-focus-detail/);
+  /*
+   * USED, not merely named.
+   *
+   * A bare /StudyTutorBoard/ counts a COMMENT as a revival — and a comment
+   * explaining why a render moved out of the deleted board is exactly the
+   * context the next reader needs. The wiring gate had this same flaw, where a
+   * docblock cleared the very symbol it documented, and #362's hygiene check
+   * had it too.
+   *
+   * Importing the legacy board or rendering it is the thing that must never
+   * happen, so that is what these match.
+   */
+  assert.doesNotMatch(shell, /\bimport\b[^;]*\bStudyTutorBoard\b|<StudyTutorBoard\b/);
+  assert.doesNotMatch(shell, /data-quantora-study-focus-detail/);
   assert.doesNotMatch(shell, />\s*(?:More|Less)\s*</);
 });
 

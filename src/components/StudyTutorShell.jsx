@@ -191,6 +191,27 @@ export default function StudyTutorShell({
                 {assessment.result.explanation || stateLabel}
               </div>
             ) : null}
+            {/*
+              The next move is the SERVER's decision, rendered verbatim.
+              buildStudyLearnerModel runs behind the assessment endpoint and
+              this shell never derives mastery or picks a move.
+
+              Landed here ahead of the server that fills it. PR #362 adds the
+              learnerModel field; until it merges this reads undefined and
+              renders nothing, which is why it is safe in either order. It sits
+              in this file because THIS file is the one that survives — #362
+              writes the same five lines into StudyTutorBoard.jsx, which this PR
+              deletes, and without a copy here that render is lost on whichever
+              of the two merges second.
+            */}
+            {assessment?.result?.learnerModel?.nextLearningMove?.learnerFacingText ? (
+              <div
+                data-quantora-study-next-learning-move="true"
+                style={{ marginTop: '4px', color: subtextColor, fontSize: '0.72rem', lineHeight: 1.45 }}
+              >
+                {assessment.result.learnerModel.nextLearningMove.learnerFacingText}
+              </div>
+            ) : null}
             {assessment?.error ? <div style={{ marginTop: '6px', color: isLight ? '#9f1239' : '#fb7185', fontSize: '0.72rem' }}>{assessment.error}</div> : null}
           </div>
         ) : null}
