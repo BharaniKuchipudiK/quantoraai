@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
+import { STUDIO_DOMAIN, studioDomainPolicy } from '../src/lib/studio-domain-policy.js';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
@@ -60,12 +61,23 @@ async function screenshot(name) {
   await page.screenshot({ path: `${ARTIFACT_DIR}/${name}.png`, fullPage: true });
 }
 
-const workspaces = [
-  { label: 'Travel Advisor', domain: 'travel', capabilities: ['Flights', 'Hotels', 'Attractions', 'Itineraries'] },
-  { label: 'Finance Advisor', domain: 'finance', capabilities: ['Portfolio', 'Cash flow', 'Debt', 'Decisions'] },
-  { label: 'Study Tutor', domain: 'education', capabilities: ['Explain', 'Practise', 'Plan', 'Review'] },
-  { label: 'Research Analyst', domain: 'research', capabilities: ['Research', 'Compare', 'Evidence', 'Decide'] },
-];
+/*
+ * Read from the policy the app itself renders, never a second copy.
+ *
+ * This list used to be hardcoded, and the day Finance stopped advertising a
+ * "Portfolio" it could not answer, the gate failed for asserting the old claim
+ * — the gate defending a promise the product had already withdrawn. A gate
+ * carrying its own copy of the truth eventually guards the copy instead.
+ *
+ * So this proves the UI renders exactly what the policy declares, and
+ * capability-claims-gate.mjs separately proves every declared capability has a
+ * module behind it. Together: what is shown is what is declared, and what is
+ * declared is answerable.
+ */
+const workspaces = Object.values(STUDIO_DOMAIN).map((domain) => {
+  const policy = studioDomainPolicy(domain);
+  return { label: policy.title, domain, capabilities: policy.capabilities };
+});
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });

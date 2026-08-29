@@ -33,6 +33,7 @@ import {
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
+import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
@@ -890,12 +891,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
      * shouldAutoAdvanceJob and its stop conditions stay in build-job.js, tested.
      */
     const proposed = readPlanMarker(rawText);
-    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
-    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
-    setPatchNote((assembled.patchFailures || [])
-      .map((failure) => describePatchFailures(failure.result, failure.filepath))
-      .filter(Boolean)
-      .join('\n\n'));
+    /*
+     * `assembled.vfs || vfs` was not a fallback. `{}` is truthy, so it never
+     * fired once: a turn that built nothing handed the job planner an empty
+     * desk and every step was judged against no files at all.
+     *
+     * Checked explicitly here rather than fixed in applyWorkspaceFromChat.
+     * Making the no-op return the desk instead of {} looks obviously right and
+     * broke the desk review gate — proveCodingTurn runs with allowRepair over
+     * `assembled.vfs`, and the emptiness is how that path knows this turn
+     * produced nothing. The stress harness calls it a hazard rather than a
+     * defect for exactly that reason, and the producer-side change is a
+     * separate piece of work with every consumer audited.
+     */
+    const deskForJob = assembled.didUpdate ? assembled.vfs : vfs;
+    if (proposed) setBuildJob(advanceBuildJob(proposed, deskForJob));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, deskForJob) : prev));
+    setPatchNote([
+      ...(assembled.patchFailures || [])
+        .map((failure) => describePatchFailures(failure.result, failure.filepath)),
+      // An empty fence keeps the file rather than blanking it. Saying so is the
+      // whole point: a silent keep is as confusing as the silent delete was.
+      describeEmptyFenceKept(assembled.emptyFenceKept),
+    ].filter(Boolean).join('\n\n'));
     if (assembled.rejected) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
     const skillPlan = planFromMessageSnapshot(lastAi?.codingTurnPlan, {

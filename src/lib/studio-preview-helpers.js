@@ -153,9 +153,9 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
   // patchFailures rides along so the turn can say which edits did not land.
   // Dropping it here is how a half-applied edit used to reach the user wearing
   // a sentence that claimed the whole thing worked.
-  const { vfs, patchFailures } = parseVFSWithReport(rawText, currentVfs);
+  const { vfs, patchFailures, emptyFenceKept } = parseVFSWithReport(rawText, currentVfs);
   if (Object.keys(vfs).length > 0) {
-    return { vfs, code: pickPreviewEntry(vfs), patchFailures };
+    return { vfs, code: pickPreviewEntry(vfs), patchFailures, emptyFenceKept };
   }
 
   const html = extractUnfencedHtml(rawText);
@@ -164,10 +164,11 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
       vfs: { 'index.html': { content: html, language: 'html' } },
       code: html,
       patchFailures,
+      emptyFenceKept,
     };
   }
 
-  return { vfs: {}, code: '', patchFailures };
+  return { vfs: {}, code: '', patchFailures, emptyFenceKept };
 }
 
 /**
@@ -239,6 +240,8 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
     // Edits the model asked for that could not be applied. The turn must say so
     // rather than commit what landed and describe what was asked.
     patchFailures: assembled.patchFailures || [],
+    // Files an empty fence tried to blank. The turn must say so.
+    emptyFenceKept: assembled.emptyFenceKept || [],
   };
 }
 
