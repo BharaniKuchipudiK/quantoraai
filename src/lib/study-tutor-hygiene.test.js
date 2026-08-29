@@ -59,3 +59,9 @@ test('Study assessment responses are generation-guarded across topic and session
     'issue and grade continuations must reject stale responses',
   );
 });
+
+test('Study next move is rendered from the server learner model, not inferred in the browser', () => {
+  const board = fs.readFileSync(path.join(root, 'src/components/StudyTutorBoard.jsx'), 'utf8');
+  assert.match(board, /assessment\.result\.learnerModel\?\.nextLearningMove\?\.learnerFacingText/);
+  assert.equal(board.includes('buildStudyLearnerModel'), false);
+});
