@@ -1051,6 +1051,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    */
   const [pendingHandover, setPendingHandover] = useState(null);
 
+  /*
+   * The session goal had no way to close. On an advisor workspace it is sticky
+   * by design, so it sat forever echoing a truncated sentence the Study card
+   * above it was already showing — two cards, one string, in the scarcest
+   * space on the screen. Keyed by session so hiding it in one chat does not
+   * hide it in the next.
+   */
+  const [missionDismissedFor, setMissionDismissedFor] = useState(null);
+  const missionDismissed = missionDismissedFor === activeSessionId;
+
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
@@ -3600,10 +3610,15 @@ Paused — ${autoPauseRef.current}.`
             // Coding Desk: mission chrome is not a progress indicator — it sits forever
             // echoing the last oversize ask ("Building: 100 unique…") and mocks failure.
             // Advisors keep a short sticky goal; coding only shows it while generating.
-            ['travel', 'education', 'finance', 'research'].includes(studioDomain)
-              ? studioMission
-              : (isGenerating ? studioMission : null)
+            missionDismissed
+              ? null
+              : ['travel', 'education', 'finance', 'research'].includes(studioDomain)
+                ? studioMission
+                : (isGenerating ? studioMission : null)
           }
+          // Study shows the topic in its own focus card; repeating it here is noise.
+          hideGoal={studioDomain === 'education'}
+          onDismiss={() => setMissionDismissedFor(activeSessionId)}
           isLight={isLight}
           textColor={textColor}
           subtextColor={subtextColor}

@@ -8,14 +8,39 @@ const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab)\b([^>]*)\/?>/gi;
 
 export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
 
+/*
+ * A caption ABOUT THE INSTRUCTION rather than about an idea. The tutor prompt
+ * describes the picture tag to the model, and the model sometimes captions the
+ * tag instead of the subject — "Opening a study idea with an icebreaker and
+ * visual tag" is a caption about captioning. There is no diagram of that.
+ */
+const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|one sentence|caption|placeholder|diagram of the (?:idea|concept))\b/i;
+
+/**
+ * Which diagram this caption earns, or NULL when it earns none.
+ *
+ * Null is the important return. Every caption used to fall through to a generic
+ * three-box "Observe / Connect / Check", so a caption naming no subject still
+ * got a picture — shapes arranged to look like teaching while teaching nothing.
+ * That is placeholder content, and it is precisely what Build Truth flags as a
+ * defect in the pages this platform builds for other people. Drawing nothing is
+ * the correct answer when there is nothing to draw.
+ */
 export function studyVisualKind(caption = '') {
   const text = String(caption || '').toLowerCase();
-  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile/.test(text)) return 'physics-motion';
+  if (META_CAPTION.test(text)) return null;
+  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body/.test(text)) return 'physics-motion';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
-  if (/graph|slope|axis|curve|plot/.test(text)) return 'graph';
-  return 'concept-relationship';
+  if (/graph|slope|axis|curve|plot|trend|correlation|distribution/.test(text)) return 'graph';
+  /*
+   * The relationship diagram is real, but only for a caption that actually
+   * describes a relationship. Requiring the words keeps it from becoming the
+   * catch-all it used to be.
+   */
+  if (/cause|effect|leads? to|depends? on|relationship|process|cycle|step|stage|flow|compare|versus|\bvs\b|between/.test(text)) return 'concept-relationship';
+  return null;
 }
 
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */

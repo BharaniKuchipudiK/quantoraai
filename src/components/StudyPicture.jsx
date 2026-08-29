@@ -28,15 +28,37 @@ function PictureArt({ isLight, caption, kind }) {
   return (
     <Frame isLight={isLight} label={`${kind.replace(/-/g, ' ')} diagram: ${caption}`}>
       {kind === 'physics-motion' ? (
+        /*
+         * A real free-body diagram, not a box with decoration. Every force is
+         * drawn FROM the same point — the body's centre — because that is the
+         * whole idea the diagram exists to teach, and the previous version drew
+         * them from an offset that quietly taught the wrong thing. Friction
+         * opposes the applied force; normal and weight are equal and opposite
+         * and are drawn that length, so the picture is consistent with the
+         * physics rather than merely decorated with its vocabulary.
+         */
         <>
-          <line x1="30" y1="134" x2="330" y2="134" stroke={muted} strokeWidth="3" />
-          <rect x="146" y="86" width="68" height="46" rx="7" fill={isLight ? '#cbd5e1' : '#475569'} stroke={ink} strokeWidth="2" />
-          <Arrow x1="180" y1="108" x2="285" y2="108" label="" color="#f97316" />
-          <Arrow x1="180" y1="108" x2="180" y2="36" label="" color="#0ea5e9" />
-          <Arrow x1="180" y1="108" x2="180" y2="164" label="" color="#e879f9" />
-          <text x="232" y="98" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="800">force / velocity</text>
-          <text x="190" y="48" fill="#0ea5e9" fontSize="12" fontWeight="800">normal</text>
-          <text x="190" y="158" fill="#e879f9" fontSize="12" fontWeight="800">weight</text>
+          <line x1="24" y1="132" x2="336" y2="132" stroke={ink} strokeWidth="2.5" />
+          {[36, 60, 84, 108, 132, 156, 180, 204, 228, 252, 276, 300, 324].map((x) => (
+            <line key={x} x1={x} y1="132" x2={x - 9} y2="141" stroke={muted} strokeWidth="1.5" />
+          ))}
+          <rect x="152" y="96" width="56" height="36" rx="5" fill={isLight ? '#e2e8f0' : '#334155'} stroke={ink} strokeWidth="2" />
+          <text x="180" y="119" textAnchor="middle" fill={ink} fontSize="13" fontWeight="700">m</text>
+
+          <Arrow x1="180" y1="114" x2="180" y2="40" label="" color="#0ea5e9" />
+          <text x="187" y="44" fill="#0ea5e9" fontSize="12" fontWeight="700">N (normal)</text>
+
+          <Arrow x1="180" y1="114" x2="180" y2="172" label="" color="#e879f9" />
+          <text x="187" y="168" fill="#e879f9" fontSize="12" fontWeight="700">W = mg</text>
+
+          <Arrow x1="180" y1="114" x2="292" y2="114" label="" color="#f97316" />
+          <text x="238" y="106" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="700">F applied</text>
+
+          <Arrow x1="180" y1="114" x2="106" y2="114" label="" color="#94a3b8" />
+          <text x="140" y="106" textAnchor="middle" fill={muted} fontSize="12" fontWeight="700">friction</text>
+
+          <circle cx="180" cy="114" r="3.5" fill={ink} />
+          <text x="180" y="16" textAnchor="middle" fill={muted} fontSize="11">every force acts from the same point</text>
         </>
       ) : null}
       {kind === 'algebra-balance' ? (
@@ -95,6 +117,9 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   const label = String(caption || '').trim();
   if (!label) return null;
   const kind = studyVisualKind(label);
+  // No diagram earns a frame it cannot fill. An empty decorative box beside a
+  // lesson reads as a broken image, which is worse than no image at all.
+  if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
