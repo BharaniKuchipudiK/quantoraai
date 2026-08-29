@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import process from 'node:process';
+import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
@@ -77,6 +78,11 @@ await page.route('**/api/**', async (route) => {
       '',
       `- [Verified Study lesson](https://www.youtube.com/watch?v=${VALID_VIDEO_ID}) — watch this inside Quantora.`,
       `- [Dead Study lesson](https://www.youtube.com/watch?v=${DEAD_VIDEO_ID}) — this must never be offered.`,
+      '',
+      '<quantora-study-picture caption="A box accelerating under a net force with weight and normal forces" />',
+      '',
+      'Which part of motion would you explain first?',
+      'Write your attempt. I will wait.',
     ].join('\n');
     return route.fulfill({
       status: 200,
@@ -126,16 +132,17 @@ await page.route('**/api/**', async (route) => {
         }),
       });
     }
-    if (body.action === 'grade' && body.optionId === 'c') {
+    if (body.action === 'grade') {
+      const correct = body.optionId === 'c';
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           recorded: true,
           duplicate: false,
-          correct: true,
-          score: 1,
-          misconceptionSignal: false,
+          correct,
+          score: correct ? 1 : 0,
+          misconceptionSignal: !correct,
           explanation: 'The slope is change in displacement divided by change in time, which is velocity.',
           evidenceKind: 'assessment_item',
           masteryUpdated: true,
@@ -199,6 +206,10 @@ try {
       && play.disabled === false;
   });
   await visible(validLink, 'Study did not render the verified video after validation.');
+  const answerAffordance = page.locator('[data-quantora-study-answer-affordance="embedded"]').first();
+  await visible(answerAffordance, 'Tutor question has no embedded learner answer affordance.');
+  await visible(page.locator('[data-quantora-study-picture="physics-motion"]').first(), 'Physics lesson did not render a labeled motion/force diagram.');
+  await hidden(page.locator('[data-quantora-study-your-turn="true"]').first(), 'Legacy Your turn banner is still rendered.');
 
   const deadLink = page.getByRole('link', { name: 'Dead Study lesson', exact: true }).first();
   await deadLink.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
@@ -253,9 +264,22 @@ try {
   const verifiedCheck = board.locator('[data-quantora-study-verified-check="true"]').first();
   await visible(verifiedCheck, 'Mapped Study concept did not receive a server-graded check.');
   await visible(verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }), 'Server-issued Study prompt was not rendered.');
+  await verifiedCheck.getByRole('button', { name: 'Acceleration', exact: true }).click();
+  await visible(board.locator('[data-quantora-study-verified-result="incorrect"]').first(), 'Incorrect answer did not resolve into remediation.');
+  await visible(board.getByText(/key distinction/i).first(), 'Incorrect answer did not receive precise, empathetic feedback.');
+  await visible(board.getByRole('button', { name: 'Retry', exact: true }), 'Incorrect answer has no retry action.');
+  await visible(board.getByRole('button', { name: 'Another example', exact: true }), 'Incorrect answer has no alternate example action.');
+  await visible(board.getByRole('button', { name: 'Useful reference', exact: true }), 'Incorrect answer has no useful reference action.');
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await board.screenshot({ path: 'artifacts/e2e/study-conversation-loop-remediation.png' });
+
+  await board.getByRole('button', { name: 'Retry', exact: true }).click();
+  await visible(verifiedCheck.getByRole('button', { name: 'Velocity', exact: true }), 'Explicit retry did not issue the check again.');
   await verifiedCheck.getByRole('button', { name: 'Velocity', exact: true }).click();
   await visible(board.locator('[data-quantora-study-verified-result="correct"]').first(), 'Correct server-graded Study result was not rendered.');
   await visible(board.getByText(/slope is change in displacement divided by change in time/i).first(), 'Verified Study explanation was not rendered.');
+  await visible(board.locator('button', { hasText: 'Completed' }).first(), 'Completed check did not stay resolved.');
+  if (assessmentIssueCount !== 3) throw new Error(`Completed question repeated without an explicit retry (${assessmentIssueCount} issues).`);
 
   await board.getByRole('button', { name: 'Close Study focus', exact: true }).click();
   const reopen = board.getByRole('button', { name: /Reopen Study focus/i }).first();
@@ -263,8 +287,14 @@ try {
   await reopen.click();
   await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Reopening Study focus did not restore primary actions.');
 
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await page.screenshot({ path: 'artifacts/e2e/study-conversation-loop-pass.png', fullPage: true });
+  await board.screenshot({ path: 'artifacts/e2e/study-conversation-loop-board.png' });
+
   console.log('Study media browser gate passed.');
 } catch (error) {
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await page.screenshot({ path: 'artifacts/e2e/study-conversation-loop-failure.png', fullPage: true }).catch(() => {});
   console.error('Study media browser gate FAILED:', error?.stack || error);
   process.exitCode = 1;
 } finally {

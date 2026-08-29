@@ -8,6 +8,16 @@ const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab)\b([^>]*)\/?>/gi;
 
 export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
 
+export function studyVisualKind(caption = '') {
+  const text = String(caption || '').toLowerCase();
+  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile/.test(text)) return 'physics-motion';
+  if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
+  if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
+  if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
+  if (/graph|slope|axis|curve|plot/.test(text)) return 'graph';
+  return 'concept-relationship';
+}
+
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
 const STOCK_SCENE_CAPTION = /newton under the tree|apple fall the same way|book at rest on a table|two forces, no motion|truck vs car|step out of a canoe|rocket pushes gas|net force and mass together|on ice, a shove keeps going/i;
 

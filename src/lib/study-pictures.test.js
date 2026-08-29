@@ -5,6 +5,7 @@ import {
   pictureCaptionFitsLesson,
   splitStudySegments,
   studyPicturePromptHint,
+  studyVisualKind,
   wantsStudyLab,
 } from './study-pictures.js';
 
@@ -74,4 +75,11 @@ test('a model caption about this Algebra turn is kept', () => {
 test('wantsStudyLab does not treat a generic visual as Newton', () => {
   assert.equal(wantsStudyLab('Add a visual workspace for this idea'), false);
   assert.equal(wantsStudyLab('Open the free-body diagram lab'), true);
+});
+
+test('Study visuals are subject-aware teaching diagrams', () => {
+  assert.equal(studyVisualKind('A box accelerating under a net force'), 'physics-motion');
+  assert.equal(studyVisualKind('Keep both sides of the equation balanced'), 'algebra-balance');
+  assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
+  assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
 });

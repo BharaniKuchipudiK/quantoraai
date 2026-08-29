@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import { studyLessonAsk, studyPracticeAsk, studyQuizAsk } from '../lib/study-learning-resources.js';
 
 /**
@@ -16,8 +16,11 @@ export default function StudyTutorShell({
   onAsk,
   onSend,
   assessment,
+  loop,
   onRequestAssessment,
   onSubmitAssessment,
+  onAdvance,
+  onRemediation,
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [activity, setActivity] = useState(null);
@@ -25,16 +28,17 @@ export default function StudyTutorShell({
   const topic = brief?.label || 'this topic';
   const gaps = brief?.gaps || [];
   const verifiedResult = assessment?.result || null;
+  const completedCheck = Boolean(loop?.completedQuestionIds?.length);
 
   const askOrSend = (text) => {
     if (onSend) onSend(text);
     else onAsk?.(text);
   };
 
-  const requestCheck = async () => {
+  const requestCheck = async (options) => {
     setActivity('check');
     if (onRequestAssessment) {
-      const outcome = await onRequestAssessment();
+      const outcome = await onRequestAssessment(options);
       if (!outcome?.fallback) return;
       askOrSend(studyQuizAsk(topic));
       setActivity(null);
@@ -75,7 +79,7 @@ export default function StudyTutorShell({
   };
 
   const stateLabel = verifiedResult
-    ? (verifiedResult.correct ? 'Verified' : 'Gap found')
+    ? (verifiedResult.correct ? 'Question complete' : 'Ready to repair')
     : gaps.length
       ? `${gaps.length} to check`
       : 'Not checked yet';
@@ -110,7 +114,7 @@ export default function StudyTutorShell({
     <div
       data-quantora-study-board="true"
       data-quantora-workspace-capabilities="education"
-      style={{ maxWidth: '720px', margin: '0 auto 12px', textAlign: 'left' }}
+      style={{ maxWidth: '720px', margin: '0 auto 6px', textAlign: 'left' }}
     >
       <section
         aria-label={`Study focus: ${topic}`}
@@ -118,7 +122,7 @@ export default function StudyTutorShell({
           border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.20)',
           background: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.64)',
           borderRadius: '14px',
-          padding: '9px 10px',
+          padding: '8px 10px',
           boxShadow: isLight ? '0 5px 18px rgba(15,23,42,0.05)' : '0 8px 24px rgba(0,0,0,0.14)',
         }}
       >
@@ -151,11 +155,11 @@ export default function StudyTutorShell({
           <button
             type="button"
             aria-label="Test me on this"
-            disabled={assessment?.status === 'loading' || assessment?.status === 'grading'}
-            onClick={requestCheck}
-            style={{ ...actionStyle(true), opacity: ['loading', 'grading'].includes(assessment?.status) ? 0.55 : 1 }}
+            disabled={assessment?.status === 'loading' || assessment?.status === 'grading' || verifiedResult?.correct}
+            onClick={() => requestCheck({ explicitRetry: completedCheck })}
+            style={{ ...actionStyle(true), opacity: ['loading', 'grading'].includes(assessment?.status) || verifiedResult?.correct ? 0.55 : 1 }}
           >
-            {assessment?.status === 'loading' ? 'Preparing…' : assessment?.status === 'grading' ? 'Checking…' : 'Check'}
+            {assessment?.status === 'loading' ? 'Preparing…' : assessment?.status === 'grading' ? 'Checking…' : verifiedResult?.correct ? 'Completed' : completedCheck ? 'Retry check' : 'Check'}
           </button>
         </div>
 
@@ -163,10 +167,11 @@ export default function StudyTutorShell({
           <div
             data-quantora-study-verified-check="true"
             data-quantora-study-inline-activity="check"
-            style={{ marginTop: '9px', padding: '10px 11px', borderRadius: '11px', background: isLight ? '#f0fdf4' : 'rgba(6,78,59,0.18)', border: isLight ? '1px solid #bbf7d0' : '1px solid rgba(110,231,183,0.25)' }}
+            data-quantora-study-loop-phase={loop?.phase}
+            style={{ marginTop: '8px', padding: '10px 11px', borderRadius: '11px', background: isLight ? '#f8fafc' : 'rgba(15,23,42,0.5)', border: isLight ? '1px solid #dbe4ee' : '1px solid rgba(148,163,184,0.22)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-              <div style={{ color: isLight ? '#047857' : '#6ee7b7', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase' }}>Verified check</div>
+              <div style={{ color: isLight ? '#475569' : '#94a3b8', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>One quick check</div>
               <button type="button" aria-label="Close check" onClick={() => setActivity(null)} style={iconButtonStyle}><X size={14} /></button>
             </div>
             <div style={{ color: textColor, fontSize: '0.80rem', fontWeight: 650, lineHeight: 1.45, marginTop: '4px' }}>{assessment.item.prompt}</div>
@@ -177,7 +182,14 @@ export default function StudyTutorShell({
                   key={option.id}
                   disabled={assessment?.status === 'grading' || Boolean(assessment?.result)}
                   onClick={() => onSubmitAssessment?.(option.id)}
-                  style={{ ...actionStyle(false), textAlign: 'left', borderRadius: '10px', width: '100%' }}
+                  style={{
+                    ...actionStyle(false),
+                    textAlign: 'left',
+                    borderRadius: '10px',
+                    width: '100%',
+                    borderColor: assessment?.selectedOptionId === option.id ? '#f97316' : undefined,
+                    opacity: assessment?.result && assessment?.selectedOptionId !== option.id ? 0.62 : 1,
+                  }}
                 >
                   {option.text}
                 </button>
@@ -186,9 +198,49 @@ export default function StudyTutorShell({
             {assessment?.result ? (
               <div
                 data-quantora-study-verified-result={assessment.result.correct ? 'correct' : 'incorrect'}
-                style={{ marginTop: '8px', color: assessment.result.correct ? (isLight ? '#047857' : '#6ee7b7') : (isLight ? '#9f1239' : '#fb7185'), fontSize: '0.75rem', lineHeight: 1.45 }}
+                className={assessment.result.correct ? 'study-resolution study-resolution--correct' : 'study-resolution'}
+                style={{
+                  marginTop: '9px',
+                  padding: '9px 10px',
+                  borderRadius: '10px',
+                  color: textColor,
+                  background: assessment.result.correct
+                    ? (isLight ? '#ecfdf5' : 'rgba(6,95,70,0.18)')
+                    : (isLight ? '#fffbeb' : 'rgba(120,53,15,0.16)'),
+                  border: assessment.result.correct
+                    ? (isLight ? '1px solid #a7f3d0' : '1px solid rgba(110,231,183,0.25)')
+                    : (isLight ? '1px solid #fde68a' : '1px solid rgba(251,191,36,0.24)'),
+                  fontSize: '0.76rem',
+                  lineHeight: 1.45,
+                }}
               >
-                {assessment.result.explanation || stateLabel}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 800, color: assessment.result.correct ? (isLight ? '#047857' : '#6ee7b7') : (isLight ? '#92400e' : '#fcd34d') }}>
+                  {assessment.result.correct ? <Check size={15} /> : <Lightbulb size={15} />}
+                  {assessment.result.correct ? 'Exactly — that fits.' : 'Good attempt — here is the key distinction.'}
+                </div>
+                {!assessment.result.correct && assessment?.selectedOptionId ? (
+                  <div style={{ marginTop: '5px', color: subtextColor }}>
+                    You chose “{assessment.item.options.find((option) => option.id === assessment.selectedOptionId)?.text}”.
+                    {assessment.result.misconceptionSignal ? ' That points to a concept mix-up, not a careless miss.' : ' It is close, but it uses the wrong relationship here.'}
+                  </div>
+                ) : null}
+                <div style={{ marginTop: '4px' }}>
+                  <strong>Why:</strong> {assessment.result.explanation || stateLabel}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                  {assessment.result.correct ? (
+                    <>
+                      <button type="button" onClick={onAdvance} style={actionStyle(true)}>Next question <ArrowRight size={12} style={{ verticalAlign: '-2px' }} /></button>
+                      <button type="button" onClick={() => requestCheck({ explicitRetry: true })} style={actionStyle(false)}>Retry this one</button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => onRemediation?.('retry')} style={actionStyle(true)}><RotateCcw size={12} style={{ verticalAlign: '-2px' }} /> Retry</button>
+                      <button type="button" onClick={() => onRemediation?.('example')} style={actionStyle(false)}>Another example</button>
+                      <button type="button" onClick={() => onRemediation?.('reference')} style={actionStyle(false)}>Useful reference</button>
+                    </>
+                  )}
+                </div>
               </div>
             ) : null}
             {/*
@@ -212,7 +264,7 @@ export default function StudyTutorShell({
                 {assessment.result.learnerModel.nextLearningMove.learnerFacingText}
               </div>
             ) : null}
-            {assessment?.error ? <div style={{ marginTop: '6px', color: isLight ? '#9f1239' : '#fb7185', fontSize: '0.72rem' }}>{assessment.error}</div> : null}
+            {assessment?.error ? <div style={{ marginTop: '6px', color: isLight ? '#92400e' : '#fcd34d', fontSize: '0.72rem' }}>{assessment.error}</div> : null}
           </div>
         ) : null}
 

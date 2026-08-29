@@ -1792,6 +1792,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}
+                            answerEnabled={lastAiMessage?.id === msg.id && !isActiveGenerating}
+                            onAnswer={(answer) => handleSendMessage(answer)}
                           />
                         ) : (
                           <ReactMarkdown
