@@ -206,8 +206,27 @@ try {
       && play.disabled === false;
   });
   await visible(validLink, 'Study did not render the verified video after validation.');
-  const answerAffordance = page.locator('[data-quantora-study-answer-affordance="embedded"]').first();
-  await visible(answerAffordance, 'Tutor question has no embedded learner answer affordance.');
+  /*
+   * One composer, and it names the answer.
+   *
+   * The lesson used to render its own input. It appeared on a phrase match —
+   * "write your attempt", which the prompt TELLS the tutor to end with — so it
+   * showed under lessons that had asked nothing, inviting an answer to a
+   * question that did not exist. It was also a second composer calling the same
+   * send path with none of the real one's capabilities.
+   *
+   * The contract now: exactly one text input in the studio, and when a question
+   * WAS asked, that input says so.
+   */
+  if (await page.locator('[data-quantora-study-answer-affordance]').count()) {
+    throw new Error('The lesson rendered a second composer; the studio must have exactly one input.');
+  }
+  await page.waitForFunction(() => {
+    const box = document.querySelector('.app-shell--studio textarea');
+    return /write your answer to the question above/i.test(box?.getAttribute('placeholder') || '');
+  }, undefined, { timeout: 10_000 }).catch(() => {
+    throw new Error('A tutor question did not anchor itself in the composer placeholder.');
+  });
   await visible(page.locator('[data-quantora-study-picture="physics-motion"]').first(), 'Physics lesson did not render a labeled motion/force diagram.');
   await hidden(page.locator('[data-quantora-study-your-turn="true"]').first(), 'Legacy Your turn banner is still rendered.');
 

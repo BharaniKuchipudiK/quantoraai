@@ -322,28 +322,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
   const domainPolicy = studioDomainPolicy(studioDomain);
 
-  /*
-   * The whole Study type system was dead CSS.
-   *
-   * src/index.css carries four rule blocks under
-   * html[data-quantora-domain="education"] — the Nunito reading face, the
-   * heading pairing, the paragraph rhythm, the thread spacing — and NOTHING in
-   * the application ever set that attribute. Every one of them had never
-   * rendered, including the spacing rule added the day before this was found.
-   *
-   * So Study prose fell back to the generic chat body font, and the workspace
-   * that most needs to look like a book looked like a terminal. This is a dead
-   * control in the platform's own sense: a declaration that reaches nothing.
-   */
-  useEffect(() => {
-    const root = document.documentElement;
-    if (!studioDomain) {
-      root.removeAttribute('data-quantora-domain');
-      return undefined;
-    }
-    root.setAttribute('data-quantora-domain', studioDomain);
-    return () => root.removeAttribute('data-quantora-domain');
-  }, [studioDomain]);
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
 
   /*
@@ -1085,16 +1063,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [missionDismissedFor, setMissionDismissedFor] = useState(null);
   const missionDismissed = missionDismissedFor === activeSessionId;
 
-  /*
-   * Study used to put a second input under the lesson whenever the tutor said
-   * "Write your attempt" — a phrase the prompt tells it to end with, so the box
-   * appeared under lessons that had asked nothing. The question now anchors
-   * itself in the composer that was always there, and only when a question was
-   * genuinely asked.
-   */
-  const awaitingStudyAnswer = studioDomain === 'education'
-    && !isGenerating
-    && studyAwaitsAnswer(lastAiMessage?.text || '');
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
@@ -1580,6 +1548,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const lastAiMessage = [...messages].reverse().find((message) => message.sender === 'ai' && message.type !== 'greeting');
+
+  /*
+   * Study used to put a second input under the lesson whenever the tutor said
+   * "Write your attempt" — a phrase the prompt tells it to end with, so the box
+   * appeared under lessons that had asked nothing. The question now anchors
+   * itself in the composer that was always there, and only when a question was
+   * genuinely asked.
+   *
+   * Declared HERE, after lastAiMessage. It was 487 lines above it, which is a
+   * temporal dead zone: const is hoisted but not initialised, so every render
+   * threw a ReferenceError and the whole studio went blank. Lint did not see
+   * it, the build did not see it, and no unit test renders this component.
+   */
+  const awaitingStudyAnswer = studioDomain === 'education'
+    && !isGenerating
+    && studyAwaitsAnswer(lastAiMessage?.text || '');
   const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const previewAssemblyKey = previewAssemblyFingerprint(vfs);
