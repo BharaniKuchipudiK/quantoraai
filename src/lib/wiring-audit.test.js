@@ -174,3 +174,18 @@ test('stripNonCode leaves real code alone', () => {
     assert.doesNotMatch(stripped, new RegExp(`\\b${hidden}\\b`), `${hidden} was not real code`);
   }
 });
+
+test('root config files are production code', () => {
+  /*
+   * vite.config.ts imports crossOriginHeadersForPath to set the COEP headers
+   * Preview depends on. The gate could not see root config files, reported
+   * vercel-headers as orphaned, and I very nearly deleted it during a sweep.
+   * Typecheck caught that one; the next might not be typed.
+   */
+  const files = {
+    'src/lib/headers.js': 'export function crossOriginHeadersForPath(p) { return {}; }',
+    'vite.config.ts': "import { crossOriginHeadersForPath } from './src/lib/headers.js';\nexport default { headers: crossOriginHeadersForPath };",
+    'src/lib/headers.test.js': 'crossOriginHeadersForPath("/");',
+  };
+  assert.deepEqual(findOrphanExports(files), [], 'a config file is a caller like any other');
+});

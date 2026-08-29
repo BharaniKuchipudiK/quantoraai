@@ -11,6 +11,5 @@
   "src/lib/office-intent.js::clearOfficeToolSelection",
   "src/lib/studio-git.js::resetDeskGitRepos",
   "src/lib/study-syllabus-overlay.js::STUDY_CHECK_PASSED_PREFIX",
-  "src/lib/vercel-headers.js::checkFramedDocumentContract",
-  "src/lib/vercel-headers.js::crossOriginHeadersForPath"
+  "src/lib/vercel-headers.js::checkFramedDocumentContract"
 ]

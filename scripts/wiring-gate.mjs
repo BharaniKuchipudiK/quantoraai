@@ -5,7 +5,7 @@
  * A ratchet against src/lib/wiring-baseline.json. Run with --update after
  * deliberately wiring or deleting something, and commit the smaller baseline.
  */
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
@@ -14,6 +14,16 @@ import { compareToBaseline, findOrphanExports, orphanKey } from '../src/lib/wiri
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE = join(ROOT, 'src', 'lib', 'wiring-baseline.json');
 const SOURCE_DIRS = ['src', 'shared', 'api', 'scripts'];
+/*
+ * Root config files count as production code.
+ *
+ * vite.config.ts imports crossOriginHeadersForPath to set the COEP headers
+ * Preview depends on, and the gate could not see it — so vercel-headers was
+ * reported orphaned and I very nearly deleted it during a sweep. Typecheck
+ * caught that one; the next might not be typed. A dead-code check that cannot
+ * see the build config is one file away from breaking the build.
+ */
+const ROOT_FILES = ['vite.config.ts', 'vite.config.js', 'vitest.config.ts', 'playwright.config.ts', 'eslint.config.js'];
 // .mjs matters: every browser gate in scripts/ is one, so omitting it made
 // anything called only from a script look like it had no caller at all.
 const CODE = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx']);
@@ -33,6 +43,10 @@ for (const dir of SOURCE_DIRS) {
   for (const path of walk(join(ROOT, dir))) {
     files[path.slice(ROOT.length + 1)] = readFileSync(path, 'utf8');
   }
+}
+for (const name of ROOT_FILES) {
+  const path = join(ROOT, name);
+  if (existsSync(path)) files[name] = readFileSync(path, 'utf8');
 }
 
 const orphans = findOrphanExports(files);
