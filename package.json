@@ -27,7 +27,9 @@
     "lint:undef": "eslint 'src/**/*.{js,jsx}'",
     "test:wiring": "node scripts/wiring-gate.mjs",
     "test:stress": "node scripts/stress/pipeline-stress.mjs",
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "test:claims": "node scripts/capability-claims-gate.mjs",
+    "test:dead-controls": "node scripts/platform-dead-control-gate.mjs"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",

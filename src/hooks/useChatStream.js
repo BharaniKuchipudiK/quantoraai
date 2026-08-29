@@ -21,7 +21,7 @@ import {
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
-import { deskCanStart, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
+import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
@@ -1319,9 +1319,8 @@ export function useChatStream({
                       missingImports.length
                         ? `${why}. ${describeMissingImports(missingImports)} Ask me to finish `
                           + `${missingImports.length === 1 ? 'that file' : 'those files'} and the rest of the build stays as it is.`
-                        : `${why}, but Preview is already proved on the desk `
-                          + `(${deskProof.evidence.photos || 0} catalog photos`
-                          + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                        : `${why}, but Preview is already proved on the desk`
+                          + `${describeDeskEvidence(deskProof.evidence)}. `
                           + 'Open Coding desk — the page is there.',
                       deskProof,
                     ),
@@ -1704,9 +1703,8 @@ export function useChatStream({
                   ...m,
                   text: withBuildTruth(
                     deskCanStart(deskProof.vfs || {})
-                      ? `${why}, but Preview is already proved on the desk `
-                        + `(${deskProof.evidence.photos || 0} catalog photos`
-                        + `${deskProof.evidence.hasCart ? ', Add to Cart' : ''}). `
+                      ? `${why}, but Preview is already proved on the desk`
+                        + `${describeDeskEvidence(deskProof.evidence)}. `
                         + 'Open Coding desk — the page is there.'
                       : `${why}. ${describeMissingImports(findMissingLocalImports(deskProof.vfs || {}))}`,
                     deskProof,

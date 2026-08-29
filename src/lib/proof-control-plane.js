@@ -45,7 +45,10 @@ function repairPass(vfs, truth) {
   const html = path && vfs[path]?.content ? String(vfs[path].content) : '';
   if (!html) return { vfs, truth, repair: NO_REPAIR };
 
-  const repair = repairBuild(html, truth.findings);
+  // The shipped file list is what makes a wrong path repairable: a link to
+  // "assets/guide.html" in a build whose only guide.html sits at the root is a
+  // wrong path, not a missing page.
+  const repair = repairBuild(html, truth.findings, { files: Object.keys(vfs) });
   if (!repair.changed) return { vfs, truth, repair };
 
   const nextVfs = { ...vfs, [path]: { ...vfs[path], content: repair.html } };
