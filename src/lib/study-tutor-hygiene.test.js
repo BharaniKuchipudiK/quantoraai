@@ -60,8 +60,45 @@ test('Study assessment responses are generation-guarded across topic and session
   );
 });
 
+/*
+ * WHICHEVER component is showing Study results has to render this.
+ *
+ * The first version read StudyTutorBoard.jsx by path. PR #359 replaces that
+ * board with StudyTutorShell.jsx, so on the merge that lands second this test
+ * would have thrown ENOENT — a crash that says a file is missing, not that a
+ * feature lost its renderer. Worse, had the path simply been updated, the
+ * server would have gone on returning a next move that nothing displayed.
+ *
+ * So the assertion is on the CAPABILITY, not on a filename: some Study result
+ * component renders the server's line, and no Study component computes the
+ * learner model in the browser.
+ */
+const STUDY_RESULT_COMPONENTS = [
+  'src/components/StudyTutorBoard.jsx',
+  'src/components/StudyTutorShell.jsx',
+];
+
 test('Study next move is rendered from the server learner model, not inferred in the browser', () => {
-  const board = fs.readFileSync(path.join(root, 'src/components/StudyTutorBoard.jsx'), 'utf8');
-  assert.match(board, /assessment\.result\.learnerModel\?\.nextLearningMove\?\.learnerFacingText/);
-  assert.equal(board.includes('buildStudyLearnerModel'), false);
+  const present = STUDY_RESULT_COMPONENTS
+    .map((relative) => [relative, path.join(root, relative)])
+    .filter(([, full]) => fs.existsSync(full))
+    .map(([relative, full]) => [relative, fs.readFileSync(full, 'utf8')]);
+
+  assert.ok(present.length, `no Study result component exists: ${STUDY_RESULT_COMPONENTS.join(', ')}`);
+
+  const renders = present.filter(([, source]) =>
+    /assessment\.result\.learnerModel\?\.nextLearningMove\?\.learnerFacingText/.test(source));
+  assert.ok(
+    renders.length,
+    `The server returns a next learning move and no Study component renders it. `
+    + `Port the learnerFacingText line into: ${present.map(([relative]) => relative).join(', ')}`,
+  );
+
+  for (const [relative, source] of present) {
+    assert.equal(
+      source.includes('buildStudyLearnerModel'),
+      false,
+      `${relative} computes the learner model in the browser; the server decides mastery`,
+    );
+  }
 });
