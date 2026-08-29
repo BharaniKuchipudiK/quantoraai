@@ -11,6 +11,7 @@
 
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import { parseSavingsIntent } from "./savings-goal-intent.js";
 import { projectSavings, formatSavingsPlan } from "./savings-goal.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
@@ -81,9 +82,10 @@ export async function handleSavingsGoal(req: any, res: any): Promise<boolean> {
    * invent the numbers.
    */
   const projection = projectSavings(inputs);
-  const followUps = {
+  sendStream(res, requestId, withNextMoves({
+    text: formatSavingsPlan(inputs, projection),
     question: projection.onTrack ? "Want to press on this?" : "What should I work out next?",
-    options: [
+    moves: [
       {
         id: "savings_sooner",
         title: "What gets me there sooner",
@@ -103,16 +105,10 @@ export async function handleSavingsGoal(req: any, res: any): Promise<boolean> {
         value: "What happens to this plan if I have to stop contributing for a few months?",
       },
     ],
-  };
-  const facts = [
-    `Savings goal: ${intent.goal} in ${intent.months} months`,
-    `Saving ${intent.monthly}/month from ${intent.current}, ${intent.annualRatePct}% assumed return`,
-  ];
-
-  sendStream(
-    res,
-    requestId,
-    `${formatSavingsPlan(inputs, projection)}\n\n<quantora-modal>\n${JSON.stringify(followUps)}\n</quantora-modal>\n<!-- quantora-ctx: ${JSON.stringify({ facts })} -->`,
-  );
+    facts: [
+      `Savings goal: ${intent.goal} in ${intent.months} months`,
+      `Saving ${intent.monthly}/month from ${intent.current}, ${intent.annualRatePct}% assumed return`,
+    ],
+  }));
   return true;
 }

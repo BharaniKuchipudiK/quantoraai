@@ -15,6 +15,7 @@
 import type { Debt } from "./debt-payoff.js";
 import { comparePayoff, formatDebtPlan } from "./debt-payoff.js";
 import type { DebtIntent } from "./debt-intent.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import {
   aprToFitPayment,
   blendedApr,
@@ -31,21 +32,6 @@ export type DebtMove = {
   text: string;
 };
 
-type Option = { id: string; title: string; description: string; value: string };
-
-/** The decision card AiStudio renders. Shape mirrors the live travel path. */
-function decisionCard(question: string, options: Option[]): string {
-  return `\n\n<quantora-modal>\n${JSON.stringify({ question, options })}\n</quantora-modal>`;
-}
-
-/**
- * What the next turn should still know. Stripped from the visible reply by the
- * client, merged into session context, so the user never restates their debts.
- */
-function memory(facts: string[]): string {
-  if (!facts.length) return "";
-  return `\n<!-- quantora-ctx: ${JSON.stringify({ facts })} -->`;
-}
 
 function money(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -84,9 +70,10 @@ function askCapacity(debts: Debt[], intent: DebtIntent): DebtMove {
     `A plan built on the wrong assumption about your income is worse than no plan.`;
   return {
     kind: "ask-capacity",
-    text:
-      text +
-      decisionCard("Where do those payments sit against your month?", [
+    text: withNextMoves({
+      text,
+      question: "Where do those payments sit against your month?",
+      moves: [
         {
           id: "debt_room",
           title: "I have room beyond the minimums",
@@ -105,8 +92,9 @@ function askCapacity(debts: Debt[], intent: DebtIntent): DebtMove {
           description: "The obligations are larger than the income",
           value: "My debt payments already exceed my monthly income — I'll tell you both numbers.",
         },
-      ]) +
-      memory(debtFacts(debts, intent)),
+      ],
+      facts: debtFacts(debts, intent),
+    }),
   };
 }
 
@@ -167,9 +155,10 @@ function shortfall(debts: Debt[], intent: DebtIntent, affordable: number): DebtM
 
   return {
     kind: "shortfall",
-    text:
-      lines.join("\n") +
-      decisionCard("What should I work out next?", [
+    text: withNextMoves({
+      text: lines.join("\n"),
+      question: "What should I work out next?",
+      moves: [
         {
           id: "debt_offer",
           title: "I have an offer — check it",
@@ -188,8 +177,9 @@ function shortfall(debts: Debt[], intent: DebtIntent, affordable: number): DebtM
           description: "Your income minus living costs — the number that makes this real",
           value: "Here is what I can actually put toward debt each month after rent, food and essentials — work backwards from that.",
         },
-      ]) +
-      memory([...debtFacts(debts, intent), `Monthly shortfall against minimums: ${money(gap)}`]),
+      ],
+      facts: [...debtFacts(debts, intent), `Monthly shortfall against minimums: ${money(gap)}`],
+    }),
   };
 }
 
@@ -229,9 +219,10 @@ function consolidation(debts: Debt[], intent: DebtIntent, offer: ConsolidationOf
 
   return {
     kind: "consolidation",
-    text:
-      lines.join("\n") +
-      decisionCard("Want me to test this further?", [
+    text: withNextMoves({
+      text: lines.join("\n"),
+      question: "Want me to test this further?",
+      moves: [
         {
           id: "debt_offer_alt",
           title: "Compare another offer",
@@ -244,11 +235,12 @@ function consolidation(debts: Debt[], intent: DebtIntent, offer: ConsolidationOf
           description: "Payoff order without consolidating",
           value: "What happens if I don't consolidate and just pay these off in the best order?",
         },
-      ]) +
-      memory([
+      ],
+      facts: [
         ...debtFacts(debts, intent),
         `Consolidation modelled: ${offer.apr}% over ${termLabel(offer.months)} = ${money(result.newPayment)}/month`,
-      ]),
+      ],
+    }),
   };
 }
 
@@ -258,9 +250,10 @@ function plan(debts: Debt[], intent: DebtIntent): DebtMove {
   const body = formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums });
   return {
     kind: "plan",
-    text:
-      body +
-      decisionCard("Where do you want to take this?", [
+    text: withNextMoves({
+      text: body,
+      question: "Where do you want to take this?",
+      moves: [
         {
           id: "debt_more",
           title: "What if I pay more",
@@ -279,8 +272,9 @@ function plan(debts: Debt[], intent: DebtIntent): DebtMove {
           description: "Test the plan against a drop in income",
           value: "What happens to this plan if my income drops and I can only cover the minimums?",
         },
-      ]) +
-      memory(debtFacts(debts, intent)),
+      ],
+      facts: debtFacts(debts, intent),
+    }),
   };
 }
 
