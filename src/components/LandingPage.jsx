@@ -126,7 +126,7 @@ function AdvisorMock({ isLight, type }) {
   const items = {
     research: ['Compare sources', 'Evidence map', 'Conclusion draft'],
     travel: ['Flights', 'Hotels', 'Itinerary'],
-    finance: ['Portfolio', 'Cash flow', 'Decisions'],
+    finance: ['Currency', 'Debt', 'Savings'],
   };
   const title = titles[type] || titles.research;
   const rows = items[type] || items.research;

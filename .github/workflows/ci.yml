@@ -54,6 +54,9 @@ jobs:
       - name: Run all tests
         run: npm run test:all
 
+      - name: Capability claims gate
+        run: node scripts/capability-claims-gate.mjs
+
       - name: Shop catalog photos scale gate
         run: node scripts/shop-catalog-photos-scale-gate.mjs
 
