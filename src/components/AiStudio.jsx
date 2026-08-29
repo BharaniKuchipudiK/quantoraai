@@ -893,8 +893,22 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
      * shouldAutoAdvanceJob and its stop conditions stay in build-job.js, tested.
      */
     const proposed = readPlanMarker(rawText);
-    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
-    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
+    /*
+     * `assembled.vfs || vfs` was not a fallback. `{}` is truthy, so it never
+     * fired once: a turn that built nothing handed the job planner an empty
+     * desk and every step was judged against no files at all.
+     *
+     * Checked explicitly here rather than fixed in applyWorkspaceFromChat.
+     * Making the no-op return the desk instead of {} looks obviously right and
+     * broke the desk review gate — proveCodingTurn runs with allowRepair over
+     * `assembled.vfs`, and the emptiness is how that path knows this turn
+     * produced nothing. The stress harness calls it a hazard rather than a
+     * defect for exactly that reason, and the producer-side change is a
+     * separate piece of work with every consumer audited.
+     */
+    const deskForJob = assembled.didUpdate ? assembled.vfs : vfs;
+    if (proposed) setBuildJob(advanceBuildJob(proposed, deskForJob));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, deskForJob) : prev));
     setPatchNote([
       ...(assembled.patchFailures || [])
         .map((failure) => describePatchFailures(failure.result, failure.filepath)),

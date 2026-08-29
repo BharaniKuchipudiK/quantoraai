@@ -45,6 +45,56 @@ export function isProviderCredentialRejection(error: unknown) {
   return /\b(invalid api key|no auth credentials|unauthorized|authentication fail|invalid_api_key|user not found)\b/i.test(message);
 }
 
+/**
+ * 402 IS NOT A REJECTED KEY.
+ *
+ * isProviderCredentialRejection groups 401, 402 and 403, which is right for
+ * routing — all three are fatal for this credential and no retry helps. It was
+ * wrong for the sentence the user reads. A build ran on Gemini at 19:45 and the
+ * next turn was told its API key "has never been accepted", while the Gemini
+ * dashboard showed 100% success and zero errors. The key was fine. The wallet
+ * behind a different provider was empty.
+ *
+ * A key that stops working mid-session is almost never a key that expired; it
+ * is a balance that hit zero. Telling somebody to go re-issue a working key
+ * sends them to the one place the problem is not.
+ */
+export function isOutOfCredit(error: unknown) {
+  const status = Number((error as any)?.status || 0);
+  if (status === 402) return true;
+  const message = String((error as any)?.message || error || '');
+  return /\b(payment required|insufficient (?:credits?|balance|funds)|out of credits?|quota exceeded for your plan)\b/i.test(message);
+}
+
+/**
+ * Which provider actually refused, said plainly.
+ *
+ * The turn already computed this for the SSE payload and dropped it from the
+ * text, so the user was left to guess between their providers — and guessed
+ * wrong, because the one named nowhere is the one that failed.
+ */
+export function describeCredentialFailure(error: unknown, modelId?: string) {
+  const provider = providerOf(String(modelId || ''));
+  const name = provider === 'gemini' ? 'Google Gemini' : 'OpenRouter';
+  const where = provider === 'gemini'
+    ? 'GEMINI_API_KEY'
+    : 'OPENROUTER_API_KEY';
+
+  if (isOutOfCredit(error)) {
+    return `${name} refused this turn for billing, not for a bad key (HTTP 402). `
+      + `The credential is accepted; the balance behind it is not sufficient. `
+      + `Top up the ${name} account — re-issuing the key will change nothing. `
+      + `Other providers are unaffected.`;
+  }
+
+  return `${name} rejected the credential itself (HTTP 401/403), so no model on `
+    + `that gateway could run. Retrying fails identically until the key changes. `
+    + `Check ${where} in the server environment, or paste your own under `
+    + `Privacy Vault → Session-only provider keys. A key showing "Last Used: Never" `
+    + `on the ${name} dashboard has never been accepted. `
+    + `Providers other than ${name} are unaffected.`;
+}
+
 export function shouldFallbackBeforeStreaming(error: unknown, context?: FallbackContext) {
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);

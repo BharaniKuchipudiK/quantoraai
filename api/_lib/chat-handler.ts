@@ -21,7 +21,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { describeCredentialFailure, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -67,6 +67,12 @@ import { TRAVEL_CONVERSATION_MODEL_ID } from "./travel-model-routing.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
 import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
+import {
+  applyStudyCapabilityRouting,
+  formatStudyCognitiveDirective,
+  interpretStudyTurn,
+  publicStudyCognitiveMetadata,
+} from './study-cognitive-routing.js';
 
 const PREVIEW_HTML_RECOVERY = `
 
@@ -677,7 +683,7 @@ export default async function handler(req: any, res: any) {
       routingCatalog,
       outcomeSignalsForTask(qualitySummaryRows, taskCategory),
     );
-    const modelRouting = selectModelsForTurn({
+    const baseModelRouting = selectModelsForTurn({
       models: routingModels,
       message,
       explicitModelId: typeof modelId === "string" ? modelId : null,
@@ -697,6 +703,22 @@ export default async function handler(req: any, res: any) {
       // session, no BYOK) has no effective key, so they still stay on Gemini.
       allowPaid: Boolean(effectiveOpenRouterKey),
       qualityHints,
+    });
+    const studyInterpretation = interpretStudyTurn({
+      studioDomain: normalizedStudioDomain,
+      message,
+      history: boundedHistory,
+      hasImages: visionImages.length > 0,
+    });
+    if (studyInterpretation) {
+      dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
+    }
+    const modelRouting = applyStudyCapabilityRouting({
+      interpretation: studyInterpretation,
+      baseDecision: baseModelRouting,
+      models: routingModels,
+      explicitModelSelected: !autoModelRequest,
+      hasImages: visionImages.length > 0,
     });
     // Diagnostic isolation switch: set QUANTORA_FORCE_OPENROUTER=1 to take Gemini
     // out of the picture entirely for coding/build turns and route straight to an
@@ -779,7 +801,7 @@ export default async function handler(req: any, res: any) {
       userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
       lastMessage: message,
       history: boundedHistory
-    }) + navigatorDirective + (visionImages.length
+    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + (visionImages.length
       ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
       : "");
     let finalSystemPrompt = finalSystemPromptBase;
@@ -798,6 +820,7 @@ export default async function handler(req: any, res: any) {
             usedFallback: Boolean(fallbackFrom),
           }),
           routing: modelRouting,
+          ...(studyInterpretation ? { studyCognitiveRouting: publicStudyCognitiveMetadata(studyInterpretation) } : {}),
           communicationRequest: {
             studioMode: communicationRequest.studioMode,
             studioDomain: communicationRequest.studioDomain,
@@ -1682,7 +1705,10 @@ export default async function handler(req: any, res: any) {
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
         : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : credentialRejected
-      ? "The AI provider rejected the configured API key, so no model could run. This is a credential problem, not a temporary one — retrying will fail the same way. Check the key in the server environment (or paste your own under Privacy Vault → Session-only provider keys); a key that shows \"Last Used: Never\" on the provider dashboard has never been accepted."
+      // Names the provider and separates an empty balance from a bad key. The
+      // old sentence did neither, and sent somebody to re-issue a Gemini key
+      // that its own dashboard showed working at 100% success.
+      ? describeCredentialFailure(err, req.body?.modelId)
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";

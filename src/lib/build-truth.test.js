@@ -385,3 +385,71 @@ test('the numeric check still catches a total that is genuinely wrong', () => {
     + '<tr><td>B</td><td>800</td></tr><tr><td>Total</td><td>1900</td></tr></table>';
   assert.equal(findNumbersThatDisagree(html).findings.length, 1);
 });
+
+// ------------------------------------------------- asset references --
+
+/*
+ * The gap this closes.
+ *
+ * findBrokenLinks scanned <a> only. A page whose <link href="styles.css">
+ * pointed at a stylesheet the build never produced rendered unstyled while
+ * every check passed — the defect a person notices first was the one nothing
+ * looked for.
+ */
+test('a stylesheet that was never built is a broken link', () => {
+  const page = '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head><body>x</body></html>';
+  const { findings } = findBrokenLinks(page, { files: ['index.html'] });
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].data.file, 'styles.css');
+  assert.match(findings[0].what, /wasn't built/);
+});
+
+test('a script and an image that were never built are caught too', () => {
+  const page = '<!DOCTYPE html><html><body><img src="hero.jpg"><script src="app.js"></script></body></html>';
+  const { findings } = findBrokenLinks(page, { files: ['index.html'] });
+  assert.deepEqual(findings.map((f) => f.data.file).sort(), ['app.js', 'hero.jpg']);
+});
+
+test('an asset the build DID produce is not flagged', () => {
+  const page = '<!DOCTYPE html><html><head><link href="styles.css"></head><body><script src="./app.js"></script></body></html>';
+  const { findings } = findBrokenLinks(page, { files: ['index.html', 'styles.css', 'app.js'] });
+  assert.deepEqual(findings, []);
+});
+
+/*
+ * The false positive this scan had to avoid.
+ *
+ * Every proxied shop photo is <img src="/api/preview-image?u=...">. That is a
+ * server route, not a file this build produced, and the VFS does not describe
+ * it. Judging absolute paths would have flagged every photo on every shop page
+ * — turning a working catalogue into a wall of broken-link findings.
+ */
+test('an absolute path is a route, not a build output, and is left alone', () => {
+  const page = [
+    '<!DOCTYPE html><html><body>',
+    '<img src="/api/preview-image?u=https%3A%2F%2Fimages.unsplash.com%2Fphoto-1">',
+    '<img src="/assets/logo.png">',
+    '</body></html>',
+  ].join('');
+  const { findings } = findBrokenLinks(page, { files: ['index.html'] });
+  assert.deepEqual(findings, [], 'a server route is not a missing file');
+});
+
+test('remote and inline assets are never judged', () => {
+  const page = [
+    '<!DOCTYPE html><html><head>',
+    '<link rel="preconnect" href="https://fonts.googleapis.com">',
+    '<link href="https://fonts.googleapis.com/css2?family=Inter" rel="stylesheet">',
+    '</head><body>',
+    '<img src="data:image/png;base64,iVBORw0KGgo=">',
+    '<script src="//cdn.example.com/x.js"></script>',
+    '</body></html>',
+  ].join('');
+  const { findings } = findBrokenLinks(page, { files: ['index.html'] });
+  assert.deepEqual(findings, [], 'no network calls, no guessing about a host we have not contacted');
+});
+
+test('with no file list, nothing is judged — unchanged behaviour', () => {
+  const page = '<!DOCTYPE html><html><head><link href="styles.css"></head><body>x</body></html>';
+  assert.deepEqual(findBrokenLinks(page).findings, [], 'we do not know what shipped');
+});

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import ProfilePictureEditor from './ProfilePictureEditor.jsx';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
-import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity, CreditCard } from 'lucide-react';
+import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
 
 const PROFILE_MENU_WIDTH = 320;
 const PROFILE_MENU_GUTTER = 12;
@@ -606,36 +606,6 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   >
                     <Download size={16} color="#0284c7" />
                     <span>{dataActionBusy ? 'Preparing…' : 'Export My Data'}</span>
-                  </div>
-
-                  {/* Connect Stripe */}
-                  <div
-                    onClick={async () => {
-                      try {
-                        const res = await fetch('/api/stripe-onboard', { method: 'POST' });
-                        const data = await res.json();
-                        if (data.url) window.location.href = data.url;
-                        else alert('Failed to connect Stripe: ' + (data.error || 'Unknown error'));
-                      } catch (err) {
-                        alert('Network error connecting to Stripe.');
-                      }
-                    }}
-                    style={{
-                      padding: '10px',
-                      borderRadius: '10px',
-                      background: 'rgba(99, 102, 241, 0.12)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      marginBottom: '6px',
-                      fontSize: '0.85rem',
-                      color: '#6366f1',
-                      fontWeight: '600'
-                    }}
-                  >
-                    <CreditCard size={16} color="#6366f1" />
-                    <span>Connect Stripe Account</span>
                   </div>
 
                   {/* Clear Data */}
