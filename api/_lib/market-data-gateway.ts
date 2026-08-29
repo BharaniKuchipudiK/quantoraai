@@ -25,6 +25,7 @@ import {
 } from "./market-data-store.js";
 import { liveFxRate } from "./market-data/frankfurter-provider.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
+import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 
@@ -104,7 +105,33 @@ export async function handleMarketDataLookup(req: any, res: any): Promise<boolea
     const directUsable = Boolean(direct) && !isBarStale({ as_of: direct!.as_of });
     const inverse = storeReady && !directUsable ? await readLatestFxRate(intent.quote, intent.base) : null;
 
-    sendStream(res, requestId, fxLookupResult(intent, direct, inverse).text);
+    /*
+     * The rate answers the question, and the question after it is nearly always
+     * "what about the other direction" or "what about a different amount".
+     * Offering those keeps a working capability from ending the turn — the FX
+     * path is the one Finance feature that runs end to end, so a dead end here
+     * is the most expensive one in the workspace.
+     */
+    const rate = fxLookupResult(intent, direct, inverse);
+    sendStream(res, requestId, withNextMoves({
+      text: rate.text,
+      question: "Anything else on this rate?",
+      moves: [
+        {
+          id: "fx_invert",
+          title: `Show me ${intent.quote} to ${intent.base}`,
+          description: "The same rate, the other way round",
+          value: `What is the ${intent.quote} to ${intent.base} rate?`,
+        },
+        {
+          id: "fx_amount",
+          title: "Convert a different amount",
+          description: "Same pair, another figure",
+          value: `Convert a different amount from ${intent.base} to ${intent.quote} — I'll give you the number.`,
+        },
+      ],
+      facts: [`Asked for ${intent.base} to ${intent.quote}`],
+    }));
     return true;
   }
 

@@ -54,3 +54,39 @@ test("formatDebtPlan renders a recommendation, and refuses when infeasible", () 
 test("empty debt list is trivially feasible", () => {
   assert.equal(simulatePayoff([], 100, "avalanche").feasible, true);
 });
+
+test("an affordable-monthly below the minimums ends the simulation instead of dating it", () => {
+  const debts = [
+    { name: "Home loan", balance: 400000, apr: 4, minPayment: 18000 },
+    { name: "Cards", balance: 60000, apr: 24, minPayment: 7000 },
+  ];
+  // 25,000 of minimums against 15,000 coming in.
+  const r = simulatePayoff(debts, 0, "avalanche", 15000);
+  assert.equal(r.feasible, false);
+  assert.match(String(r.reason), /shortfall of 10000\.00/);
+  assert.equal(r.months, 0);
+
+  // Without the constraint the same numbers still simulate — the old callers are unchanged.
+  assert.equal(simulatePayoff(debts, 0, "avalanche").feasible, true);
+});
+
+test("an affordable-monthly that covers the minimums does not interfere", () => {
+  const debts = [{ name: "Card", balance: 5000, apr: 20, minPayment: 150 }];
+  const with_ = simulatePayoff(debts, 300, "avalanche", 2000);
+  const without = simulatePayoff(debts, 300, "avalanche");
+  assert.equal(with_.feasible, true);
+  assert.equal(with_.months, without.months);
+  assert.equal(with_.totalInterest, without.totalInterest);
+});
+
+test("the shortfall refusal does not tell someone underwater to pay more", () => {
+  const debts = [
+    { name: "Home loan", balance: 400000, apr: 4, minPayment: 18000 },
+    { name: "Cards", balance: 60000, apr: 24, minPayment: 7000 },
+  ];
+  const text = formatDebtPlan(comparePayoff(debts, 0, 15000));
+  assert.match(text, /shortfall of 10000\.00/);
+  assert.doesNotMatch(text, /increase the amount you can put/);
+  assert.doesNotMatch(text, /Debt-free in/);
+  assert.match(text, /consolidation at a lower rate|longer term/);
+});

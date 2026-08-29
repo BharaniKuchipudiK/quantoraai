@@ -54,6 +54,9 @@ jobs:
       - name: Run all tests
         run: npm run test:all
 
+      - name: Finance judgment gate
+        run: npm run test:judgment
+
       - name: Capability claims gate
         run: node scripts/capability-claims-gate.mjs
 
