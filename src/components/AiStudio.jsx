@@ -33,7 +33,7 @@ import {
 import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studio-desk-snapshot.js';
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
-import { advanceBuildJob, buildJobIsComplete, describeBuildJob, nextStepBrief, readPlanMarker, shouldAutoAdvanceJob } from '../lib/build-job.js';
+import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
@@ -553,10 +553,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [buildJob, setBuildJob] = useState(null);
   // Steps taken without being asked. Reset when a new plan starts; capped so an
   // agent loop can never become an open tap.
-  const autoStepsRef = useRef(0);
-  // The job as the loop last saw it. Read outside React state so the
-  // auto-advance decision never sits inside an updater that can run twice.
-  const buildJobRef = useRef(null);
   const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
@@ -883,44 +879,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // A plan turn starts the job; every other turn re-judges it against the
     // files that now exist, so a step can also go BACK to not-done if its file
     // is later emptied. The job describes the desk, not the history of claims.
+    /*
+     * Auto-advance is REVERTED here, not debugged in place.
+     *
+     * It broke the desk-job browser gate — the Preview stopped rendering — and
+     * the same PR carries the fix for a live Travel outage. Holding a
+     * production fix hostage to a feature is the wrong trade, so the loop comes
+     * out and goes back in on its own PR with that gate passing first.
+     *
+     * shouldAutoAdvanceJob and its stop conditions stay in build-job.js, tested.
+     */
     const proposed = readPlanMarker(rawText);
-    if (proposed) {
-      autoStepsRef.current = 0;
-      autoPauseRef.current = '';
-      buildJobRef.current = advanceBuildJob(proposed, assembled.vfs || vfs);
-      setBuildJob(buildJobRef.current);
-    } else if (buildJobRef.current) {
-      /*
-       * Decided OUTSIDE the state updater on purpose.
-       *
-       * The first version ran this inside setBuildJob's updater, which React
-       * may invoke twice (StrictMode, and any re-render it decides to retry).
-       * An updater that schedules a send and increments a counter therefore
-       * sends the step twice and charges for it twice — an agent loop is
-       * exactly the wrong place to put a side effect that can run again.
-       */
-      const previous = buildJobRef.current;
-      const next = advanceBuildJob(previous, assembled.vfs || vfs);
-      buildJobRef.current = next;
-      setBuildJob(next);
-
-      // Every stop condition lives in shouldAutoAdvanceJob. The one that
-      // matters is NO PROGRESS: a step that delivered no new file will not
-      // deliver one on a retry, so repeating it is a charge with a known
-      // outcome.
-      const verdict = shouldAutoAdvanceJob({
-        job: next,
-        previousJob: previous,
-        autoStepsUsed: autoStepsRef.current,
-        lastTurnFailed: Boolean(assembled.rejected),
-      });
-      autoPauseRef.current = verdict.advance ? '' : verdict.reason;
-      if (verdict.advance) {
-        autoStepsRef.current += 1;
-        // After paint, so the step just finished is on screen before the next starts.
-        setTimeout(() => handleSendMessageRef.current?.(nextStepBrief(next)), 0);
-      }
-    }
+    if (proposed) setBuildJob(advanceBuildJob(proposed, assembled.vfs || vfs));
+    else setBuildJob((prev) => (prev ? advanceBuildJob(prev, assembled.vfs || vfs) : prev));
     setPatchNote((assembled.patchFailures || [])
       .map((failure) => describePatchFailures(failure.result, failure.filepath))
       .filter(Boolean)
@@ -1421,7 +1392,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
   };
 
-  const handleSendMessageRef = useRef(null);
   const handleSendMessage = (overrideText = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
@@ -1487,9 +1457,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
     streamSendMessage(overrideText);
   };
-  // The auto-advance loop calls through this ref so it always reaches the
-  // current closure rather than the one captured when the job started.
-  handleSendMessageRef.current = handleSendMessage;
 
   const commitStudySyllabusChip = (item) => {
     if (!STUDY_SYLLABUS_CHIPS.some((chip) => chip.id === item.id)) return;

@@ -26,7 +26,8 @@
     "test:all": "npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && node --test api/_lib/*.test.js src/lib/*.test.js src/lib/quantum/*.test.js src/hooks/*.test.js scripts/*.test.mjs && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:wiring",
     "lint:undef": "eslint 'src/**/*.{js,jsx}'",
     "test:wiring": "node scripts/wiring-gate.mjs",
-    "test:stress": "node scripts/stress/pipeline-stress.mjs"
+    "test:stress": "node scripts/stress/pipeline-stress.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",

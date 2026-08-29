@@ -480,15 +480,26 @@ test('a build that is neither shop nor calculator still gets real checks', () =>
   assert.ok(failing.some((l) => /placeholder text left in/.test(l)));
 });
 
-test('a clean build passes every generic check, and says so positively', () => {
+test('a clean build is UNVERIFIED until the page is probed, never passed', () => {
   const html = '<!DOCTYPE html><html><body><h1 id="top">Board</h1>'
     + '<button onclick="zoom()">Zoom in</button><a href="#top">Back to top</a>'
     + '<script>function zoom(){}</script></body></html>';
-  const checks = buildTruthChecks(html, ['index.html']);
-  assert.ok(checks.length >= 4);
-  assert.ok(checks.every((check) => check.ok), checks.filter((c) => !c.ok).map((c) => c.label).join('; '));
-  assert.ok(checks.some((check) => /Every control is wired/.test(check.label)),
-    'a pass must read as a pass, not as an absence');
+  /*
+   * A FINDING is sound from source; an ABSENCE is not. The desk-job gate
+   * caught the first version reporting ok:true from reading HTML — "a desk
+   * whose page was never probed reported a passing check" — which is the rule
+   * this codebase enforces everywhere else.
+   */
+  const fromSource = buildTruthChecks(html, ['index.html']);
+  assert.ok(fromSource.length >= 4);
+  assert.ok(fromSource.every((check) => check.state === 'unverified'),
+    'not finding a defect in source is not proof the page works');
+  assert.ok(fromSource.every((check) => check.ok === false));
+
+  const probed = buildTruthChecks(html, ['index.html'], { livePresent: true });
+  assert.ok(probed.every((check) => check.ok), probed.filter((c) => !c.ok).map((c) => c.label).join('; '));
+  assert.ok(probed.some((check) => /Every control is wired/.test(check.label)),
+    'once probed, a pass reads as a pass rather than as an absence');
 });
 
 test('the generic checks reach the packet a user actually sees', () => {

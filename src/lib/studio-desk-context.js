@@ -157,7 +157,7 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
   // Shop and calculator checks where they apply, PLUS the ones that apply to
   // every build. Before this, anything that was neither got a single
   // unverifiable placeholder.
-  const checks = [...buildDeskChecks(facts, { includeCatalog, job }), ...buildTruthChecks(source, listStudioFiles(vfs))];
+  const checks = [...buildDeskChecks(facts, { includeCatalog, job }), ...buildTruthChecks(source, listStudioFiles(vfs), { livePresent: false })];
   const failed = failingChecks(checks);
   const nextBeat = failed[0]?.label || '';
   return { facts, checks, failed, nextBeat, catalog };
@@ -184,7 +184,7 @@ export function probeRunningDesk({ html = '', vfs = {}, job = null } = {}) {
  * fabricated content, numbers that disagree — and was wired into the proof
  * plane but not into the panel the user actually reads.
  */
-export function buildTruthChecks(html = '', files = []) {
+export function buildTruthChecks(html = '', files = [], { livePresent = false } = {}) {
   const source = String(html || '');
   if (!source.trim()) return [];
   let truth;
@@ -210,22 +210,39 @@ export function buildTruthChecks(html = '', files = []) {
   const checks = [];
   for (const [kind, label] of Object.entries(LABELS)) {
     const count = byKind.get(kind) || 0;
+    /*
+     * A FINDING is sound from source; an ABSENCE is not.
+     *
+     * The first version reported ok:true from reading the HTML, and the
+     * desk-job gate caught it: "a desk whose page was never probed reported a
+     * passing check". That is the rule this codebase enforces everywhere else —
+     * a data-testid in source is not a passing calculator check either.
+     *
+     * So a dead control found in the source is a real failure and says so. Not
+     * finding one only means the source did not show one, which is 'unverified'
+     * until the live page has actually been probed.
+     */
     checks.push({
       id: `truth-${kind}`,
-      ok: count === 0,
-      state: count === 0 ? 'ok' : 'fix',
+      ok: count === 0 && livePresent,
+      state: count > 0 ? 'fix' : (livePresent ? 'ok' : 'unverified'),
       sourceOk: count === 0,
-      label: count === 0 ? okLabelFor(kind) : label(count),
+      label: count === 0 ? okLabelFor(kind, livePresent) : label(count),
     });
   }
   return checks;
 }
 
-function okLabelFor(kind) {
-  if (kind === 'dead-control') return 'Every control is wired to something';
-  if (kind === 'broken-link') return 'Every link resolves';
-  if (kind === 'placeholder-content') return 'No placeholder text left in';
-  return 'Totals match their rows';
+function okLabelFor(kind, livePresent) {
+  const proved = {
+    'dead-control': 'Every control is wired to something',
+    'broken-link': 'Every link resolves',
+    'placeholder-content': 'No placeholder text left in',
+    'numbers-disagree': 'Totals match their rows',
+  }[kind] || 'Checked';
+  // Until the running page has been probed, this is what the SOURCE shows —
+  // not what the page does.
+  return livePresent ? proved : `Not checked on Preview yet: ${proved.toLowerCase()}`;
 }
 
 function observedBool(live, key) {
@@ -434,7 +451,18 @@ export function mergeLiveDeskProbe(packet, live = null) {
   }
 
   const includeCatalog = (packet.checks || []).some((check) => check.id === 'catalog');
-  const checks = buildDeskChecks(facts, { includeCatalog, job: packet.job, live });
+  /*
+   * Carry the generic truth rows through from the packet rather than
+   * recomputing them — the HTML is not in scope here. A row that FAILED stays
+   * failed; a row that merely found nothing is promoted from 'unverified' to
+   * 'ok' now that the running page has actually been probed.
+   */
+  const carriedTruth = (packet.checks || [])
+    .filter((check) => String(check.id || '').startsWith('truth-'))
+    .map((check) => (check.sourceOk
+      ? { ...check, ok: true, state: 'ok', label: check.label.replace(/^Not checked on Preview yet: /, '').replace(/^./, (c) => c.toUpperCase()) }
+      : check));
+  const checks = [...buildDeskChecks(facts, { includeCatalog, job: packet.job, live }), ...carriedTruth];
   /*
    * Only report the CLICK when there is a control to click. The old else-branch
    * repeated "Add to Cart missing from Preview" verbatim under a second id, so
