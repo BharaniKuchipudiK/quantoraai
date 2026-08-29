@@ -86,17 +86,33 @@ test('Study next move is rendered from the server learner model, not inferred in
 
   assert.ok(present.length, `no Study result component exists: ${STUDY_RESULT_COMPONENTS.join(', ')}`);
 
-  const renders = present.filter(([, source]) =>
-    /assessment\.result\.learnerModel\?\.nextLearningMove\?\.learnerFacingText/.test(source));
+  /*
+   * The chain, not its punctuation. Pinning `assessment.result.learnerModel?...`
+   * with plain dots failed against a component reaching the same field through
+   * optional chaining — pinning an exact expression is the same mistake as
+   * pinning exact prose.
+   */
+  const RENDERS_SERVER_MOVE = /learnerModel[?.\s]*nextLearningMove[?.\s]*learnerFacingText/;
+  const renders = present.filter(([, source]) => RENDERS_SERVER_MOVE.test(source));
   assert.ok(
     renders.length,
     `The server returns a next learning move and no Study component renders it. `
     + `Port the learnerFacingText line into: ${present.map(([relative]) => relative).join(', ')}`,
   );
 
+  /*
+   * IMPORTED OR CALLED, not merely mentioned.
+   *
+   * A raw substring check counts a COMMENT as a violation — the same flaw the
+   * wiring gate had before it learned to skip comments and strings, where a
+   * docblock cleared the very symbol it documented. Naming the server function
+   * in a comment is how a reader learns where mastery is decided; importing or
+   * calling it in the browser is the thing that must never happen.
+   */
+  const COMPUTES_LOCALLY = /\bimport\b[^;]*\bbuildStudyLearnerModel\b|\bbuildStudyLearnerModel\s*\(/;
   for (const [relative, source] of present) {
     assert.equal(
-      source.includes('buildStudyLearnerModel'),
+      COMPUTES_LOCALLY.test(source),
       false,
       `${relative} computes the learner model in the browser; the server decides mastery`,
     );
