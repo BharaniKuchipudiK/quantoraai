@@ -13,6 +13,7 @@ import {
   studyAssessmentItemsForConcept,
 } from "./study-assessment-items.js";
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
+import { buildStudyLearnerModel } from "./study-learner-model.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -149,6 +150,14 @@ export default async function studyAssessmentHandler(req: any, res: any) {
   const masteryUpdated = estimate
     ? await saveStudyMasteryEstimate({ userSub, conceptId: grade.conceptId, estimate })
     : false;
+  const learnerModel = estimate && evidence
+    ? buildStudyLearnerModel({
+        conceptId: grade.conceptId,
+        conceptKey: item.conceptKey,
+        evidence,
+        estimate,
+      })
+    : null;
 
   return res.status(200).json({
     recorded: true,
@@ -165,5 +174,6 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       evidenceCount: estimate.evidenceCount,
       // The UI receives an interpretable state, not a fake exam rank or pass probability.
     } : null,
+    learnerModel,
   });
 }
