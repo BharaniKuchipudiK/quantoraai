@@ -4,7 +4,7 @@
 
 ## North Star
 
-**Conversation first.** Cards and chips introduce the next learning move; they do not become permanent dashboards that hide the lesson.
+**Conversation first.** Cards and chips are progressive-disclosure controls: they introduce the next useful learning move, then collapse or disappear. They are not permanent dashboards that compete with the lesson.
 
 ## Delivery pipeline
 
