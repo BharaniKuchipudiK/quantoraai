@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyMoveChatToProject, DEFAULT_PROJECT_ID } from './useStudioSession.js';
+import { applyMoveChatToProject, DEFAULT_PROJECT_ID, makeHandoverSession } from './useStudioSession.js';
 
 const greeting = { id: 1, sender: 'ai', text: 'Hello', type: 'greeting' };
 
@@ -72,4 +72,28 @@ test('moving to the same project is a no-op', () => {
   });
   assert.equal(result.changed, false);
   assert.equal(result.sessions, sessions);
+});
+
+test('handover creates a child chat in the owning project without copying transcript', () => {
+  const session = makeHandoverSession({
+    projectId: 'project-physics',
+    defaultGreetingMsg: greeting,
+    contract: {
+      version: 1,
+      kind: 'session_handover',
+      id: 'handover:old:1',
+      sourceSessionId: 'old',
+      studioDomain: 'education',
+      createdAt: 1,
+      summary: { goal: 'Master forces', facts: ['Free-body diagrams next'] },
+      context: { goal: 'Master forces', facts: ['Free-body diagrams next'] },
+    },
+  });
+
+  assert.equal(session.projectId, 'project-physics');
+  assert.equal(session.studioDomain, 'education');
+  assert.equal(session.parentSessionId, 'old');
+  assert.equal(session.title, 'Master forces');
+  assert.deepEqual(session.conversationContext, { goal: 'Master forces', facts: ['Free-body diagrams next'] });
+  assert.deepEqual(session.messages, [greeting]);
 });

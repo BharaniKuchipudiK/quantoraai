@@ -331,6 +331,27 @@ function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
   };
 }
 
+/** Create a reversible child session from bounded continuity state. */
+export function makeHandoverSession({ contract, projectId, defaultGreetingMsg } = {}) {
+  if (contract?.kind !== 'session_handover' || !contract?.sourceSessionId || !projectId) return null;
+  const domain = normalizeStudioDomain(contract.studioDomain);
+  const session = makeSession(projectId, defaultGreetingMsg, domain);
+  const goal = String(contract?.summary?.goal || '').trim();
+  return {
+    ...session,
+    ...(goal ? { title: goal.slice(0, 80) } : {}),
+    conversationContext: contract.context || {},
+    parentSessionId: String(contract.sourceSessionId),
+    handover: {
+      version: contract.version,
+      id: contract.id,
+      sourceSessionId: String(contract.sourceSessionId),
+      createdAt: contract.createdAt,
+      summary: contract.summary || {},
+    },
+  };
+}
+
 function createProjectId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `project-${crypto.randomUUID()}`;
@@ -652,6 +673,23 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveSessionId(newSession.id);
   }, [activeProject.id, defaultGreetingMsg]);
 
+  const handleCreateHandoverChat = useCallback((contract) => {
+    const newSession = makeHandoverSession({
+      contract,
+      // A handover may not move data across projects. The active project owns it.
+      projectId: activeProject.id,
+      defaultGreetingMsg,
+    });
+    if (!newSession) return null;
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+    return newSession.id;
+  }, [activeProject.id, defaultGreetingMsg]);
+
   const openAdvisorWorkspace = useCallback((domain) => {
     const requestedDomain = normalizeStudioDomain(domain);
     if (!requestedDomain) return null;
@@ -863,6 +901,7 @@ export function useStudioSession({ user, selectedModel }) {
     setStudioDomain,
     recordListeningSignal,
     handleCreateNewChat,
+    handleCreateHandoverChat,
     handleCreateAdvisorChat,
     openAdvisorWorkspace,
     forkChatFromMessage,
