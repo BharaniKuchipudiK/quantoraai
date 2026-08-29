@@ -52,10 +52,12 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="187" y="168" fill="#e879f9" fontSize="12" fontWeight="700">W = mg</text>
 
           <Arrow x1="180" y1="114" x2="292" y2="114" label="" color="#f97316" />
-          <text x="238" y="106" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="700">F applied</text>
+          <text x="252" y="102" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="700">F applied</text>
 
-          <Arrow x1="180" y1="114" x2="106" y2="114" label="" color="#94a3b8" />
-          <text x="140" y="106" textAnchor="middle" fill={muted} fontSize="12" fontWeight="700">friction</text>
+          <Arrow x1="180" y1="114" x2="86" y2="114" label="" color="#94a3b8" />
+          {/* Left of the block, not over it: the label sat at x=140 with the
+              block starting at 152, so a ~50px word crossed its edge. */}
+          <text x="120" y="102" textAnchor="middle" fill={muted} fontSize="12" fontWeight="700">friction</text>
 
           <circle cx="180" cy="114" r="3.5" fill={ink} />
           <text x="180" y="16" textAnchor="middle" fill={muted} fontSize="11">every force acts from the same point</text>

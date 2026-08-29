@@ -116,40 +116,29 @@ export default function StudyTutorShell({
       data-quantora-workspace-capabilities="education"
       style={{ maxWidth: '720px', margin: '0 auto 6px', textAlign: 'left' }}
     >
+      {/*
+        * A row, not a card. The boxed panel read as a separate surface sitting
+        * between the lesson and the composer, unlike every other set of actions
+        * on the platform, which are chips inline with the conversation. Same
+        * controls, same accessible names, one less container to look at.
+        */}
       <section
         aria-label={`Study focus: ${topic}`}
-        style={{
-          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.20)',
-          background: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.64)',
-          borderRadius: '14px',
-          padding: '8px 10px',
-          boxShadow: isLight ? '0 5px 18px rgba(15,23,42,0.05)' : '0 8px 24px rgba(0,0,0,0.14)',
-        }}
+        style={{ padding: '2px 2px 0' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '36px' }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '7px', minWidth: 0 }}>
-              <strong
-                style={{
-                  color: textColor,
-                  fontSize: '0.84rem',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {topic}
-              </strong>
-              <span style={{ color: subtextColor, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>· {stateLabel}</span>
-            </div>
-          </div>
-
-          <button type="button" title="Close Study focus" aria-label="Close Study focus" onClick={() => setDismissed(true)} style={iconButtonStyle}>
-            <X size={16} />
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap', marginTop: '7px' }}>
+        <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span
+            style={{
+              color: subtextColor,
+              fontSize: '0.74rem',
+              maxWidth: '260px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <strong style={{ color: textColor }}>{topic}</strong> · {stateLabel}
+          </span>
           <button type="button" onClick={() => askOrSend(studyLessonAsk(topic))} style={actionStyle(false)}>Explain</button>
           <button type="button" onClick={() => askOrSend(studyPracticeAsk(topic))} style={actionStyle(false)}>Practice</button>
           <button
@@ -160,6 +149,9 @@ export default function StudyTutorShell({
             style={{ ...actionStyle(true), opacity: ['loading', 'grading'].includes(assessment?.status) || verifiedResult?.correct ? 0.55 : 1 }}
           >
             {assessment?.status === 'loading' ? 'Preparing…' : assessment?.status === 'grading' ? 'Checking…' : verifiedResult?.correct ? 'Completed' : completedCheck ? 'Retry check' : 'Check'}
+          </button>
+          <button type="button" title="Close Study focus" aria-label="Close Study focus" onClick={() => setDismissed(true)} style={iconButtonStyle}>
+            <X size={16} />
           </button>
         </div>
 

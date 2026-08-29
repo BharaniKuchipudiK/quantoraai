@@ -74,3 +74,31 @@ export function isStudyQuestionCompleted(state, item) {
   const questionId = studyQuestionId(item);
   return Boolean(questionId && state?.completedQuestionIds?.includes(questionId));
 }
+
+/*
+ * A closing phrase is not a question.
+ *
+ * The tutor prompt instructs the model to END with "Write your attempt. I will
+ * wait." — so it says that line even on an opening turn where the learner
+ * explicitly asked it NOT to quiz them yet. Matching the phrase put an answer
+ * box under a lesson that had asked nothing, which is a control that reaches
+ * nothing: the learner is invited to reply to a question that does not exist.
+ *
+ * The question itself is the evidence. Strip the closing lines and the picture
+ * tags, then look for something actually addressed to the learner.
+ */
+const WAITING_PHRASE = /(i[''']m with you|write your attempt|i will wait|wait for (?:your|the learner)[^.]*)\.?/gi;
+const STUDY_TAG = /<quantora-study-[a-z-]+\b[^>]*\/?>/gi;
+
+export function studyAwaitsAnswer(text) {
+  const raw = String(text || '');
+  if (!WAITING_PHRASE.test(raw)) {
+    WAITING_PHRASE.lastIndex = 0;
+    return false;
+  }
+  WAITING_PHRASE.lastIndex = 0;
+  const body = raw.replace(WAITING_PHRASE, ' ').replace(STUDY_TAG, ' ');
+  // A question mark is the cheapest honest proxy for "something was asked".
+  // An imperative task counts too: "Solve for x" needs no question mark.
+  return /\?/.test(body) || /\b(solve|calculate|work out|try|find|show that|prove|sketch|estimate)\b/i.test(body);
+}

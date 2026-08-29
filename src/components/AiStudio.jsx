@@ -82,6 +82,7 @@ import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
+import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -320,6 +321,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Derive current session and messages
   const activeSession = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
   const domainPolicy = studioDomainPolicy(studioDomain);
+
+  /*
+   * The whole Study type system was dead CSS.
+   *
+   * src/index.css carries four rule blocks under
+   * html[data-quantora-domain="education"] — the Nunito reading face, the
+   * heading pairing, the paragraph rhythm, the thread spacing — and NOTHING in
+   * the application ever set that attribute. Every one of them had never
+   * rendered, including the spacing rule added the day before this was found.
+   *
+   * So Study prose fell back to the generic chat body font, and the workspace
+   * that most needs to look like a book looked like a terminal. This is a dead
+   * control in the platform's own sense: a declaration that reaches nothing.
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!studioDomain) {
+      root.removeAttribute('data-quantora-domain');
+      return undefined;
+    }
+    root.setAttribute('data-quantora-domain', studioDomain);
+    return () => root.removeAttribute('data-quantora-domain');
+  }, [studioDomain]);
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
 
   /*
@@ -1060,6 +1084,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    */
   const [missionDismissedFor, setMissionDismissedFor] = useState(null);
   const missionDismissed = missionDismissedFor === activeSessionId;
+
+  /*
+   * Study used to put a second input under the lesson whenever the tutor said
+   * "Write your attempt" — a phrase the prompt tells it to end with, so the box
+   * appeared under lessons that had asked nothing. The question now anchors
+   * itself in the composer that was always there, and only when a question was
+   * genuinely asked.
+   */
+  const awaitingStudyAnswer = studioDomain === 'education'
+    && !isGenerating
+    && studyAwaitsAnswer(lastAiMessage?.text || '');
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
@@ -1822,8 +1857,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}
-                            answerEnabled={lastAiMessage?.id === msg.id && !isActiveGenerating}
-                            onAnswer={(answer) => handleSendMessage(answer)}
                           />
                         ) : (
                           <ReactMarkdown
@@ -3797,7 +3830,7 @@ Paused — ${autoPauseRef.current}.`
                   e.target.style.height = 'auto';
                 }
               }}
-              placeholder={domainPolicy.placeholder}
+              placeholder={awaitingStudyAnswer ? 'Write your answer to the question above…' : domainPolicy.placeholder}
               style={{
                 width: '100%',
                 background: 'transparent',
