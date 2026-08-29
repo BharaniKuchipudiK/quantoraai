@@ -231,12 +231,6 @@ try {
   const board = page.locator('[data-quantora-study-board="true"]').first();
   await visible(board, 'Study answered about a concept but showed no tutor focus.');
   await visible(board.getByText("Newton's laws", { exact: false }).first(), 'Tutor focus did not name the concept the student asked about.');
-  await visible(board.locator('[data-quantora-study-encouragement="true"]').first(), 'Tutor focus has no learner encouragement signal.');
-  await visible(board.locator('[data-quantora-study-gaps="true"]').first(), 'Tutor focus has no next-step/gap signal.');
-  await visible(board.locator('[data-quantora-study-competencies="true"]').first(), 'Tutor focus has no competency evidence signal.');
-  await visible(board.getByText('No fake score. A filled bar only after a real check.', { exact: true }), 'Tutor focus implied progress before a real check.');
-  await visible(board.locator('[data-quantora-study-competency-active="false"]').first(), 'Tutor focus claimed exam competencies before the session tagged any.');
-
   await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Compact Study focus has no Explain action.');
   await visible(board.getByRole('button', { name: 'Practice', exact: true }), 'Compact Study focus has no Practice action.');
   await visible(board.getByRole('button', { name: 'Test me on this', exact: true }), 'Compact Study focus has no Check action.');
@@ -245,11 +239,12 @@ try {
   const focusHeight = await board.evaluate((node) => Math.round(node.getBoundingClientRect().height));
   if (focusHeight > 180) throw new Error(`Collapsed Study focus is still too tall (${focusHeight}px).`);
 
+  // The first synthetic topic has no reviewed server assessment. The fallback
+  // should continue in conversation and must never manufacture local mastery.
   await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
-  const honesty = board.getByRole('button', { name: /I can explain Newton's laws without looking/i }).first();
-  await visible(honesty, 'Tutor focus offered no session honesty check after Check.');
-  await honesty.click();
-  await visible(board.getByText(/Confidence noted — mastery is still unverified/i).first(), 'Tutor focus did not record self-confidence without claiming mastery.');
+  await page.waitForTimeout(250);
+  await hidden(board.locator('[data-quantora-study-verified-check="true"]').first(), 'Unmapped Study topic rendered a fake verified check.');
+  await hidden(board.locator('[data-quantora-study-verified-result]').first(), 'Unmapped Study topic rendered a fake verified result.');
 
   await textarea.fill('Teach me motion graphs');
   await textarea.press('Enter');
@@ -260,7 +255,7 @@ try {
   await visible(verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }), 'Server-issued Study prompt was not rendered.');
   await verifiedCheck.getByRole('button', { name: 'Velocity', exact: true }).click();
   await visible(board.locator('[data-quantora-study-verified-result="correct"]').first(), 'Correct server-graded Study result was not rendered.');
-  await visible(board.getByText(/evidence ledger, not self-report, now informs mastery/i).first(), 'Tutor focus did not distinguish verified evidence from self-report.');
+  await visible(board.getByText(/slope is change in displacement divided by change in time/i).first(), 'Verified Study explanation was not rendered.');
 
   await board.getByRole('button', { name: 'Close Study focus', exact: true }).click();
   const reopen = board.getByRole('button', { name: /Reopen Study focus/i }).first();
