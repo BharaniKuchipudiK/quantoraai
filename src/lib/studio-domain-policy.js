@@ -37,8 +37,17 @@ const POLICIES = Object.freeze({
     title: 'Finance Advisor',
     hero: 'What financial outcome are you working towards?',
     supporting: 'Work through the numbers, trade-offs, risks and decisions in one focused workspace.',
-    capabilities: ['Portfolio', 'Cash flow', 'Debt', 'Decisions'],
-    placeholder: 'What financial decision or portfolio question should we work through?',
+    /*
+     * Named for what the desk can actually answer, not what sounds complete.
+     * "Portfolio" was advertised here and on the landing page with no holdings
+     * store, no gateway and no arithmetic behind it — a painted door on the
+     * front of the workspace. "Cash flow" came out with it: the balance-sheet
+     * work that would honour it is not merged. Both come back when the code
+     * that answers them does, and capability-claims.js is what makes that the
+     * only way back.
+     */
+    capabilities: ['Currency', 'Debt', 'Savings', 'Decisions'],
+    placeholder: 'What financial decision should we work through? Currency, debt, savings, or whether you can afford something.',
     showModelControls: false,
     showArena: true,
     showGenericCanvasNavigation: false,
