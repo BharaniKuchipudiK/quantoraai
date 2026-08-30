@@ -23,6 +23,7 @@ import { deleteProject, isProjectStoreConfigured, listProjects, readProjectConte
 import { saveUserFeedback } from "./_lib/feedback-store.js";
 import { handleAffordabilityDecision } from "./_lib/chat-decision-gateway.js";
 import { handleMarketDataLookup } from "./_lib/market-data-gateway.js";
+import { handleSignalRead } from "./_lib/equity-signal-gateway.js";
 import { handleFxAnalytics } from "./_lib/fx-analytics-gateway.js";
 import { handleFxForecast } from "./_lib/fx-forecast-gateway.js";
 import { handleDebtPlan } from "./_lib/debt-gateway.js";
@@ -104,6 +105,7 @@ export default async function handler(req: any, res: any) {
     if (await handleAffordabilityDecision(req, res)) return;
     if (await handleFxForecast(req, res)) return;
     if (await handleFxAnalytics(req, res)) return;
+    if (await handleSignalRead(req, res)) return;
     if (await handleMarketDataLookup(req, res)) return;
     if (await handleDebtCrisis(req, res)) return;
     if (await handleDebtPlan(req, res)) return;
