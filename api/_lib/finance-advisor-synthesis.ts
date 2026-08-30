@@ -21,6 +21,7 @@ import {
   PROFILE_SET_HINTS,
 } from "./financial-profile.js";
 import type { BalanceSheet } from "./financial-balance-sheet.js";
+import type { WhatIf } from "./finance-advisor-intent.js";
 import {
   simulateGoalProbability,
   requiredMonthlyForConfidence,
@@ -215,6 +216,107 @@ export function formatAdvisoryPlan(plan: AdvisoryPlan): string {
     ...(plan.notes.length
       ? ["", "**5. From your balance sheet, I'd flag first**", ...plan.notes.map((n) => `- ${n}`)]
       : []),
+    "",
+    DISCLAIMER,
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// What-if scenario modeling — rerun the plan under a hypothetical adjustment
+// (more per month, a longer horizon, a different risk mix, a bigger goal) and
+// show the delta, the signature move of Boldin/Empower-class planners. It reuses
+// the same seeded engine for both sides, so the comparison is like-for-like and
+// the change in odds is attributable to the lever, not to simulation noise.
+
+/** Apply a hypothetical adjustment over the saved profile. Only stated levers move. */
+export function applyWhatIf(profile: FinancialProfile, adj: WhatIf): FinancialProfile {
+  const next: FinancialProfile = { ...profile };
+  if (typeof adj.monthlyOverride === "number") next.monthlyInvestable = adj.monthlyOverride;
+  if (typeof adj.addMonthly === "number") next.monthlyInvestable = (profile.monthlyInvestable ?? 0) + adj.addMonthly;
+  if (typeof adj.horizonYears === "number") next.horizonYears = adj.horizonYears;
+  if (adj.risk) next.riskTolerance = adj.risk;
+  if (typeof adj.goalOverride === "number") next.goalAmount = adj.goalOverride;
+  return next;
+}
+
+export type WhatIfComparison = {
+  applicable: boolean; // both sides complete and a lever actually moved
+  changes: string[]; // human-readable "before → after" per lever
+  base: AdvisoryPlan;
+  scenario: AdvisoryPlan;
+};
+
+/** The levers that actually moved, each as a "before → after" phrase. */
+function describeChanges(before: FinancialProfile, after: FinancialProfile): string[] {
+  const changes: string[] = [];
+  const mcur = after.monthlyCurrency || before.monthlyCurrency;
+  const gcur = after.goalCurrency || before.goalCurrency;
+  if (after.monthlyInvestable !== null && after.monthlyInvestable !== before.monthlyInvestable) {
+    changes.push(`Contribution **${money(before.monthlyInvestable ?? 0, mcur)} → ${money(after.monthlyInvestable, mcur)}/month**`);
+  }
+  if (after.horizonYears !== null && after.horizonYears !== before.horizonYears) {
+    changes.push(`Horizon **${before.horizonYears} → ${after.horizonYears} years**`);
+  }
+  if (after.riskTolerance && after.riskTolerance !== before.riskTolerance) {
+    changes.push(`Risk **${before.riskTolerance} → ${after.riskTolerance}**`);
+  }
+  if (after.goalAmount !== null && after.goalAmount !== before.goalAmount) {
+    changes.push(`Goal **${money(before.goalAmount ?? 0, gcur)} → ${money(after.goalAmount, gcur)}**`);
+  }
+  return changes;
+}
+
+export function buildWhatIfComparison(
+  profile: FinancialProfile,
+  adj: WhatIf,
+  options: { current?: number; balanceSheet?: BalanceSheet } = {},
+): WhatIfComparison {
+  const base = buildAdvisoryPlan(profile, options);
+  const adjusted = applyWhatIf(profile, adj);
+  const scenario = buildAdvisoryPlan(adjusted, options);
+  const changes = describeChanges(profile, adjusted);
+  return { applicable: base.complete && scenario.complete && changes.length > 0, changes, base, scenario };
+}
+
+function signedPts(delta: number): string {
+  const r = Math.round(delta * 10) / 10;
+  return `${r >= 0 ? "+" : "−"}${Math.abs(r)} pts`;
+}
+
+function signedMoney(delta: number, currency: string | null): string {
+  return `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta), currency)}`;
+}
+
+/**
+ * Render the comparison. Assumes the plan is applicable (both sides complete);
+ * the gateway falls back to the ordinary plan/refusal when it isn't.
+ */
+export function formatWhatIfComparison(cmp: WhatIfComparison): string {
+  const { base, scenario } = cmp;
+  const p = scenario.profile;
+  const cur = p.goalCurrency;
+  const bMc = base.monteCarlo!;
+  const sMc = scenario.monteCarlo!;
+  const oddsDelta = Number((sMc.probabilityPct - bMc.probabilityPct).toFixed(1));
+
+  const crossesUp = bMc.probabilityPct < CONFIDENCE_TARGET_PCT && sMc.probabilityPct >= CONFIDENCE_TARGET_PCT;
+  const stillShort = sMc.probabilityPct < CONFIDENCE_TARGET_PCT && scenario.monteCarloTargetMonthly !== null;
+  const verdict = crossesUp
+    ? `That clears the ~${CONFIDENCE_TARGET_PCT}% planning bar — the change is enough on its own.`
+    : stillShort
+      ? `Even with this, the odds stay under ${CONFIDENCE_TARGET_PCT}%. To get there you'd need about **${money(scenario.monteCarloTargetMonthly!, p.monthlyCurrency)}/month**.`
+      : null;
+
+  return [
+    `**What-if — ${cmp.changes.join("; ")}**`,
+    "",
+    `**Goal odds:** ${bMc.probabilityPct}% → **${sMc.probabilityPct}%** (${signedPts(oddsDelta)})`,
+    `**Median outcome:** ${money(bMc.p50, cur)} → **${money(sMc.p50, cur)}** (${signedMoney(sMc.p50 - bMc.p50, cur)})`,
+    `**Tough decade (bottom 10%):** ${money(bMc.p10, cur)} → **${money(sMc.p10, cur)}**`,
+    `**Where the pace lands:** ${base.projection!.onTrack ? "on track" : "short"} → **${scenario.projection!.onTrack ? "on track" : "short"}**`,
+    ...(verdict ? ["", verdict] : []),
+    "",
+    `_Both sides use the same seeded ${sMc.paths.toLocaleString("en-US")}-path simulation under each mix's labeled return/volatility assumptions — a like-for-like comparison, not a forecast._`,
     "",
     DISCLAIMER,
   ].join("\n");

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildAdvisoryPlan, formatAdvisoryPlan } from "./finance-advisor-synthesis.js";
+import {
+  buildAdvisoryPlan,
+  formatAdvisoryPlan,
+  applyWhatIf,
+  buildWhatIfComparison,
+  formatWhatIfComparison,
+} from "./finance-advisor-synthesis.js";
 import type { FinancialProfile } from "./financial-profile.js";
 
 const COMPLETE: FinancialProfile = {
@@ -77,6 +83,37 @@ test("no balance sheet -> no cautions section", () => {
   const plan = buildAdvisoryPlan(COMPLETE, { current: 0 });
   assert.deepEqual(plan.notes, []);
   assert.doesNotMatch(formatAdvisoryPlan(plan), /From your balance sheet/);
+});
+
+test("applyWhatIf moves only the stated levers", () => {
+  assert.deepEqual(applyWhatIf(COMPLETE, { addMonthly: 500 }).monthlyInvestable, 2500);
+  assert.deepEqual(applyWhatIf(COMPLETE, { monthlyOverride: 4000 }).monthlyInvestable, 4000);
+  assert.deepEqual(applyWhatIf(COMPLETE, { horizonYears: 30 }).horizonYears, 30);
+  assert.deepEqual(applyWhatIf(COMPLETE, { risk: "aggressive" }).riskTolerance, "aggressive");
+  assert.deepEqual(applyWhatIf(COMPLETE, { goalOverride: 2_000_000 }).goalAmount, 2_000_000);
+  // Untouched fields stay put.
+  assert.equal(applyWhatIf(COMPLETE, { addMonthly: 500 }).horizonYears, 20);
+});
+
+test("what-if raises the odds and renders a like-for-like comparison", () => {
+  const cmp = buildWhatIfComparison(COMPLETE, { addMonthly: 1500 }, { current: 50_000 });
+  assert.equal(cmp.applicable, true);
+  assert.ok(cmp.scenario.monteCarlo!.probabilityPct >= cmp.base.monteCarlo!.probabilityPct, "more per month never lowers the odds");
+  const text = formatWhatIfComparison(cmp);
+  assert.match(text, /What-if — Contribution/);
+  assert.match(text, /SGD 2,000 → SGD 3,500\/month/);
+  assert.match(text, /Goal odds:/);
+  assert.match(text, /Median outcome:/);
+  assert.match(text, /like-for-like comparison, not a forecast/i);
+});
+
+test("an incomplete profile makes the comparison inapplicable (gateway falls back)", () => {
+  const cmp = buildWhatIfComparison(
+    { ...COMPLETE, riskTolerance: null, monthlyInvestable: null },
+    { addMonthly: 500 },
+  );
+  assert.equal(cmp.applicable, false);
+  assert.equal(cmp.base.complete, false);
 });
 
 test("risk tolerance drives the assumption and the framework", () => {

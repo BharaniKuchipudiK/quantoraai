@@ -24,6 +24,14 @@ test("ignores an ordinary finance message with no advice intent", async () => {
   assert.equal(handled, false);
 });
 
+test("ignores a what-if outside the finance domain (isolation)", async () => {
+  const handled = await handleFinanceAdvisor(
+    { method: "POST", body: { studioDomain: "study", message: "what if I add SGD 500 a month" } },
+    untouchableRes(),
+  );
+  assert.equal(handled, false);
+});
+
 test("ignores a non-POST request", async () => {
   const handled = await handleFinanceAdvisor(
     { method: "GET", body: { studioDomain: "finance", message: "build me a plan" } },

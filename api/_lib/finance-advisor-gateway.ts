@@ -18,10 +18,15 @@ import { getSessionUser } from "./session.js";
 import { isUserContextStoreConfigured, readUserContextGraph } from "./user-context-store.js";
 import { userContextNodesForKey } from "./user-context-graph.js";
 import { guardFinanceGateway } from "./finance-gateway-guard.js";
-import { parseAdviceIntent } from "./finance-advisor-intent.js";
+import { parseAdviceIntent, parseWhatIf } from "./finance-advisor-intent.js";
 import { readFinancialProfile } from "./financial-profile.js";
 import { readBalanceSheet } from "./financial-balance-sheet.js";
-import { buildAdvisoryPlan, formatAdvisoryPlan } from "./finance-advisor-synthesis.js";
+import {
+  buildAdvisoryPlan,
+  formatAdvisoryPlan,
+  buildWhatIfComparison,
+  formatWhatIfComparison,
+} from "./finance-advisor-synthesis.js";
 
 const ADVISOR_RATE_LIMIT_PER_MINUTE = 60;
 
@@ -56,7 +61,8 @@ export function handleFinanceAdvisor(req: any, res: any): Promise<boolean> {
 async function runFinanceAdvisor(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;
-  if (!parseAdviceIntent(req.body?.message).matched) return false;
+  const whatIf = parseWhatIf(req.body?.message);
+  if (!parseAdviceIntent(req.body?.message).matched && !whatIf) return false;
 
   applyCors(req, res, "POST,OPTIONS");
   const requestId = randomUUID();
@@ -79,7 +85,19 @@ async function runFinanceAdvisor(req: any, res: any): Promise<boolean> {
   const graph = await readUserContextGraph(sub);
   const profile = readFinancialProfile(graph);
   const balanceSheet = readBalanceSheet(graph);
-  const plan = buildAdvisoryPlan(profile, { current: currentLiquidCash(graph), balanceSheet });
+  const options = { current: currentLiquidCash(graph), balanceSheet };
+
+  // A hypothetical ("what if I add SGD 500/month") reruns the plan under the
+  // adjustment and shows the delta. If the profile is incomplete the comparison
+  // isn't applicable, so fall back to the ordinary plan — which asks for the
+  // missing facts rather than modeling a scenario on numbers the user never set.
+  if (whatIf) {
+    const cmp = buildWhatIfComparison(profile, whatIf, options);
+    sendStream(res, requestId, cmp.applicable ? formatWhatIfComparison(cmp) : formatAdvisoryPlan(cmp.base));
+    return true;
+  }
+
+  const plan = buildAdvisoryPlan(profile, options);
   sendStream(res, requestId, formatAdvisoryPlan(plan));
   return true;
 }
