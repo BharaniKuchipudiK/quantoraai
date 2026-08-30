@@ -54,6 +54,8 @@ test('Study menu labels stay topic-neutral while the resolved action receives co
   assert.equal(action.kind, STUDIO_PLUS_ACTION.PROMPT);
   assert.match(action.text, /Class 10/);
   assert.match(action.text, /Thermodynamics/);
+  assert.equal(action.visibleText, 'Turn our work on Thermodynamics into concise notes.');
+  assert.doesNotMatch(action.visibleText, /Class 10|Do not|conversation/i);
 });
 
 test('Study icebreaker remains Study-scoped and context-driven', () => {
@@ -84,4 +86,6 @@ test('Study menu work leaves Travel, Finance, Research, and general catalogs unc
     'Word',
     'PDF',
   ]);
+  assert.equal(resolveStudioPlusAction('travel-icebreaker', 'travel').visibleText, undefined);
+  assert.equal(resolveStudioPlusAction('Search', null).visibleText, undefined);
 });

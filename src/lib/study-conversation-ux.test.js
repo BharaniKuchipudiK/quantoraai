@@ -51,3 +51,44 @@ test('Study model guidance forbids automatic repeats after a correct answer', ()
   const education = directives.slice(directives.indexOf('education:'), directives.indexOf('finance:'));
   assert.match(education, /answers a question correctly[\s\S]*Do not repeat it automatically/i);
 });
+
+test('Study explanations use the available width and the product body font', () => {
+  const css = read('src/index.css');
+  const studyCss = css.slice(css.indexOf('html[data-quantora-domain="education"] .app-shell--studio .markdown-prose'));
+  assert.match(studyCss, /font-family: var\(--font-body\)/);
+  assert.match(studyCss, /max-width: none/);
+  assert.doesNotMatch(studyCss.slice(0, 500), /max-width: (?:34|68)rem|font-study-body/);
+});
+
+test('Study removes robotic response labels without changing other domain renderers', () => {
+  const markdown = read('src/components/StudyMarkdown.jsx');
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(markdown, /polishStudyTutorText\(text\)/);
+  assert.match(studio, /String\(tool\)\.startsWith\('study-'\)[\s\S]*visibleUserText: action\.visibleText/);
+  assert.match(studio, /String\(tool\)\.startsWith\('travel-'\)[\s\S]*handleSendMessage\(action\.text\)/);
+});
+
+test('Study flashcards are an interactive hidden-answer deck, not a Front/Back table', () => {
+  const deck = read('src/components/StudyFlashcards.jsx');
+  const markdown = read('src/components/StudyMarkdown.jsx');
+  assert.match(deck, /data-quantora-study-flashcard=\{revealed \? 'back' : 'front'\}/);
+  assert.match(deck, /Tap when you have an answer in mind/);
+  assert.match(deck, />Next <ArrowRight/);
+  assert.match(markdown, /<StudyFlashcards/);
+});
+
+test('Study gives the learner compact next-path choices instead of dumping every activity', () => {
+  const shell = read('src/components/StudyTutorShell.jsx');
+  assert.match(shell, /data-quantora-study-next-choices="true"/);
+  for (const label of ['Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
+    assert.match(shell, new RegExp(label.replace('?', '\\?')));
+  }
+});
+
+test('persisted private Study prompts are removed from both rendering and model history', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  const stream = read('src/hooks/useChatStream.js');
+  assert.match(studio, /cleanStudyMessages = withoutPrivateStudyInstructions\(messages, studioDomain\)/);
+  assert.match(studio, /return cleanStudyMessages\.filter/);
+  assert.match(stream, /withoutPrivateStudyInstructions\([\s\S]*studioDomain/);
+});
