@@ -6,6 +6,8 @@
  * grounding gateway, the market-data analog of parseAffordabilityIntent.
  */
 
+import { tickerForName } from "./market-data/ticker-resolve.js";
+
 export const KNOWN_CURRENCIES = [
   "USD", "EUR", "GBP", "SGD", "INR", "JPY", "AUD", "CAD", "CHF", "HKD", "CNY",
 ];
@@ -95,6 +97,25 @@ function detectFx(message: string): MarketDataIntent | null {
 
 function detectPrice(message: string): MarketDataIntent | null {
   if (!PRICE_HINT.test(message)) return null;
+
+  /*
+   * A spoken company name is how most people actually ask ("how much is Apple",
+   * "Tesla share price") — and it carried no ticker, so the uppercase-only rules
+   * below discarded it and the turn fell through to the model. Names resolve
+   * first, against a curated list of well-known US issuers.
+   */
+  const named = message.match(
+    /\b(?:price|quote)\s+(?:of|for)\s+([A-Za-z][A-Za-z.&' -]{1,24}?)(?:\s+(?:stock|share|shares))?\s*[?.!]?$/i,
+  ) || message.match(
+    /\bhow\s+much\s+(?:is|are|does)\s+(?:a\s+|one\s+)?([A-Za-z][A-Za-z.&' -]{1,24}?)(?:\s+(?:stock|share|shares))?\s*[?.!]?$/i,
+  ) || message.match(
+    /\b([A-Za-z][A-Za-z.&' -]{1,24}?)\s+(?:stock|share)\s+price\b/i,
+  );
+  if (named) {
+    const ticker = tickerForName(named[1]);
+    if (ticker) return { kind: "price", symbol: ticker };
+  }
+
   // `upperOnly` patterns match the plain way people ask ("how much is TSLA",
   // "what's NVDA at") but only accept an UPPERCASE ticker in the source, so
   // "how much is my rent" or "what is it" never read as a quote lookup. A `$`

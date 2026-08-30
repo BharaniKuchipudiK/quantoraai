@@ -66,3 +66,20 @@ test("ordinary finance conversation does not match", () => {
   assert.equal(parseMarketDataIntent("").kind, null);
   assert.equal(parseMarketDataIntent(null).kind, null);
 });
+
+/*
+ * People ask for a company by name far more often than by ticker. The
+ * uppercase-only ticker rules discarded "Apple" as a bare lowercase word, so
+ * "how much is Apple" never reached the deterministic desk at all.
+ */
+test("detects a stock quote asked by company name", () => {
+  assert.deepEqual(parseMarketDataIntent("how much is Apple"), { kind: "price", symbol: "AAPL" });
+  assert.deepEqual(parseMarketDataIntent("what's the price of Tesla?"), { kind: "price", symbol: "TSLA" });
+  assert.deepEqual(parseMarketDataIntent("Microsoft stock price"), { kind: "price", symbol: "MSFT" });
+  assert.deepEqual(parseMarketDataIntent("price of Nvidia shares"), { kind: "price", symbol: "NVDA" });
+});
+
+test("a company name that is not a known issuer does not become a quote", () => {
+  assert.equal(parseMarketDataIntent("how much is my rent").kind, null);
+  assert.equal(parseMarketDataIntent("how much is the mortgage").kind, null);
+});

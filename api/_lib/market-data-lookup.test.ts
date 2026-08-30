@@ -40,8 +40,8 @@ test("FX: refuses a stale rate instead of quoting it", () => {
 test("FX: refuses when no rate is stored (never invents one)", () => {
   const r = fxLookupResult({ kind: "fx", base: "USD", quote: "SGD", amount: null }, null, null, NOW);
   assert.equal(r.resolved, false);
-  assert.match(r.text, /don't have a stored/);
-  assert.match(r.text, /will not invent one/);
+  assert.match(r.text, /couldn't reach a real source/);
+  assert.match(r.text, /won't invent one/);
 });
 
 const aaplBar: PriceBar = {
@@ -69,14 +69,16 @@ test("price: known instrument but no price data explains the gap honestly", () =
   };
   const r = priceLookupResult({ kind: "price", symbol: "AAPL" }, null, inst, NOW);
   assert.equal(r.resolved, false);
-  assert.match(r.text, /no price data/);
-  assert.match(r.text, /won't guess a price/);
+  assert.match(r.text, /don't hold a price/);
+  assert.match(r.text, /won't guess one/);
 });
 
 test("price: unknown symbol refuses rather than inventing", () => {
   const r = priceLookupResult({ kind: "price", symbol: "ZZZZ" }, null, null, NOW);
   assert.equal(r.resolved, false);
-  assert.match(r.text, /don't have \*\*ZZZZ\*\*/);
+  assert.match(r.text, /don't recognise \*\*ZZZZ\*\*/);
+  // The remedy must be something the reader can act on — never a CI job.
+  assert.doesNotMatch(r.text, /workflow/i);
 });
 
 /*

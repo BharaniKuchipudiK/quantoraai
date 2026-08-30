@@ -15,7 +15,13 @@
 import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { parseMarketDataIntent, isFxIntent, isPriceIntent } from "./market-data-intent.js";
-import { fxLookupResult, freshestFxRate, priceLookupResult } from "./market-data-lookup.js";
+import {
+  fxLookupResult,
+  freshestFxRate,
+  priceLookupResult,
+  unknownSymbolText,
+  feedUnreachableText,
+} from "./market-data-lookup.js";
 import {
   isBarStale,
   isMarketDataStoreConfigured,
@@ -24,7 +30,8 @@ import {
   readInstrument,
 } from "./market-data-store.js";
 import { liveFxRate } from "./market-data/frankfurter-provider.js";
-import { liveStockQuote, usInstrumentId } from "./market-data/stooq-provider.js";
+import { resolveTicker } from "./market-data/ticker-resolve.js";
+import { liveStockQuoteOutcome, usInstrumentId } from "./market-data/stooq-provider.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
@@ -148,10 +155,67 @@ async function runMarketDataLookup(req: any, res: any): Promise<boolean> {
    * below (same shape as FX). Only if the live feed has nothing do we fall
    * through to the stored bar (or the honest refusal).
    */
+  /*
+   * Prices resolve the SYMBOL before the feed, so the reply can tell a typo
+   * from an outage from a genuinely unlisted ticker. "APL" used to come back as
+   * "I don't have APL in my market data — run the Market Data Ingestion
+   * workflow": a spelling slip reported as a data-pipeline gap, answered with a
+   * CI job the reader cannot run, while the thing they wanted (AAPL) sat one
+   * character away. A suggestion is offered, never silently substituted.
+   */
   if (isPriceIntent(intent)) {
-    const live = await liveStockQuote(intent.symbol);
-    if (live) {
-      sendStream(res, requestId, priceLookupResult(intent, live, null).text);
+    const resolution = resolveTicker(intent.symbol);
+    const target = resolution.status === "known" ? resolution.symbol : intent.symbol;
+    const outcome = await liveStockQuoteOutcome(target);
+
+    if (outcome.status === "ok") {
+      sendStream(res, requestId, priceLookupResult({ ...intent, symbol: target }, outcome.bar, null).text);
+      return true;
+    }
+
+    /*
+     * The feed ANSWERED and carries nothing for this symbol. That is a verdict
+     * on the symbol, not on our plumbing, and it needs no store to be trusted —
+     * so say what is actually wrong, and name the nearest real ticker when there
+     * is exactly one. Falling through here is what produced the Supabase setup
+     * checklist in reply to a three-letter typo.
+     */
+    if (outcome.status === "no-data" || outcome.status === "invalid-symbol") {
+      if (resolution.status === "did-you-mean") {
+        sendStream(res, requestId, withNextMoves({
+          text: unknownSymbolText(resolution.typed, { symbol: resolution.symbol, name: resolution.name }),
+          question: `Want the ${resolution.symbol} price?`,
+          moves: [{
+            id: "price_did_you_mean",
+            title: `Yes — quote ${resolution.symbol}`,
+            description: resolution.name,
+            value: `What is the price of ${resolution.symbol}?`,
+          }],
+          facts: [`Asked for ${resolution.typed}`],
+        }));
+        return true;
+      }
+      if (!isMarketDataStoreConfigured()) {
+        sendStream(res, requestId, unknownSymbolText(target.toUpperCase()));
+        return true;
+      }
+    }
+
+    /*
+     * The feed did NOT answer. A stored bar is still worth having, so this must
+     * fall through to the store rather than end the turn — the live path is an
+     * upgrade over the store, never a replacement for it. Only once the store
+     * has also come up empty do we report the outage, and we report it as an
+     * outage: with the feed down we cannot say whether the symbol is real.
+     */
+    if (outcome.status === "unreachable" && isMarketDataStoreConfigured()) {
+      const instrumentId = usInstrumentId(target);
+      const bar = await readLatestPrice(instrumentId);
+      if (bar) {
+        sendStream(res, requestId, priceLookupResult({ ...intent, symbol: target }, bar, null).text);
+        return true;
+      }
+      sendStream(res, requestId, feedUnreachableText(target.toUpperCase()));
       return true;
     }
   }

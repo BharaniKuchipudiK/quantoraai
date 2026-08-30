@@ -132,7 +132,8 @@ test("FX: a dead live feed refuses honestly rather than inventing a rate", async
       res,
     );
     assert.equal(handled, true);
-    assert.match(res.text(), /don't have a stored/);
+    assert.match(res.text(), /couldn't reach a real source|don't have a stored/,
+      "refuses by naming the missing source, not by inventing a rate");
     assert.doesNotMatch(res.text(), /1 USD = \d/);
   } finally {
     restore();
@@ -190,4 +191,77 @@ test('INVARIANT: a figure is still never invented when the door is shut', async 
     restore();
     if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
   }
+});
+
+/*
+ * The reported defect, end to end.
+ *
+ * "How much is APL?" produced: "I don't have APL in my market data, so I can't
+ * quote it … If it's a US-listed symbol, run the Market Data Ingestion workflow
+ * to load the reference universe." Three things wrong at once — a typo
+ * described as a coverage gap, a remedy the reader cannot perform, and no
+ * mention of AAPL sitting one keystroke away.
+ */
+test("a mistyped ticker names the nearest real symbol, not a data pipeline", async () => {
+  const restore = withFetch((async () => ({
+    ok: true,
+    status: 200,
+    text: async () => "Symbol,Date,Open,High,Low,Close,Volume\nAPL.US,N/D,N/D,N/D,N/D,N/D,N/D\n",
+  })) as any);
+  try {
+    const res = capturingRes();
+    const handled = await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "How much is APL?" } },
+      res,
+    );
+    assert.equal(handled, true);
+    const text = res.text();
+    assert.match(text, /AAPL/, "must name the ticker the user probably meant");
+    assert.match(text, /Apple/, "must name the company so the suggestion is checkable");
+    assert.doesNotMatch(text, /Market Data Ingestion/i, "must not hand the user an internal workflow");
+    assert.doesNotMatch(text, /workflow/i, "no CI instructions in a user-facing reply");
+  } finally { restore(); }
+});
+
+test("an unreachable feed says so instead of blaming the symbol", async () => {
+  // With a store present, a feed outage must not masquerade as an unknown
+  // ticker: the store is consulted first, and only its silence ends the turn.
+  const savedUrl = process.env.SUPABASE_URL;
+  const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key";
+  const restore = withFetch((async () => { throw new Error("connect ETIMEDOUT"); }) as any);
+  try {
+    const res = capturingRes();
+    const handled = await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "What is the price of AAPL?" } },
+      res,
+    );
+    assert.equal(handled, true);
+    const text = res.text();
+    assert.match(text, /couldn't reach/i, "an outage must be reported as an outage");
+    assert.doesNotMatch(text, /don't recognise/i, "must not call a real ticker unknown when the feed is down");
+    assert.doesNotMatch(text, /Market Data Ingestion/i);
+  } finally {
+    restore();
+    if (savedUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = savedUrl;
+    if (savedKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey;
+  }
+});
+
+test("a live quote answers with a real dated close", async () => {
+  const restore = withFetch((async () => ({
+    ok: true,
+    status: 200,
+    text: async () => `Symbol,Date,Open,High,Low,Close,Volume\nAAPL.US,${today()},232.1,234.5,231,233.87,41230000\n`,
+  })) as any);
+  try {
+    const res = capturingRes();
+    const handled = await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "how much is Apple" } },
+      res,
+    );
+    assert.equal(handled, true);
+    assert.match(res.text(), /233\.87/, "a company name must reach the real quote");
+  } finally { restore(); }
 });
