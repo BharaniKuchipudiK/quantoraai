@@ -260,8 +260,8 @@ try {
   await visible(page.locator('[data-quantora-profile-personalizer]').first(), 'Change profile picture did not open the avatar chooser.');
   await page.getByRole('button', { name: 'Close profile picture chooser' }).click();
 
-  const arena = page.locator('[data-quantora-dual-arena]').first();
-  await visible(arena, 'Dual Arena is missing from the Studio shell.');
+  // Dual Arena is intentionally hidden across all workspaces now — assert its absence.
+  await hidden(page.locator('[data-quantora-dual-arena]').first(), 'Dual Arena should be hidden from the Studio shell.');
   await hidden(page.locator('[data-quantora-fork-chat]').first(), 'Fork Chat is incorrectly placed in the top bar.');
   await hidden(page.locator('[data-quantora-code-workspace="true"]').first(), 'Coding desk opened before it was selected.');
 
@@ -509,10 +509,6 @@ try {
 
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
-  await arena.click();
-  await page.waitForTimeout(120);
-  if (!/Arena Active/i.test(await arena.innerText())) throw new Error('Dual Arena did not activate.');
-  await visible(page.getByRole('button', { name: /VS:/ }).first(), 'Dual Arena did not expose Model B selection.');
 
   const sessionsBeforeFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
   await fork.click();

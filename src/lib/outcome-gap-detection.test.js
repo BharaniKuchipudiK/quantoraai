@@ -138,3 +138,25 @@ test('a real shop still gets its commerce chips', () => {
   assert.ok(labels.includes('Add real product photos'), 'a real shop still needs photos');
   assert.ok(labels.includes('Add a payment gateway'), 'a real shop still needs payments');
 });
+
+test('the advice desks (finance/study/research) get no travel/property gap chips', () => {
+  // "when will the conversion become 80 INR" would trip the dates/itinerary chip
+  // on the bare word "when" — advice desks must not surface these travel chips.
+  for (const studioDomain of ['finance', 'education', 'research']) {
+    const gaps = detectOutcomeGaps(
+      'when will the conversion become 80 INR and what are the prices',
+      'It depends on the market.',
+      { studioDomain },
+    );
+    assert.deepEqual(gaps, [], studioDomain);
+  }
+});
+
+test('travel still gets its dates/itinerary chip (it is their home)', () => {
+  const labels = detectOutcomeGaps(
+    'when are the best dates and can you do a day-by-day itinerary',
+    'Bali is lovely.',
+    { studioDomain: 'travel' },
+  ).map((g) => g.label);
+  assert.ok(labels.includes('Add dates / itinerary'), 'travel keeps its itinerary chip');
+});

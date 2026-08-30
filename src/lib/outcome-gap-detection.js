@@ -63,6 +63,16 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     return officeFollowUpGaps(officeKind);
   }
 
+  // The advice desks (Finance, Study, Research) run their own deterministic
+  // next-moves. The gaps below are travel/property/desk-shaped — direct links,
+  // nightly prices, "Add dates / itinerary", compare-properties — and misfire in
+  // those domains: e.g. a Finance "when will SGD hit 80?" trips the dates/
+  // itinerary chip on the bare word "when". Offer none of them there. (Travel is
+  // intentionally excluded from this list — these chips are its home.)
+  if (studioDomain === 'finance' || studioDomain === 'education' || studioDomain === 'research') {
+    return [];
+  }
+
   const probeGaps = chipsFromDeskChecks(deskChecks);
 
   const wantsUrls = /\b(url|urls|link|links|clickable)\b/i.test(userPrompt);
