@@ -8,11 +8,13 @@ import {
   parseStudySubjects,
   parseStudySyllabusNodes,
 } from './study-syllabus-overlay.js';
+import { isPrivateStudyInstruction } from './study-private-instructions.js';
 
 function userTexts(messages = []) {
   return (messages || [])
     .filter((message) => message?.sender === 'user' && message.text)
     .map((message) => String(message.text).trim())
+    .filter((text) => !isPrivateStudyInstruction(text))
     .filter(Boolean);
 }
 
@@ -32,9 +34,12 @@ function deriveLabel({ conversationContext = {}, messages = [] } = {}) {
   }
   const nodes = parseStudySyllabusNodes(conversationContext.facts);
   if (nodes.length) return nodes[nodes.length - 1];
-  const fromGoal = extractStudyTopicLabel(conversationContext.goal || '');
+  const rawGoal = isPrivateStudyInstruction(conversationContext.goal || '')
+    ? ''
+    : String(conversationContext.goal || '');
+  const fromGoal = extractStudyTopicLabel(rawGoal);
   if (fromGoal) return fromGoal;
-  const goal = String(conversationContext.goal || '').replace(/\s+/g, ' ').trim();
+  const goal = rawGoal.replace(/\s+/g, ' ').trim();
   if (goal && goal.length <= 72 && !/\bhttps?:\/\//i.test(goal)) return goal;
   return '';
 }

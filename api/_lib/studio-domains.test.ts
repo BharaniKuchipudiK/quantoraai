@@ -52,7 +52,8 @@ test("Education directive behaves as an evidence-backed Study Advisor instead of
   assert.match(directive, /SWAYAM/i);
   assert.match(directive, /NotebookLM/i);
   assert.match(directive, /Never invent a specific video/i);
-  assert.match(directive, /I will wait/i);
+  assert.match(directive, /End on the question itself/i);
+  assert.match(directive, /do not.*say that you will wait/i);
   assert.match(directive, /shortest clean method/i);
   assert.match(directive, /not an official IIT\/NEET timetable/i);
   assert.match(directive, /TUTOR STANCE/i);

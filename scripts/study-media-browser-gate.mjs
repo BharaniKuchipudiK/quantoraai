@@ -73,16 +73,22 @@ await page.route('**/api/**', async (route) => {
   }
 
   if (path === '/api/chat') {
-    const reply = [
-      'Here is one verified lesson and one intentionally unavailable fixture:',
+    const body = request.postDataJSON();
+    const reply = /quantora-study-flashcard|Create 3 to 5 genuine recall flashcards/i.test(body?.message || '') ? [
+      'Flashcard Set: Inertia',
+      '',
+      '| Front | Back |',
+      '| --- | --- |',
+      '| 1. What is inertia? | Resistance to a change in velocity. |',
+      '| 2. Is inertia a force? | No. It is a property of mass. |',
+      '| 3. With zero net force, what stays constant? | Velocity. |',
+    ].join('\n') : [
+      "**Why it's relevant:** You feel inertia when a car brakes and your body keeps moving forward until the seatbelt changes your motion.",
       '',
       `- [Verified Study lesson](https://www.youtube.com/watch?v=${VALID_VIDEO_ID}) — watch this inside Quantora.`,
       `- [Dead Study lesson](https://www.youtube.com/watch?v=${DEAD_VIDEO_ID}) — this must never be offered.`,
       '',
-      '<quantora-study-picture caption="A box accelerating under a net force with weight and normal forces" />',
-      '',
-      'Which part of motion would you explain first?',
-      'Write your attempt. I will wait.',
+      '**Context-aware question:** Which force changes your forward velocity when the car stops?',
     ].join('\n');
     return route.fulfill({
       status: 200,
@@ -228,7 +234,29 @@ try {
     throw new Error('A tutor question did not anchor itself in the composer placeholder.');
   });
   await visible(page.locator('[data-quantora-study-picture="physics-motion"]').first(), 'Physics lesson did not render a labeled motion/force diagram.');
+  await visible(page.locator('[data-quantora-study-picture-variant="braking-inertia"]').first(), 'Inertia lesson fell back to a mismatched generic force diagram.');
   await hidden(page.locator('[data-quantora-study-your-turn="true"]').first(), 'Legacy Your turn banner is still rendered.');
+
+  const lesson = page.locator('[data-quantora-study-lesson="true"]').last();
+  const lessonMetrics = await lesson.evaluate((node) => {
+    const styles = getComputedStyle(node);
+    return {
+      width: node.getBoundingClientRect().width,
+      parentWidth: node.parentElement?.getBoundingClientRect().width || 0,
+      fontFamily: styles.fontFamily,
+    };
+  });
+  if (lessonMetrics.width < 800) throw new Error(`Study explanation still wastes horizontal space (${Math.round(lessonMetrics.width)}px).`);
+  if (lessonMetrics.parentWidth && lessonMetrics.width / lessonMetrics.parentWidth < 0.94) {
+    throw new Error(`Study explanation still caps the reading column (${Math.round(lessonMetrics.width)}px of ${Math.round(lessonMetrics.parentWidth)}px).`);
+  }
+  if (!/Inter/i.test(lessonMetrics.fontFamily) || /Nunito/i.test(lessonMetrics.fontFamily)) {
+    throw new Error(`Study explanation uses the wrong font (${lessonMetrics.fontFamily}).`);
+  }
+  const lessonText = await lesson.innerText();
+  if (/Why it's relevant|Context-aware question|Write your attempt|I will wait/i.test(lessonText)) {
+    throw new Error('Study rendered robotic response-shaping labels instead of natural tutor prose.');
+  }
 
   const deadLink = page.getByRole('link', { name: 'Dead Study lesson', exact: true }).first();
   await deadLink.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
@@ -262,9 +290,49 @@ try {
   await visible(board, 'Study answered about a concept but showed no tutor focus.');
   await visible(board.getByText("Newton's laws", { exact: false }).first(), 'Tutor focus did not name the concept the student asked about.');
   await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Compact Study focus has no Explain action.');
-  await visible(board.getByRole('button', { name: 'Practice', exact: true }), 'Compact Study focus has no Practice action.');
+  await visible(board.getByRole('button', { name: /Mini practice/, exact: false }), 'Compact Study focus has no Mini practice action.');
+  await visible(board.locator('[data-quantora-study-next-choices="true"]'), 'Study did not offer learner-directed next paths.');
+  await visible(board.getByRole('button', { name: /Real world/ }), 'Study has no real-world application path.');
+  await visible(board.getByRole('button', { name: /Quick sketch/ }), 'Study has no quick-sketch path.');
+  await visible(board.getByRole('button', { name: /Did you know/ }), 'Study has no accurate quick-fact path.');
+  await visible(board.getByRole('button', { name: /Where next/ }), 'Study has no learner-directed next-step path.');
   await visible(board.getByRole('button', { name: 'Test me on this', exact: true }), 'Compact Study focus has no Check action.');
   await hidden(board.getByRole('button', { name: 'More', exact: true }), 'Legacy Tutor Board More action is still present.');
+
+  const explainRequestPromise = page.waitForRequest((candidate) => {
+    if (new URL(candidate.url()).pathname !== '/api/chat') return false;
+    try {
+      return /Teach ONE idea/i.test(candidate.postDataJSON()?.message || '');
+    } catch {
+      return false;
+    }
+  }, { timeout: 10_000 });
+  await board.getByRole('button', { name: 'Explain', exact: true }).click();
+  const explainRequest = await explainRequestPromise;
+  const friendlyExplain = page.getByText(/^Explain .+ like a real tutor\.$/).last();
+  await visible(friendlyExplain, 'Study control exposed its internal model prompt instead of a learner-facing request.');
+  if (!/Teach ONE idea/i.test(explainRequest.postDataJSON()?.message || '')) {
+    throw new Error('Study learner-facing copy replaced the detailed model instruction instead of only hiding it.');
+  }
+  if (/Do not invent a specific YouTube|context-aware question|wait for the learner/i.test(await friendlyExplain.innerText())) {
+    throw new Error('Internal Study prompt instructions leaked into the learner transcript.');
+  }
+
+  await page.locator('[data-quantora-plus-trigger="true"]').click();
+  await page.getByRole('button', { name: /Flashcards/i }).click();
+  const deck = page.locator('[data-quantora-study-flashcards="true"]').last();
+  await visible(deck, 'Study Flashcards rendered as prose or a table instead of an interactive deck.');
+  await visible(deck.locator('[data-quantora-study-flashcard="front"]'), 'Flashcard front is not the initial recall state.');
+  if (await deck.getByText('Resistance to a change in velocity.', { exact: true }).count()) {
+    throw new Error('Flashcard answer leaked before the learner chose Reveal.');
+  }
+  await deck.locator('[data-quantora-study-flashcard="front"]').click();
+  await visible(deck.getByText('Resistance to a change in velocity.', { exact: true }), 'Flashcard did not reveal its answer on demand.');
+  await deck.getByRole('button', { name: /Next/i }).click();
+  await visible(deck.getByText('Is inertia a force?', { exact: true }), 'Flashcard Next did not advance one card at a time.');
+  await visible(deck.getByRole('button', { name: 'Reveal answer', exact: true }), 'Flashcard reveal control did not reset after advancing.');
+  mkdirSync('artifacts/e2e', { recursive: true });
+  await deck.screenshot({ path: 'artifacts/e2e/study-flashcards-pass.png' });
 
   const focusHeight = await board.evaluate((node) => Math.round(node.getBoundingClientRect().height));
   if (focusHeight > 180) throw new Error(`Collapsed Study focus is still too tall (${focusHeight}px).`);

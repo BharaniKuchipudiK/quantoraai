@@ -60,6 +60,19 @@ export function resolveStudioPartnerStatus({
 
   if (isGenerating) {
     if (lifeDomain) {
+      if (studioDomain === 'education') {
+        const now = totalSec < 6
+          ? 'Reading your question…'
+          : totalSec < 20
+            ? 'Shaping a clear tutor response…'
+            : totalSec < 45
+              ? 'Still working on the explanation…'
+              : 'The tutor model is taking longer than expected.';
+        const next = totalSec < 45
+          ? 'I’ll show the answer here as soon as it starts arriving.'
+          : 'You can stop and retry; Quantora will use the next eligible tutor route.';
+        return { now: `${now} ${clock}`, next };
+      }
       return {
         now: `${generatingLabel || 'Working on your next step…'} ${clock}`,
         next: '',

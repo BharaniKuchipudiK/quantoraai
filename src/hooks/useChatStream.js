@@ -10,6 +10,7 @@ import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-
 import { deriveStudioMission } from '../lib/studio-mission.js';
 import { mergeStudySyllabusFromText } from '../lib/study-syllabus-overlay.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import { withoutPrivateStudyInstructions } from '../lib/study-private-instructions.js';
 import { buildStudyAdaptiveRequestContext } from '../lib/study-adaptive-request.js';
 import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
 import { applyPclContinuityToOutcomeState } from '../lib/pcl-outcome-sync.js';
@@ -290,7 +291,7 @@ export function useChatStream({
     });
   };
 
-  const handleSendMessage = async (textToSend, targetModelOverride = null) => {
+  const handleSendMessage = async (textToSend, targetModelOverride = null, sendOptions = null) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
@@ -299,7 +300,8 @@ export function useChatStream({
     generationTokenRef.current = generationToken;
     const stillCurrent = () => isActiveGeneration(generationTokenRef.current, generationToken);
 
-    const visibleUserText = text.trim();
+    const requestedVisibleText = String(sendOptions?.visibleUserText || '').trim();
+    const visibleUserText = requestedVisibleText || text.trim();
     const priorUserTexts = (messages || [])
       .filter((message) => message?.sender === 'user' && message.text)
       .map((message) => String(message.text));
@@ -377,7 +379,9 @@ export function useChatStream({
       id: createMessageId('user'),
       sender: 'user',
       // Keep the short typed accept in the transcript; the model still gets the expanded brief.
-      text: intakeAccept.expanded ? visibleUserText : text.trim(),
+      text: requestedVisibleText
+        ? visibleUserText
+        : (intakeAccept.expanded ? visibleUserText : text.trim()),
       attachments: [...attachments]
     };
 
@@ -497,7 +501,11 @@ export function useChatStream({
      * Worse, retrying made it worse: each attempt added turns, and the only
      * escape was to start a new chat and lose the work.
      */
-    const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
+    const filteredMessages = withoutPrivateStudyInstructions(
+      messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required')),
+      studioDomain,
+    );
     const historyBudget = budgetHistory(filteredMessages);
     const cleanMessages = historyBudget.history;
     // The FACT that history was shortened, reported every time it happens. The
@@ -509,8 +517,6 @@ export function useChatStream({
       messages: continuityTranscript,
       historyResult: historyBudget,
     });
-    const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
-
     const currentOfficeArtifact = activeOfficeArtifact(messages);
     const explicitOfficeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
     const inheritedOfficeKind = activeOfficeBriefingKind(messages) || activeOfficeArtifactKind(messages);

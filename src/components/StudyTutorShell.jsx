@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
-import { studyLessonAsk, studyPracticeAsk, studyQuizAsk } from '../lib/study-learning-resources.js';
+import {
+  studyActionVisibleText,
+  studyLessonAsk,
+  studyPracticeAsk,
+  studyQuizAsk,
+  studyRealWorldAsk,
+  studySketchChallengeAsk,
+  studyTriviaAsk,
+  studyWhereNextAsk,
+} from '../lib/study-learning-resources.js';
 
 /**
  * Conversation-first Study shell.
@@ -30,8 +39,8 @@ export default function StudyTutorShell({
   const verifiedResult = assessment?.result || null;
   const completedCheck = Boolean(loop?.completedQuestionIds?.length);
 
-  const askOrSend = (text) => {
-    if (onSend) onSend(text);
+  const askOrSend = (text, action) => {
+    if (onSend) onSend(text, { visibleUserText: studyActionVisibleText(action, topic) });
     else onAsk?.(text);
   };
 
@@ -40,11 +49,11 @@ export default function StudyTutorShell({
     if (onRequestAssessment) {
       const outcome = await onRequestAssessment(options);
       if (!outcome?.fallback) return;
-      askOrSend(studyQuizAsk(topic));
+      askOrSend(studyQuizAsk(topic), 'quiz');
       setActivity(null);
       return;
     }
-    askOrSend(studyQuizAsk(topic));
+    askOrSend(studyQuizAsk(topic), 'quiz');
     setActivity(null);
   };
 
@@ -62,6 +71,8 @@ export default function StudyTutorShell({
     fontWeight: 750,
     cursor: 'pointer',
     lineHeight: 1.1,
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   });
 
   const iconButtonStyle = {
@@ -126,7 +137,10 @@ export default function StudyTutorShell({
         aria-label={`Study focus: ${topic}`}
         style={{ padding: '2px 2px 0' }}
       >
-        <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div
+          data-quantora-study-next-choices="true"
+          style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap', alignItems: 'center', overflowX: 'auto', paddingBottom: '2px' }}
+        >
           <span
             style={{
               color: subtextColor,
@@ -139,8 +153,12 @@ export default function StudyTutorShell({
           >
             <strong style={{ color: textColor }}>{topic}</strong> · {stateLabel}
           </span>
-          <button type="button" onClick={() => askOrSend(studyLessonAsk(topic))} style={actionStyle(false)}>Explain</button>
-          <button type="button" onClick={() => askOrSend(studyPracticeAsk(topic))} style={actionStyle(false)}>Practice</button>
+          <button type="button" onClick={() => askOrSend(studyLessonAsk(topic), 'lesson')} style={actionStyle(false)}>Explain</button>
+          <button type="button" onClick={() => askOrSend(studyRealWorldAsk(topic), 'real-world')} style={actionStyle(false)}>🌍 Real world</button>
+          <button type="button" onClick={() => askOrSend(studyPracticeAsk(topic), 'practice')} style={actionStyle(false)}>🧩 Mini practice</button>
+          <button type="button" onClick={() => askOrSend(studySketchChallengeAsk(topic), 'sketch')} style={actionStyle(false)}>🎨 Quick sketch</button>
+          <button type="button" onClick={() => askOrSend(studyTriviaAsk(topic), 'trivia')} style={actionStyle(false)}>💡 Did you know?</button>
+          <button type="button" onClick={() => askOrSend(studyWhereNextAsk(topic), 'where-next')} style={actionStyle(false)}>📚 Where next?</button>
           <button
             type="button"
             aria-label="Test me on this"

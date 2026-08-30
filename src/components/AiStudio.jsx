@@ -83,6 +83,8 @@ import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
 import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
+import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import { withoutPrivateStudyInstructions } from '../lib/study-private-instructions.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -1450,7 +1452,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
   };
 
-  const handleSendMessage = (overrideText = null) => {
+  const handleSendMessage = (overrideText = null, sendOptions = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
 
@@ -1513,7 +1515,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
-    streamSendMessage(overrideText);
+    streamSendMessage(overrideText, null, sendOptions);
   };
 
   const commitStudySyllabusChip = (item) => {
@@ -1569,7 +1571,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const awaitingStudyAnswer = studioDomain === 'education'
     && !isGenerating
     && studyAwaitsAnswer(lastAiMessage?.text || '');
-  const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
+  const cleanStudyMessages = withoutPrivateStudyInstructions(messages, studioDomain);
+  const lastUserMessage = [...cleanStudyMessages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const previewAssemblyKey = previewAssemblyFingerprint(vfs);
   const shellVfs = deskShellVfs(vfs, previewRunCode);
@@ -1595,7 +1598,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const claimFilterOpts = { previewWarming };
 
   const renderedChatFeed = React.useMemo(() => {
-    return messages.filter(msg => msg.type !== 'greeting').map(msg => {
+    return cleanStudyMessages.filter((msg) => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text)) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       const isFailover = isActiveGenerating && msg.isFailover;
@@ -2699,6 +2702,9 @@ Paused — ${autoPauseRef.current}.`
     studioDomain,
     lastTurnFailed: Boolean(lastAiMessage?.isError) && !isGenerating,
   });
+  const studyTopicLabel = studioDomain === 'education'
+    ? deriveStudyTutorBrief({ conversationContext, messages }).label
+    : '';
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);
   const isIdeLayout = isCodingDesk;
@@ -3545,7 +3551,7 @@ Paused — ${autoPauseRef.current}.`
                   textColor={textColor}
                   subtextColor={subtextColor}
                   onAsk={(text) => setInputText(text)}
-                  onSend={(text) => handleSendMessage(text)}
+                  onSend={(text, sendOptions) => handleSendMessage(text, sendOptions)}
                 />
               </Suspense>
             ) : null}
@@ -3936,7 +3942,7 @@ Paused — ${autoPauseRef.current}.`
                   onClose={() => setShowToolsMenu(false)}
                   isLight={isLight}
                   studioDomain={studioDomain}
-                  topic={conversationContext?.goal || ''}
+                  topic={studioDomain === 'education' ? (studyTopicLabel || 'this topic') : (conversationContext?.goal || '')}
                   onSelectTool={(tool) => {
                     const overlay = inferStudySyllabus({
                       conversationContext,
@@ -3946,7 +3952,7 @@ Paused — ${autoPauseRef.current}.`
                     const action = resolveStudioPlusAction(
                       tool,
                       studioDomain,
-                      conversationContext?.goal || '',
+                      studioDomain === 'education' ? (studyTopicLabel || 'this topic') : (conversationContext?.goal || ''),
                       overlay,
                     );
                     setShowToolsMenu(false);
@@ -3959,7 +3965,11 @@ Paused — ${autoPauseRef.current}.`
                       return;
                     }
                     if (action.kind === STUDIO_PLUS_ACTION.PROMPT && action.text) {
-                      if (String(tool).startsWith('study-') || String(tool).startsWith('travel-')) {
+                      if (String(tool).startsWith('study-')) {
+                        handleSendMessage(action.text, { visibleUserText: action.visibleText });
+                        return;
+                      }
+                      if (String(tool).startsWith('travel-')) {
                         handleSendMessage(action.text);
                         return;
                       }

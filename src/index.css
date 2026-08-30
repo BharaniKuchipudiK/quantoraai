@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;600;700&family=Nunito:wght@500;700;800&family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=Fira+Code:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;600;700&family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=Fira+Code:wght@400;500&display=swap');
 @import "tailwindcss";
 
 /* Global Design Tokens: Light & Dark Modes */
@@ -6,7 +6,7 @@
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-heading: 'Outfit', sans-serif;
   --font-story: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-study-body: 'Nunito', 'Plus Jakarta Sans', sans-serif;
+  --font-study-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'Fira Code', monospace;
 
   /* Polished Light Mode Tokens (Gemini-style) */
@@ -2402,13 +2402,12 @@ body {
  */
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose,
 html[data-quantora-domain="education"] .app-shell--studio .study-lesson {
-  font-family: var(--font-study-body);
-  font-size: 1.06rem;
-  /* 1.5 is chat spacing. Continuous prose wants air between the lines. */
-  line-height: 1.72;
-  letter-spacing: 0.003em;
-  /* ~66 characters: the measure long-form reading is comfortable at. */
-  max-width: 34rem;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.62;
+  letter-spacing: 0;
+  width: 100%;
+  max-width: none;
 }
 
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose h1,
@@ -2417,22 +2416,21 @@ html[data-quantora-domain="education"] .app-shell--studio .markdown-prose h3,
 html[data-quantora-domain="education"] .app-shell--studio .study-lesson h1,
 html[data-quantora-domain="education"] .app-shell--studio .study-lesson h2,
 html[data-quantora-domain="education"] .app-shell--studio .study-lesson h3 {
-  font-family: var(--font-story);
+  font-family: var(--font-heading);
   font-weight: 600;
   letter-spacing: -0.03em;
   margin: 0.4em 0 0.35em;
 }
 
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose p {
-  line-height: 1.72 !important;
-  /* Paragraphs are the unit of an idea here, so they get real separation. */
-  margin: 0 0 1.05em;
+  line-height: 1.62 !important;
+  margin: 0 0 0.8em;
 }
 
 /* A lead paragraph opens the idea; the eye needs somewhere to land first. */
 html[data-quantora-domain="education"] .app-shell--studio .study-lesson > p:first-of-type {
-  font-size: 1.12rem;
-  line-height: 1.62;
+  font-size: 1.04rem;
+  line-height: 1.58;
   color: inherit;
 }
 
@@ -2459,6 +2457,15 @@ html[data-quantora-domain="education"] .app-shell--studio .ai-studio-thread {
   animation: study-answer-settle 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.study-flashcard__face {
+  animation: study-flashcard-face 180ms ease-out;
+}
+
+@keyframes study-flashcard-face {
+  from { opacity: 0.35; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes study-answer-settle {
   0% { opacity: 0; transform: translateY(5px) scale(0.985); }
   65% { transform: translateY(-1px) scale(1.005); }
@@ -2466,7 +2473,8 @@ html[data-quantora-domain="education"] .app-shell--studio .ai-studio-thread {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .study-resolution--correct { animation: none; }
+  .study-resolution--correct,
+  .study-flashcard__face { animation: none; }
 }
 
 /* Google Sign-In iframe must not inherit dark color-scheme or landing filters. */

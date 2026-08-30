@@ -12,6 +12,7 @@ import {
   transitionStudyLoop,
 } from '../lib/study-conversation-loop.js';
 import {
+  studyActionVisibleText,
   studyAnotherExampleAsk,
   studyNextQuestionAsk,
   studyUsefulReferenceAsk,
@@ -104,7 +105,9 @@ export default function StudyTutorWorkspace({
   const handleAdvance = useCallback(() => {
     dispatchLoop({ type: 'ADVANCE' });
     setAssessment(EMPTY_ASSESSMENT);
-    onSend?.(studyNextQuestionAsk(brief?.label));
+    onSend?.(studyNextQuestionAsk(brief?.label), {
+      visibleUserText: studyActionVisibleText('next', brief?.label),
+    });
   }, [brief?.label, onSend]);
 
   const handleRemediation = useCallback((kind) => {
@@ -113,7 +116,9 @@ export default function StudyTutorWorkspace({
       return;
     }
     const ask = kind === 'example' ? studyAnotherExampleAsk(brief?.label) : studyUsefulReferenceAsk(brief?.label);
-    onSend?.(ask);
+    onSend?.(ask, {
+      visibleUserText: studyActionVisibleText(kind === 'example' ? 'example' : 'reference', brief?.label),
+    });
   }, [brief?.label, handleRequestAssessment, onSend]);
 
   if (!brief?.active) return null;

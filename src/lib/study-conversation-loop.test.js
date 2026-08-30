@@ -89,6 +89,10 @@ test('a question with no invitation to answer is still not a prompt to answer', 
   assert.equal(studyAwaitsAnswer('Why do things move? Because forces act on them.'), false);
 });
 
+test('a natural question at the end awaits an answer without robotic waiting copy', () => {
+  assert.equal(studyAwaitsAnswer('The belt supplies the force that changes your velocity. What would your body do if the bus stopped suddenly?'), true);
+});
+
 test('a question mark inside a picture tag does not count', () => {
   assert.equal(
     studyAwaitsAnswer('<quantora-study-picture caption="What is inertia?" />\nWrite your attempt. I will wait.'),
