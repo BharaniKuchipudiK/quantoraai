@@ -170,7 +170,7 @@ export function applyStudySyllabusOverlay(context, chipId) {
   };
 }
 
-const TOPIC_LEAD = /^(?:please\s+)?(?:can you\s+|could you\s+)?(?:teach(?:\s+me)?|explain|help me (?:to\s+)?(?:learn|with)|i(?:'m| am) (?:stuck on|struggling with)|i keep missing|quiz me on|test me on|revise|review)\s+/i;
+const TOPIC_LEAD = /^(?:please\s+)?(?:can you\s+|could you\s+)?(?:teach(?:\s+me)?|explain|let(?:'|’)?s\s+learn|help me (?:to\s+)?(?:learn|with)|i(?:'m| am) (?:stuck on|struggling with)|i keep missing|quiz me on|test me on|revise|review)\s+/i;
 const WHAT_IS = /^what is\s+/i;
 const STOP_AFTER_AND = /\s+and\s+(?:give|show|make|find|with|then|also|one)\b/i;
 const EMBEDDED_TEACH = /(?:teach(?:\s+me)?|explain|help me (?:to\s+)?(?:learn|with)|quiz me on|test me on)\s+(.{2,72}?)(?=\s+and\s+(?:give|show|make|find|with|then|also|one)\b|[.?!]|$)/i;
@@ -178,6 +178,7 @@ const EMBEDDED_TEACH = /(?:teach(?:\s+me)?|explain|help me (?:to\s+)?(?:learn|wi
 function cleanTopicRest(rest = '') {
   let value = String(rest || '').split(STOP_AFTER_AND)[0];
   value = value.replace(/\b(?:for|on)\s+(?:jee|neet|cbse|ncert|class|grade)\b[\s\S]*$/i, '');
+  value = value.replace(/\s+like a real tutor[.!]?$/i, '');
   return clipLabel(value, 72);
 }
 

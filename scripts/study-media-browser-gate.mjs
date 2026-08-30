@@ -240,9 +240,16 @@ try {
   const lesson = page.locator('[data-quantora-study-lesson="true"]').last();
   const lessonMetrics = await lesson.evaluate((node) => {
     const styles = getComputedStyle(node);
-    return { width: node.getBoundingClientRect().width, fontFamily: styles.fontFamily };
+    return {
+      width: node.getBoundingClientRect().width,
+      parentWidth: node.parentElement?.getBoundingClientRect().width || 0,
+      fontFamily: styles.fontFamily,
+    };
   });
   if (lessonMetrics.width < 800) throw new Error(`Study explanation still wastes horizontal space (${Math.round(lessonMetrics.width)}px).`);
+  if (lessonMetrics.parentWidth && lessonMetrics.width / lessonMetrics.parentWidth < 0.94) {
+    throw new Error(`Study explanation still caps the reading column (${Math.round(lessonMetrics.width)}px of ${Math.round(lessonMetrics.parentWidth)}px).`);
+  }
   if (!/Inter/i.test(lessonMetrics.fontFamily) || /Nunito/i.test(lessonMetrics.fontFamily)) {
     throw new Error(`Study explanation uses the wrong font (${lessonMetrics.fontFamily}).`);
   }

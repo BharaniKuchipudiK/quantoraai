@@ -2407,7 +2407,7 @@ html[data-quantora-domain="education"] .app-shell--studio .study-lesson {
   line-height: 1.62;
   letter-spacing: 0;
   width: 100%;
-  max-width: 68rem;
+  max-width: none;
 }
 
 html[data-quantora-domain="education"] .app-shell--studio .markdown-prose h1,
