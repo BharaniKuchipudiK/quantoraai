@@ -70,7 +70,9 @@ export default function StudyFlashcards({ cards = [], isLight = false }) {
       </button>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '9px' }}>
         <button type="button" disabled={index === 0} onClick={() => move(index - 1)} style={{ ...buttonStyle, opacity: index === 0 ? 0.45 : 1 }}><ArrowLeft size={13} /> Previous</button>
-        <button type="button" onClick={() => setRevealed(false)} style={buttonStyle}><RotateCcw size={13} /> Hide answer</button>
+        <button type="button" onClick={() => setRevealed((value) => !value)} style={buttonStyle}>
+          <RotateCcw size={13} /> {revealed ? 'Hide answer' : 'Reveal answer'}
+        </button>
         <button type="button" disabled={index === deck.length - 1} onClick={() => move(index + 1)} style={{ ...buttonStyle, opacity: index === deck.length - 1 ? 0.45 : 1 }}>Next <ArrowRight size={13} /></button>
       </div>
     </section>

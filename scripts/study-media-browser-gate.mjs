@@ -323,6 +323,7 @@ try {
   await visible(deck.getByText('Resistance to a change in velocity.', { exact: true }), 'Flashcard did not reveal its answer on demand.');
   await deck.getByRole('button', { name: /Next/i }).click();
   await visible(deck.getByText('Is inertia a force?', { exact: true }), 'Flashcard Next did not advance one card at a time.');
+  await visible(deck.getByRole('button', { name: 'Reveal answer', exact: true }), 'Flashcard reveal control did not reset after advancing.');
   mkdirSync('artifacts/e2e', { recursive: true });
   await deck.screenshot({ path: 'artifacts/e2e/study-flashcards-pass.png' });
 
