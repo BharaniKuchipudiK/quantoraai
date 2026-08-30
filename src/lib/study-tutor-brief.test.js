@@ -8,6 +8,11 @@ import {
   mergeStudySyllabusFromText,
 } from './study-syllabus-overlay.js';
 
+const legacyRepositoryTask = [
+  'Scan through the GitHub',
+  ' public repositories and find out if we can leverage them.',
+].join('');
+
 test('empty Study has no persistent surface or manufactured presentation copy', () => {
   const brief = deriveStudyTutorBrief({ messages: [] });
   assert.equal(brief.active, false);
@@ -28,9 +33,27 @@ test('Study identifies the learner topic without manufacturing a local activity'
   assert.equal('check' in brief, false);
 });
 
+test('generic project goals can never become a Study topic', () => {
+  const brief = deriveStudyTutorBrief({
+    conversationContext: { goal: legacyRepositoryTask },
+    messages: [],
+  });
+  assert.equal(brief.label, '');
+  assert.equal(brief.active, false);
+});
+
+test('a real learner topic wins even when generic project memory is poisoned', () => {
+  const brief = deriveStudyTutorBrief({
+    conversationContext: { goal: legacyRepositoryTask },
+    messages: [{ sender: 'user', text: 'lets learn thermo dynamics' }],
+  });
+  assert.equal(brief.label, 'thermo dynamics');
+  assert.doesNotMatch(brief.label, /github|repository|scan through/i);
+});
+
 test('old private Study prompts never become the visible topic', () => {
   const leakedInstruction = [
-    'Scan through the Github public repositories and find out if we can leverage them.',
+    legacyRepositoryTask,
     '<quantora-study-picture caption="one sentence about this idea" />',
     'Do not invent image URLs or YouTube IDs.',
     'Ask me to signal that I am ready. No leaderboard, points, or rank. Do not plan trips.',
