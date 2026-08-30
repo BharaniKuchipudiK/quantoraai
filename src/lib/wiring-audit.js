@@ -30,18 +30,52 @@
  * function that IS exported and called is wired; flagging it would bury the
  * real signal in noise, and a gate people learn to ignore protects nothing.
  *
+ * THE SECOND KIND: A COMPONENT NOTHING RENDERS
+ *
+ * TravelTripBoard was a finished, working trip board — live flight and hotel
+ * search, its own error states — that AiStudio never imported. It was the only
+ * caller of /api/travel-search, so that endpoint was unreachable from the
+ * running product while every gate stayed green.
+ *
+ * Nothing here saw it. findOrphanExports reasons about named symbols, and
+ * src/components/ is excluded from it on purpose: a component file may export
+ * helper consts, and "nothing imports this name" is normal for an entry point.
+ * A DEFAULT-exported component is the opposite — it is worth nothing unless
+ * something renders it.
+ *
+ * So findOrphanComponents asks a different question, by import PATH rather than
+ * by name, because a component can be imported under any binding it likes. It
+ * also drops the "a test must claim it works" condition that findOrphanExports
+ * applies. That condition is right for a function: an untested dead helper
+ * misleads nobody. It is wrong for a component, because a fully built one
+ * sitting in src/components/ reads as a shipped feature to everyone who opens
+ * the directory. TravelTripBoard had no test at all and was still the most
+ * expensive dead wire in the repository.
+ *
  * WHAT THIS DELIBERATELY DOES NOT CATCH
  *
  * Dead *data*. Three of four capability doors are defined and unreachable, but
  * they are entries in an object, not exported functions, so this will not see
  * them. Saying so here rather than letting the gate imply a coverage it does
  * not have.
+ *
+ * A component reached only through a computed specifier — import(`./${name}`) —
+ * reads as unrendered. No such call exists here today, and erring toward
+ * flagging is the right direction for a gate about dead wires.
  */
 
 const EXPORTED = /export\s+(?:async\s+)?(?:function|const|class)\s+([A-Za-z_$][\w$]*)/g;
 
 /** Source files this audit reasons about. */
 export const AUDITED_DIRS = ['src/lib/', 'shared/', 'api/_lib/'];
+
+/** Where a default export earns its keep only by being rendered. */
+export const AUDITED_COMPONENT_DIRS = ['src/components/'];
+
+const DEFAULT_EXPORT = /\bexport\s+default\b/;
+/** `from './x.jsx'`, `import './x.css'`, and `import('./x.jsx')` alike. */
+const MODULE_SPECIFIER = /\b(?:from|import)\s*\(?\s*['"]([^'"\n]+)['"]/g;
+const MODULE_EXTENSIONS = ['.jsx', '.js', '.tsx', '.ts'];
 
 export function isTestPath(path) {
   return /\.test\.[jt]sx?$/.test(String(path || ''));
@@ -83,8 +117,13 @@ export function exportedNames(source = '') {
  * Accepted blind spot: a symbol referenced only by name in a string — a
  * dynamic dispatch table — reads as uncalled. That is rare, and erring toward
  * flagging is the right direction for a gate about dead wires.
+ *
+ * `keepStrings` keeps quoted text so module specifiers survive, for the import
+ * scan that findOrphanComponents runs. Comments still go in that mode, which is
+ * what makes a commented-out import read as the missing wire it is rather than
+ * as a live one.
  */
-export function stripNonCode(source = '') {
+export function stripNonCode(source = '', { keepStrings = false } = {}) {
   const src = String(source || '');
   let out = '';
   let i = 0;
@@ -126,12 +165,13 @@ export function stripNonCode(source = '') {
     }
     if (ch === "'" || ch === '"') {
       const quote = ch;
-      drop(); i += 1;
+      const take = keepStrings ? ((n = 1) => { out += src.slice(i, i + n); }) : drop;
+      take(); i += 1;
       while (i < src.length && src[i] !== quote && src[i] !== '\n') {
-        if (src[i] === '\\') { drop(2); i += 2; continue; }
-        drop(); i += 1;
+        if (src[i] === '\\') { take(2); i += 2; continue; }
+        take(); i += 1;
       }
-      drop(); i += 1;
+      take(); i += 1;
       prev = quote;
       continue;
     }
@@ -209,6 +249,79 @@ export function findOrphanExports(files = {}) {
       if (!mentions(testSource, name)) continue;
       orphans.push({ name, file: path });
     }
+  }
+  return orphans.sort((left, right) => (
+    left.file.localeCompare(right.file) || left.name.localeCompare(right.name)
+  ));
+}
+
+/** Where a relative specifier lands, given the files that actually exist. */
+function resolveSpecifier(fromPath, specifier, known) {
+  if (!String(specifier).startsWith('.')) return null;
+  const stack = String(fromPath).split('/').slice(0, -1);
+  for (const part of String(specifier).split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') stack.pop();
+    else stack.push(part);
+  }
+  const target = stack.join('/');
+  if (known.has(target)) return target;
+  // A specifier may carry no extension, or the compiled one (.js for a .ts).
+  const bare = target.replace(/\.[jt]sx?$/, '');
+  for (const extension of MODULE_EXTENSIONS) {
+    for (const candidate of [`${bare}${extension}`, `${target}${extension}`, `${target}/index${extension}`]) {
+      if (known.has(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** Every existing file a source imports, by path rather than by binding. */
+export function importedModulePaths(fromPath, source, known = new Set()) {
+  const scanned = stripNonCode(source, { keepStrings: true });
+  const targets = new Set();
+  const re = new RegExp(MODULE_SPECIFIER.source, 'g');
+  let match;
+  while ((match = re.exec(scanned)) !== null) {
+    const resolved = resolveSpecifier(fromPath, match[1], known);
+    if (resolved) targets.add(resolved);
+  }
+  return targets;
+}
+
+export function hasDefaultExport(source = '') {
+  return DEFAULT_EXPORT.test(stripNonCode(source));
+}
+
+/**
+ * Find components that exist but nothing renders.
+ *
+ * Matched by import PATH, never by binding name: `import Board from './X.jsx'`
+ * and `const Anything = lazy(() => import('./X.jsx'))` both wire X, and a name
+ * search would miss the second and be fooled by a same-named symbol elsewhere.
+ *
+ * A test importing the component does NOT wire it — same rule findOrphanExports
+ * applies to functions, for the same reason: a green tick over a dead wire is
+ * the failure, not the absence of one.
+ *
+ * Returns [{ name, file }] sorted for a stable baseline.
+ */
+export function findOrphanComponents(files = {}) {
+  const paths = Object.keys(files);
+  const known = new Set(paths);
+  const productionPaths = paths.filter((path) => !isTestPath(path));
+
+  const importsByPath = new Map();
+  for (const path of productionPaths) {
+    importsByPath.set(path, importedModulePaths(path, files[path], known));
+  }
+
+  const orphans = [];
+  for (const path of productionPaths) {
+    if (!AUDITED_COMPONENT_DIRS.some((dir) => path.includes(dir))) continue;
+    if (!hasDefaultExport(files[path])) continue;
+    if (productionPaths.some((other) => other !== path && importsByPath.get(other).has(path))) continue;
+    orphans.push({ name: path.split('/').pop().replace(/\.[jt]sx?$/, ''), file: path });
   }
   return orphans.sort((left, right) => (
     left.file.localeCompare(right.file) || left.name.localeCompare(right.name)
