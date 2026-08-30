@@ -11,17 +11,23 @@ const CTX_START = /<!--\s*quantora-ctx:/i;
 
 /*
  * A known legacy cross-workspace prompt was once persisted as generic project
- * memory. Because project memory is intentionally reused across sessions, that
- * one bad value could reappear long after the original turn and masquerade as
- * the current Study topic. Quarantine the SHAPE of that legacy repository-scan
- * task at normalization time, which protects local restore, remote project
- * restore, handover and the API request path. A genuine learning ask such as
- * "Explain how GitHub branches work" does not match this pattern.
+ * memory. Keep two scopes deliberately separate:
+ * - repository-scan SHAPE: broad enough for Study to recognise shortened old
+ *   transcript variants;
+ * - legacy contamination: narrow enough that generic Coding/Research project
+ *   memory is not deleted just because it legitimately discusses repositories.
  */
-const LEGACY_REPOSITORY_SCAN = /\bscan\s+through\b[\s\S]{0,120}\bgithub\b[\s\S]{0,120}\bpublic\s+repositor(?:y|ies)\b[\s\S]{0,160}\bfind\s+out\s+if\s+we\s+can\b/i;
+const REPOSITORY_SCAN_TASK = /\bscan\s+through\b[\s\S]{0,120}\bgithub\b[\s\S]{0,120}\bpublic\s+repositor(?:y|ies)\b/i;
+const LEGACY_REPOSITORY_SCAN_TAIL = /\bfind\s+out\s+if\s+we\s+can\b/i;
+
+export function isRepositoryScanTask(text) {
+  return typeof text === 'string' && REPOSITORY_SCAN_TASK.test(text.replace(/\s+/g, ' ').trim());
+}
 
 export function isLegacySessionContamination(text) {
-  return typeof text === 'string' && LEGACY_REPOSITORY_SCAN.test(text.replace(/\s+/g, ' ').trim());
+  if (typeof text !== 'string') return false;
+  const value = text.replace(/\s+/g, ' ').trim();
+  return REPOSITORY_SCAN_TASK.test(value) && LEGACY_REPOSITORY_SCAN_TAIL.test(value);
 }
 
 function cleanMemoryText(text, max) {
