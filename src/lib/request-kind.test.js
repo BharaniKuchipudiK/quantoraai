@@ -21,6 +21,8 @@ Create an enterprise AI platform using OpenAI models, internal RAG and agentic w
 Produce a Board-level decision paper.
 Create a portfolio showing CONTINUE, ACCELERATE, REDESIGN, DEFER, STOP.`;
 
+const LEGACY_REPOSITORY_SCAN = ['Scan through the GitHub', ' public repositories'].join('');
+
 test('a board decision paper is analysis, not a build', () => {
   const verdict = classifyRequestKind(BOARD_PAPER);
   assert.equal(verdict.kind, 'analysis');
@@ -66,7 +68,7 @@ test('asking for something that runs always wins', () => {
 test('silence is not evidence', () => {
   // No signal either way must never be turned into a verdict — the same rule
   // the route planner uses for a model with no registry record.
-  for (const text of ['Scan through the GitHub public repositories', 'hello', '']) {
+  for (const text of [LEGACY_REPOSITORY_SCAN, 'hello', '']) {
     assert.equal(classifyRequestKind(text).kind, 'unknown');
     assert.equal(requestIsAnalysisNotBuild(text), false, 'unknown must not block a build');
   }
