@@ -49,6 +49,17 @@ test("detects a stock quote and extracts the ticker", () => {
   assert.deepEqual(parseMarketDataIntent("quote for tsla"), { kind: "price", symbol: "TSLA" });
 });
 
+test("catches the plain 'how much is TSLA' ask (uppercase ticker)", () => {
+  assert.deepEqual(parseMarketDataIntent("How much is TSLA"), { kind: "price", symbol: "TSLA" });
+  assert.deepEqual(parseMarketDataIntent("how much is $nvda"), { kind: "price", symbol: "NVDA" });
+});
+
+test("'how much is <word>' does not read a lowercase word as a ticker", () => {
+  assert.equal(parseMarketDataIntent("How much is my rent").kind, null);
+  assert.equal(parseMarketDataIntent("how much is tsla").kind, null); // must type the ticker uppercase
+  assert.equal(parseMarketDataIntent("How much is USD").kind, null); // a currency, not a stock
+});
+
 test("ordinary finance conversation does not match", () => {
   assert.equal(parseMarketDataIntent("what do you think about tech stocks this year?").kind, null);
   assert.equal(parseMarketDataIntent("should I pay down my mortgage or invest?").kind, null);

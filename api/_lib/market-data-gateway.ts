@@ -24,6 +24,7 @@ import {
   readInstrument,
 } from "./market-data-store.js";
 import { liveFxRate } from "./market-data/frankfurter-provider.js";
+import { liveStockQuote, usInstrumentId } from "./market-data/stooq-provider.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
@@ -140,6 +141,21 @@ async function runMarketDataLookup(req: any, res: any): Promise<boolean> {
     return true;
   }
 
+  /*
+   * Stock quotes are answered LIVE first — the free EOD feed (Stooq) needs no
+   * store, so "how much is TSLA?" grounds on a real, dated close instead of the
+   * model hand-waving a range. This runs BEFORE the store-not-configured refusal
+   * below (same shape as FX). Only if the live feed has nothing do we fall
+   * through to the stored bar (or the honest refusal).
+   */
+  if (isPriceIntent(intent)) {
+    const live = await liveStockQuote(intent.symbol);
+    if (live) {
+      sendStream(res, requestId, priceLookupResult(intent, live, null).text);
+      return true;
+    }
+  }
+
   if (!isMarketDataStoreConfigured()) {
     /*
      * This one must NOT fall through. Every other refusal in this file consumes
@@ -171,8 +187,9 @@ async function runMarketDataLookup(req: any, res: any): Promise<boolean> {
   }
 
   if (isPriceIntent(intent)) {
-    const bar = await readLatestPrice(`${intent.symbol}.US`);
-    const instrument = bar ? null : await readInstrument(`${intent.symbol}.US`);
+    const instrumentId = usInstrumentId(intent.symbol);
+    const bar = await readLatestPrice(instrumentId);
+    const instrument = bar ? null : await readInstrument(instrumentId);
     sendStream(res, requestId, priceLookupResult(intent, bar, instrument).text);
     return true;
   }

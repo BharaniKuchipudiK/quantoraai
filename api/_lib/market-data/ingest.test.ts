@@ -3,16 +3,19 @@ import test from "node:test";
 
 const { runIngestion } = await import("./ingest.js");
 import type { MarketDataProvider } from "./provider.js";
-import type { Instrument, FxRate, Fundamental } from "../market-data-store.js";
+import type { Instrument, FxRate, Fundamental, PriceBar } from "../market-data-store.js";
 
 function captureWriters() {
-  const calls = { instruments: [] as Instrument[][], fx: [] as FxRate[][], fundamentals: [] as Fundamental[][] };
+  const calls = {
+    instruments: [] as Instrument[][], fx: [] as FxRate[][], fundamentals: [] as Fundamental[][], prices: [] as PriceBar[][],
+  };
   return {
     calls,
     writers: {
       writeInstruments: async (rows: Instrument[]) => { calls.instruments.push(rows); return true; },
       writeFxRates: async (rows: FxRate[]) => { calls.fx.push(rows); return true; },
       writeFundamentals: async (rows: Fundamental[]) => { calls.fundamentals.push(rows); return true; },
+      writePrices: async (rows: PriceBar[]) => { calls.prices.push(rows); return true; },
     },
   };
 }
@@ -29,6 +32,19 @@ test("persists what a provider returns and reports the counts", async () => {
   assert.equal(outcomes[0].ok, true);
   assert.equal(outcomes[0].wrote.fxRates, 3);
   assert.equal(calls.fx.flat().length, 3);
+});
+
+test("persists prices a provider returns and counts them", async () => {
+  const bars: PriceBar[] = Array.from({ length: 5 }, (_, i) => ({
+    instrument_id: "TSLA.US", price_date: `2026-08-2${i}`, open: null, high: null, low: null,
+    close: 100 + i, adj_close: null, volume: null, currency: "USD", source: "stooq", as_of: `2026-08-2${i}T20:00:00Z`,
+  }));
+  const provider: MarketDataProvider = { id: "px", label: "px", fetch: async () => ({ prices: bars }) };
+  const { calls, writers } = captureWriters();
+  const outcomes = await runIngestion([provider], writers);
+  assert.equal(outcomes[0].ok, true);
+  assert.equal(outcomes[0].wrote.prices, 5);
+  assert.equal(calls.prices.flat().length, 5);
 });
 
 test("one failing provider does not abort the others", async () => {
@@ -57,6 +73,7 @@ test("a rejected write is a failure, not a silent success", async () => {
     writeInstruments: async () => true,
     writeFxRates: async () => false, // store rejected the write (e.g. Supabase down)
     writeFundamentals: async () => true,
+    writePrices: async () => true,
   };
   const outcomes = await runIngestion([provider], writers);
   assert.equal(outcomes[0].ok, false, "provider is not reported successful");
