@@ -89,25 +89,47 @@ function barFromRow(instrumentId: string, row: Record<string, string>): PriceBar
 }
 
 /**
- * The latest end-of-day quote for a US symbol, or null when the feed has no
- * usable close (bad symbol, non-2xx, or "N/D"). Live path — short timeout, so a
- * slow feed degrades to the stored bar rather than blocking the turn.
+ * Why a quote failed, not just that it did.
+ *
+ * These were one `null` before, and the desk reported every one of them as "I
+ * don't have that symbol in my market data" — which reads as a coverage gap the
+ * user should go fix. For a typo that sent people at a data pipeline instead of
+ * a spelling correction, and for an unreachable feed it hid an outage behind a
+ * message about missing rows. Feed health and symbol validity are different
+ * facts and the reply has to be able to tell them apart.
  */
-export async function liveStockQuote(
+export type LiveQuoteOutcome =
+  | { status: "ok"; bar: PriceBar }
+  /** The feed answered and has nothing for this symbol — usually not a real ticker. */
+  | { status: "no-data" }
+  /** The feed did not answer (blocked, timed out, non-2xx). Says nothing about the symbol. */
+  | { status: "unreachable"; detail: string }
+  /** Not a plausible ticker; never reached the network. */
+  | { status: "invalid-symbol" };
+
+/**
+ * The latest end-of-day quote for a US symbol, with the reason when there isn't
+ * one. Live path — short timeout, so a slow feed degrades to the stored bar
+ * rather than blocking the turn.
+ */
+export async function liveStockQuoteOutcome(
   symbol: string,
   { fetchFn = fetch, timeoutMs = LIVE_TIMEOUT_MS }: { fetchFn?: typeof fetch; timeoutMs?: number } = {},
-): Promise<PriceBar | null> {
+): Promise<LiveQuoteOutcome> {
   const sym = String(symbol || "").trim();
-  if (!TICKER.test(sym)) return null;
+  if (!TICKER.test(sym)) return { status: "invalid-symbol" };
   try {
     const url = `${LATEST_ENDPOINT}?s=${encodeURIComponent(stooqSymbol(sym))}&f=sd2ohlcv&h&e=csv`;
     const response = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) } as any);
-    if (!response.ok) return null;
+    if (!response.ok) return { status: "unreachable", detail: `HTTP ${response.status}` };
     const rows = parseCsv(await response.text());
-    if (!rows.length) return null;
-    return barFromRow(usInstrumentId(sym), rows[0]);
-  } catch {
-    return null;
+    if (!rows.length) return { status: "no-data" };
+    const bar = barFromRow(usInstrumentId(sym), rows[0]);
+    // A parsed row with no usable close is Stooq's "N/D" — the feed is healthy,
+    // it simply does not carry this symbol.
+    return bar ? { status: "ok", bar } : { status: "no-data" };
+  } catch (err: any) {
+    return { status: "unreachable", detail: err?.message || String(err) };
   }
 }
 

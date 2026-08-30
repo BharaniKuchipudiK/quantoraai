@@ -94,7 +94,7 @@ export function fxLookupResult(
     return {
       resolved: false,
       stale: false,
-      text: `I don't have a stored **${base}→${quote}** rate, and the live ECB feed didn't answer either. Quantora quotes only rates it holds from a real source — it will not invent one. Try again in a moment; if it keeps failing, run the **Market Data Ingestion** workflow to refill FX.`,
+      text: `I couldn't reach a real source for **${base}→${quote}** just now — the live ECB feed didn't answer and I have nothing stored for this pair. I quote only rates I hold from a real source, so I won't invent one. This is usually momentary: try again shortly.`,
     };
   }
 
@@ -102,7 +102,7 @@ export function fxLookupResult(
     return {
       resolved: false,
       stale: true,
-      text: `I have a **${base}→${quote}** rate, but it is from **${resolved.rate_date}**, which is older than I'll rely on. I won't quote a stale rate as if it were current — re-run the **Market Data Ingestion** workflow to refresh it.`,
+      text: `The most recent **${base}→${quote}** rate I hold is from **${resolved.rate_date}**, which is older than I'll rely on. I won't present a stale rate as today's. Try again shortly — the live feed usually recovers on its own.`,
     };
   }
 
@@ -143,13 +143,33 @@ export function priceLookupResult(
     return {
       resolved: false,
       stale: false,
-      text: `**${sym}** is in the reference universe (${instrument.name || sym}), but I have **no price data** for it yet. The free tier covers the equity list and FX, not live prices — connect a price feed (e.g. Marketstack) to quote it. I won't guess a price.`,
+      text: `I know **${sym}** (${instrument.name || sym}), but I don't hold a price for it yet. I won't guess one. Try again shortly, or ask me about a widely-held US name.`,
     };
   }
 
   return {
     resolved: false,
     stale: false,
-    text: `I don't have **${sym}** in my market data, so I can't quote it — and I won't invent a number. If it's a US-listed symbol, run the **Market Data Ingestion** workflow to load the reference universe.`,
+    text: unknownSymbolText(sym),
   };
+}
+
+/**
+ * What to say when nothing could be quoted for a symbol.
+ *
+ * Split by CAUSE, because the previous single message ("I don't have SYM in my
+ * market data … run the Market Data Ingestion workflow") described a typo as a
+ * coverage gap and answered it with a CI job the reader cannot run. Each branch
+ * below names the real reason and offers a step the person can actually take.
+ */
+export function unknownSymbolText(symbol: string, suggestion?: { symbol: string; name: string }): string {
+  if (suggestion) {
+    return `I don't recognise **${symbol}** as a US ticker — did you mean **${suggestion.symbol}** (${suggestion.name})? Ask me for ${suggestion.symbol} and I'll quote it.`;
+  }
+  return `I don't recognise **${symbol}** as a US-listed ticker, so I can't quote it — and I won't invent a number. Check the symbol, or give me the company name and I'll find it.`;
+}
+
+/** The feed itself was unreachable — this says nothing about whether the symbol is real. */
+export function feedUnreachableText(symbol: string): string {
+  return `I couldn't reach the price feed for **${symbol}** just now, so I have no figure I'd stand behind — and I won't estimate one. This is usually momentary: try again shortly.`;
 }

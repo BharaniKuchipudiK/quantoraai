@@ -132,8 +132,8 @@ export function fxAnalyticsResult(intent: FxAnalyticsIntent, series: FxRate[]): 
     return {
       resolved: false,
       text:
-        `I don't have enough stored **${base}→${quote}** history to analyze yet — Quantora only measures a series it has ingested from the ECB feed, and won't fabricate one. ` +
-        `Run the **Market Data Ingestion** workflow to backfill the daily series, then ask again.`,
+        `I don't have enough stored **${base}→${quote}** history to analyse yet — Quantora only measures a series it holds from the ECB feed, and won't fabricate one. ` +
+        `I can still give you the current rate; the trend needs more days of history than I have.`,
     };
   }
 
