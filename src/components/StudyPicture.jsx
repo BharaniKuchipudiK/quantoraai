@@ -1,5 +1,11 @@
 import React from 'react';
-import { studyPhysicsVisualVariant, studyVisualKind } from '../lib/study-pictures.js';
+import {
+  studyNumberLineSpec,
+  studyPhysicsVisualVariant,
+  studyProcessSteps,
+  studyTimelinePoints,
+  studyVisualKind,
+} from '../lib/study-pictures.js';
 
 function Frame({ isLight, children, label }) {
   return (
@@ -21,11 +27,24 @@ function Arrow({ x1, y1, x2, y2, label, color }) {
   );
 }
 
+function processCenters(count) {
+  if (count === 2) return [100, 260];
+  if (count === 3) return [68, 180, 292];
+  return [48, 136, 224, 312];
+}
+
+function formatTick(value) {
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
+}
+
 /** Caption-routed teaching diagrams; no generic decorative scene is shown. */
 function PictureArt({ isLight, caption, kind }) {
   const ink = isLight ? '#334155' : '#e2e8f0';
   const muted = isLight ? '#64748b' : '#94a3b8';
   const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(caption) : null;
+  const processSteps = kind === 'process-flow' ? studyProcessSteps(caption) : [];
+  const timelinePoints = kind === 'timeline' ? studyTimelinePoints(caption) : [];
+  const numberLine = kind === 'number-line' ? studyNumberLineSpec(caption) : null;
   return (
     <Frame isLight={isLight} label={`${kind.replace(/-/g, ' ')} diagram: ${caption}`}>
       {kind === 'physics-motion' && physicsVariant === 'braking-inertia' ? (
@@ -103,6 +122,82 @@ function PictureArt({ isLight, caption, kind }) {
           <line x1="78" y1="126" x2="282" y2="50" stroke="#f97316" strokeWidth="5" />
           <path d="M190 84 L240 84 L240 65" fill="none" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="5 4" />
           <text x="245" y="79" fill="#0ea5e9" fontSize="12" fontWeight="700">slope = Δy / Δx</text>
+        </>
+      ) : null}
+      {kind === 'process-flow' && processSteps.length >= 2 ? (
+        <>
+          {processSteps.map((step, index) => {
+            const centers = processCenters(processSteps.length);
+            const cx = centers[index];
+            const boxWidth = processSteps.length === 4 ? 68 : 78;
+            const nextCx = centers[index + 1];
+            return (
+              <g key={`${step}-${index}`}>
+                <rect
+                  x={cx - boxWidth / 2}
+                  y="66"
+                  width={boxWidth}
+                  height="50"
+                  rx="11"
+                  fill={index === processSteps.length - 1 ? '#f97316' : (isLight ? '#e2e8f0' : '#334155')}
+                  stroke={index === processSteps.length - 1 ? '#f97316' : muted}
+                  strokeWidth="1.5"
+                />
+                <text x={cx} y="87" textAnchor="middle" fill={index === processSteps.length - 1 ? '#fff' : ink} fontSize="10.5" fontWeight="700">
+                  {step.length > 16 ? <><tspan x={cx} dy="0">{step.slice(0, 16)}</tspan><tspan x={cx} dy="13">{step.slice(16)}</tspan></> : step}
+                </text>
+                {nextCx ? <Arrow x1={cx + boxWidth / 2 + 5} y1="91" x2={nextCx - boxWidth / 2 - 7} y2="91" label="" color={muted} /> : null}
+              </g>
+            );
+          })}
+          <text x="180" y="145" textAnchor="middle" fill={muted} fontSize="11">follow the change from left to right</text>
+        </>
+      ) : null}
+      {kind === 'timeline' && timelinePoints.length >= 2 ? (
+        <>
+          <line x1="48" y1="92" x2="312" y2="92" stroke={muted} strokeWidth="3" strokeLinecap="round" />
+          {timelinePoints.map((year, index) => {
+            const x = timelinePoints.length === 1 ? 180 : 48 + (264 * index) / (timelinePoints.length - 1);
+            const above = index % 2 === 0;
+            return (
+              <g key={`${year}-${index}`}>
+                <circle cx={x} cy="92" r="7" fill={index === timelinePoints.length - 1 ? '#f97316' : '#0ea5e9'} />
+                <line x1={x} y1={above ? 85 : 99} x2={x} y2={above ? 58 : 126} stroke={muted} strokeWidth="1.5" />
+                <text x={x} y={above ? 48 : 145} textAnchor="middle" fill={ink} fontSize="12" fontWeight="800">{year}</text>
+              </g>
+            );
+          })}
+          <text x="180" y="166" textAnchor="middle" fill={muted} fontSize="11">earlier → later</text>
+        </>
+      ) : null}
+      {kind === 'number-line' && numberLine ? (
+        <>
+          <line x1="48" y1="96" x2="312" y2="96" stroke={ink} strokeWidth="3" strokeLinecap="round" />
+          <polygon points="48,96 58,90 58,102" fill={ink} />
+          <polygon points="312,96 302,90 302,102" fill={ink} />
+          {Array.from({ length: 7 }, (_, index) => {
+            const ratio = index / 6;
+            const value = numberLine.min + (numberLine.max - numberLine.min) * ratio;
+            const x = 52 + 256 * ratio;
+            return (
+              <g key={index}>
+                <line x1={x} y1="87" x2={x} y2="105" stroke={muted} strokeWidth="1.5" />
+                <text x={x} y="124" textAnchor="middle" fill={muted} fontSize="10.5">{formatTick(value)}</text>
+              </g>
+            );
+          })}
+          {numberLine.mark !== null ? (() => {
+            const ratio = (numberLine.mark - numberLine.min) / (numberLine.max - numberLine.min);
+            const x = 52 + 256 * ratio;
+            return (
+              <g>
+                <circle cx={x} cy="96" r="9" fill="#f97316" stroke={isLight ? '#fff' : '#111827'} strokeWidth="3" />
+                <text x={x} y="62" textAnchor="middle" fill="#f97316" fontSize="13" fontWeight="800">{formatTick(numberLine.mark)}</text>
+                <line x1={x} y1="69" x2={x} y2="82" stroke="#f97316" strokeWidth="2" />
+              </g>
+            );
+          })() : null}
+          <text x="180" y="154" textAnchor="middle" fill={muted} fontSize="11">position shows relative value</text>
         </>
       ) : null}
       {kind === 'concept-relationship' ? (
