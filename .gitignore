@@ -24,3 +24,6 @@ coverage/
 /test_production.cjs
 /test_simulation.cjs
 .worktrees/
+
+# Gate output (browser gates, stress runs) — tens of MB, never source.
+artifacts/
