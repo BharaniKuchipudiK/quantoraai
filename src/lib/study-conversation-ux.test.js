@@ -23,8 +23,6 @@ test('the lesson never renders a second composer', () => {
 
 test('the question is anchored in the composer, and only when one was asked', () => {
   const studio = read('src/components/AiStudio.jsx');
-  // The prompt tells the tutor to END with "Write your attempt", so matching
-  // that phrase put an answer field under lessons that had asked nothing.
   assert.match(studio, /studyAwaitsAnswer\(/);
   assert.match(studio, /awaitingStudyAnswer \? 'Write your answer to the question above/);
 });
@@ -52,12 +50,32 @@ test('Study model guidance forbids automatic repeats after a correct answer', ()
   assert.match(education, /answers a question correctly[\s\S]*Do not repeat it automatically/i);
 });
 
-test('Study explanations use the available width and the product body font', () => {
+test('Study explanations use the available width and keep the platform UI font at the message boundary', () => {
   const css = read('src/index.css');
   const studyCss = css.slice(css.indexOf('html[data-quantora-domain="education"] .app-shell--studio .markdown-prose'));
   assert.match(studyCss, /font-family: var\(--font-body\)/);
   assert.match(studyCss, /max-width: 68rem/);
   assert.doesNotMatch(studyCss.slice(0, 500), /max-width: 34rem|font-study-body/);
+});
+
+test('Study reading copy has a quiet book-like type voice without changing controls', () => {
+  const markdown = read('src/components/StudyMarkdown.jsx');
+  assert.match(markdown, /STUDY_READING_FONT/);
+  assert.match(markdown, /Charter/);
+  assert.match(markdown, /Iowan Old Style/);
+  assert.match(markdown, /data-quantora-study-reading-copy="true"/);
+  assert.match(markdown, /fontFamily: STUDY_READING_FONT/);
+});
+
+test('Study responses carry subtle tutor illustration cues rather than a chatbot avatar', () => {
+  const markdown = read('src/components/StudyMarkdown.jsx');
+  const nudge = read('src/components/StudyTutorNudge.jsx');
+  assert.match(markdown, /<StudyTutorNudge/);
+  assert.match(nudge, /data-quantora-study-nudge=\{kind\}/);
+  for (const visual of ['wave', 'book', 'pencil', 'spark', 'magnify', 'idea']) {
+    assert.match(nudge, new RegExp(`${visual}:`));
+  }
+  assert.doesNotMatch(nudge, /avatar|mascot/i);
 });
 
 test('Study removes robotic response labels without changing other domain renderers', () => {
@@ -77,10 +95,10 @@ test('Study flashcards are an interactive hidden-answer deck, not a Front/Back t
   assert.match(markdown, /<StudyFlashcards/);
 });
 
-test('Study gives the learner compact next-path choices instead of dumping every activity', () => {
+test('Study gives the learner compact next-path choices instead of dumping activities into the lesson', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   assert.match(shell, /data-quantora-study-next-choices="true"/);
-  for (const label of ['Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
+  for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
     assert.match(shell, new RegExp(label.replace('?', '\\?')));
   }
 });
