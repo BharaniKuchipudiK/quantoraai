@@ -72,6 +72,8 @@ import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
 import FinanceBoard from './FinanceBoard.jsx';
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
+import TravelTripBoard from './TravelTripBoard.jsx';
+import { deriveTravelBrief } from '../lib/travel-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -1326,6 +1328,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     [studioDomain, messages],
   );
 
+  const travelBrief = React.useMemo(
+    () => (studioDomain === 'travel' ? deriveTravelBrief({ messages }) : null),
+    [studioDomain, messages],
+  );
+
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
@@ -2271,6 +2278,17 @@ Paused — ${autoPauseRef.current}.`
                             onSend={(text) => handleSendMessage(text)}
                           />
                         ) : null}
+                        {studioDomain === 'travel' && msg.id === latestAiId && travelBrief?.active ? (
+                          <TravelTripBoard
+                            brief={travelBrief}
+                            isLight={isLight}
+                            textColor={textColor}
+                            subtextColor={subtextColor}
+                            signedIn={Boolean(user)}
+                            onAsk={(text) => setInputText(text)}
+                            onRequireAuth={onOpenAuth}
+                          />
+                        ) : null}
                         </>
                         );
                       })()}
@@ -2391,7 +2409,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, travelBrief, user, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {

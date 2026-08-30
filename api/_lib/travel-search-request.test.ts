@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseTravelSearchRequest } from './travel-search-request.js';
+import { deriveTravelBrief } from '../../src/lib/travel-board-brief.js';
 
 test('the trip board cannot ask the booking tools', () => {
   assert.equal(parseTravelSearchRequest({ kind: 'book' }).ok, false);
@@ -18,4 +19,51 @@ test('flight search needs airport codes and a date', () => {
     assert.equal(parsed.tool, 'search_flights');
     assert.equal(parsed.args.origin, 'SIN');
   }
+});
+
+/*
+ * The trip board's chips and this parser are two halves of one contract. If the
+ * board can enable a chip whose payload this parser rejects, the user taps a
+ * live-search button and gets a 400 — a dead control on the desk that is
+ * supposed to be Travel's honest path to real results. These tests bind the two
+ * together so neither side can drift alone.
+ */
+test('every search the board enables is accepted by this parser', () => {
+  const board = deriveTravelBrief({
+    messages: [{ sender: 'user', text: 'SIN to DPS on 2026-09-12, returning 2026-09-20' }],
+  });
+  assert.equal(board.canSearchFlights, true);
+  assert.equal(board.canSearchHotels, false, 'airport codes alone are not a city');
+
+  const flights = parseTravelSearchRequest({
+    kind: 'flights',
+    origin: board.origin,
+    destination: board.destination,
+    departureDate: board.departureDate,
+    returnDate: board.returnDate,
+  });
+  assert.equal(flights.ok, true);
+
+  const stays = deriveTravelBrief({
+    messages: [{ sender: 'user', text: 'I am going to Singapore' }],
+  });
+  assert.equal(stays.canSearchHotels, true);
+  assert.equal(
+    parseTravelSearchRequest({ kind: 'hotels', location: stays.destinationLabel }).ok,
+    true,
+  );
+});
+
+test('a chip the board leaves disabled is one this parser would reject', () => {
+  const board = deriveTravelBrief({ messages: [{ sender: 'user', text: 'SIN to DPS' }] });
+  assert.equal(board.canSearchFlights, false, 'no departure date yet');
+  assert.equal(
+    parseTravelSearchRequest({
+      kind: 'flights',
+      origin: board.origin,
+      destination: board.destination,
+      departureDate: board.departureDate,
+    }).ok,
+    false,
+  );
 });
