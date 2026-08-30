@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseAdviceIntent, isProfileShowQuery, parseWhatIf } from "./finance-advisor-intent.js";
+import { parseAdviceIntent, isProfileShowQuery, parseWhatIf, hasScenarioOpener } from "./finance-advisor-intent.js";
 
 test("matches open requests for a plan or guidance", () => {
   for (const m of [
@@ -61,6 +61,25 @@ test("does not fire without a hypothetical framing", () => {
 
 test("a hypothetical with no recognized lever is null (falls through to normal advice)", () => {
   assert.equal(parseWhatIf("what if the market crashes?"), null);
+});
+
+test("add-vs-replace is read from the monthly clause, not an unrelated lever", () => {
+  // "increase" belongs to the horizon here — it must not turn the override into an add.
+  assert.deepEqual(
+    parseWhatIf("what if I contribute 3,000/month and increase my horizon to 25 years"),
+    { monthlyOverride: 3000, horizonYears: 25 },
+  );
+});
+
+test("a bare 'for N years' qualifies a contribution, not the plan horizon", () => {
+  assert.deepEqual(parseWhatIf("what if I add SGD 500/month for 5 years"), { addMonthly: 500 });
+});
+
+test("hasScenarioOpener flags a strong hypothetical opener", () => {
+  assert.equal(hasScenarioOpener("what if I save SGD 3,000/month and retire in 25 years"), true);
+  assert.equal(hasScenarioOpener("suppose I go aggressive"), true);
+  assert.equal(hasScenarioOpener("if I save 2000/month can I reach 500k in 10 years"), false);
+  assert.equal(hasScenarioOpener("save 20000 in 3 years at 400/month"), false);
 });
 
 test("detects a profile read-back query", () => {

@@ -40,6 +40,17 @@ test("does not intercept a non-POST request", async () => {
   assert.equal(handled, false);
 });
 
+test("defers a 'what if …' scenario to the advisor, even with a save/month figure", async () => {
+  // "save SGD 3,000/month" would otherwise read 3,000 as the goal here; the
+  // scenario opener means it belongs to the advisor's what-if, so this declines
+  // before it ever touches the response.
+  const handled = await handleSavingsGoal(
+    { method: "POST", body: { studioDomain: "finance", message: "what if I save SGD 3,000/month and retire in 25 years" } },
+    untouchableRes(),
+  );
+  assert.equal(handled, false);
+});
+
 test("a savings-shaped question WITHOUT numbers falls through to the model", async () => {
   // The trigger is the bare word "save", so these all matched and used to be
   // answered with a canned demand for three numbers — streamed as the assistant,

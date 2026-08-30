@@ -107,6 +107,23 @@ test("what-if raises the odds and renders a like-for-like comparison", () => {
   assert.match(text, /like-for-like comparison, not a forecast/i);
 });
 
+test("a what-if carries the scenario's balance-sheet cautions, not just better odds", () => {
+  const bs = {
+    incomeMonthly: 5000, expensesMonthly: 4500, emergencyFund: 20000, liquidCash: 5000,
+    assets: [], liabilities: [],
+    currency: "SGD", mixedCurrency: false,
+    totalAssets: 25000, totalLiabilities: 0, netWorth: 25000,
+    monthlySurplus: 500, savingsRatePct: 10, emergencyMonths: 6,
+  };
+  // Raising the contribution to SGD 4,000/month blows past the SGD 500 surplus —
+  // the lift must not be sold without that sustainability catch.
+  const cmp = buildWhatIfComparison(COMPLETE, { monthlyOverride: 4000 }, { current: 0, balanceSheet: bs });
+  assert.ok(cmp.scenario.notes.some((n) => /more than your monthly surplus/i.test(n)));
+  const text = formatWhatIfComparison(cmp);
+  assert.match(text, /Worth flagging under this scenario/);
+  assert.match(text, /more than your monthly surplus/i);
+});
+
 test("an incomplete profile makes the comparison inapplicable (gateway falls back)", () => {
   const cmp = buildWhatIfComparison(
     { ...COMPLETE, riskTolerance: null, monthlyInvestable: null },

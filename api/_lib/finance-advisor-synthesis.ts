@@ -315,6 +315,13 @@ export function formatWhatIfComparison(cmp: WhatIfComparison): string {
     `**Tough decade (bottom 10%):** ${money(bMc.p10, cur)} → **${money(sMc.p10, cur)}**`,
     `**Where the pace lands:** ${base.projection!.onTrack ? "on track" : "short"} → **${scenario.projection!.onTrack ? "on track" : "short"}**`,
     ...(verdict ? ["", verdict] : []),
+    // Better odds are not free: a higher contribution can outrun the monthly
+    // surplus, and going aggressive while carrying high-interest debt or a thin
+    // buffer is a real trade-off. Carry the scenario's balance-sheet cautions
+    // through so the comparison never sells a lift without the catch.
+    ...(scenario.notes.length
+      ? ["", "**Worth flagging under this scenario:**", ...scenario.notes.map((n) => `- ${n}`)]
+      : []),
     "",
     `_Both sides use the same seeded ${sMc.paths.toLocaleString("en-US")}-path simulation under each mix's labeled return/volatility assumptions — a like-for-like comparison, not a forecast._`,
     "",

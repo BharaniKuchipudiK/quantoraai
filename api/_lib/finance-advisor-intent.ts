@@ -107,21 +107,29 @@ export function parseWhatIf(message: unknown): WhatIf | null {
   const whatIf: WhatIf = {};
 
   // Monthly contribution — additive ("add/extra/another") vs. a replacement.
+  // The add-vs-replace signal is read only from the words immediately BEFORE the
+  // amount, so an unrelated lever elsewhere ("…and increase my horizon") can't
+  // flip "contribute 3,000/month" (a replacement) into an addition.
   const monthly = text.match(new RegExp(`${AMT}\\s*${PER_MONTH}\\b`, "i"));
-  if (monthly) {
+  if (monthly && monthly.index != null) {
     const amt = parseAmountToken(monthly[1]);
     if (amt !== null) {
-      const additive = /\b(?:add|extra|another|additional|more|increase|bump|raise|kick\s+in|on\s+top)\b/i.test(text);
+      const clause = text.slice(Math.max(0, monthly.index - 28), monthly.index);
+      const additive = /\b(?:add|extra|another|additional|more|bump|raise|top\s+up|on\s+top)\b/i.test(clause);
       if (additive) whatIf.addMonthly = amt;
       else whatIf.monthlyOverride = amt;
     }
   }
 
   // Horizon — "retire in 25 years", "over 30 years", "horizon of 15 years".
+  // NB: a bare "for N years" is deliberately NOT a horizon — it usually
+  // qualifies how long a contribution runs ("add 500/month for 5 years"), which
+  // this model can't represent, and reading it as the plan horizon would shorten
+  // the whole projection and mislead badly.
   const horizon =
     text.match(/\bretire\s+(?:in|after)\s+(\d{1,3})\s*years?\b/i) ||
     text.match(/\bhorizon\s+(?:were|was|is|of|to)?\s*(\d{1,3})\s*years?\b/i) ||
-    text.match(/\b(?:in|over|within|after|for)\s+(\d{1,3})\s*years?\b/i);
+    text.match(/\b(?:in|over|within|after)\s+(\d{1,3})\s*years?\b/i);
   if (horizon) {
     const y = years(horizon[1]);
     if (y !== null) whatIf.horizonYears = y;
@@ -142,4 +150,15 @@ export function parseWhatIf(message: unknown): WhatIf | null {
   }
 
   return Object.keys(whatIf).length ? whatIf : null;
+}
+
+// A strong scenario opener means the turn is modeling a hypothetical against the
+// saved plan — the advisor's job — even when the sentence contains "save" and a
+// figure that the standalone savings calculator would otherwise grab as a goal.
+// The upstream savings gateway checks this so a compound what-if ("what if I
+// save 3,000/month and retire in 25 years") reaches the advisor intact.
+const SCENARIO_OPENER = /\b(?:what\s+if|what\s+about|suppose|imagine)\b/i;
+
+export function hasScenarioOpener(message: unknown): boolean {
+  return typeof message === "string" && SCENARIO_OPENER.test(message);
 }
