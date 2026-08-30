@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeStudioDomain } from "./studio-domains.js";
 import { withNextMoves } from "./deterministic-turn.js";
 import { parseSavingsIntent } from "./savings-goal-intent.js";
+import { hasScenarioOpener } from "./finance-advisor-intent.js";
 import { projectSavings, formatSavingsPlan } from "./savings-goal.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
@@ -45,6 +46,10 @@ export function handleSavingsGoal(req: any, res: any): Promise<boolean> {
 async function runSavingsGoal(req: any, res: any): Promise<boolean> {
   if (req.method !== "POST") return false;
   if (normalizeStudioDomain(req.body?.studioDomain) !== "finance") return false;
+  // A "what if …" scenario belongs to the advisor (it models against the saved
+  // profile), not this standalone calculator — even though its "save …/month"
+  // figure would otherwise read here as a goal. Defer to keep the what-if whole.
+  if (hasScenarioOpener(req.body?.message)) return false;
   const intent = parseSavingsIntent(req.body?.message);
   if (!intent.matched) return false;
 
