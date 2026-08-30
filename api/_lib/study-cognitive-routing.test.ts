@@ -46,19 +46,30 @@ test('adds visual interpretation without replacing the learning capability', () 
   assert.ok(interpretation?.capabilities.includes('visual_interpretation'));
 });
 
-test('routes deep Study turns within the existing eligible ladder', () => {
+test('keeps unproven free reasoning endpoints behind the reliable Study verification rung', () => {
   const interpretation = interpretStudyTurn({ studioDomain: 'education', message: 'Verify my proof and identify the first invalid assumption.' });
   const decision = applyStudyCapabilityRouting({ interpretation, baseDecision, models: [
     { id: 'gemini-flash-latest', specialty: 'Fast general answers' },
-    { id: 'nvidia/nemotron-3-super-120b-a12b:free', specialty: 'Reasoning' },
-    { id: 'openai/gpt-oss-120b:free', specialty: 'General reasoning' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', specialty: 'Reasoning', pricingKind: 'free' },
+    { id: 'openai/gpt-oss-120b:free', specialty: 'General reasoning', pricingKind: 'free' },
     { id: 'paid/model-that-was-not-eligible', specialty: 'Reasoning', pricingKind: 'paid' },
   ] });
-  assert.equal(decision.selectionSource, 'study_capability_route');
-  assert.equal(decision.reason, 'study_verification');
-  assert.equal(decision.primaryModelId, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(decision.primaryModelId, 'gemini-flash-latest');
   assert.deepEqual(new Set([decision.primaryModelId, ...decision.fallbackModelIds]), new Set([baseDecision.primaryModelId, ...baseDecision.fallbackModelIds]));
   assert.ok(!decision.fallbackModelIds.includes('paid/model-that-was-not-eligible'));
+});
+
+test('lets observed quality evidence earn a free reasoning rung back to primary', () => {
+  const interpretation = interpretStudyTurn({ studioDomain: 'education', message: 'Verify my proof and identify the first invalid assumption.' });
+  const decision = applyStudyCapabilityRouting({ interpretation, baseDecision, models: [
+    { id: 'gemini-flash-latest', specialty: 'Fast general answers' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', specialty: 'Reasoning', pricingKind: 'free', quality: { sampleSize: 12, score: 90 } },
+    { id: 'openai/gpt-oss-120b:free', specialty: 'General reasoning', pricingKind: 'free' },
+  ] });
+  assert.equal(decision.primaryModelId, 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(decision.selectionSource, 'study_capability_route');
+  assert.equal(decision.reason, 'study_verification');
+  assert.deepEqual(new Set([decision.primaryModelId, ...decision.fallbackModelIds]), new Set([baseDecision.primaryModelId, ...baseDecision.fallbackModelIds]));
 });
 
 test('routes ordinary Study explanation and practice to the eligible fast Gemini model', () => {
@@ -79,6 +90,26 @@ test('routes ordinary Study explanation and practice to the eligible fast Gemini
     assert.equal(routed.reason, 'study_fast_response');
     assert.deepEqual(new Set([routed.primaryModelId, ...routed.fallbackModelIds]), new Set([slowFirst.primaryModelId, ...slowFirst.fallbackModelIds]));
   }
+});
+
+test('prefers DeepSeek V4 Flash for ordinary Study turns when that workhorse is already eligible', () => {
+  const eligible = {
+    primaryModelId: 'nvidia/nemotron-3.5-lightning:free',
+    fallbackModelIds: ['gemini-flash-latest', 'deepseek/deepseek-v4-flash-0731'],
+    reason: 'ranked',
+    provider: 'openrouter' as const,
+    hasVisionSupport: false,
+    selectionSource: 'ranked',
+  };
+  const routed = applyStudyCapabilityRouting({
+    interpretation: interpretStudyTurn({ studioDomain: 'education', message: 'Explain entropy in simple terms.' }),
+    baseDecision: eligible,
+  });
+  assert.equal(routed.primaryModelId, 'deepseek/deepseek-v4-flash-0731');
+  assert.equal(routed.provider, 'openrouter');
+  assert.equal(routed.hasVisionSupport, false);
+  assert.equal(routed.reason, 'study_fast_response');
+  assert.deepEqual(new Set([routed.primaryModelId, ...routed.fallbackModelIds]), new Set([eligible.primaryModelId, ...eligible.fallbackModelIds]));
 });
 
 test('does not override explicit model choices or vision routing', () => {
