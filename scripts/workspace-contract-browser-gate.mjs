@@ -118,15 +118,8 @@ try {
       }
     }
 
-    const arena = page.locator('[data-quantora-dual-arena="true"]').first();
-    await visible(arena, `${workspace.label} is missing Dual Arena.`);
-    await arena.click();
-    await page.waitForTimeout(80);
-    if (await arena.getAttribute('aria-pressed') !== 'true') throw new Error(`${workspace.label} Dual Arena did not activate.`);
-    await visible(page.getByRole('button', { name: /VS:/ }).first(), `${workspace.label} Arena did not expose Model B selection.`);
-    await arena.click();
-    await page.waitForTimeout(80);
-    if (await arena.getAttribute('aria-pressed') !== 'false') throw new Error(`${workspace.label} Dual Arena did not deactivate.`);
+    // Dual Arena is intentionally hidden across all workspaces now — assert its absence.
+    await hidden(page.locator('[data-quantora-dual-arena="true"]').first(), `${workspace.label} should not show Dual Arena.`);
 
     await hidden(page.locator('[data-quantora-fork-chat]').first(), `${workspace.label} still has top-level Fork Chat.`);
     await assertNoBrokenVisibleImages(workspace.label);

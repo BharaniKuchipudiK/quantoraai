@@ -23,7 +23,7 @@ export function resolveTurnRecovery({
   timedOut = false,
   networkError = false,
 } = {}) {
-  const no = (reason) => ({ retry: false, notice: '', reason });
+  const no = (reason) => ({ retry: false, resume: false, notice: '', reason });
 
   if (stoppedByUser) return no('stopped');
   if (Number(attempt) >= MAX_TURN_ATTEMPTS) return no('attempts-exhausted');
@@ -52,9 +52,20 @@ export function resolveTurnRecovery({
     };
   }
 
-  // A half-written answer is worse to restart than to keep: the person already
-  // read the first paragraph.
-  if (hasPartialText) return no('partial-answer');
+  /*
+   * A half-written answer is worse to RESTART than to keep — the person already
+   * read the first paragraph. But "don't restart" was implemented as "stop
+   * entirely", which is how a build turn ended as a truncated sentence plus
+   * "Quantora could not complete the provider handoff for this turn" and no way
+   * forward. Neither restarting nor continuing: just a dead end the user has to
+   * nurse by retyping.
+   *
+   * So a partial answer is now RESUMABLE. The turn is not retried (that would
+   * re-run the whole job and duplicate what is already on screen); instead the
+   * caller offers a one-tap continuation that carries the partial text forward,
+   * which is what "continue as a loop" actually means here.
+   */
+  if (hasPartialText) return { retry: false, resume: true, notice: '', reason: 'partial-answer' };
 
   if (retryable === true || RETRYABLE_STATUS.has(Number(status))) {
     return {

@@ -143,6 +143,31 @@ export function createSessionHandoverContract({
   });
 }
 
+/*
+ * Session exhaustion has TWO causes, and only one was ever wired.
+ *
+ * assessSessionContinuity measures CONTEXT pressure — the transcript growing
+ * past what the window can carry. But the way a long session actually dies in
+ * practice is the other one: the route runs out (quota exhausted, every gateway
+ * refusing), and the turn ends on "Quantora could not reach a healthy AI route"
+ * with no offer to continue anywhere. The handover machinery — summary, facts,
+ * recent intents, a seeded child chat — sat right there and was never reachable
+ * from that path, which is why the transition never felt smooth: for this
+ * failure it did not exist.
+ *
+ * This synthesizes the pressure record for a route/quota exhaustion so the same
+ * contract builder can seed a fresh chat from a dead one. It is a real trigger
+ * with its own reason, not a pretend context-pressure reading.
+ */
+export function providerExhaustionPressure(detail = '') {
+  return {
+    level: 'handover',
+    recommendHandover: true,
+    reasons: [detail ? `provider-exhausted: ${detail}` : 'provider-exhausted'],
+    metrics: { providerExhausted: 1, pressureRatio: 1 },
+  };
+}
+
 export function shouldOfferSessionHandover(messages = [], pressure = null) {
   /*
    * PRESSURE FIRST, and the reason this line has to be here.

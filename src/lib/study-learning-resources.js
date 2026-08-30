@@ -3,10 +3,12 @@ import { studyPicturePromptHint } from './study-pictures.js';
 export function studyIcebreakerAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
-    `Open ${label} with one true icebreaker and a picture tag.`,
+    `Open ${label} like a thoughtful tutor meeting the learner where they are.`,
+    'First infer whether they sound curious, stuck, rushed, or unsure from the conversation already present.',
+    'Acknowledge that state in one natural sentence only when it genuinely helps; never use generic praise.',
     studyPicturePromptHint(label),
-    'Do not invent image URLs or YouTube IDs. The tag is how Quantora draws the scene.',
-    'Then STOP. Ask me to signal that I am ready before any definition, table, or quiz.',
+    'Use one true hook or small visual only if it makes the idea easier to enter.',
+    'Then ask ONE short question that helps you understand what they already think, and STOP. Do not dump the lesson underneath it.',
     'No leaderboard, points, or rank. Do not plan trips.',
   ].join(' ');
 }
@@ -15,15 +17,41 @@ export function studyLessonAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
     `Teach ONE idea about ${label} in this message — not a whole chapter.`,
+    'Read the learner’s last turn first. If they sound confused or frustrated, acknowledge the exact difficulty in one human sentence before teaching; otherwise begin naturally without a ceremonial greeting.',
     studyPicturePromptHint(label),
     'Speak directly to the learner in two or three natural paragraphs, adapted to the context already present in this conversation.',
-    'Begin with one familiar experience, connect it to the idea, and name the likely misconception in ordinary language.',
+    'Begin from something familiar, connect it to the idea, and name the likely misconception in ordinary language.',
     'Do not use labels such as “Why it is relevant”, “Context-aware question”, “Key takeaway”, or narrate the teaching structure.',
     'Use at most one short formula in $$...$$ unless the learner asks for a derivation.',
     'For mechanics or physics, include a subject-specific picture caption that names the actual motion and forces; never use a decorative generic visual.',
     'A single relevant emoji is welcome when it adds warmth, but never decorate every line.',
-    'End on one short question that uses the idea. Do not announce that the question is context-aware or say that you will wait.',
+    'End on ONE short diagnostic or application question. Do not append a summary, a second question, or a list of next steps. STOP there so the learner can answer.',
     'Do not invent a specific YouTube video, channel episode, or URL.',
+  ].join(' ');
+}
+
+export function studyExplainDifferentlyAsk(topic) {
+  const label = String(topic || 'this idea').trim();
+  return [
+    `Explain ${label} differently because the previous explanation may not have landed.`,
+    'Start with one brief acknowledgement such as “Let’s try this another way” only if it fits the conversation; do not apologise or over-praise.',
+    'Do NOT repeat the same wording, structure, analogy, or worked example from the previous explanation.',
+    'Switch modality deliberately: if the last answer was abstract, use a concrete analogy; if it was verbal, use a simple subject-aware picture; if it was an analogy, use a tiny worked example; if it was procedural, explain the underlying intuition.',
+    studyPicturePromptHint(label),
+    'Teach one idea only. Keep it short and conversational.',
+    'End with ONE quick question that reveals whether this new explanation worked, then STOP.',
+  ].join(' ');
+}
+
+export function studyVisualExplainAsk(topic) {
+  const label = String(topic || 'this idea').trim();
+  return [
+    `Show ${label} visually in the simplest useful way.`,
+    'Use one subject-aware <quantora-study-picture> caption when the existing Study visual system can teach the relationship. Never add a decorative image merely to make the answer pretty.',
+    studyPicturePromptHint(label),
+    'Give at most two short sentences around the visual: what to notice before it, and one question after it.',
+    'If the concept cannot be represented honestly with the available visual language, say that briefly and use a tiny text sketch instead of inventing an image URL or pretending a diagram exists.',
+    'STOP after one question.',
   ].join(' ');
 }
 
@@ -33,6 +61,8 @@ export function studyActionVisibleText(action, topic) {
   const messages = {
     icebreaker: `Help me get curious about ${label}.`,
     lesson: `Explain ${label} like a real tutor.`,
+    different: `Explain ${label} a different way.`,
+    visual: `Show me ${label} visually.`,
     practice: `Give me one practice question on ${label}.`,
     quiz: `Check my understanding of ${label}.`,
     flashcards: `Make a few flashcards for ${label}.`,
@@ -51,15 +81,15 @@ export function studyActionVisibleText(action, topic) {
 }
 
 export function studyQuizAsk(topic) {
-  return `Quiz me on ${String(topic || 'this idea').trim()} with 3 short questions that fit the current conversation and learner context. Wait for my answers. Do not give the answers first. If I miss one, identify the likely prerequisite or misconception before re-checking.`;
+  return `Quiz me on ${String(topic || 'this idea').trim()} with 3 short questions that fit the current conversation and learner context. Ask only the first question now and wait for my answer. After each answer, give specific feedback about my reasoning before asking the next one. Do not give the answers first.`;
 }
 
 export function studyPracticeAsk(topic) {
-  return `Give me one short practice problem on ${String(topic || 'this idea').trim()}. Use the current conversation and my learning context. Wait for my attempt before explaining or grading it.`;
+  return `Give me one short practice problem on ${String(topic || 'this idea').trim()}. Use the current conversation and my learning context. Ask only the problem now. Wait for my attempt before explaining or grading it; after I answer, recognise the specific part of my reasoning that was right or useful before correcting anything that needs repair.`;
 }
 
 export function studyAnotherExampleAsk(topic) {
-  return `Show one short, different worked example for ${String(topic || 'this idea').trim()} that directly repairs the misconception in my last answer. Contrast the mistaken idea with the correct one, then ask one fresh question and wait.`;
+  return `Show one short, different worked example for ${String(topic || 'this idea').trim()} that directly repairs the misconception in my last answer. Start by acknowledging the exact point that caused trouble, then contrast the mistaken idea with the correct one. Ask one fresh question and wait.`;
 }
 
 export function studyUsefulReferenceAsk(topic) {
@@ -67,7 +97,7 @@ export function studyUsefulReferenceAsk(topic) {
 }
 
 export function studyNextQuestionAsk(topic) {
-  return `That question is complete. Ask one new, non-repeating question on ${String(topic || 'this idea').trim()} that checks transfer rather than the same wording. Wait for my attempt.`;
+  return `That question is complete. Briefly recognise what the learner demonstrated, then ask one new, non-repeating question on ${String(topic || 'this idea').trim()} that checks transfer rather than the same wording. Wait for my attempt.`;
 }
 
 export function studyFlashcardAsk(topic) {
@@ -81,7 +111,7 @@ export function studyFlashcardAsk(topic) {
 }
 
 export function studyApplicationAsk(topic) {
-  return `Help me apply ${String(topic || 'this idea').trim()} to a real situation that fits the current learning context. Pick the example from the subject and level already established in this conversation, explain why it is relevant, and then give me one short application question.`;
+  return `Help me apply ${String(topic || 'this idea').trim()} to a real situation that fits the current learning context. Pick the example from the subject and level already established in this conversation, explain why it is relevant in natural tutor language, and then give me one short application question.`;
 }
 
 export function studyRealWorldAsk(topic) {

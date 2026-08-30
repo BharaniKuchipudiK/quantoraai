@@ -95,18 +95,26 @@ function detectFx(message: string): MarketDataIntent | null {
 
 function detectPrice(message: string): MarketDataIntent | null {
   if (!PRICE_HINT.test(message)) return null;
-  const patterns = [
-    /\b(?:of|for)\s+\$?([A-Za-z]{1,5})\b/i,
-    /\$?([A-Za-z]{1,5})\s+(?:price|quote|stock|share)/i,
-    /\b(?:price|quote)\s+(?:of|for)?\s*\$?([A-Za-z]{1,5})\b/i,
+  // `upperOnly` patterns match the plain way people ask ("how much is TSLA",
+  // "what's NVDA at") but only accept an UPPERCASE ticker in the source, so
+  // "how much is my rent" or "what is it" never read as a quote lookup. A `$`
+  // prefix ($tsla) is an explicit ticker, so those stay case-insensitive.
+  const patterns: Array<{ re: RegExp; upperOnly?: boolean }> = [
+    { re: /\b(?:of|for)\s+\$?([A-Za-z]{1,5})\b/i },
+    { re: /\$?([A-Za-z]{1,5})\s+(?:price|quote|stock|share)/i },
+    { re: /\b(?:price|quote)\s+(?:of|for)?\s*\$?([A-Za-z]{1,5})\b/i },
+    { re: /\bhow\s+much\s+(?:is|are|does)\s+\$([A-Za-z]{1,5})\b/i },
+    { re: /\bhow\s+much\s+(?:is|are|does)\s+([A-Za-z]{1,5})\b/i, upperOnly: true },
   ];
-  for (const pattern of patterns) {
-    const m = message.match(pattern);
+  for (const { re, upperOnly } of patterns) {
+    const m = message.match(re);
     if (!m) continue;
-    const symbol = m[1].toUpperCase();
+    const raw = m[1];
+    if (upperOnly && raw !== raw.toUpperCase()) continue; // ticker must be typed uppercase
+    const symbol = raw.toUpperCase();
     // Don't treat a currency code or a bare hint word as a ticker.
     if (KNOWN_CURRENCIES.includes(symbol)) continue;
-    if (/^(PRICE|QUOTE|STOCK|SHARE|OF|FOR)$/.test(symbol)) continue;
+    if (/^(PRICE|QUOTE|STOCK|SHARE|OF|FOR|IS|ARE|AT|IT|ME|MY|THE)$/.test(symbol)) continue;
     return { kind: "price", symbol };
   }
   return null;
