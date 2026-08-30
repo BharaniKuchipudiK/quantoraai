@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  studyNumberLineLabel,
   studyNumberLineSpec,
   studyPhysicsVisualVariant,
   studyProcessSteps,
@@ -31,10 +32,6 @@ function processCenters(count) {
   if (count === 2) return [100, 260];
   if (count === 3) return [68, 180, 292];
   return [48, 136, 224, 312];
-}
-
-function formatTick(value) {
-  return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
 }
 
 /** Caption-routed teaching diagrams; no generic decorative scene is shown. */
@@ -182,7 +179,7 @@ function PictureArt({ isLight, caption, kind }) {
             return (
               <g key={index}>
                 <line x1={x} y1="87" x2={x} y2="105" stroke={muted} strokeWidth="1.5" />
-                <text x={x} y="124" textAnchor="middle" fill={muted} fontSize="10.5">{formatTick(value)}</text>
+                <text x={x} y="124" textAnchor="middle" fill={muted} fontSize="10.5">{studyNumberLineLabel(value, numberLine.min, numberLine.max)}</text>
               </g>
             );
           })}
@@ -192,7 +189,7 @@ function PictureArt({ isLight, caption, kind }) {
             return (
               <g>
                 <circle cx={x} cy="96" r="9" fill="#f97316" stroke={isLight ? '#fff' : '#111827'} strokeWidth="3" />
-                <text x={x} y="62" textAnchor="middle" fill="#f97316" fontSize="13" fontWeight="800">{formatTick(numberLine.mark)}</text>
+                <text x={x} y="62" textAnchor="middle" fill="#f97316" fontSize="13" fontWeight="800">{studyNumberLineLabel(numberLine.mark, numberLine.min, numberLine.max)}</text>
                 <line x1={x} y1="69" x2={x} y2="82" stroke="#f97316" strokeWidth="2" />
               </g>
             );
