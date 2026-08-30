@@ -7,12 +7,15 @@ import 'katex/dist/katex.min.css';
 import StudyPicture from './StudyPicture.jsx';
 import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
+import StudyTutorNudge from './StudyTutorNudge.jsx';
 import {
   decorateStudyMessage,
   ensureStudyTeachingVisual,
   splitStudySegments,
 } from '../lib/study-pictures.js';
-import { polishStudyTutorText } from '../lib/study-tutor-presentation.js';
+import { polishStudyTutorText, studyTutorNudge } from '../lib/study-tutor-presentation.js';
+
+const STUDY_READING_FONT = 'Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
 
 export default function StudyMarkdown({
   text = '',
@@ -30,6 +33,7 @@ export default function StudyMarkdown({
    * costs no vertical space and keeps every capability.
    */
   const polished = polishStudyTutorText(text);
+  const nudge = studyTutorNudge(polished);
   const illustrated = ensureStudyTeachingVisual(polished, topic);
   const segments = splitStudySegments(decorateStudyMessage(illustrated, topic), topic);
   const flashcards = segments.filter((segment) => segment.type === 'flashcard');
@@ -41,6 +45,7 @@ export default function StudyMarkdown({
       data-quantora-study-lesson="true"
       style={{ color: textColor, width: '100%' }}
     >
+      {nudge ? <StudyTutorNudge kind={nudge.kind} label={nudge.label} isLight={isLight} /> : null}
       {segments.map((segment, index) => {
         if (segment.type === 'flashcard') {
           return index === firstFlashcardIndex ? (
@@ -66,14 +71,25 @@ export default function StudyMarkdown({
           );
         }
         return (
-          <ReactMarkdown
+          <div
             key={`md-${index}`}
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-            components={components}
+            data-quantora-study-reading-copy="true"
+            style={{
+              fontFamily: STUDY_READING_FONT,
+              fontSize: '1.035rem',
+              lineHeight: 1.7,
+              letterSpacing: '-0.006em',
+              textWrap: 'pretty',
+            }}
           >
-            {segment.text}
-          </ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              components={components}
+            >
+              {segment.text}
+            </ReactMarkdown>
+          </div>
         );
       })}
     </div>
