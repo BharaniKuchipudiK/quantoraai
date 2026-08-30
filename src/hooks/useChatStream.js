@@ -10,6 +10,7 @@ import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-
 import { deriveStudioMission } from '../lib/studio-mission.js';
 import { mergeStudySyllabusFromText } from '../lib/study-syllabus-overlay.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import { withoutPrivateStudyInstructions } from '../lib/study-private-instructions.js';
 import { buildStudyAdaptiveRequestContext } from '../lib/study-adaptive-request.js';
 import { forgetOutcomeState, loadOutcomeState, persistOutcomeState } from '../lib/outcome-state.js';
 import { applyPclContinuityToOutcomeState } from '../lib/pcl-outcome-sync.js';
@@ -45,6 +46,7 @@ import {
   assessSessionContinuity,
   createSessionHandoverContract,
   shouldOfferSessionHandover,
+  providerExhaustionPressure,
 } from '../lib/session-continuity.js';
 import {
   proveCodingTurn,
@@ -221,6 +223,20 @@ function activeStudioDomain(chatSessions, activeSessionId) {
   const session = (chatSessions || []).find((candidate) => candidate?.id === activeSessionId);
   return session?.studioDomain || null;
 }
+
+/*
+ * The one-tap continuation offered when a reply dies mid-stream. It carries the
+ * partial answer forward rather than restarting the job, so the person never has
+ * to retype a request the model already half-answered.
+ */
+const RESUME_AFTER_PARTIAL_SET = {
+  prompt: 'That reply was cut off. Want me to finish it?',
+  items: [{
+    id: 'resume-after-partial',
+    label: 'Continue',
+    value: 'Your previous reply was cut off partway through. Continue from exactly where it stopped — do not repeat what you already wrote.',
+  }],
+};
 
 export function useChatStream({
   inputText,
@@ -500,7 +516,11 @@ export function useChatStream({
      * Worse, retrying made it worse: each attempt added turns, and the only
      * escape was to start a new chat and lose the work.
      */
-    const filteredMessages = messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required'));
+    const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
+    const filteredMessages = withoutPrivateStudyInstructions(
+      messages.filter(m => m.id !== 1 && !m.isKeyPrompt && !m.text?.includes('⚠️ **API Key Required')),
+      studioDomain,
+    );
     const historyBudget = budgetHistory(filteredMessages);
     const cleanMessages = historyBudget.history;
     // The FACT that history was shortened, reported every time it happens. The
@@ -512,8 +532,6 @@ export function useChatStream({
       messages: continuityTranscript,
       historyResult: historyBudget,
     });
-    const studioDomain = activeStudioDomain(chatSessions, activeSessionId);
-
     const currentOfficeArtifact = activeOfficeArtifact(messages);
     const explicitOfficeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
     const inheritedOfficeKind = activeOfficeBriefingKind(messages) || activeOfficeArtifactKind(messages);
@@ -1291,6 +1309,7 @@ export function useChatStream({
           }
 
           if (!stillCurrent()) return;
+          let resumeAfterFailure = false;
           if (streamedError || !receivedDone) {
             const recovery = resolveTurnRecovery({
               attempt,
@@ -1302,6 +1321,7 @@ export function useChatStream({
               announceRecovery(recovery.notice);
               continue;
             }
+            resumeAfterFailure = recovery.resume === true;
           }
 
           if (streamedError) {
@@ -1398,15 +1418,44 @@ export function useChatStream({
               } : m));
               return;
             }
+            const exhaustionHandover = (!currentText && !artifactFailed)
+              ? createSessionHandoverContract({
+                sourceSessionId: activeSessionId,
+                projectId: sessionContext?.projectId || null,
+                studioDomain,
+                conversationContext: conversationContext || {},
+                messages,
+                pressure: providerExhaustionPressure(streamedError?.message || 'no healthy AI route'),
+              })
+              : null;
+            /*
+             * A partial answer is not a dead end any more. The text stays, the
+             * notice says plainly that the reply was cut off mid-stream, and a
+             * one-tap chip carries it forward — instead of the old truncated
+             * sentence plus an unexplained "provider handoff" warning that left
+             * the person retyping their request.
+             */
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: artifactFailed
                 ? `⚠️ **Could not finish:** ${streamedError.message}`
                 : currentText
-                  ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ Quantora could not complete the provider handoff for this turn.`
+                  ? `${sanitizeAssistantStream(currentText)}\n\n⚠️ _The reply was cut off here — the model route dropped mid-answer. Nothing above is lost; tap **Continue** and I'll pick up from this point._`
                   : '⚠️ **Temporarily unavailable:** Quantora could not reach a healthy AI route. Please retry in a moment.',
-              isError: true,
+              isError: !currentText || artifactFailed,
               executionStatus: null,
+              ...(currentText && !artifactFailed && resumeAfterFailure
+                ? { continueSet: RESUME_AFTER_PARTIAL_SET }
+                : {}),
+              /*
+               * Route exhaustion with nothing streamed is where a session
+               * genuinely dies. Offer the handover here — a fresh chat seeded
+               * with this one's goal, facts and recent intents — instead of
+               * leaving "retry in a moment" as the only way out.
+               */
+              ...(!currentText && !artifactFailed && exhaustionHandover
+                ? { sessionContinuity: exhaustionHandover }
+                : {}),
             } : m));
             return;
           }

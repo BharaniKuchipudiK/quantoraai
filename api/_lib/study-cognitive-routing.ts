@@ -1,4 +1,4 @@
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-08-29.1';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-08-30.1';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -29,6 +29,7 @@ const PLAN_RE = /\b(?:study plan|learning plan|revision plan|syllabus|curriculum
 const CONTINUE_RE = /^(?:continue|go on|next|keep going|do it|try again|more)\W*$/i;
 const ADVANCED_RE = /\b(?:derive|proof|prove|theorem|rigorous|formalism|asymptotic|eigenvalue|tensor|quantum|lagrangian|hamiltonian|differential equation|organic mechanism|graduate|postgraduate|research level|olympiad)\b/i;
 const FOUNDATIONAL_RE = /\b(?:basics?|beginner|simple terms?|eli5|fundamentals?|introduction|what is|define|meaning of|from scratch)\b/i;
+const STUDY_FAST_WORKHORSE_ID = 'deepseek/deepseek-v4-flash-0731';
 
 function textOf(item: HistoryItem): string { return String(item?.text || item?.content || '').trim(); }
 function isAssistant(item: HistoryItem): boolean { return item?.sender === 'ai' || item?.role === 'assistant' || item?.role === 'model'; }
@@ -107,13 +108,38 @@ This directive applies only because the active workspace is Study Tutor.
 Answer the current learning move directly. Match explanation depth to the inferred difficulty. Do not claim mastery or persistent learner knowledge from this routing signal.`;
 }
 
+function isUnmeteredFreeEndpoint(model: ModelLike): boolean {
+  const id = String(model.id || '');
+  return model.pricingKind === 'free' || /:free$/i.test(id);
+}
+
+function hasStrongObservedQuality(model: ModelLike): boolean {
+  const sampleSize = Number(model.quality?.sampleSize || 0);
+  const score = Number(model.quality?.score);
+  return sampleSize >= 8 && Number.isFinite(score) && score >= 75;
+}
+
 function reasoningScore(model: ModelLike, interpretation: StudyCognitiveInterpretation): number {
   const haystack = `${model.id || ''} ${model.name || ''} ${model.specialty || ''} ${model.description || ''}`.toLowerCase();
   let score = 0;
   if (/reason|deepseek|nemotron|gpt-oss|qwen/.test(haystack)) score += 30;
   if (/gemini|flash/.test(haystack)) score += interpretation.difficulty === 'foundational' ? 22 : 8;
   if (/coder/.test(haystack)) score -= 10;
-  if (model.quality?.sampleSize && model.quality.sampleSize >= 5 && Number.isFinite(model.quality.score)) score += Math.max(0, Math.min(15, Number(model.quality.score) / 7));
+
+  /*
+   * A free endpoint does not become the Study verification primary merely
+   * because its NAME contains "reasoning". We have already seen those rungs
+   * rate-limit and time out in production, while the direct Gemini route keeps
+   * finishing. Keep an unproven :free endpoint as fallback until real outcome
+   * evidence earns it back. This does not remove or add a model; it only orders
+   * the ladder that the authoritative selector already declared eligible.
+   */
+  if (/gemini/.test(haystack)) score += 18;
+  if (isUnmeteredFreeEndpoint(model) && !hasStrongObservedQuality(model)) score -= 28;
+
+  if (model.quality?.sampleSize && model.quality.sampleSize >= 5 && Number.isFinite(model.quality.score)) {
+    score += Math.max(0, Math.min(15, Number(model.quality.score) / 7));
+  }
   return score;
 }
 
@@ -121,8 +147,24 @@ function reasoningScore(model: ModelLike, interpretation: StudyCognitiveInterpre
 export function applyStudyCapabilityRouting(input: { interpretation: StudyCognitiveInterpretation | null; baseDecision: RoutingDecision; models?: ModelLike[]; explicitModelSelected?: boolean; hasImages?: boolean }): RoutingDecision {
   const { interpretation, baseDecision } = input;
   if (!interpretation || input.explicitModelSelected || input.hasImages) return baseDecision;
-  if (interpretation.difficulty === 'foundational' && !interpretation.requiresVerification) return baseDecision;
   const ladder = [baseDecision.primaryModelId, ...(baseDecision.fallbackModelIds || [])];
+  if (interpretation.difficulty !== 'advanced' && !interpretation.requiresVerification) {
+    // Prefer the low-cost Study workhorse when it is already an eligible rung;
+    // otherwise use the direct Gemini route. No model is introduced here, so
+    // the spend/approval gate remains authoritative.
+    const fastModelId = ladder.find((id) => id === STUDY_FAST_WORKHORSE_ID)
+      || ladder.find((id) => id.startsWith('gemini'));
+    if (!fastModelId || fastModelId === baseDecision.primaryModelId) return baseDecision;
+    return {
+      ...baseDecision,
+      primaryModelId: fastModelId,
+      fallbackModelIds: ladder.filter((id) => id !== fastModelId),
+      provider: fastModelId.startsWith('gemini') ? 'gemini' : 'openrouter',
+      hasVisionSupport: fastModelId.startsWith('gemini'),
+      reason: 'study_fast_response',
+      selectionSource: 'study_capability_route',
+    };
+  }
   const modelById = new Map((input.models || []).map((model) => [String(model.id || ''), model]));
   const ordered = ladder.map((id, index) => ({ id, index, score: reasoningScore(modelById.get(id) || { id }, interpretation) }))
     .sort((a, b) => b.score - a.score || a.index - b.index).map((item) => item.id);

@@ -83,6 +83,8 @@ import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
 import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
+import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import { withoutPrivateStudyInstructions } from '../lib/study-private-instructions.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -275,6 +277,11 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
 }
 
 const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim() : '';
+
+// Dual Arena (compare two models side-by-side) is a power-user experiment, not
+// part of the clean, purposeful advisor surface — hidden across all workspaces.
+// Flip to true to bring the toggle back; the arena code below stays intact.
+const SHOW_DUAL_ARENA = false;
 
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
@@ -1564,7 +1571,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const awaitingStudyAnswer = studioDomain === 'education'
     && !isGenerating
     && studyAwaitsAnswer(lastAiMessage?.text || '');
-  const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
+  const cleanStudyMessages = withoutPrivateStudyInstructions(messages, studioDomain);
+  const lastUserMessage = [...cleanStudyMessages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const previewAssemblyKey = previewAssemblyFingerprint(vfs);
   const shellVfs = deskShellVfs(vfs, previewRunCode);
@@ -1590,7 +1598,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const claimFilterOpts = { previewWarming };
 
   const renderedChatFeed = React.useMemo(() => {
-    return messages.filter(msg => msg.type !== 'greeting').map(msg => {
+    return cleanStudyMessages.filter((msg) => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text)) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       const isFailover = isActiveGenerating && msg.isFailover;
@@ -2694,6 +2702,9 @@ Paused — ${autoPauseRef.current}.`
     studioDomain,
     lastTurnFailed: Boolean(lastAiMessage?.isError) && !isGenerating,
   });
+  const studyTopicLabel = studioDomain === 'education'
+    ? deriveStudyTutorBrief({ conversationContext, messages }).label
+    : '';
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);
   const isIdeLayout = isCodingDesk;
@@ -3273,7 +3284,8 @@ Paused — ${autoPauseRef.current}.`
           </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
-          {/* Dual Model Arena Toggle Button */}
+          {/* Dual Model Arena Toggle Button — hidden across workspaces (SHOW_DUAL_ARENA) */}
+          {SHOW_DUAL_ARENA && (
           <button
             data-quantora-dual-arena="true"
             aria-pressed={arenaMode}
@@ -3297,6 +3309,7 @@ Paused — ${autoPauseRef.current}.`
           >
             <Layers size={14} /> {arenaMode ? '⚔️ Arena Active' : '⚔️ Dual Arena'}
           </button>
+          )}
 
           {/* Model B Selector Dropdown in Arena Mode */}
           {arenaMode && (
@@ -3929,7 +3942,7 @@ Paused — ${autoPauseRef.current}.`
                   onClose={() => setShowToolsMenu(false)}
                   isLight={isLight}
                   studioDomain={studioDomain}
-                  topic={conversationContext?.goal || ''}
+                  topic={studioDomain === 'education' ? (studyTopicLabel || 'this topic') : (conversationContext?.goal || '')}
                   onSelectTool={(tool) => {
                     const overlay = inferStudySyllabus({
                       conversationContext,
@@ -3939,7 +3952,7 @@ Paused — ${autoPauseRef.current}.`
                     const action = resolveStudioPlusAction(
                       tool,
                       studioDomain,
-                      conversationContext?.goal || '',
+                      studioDomain === 'education' ? (studyTopicLabel || 'this topic') : (conversationContext?.goal || ''),
                       overlay,
                     );
                     setShowToolsMenu(false);

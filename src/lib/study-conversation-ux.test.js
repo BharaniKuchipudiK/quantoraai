@@ -54,8 +54,8 @@ test('Study explanations use the available width and keep the platform UI font a
   const css = read('src/index.css');
   const studyCss = css.slice(css.indexOf('html[data-quantora-domain="education"] .app-shell--studio .markdown-prose'));
   assert.match(studyCss, /font-family: var\(--font-body\)/);
-  assert.match(studyCss, /max-width: 68rem/);
-  assert.doesNotMatch(studyCss.slice(0, 500), /max-width: 34rem|font-study-body/);
+  assert.match(studyCss, /max-width: none/);
+  assert.doesNotMatch(studyCss.slice(0, 500), /max-width: (?:34|68)rem|font-study-body/);
 });
 
 test('Study reading copy has a quiet book-like type voice without changing controls', () => {
@@ -101,4 +101,12 @@ test('Study gives the learner compact next-path choices instead of dumping activ
   for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
     assert.match(shell, new RegExp(label.replace('?', '\\?')));
   }
+});
+
+test('persisted private Study prompts are removed from both rendering and model history', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  const stream = read('src/hooks/useChatStream.js');
+  assert.match(studio, /cleanStudyMessages = withoutPrivateStudyInstructions\(messages, studioDomain\)/);
+  assert.match(studio, /return cleanStudyMessages\.filter/);
+  assert.match(stream, /withoutPrivateStudyInstructions\([\s\S]*studioDomain/);
 });

@@ -807,13 +807,28 @@ export default async function handler(req: any, res: any) {
     const conversationDecision = chooseNextConversationMove(conversationSnapshot);
     const responseContract = buildResponseContract(conversationSnapshot, conversationDecision);
     const navigatorDirective = formatConversationDecisionForPrompt(conversationSnapshot, conversationDecision);
-    const promptSessionContext = conversationSnapshot.stateSource === "authoritative"
+    const basePromptSessionContext = conversationSnapshot.stateSource === "authoritative"
       ? {
           ...(conversationSnapshot.goal ? { goal: conversationSnapshot.goal.statement } : {}),
           ...(conversationSnapshot.inferredFacts[0] ? { understanding: conversationSnapshot.inferredFacts[0] } : {}),
           facts: conversationSnapshot.confirmedFacts,
         }
       : normalizedSessionContext;
+    /*
+     * The advice desks (Finance, Study, Research) must not be handed a sticky
+     * session GOAL in the prompt. A single goal bleeds across the shared Personal
+     * Workspace, and once the model is told "the goal is X" it fixates on it —
+     * that is why a Finance chat kept steering every turn back to an old "scan
+     * the GitHub repositories" ask. Keep the confirmed facts (real, user-stated
+     * grounding) but drop the goal and the inferred understanding so the model
+     * answers the question actually in front of it.
+     */
+    const isAdviceDeskPrompt = normalizedStudioDomain === "finance"
+      || normalizedStudioDomain === "education"
+      || normalizedStudioDomain === "research";
+    const promptSessionContext = isAdviceDeskPrompt
+      ? { facts: (basePromptSessionContext as { facts?: string[] })?.facts ?? [] }
+      : basePromptSessionContext;
     const finalSystemPromptBase = buildConversationSystemPrompt({
       cognitiveLevel,
       modelName: modelName || modelId,
@@ -1736,6 +1751,8 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
+    // 429 across the board is quota, not a transient blip — say so honestly.
+    const quotaExhausted = Number(err?.status) === 429 || err?.detailCode === 'quota-exhausted';
     // An auth/billing rejection must never be reported as "retry in a moment".
     const credentialRejected = isProviderCredentialRejection(err);
     const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
@@ -1750,6 +1767,13 @@ export default async function handler(req: any, res: any) {
       // old sentence did neither, and sent somebody to re-issue a Gemini key
       // that its own dashboard showed working at 100% success.
       ? describeCredentialFailure(err, req.body?.modelId)
+      : quotaExhausted
+      /*
+       * "Retry in a moment" is false when the quota is spent — retrying just
+       * burns another failed turn and the person is told the same thing again.
+       * Name the real condition and the real remedy instead.
+       */
+      ? "Every configured AI route is out of quota right now, so retrying will not help this minute. Add or top up a provider key (or wait for the quota window to reset) and I'll pick straight back up."
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
       : "Quantora could not complete this request.";

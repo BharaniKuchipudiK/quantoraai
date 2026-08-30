@@ -9,6 +9,34 @@ const MAX_FIELD_LEN = 280;
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;
 const CTX_START = /<!--\s*quantora-ctx:/i;
 
+/*
+ * A known legacy cross-workspace prompt was once persisted as generic project
+ * memory. Keep two scopes deliberately separate:
+ * - repository-scan SHAPE: broad enough for Study to recognise shortened old
+ *   transcript variants;
+ * - legacy contamination: narrow enough that generic Coding/Research project
+ *   memory is not deleted just because it legitimately discusses repositories.
+ */
+const REPOSITORY_SCAN_TASK = /\bscan\s+through\b[\s\S]{0,120}\bgithub\b[\s\S]{0,120}\bpublic\s+repositor(?:y|ies)\b/i;
+const LEGACY_REPOSITORY_SCAN_TAIL = /\bfind\s+out\s+if\s+we\s+can\b/i;
+
+export function isRepositoryScanTask(text) {
+  return typeof text === 'string' && REPOSITORY_SCAN_TASK.test(text.replace(/\s+/g, ' ').trim());
+}
+
+export function isLegacySessionContamination(text) {
+  if (typeof text !== 'string') return false;
+  const value = text.replace(/\s+/g, ' ').trim();
+  return REPOSITORY_SCAN_TASK.test(value) && LEGACY_REPOSITORY_SCAN_TAIL.test(value);
+}
+
+function cleanMemoryText(text, max) {
+  if (typeof text !== 'string') return undefined;
+  const value = text.trim().slice(0, max);
+  if (!value || isLegacySessionContamination(value)) return undefined;
+  return value;
+}
+
 export function emptySessionContext() {
   return {};
 }
@@ -19,12 +47,11 @@ export function normalizeSessionContext(value) {
     ? value.facts
         .filter((f) => typeof f === 'string' && f.trim().length > 0)
         .map((f) => f.trim().slice(0, MAX_FIELD_LEN))
+        .filter((f) => !isLegacySessionContamination(f))
         .slice(-MAX_FACTS)
     : undefined;
-  const goal = typeof value.goal === 'string' ? value.goal.trim().slice(0, MAX_FIELD_LEN) : undefined;
-  const understanding = typeof value.understanding === 'string'
-    ? value.understanding.trim().slice(0, MAX_FIELD_LEN * 2)
-    : undefined;
+  const goal = cleanMemoryText(value.goal, MAX_FIELD_LEN);
+  const understanding = cleanMemoryText(value.understanding, MAX_FIELD_LEN * 2);
 
   return {
     ...(goal ? { goal } : {}),

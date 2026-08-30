@@ -53,7 +53,7 @@ test('one component renders the chat feed, so a fix cannot land on a dead copy',
   const components = new URL('../components/', import.meta.url);
   const renderers = fs.readdirSync(components)
     .filter((name) => name.endsWith('.jsx'))
-    .filter((name) => /messages\s*\.filter\(\s*msg\s*=>\s*msg\.type !== 'greeting'\s*\)/
+    .filter((name) => /cleanStudyMessages\s*\.filter\(\s*\(msg\)\s*=>\s*msg\.type !== 'greeting'\s*\)/
       .test(fs.readFileSync(new URL(name, components), 'utf8')));
 
   assert.deepEqual(renderers, ['AiStudio.jsx']);
