@@ -6,8 +6,14 @@ import {
   mergeStudySyllabusFromText,
   shouldShowStudySyllabusChips,
   studySyllabusContinueSet,
+  studySyllabusHaystack,
   withStudySyllabusAsk,
 } from './study-syllabus-overlay.js';
+
+const legacyRepositoryTask = [
+  'Scan through the GitHub',
+  ' public repositories and find out if we can leverage them.',
+].join('');
 
 test('infers CBSE 10 from the learner’s own words and then hides the chips', () => {
   const overlay = inferStudySyllabus({ extra: 'Explain thermodynamics for class 10 CBSE' });
@@ -26,9 +32,25 @@ test('does not invent a syllabus when the learner only named a topic', () => {
   }), true);
 });
 
+test('generic project goal and understanding never participate in Study syllabus inference', () => {
+  const context = {
+    goal: `${legacyRepositoryTask} JEE Main`,
+    understanding: 'Class 10 coding repository audit',
+  };
+  assert.equal(studySyllabusHaystack({ conversationContext: context }), '');
+  assert.equal(inferStudySyllabus({ conversationContext: context }), null);
+});
+
+test('Study action prompts scrub cross-workspace project tasks before interpolation', () => {
+  const values = studySyllabusContinueSet(legacyRepositoryTask).items.map((item) => item.value).join('\n');
+  assert.doesNotMatch(values, /github|public repositories|scan through/i);
+  assert.match(values, /Ask what we should learn/i);
+});
+
 test('a syllabus chip is stored as a fact and used to cap the plus Explain ask', () => {
   const next = applyStudySyllabusOverlay({ goal: 'Thermodynamics' }, 'cbse-10');
   assert.match(next.facts[0], /CBSE Class 10/);
+  assert.equal(next.goal, undefined);
   const ask = withStudySyllabusAsk('Teach ONE idea about Thermodynamics.', inferStudySyllabus({ conversationContext: next }));
   assert.match(ask, /Class 10/);
   assert.equal(studySyllabusContinueSet('Thermodynamics').items.length, 7);
@@ -38,6 +60,17 @@ test('typed syllabus on a Study turn is merged without a second chip pick', () =
   const merged = mergeStudySyllabusFromText({}, 'JEE Main projectile motion', 'education');
   assert.match(merged.facts.join(' '), /JEE Main/);
   assert.equal(mergeStudySyllabusFromText({}, 'Bali hotels', 'travel').facts, undefined);
+});
+
+test('entering Study drops generic project goal and understanding even when no syllabus is inferred', () => {
+  const merged = mergeStudySyllabusFromText(
+    { goal: legacyRepositoryTask, understanding: legacyRepositoryTask },
+    'Please continue.',
+    'education',
+  );
+  assert.equal(merged.goal, undefined);
+  assert.equal(merged.understanding, undefined);
+  assert.doesNotMatch(JSON.stringify(merged), /github|public repositories|scan through/i);
 });
 
 test('class plus subjects and a chapter list become stored facts, not a canned TOC', () => {
