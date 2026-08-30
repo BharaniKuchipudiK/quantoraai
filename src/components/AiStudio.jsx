@@ -83,6 +83,8 @@ import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
 import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
+import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
+import { withoutPrivateStudyInstructions } from '../lib/study-private-instructions.js';
 import {
   isStudioSplitMobile,
   loadChatWidthPct,
@@ -1564,7 +1566,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const awaitingStudyAnswer = studioDomain === 'education'
     && !isGenerating
     && studyAwaitsAnswer(lastAiMessage?.text || '');
-  const lastUserMessage = [...messages].reverse().find((message) => message.sender === 'user');
+  const cleanStudyMessages = withoutPrivateStudyInstructions(messages, studioDomain);
+  const lastUserMessage = [...cleanStudyMessages].reverse().find((message) => message.sender === 'user');
   const previewRunCode = runningPreviewCode(vfs, workspaceCode);
   const previewAssemblyKey = previewAssemblyFingerprint(vfs);
   const shellVfs = deskShellVfs(vfs, previewRunCode);
@@ -1590,7 +1593,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const claimFilterOpts = { previewWarming };
 
   const renderedChatFeed = React.useMemo(() => {
-    return messages.filter(msg => msg.type !== 'greeting').map(msg => {
+    return cleanStudyMessages.filter((msg) => msg.type !== 'greeting').map(msg => {
       const runnableCode = msg.sender === 'ai' ? (msg.codeSnippet || extractRunnableCode(msg.text)) : null;
       const isActiveGenerating = isGenerating && msg.id === messages[messages.length - 1].id;
       const isFailover = isActiveGenerating && msg.isFailover;
@@ -2694,6 +2697,9 @@ Paused — ${autoPauseRef.current}.`
     studioDomain,
     lastTurnFailed: Boolean(lastAiMessage?.isError) && !isGenerating,
   });
+  const studyTopicLabel = studioDomain === 'education'
+    ? deriveStudyTutorBrief({ conversationContext, messages }).label
+    : '';
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);
   const isIdeLayout = isCodingDesk;
@@ -3929,7 +3935,7 @@ Paused — ${autoPauseRef.current}.`
                   onClose={() => setShowToolsMenu(false)}
                   isLight={isLight}
                   studioDomain={studioDomain}
-                  topic={conversationContext?.goal || ''}
+                  topic={studioDomain === 'education' ? (studyTopicLabel || 'this topic') : (conversationContext?.goal || '')}
                   onSelectTool={(tool) => {
                     const overlay = inferStudySyllabus({
                       conversationContext,
@@ -3939,7 +3945,7 @@ Paused — ${autoPauseRef.current}.`
                     const action = resolveStudioPlusAction(
                       tool,
                       studioDomain,
-                      conversationContext?.goal || '',
+                      studioDomain === 'education' ? (studyTopicLabel || 'this topic') : (conversationContext?.goal || ''),
                       overlay,
                     );
                     setShowToolsMenu(false);
