@@ -217,6 +217,7 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
     if (deskChecksRegressed(before.checks, after.checks)) {
       return {
         vfs: currentVfs,
+        producedVfs: currentVfs,
         code: pickPreviewEntry(currentVfs),
         didUpdate: false,
         reopenDesk: false,
@@ -227,8 +228,24 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
       };
     }
   }
+  /*
+   * `vfs` is the desk that should EXIST after this turn; `producedVfs` is what
+   * this turn actually built.
+   *
+   * They were one field, and it was the dangerous one that had the obvious
+   * name: a turn that built nothing returned `vfs: {}`, so any caller reading
+   * `.vfs` without first checking `didUpdate` replaced a working project with
+   * an empty desk. Correct only because every caller remembered — which the
+   * stress harness reports as a hazard across 44 call paths.
+   *
+   * The emptiness is still load-bearing for exactly one consumer: the proof
+   * control plane repairs over what the turn produced, and `{}` is how it knows
+   * the turn produced nothing. That reading now has its own name, so it cannot
+   * be reached by accident, and the obvious property is the safe one.
+   */
   return {
-    vfs,
+    vfs: didUpdate ? vfs : currentVfs,
+    producedVfs: vfs,
     code,
     didUpdate,
     reopenDesk: hadProject && didUpdate,

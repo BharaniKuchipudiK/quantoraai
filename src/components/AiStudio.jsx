@@ -907,15 +907,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
      * fired once: a turn that built nothing handed the job planner an empty
      * desk and every step was judged against no files at all.
      *
-     * Checked explicitly here rather than fixed in applyWorkspaceFromChat.
-     * Making the no-op return the desk instead of {} looks obviously right and
-     * broke the desk review gate — proveCodingTurn runs with allowRepair over
-     * `assembled.vfs`, and the emptiness is how that path knows this turn
-     * produced nothing. The stress harness calls it a hazard rather than a
-     * defect for exactly that reason, and the producer-side change is a
-     * separate piece of work with every consumer audited.
+     * That is now fixed at the producer: `assembled.vfs` is the desk this turn
+     * should leave behind, so a no-op returns the existing files rather than
+     * nothing. The one reading that still needs the emptiness — the proof
+     * plane's repair path — takes `producedVfs` by name a few lines below.
      */
-    const deskForJob = assembled.didUpdate ? assembled.vfs : vfs;
+    const deskForJob = assembled.vfs;
     if (proposed) setBuildJob(advanceBuildJob(proposed, deskForJob));
     else setBuildJob((prev) => (prev ? advanceBuildJob(prev, deskForJob) : prev));
     setPatchNote([
@@ -941,7 +938,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
     const proved = proveCodingTurn({
       plan: skillPlan,
-      vfs: assembled.vfs,
+      // What this turn BUILT, not the desk it should leave behind: the repair
+      // path reads emptiness as "produced nothing" and must keep doing so.
+      vfs: assembled.producedVfs,
       job: assembled.job || deskJob,
       brief,
       allowRepair: true,
@@ -2533,7 +2532,8 @@ Paused — ${autoPauseRef.current}.`
         };
         const proved = proveCodingTurn({
           plan: skillPlan,
-          vfs: assembled.vfs,
+          // As above — the proof plane judges what was produced, not the desk.
+          vfs: assembled.producedVfs,
           job: assembled.job || deskJob,
           brief: userBrief,
           allowRepair: true,
