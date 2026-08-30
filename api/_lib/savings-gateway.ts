@@ -15,6 +15,7 @@ import { withNextMoves } from "./deterministic-turn.js";
 import { parseSavingsIntent } from "./savings-goal-intent.js";
 import { hasScenarioOpener } from "./finance-advisor-intent.js";
 import { projectSavings, formatSavingsPlan } from "./savings-goal.js";
+import { buildSavingsProgram, formatSavingsProgram } from "./savings-program.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
 import { guardFinanceGateway } from "./finance-gateway-guard.js";
@@ -92,8 +93,21 @@ async function runSavingsGoal(req: any, res: any): Promise<boolean> {
    * invent the numbers.
    */
   const projection = projectSavings(inputs);
+
+  /*
+   * The plan answers the question that was asked. The program answers the one
+   * behind it: "in 14 months" is arithmetic a person forgets by evening, while
+   * "October 2027" is a date they can be held to. It is appended, never
+   * substituted — when there is no finish line to name (goal already met, or a
+   * pace that never gets there) the plan stands alone rather than being padded
+   * with a date that would have to be invented.
+   */
+  const program = buildSavingsProgram(inputs, projection);
+  const body = [formatSavingsPlan(inputs, projection)];
+  if (program) body.push("", formatSavingsProgram(program));
+
   sendStream(res, requestId, withNextMoves({
-    text: formatSavingsPlan(inputs, projection),
+    text: body.join("\n"),
     question: projection.onTrack ? "Want to press on this?" : "What should I work out next?",
     moves: [
       {
