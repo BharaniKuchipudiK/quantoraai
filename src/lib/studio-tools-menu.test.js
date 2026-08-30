@@ -61,7 +61,17 @@ test('Study menu labels stay topic-neutral while the resolved action receives co
 test('Study icebreaker remains Study-scoped and context-driven', () => {
   const action = resolveStudioPlusAction('study-icebreaker', 'education', 'kinematics');
   assert.equal(action.kind, STUDIO_PLUS_ACTION.PROMPT);
-  assert.match(action.text, /signal that I am ready/i);
+  /*
+   * Assert the BEHAVIOUR, not one phrasing of it. This used to pin the literal
+   * "signal that I am ready" wording, which the human-tutor rewrite replaced
+   * with a diagnostic question that serves the same purpose — and which the
+   * Study contamination cleanup independently flags as a private-instruction
+   * marker that should never reach a learner. Pinning the sentence made the
+   * test guard a copy of the intent instead of the intent: the tutor must ask
+   * one question and stop rather than dumping the lesson.
+   */
+  assert.match(action.text, /ask ONE short question/i);
+  assert.match(action.text, /STOP\. Do not dump the lesson/i);
   assert.match(action.text, /Do not plan trips/i);
 });
 

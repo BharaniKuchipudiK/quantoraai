@@ -4,11 +4,58 @@
  */
 const ROBOTIC_SECTION_LABEL = /(^|\n)[ \t]*(?:\*\*)?(?:why (?:it(?:'|’)s|this is) relevant|context-aware question|key takeaway|tutor question)[ \t]*(?::[ \t]*(?:\*\*)?|(?:\*\*)[ \t]*:)[ \t]*/gi;
 
+const NUDGE_RULES = [
+  {
+    kind: 'wave',
+    label: 'I’m with you',
+    pattern: /^\s*(?:hi|hello|hey|okay|ok|got it|i hear you|let(?:'|’)s start)\b/i,
+  },
+  {
+    kind: 'spark',
+    label: 'Good thinking',
+    pattern: /\b(?:exactly|that(?:'|’)s right|you(?:'|’)ve got it|well spotted|nice reasoning|correct)\b/i,
+  },
+  {
+    kind: 'magnify',
+    label: 'Let’s look closer',
+    pattern: /\b(?:almost|not quite|mix[- ]?up|misconception|confus(?:ed|ing)?|stuck|tricky|close, but)\b/i,
+  },
+  {
+    kind: 'pencil',
+    label: 'Let’s work it out',
+    pattern: /\b(?:try this|practice|solve this|work this out|have a go|test your understanding)\b/i,
+  },
+  {
+    kind: 'idea',
+    label: 'Notice this',
+    pattern: /\b(?:notice|surpris(?:e|ing)|interesting|did you know|worth noticing)\b/i,
+  },
+];
+
 export function polishStudyTutorText(text = '') {
   return normalizeStudyFlashcards(String(text || ''))
     .replace(ROBOTIC_SECTION_LABEL, '$1')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Give each tutor turn a quiet visual cue without asking the model to decorate
+ * its prose. The cue follows the learner-facing tone of the response: welcome,
+ * recognition, repair, practice, insight, or a neutral book for explanation.
+ */
+export function studyTutorNudge(text = '') {
+  const source = polishStudyTutorText(text)
+    .replace(/<quantora-study-(?:picture|lab|flashcard)\b[^>]*\/?\s*>/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!source) return null;
+
+  const openingBeat = source.slice(0, 260);
+  const match = NUDGE_RULES.find((rule) => rule.pattern.test(openingBeat));
+  if (match) return { kind: match.kind, label: match.label };
+
+  return { kind: 'book', label: 'Let’s unpack it' };
 }
 
 function cleanCardCell(value = '') {
