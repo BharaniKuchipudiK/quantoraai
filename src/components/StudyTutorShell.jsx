@@ -2,20 +2,23 @@ import React, { useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import {
   studyActionVisibleText,
+  studyExplainDifferentlyAsk,
   studyLessonAsk,
   studyPracticeAsk,
   studyQuizAsk,
   studyRealWorldAsk,
   studySketchChallengeAsk,
   studyTriviaAsk,
+  studyVisualExplainAsk,
   studyWhereNextAsk,
 } from '../lib/study-learning-resources.js';
 
 /**
  * Conversation-first Study shell.
  *
- * One compact learning beat: topic, evidence state, and three actions. Only a
- * server-issued check expands here; richer work belongs in the conversation.
+ * One compact learning beat: topic, evidence state, and learner-directed next
+ * moves. Only a server-issued check expands here; richer work belongs in the
+ * conversation rather than in a permanent tutor dashboard.
  */
 export default function StudyTutorShell({
   brief,
@@ -128,11 +131,10 @@ export default function StudyTutorShell({
       style={{ maxWidth: '720px', margin: '0 auto 6px', textAlign: 'left' }}
     >
       {/*
-        * A row, not a card. The boxed panel read as a separate surface sitting
-        * between the lesson and the composer, unlike every other set of actions
-        * on the platform, which are chips inline with the conversation. Same
-        * controls, same accessible names, one less container to look at.
-        */}
+        A row, not a card. The boxed panel read as a separate surface sitting
+        between the lesson and the composer. These are learner-directed next
+        moves, so they stay lightweight and inline with the conversation.
+      */}
       <section
         aria-label={`Study focus: ${topic}`}
         style={{ padding: '2px 2px 0' }}
@@ -154,6 +156,8 @@ export default function StudyTutorShell({
             <strong style={{ color: textColor }}>{topic}</strong> · {stateLabel}
           </span>
           <button type="button" onClick={() => askOrSend(studyLessonAsk(topic), 'lesson')} style={actionStyle(false)}>Explain</button>
+          <button type="button" onClick={() => askOrSend(studyExplainDifferentlyAsk(topic), 'different')} style={actionStyle(false)}>Explain differently</button>
+          <button type="button" onClick={() => askOrSend(studyVisualExplainAsk(topic), 'visual')} style={actionStyle(false)}>Show visually</button>
           <button type="button" onClick={() => askOrSend(studyRealWorldAsk(topic), 'real-world')} style={actionStyle(false)}>🌍 Real world</button>
           <button type="button" onClick={() => askOrSend(studyPracticeAsk(topic), 'practice')} style={actionStyle(false)}>🧩 Mini practice</button>
           <button type="button" onClick={() => askOrSend(studySketchChallengeAsk(topic), 'sketch')} style={actionStyle(false)}>🎨 Quick sketch</button>
