@@ -206,9 +206,41 @@ test('INVARIANT: the job planner is never handed a desk chosen by truthiness', (
     /advanceBuildJob\([^)]*\|\|/,
     'advanceBuildJob is being given a desk via ||, which {} defeats — select on didUpdate instead',
   );
+  /*
+   * The old form of this guard required the caller to pick the desk with
+   * `assembled.didUpdate ? assembled.vfs : vfs`. That workaround existed
+   * because the producer returned {} for a turn that built nothing, so every
+   * caller had to remember. The producer now returns the existing desk, and
+   * the emptiness lives on `producedVfs` for the one consumer that needs it.
+   *
+   * So the guard moves to the new footgun: `producedVfs` is the dangerous
+   * value now, and it must never reach the job planner.
+   */
+  assert.doesNotMatch(
+    studio,
+    /advanceBuildJob\([^)]*producedVfs/,
+    'advanceBuildJob must never be handed producedVfs — {} would judge every step against no files',
+  );
   assert.match(
     studio,
-    /assembled\.didUpdate \? assembled\.vfs :/,
-    'the desk handed to the job planner must be chosen by didUpdate',
+    /const deskForJob = assembled\.vfs;/,
+    'the job planner takes the desk the turn should leave behind',
   );
+});
+
+/*
+ * The producer-side guarantee the guard above now leans on. A chat turn that
+ * builds nothing must hand back the desk that already existed — never {} —
+ * so a caller reading `.vfs` cannot erase a working project by forgetting a
+ * flag. The stress harness reported this as a hazard across 44 call paths.
+ */
+test('INVARIANT: a no-op turn returns the existing desk, not an empty one', async () => {
+  const { applyWorkspaceFromChat } = await import('./studio-preview-helpers.js');
+  const desk = {
+    'index.html': { content: '<!DOCTYPE html><html><body>Kept</body></html>', language: 'html' },
+  };
+  const result = applyWorkspaceFromChat('Thanks, looks good.', desk);
+  assert.equal(result.didUpdate, false);
+  assert.deepEqual(result.vfs, desk, 'a no-op must not blank the desk');
+  assert.deepEqual(result.producedVfs, {}, 'and must still report that it built nothing');
 });
