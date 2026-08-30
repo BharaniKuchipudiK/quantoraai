@@ -141,8 +141,7 @@ export default function StudyFlashcards({ cards = [] }) {
           disabled={index === deck.length - 1}
           onClick={() => move(index + 1)}
           style={navStyle(index === deck.length - 1)}
-        >
-          Next <ArrowRight size={13} />
+        >Next <ArrowRight size={13} />
         </button>
       </div>
     </section>
