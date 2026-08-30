@@ -17,6 +17,8 @@
  *    never from switching on a famous chapter name.
  */
 
+import { isLegacySessionContamination } from './session-context.js';
+
 export const STUDY_SYLLABUS_FACT_PREFIX = 'Syllabus overlay:';
 export const STUDY_NODE_FACT_PREFIX = 'Syllabus node:';
 export const STUDY_SUBJECT_FACT_PREFIX = 'Study subject:';
@@ -94,12 +96,26 @@ function clipLabel(text, max = 80) {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
+const CROSS_WORKSPACE_TASK = /(?:\b(?:scan|search|inspect|audit|review|clone|commit|merge|deploy|implement|code|build|fix|modify|edit)\b[\s\S]{0,100}\b(?:github|repositori(?:y|ies)|repo|codebase|pull\s+request|branch|deployment|website|app)\b)|(?:\b(?:github|repositori(?:y|ies)|repo|codebase|pull\s+request|branch|deployment)\b[\s\S]{0,100}\b(?:scan|search|inspect|audit|review|clone|commit|merge|deploy|implement|code|build|fix|modify|edit)\b)/i;
+
+export function safeStudyTopicInput(text = '') {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!value || isLegacySessionContamination(value) || /\bhttps?:\/\//i.test(value)) return '';
+  if (CROSS_WORKSPACE_TASK.test(value)) return '';
+  return clipLabel(value, 72);
+}
+
 export function studySyllabusHaystack({ conversationContext = {}, messages = [], extra = '' } = {}) {
-  const facts = conversationContext.facts || [];
+  const facts = (conversationContext.facts || [])
+    .filter((fact) => !isLegacySessionContamination(String(fact || '')));
   const users = (messages || [])
     .filter((message) => message?.sender === 'user' && message.text)
     .map((message) => String(message.text));
-  return [conversationContext.goal, conversationContext.understanding, ...facts, ...users, extra]
+
+  // Generic project goal/understanding deliberately do not participate in Study
+  // inference. Those fields are cross-workspace memory; Study syllabus truth is
+  // learner text plus Study facts only.
+  return [...facts, ...users, extra]
     .filter(Boolean)
     .join('\n');
 }
@@ -162,12 +178,10 @@ export function shouldShowStudySyllabusChips({ studioDomain, conversationContext
 export function applyStudySyllabusOverlay(context, chipId) {
   const chip = chipById(chipId);
   if (!chip) return context || {};
-  const facts = (context?.facts || []).filter((fact) => !String(fact).startsWith(STUDY_SYLLABUS_FACT_PREFIX));
-  return {
-    ...(context?.goal ? { goal: context.goal } : {}),
-    ...(context?.understanding ? { understanding: context.understanding } : {}),
-    facts: [...facts, chip.fact],
-  };
+  const facts = (context?.facts || [])
+    .filter((fact) => !isLegacySessionContamination(String(fact || '')))
+    .filter((fact) => !String(fact).startsWith(STUDY_SYLLABUS_FACT_PREFIX));
+  return { facts: [...facts, chip.fact] };
 }
 
 const TOPIC_LEAD = /^(?:please\s+)?(?:can you\s+|could you\s+)?(?:teach(?:\s+me)?|explain|let(?:'|’)?s\s+learn|help me (?:to\s+)?(?:learn|with)|i(?:'m| am) (?:stuck on|struggling with)|i keep missing|quiz me on|test me on|revise|review)\s+/i;
@@ -184,7 +198,7 @@ function cleanTopicRest(rest = '') {
 
 export function extractStudyTopicLabel(text = '') {
   const raw = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!raw) return '';
+  if (!raw || isLegacySessionContamination(raw)) return '';
   const first = raw.split(/[?!\n]/)[0] || raw;
   if (TOPIC_LEAD.test(first)) return cleanTopicRest(first.replace(TOPIC_LEAD, ''));
   if (WHAT_IS.test(first)) return cleanTopicRest(first.replace(WHAT_IS, ''));
@@ -198,7 +212,7 @@ function uniqueLabels(values) {
   const out = [];
   for (const value of values) {
     const label = clipLabel(value, 72);
-    if (!label) continue;
+    if (!label || isLegacySessionContamination(label)) continue;
     const key = label.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -209,6 +223,7 @@ function uniqueLabels(values) {
 
 export function parsePrefixedFacts(facts = [], prefix) {
   return (facts || [])
+    .filter((fact) => !isLegacySessionContamination(String(fact || '')))
     .filter((fact) => String(fact).startsWith(prefix))
     .map((fact) => String(fact).slice(prefix.length).trim())
     .filter(Boolean);
@@ -313,14 +328,14 @@ function extractCompetencyMentions(text = '', node = '') {
 
 function withFact(facts, prefix, value) {
   const label = clipLabel(value, 72);
-  if (!label) return facts;
+  if (!label || isLegacySessionContamination(label)) return facts;
   const line = `${prefix} ${label}`;
   if (facts.some((fact) => String(fact).toLowerCase() === line.toLowerCase())) return facts;
   return [...facts, line];
 }
 
 export function mergeStudyGraphFromText(context = {}, text = '') {
-  const facts = [...(context?.facts || [])];
+  const facts = (context?.facts || []).filter((fact) => !isLegacySessionContamination(String(fact || '')));
   let nextFacts = facts;
   const topic = extractStudyTopicLabel(text);
   const listedNodes = listAfterLabel(text, /\b(?:chapters?|topics?|units?)\s*:\s*([^\n]+)/i);
@@ -334,33 +349,31 @@ export function mergeStudyGraphFromText(context = {}, text = '') {
     const value = row.node ? `${row.tag} @ ${row.node}` : row.tag;
     nextFacts = withFact(nextFacts, STUDY_COMPETENCY_FACT_PREFIX, value);
   }
-  if (nextFacts === facts) return context || {};
-  return {
-    ...(context?.goal ? { goal: context.goal } : {}),
-    ...(context?.understanding ? { understanding: context.understanding } : {}),
-    facts: nextFacts,
-  };
+
+  // Study carries Study facts only. Generic goal/understanding are project-wide
+  // memory and must not be copied back into the Study context.
+  return nextFacts.length ? { facts: nextFacts } : {};
 }
 
 export function mergeStudySyllabusFromText(context, text, studioDomain) {
   if (studioDomain !== 'education') return context || {};
-  let next = context || {};
+
+  // Domain boundary: enter Study with only Study facts. This intentionally
+  // drops generic project goal/understanding before any syllabus or topic work.
+  const cleanFacts = (context?.facts || []).filter((fact) => !isLegacySessionContamination(String(fact || '')));
+  let next = cleanFacts.length ? { facts: cleanFacts } : {};
   if (!inferStudySyllabus({ conversationContext: next })) {
     const inferred = inferStudySyllabus({ extra: text });
     if (inferred?.fact) {
       const facts = (next.facts || []).filter((fact) => !String(fact).startsWith(STUDY_SYLLABUS_FACT_PREFIX));
-      next = {
-        ...(next.goal ? { goal: next.goal } : {}),
-        ...(next.understanding ? { understanding: next.understanding } : {}),
-        facts: [...facts, inferred.fact],
-      };
+      next = { facts: [...facts, inferred.fact] };
     }
   }
   return mergeStudyGraphFromText(next, text);
 }
 
 export function studySyllabusSendText(chip, topic = '') {
-  const label = String(topic || '').trim();
+  const label = safeStudyTopicInput(topic);
   const lead = chip?.sendLead || 'Teach at the depth already on this thread.';
   if (chip?.id === 'open') {
     return label
