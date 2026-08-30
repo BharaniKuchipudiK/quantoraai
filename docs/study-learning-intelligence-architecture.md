@@ -202,7 +202,7 @@ version
 
 ### Release rule
 
-Only reviewed / governed items may contribute to high-confidence verified mastery unless an explicitly designed rubric path can grade the item deterministically enough for the target use case.
+**Every item that can contribute to verified mastery must be reviewed and governed.** A deterministic rubric or deterministic grader makes scoring reproducible; it does not prove that the question, answer key, rubric, prerequisite mapping or misconception mapping is educationally valid. Deterministic grading therefore governs **how an already valid, reviewed item is scored** and never upgrades an unreviewed or LLM-drafted item into high-confidence verified evidence.
 
 Use QTI-compatible concepts where practical so Quantora does not trap assessment content in a proprietary dead end.
 
@@ -438,6 +438,7 @@ Example envelope:
 
 ```text
 event_id
+schema_version
 learner_id
 session_id
 concept_id
@@ -453,6 +454,8 @@ representation?
 source_context?
 model_version
 ```
+
+`schema_version` identifies the event contract and serialization semantics. `model_version` identifies the learner/scoring model that interpreted or produced the projection. They are intentionally separate so historical events remain replayable across schema and model upgrades.
 
 The Learner Graph is a projection over this ledger.
 
@@ -470,7 +473,7 @@ The Learner Graph is a projection over this ledger.
 
 ## 14. Quantora Monochrome Design System
 
-The Study roadmap adopts a strict black/white visual language as the next implementation phase.
+The **entire Quantora platform** adopts a strict black/white visual language as the target design system. Study is the first migration wave because it is currently the clearest proving ground for learning-focused interaction and can validate the system before Travel, Finance, Coding, Shop, Preview and shared platform chrome are migrated.
 
 ### 14.1 Palette
 
@@ -505,11 +508,17 @@ Correctness, selection, focus and warning states must remain clear through icono
 
 ### 14.4 Migration rule
 
-Do not patch isolated Study screens with hard-coded black/white values.
+Do not repaint isolated screens with hard-coded black/white values.
 
-First establish semantic design tokens and component contracts, then migrate surfaces systematically.
+First establish **global semantic monochrome tokens and component contracts**, then migrate in controlled waves:
 
-No new arbitrary inline accent colors should be introduced after the migration begins.
+1. Study flashcards and tutor nudges
+2. Study shell, assessment states and controls
+3. Study teaching visuals
+4. shared platform chrome / welcome hub / Studio shell
+5. Travel, Finance, Coding, Shop and Preview surfaces
+
+No new arbitrary inline accent colors should be introduced after the migration begins. The end-state is platform-wide monochrome even while migration is deliberately phased for safety.
 
 ---
 
@@ -569,7 +578,7 @@ Deliverables:
 - one learner truth decision
 - one evidence ledger direction
 - one integration ordering
-- one monochrome design-system direction
+- one global monochrome design-system direction
 - explicit exit gates for subsequent phases
 
 **Exit gate:** no new Study capability is approved if it creates a second source of learner truth.
@@ -578,24 +587,27 @@ Deliverables:
 
 ### Phase B — Black / White Design System
 
-**Goal:** establish the permanent visual foundation before adding more Study chrome.
+**Goal:** establish the permanent **platform-wide** visual foundation, beginning with Study before adding more Study chrome or migrating the remaining workspaces.
 
 Deliverables:
 
-- semantic monochrome tokens
+- global semantic monochrome tokens
 - black/white component primitives
-- remove Study gradients / accent colors
+- remove Study gradients / accent colors first
 - migrate Flashcards, Tutor shell, visual cards and Study controls
 - accessibility states without gray/color dependence
 - regression screenshots / browser gates
+- controlled follow-on migration for shared chrome and remaining workspaces
 
-**Exit gates:**
+**Exit gates for the Study proving wave:**
 
 - target Study surfaces use only #000 and #FFF for UI color
 - no gradients on Study surfaces
 - no hard-coded legacy orange/slate/blue/green in migrated Study components
 - keyboard/focus/reduced-motion gates pass
 - conversation remains dominant
+
+**Platform completion gate:** shared chrome and every workspace complete the same monochrome contract without reintroducing gradients, shades or semantic dependence on color.
 
 ---
 
@@ -647,7 +659,7 @@ Deliverables:
 
 Deliverables:
 
-- versioned evidence ledger
+- versioned evidence ledger with independent schema and model versions
 - persistent concept projection
 - retention timeline
 - confidence calibration
@@ -657,7 +669,7 @@ Deliverables:
 
 - Tutor, Flashcards, Quiz and Practice consume the same projection
 - evidence can be replayed into the same graph state deterministically
-- model upgrades are versioned
+- model upgrades are versioned independently from event-schema upgrades
 
 ---
 
@@ -736,7 +748,7 @@ Quantora already has important foundations:
 
 This roadmap deliberately builds on those pieces rather than replacing them.
 
-The next production implementation phase is therefore **Phase B — Quantora Monochrome Design System**.
+The next production implementation phase is therefore **Phase B — Quantora Monochrome Design System**, beginning with the Study proving wave and then expanding platform-wide.
 
 ---
 
