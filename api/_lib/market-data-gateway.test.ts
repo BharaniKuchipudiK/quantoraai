@@ -265,3 +265,73 @@ test("a live quote answers with a real dated close", async () => {
     assert.match(res.text(), /233\.87/, "a company name must reach the real quote");
   } finally { restore(); }
 });
+
+/*
+ * Real-time first, end-of-day beneath it.
+ *
+ * A deployment with no FINNHUB_API_KEY must quote exactly as it did before, and
+ * a real-time OUTAGE must fall through to the settled close rather than end the
+ * turn — a yesterday's close beats no answer at all.
+ */
+test("a real-time quote is labelled live, not 'last close'", async () => {
+  const saved = process.env.FINNHUB_API_KEY;
+  process.env.FINNHUB_API_KEY = "test-key";
+  const restore = withFetch((async (url: any) => {
+    if (String(url).includes("finnhub.io")) {
+      return { ok: true, status: 200, json: async () => ({ c: 233.87, h: 234.5, l: 231, o: 232.1, t: Math.floor(Date.now() / 1000) }) } as any;
+    }
+    throw new Error("stooq must not be consulted when real-time answered");
+  }) as any);
+  try {
+    const res = capturingRes();
+    assert.equal(await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "What is the price of AAPL?" }, headers: {} }, res,
+    ), true);
+    const text = res.text();
+    assert.match(text, /233\.87/);
+    assert.match(text, /\(live\)/, "an intraday price must not be called a close");
+    assert.doesNotMatch(text, /last close/);
+  } finally {
+    restore();
+    if (saved === undefined) delete process.env.FINNHUB_API_KEY; else process.env.FINNHUB_API_KEY = saved;
+  }
+});
+
+test("with no key, quoting falls back to the end-of-day close unchanged", async () => {
+  const saved = process.env.FINNHUB_API_KEY;
+  delete process.env.FINNHUB_API_KEY;
+  const restore = withFetch((async (url: any) => {
+    if (String(url).includes("finnhub.io")) throw new Error("must not call finnhub without a key");
+    return { ok: true, status: 200, text: async () => `Symbol,Date,Open,High,Low,Close,Volume\nAAPL.US,${today()},232.1,234.5,231,233.87,41230000\n` } as any;
+  }) as any);
+  try {
+    const res = capturingRes();
+    assert.equal(await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "What is the price of AAPL?" }, headers: {} }, res,
+    ), true);
+    assert.match(res.text(), /233\.87/);
+    assert.match(res.text(), /last close/, "an EOD bar must be labelled a close");
+  } finally {
+    restore();
+    if (saved !== undefined) process.env.FINNHUB_API_KEY = saved;
+  }
+});
+
+test("a real-time outage falls through to the end-of-day close", async () => {
+  const saved = process.env.FINNHUB_API_KEY;
+  process.env.FINNHUB_API_KEY = "test-key";
+  const restore = withFetch((async (url: any) => {
+    if (String(url).includes("finnhub.io")) return { ok: false, status: 429, json: async () => ({}) } as any;
+    return { ok: true, status: 200, text: async () => `Symbol,Date,Open,High,Low,Close,Volume\nAAPL.US,${today()},232.1,234.5,231,233.87,41230000\n` } as any;
+  }) as any);
+  try {
+    const res = capturingRes();
+    assert.equal(await handleMarketDataLookup(
+      { method: "POST", body: { studioDomain: "finance", message: "What is the price of AAPL?" }, headers: {} }, res,
+    ), true);
+    assert.match(res.text(), /233\.87/, "an over-quota real-time feed must not cost the user their answer");
+  } finally {
+    restore();
+    if (saved === undefined) delete process.env.FINNHUB_API_KEY; else process.env.FINNHUB_API_KEY = saved;
+  }
+});
