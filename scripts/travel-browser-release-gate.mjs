@@ -209,8 +209,10 @@ try {
   await visible(textarea, 'Travel prompt input is missing.');
 
   await textarea.fill('One line');
+  await page.waitForTimeout(120); // let the auto-resize effect settle before measuring
   const oneLineHeight = await textarea.evaluate((node) => node.getBoundingClientRect().height);
   await textarea.fill(Array.from({ length: 14 }, (_, index) => `Line ${index + 1} of a deliberately longer travel prompt`).join('\n'));
+  await page.waitForTimeout(200); // the max-height clamp applies on the next frames, not synchronously with fill()
   const multiLineHeight = await textarea.evaluate((node) => node.getBoundingClientRect().height);
   if (!(multiLineHeight > oneLineHeight) || multiLineHeight > 176) {
     throw new Error(`Travel composer sizing regressed (${oneLineHeight}px → ${multiLineHeight}px).`);
