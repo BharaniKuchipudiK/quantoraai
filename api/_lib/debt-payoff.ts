@@ -24,6 +24,14 @@ export type PayoffResult = {
   totalInterest: number;
   totalPaid: number;
   order: string[]; // names in the order they are cleared
+  /*
+   * The same clearances as `order`, each with the month it happens in. The
+   * simulation always knew this — the loop records a clearance inside the month
+   * that produced it — and used to throw the month away, which left the desk
+   * able to say WHICH debt goes first but never WHEN. That month is the whole
+   * substance of a payoff milestone.
+   */
+  cleared: Array<{ name: string; month: number }>;
   reason?: string; // set when infeasible
 };
 
@@ -48,7 +56,7 @@ export function simulatePayoff(
   affordableMonthly?: number | null,
 ): PayoffResult {
   const base: PayoffResult = {
-    strategy, feasible: false, months: 0, totalInterest: 0, totalPaid: 0, order: [],
+    strategy, feasible: false, months: 0, totalInterest: 0, totalPaid: 0, order: [], cleared: [],
   };
   if (!debts.length) return { ...base, feasible: true };
 
@@ -73,6 +81,7 @@ export function simulatePayoff(
 
   const balances = debts.map((d) => Math.max(0, d.balance));
   const order: string[] = [];
+  const cleared: Array<{ name: string; month: number }> = [];
   let totalInterest = 0;
   let months = 0;
 
@@ -111,13 +120,16 @@ export function simulatePayoff(
 
     // 4) Record any debts cleared this month.
     for (let i = 0; i < balances.length; i += 1) {
-      if (balances[i] <= CENT && !order.includes(debts[i].name)) order.push(debts[i].name);
+      if (balances[i] <= CENT && !order.includes(debts[i].name)) {
+        order.push(debts[i].name);
+        cleared.push({ name: debts[i].name, month: months });
+      }
     }
   }
 
   const feasible = balances.every((b) => b <= CENT);
   if (!feasible) {
-    return { ...base, months, totalInterest, reason: `Balances do not clear within ${HORIZON_MONTHS} months — the budget barely covers interest.` };
+    return { ...base, months, totalInterest, order, cleared, reason: `Balances do not clear within ${HORIZON_MONTHS} months — the budget barely covers interest.` };
   }
 
   const principal = debts.reduce((sum, d) => sum + Math.max(0, d.balance), 0);
@@ -128,6 +140,7 @@ export function simulatePayoff(
     totalInterest: Number(totalInterest.toFixed(2)),
     totalPaid: Number((principal + totalInterest).toFixed(2)),
     order,
+    cleared,
   };
 }
 
