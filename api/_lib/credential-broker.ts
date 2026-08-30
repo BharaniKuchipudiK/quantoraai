@@ -51,6 +51,8 @@ type BrokerDependencies = {
   serviceRoleKey?: string | null;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  /** Test seam for the last-known-good credential cache's TTL arithmetic. */
+  now?: number;
 };
 
 export function normalizeServerCredentialId(value: unknown): ServerCredentialId | null {
@@ -70,6 +72,44 @@ async function fetchWithDeadline(
   return fetchFn(input, { ...init, signal });
 }
 
+
+/*
+ * Last-known-good credential cache — the fix for "no healthy AI route".
+ *
+ * Every chat turn re-reads the gateway credential from Supabase, and this
+ * function fails SOFT (returns null) on any hiccup: a timeout, a cold start, a
+ * transient non-2xx. That null then flows all the way to planInferenceRoutes as
+ * "this gateway has no credential", every route is dropped, and a signed-in user
+ * whose key is perfectly valid is told Quantora "could not reach a healthy AI
+ * route" — on a plain question, seconds after the same key served a turn.
+ *
+ * A credential that resolved a moment ago has not stopped existing because one
+ * lookup timed out. Cache the last good value per provider in module memory and
+ * serve it when a live read fails, so a blip in the credential BACKEND can no
+ * longer masquerade as a missing key. Bounded by TTL so a genuinely revoked or
+ * rotated key still drains out; a successful read always refreshes the entry.
+ *
+ * Process-local by design (serverless instances each keep their own) — this is
+ * a resilience buffer, never a source of truth.
+ */
+const CREDENTIAL_CACHE_TTL_MS = 10 * 60 * 1000;
+const credentialCache = new Map<string, { value: string; storedAt: number }>();
+
+/** Test seam: drop every cached credential. */
+export function clearGatewayCredentialCache(): void {
+  credentialCache.clear();
+}
+
+function cachedCredential(id: string, now: number): string | null {
+  const hit = credentialCache.get(id);
+  if (!hit) return null;
+  if (now - hit.storedAt > CREDENTIAL_CACHE_TTL_MS) {
+    credentialCache.delete(id);
+    return null;
+  }
+  return hit.value;
+}
+
 /**
  * Read exactly one allow-listed credential from the existing Supabase gateway.
  * This compatibility backend fails soft and never exposes service-role material.
@@ -81,8 +121,12 @@ export async function fetchGatewayCredential(
   const id = normalizeServerCredentialId(provider);
   if (!id) return null;
 
+  const now = dependencies.now ?? Date.now();
   const supabaseUrl = dependencies.supabaseUrl ?? process.env.SUPABASE_URL ?? null;
   const serviceRoleKey = dependencies.serviceRoleKey ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? null;
+  // Missing configuration is a real "no credential", not a blip — do not serve
+  // a cached value over it, or a deliberately unconfigured deployment would
+  // keep answering from a key it is no longer meant to have.
   if (!supabaseUrl || !serviceRoleKey) return null;
 
   const fetchFn = dependencies.fetchFn || fetch;
@@ -98,14 +142,33 @@ export async function fetchGatewayCredential(
         Authorization: `Bearer ${serviceRoleKey}`,
       },
     }, timeoutMs);
-    if (!response.ok) return null;
+    // A 5xx/timeout is the backend faltering, not the key vanishing. A 4xx is
+    // the backend answering clearly, so it drains the cache instead.
+    if (!response.ok) {
+      if (response.status >= 500) return cachedCredential(id, now);
+      credentialCache.delete(id);
+      return null;
+    }
     const data: unknown = await response.json();
-    if (!Array.isArray(data) || !data.length) return null;
+    if (!Array.isArray(data) || !data.length) {
+      credentialCache.delete(id);
+      return null;
+    }
     const apiKey = (data[0] as any)?.api_key;
-    return typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : null;
+    const resolved = typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : null;
+    if (resolved) credentialCache.set(id, { value: resolved, storedAt: now });
+    else credentialCache.delete(id);
+    return resolved;
   } catch (error: any) {
-    console.warn(`[CredentialBroker] ${id} credential backend unavailable:`, error?.message || 'request_failed');
-    return null;
+    // Network/timeout: fall back to the last credential that actually worked so
+    // one slow read cannot stand a whole turn down with "no healthy AI route".
+    const fallback = cachedCredential(id, now);
+    console.warn(
+      `[CredentialBroker] ${id} credential backend unavailable:`,
+      error?.message || 'request_failed',
+      fallback ? '(served last-known-good credential)' : '(no cached credential)',
+    );
+    return fallback;
   }
 }
 

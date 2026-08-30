@@ -202,25 +202,17 @@ try {
     'Fork Chat is still incorrectly pinned to the top of Travel.',
   );
 
-  const arena = page.locator('[data-quantora-dual-arena]').first();
-  await visible(arena, 'Dual Arena is missing from Travel.');
-  await arena.click();
-  await page.waitForTimeout(120);
-  if (!/Arena Active/i.test(await arena.innerText())) {
-    throw new Error('Dual Arena did not activate the real React arena state in Travel.');
-  }
-  await arena.click();
-  await page.waitForTimeout(120);
-  if (/Arena Active/i.test(await arena.innerText())) {
-    throw new Error('Dual Arena could not be switched off again.');
-  }
+  // Dual Arena is intentionally hidden across all workspaces now — assert its absence.
+  await hidden(page.locator('[data-quantora-dual-arena]').first(), 'Dual Arena should be hidden in Travel.');
 
   const textarea = page.locator('.app-shell--studio textarea').first();
   await visible(textarea, 'Travel prompt input is missing.');
 
   await textarea.fill('One line');
+  await page.waitForTimeout(120); // let the auto-resize effect settle before measuring
   const oneLineHeight = await textarea.evaluate((node) => node.getBoundingClientRect().height);
   await textarea.fill(Array.from({ length: 14 }, (_, index) => `Line ${index + 1} of a deliberately longer travel prompt`).join('\n'));
+  await page.waitForTimeout(200); // the max-height clamp applies on the next frames, not synchronously with fill()
   const multiLineHeight = await textarea.evaluate((node) => node.getBoundingClientRect().height);
   if (!(multiLineHeight > oneLineHeight) || multiLineHeight > 176) {
     throw new Error(`Travel composer sizing regressed (${oneLineHeight}px → ${multiLineHeight}px).`);
