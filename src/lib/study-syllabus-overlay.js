@@ -32,6 +32,30 @@ export const STUDY_FIGURE_URL_PREFIX = 'Figure URL:';
 export const STUDY_FOUNDATION_PREFIX = 'Foundation:';
 export const STUDY_FLASHCARD_PREFIX = 'Flashcard:';
 
+const STUDY_FACT_PREFIXES = Object.freeze([
+  STUDY_SYLLABUS_FACT_PREFIX,
+  STUDY_NODE_FACT_PREFIX,
+  STUDY_SUBJECT_FACT_PREFIX,
+  STUDY_COMPETENCY_FACT_PREFIX,
+  STUDY_CHECK_PASSED_PREFIX,
+  STUDY_EVIDENCE_VERIFIED_PREFIX,
+  STUDY_CHECK_MISSED_PREFIX,
+  STUDY_FIGURE_URL_PREFIX,
+  STUDY_FOUNDATION_PREFIX,
+  STUDY_FLASHCARD_PREFIX,
+]);
+
+export function isStudyOwnedFact(fact) {
+  const value = String(fact || '').trim();
+  return Boolean(value)
+    && !isLegacySessionContamination(value)
+    && STUDY_FACT_PREFIXES.some((prefix) => value.startsWith(prefix));
+}
+
+function studyOwnedFacts(facts = []) {
+  return (facts || []).filter(isStudyOwnedFact);
+}
+
 /** How a paper can test an idea the student already named — not a chapter list. */
 export const STUDY_COMPETENCY_TAGS = Object.freeze([
   'recall',
@@ -106,22 +130,21 @@ export function safeStudyTopicInput(text = '') {
 }
 
 export function studySyllabusHaystack({ conversationContext = {}, messages = [], extra = '' } = {}) {
-  const facts = (conversationContext.facts || [])
-    .filter((fact) => !isLegacySessionContamination(String(fact || '')));
+  const facts = studyOwnedFacts(conversationContext.facts);
   const users = (messages || [])
     .filter((message) => message?.sender === 'user' && message.text)
     .map((message) => String(message.text));
 
-  // Generic project goal/understanding deliberately do not participate in Study
-  // inference. Those fields are cross-workspace memory; Study syllabus truth is
-  // learner text plus Study facts only.
+  // Generic project goal/understanding and generic project facts deliberately
+  // do not participate in Study inference. Study syllabus truth is learner text
+  // plus Study-owned facts only.
   return [...facts, ...users, extra]
     .filter(Boolean)
     .join('\n');
 }
 
 function overlayFromFact(facts = []) {
-  const line = (facts || []).find((fact) => String(fact).startsWith(STUDY_SYLLABUS_FACT_PREFIX));
+  const line = studyOwnedFacts(facts).find((fact) => String(fact).startsWith(STUDY_SYLLABUS_FACT_PREFIX));
   if (!line) return null;
   if (/targeting a competitive exam/i.test(line)) {
     return {
@@ -178,8 +201,7 @@ export function shouldShowStudySyllabusChips({ studioDomain, conversationContext
 export function applyStudySyllabusOverlay(context, chipId) {
   const chip = chipById(chipId);
   if (!chip) return context || {};
-  const facts = (context?.facts || [])
-    .filter((fact) => !isLegacySessionContamination(String(fact || '')))
+  const facts = studyOwnedFacts(context?.facts)
     .filter((fact) => !String(fact).startsWith(STUDY_SYLLABUS_FACT_PREFIX));
   return { facts: [...facts, chip.fact] };
 }
@@ -222,8 +244,7 @@ function uniqueLabels(values) {
 }
 
 export function parsePrefixedFacts(facts = [], prefix) {
-  return (facts || [])
-    .filter((fact) => !isLegacySessionContamination(String(fact || '')))
+  return studyOwnedFacts(facts)
     .filter((fact) => String(fact).startsWith(prefix))
     .map((fact) => String(fact).slice(prefix.length).trim())
     .filter(Boolean);
@@ -335,7 +356,7 @@ function withFact(facts, prefix, value) {
 }
 
 export function mergeStudyGraphFromText(context = {}, text = '') {
-  const facts = (context?.facts || []).filter((fact) => !isLegacySessionContamination(String(fact || '')));
+  const facts = studyOwnedFacts(context?.facts);
   let nextFacts = facts;
   const topic = extractStudyTopicLabel(text);
   const listedNodes = listAfterLabel(text, /\b(?:chapters?|topics?|units?)\s*:\s*([^\n]+)/i);
@@ -350,17 +371,18 @@ export function mergeStudyGraphFromText(context = {}, text = '') {
     nextFacts = withFact(nextFacts, STUDY_COMPETENCY_FACT_PREFIX, value);
   }
 
-  // Study carries Study facts only. Generic goal/understanding are project-wide
-  // memory and must not be copied back into the Study context.
+  // Study carries Study facts only. Generic goal/understanding and unrelated
+  // project facts are not copied back into the Study context.
   return nextFacts.length ? { facts: nextFacts } : {};
 }
 
 export function mergeStudySyllabusFromText(context, text, studioDomain) {
   if (studioDomain !== 'education') return context || {};
 
-  // Domain boundary: enter Study with only Study facts. This intentionally
-  // drops generic project goal/understanding before any syllabus or topic work.
-  const cleanFacts = (context?.facts || []).filter((fact) => !isLegacySessionContamination(String(fact || '')));
+  // Domain boundary: enter Study with only Study-owned facts. This intentionally
+  // drops generic project goal/understanding and unrelated project facts before
+  // any syllabus or topic work.
+  const cleanFacts = studyOwnedFacts(context?.facts);
   let next = cleanFacts.length ? { facts: cleanFacts } : {};
   if (!inferStudySyllabus({ conversationContext: next })) {
     const inferred = inferStudySyllabus({ extra: text });
