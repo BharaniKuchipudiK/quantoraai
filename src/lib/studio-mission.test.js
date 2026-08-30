@@ -8,6 +8,11 @@ import {
   toShortMissionGoal,
 } from './studio-mission.js';
 
+const LEGACY_REPOSITORY_SCAN = [
+  'Scan through the GitHub',
+  ' public repositories and find out if we can leverage them',
+].join('');
+
 test('mission goal is a short title, not a Help-me prompt dump', () => {
   const raw = 'Help me build an AI agent that help me to go through my google drive and analyse the files so I can clean up duplicates and organise folders by project';
   const goal = toShortMissionGoal(raw);
@@ -146,10 +151,8 @@ test('an Office mission does not tell the user to publish a website', () => {
 });
 
 test('a bled sticky goal never surfaces on the Finance advice desk', () => {
-  // A stale build/scan ask from another chat in the shared Personal Workspace
-  // must not become "Working through: Scan through the GitHub…" on a Finance turn.
   const mission = deriveStudioMission({
-    conversationContext: { goal: 'Scan through the GitHub public repositories and find out if we can leverage them' },
+    conversationContext: { goal: LEGACY_REPOSITORY_SCAN },
     messages: [{ sender: 'user', text: 'how much is APL?' }],
     studioDomain: 'finance',
   });
@@ -161,7 +164,7 @@ test('a bled sticky goal never surfaces on the Study / Research advice desks', (
   for (const studioDomain of ['education', 'research']) {
     const mission = deriveStudioMission({
       conversationContext: {
-        goal: 'Scan through the GitHub public repositories and find out if we can leverage them',
+        goal: LEGACY_REPOSITORY_SCAN,
         understanding: 'Drive Cleaner Agent dashboard is in Preview.',
       },
       messages: [{ sender: 'user', text: 'explain photosynthesis' }],
