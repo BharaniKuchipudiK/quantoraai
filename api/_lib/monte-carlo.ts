@@ -11,7 +11,9 @@
  */
 
 // Deterministic PRNG (mulberry32) — small, fast, good enough for planning sims.
-function mulberry32(seed: number): () => number {
+// Exported so other seeded simulations (e.g. the FX projection) draw from the
+// same reproducible primitive rather than duplicating it.
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a |= 0;
@@ -23,7 +25,7 @@ function mulberry32(seed: number): () => number {
 }
 
 // Standard normal via Box–Muller from two uniforms.
-function normal(rand: () => number): number {
+export function normal(rand: () => number): number {
   const u1 = Math.max(rand(), 1e-12);
   const u2 = rand();
   return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);

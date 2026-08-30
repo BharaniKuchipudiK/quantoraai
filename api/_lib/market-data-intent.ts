@@ -41,7 +41,7 @@ const CURRENCY_NAME_ALIASES: Array<{ re: RegExp; code: string }> = [
 const FX_CONVERT = /\bhow\s+much\b|\b(?:convert|conversion|exchange|worth|rate|equals?)\b|\b(?:to|into|vs\.?|versus|against)\b|→|->/i;
 
 /** Every known currency mentioned by ISO code or spoken name, in reading order, deduped. */
-function currencyMentions(message: string): Array<{ code: string; index: number }> {
+export function currencyMentions(message: string): Array<{ code: string; index: number }> {
   const upper = message.toUpperCase();
   const earliest = new Map<string, number>();
   const note = (code: string, index: number) => {
