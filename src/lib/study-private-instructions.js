@@ -1,4 +1,4 @@
-import { isLegacySessionContamination } from './session-context.js';
+import { isRepositoryScanTask } from './session-context.js';
 
 /**
  * Detect Study control prompts that are meant for the model, never the learner.
@@ -9,9 +9,9 @@ export function isPrivateStudyInstruction(text = '') {
   const value = String(text || '');
   if (/<quantora-study-(?:picture|flashcard)\b/i.test(value)) return true;
 
-  // One shared legacy-contamination detector owns the old cross-workspace task.
-  // Do not duplicate the poisoned sentence in Study-specific matching rules.
-  if (isLegacySessionContamination(value)) return true;
+  // One shared detector owns the old repository-scan shape, including shortened
+  // transcript variants. Do not duplicate the poisoned sentence in Study rules.
+  if (isRepositoryScanTask(value)) return true;
 
   const markers = [
     /do not invent (?:image urls?|youtube ids?|a specific youtube)/i,
