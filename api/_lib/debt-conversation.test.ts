@@ -81,3 +81,37 @@ test("a rate belonging to a debt is not mistaken for an offer", () => {
   const intent = parseDebtIntent("consolidate my $5,000 at 19.99% (min $150) over 3 years");
   assert.equal(intent.offer, null);
 });
+
+const MONTH_YEAR = /\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4}\b/;
+
+/*
+ * "Debt-free in 19 payments" is arithmetic. A date is a commitment, and the
+ * months the individual cards disappear are the moments people actually
+ * remember. Both must survive from the engine to the reply.
+ */
+test("a workable plan comes back as a dated program", () => {
+  const m = move(
+    "help me pay off my debts: $3,200 at 22.9% (min $80), $8,400 at 7.4% (min $210) and $900 at 29.9% (min $25). I can put $400 a month extra toward it.",
+  );
+  assert.ok(m, "a plan is expected from concrete numbers");
+  assert.equal(m.kind, "plan");
+  assert.match(m.text, /Debt-free: /, "the program must reach the reply");
+  assert.match(m.text, MONTH_YEAR, "the freedom date must name a real month");
+  assert.match(m.text, /On the way:/, "the landmarks must survive");
+  assert.match(m.text, /gone/, "each cleared debt is named");
+  assert.doesNotMatch(m.text, /Debt \\d gone/, "a numbered placeholder must never reach the reader");
+  assert.match(m.text, /deterministic simulation/, "the plan itself is not replaced");
+});
+
+/*
+ * The person whose minimums already exceed their income must never be handed a
+ * freedom date — a schedule would have to assume money that is not there.
+ */
+test("a shortfall keeps the refusal and invents no freedom date", () => {
+  const m = move(
+    "help me pay off my debts: $9,000 at 24% (min $250) and $7,000 at 26% (min $200). I only earn $200 per month.",
+  );
+  assert.ok(m);
+  assert.doesNotMatch(m.text, /Debt-free: /, "no finish line where there is none to name");
+  assert.doesNotMatch(m.text, MONTH_YEAR, "no date invented from a shortfall");
+});

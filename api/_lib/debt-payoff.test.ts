@@ -90,3 +90,34 @@ test("the shortfall refusal does not tell someone underwater to pay more", () =>
   assert.doesNotMatch(text, /Debt-free in/);
   assert.match(text, /consolidation at a lower rate|longer term/);
 });
+
+/*
+ * The simulation always knew the month each debt clears — it recorded the
+ * clearance inside the month that produced it and then discarded the month.
+ * That number is the entire substance of a payoff landmark, so it is now
+ * carried out of the engine.
+ */
+test("records the month each debt is cleared, consistent with the order", () => {
+  const debts = [
+    { name: "Barclaycard", balance: 3200, apr: 22.9, minPayment: 80 },
+    { name: "Car loan", balance: 8400, apr: 7.4, minPayment: 210 },
+    { name: "Store card", balance: 900, apr: 29.9, minPayment: 25 },
+  ];
+  const r = simulatePayoff(debts, 400, "avalanche");
+  assert.equal(r.feasible, true);
+  assert.deepEqual(r.cleared.map((c) => c.name), r.order, "cleared must mirror the payoff order");
+  // Months are strictly increasing, all within the run, and the last is the finish.
+  let previous = 0;
+  for (const c of r.cleared) {
+    assert.ok(c.month > previous, `${c.name} must clear after the one before it`);
+    assert.ok(c.month <= r.months, `${c.name} cannot clear after the payoff completes`);
+    previous = c.month;
+  }
+  assert.equal(r.cleared[r.cleared.length - 1].month, r.months, "the last clearance IS the payoff month");
+});
+
+test("an infeasible payoff reports no clearances to date", () => {
+  const r = simulatePayoff([{ name: "Card", balance: 20000, apr: 30, minPayment: 1 }], 0, "avalanche");
+  assert.equal(r.feasible, false);
+  assert.deepEqual(r.cleared, []);
+});

@@ -14,6 +14,7 @@
 
 import type { Debt } from "./debt-payoff.js";
 import { comparePayoff, formatDebtPlan } from "./debt-payoff.js";
+import { buildDebtProgram, formatDebtProgram } from "./debt-program.js";
 import type { DebtIntent } from "./debt-intent.js";
 import { withNextMoves } from "./deterministic-turn.js";
 import {
@@ -247,11 +248,23 @@ function consolidation(debts: Debt[], intent: DebtIntent, offer: ConsolidationOf
 /** A workable plan — still ends with the next move, not a full stop. */
 function plan(debts: Debt[], intent: DebtIntent): DebtMove {
   const comparison = comparePayoff(debts, intent.extraMonthly ?? 0, intent.statedIncome);
-  const body = formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums });
+
+  /*
+   * The plan proves the arithmetic. The program commits to it: "38 payments"
+   * becomes a month, and the debts that vanish along the way get their own
+   * months. Appended, never substituted — when no strategy is workable
+   * (notably a shortfall, where the minimums already exceed the income) there
+   * is no date to name, and the refusal above must stand alone rather than
+   * being softened with one.
+   */
+  const program = buildDebtProgram(comparison, debts);
+  const body = [formatDebtPlan(comparison, { assumedMinimums: intent.assumedMinimums })];
+  if (program) body.push("", formatDebtProgram(program));
+
   return {
     kind: "plan",
     text: withNextMoves({
-      text: body,
+      text: body.join("\n"),
       question: "Where do you want to take this?",
       moves: [
         {
