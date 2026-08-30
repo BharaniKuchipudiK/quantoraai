@@ -1,0 +1,47 @@
+/*
+ * Quantora Monochrome — platform design-system foundation.
+ *
+ * The end-state palette is intentionally binary. Components create hierarchy
+ * with type, space, borders, inversion, line style and motion — never a third
+ * colour disguised as gray, transparency or a gradient.
+ *
+ * Migration is phased. These tokens are global now; Study is the first surface
+ * family to consume them before shared chrome and the remaining workspaces.
+ */
+:root {
+  --q-paper: #ffffff;
+  --q-ink: #000000;
+  --q-surface: #ffffff;
+  --q-text: #000000;
+  --q-border: #000000;
+  --q-inverse-paper: #000000;
+  --q-inverse-ink: #ffffff;
+  --q-focus: #000000;
+}
+
+[data-theme="dark"] {
+  --q-paper: #000000;
+  --q-ink: #ffffff;
+  --q-surface: #000000;
+  --q-text: #ffffff;
+  --q-border: #ffffff;
+  --q-inverse-paper: #ffffff;
+  --q-inverse-ink: #000000;
+  --q-focus: #ffffff;
+}
+
+/*
+ * Shared focus primitive for migrated monochrome controls. A double-line focus
+ * treatment remains visible without introducing glow, alpha or accent colour.
+ */
+.q-mono-control:focus-visible {
+  outline: 2px solid var(--q-focus);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-quantora-motion] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
