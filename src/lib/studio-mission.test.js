@@ -145,6 +145,42 @@ test('an Office mission does not tell the user to publish a website', () => {
   assert.match(mission.understanding || mission.goal, /Office|presentation|HAM/i);
 });
 
+test('a bled sticky goal never surfaces on the Finance advice desk', () => {
+  // A stale build/scan ask from another chat in the shared Personal Workspace
+  // must not become "Working through: Scan through the GitHub…" on a Finance turn.
+  const mission = deriveStudioMission({
+    conversationContext: { goal: 'Scan through the GitHub public repositories and find out if we can leverage them' },
+    messages: [{ sender: 'user', text: 'how much is APL?' }],
+    studioDomain: 'finance',
+  });
+  assert.doesNotMatch(mission?.goal || '', /github|scan/i);
+  assert.equal(mission?.goal || '', '');
+});
+
+test('a bled sticky goal never surfaces on the Study / Research advice desks', () => {
+  for (const studioDomain of ['education', 'research']) {
+    const mission = deriveStudioMission({
+      conversationContext: {
+        goal: 'Scan through the GitHub public repositories and find out if we can leverage them',
+        understanding: 'Drive Cleaner Agent dashboard is in Preview.',
+      },
+      messages: [{ sender: 'user', text: 'explain photosynthesis' }],
+      studioDomain,
+    });
+    assert.doesNotMatch(mission?.goal || '', /github|scan/i, studioDomain);
+    assert.doesNotMatch(mission?.understanding || '', /github|scan|drive cleaner/i, studioDomain);
+  }
+});
+
+test('Travel still keeps its own curated trip goal (not an advice desk)', () => {
+  const mission = deriveStudioMission({
+    conversationContext: { goal: 'Plan a balanced trip to Mauritius for 2 adults' },
+    messages: [{ sender: 'user', text: '7 Days / 1 Week' }],
+    studioDomain: 'travel',
+  });
+  assert.match(mission.goal, /Mauritius/i);
+});
+
 test('Travel is planning a trip, not building a website', () => {
   const mission = deriveStudioMission({
     conversationContext: { goal: 'Plan a balanced trip to Mauritius for 2 adults' },
