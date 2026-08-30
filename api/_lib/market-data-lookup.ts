@@ -11,6 +11,54 @@ import { FINNHUB_SOURCE } from "./market-data/finnhub-provider.js";
 import { isBarStale, type FxRate, type PriceBar, type Instrument } from "./market-data-store.js";
 import type { FxIntent, PriceIntent } from "./market-data-intent.js";
 
+/*
+ * A price is "live" because of WHEN it was struck, not which feed carried it.
+ *
+ * The first cut labelled anything from the real-time feed "(live)". On a Sunday
+ * that put a live badge on Friday's closing print — an overstatement of exactly
+ * the kind this file exists to prevent, and the direction that misleads: a
+ * settled price mistaken for a moving one invites a decision it cannot support.
+ * The label now follows the timestamp's age, and a price that is not live always
+ * carries its DATE, so "20:00 UTC" can never read as "20:00 UTC today".
+ */
+const LIVE_WINDOW_MS = 15 * 60 * 1000;
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Fri 28 Aug" — built by hand so it cannot vary with locale or ICU build. */
+function shortDay(d: Date): string {
+  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+type Freshness = { label: string; stamp: string };
+
+function describeFreshness(bar: PriceBar, now: Date): Freshness {
+  const struck = Date.parse(bar.as_of);
+  const ageMs = Number.isFinite(struck) ? now.getTime() - struck : Number.NaN;
+  const intraday = bar.source === FINNHUB_SOURCE;
+  // A future timestamp is not fresh — it is a clock problem, and guessing which
+  // clock is wrong is worse than falling back to the dated form.
+  const live = intraday && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= LIVE_WINDOW_MS;
+  const real = "This is a real, sourced figure — not a model estimate.";
+
+  if (live) {
+    return {
+      label: "live",
+      stamp: `As of ${bar.as_of.slice(11, 16)} UTC today · source: ${bar.source}. ${real}`,
+    };
+  }
+  const when = Number.isFinite(struck) ? shortDay(new Date(struck)) : bar.as_of.slice(0, 10);
+  if (intraday) {
+    return {
+      label: "last trade",
+      stamp: `Last traded ${when} at ${bar.as_of.slice(11, 16)} UTC · source: ${bar.source}. `
+        + `Markets are closed or quiet, so this is the most recent print — not a moving price. ${real}`,
+    };
+  }
+  return { label: "last close", stamp: `As of ${when} · source: ${bar.source}. ${real}` };
+}
+
 export type LookupResult = {
   text: string;
   resolved: boolean; // true only when a fresh, sourced figure was quoted
@@ -133,18 +181,7 @@ export function priceLookupResult(
       };
     }
     const cur = bar.currency || "";
-    /*
-     * "(last close)" was hardcoded, which was true while every bar came from an
-     * end-of-day feed and became a lie the moment a real-time one was added.
-     * A live intraday price labelled "last close" understates its freshness; a
-     * settled close labelled "live" overstates it, and that direction is the
-     * dangerous one. The label follows the bar's actual source.
-     */
-    const live = bar.source === FINNHUB_SOURCE;
-    const label = live ? "live" : "last close";
-    const stamp = live
-      ? `As of ${bar.as_of.slice(11, 16)} UTC · source: ${bar.source}. This is a real, sourced figure — not a model estimate.`
-      : asOfLine(bar.source, bar.as_of);
+    const { label, stamp } = describeFreshness(bar, now);
     return {
       resolved: true,
       stale: false,
