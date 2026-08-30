@@ -10,12 +10,13 @@
  * implements this interface — no consumer, store, or schema change.
  */
 
-import type { Instrument, FxRate, Fundamental } from "../market-data-store.js";
+import type { Instrument, FxRate, Fundamental, PriceBar } from "../market-data-store.js";
 
 export type ProviderFetch = {
   instruments?: Instrument[];
   fxRates?: FxRate[];
   fundamentals?: Fundamental[];
+  prices?: PriceBar[];
 };
 
 export type MarketDataProvider = {
@@ -28,6 +29,6 @@ export type MarketDataProvider = {
 export type ProviderOutcome = {
   provider: string;
   ok: boolean;
-  wrote: { instruments: number; fxRates: number; fundamentals: number };
+  wrote: { instruments: number; fxRates: number; fundamentals: number; prices: number };
   error?: string;
 };

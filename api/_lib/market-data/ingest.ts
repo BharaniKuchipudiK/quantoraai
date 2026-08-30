@@ -15,27 +15,31 @@ import {
   writeInstruments,
   writeFxRates,
   writeFundamentals,
+  writePrices,
   type Instrument,
   type FxRate,
   type Fundamental,
+  type PriceBar,
 } from "../market-data-store.js";
 import type { MarketDataProvider, ProviderOutcome } from "./provider.js";
 import { frankfurterProvider } from "./frankfurter-provider.js";
 import { secInstrumentsProvider } from "./sec-provider.js";
+import { stooqPricesProvider } from "./stooq-provider.js";
 
 export type Writers = {
   writeInstruments: (rows: Instrument[]) => Promise<boolean>;
   writeFxRates: (rows: FxRate[]) => Promise<boolean>;
   writeFundamentals: (rows: Fundamental[]) => Promise<boolean>;
+  writePrices: (rows: PriceBar[]) => Promise<boolean>;
 };
 
-const defaultWriters: Writers = { writeInstruments, writeFxRates, writeFundamentals };
+const defaultWriters: Writers = { writeInstruments, writeFxRates, writeFundamentals, writePrices };
 
 /** Keep each upsert body modest even when a provider returns thousands of rows. */
 const WRITE_CHUNK = 1_000;
 
 export function defaultProviders(): MarketDataProvider[] {
-  return [frankfurterProvider(), secInstrumentsProvider()];
+  return [frankfurterProvider(), secInstrumentsProvider(), stooqPricesProvider()];
 }
 
 /** Returns true only if every chunk was accepted by the store. A rejected write
@@ -58,7 +62,7 @@ export async function runIngestion(
     const outcome: ProviderOutcome = {
       provider: provider.id,
       ok: false,
-      wrote: { instruments: 0, fxRates: 0, fundamentals: 0 },
+      wrote: { instruments: 0, fxRates: 0, fundamentals: 0, prices: 0 },
     };
     try {
       const data = await provider.fetch();
@@ -82,6 +86,13 @@ export async function runIngestion(
           outcome.wrote.fundamentals = data.fundamentals.length;
         } else {
           rejected.push("fundamentals");
+        }
+      }
+      if (data.prices?.length) {
+        if (await writeChunked(data.prices, writers.writePrices)) {
+          outcome.wrote.prices = data.prices.length;
+        } else {
+          rejected.push("prices");
         }
       }
       // A rejected write is an ingestion failure, not a silent success — otherwise
