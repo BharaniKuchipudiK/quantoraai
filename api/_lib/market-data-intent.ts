@@ -18,6 +18,49 @@ const CUR = KNOWN_CURRENCIES.join("|");
 // "USD to SGD", "USD in EUR", "USD into INR", "USD->SGD", "EUR/USD", "USD vs SGD", "USD-SGD"
 const FX_PAIR = new RegExp(`\\b(${CUR})\\s*(?:to|in|into|→|->|/|vs\\.?|versus|-)\\s*(${CUR})\\b`, "i");
 const FX_HINT = /\b(rate|convert|conversion|exchange|worth|fx)\b/i;
+
+// Spoken currency names map to ISO codes, so "how much is one Singapore dollar
+// in Indian rupees" grounds on the deterministic FX engine instead of falling
+// through to a hand-waved model answer. A bare "dollar" is intentionally left
+// out — it is ambiguous across USD/SGD/AUD/CAD/HKD and must be qualified.
+const CURRENCY_NAME_ALIASES: Array<{ re: RegExp; code: string }> = [
+  { re: /\bsingapore\s+dollars?\b/i, code: "SGD" },
+  { re: /\b(?:u\.?\s?s\.?|american)\s+dollars?\b/i, code: "USD" },
+  { re: /\b(?:australian|aussie)\s+dollars?\b/i, code: "AUD" },
+  { re: /\bcanadian\s+dollars?\b/i, code: "CAD" },
+  { re: /\bhong\s*kong\s+dollars?\b/i, code: "HKD" },
+  { re: /\b(?:indian\s+)?rupees?\b/i, code: "INR" },
+  { re: /\beuros?\b/i, code: "EUR" },
+  { re: /\b(?:british\s+|pound\s+)?sterling\b|\b(?:british\s+)?pounds?(?:\s+sterling)?\b/i, code: "GBP" },
+  { re: /\b(?:japanese\s+)?yen\b/i, code: "JPY" },
+  { re: /\b(?:swiss\s+)?francs?\b/i, code: "CHF" },
+  { re: /\b(?:chinese\s+)?yuan\b|\brenminbi\b|\brmb\b/i, code: "CNY" },
+];
+// A conversion signal — a strong verb/hint or a "how much" ask. Bare "in"/"and"
+// are deliberately excluded so "I keep euros and pounds" never fires a lookup.
+const FX_CONVERT = /\bhow\s+much\b|\b(?:convert|conversion|exchange|worth|rate|equals?)\b|\b(?:to|into|vs\.?|versus|against)\b|→|->/i;
+
+/** Every known currency mentioned by ISO code or spoken name, in reading order, deduped. */
+function currencyMentions(message: string): Array<{ code: string; index: number }> {
+  const upper = message.toUpperCase();
+  const earliest = new Map<string, number>();
+  const note = (code: string, index: number) => {
+    if (index < 0) return;
+    const prev = earliest.get(code);
+    if (prev == null || index < prev) earliest.set(code, index);
+  };
+  for (const code of KNOWN_CURRENCIES) {
+    const m = new RegExp(`\\b${code}\\b`).exec(upper);
+    if (m) note(code, m.index);
+  }
+  for (const { re, code } of CURRENCY_NAME_ALIASES) {
+    const m = re.exec(message);
+    if (m) note(code, m.index);
+  }
+  return [...earliest.entries()]
+    .map(([code, index]) => ({ code, index }))
+    .sort((a, b) => a.index - b.index);
+}
 const PRICE_HINT = /\b(price|quote|quotes|share price|stock price|last close|closing price|trading at|how much (?:is|does))\b/i;
 
 function firstAmount(message: string): number | null {
@@ -30,7 +73,6 @@ function firstAmount(message: string): number | null {
 }
 
 function detectFx(message: string): MarketDataIntent | null {
-  const upper = message.toUpperCase();
   let base: string | null = null;
   let quote: string | null = null;
 
@@ -38,12 +80,12 @@ function detectFx(message: string): MarketDataIntent | null {
   if (paired) {
     base = paired[1].toUpperCase();
     quote = paired[2].toUpperCase();
-  } else if (FX_HINT.test(message)) {
-    // No explicit connector, but a rate/convert hint plus exactly two currencies.
-    const found = KNOWN_CURRENCIES.filter((c) => new RegExp(`\\b${c}\\b`).test(upper));
-    if (found.length === 2) {
-      const order = found.sort((a, b) => upper.indexOf(a) - upper.indexOf(b));
-      [base, quote] = order;
+  } else if (FX_HINT.test(message) || FX_CONVERT.test(message)) {
+    // No explicit code-to-code connector, but a conversion signal plus exactly
+    // two currencies named by code or spoken word ("Singapore dollar to rupees").
+    const mentions = currencyMentions(message);
+    if (mentions.length === 2) {
+      [base, quote] = [mentions[0].code, mentions[1].code];
     }
   }
 
