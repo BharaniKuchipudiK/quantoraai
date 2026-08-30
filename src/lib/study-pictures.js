@@ -36,7 +36,9 @@ export function studyProcessSteps(caption = '') {
 /** Extract 2–5 explicit four-digit years for a deterministic timeline. */
 export function studyTimelinePoints(caption = '') {
   const years = [...String(caption || '').matchAll(/\b((?:1[0-9]{3}|20[0-9]{2}|2100))\b/g)].map((match) => match[1]);
-  return [...new Set(years)].slice(0, 5);
+  return [...new Set(years)]
+    .sort((a, b) => Number(a) - Number(b))
+    .slice(0, 5);
 }
 
 /** Parse the intentionally narrow caption form: number line from A to B, mark C. */
@@ -58,6 +60,21 @@ export function studyNumberLineSpec(caption = '') {
   };
 }
 
+/** Keep enough precision for narrow ranges without spraying insignificant zeros. */
+export function studyNumberLineLabel(value, min, max) {
+  const number = Number(value);
+  const low = Number(min);
+  const high = Number(max);
+  if (![number, low, high].every(Number.isFinite)) return '';
+  if (Number.isInteger(number)) return String(number);
+  const span = Math.abs(high - low);
+  const step = span / 6;
+  const precision = step > 0
+    ? Math.min(12, Math.max(0, Math.ceil(-Math.log10(step)) + 1))
+    : 6;
+  return String(Number(number.toFixed(precision)));
+}
+
 /**
  * Which diagram this caption earns, or NULL when it earns none.
  *
@@ -74,12 +91,12 @@ export function studyVisualKind(caption = '') {
   if (META_CAPTION.test(text)) return null;
   if (studyNumberLineSpec(raw)) return 'number-line';
   if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
+  if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
   if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body/.test(text)) return 'physics-motion';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
   if (/graph|slope|axis|curve|plot|trend|correlation|distribution/.test(text)) return 'graph';
-  if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
   /*
    * The relationship diagram is real, but only for a caption that actually
    * describes a relationship. Requiring the words keeps it from becoming the
