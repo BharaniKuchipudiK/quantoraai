@@ -4,7 +4,7 @@
  * (or Algebra) picture because a keyword fired.
  */
 
-const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab)\b([^>]*)\/?>/gi;
+const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab|quantora-study-flashcard)\b([^>]*)\/?>/gi;
 
 export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
 
@@ -43,6 +43,12 @@ export function studyVisualKind(caption = '') {
   return null;
 }
 
+export function studyPhysicsVisualVariant(caption = '') {
+  return /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|\b(?:brak|stop)[\s\S]*\b(?:passenger|vehicle|car|bus)\b/i.test(String(caption || ''))
+    ? 'braking-inertia'
+    : 'free-body';
+}
+
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
 const STOCK_SCENE_CAPTION = /newton under the tree|apple fall the same way|book at rest on a table|two forces, no motion|truck vs car|step out of a canoe|rocket pushes gas|net force and mass together|on ice, a shove keeps going/i;
 
@@ -52,7 +58,7 @@ function attr(raw, name) {
 }
 
 function withoutStudyTags(text = '') {
-  return String(text || '').replace(/<(quantora-study-picture|quantora-study-lab)\b[^>]*\/?>/gi, ' ');
+  return String(text || '').replace(/<(quantora-study-picture|quantora-study-lab|quantora-study-flashcard)\b[^>]*\/?>/gi, ' ');
 }
 
 function contextHay(topic = '', body = '') {
@@ -86,6 +92,12 @@ export function rewriteStudyPictureTags(text = '', topic = '') {
   const hay = contextHay(topic, source);
   TOKEN_RE.lastIndex = 0;
   return source.replace(TOKEN_RE, (full, tagName, attrs) => {
+    if (String(tagName || '').toLowerCase() === 'quantora-study-flashcard') {
+      const front = attr(attrs, 'front').replace(/"/g, '');
+      const back = attr(attrs, 'back').replace(/"/g, '');
+      if (!front || !back) return '';
+      return `<quantora-study-flashcard front="${front}" back="${back}" />`;
+    }
     if (String(tagName || '').toLowerCase() === 'quantora-study-lab') {
       if (!lessonAsksForMechanicsLab(hay)) return '';
       const kindRaw = attr(attrs, 'kind').toLowerCase();
@@ -109,7 +121,11 @@ export function splitStudySegments(text = '', topic = '') {
       segments.push({ type: 'md', text: source.slice(last, match.index) });
     }
     const tag = String(match[1] || '').toLowerCase();
-    if (tag === 'quantora-study-lab') {
+    if (tag === 'quantora-study-flashcard') {
+      const front = attr(match[2], 'front');
+      const back = attr(match[2], 'back');
+      if (front && back) segments.push({ type: 'flashcard', front, back });
+    } else if (tag === 'quantora-study-lab') {
       const kindRaw = attr(match[2], 'kind').toLowerCase();
       segments.push({
         type: 'lab',
@@ -135,12 +151,41 @@ export function wantsStudyLab(text = '') {
   return /free-?body|\bfbd\b|inertia tab|newton lab|quantora-study-lab/i.test(String(text || ''));
 }
 
-/**
- * Never invent a picture. Only keep tags the model already wrote, and only
- * when they still match this conversation.
- */
+/** Keep model-authored tags only when they still match this conversation. */
 export function decorateStudyMessage(text = '', topic = '') {
   return rewriteStudyPictureTags(String(text || ''), topic);
+}
+
+const TEACHING_CAPTIONS = Object.freeze({
+  'physics-motion': 'Free-body diagram of a moving block: normal force up, weight down, applied force forward, and friction backward',
+  'algebra-balance': 'An equation balance showing the same operation applied to both sides',
+  'biology-cell': 'A labelled cell showing the membrane, cytoplasm, and nucleus',
+  'chemistry-bond': 'Two atoms sharing electrons in a covalent bond',
+  graph: 'A labelled graph showing axes, slope, and change between two points',
+});
+
+/**
+ * A long explanation about a diagrammable subject should not become a wall of
+ * text merely because a model forgot the picture tag. This fallback is limited
+ * to known teaching diagrams; unknown topics still draw nothing.
+ */
+export function ensureStudyTeachingVisual(text = '', topic = '') {
+  const source = String(text || '');
+  TOKEN_RE.lastIndex = 0;
+  if (TOKEN_RE.test(source)) {
+    TOKEN_RE.lastIndex = 0;
+    return source;
+  }
+  TOKEN_RE.lastIndex = 0;
+  if (source.trim().length < 120) return source;
+  const hay = `${topic}\n${source}`;
+  const kind = studyVisualKind(hay);
+  let caption = TEACHING_CAPTIONS[kind];
+  if (kind === 'physics-motion' && /\b(?:inertia|brak(?:e|es|ing)|seatbelt)\b/i.test(hay)) {
+    caption = 'Passenger motion when a vehicle brakes: velocity continues forward while the braking force acts backward';
+  }
+  if (!caption) return source;
+  return `<quantora-study-picture caption="${caption}" />\n\n${source}`;
 }
 
 export function studyPicturePromptHint(topic = '') {

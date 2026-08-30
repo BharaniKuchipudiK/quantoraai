@@ -1,5 +1,6 @@
 import {
   studyApplicationAsk,
+  studyActionVisibleText,
   studyFlashcardAsk,
   studyIcebreakerAsk,
   studyNotesAsk,
@@ -126,7 +127,18 @@ export function resolveStudioPlusAction(toolId, studioDomain = null, topic = '',
   };
 
   if (Object.prototype.hasOwnProperty.call(prompts, id)) {
-    return { kind: STUDIO_PLUS_ACTION.PROMPT, text: prompts[id] };
+    const studyAction = {
+      'study-icebreaker': 'icebreaker',
+      'study-flashcards': 'flashcards',
+      'study-apply': 'application',
+      'study-plan': 'plan',
+      'study-notes': 'notes',
+    }[id];
+    return {
+      kind: STUDIO_PLUS_ACTION.PROMPT,
+      text: prompts[id],
+      ...(studyAction ? { visibleText: studyActionVisibleText(studyAction, topic) } : {}),
+    };
   }
   return { kind: STUDIO_PLUS_ACTION.PROMPT, text: '' };
 }

@@ -36,6 +36,26 @@ test('a turn with nothing coming back says so, and offers a way out', () => {
   assert.ok(status.actions.length > 0, 'a stalled turn must offer something to DO');
 });
 
+test('Study gives staged learner-facing progress and names a slow tutor route', () => {
+  const early = resolveStudioPartnerStatus({
+    isGenerating: true,
+    generatingLabel: 'Working on your next step…',
+    elapsedSec: 8,
+    studioDomain: 'education',
+  });
+  assert.match(early.now, /Shaping a clear tutor response/);
+  assert.match(early.next, /as soon as it starts arriving/i);
+
+  const slow = resolveStudioPartnerStatus({
+    isGenerating: true,
+    generatingLabel: 'Working on your next step…',
+    elapsedSec: 105,
+    studioDomain: 'education',
+  });
+  assert.match(slow.now, /taking longer than expected.*1:45/i);
+  assert.match(slow.next, /stop and retry.*next eligible tutor route/i);
+});
+
 test('files being written are named as they land', () => {
   const status = resolveStudioPartnerStatus({
     isGenerating: true,

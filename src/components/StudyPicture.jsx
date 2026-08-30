@@ -1,5 +1,5 @@
 import React from 'react';
-import { studyVisualKind } from '../lib/study-pictures.js';
+import { studyPhysicsVisualVariant, studyVisualKind } from '../lib/study-pictures.js';
 
 function Frame({ isLight, children, label }) {
   return (
@@ -25,9 +25,26 @@ function Arrow({ x1, y1, x2, y2, label, color }) {
 function PictureArt({ isLight, caption, kind }) {
   const ink = isLight ? '#334155' : '#e2e8f0';
   const muted = isLight ? '#64748b' : '#94a3b8';
+  const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(caption) : null;
   return (
     <Frame isLight={isLight} label={`${kind.replace(/-/g, ' ')} diagram: ${caption}`}>
-      {kind === 'physics-motion' ? (
+      {kind === 'physics-motion' && physicsVariant === 'braking-inertia' ? (
+        <>
+          <line x1="24" y1="137" x2="336" y2="137" stroke={muted} strokeWidth="2.5" />
+          <rect x="86" y="77" width="188" height="52" rx="14" fill={isLight ? '#e2e8f0' : '#334155'} stroke={ink} strokeWidth="2.5" />
+          <path d="M126 77 L148 50 L220 50 L244 77" fill={isLight ? '#dbeafe' : '#1e3a5f'} stroke={ink} strokeWidth="2.5" />
+          <circle cx="132" cy="132" r="16" fill={isLight ? '#475569' : '#cbd5e1'} />
+          <circle cx="232" cy="132" r="16" fill={isLight ? '#475569' : '#cbd5e1'} />
+          <circle cx="180" cy="67" r="10" fill="#fbbf24" />
+          <line x1="180" y1="77" x2="180" y2="105" stroke="#fbbf24" strokeWidth="6" strokeLinecap="round" />
+          <Arrow x1="180" y1="40" x2="305" y2="40" label="" color="#f97316" />
+          <text x="242" y="27" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="700">velocity continues</text>
+          <Arrow x1="180" y1="108" x2="64" y2="108" label="" color="#0ea5e9" />
+          <text x="102" y="97" textAnchor="middle" fill="#0ea5e9" fontSize="12" fontWeight="700">seatbelt force</text>
+          <text x="180" y="163" textAnchor="middle" fill={muted} fontSize="11">the force changes velocity — not inertia by itself</text>
+        </>
+      ) : null}
+      {kind === 'physics-motion' && physicsVariant === 'free-body' ? (
         /*
          * A real free-body diagram, not a box with decoration. Every force is
          * drawn FROM the same point — the body's centre — because that is the
@@ -119,12 +136,14 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   const label = String(caption || '').trim();
   if (!label) return null;
   const kind = studyVisualKind(label);
+  const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(label) : null;
   // No diagram earns a frame it cannot fill. An empty decorative box beside a
   // lesson reads as a broken image, which is worse than no image at all.
   if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
+      data-quantora-study-picture-variant={physicsVariant || undefined}
       style={{
         margin: '0 0 16px',
         maxWidth: '420px',
@@ -141,7 +160,7 @@ export default function StudyPicture({ caption = '', isLight = false }) {
         marginTop: '8px',
         fontSize: '0.85rem',
         lineHeight: 1.4,
-        fontFamily: "var(--font-study-body), sans-serif",
+        fontFamily: 'var(--font-body)',
         color: isLight ? '#9a3412' : '#fdba74',
       }}>
         {label}

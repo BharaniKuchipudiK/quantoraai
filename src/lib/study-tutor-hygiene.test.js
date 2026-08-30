@@ -83,8 +83,8 @@ test('Study keeps contextual tutoring prose out of the persistent UI layer', () 
   const brief = fs.readFileSync(path.join(root, 'src/lib/study-tutor-brief.js'), 'utf8');
   assert.doesNotMatch(shell, /brief\?\.next|encouragement|progress\.caption|miniPracticeFor|local-check|gradeStudyCheck/);
   assert.doesNotMatch(brief, /encouragement|nextBeat|deriveSessionCheck|Quick honesty check|No fake score/);
-  assert.match(shell, /askOrSend\(studyPracticeAsk\(topic\)\)/);
-  assert.match(shell, /askOrSend\(studyQuizAsk\(topic\)\)/);
+  assert.match(shell, /askOrSend\(studyPracticeAsk\(topic\), 'practice'\)/);
+  assert.match(shell, /askOrSend\(studyQuizAsk\(topic\), 'quiz'\)/);
   assert.match(shell, /activity === 'check' && assessment\?\.status === 'error'/);
 });
 

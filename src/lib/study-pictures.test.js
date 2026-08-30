@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   decorateStudyMessage,
+  ensureStudyTeachingVisual,
   pictureCaptionFitsLesson,
   splitStudySegments,
   studyPicturePromptHint,
+  studyPhysicsVisualVariant,
   studyVisualKind,
   wantsStudyLab,
 } from './study-pictures.js';
@@ -16,6 +18,16 @@ test('Study picture tags become real segments from the caption, not a stock kind
   );
   assert.equal(parts[1].type, 'picture');
   assert.match(parts[1].caption, /unknown/);
+});
+
+test('flashcard tags become front/back segments without exposing a Markdown table', () => {
+  const parts = splitStudySegments(
+    '<quantora-study-flashcard front="What is inertia?" back="Resistance to a change in velocity." />\n<quantora-study-flashcard front="Is inertia a force?" back="No." />',
+    'Inertia',
+  );
+  assert.deepEqual(parts.map((part) => part.type), ['flashcard', 'flashcard']);
+  assert.equal(parts[0].front, 'What is inertia?');
+  assert.equal(parts[0].back, 'Resistance to a change in velocity.');
 });
 
 test('a lab tag only renders when this conversation is actually that lab', () => {
@@ -63,6 +75,20 @@ test('the client does not invent a picture from the word apple', () => {
   assert.doesNotMatch(decorated, /quantora-study-picture|apple-tree/);
 });
 
+test('a substantial physics explanation receives a real teaching diagram when the model omits its tag', () => {
+  const explanation = 'When a bus brakes, your body keeps moving forward because it resists a change in motion. The seatbelt provides the backward force that changes your velocity. What would happen without the belt?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Newtonian inertia');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /velocity continues forward/);
+  assert.equal(splitStudySegments(illustrated, 'Newtonian inertia')[0].type, 'picture');
+});
+
+test('the visual fallback stays silent for short or unknown explanations', () => {
+  assert.equal(ensureStudyTeachingVisual('Three apples in a box.', 'Counting'), 'Three apples in a box.');
+  const unknown = 'A careful explanation can be long without describing a diagrammable science or mathematics subject. It should remain prose when no honest visual is available to teach the specific idea.';
+  assert.equal(ensureStudyTeachingVisual(unknown, 'Essay writing'), unknown);
+});
+
 test('a model caption about this Algebra turn is kept', () => {
   const parts = splitStudySegments(
     '<quantora-study-picture caption="Undo subtraction by adding the same number to both sides" />\n$$x - 8 = 15$$',
@@ -82,6 +108,11 @@ test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('Keep both sides of the equation balanced'), 'algebra-balance');
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
+});
+
+test('physics visuals distinguish braking inertia from a free-body diagram', () => {
+  assert.equal(studyPhysicsVisualVariant('Passenger motion when a vehicle brakes'), 'braking-inertia');
+  assert.equal(studyPhysicsVisualVariant('Free-body diagram of a block on a table'), 'free-body');
 });
 
 test('a caption about the instruction earns no diagram', () => {
