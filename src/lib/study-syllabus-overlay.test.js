@@ -41,6 +41,20 @@ test('generic project goal and understanding never participate in Study syllabus
   assert.equal(inferStudySyllabus({ conversationContext: context }), null);
 });
 
+test('generic project facts never participate in Study syllabus inference', () => {
+  const context = {
+    facts: [
+      'Outcome kind: powerpoint',
+      'Project note: JEE Main dashboard for repository analytics',
+      'Syllabus node: Thermodynamics',
+    ],
+  };
+  const haystack = studySyllabusHaystack({ conversationContext: context });
+  assert.match(haystack, /Syllabus node: Thermodynamics/);
+  assert.doesNotMatch(haystack, /powerpoint|repository analytics|JEE Main dashboard/i);
+  assert.equal(inferStudySyllabus({ conversationContext: context }), null);
+});
+
 test('Study action prompts scrub cross-workspace project tasks before interpolation', () => {
   const values = studySyllabusContinueSet(legacyRepositoryTask).items.map((item) => item.value).join('\n');
   assert.doesNotMatch(values, /github|public repositories|scan through/i);
@@ -62,15 +76,20 @@ test('typed syllabus on a Study turn is merged without a second chip pick', () =
   assert.equal(mergeStudySyllabusFromText({}, 'Bali hotels', 'travel').facts, undefined);
 });
 
-test('entering Study drops generic project goal and understanding even when no syllabus is inferred', () => {
+test('entering Study drops generic project goal, understanding, and unrelated facts', () => {
   const merged = mergeStudySyllabusFromText(
-    { goal: legacyRepositoryTask, understanding: legacyRepositoryTask },
+    {
+      goal: legacyRepositoryTask,
+      understanding: legacyRepositoryTask,
+      facts: ['Outcome kind: powerpoint', 'Project note: build repository dashboard'],
+    },
     'Please continue.',
     'education',
   );
   assert.equal(merged.goal, undefined);
   assert.equal(merged.understanding, undefined);
-  assert.doesNotMatch(JSON.stringify(merged), /github|public repositories|scan through/i);
+  assert.equal(merged.facts, undefined);
+  assert.doesNotMatch(JSON.stringify(merged), /github|public repositories|scan through|powerpoint|repository dashboard/i);
 });
 
 test('class plus subjects and a chapter list become stored facts, not a canned TOC', () => {
