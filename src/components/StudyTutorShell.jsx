@@ -12,6 +12,7 @@ import {
   studyVisualExplainAsk,
   studyWhereNextAsk,
 } from '../lib/study-learning-resources.js';
+import { studyAdaptiveStateLabel, studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 
 /**
  * Conversation-first Study shell.
@@ -40,11 +41,13 @@ export default function StudyTutorShell({
   const topic = brief?.label || 'this topic';
   const gaps = brief?.gaps || [];
   const verifiedResult = assessment?.result || null;
+  const learnerModel = verifiedResult?.learnerModel || null;
   const completedCheck = Boolean(loop?.completedQuestionIds?.length);
 
   const askOrSend = (text, action) => {
-    if (onSend) onSend(text, { visibleUserText: studyActionVisibleText(action, topic) });
-    else onAsk?.(text);
+    const adaptiveText = studyAdaptiveTutorAsk(text, learnerModel);
+    if (onSend) onSend(adaptiveText, { visibleUserText: studyActionVisibleText(action, topic) });
+    else onAsk?.(adaptiveText);
   };
 
   const requestCheck = async (options) => {
@@ -92,11 +95,12 @@ export default function StudyTutorShell({
     padding: 0,
   };
 
-  const stateLabel = verifiedResult
+  const adaptiveState = studyAdaptiveStateLabel(learnerModel);
+  const stateLabel = adaptiveState || (verifiedResult
     ? (verifiedResult.correct ? 'Question complete' : 'Ready to repair')
     : gaps.length
       ? `${gaps.length} to check`
-      : 'Not checked yet';
+      : 'Not checked yet');
 
   if (dismissed) {
     return (
@@ -144,6 +148,7 @@ export default function StudyTutorShell({
           style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap', alignItems: 'center', overflowX: 'auto', paddingBottom: '2px' }}
         >
           <span
+            data-quantora-study-adaptive-state={adaptiveState || undefined}
             style={{
               color: subtextColor,
               fontSize: '0.74rem',

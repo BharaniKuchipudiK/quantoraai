@@ -16,6 +16,65 @@ export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
  */
 const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|one sentence|caption|placeholder|diagram of the (?:idea|concept))\b/i;
 
+function compactLabel(value = '', max = 34) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 1).trim()}…` : text;
+}
+
+/** Parse an explicit A -> B -> C teaching sequence. No arrows means no flow. */
+export function studyProcessSteps(caption = '') {
+  const source = String(caption || '').trim();
+  if (!/(?:->|→|⇒)/.test(source)) return [];
+  const body = source.includes(':') ? source.slice(source.indexOf(':') + 1) : source;
+  const steps = body
+    .split(/\s*(?:->|→|⇒)\s*/)
+    .map((part) => compactLabel(part.replace(/[.;]+$/g, '')))
+    .filter(Boolean);
+  return steps.length >= 2 ? steps.slice(0, 4) : [];
+}
+
+/** Extract 2–5 explicit four-digit years for a deterministic timeline. */
+export function studyTimelinePoints(caption = '') {
+  const years = [...String(caption || '').matchAll(/\b((?:1[0-9]{3}|20[0-9]{2}|2100))\b/g)].map((match) => match[1]);
+  return [...new Set(years)]
+    .sort((a, b) => Number(a) - Number(b))
+    .slice(0, 5);
+}
+
+/** Parse the intentionally narrow caption form: number line from A to B, mark C. */
+export function studyNumberLineSpec(caption = '') {
+  const text = String(caption || '');
+  const range = /number line\s+from\s+(-?\d+(?:\.\d+)?)\s+to\s+(-?\d+(?:\.\d+)?)/i.exec(text);
+  if (!range) return null;
+  const min = Number(range[1]);
+  const max = Number(range[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return null;
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  const markMatch = /\bmark\s+(-?\d+(?:\.\d+)?)/i.exec(text);
+  const mark = markMatch ? Number(markMatch[1]) : null;
+  return {
+    min: low,
+    max: high,
+    mark: Number.isFinite(mark) && mark >= low && mark <= high ? mark : null,
+  };
+}
+
+/** Keep enough precision for narrow ranges without spraying insignificant zeros. */
+export function studyNumberLineLabel(value, min, max) {
+  const number = Number(value);
+  const low = Number(min);
+  const high = Number(max);
+  if (![number, low, high].every(Number.isFinite)) return '';
+  if (Number.isInteger(number)) return String(number);
+  const span = Math.abs(high - low);
+  const step = span / 6;
+  const precision = step > 0
+    ? Math.min(12, Math.max(0, Math.ceil(-Math.log10(step)) + 1))
+    : 6;
+  return String(Number(number.toFixed(precision)));
+}
+
 /**
  * Which diagram this caption earns, or NULL when it earns none.
  *
@@ -27,8 +86,12 @@ const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|
  * the correct answer when there is nothing to draw.
  */
 export function studyVisualKind(caption = '') {
-  const text = String(caption || '').toLowerCase();
+  const raw = String(caption || '');
+  const text = raw.toLowerCase();
   if (META_CAPTION.test(text)) return null;
+  if (studyNumberLineSpec(raw)) return 'number-line';
+  if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
+  if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
   if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body/.test(text)) return 'physics-motion';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
@@ -39,7 +102,7 @@ export function studyVisualKind(caption = '') {
    * describes a relationship. Requiring the words keeps it from becoming the
    * catch-all it used to be.
    */
-  if (/cause|effect|leads? to|depends? on|relationship|process|cycle|step|stage|flow|compare|versus|\bvs\b|between/.test(text)) return 'concept-relationship';
+  if (/cause|effect|leads? to|depends? on|relationship|compare|versus|\bvs\b|between/.test(text)) return 'concept-relationship';
   return null;
 }
 
@@ -193,6 +256,9 @@ export function studyPicturePromptHint(topic = '') {
   return [
     `If a picture helps ${label}, put this tag on its own line: <quantora-study-picture caption="one sentence about this idea" />`,
     'The caption must come from THIS conversation — the idea the learner just asked about.',
-    'Do not reuse a scene from another subject. Do not invent image URLs.',
+    'For a process, make the caption explicit, for example: “Process: input -> change -> result”.',
+    'For a timeline, include at least two real years, for example: “Timeline: 1914 -> 1918 -> 1939”.',
+    'For a number line, use the exact form “Number line from -3 to 5, mark 2”.',
+    'Use those structured forms only when they are factually true for the concept. Do not reuse a scene from another subject. Do not invent image URLs.',
   ].join(' ');
 }
