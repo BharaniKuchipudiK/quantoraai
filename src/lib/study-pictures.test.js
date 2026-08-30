@@ -5,8 +5,11 @@ import {
   ensureStudyTeachingVisual,
   pictureCaptionFitsLesson,
   splitStudySegments,
+  studyNumberLineSpec,
   studyPicturePromptHint,
   studyPhysicsVisualVariant,
+  studyProcessSteps,
+  studyTimelinePoints,
   studyVisualKind,
   wantsStudyLab,
 } from './study-pictures.js';
@@ -108,6 +111,35 @@ test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('Keep both sides of the equation balanced'), 'algebra-balance');
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
+});
+
+test('structured captions unlock deterministic process, timeline, and number-line visuals', () => {
+  const process = 'Process: sunlight -> chlorophyll -> glucose';
+  assert.equal(studyVisualKind(process), 'process-flow');
+  assert.deepEqual(studyProcessSteps(process), ['sunlight', 'chlorophyll', 'glucose']);
+
+  const timeline = 'Timeline of key events: 1914 -> 1918 -> 1939';
+  assert.equal(studyVisualKind(timeline), 'timeline');
+  assert.deepEqual(studyTimelinePoints(timeline), ['1914', '1918', '1939']);
+
+  const numberLine = 'Number line from -3 to 5, mark 2';
+  assert.equal(studyVisualKind(numberLine), 'number-line');
+  assert.deepEqual(studyNumberLineSpec(numberLine), { min: -3, max: 5, mark: 2 });
+});
+
+test('structured visual grammar fails closed when the data needed to draw is missing', () => {
+  assert.deepEqual(studyProcessSteps('Explain a process with no explicit sequence'), []);
+  assert.equal(studyNumberLineSpec('Draw a number line'), null);
+  assert.equal(studyVisualKind('Explain a process with no explicit sequence'), null);
+  assert.equal(studyVisualKind('Timeline with no dates'), null);
+});
+
+test('picture prompt teaches the model the native visual grammar without image URLs', () => {
+  const hint = studyPicturePromptHint('photosynthesis');
+  assert.match(hint, /Process: input -> change -> result/);
+  assert.match(hint, /Timeline: 1914 -> 1918 -> 1939/);
+  assert.match(hint, /Number line from -3 to 5, mark 2/);
+  assert.match(hint, /Do not invent image URLs/);
 });
 
 test('physics visuals distinguish braking inertia from a free-body diagram', () => {
