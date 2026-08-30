@@ -11,6 +11,7 @@ const migrated = [
   'src/styles/quantora-monochrome.css',
   'src/components/StudyFlashcards.jsx',
   'src/components/StudyTutorNudge.jsx',
+  'src/components/FinanceBoard.jsx',
 ];
 
 const allowedHex = new Set(['#000', '#000000', '#fff', '#ffffff']);
@@ -73,4 +74,46 @@ test('tutor nudges keep the full visual vocabulary in black and white', () => {
   assert.match(nudge, /const ink = 'var\(--q-ink\)'/);
   assert.match(nudge, /const paper = 'var\(--q-paper\)'/);
   assert.doesNotMatch(nudge, /avatar|mascot/i);
+});
+
+/*
+ * The Finance board is the first non-Study surface on the tokens. It used to
+ * take isLight, textColor and subtextColor from its parent and pick a teal
+ * accent from them. A component that asks what colour to be is how a stray
+ * shade re-enters a monochrome system, so the props are gone and the tokens
+ * decide.
+ */
+test('the Finance board takes no inherited colour props', () => {
+  const board = read('src/components/FinanceBoard.jsx');
+  const signature = board.match(/export default function FinanceBoard\(\{([^}]*)\}/)?.[1] || '';
+  assert.ok(signature, 'the board signature must be readable');
+  for (const prop of ['isLight', 'textColor', 'subtextColor']) {
+    assert.doesNotMatch(signature, new RegExp(`\\b${prop}\\b`), `${prop} must not be a prop`);
+  }
+
+  // And the parent must stop handing them over.
+  const studio = read('src/components/AiStudio.jsx');
+  const usage = studio.match(/<FinanceBoard[\s\S]*?\/>/)?.[0] || '';
+  assert.ok(usage, 'the board must still be rendered');
+  assert.doesNotMatch(usage, /isLight|textColor|subtextColor/);
+});
+
+test('the Finance board builds hierarchy from type and rules, not a third colour', () => {
+  const board = read('src/components/FinanceBoard.jsx');
+  assert.match(board, /background: 'var\(--q-paper\)'/);
+  assert.match(board, /color: 'var\(--q-ink\)'/);
+  assert.match(board, /border: '1px solid var\(--q-border\)'/);
+  assert.match(board, /borderTop: '1px solid var\(--q-border\)'/, 'the chip row is separated by a rule, not a tint');
+  assert.doesNotMatch(board, /\bopacity\s*[:=]/i, 'no faked shades');
+  assert.doesNotMatch(board, /boxShadow|textShadow/, 'no glow standing in for an accent');
+  assert.match(board, /className="q-mono-control q-mono-chip"/, 'chips take the shared focus and inversion primitives');
+});
+
+/* Inversion is the system's highlight — the one emphasis available without a third value. */
+test('the chip primitive highlights by inverting paper and ink', () => {
+  const tokens = read('src/styles/quantora-monochrome.css');
+  const rule = tokens.match(/\.q-mono-chip:hover,[\s\S]*?\{([\s\S]*?)\}/)?.[1] || '';
+  assert.ok(rule, 'the chip primitive must exist');
+  assert.match(rule, /background:\s*var\(--q-inverse-paper\)/);
+  assert.match(rule, /color:\s*var\(--q-inverse-ink\)/);
 });

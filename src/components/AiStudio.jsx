@@ -2264,9 +2264,6 @@ Paused — ${autoPauseRef.current}.`
                         {studioDomain === 'finance' && msg.id === latestAiId && financeBrief?.active ? (
                           <FinanceBoard
                             brief={financeBrief}
-                            isLight={isLight}
-                            textColor={textColor}
-                            subtextColor={subtextColor}
                             onAsk={(text) => setInputText(text)}
                             onSend={(text) => handleSendMessage(text)}
                           />

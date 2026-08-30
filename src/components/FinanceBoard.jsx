@@ -6,8 +6,20 @@ import React from 'react';
  * composer so the user swaps in their own numbers; the Finance gateways then
  * answer from real data or arithmetic — never a guess. A launcher, not advice.
  * Rendered only in the Finance workspace.
+ *
+ * Monochrome (Quantora design system). This board used to carry a teal accent
+ * and slate borders, with light and dark handled by an `isLight` prop and two
+ * inherited colour props. All four are gone: the tokens in
+ * quantora-monochrome.css already flip on [data-theme], so a component that
+ * asks its parent what colour to be is both redundant and a way for a stray
+ * shade to re-enter.
+ *
+ * Hierarchy here is type, space and border — the heading is larger and heavier
+ * than the note under it, and the chips are separated by a rule rather than a
+ * tint. The chips invert on hover and focus, which is the system's substitute
+ * for a highlight colour.
  */
-export default function FinanceBoard({ brief, isLight, textColor, subtextColor, onAsk, onSend }) {
+export default function FinanceBoard({ brief, onAsk, onSend }) {
   const actions = brief?.actions || [];
   if (!actions.length) return null;
 
@@ -23,10 +35,11 @@ export default function FinanceBoard({ brief, isLight, textColor, subtextColor, 
       onClick={() => use(action.prompt)}
       title={action.prompt}
       data-quantora-finance-action={action.id}
+      className="q-mono-control q-mono-chip"
       style={{
-        border: isLight ? '1px solid #99f6e4' : '1px solid rgba(45,212,191,0.45)',
-        background: isLight ? '#f0fdfa' : 'rgba(45,212,191,0.12)',
-        color: textColor,
+        border: '1px solid var(--q-border)',
+        background: 'var(--q-paper)',
+        color: 'var(--q-ink)',
         borderRadius: '999px',
         padding: '7px 12px',
         fontSize: '0.78rem',
@@ -43,19 +56,33 @@ export default function FinanceBoard({ brief, isLight, textColor, subtextColor, 
       data-quantora-finance-board="true"
       style={{
         marginTop: '10px',
-        border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.25)',
+        border: '1px solid var(--q-border)',
         borderRadius: '14px',
         padding: '12px 14px',
-        background: isLight ? 'rgba(240,253,250,0.55)' : 'rgba(15,23,42,0.35)',
+        background: 'var(--q-paper)',
+        color: 'var(--q-ink)',
       }}
     >
-      <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, marginBottom: '3px' }}>
+      <div style={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.02em', marginBottom: '3px' }}>
         Finance desk
       </div>
-      <div style={{ fontSize: '0.74rem', color: subtextColor, marginBottom: '10px', lineHeight: 1.5 }}>
+      {/*
+        Secondary, without being a lighter grey: one step down in size and back
+        to normal weight carries the same "this is the note, that was the
+        heading" reading that a muted colour used to.
+      */}
+      <div style={{ fontSize: '0.74rem', fontWeight: 400, marginBottom: '10px', lineHeight: 1.5 }}>
         Deterministic tools — every answer is computed and cited, never guessed. Tap one, then edit the numbers.
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          borderTop: '1px solid var(--q-border)',
+          paddingTop: '10px',
+        }}
+      >
         {actions.map((action) => chip(action))}
       </div>
     </div>
