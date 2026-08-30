@@ -276,6 +276,11 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
 
 const formatModelName = (name) => name ? name.replace(/\s*\(free\)/ig, '').trim() : '';
 
+// Dual Arena (compare two models side-by-side) is a power-user experiment, not
+// part of the clean, purposeful advisor surface — hidden across all workspaces.
+// Flip to true to bring the toggle back; the arena code below stays intact.
+const SHOW_DUAL_ARENA = false;
+
 export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, availableModels, onPushToCanvas, user, isLight, dreamNodes, setDreamNodes, setActiveTab, inputText: externalInputText, setInputText: setExternalInputText }) {
   // Chat Sessions & History Management (Claude / ChatGPT / Gemini style)
   const {
@@ -3273,7 +3278,8 @@ Paused — ${autoPauseRef.current}.`
           </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flexShrink: 0 }}>
-          {/* Dual Model Arena Toggle Button */}
+          {/* Dual Model Arena Toggle Button — hidden across workspaces (SHOW_DUAL_ARENA) */}
+          {SHOW_DUAL_ARENA && (
           <button
             data-quantora-dual-arena="true"
             aria-pressed={arenaMode}
@@ -3297,6 +3303,7 @@ Paused — ${autoPauseRef.current}.`
           >
             <Layers size={14} /> {arenaMode ? '⚔️ Arena Active' : '⚔️ Dual Arena'}
           </button>
+          )}
 
           {/* Model B Selector Dropdown in Arena Mode */}
           {arenaMode && (
