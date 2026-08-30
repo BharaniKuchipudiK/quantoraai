@@ -2462,8 +2462,8 @@ html[data-quantora-domain="education"] .app-shell--studio .ai-studio-thread {
 }
 
 @keyframes study-flashcard-face {
-  from { opacity: 0.35; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { transform: translateY(3px); }
+  to { transform: translateY(0); }
 }
 
 @keyframes study-answer-settle {
