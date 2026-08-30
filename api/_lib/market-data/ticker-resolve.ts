@@ -127,3 +127,64 @@ export function resolveTicker(raw: string): TickerResolution {
 export function tickerForName(name: string): string | null {
   return BY_NAME.get(String(name || "").trim().toLowerCase()) || null;
 }
+
+/**
+ * The first company or ticker named anywhere in a sentence.
+ *
+ * `resolveTicker` answers "what is this token?"; an investment question does
+ * not hand you the token — it buries it in prose ("thinking about putting some
+ * money into Apple"). This scans for a known name or an explicit ticker.
+ *
+ * Aliases are matched longest-first so "coca cola" wins over a bare "coke", and
+ * the free-text ticker scan requires at least two characters: a lone capital
+ * letter in ordinary prose is far more likely to be a word than Visa.
+ *
+ * `matchedAs` matters to the caller: an explicit ticker ("should I buy AAPL")
+ * is unambiguously about the security, while a company NAME ("should I buy an
+ * Apple Watch") is very often about the product. The caller uses this to demand
+ * more context before treating a bare name as an investment question.
+ */
+export type TextTickerMatch = {
+  symbol: string;
+  matchedAs: "ticker" | "name";
+  /** Where the mention starts, so the caller can read the words around it. */
+  index: number;
+  /** The literal text that matched, for the same reason. */
+  matchedText: string;
+};
+
+export function findTickerInText(message: string): TextTickerMatch | null {
+  const text = String(message || "");
+  if (!text.trim()) return null;
+
+  // An explicit uppercase ticker is the least ambiguous signal available.
+  for (const match of text.matchAll(/\b([A-Z]{2,5})\b/g)) {
+    const entry = BY_SYMBOL.get(match[1]);
+    if (entry) {
+      return { symbol: entry.symbol, matchedAs: "ticker", index: match.index ?? 0, matchedText: match[1] };
+    }
+  }
+
+  const lower = text.toLowerCase();
+  let best: { symbol: string; index: number; length: number } | null = null;
+  for (const [alias, symbol] of BY_NAME) {
+    const at = lower.indexOf(alias);
+    if (at < 0) continue;
+    // Word boundaries by hand: aliases contain spaces, dots and ampersands that
+    // \b handles inconsistently.
+    const before = at === 0 ? " " : lower[at - 1];
+    const after = at + alias.length >= lower.length ? " " : lower[at + alias.length];
+    if (/[a-z0-9]/.test(before) || /[a-z0-9]/.test(after)) continue;
+    // Earliest mention wins; on a tie the longer alias is the more specific one.
+    if (!best || at < best.index || (at === best.index && alias.length > best.length)) {
+      best = { symbol, index: at, length: alias.length };
+    }
+  }
+  if (!best) return null;
+  return {
+    symbol: best.symbol,
+    matchedAs: "name",
+    index: best.index,
+    matchedText: text.slice(best.index, best.index + best.length),
+  };
+}
