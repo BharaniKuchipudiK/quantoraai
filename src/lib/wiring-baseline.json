@@ -1,6 +1,7 @@
 [
   "api/_lib/agent-execution-fabric.ts::AgentRuntimeRegistry",
   "api/_lib/agent-execution-fabric.ts::validatePclAgentExecutionPlan",
+  "api/_lib/credential-broker.ts::clearGatewayCredentialCache",
   "api/_lib/market-data-store.ts::clearMarketDataCache",
   "api/_lib/office-generation-budget.js::OFFICE_HOST_PROXY_LIMIT_MS",
   "api/_lib/office-generation-budget.js::OFFICE_MAX_FULL_PROVIDER_CALLS",

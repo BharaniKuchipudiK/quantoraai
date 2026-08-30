@@ -292,11 +292,11 @@ export function deriveStudioMission({
   // The pure-advice desks (Finance, Study, Research) answer questions; they do
   // not run a curated, persistent build objective the way the Building desk and
   // Travel trip-planning do. A single conversationContext.goal is sticky across
-  // turns and bleeds across the shared Personal Workspace — so an old build/scan
-  // ask ("Scan through the GitHub public repositories…") leaks in as
-  // "Working through: …" / "Learning: …" on an unrelated Finance or Study turn.
-  // In those desks, take a mission only from THIS session's own content and
-  // never resurrect the cross-session sticky goal/understanding.
+  // turns and bleeds across the shared Personal Workspace, so an old unrelated
+  // repository-scan/build ask can otherwise reappear as "Working through: …" or
+  // "Learning: …" on an unrelated Finance or Study turn. In those desks, take a
+  // mission only from THIS session's own content and never resurrect the
+  // cross-session sticky goal/understanding.
   const adviceDesk = studioDomain === 'finance'
     || studioDomain === 'education'
     || studioDomain === 'research';

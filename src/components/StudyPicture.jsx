@@ -45,15 +45,6 @@ function PictureArt({ isLight, caption, kind }) {
         </>
       ) : null}
       {kind === 'physics-motion' && physicsVariant === 'free-body' ? (
-        /*
-         * A real free-body diagram, not a box with decoration. Every force is
-         * drawn FROM the same point — the body's centre — because that is the
-         * whole idea the diagram exists to teach, and the previous version drew
-         * them from an offset that quietly taught the wrong thing. Friction
-         * opposes the applied force; normal and weight are equal and opposite
-         * and are drawn that length, so the picture is consistent with the
-         * physics rather than merely decorated with its vocabulary.
-         */
         <>
           <line x1="24" y1="132" x2="336" y2="132" stroke={ink} strokeWidth="2.5" />
           {[36, 60, 84, 108, 132, 156, 180, 204, 228, 252, 276, 300, 324].map((x) => (
@@ -72,8 +63,6 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="252" y="102" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="700">F applied</text>
 
           <Arrow x1="180" y1="114" x2="86" y2="114" label="" color="#94a3b8" />
-          {/* Left of the block, not over it: the label sat at x=140 with the
-              block starting at 152, so a ~50px word crossed its edge. */}
           <text x="120" y="102" textAnchor="middle" fill={muted} fontSize="12" fontWeight="700">friction</text>
 
           <circle cx="180" cy="114" r="3.5" fill={ink} />
@@ -137,31 +126,32 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   if (!label) return null;
   const kind = studyVisualKind(label);
   const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(label) : null;
-  // No diagram earns a frame it cannot fill. An empty decorative box beside a
-  // lesson reads as a broken image, which is worse than no image at all.
   if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
       data-quantora-study-picture-variant={physicsVariant || undefined}
       style={{
-        margin: '0 0 16px',
-        maxWidth: '420px',
+        margin: '2px 0 18px',
+        maxWidth: '430px',
       }}
     >
       <div style={{
-        borderRadius: '20px',
+        borderRadius: '18px',
         overflow: 'hidden',
-        border: isLight ? '1px solid #fdba74' : '1px solid rgba(251,146,60,0.35)',
+        border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.20)',
+        background: isLight ? '#f8fafc' : '#111827',
+        boxShadow: isLight ? '0 8px 28px rgba(15,23,42,0.05)' : '0 8px 28px rgba(0,0,0,0.12)',
       }}>
         <PictureArt isLight={isLight} caption={label} kind={kind} />
       </div>
       <figcaption style={{
-        marginTop: '8px',
-        fontSize: '0.85rem',
-        lineHeight: 1.4,
+        marginTop: '7px',
+        paddingLeft: '2px',
+        fontSize: '0.78rem',
+        lineHeight: 1.45,
         fontFamily: 'var(--font-body)',
-        color: isLight ? '#9a3412' : '#fdba74',
+        color: isLight ? '#64748b' : '#94a3b8',
       }}>
         {label}
       </figcaption>

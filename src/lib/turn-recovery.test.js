@@ -62,3 +62,18 @@ test('travel flight provider failures auto-retry with a flight-specific notice',
   assert.equal(decision.reason, 'travel-flight');
   assert.match(decision.notice, /flight/i);
 });
+
+test('a partial answer is resumable, not a dead end', () => {
+  // It must not RESTART (that would duplicate what is already on screen) but it
+  // must hand the caller a way to continue — the old behaviour did neither.
+  const decision = resolveTurnRecovery({ attempt: 1, retryable: true, hasPartialText: true });
+  assert.equal(decision.retry, false, 'never re-runs the whole turn');
+  assert.equal(decision.resume, true, 'offers a continuation instead');
+  assert.equal(decision.reason, 'partial-answer');
+});
+
+test('a failure with no partial text is not resumable', () => {
+  const decision = resolveTurnRecovery({ attempt: 2, retryable: true, hasPartialText: false });
+  assert.equal(decision.retry, false, 'attempts exhausted');
+  assert.equal(decision.resume, false, 'nothing streamed, so nothing to continue');
+});

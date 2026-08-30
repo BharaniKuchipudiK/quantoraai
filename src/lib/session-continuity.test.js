@@ -6,6 +6,7 @@ import {
   sessionHandoverLabel,
   shouldOfferSessionHandover,
   describeSessionHandover,
+  providerExhaustionPressure,
 } from './session-continuity.js';
 
 const user = (text) => ({ sender: 'user', text });
@@ -154,4 +155,22 @@ test('a handover says what it carries before it carries it', () => {
   const quiet = describeSessionHandover({ summary: {}, trigger: { metrics: {} } });
   assert.equal(quiet.carried, 0);
   assert.match(quiet.reason, /close to the size/);
+});
+
+test('provider exhaustion is a real handover trigger, not just context pressure', () => {
+  const pressure = providerExhaustionPressure('no healthy AI route');
+  assert.equal(pressure.recommendHandover, true);
+  assert.match(pressure.reasons[0], /provider-exhausted/);
+
+  // The same contract builder must accept it, so a route death can seed a fresh
+  // chat with this session's goal and facts.
+  const contract = createSessionHandoverContract({
+    sourceSessionId: 'sess-1',
+    conversationContext: { goal: 'Plan a debt payoff', facts: ['Salary 15000'] },
+    messages: [{ sender: 'user', text: 'How do I clear my card first?' }],
+    pressure,
+  });
+  assert.ok(contract, 'a route death can hand over');
+  assert.equal(contract.summary.goal, 'Plan a debt payoff');
+  assert.match(contract.trigger.reasons[0], /provider-exhausted/);
 });
