@@ -72,8 +72,6 @@ import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
 import FinanceBoard from './FinanceBoard.jsx';
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
-import TravelTripBoard from './TravelTripBoard.jsx';
-import { deriveTravelBrief } from '../lib/travel-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
@@ -98,6 +96,10 @@ import {
 
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
 const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
+// Only a travel thread ever renders the trip board, and code-highlight-browser-gate
+// holds the desk entry chunk to 300 KB gzipped. Loading it on demand keeps a
+// travel-only surface off every other desk's download.
+const TravelTripBoard = lazy(() => import('./TravelTripBoard.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -1328,11 +1330,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     [studioDomain, messages],
   );
 
-  const travelBrief = React.useMemo(
-    () => (studioDomain === 'travel' ? deriveTravelBrief({ messages }) : null),
-    [studioDomain, messages],
-  );
-
   const handlePreviewCodeBlock = useCallback((codeString, lang) => {
     if (!canExplicitlyPreviewCode(studioDomain)) return;
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
@@ -2278,16 +2275,18 @@ Paused — ${autoPauseRef.current}.`
                             onSend={(text) => handleSendMessage(text)}
                           />
                         ) : null}
-                        {studioDomain === 'travel' && msg.id === latestAiId && travelBrief?.active ? (
-                          <TravelTripBoard
-                            brief={travelBrief}
-                            isLight={isLight}
-                            textColor={textColor}
-                            subtextColor={subtextColor}
-                            signedIn={Boolean(user)}
-                            onAsk={(text) => setInputText(text)}
-                            onRequireAuth={onOpenAuth}
-                          />
+                        {studioDomain === 'travel' && msg.id === latestAiId ? (
+                          <Suspense fallback={null}>
+                            <TravelTripBoard
+                              messages={messages}
+                              isLight={isLight}
+                              textColor={textColor}
+                              subtextColor={subtextColor}
+                              signedIn={Boolean(user)}
+                              onAsk={(text) => setInputText(text)}
+                              onRequireAuth={onOpenAuth}
+                            />
+                          </Suspense>
                         ) : null}
                         </>
                         );
@@ -2409,7 +2408,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, travelBrief, user, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {
