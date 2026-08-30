@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   studyApplicationAsk,
+  studyActionVisibleText,
   studyFlashcardAsk,
   studyIcebreakerAsk,
   studyLessonAsk,
@@ -9,6 +10,10 @@ import {
   studyPlanAsk,
   studyPracticeAsk,
   studyQuizAsk,
+  studyRealWorldAsk,
+  studySketchChallengeAsk,
+  studyTriviaAsk,
+  studyWhereNextAsk,
 } from './study-learning-resources.js';
 
 test('Study asks stay context-aware and fail closed on invented media', () => {
@@ -30,7 +35,36 @@ test('Study asks stay context-aware and fail closed on invented media', () => {
   assert.match(studyQuizAsk("Newton's laws"), /current conversation/i);
   assert.match(studyPracticeAsk("Newton's laws"), /current conversation/i);
   assert.match(studyFlashcardAsk("Newton's laws"), /current conversation/i);
+  assert.match(studyFlashcardAsk("Newton's laws"), /quantora-study-flashcard/i);
+  assert.match(studyFlashcardAsk("Newton's laws"), /Do not use a Markdown table/i);
   assert.match(studyApplicationAsk("Newton's laws"), /current learning context/i);
+  assert.match(studyRealWorldAsk("Newton's laws"), /real-world application/i);
+  assert.match(studySketchChallengeAsk("Newton's laws"), /under two minutes/i);
+  assert.match(studyTriviaAsk("Newton's laws"), /never invent an age, date, quote/i);
+  assert.match(studyWhereNextAsk("Newton's laws"), /three concise next moves/i);
   assert.match(studyPlanAsk("Newton's laws"), /context already known/i);
   assert.match(studyNotesAsk("Newton's laws"), /actually established/i);
+});
+
+test('learner-directed Study paths stay focused and appear as natural requests', () => {
+  assert.equal(studyActionVisibleText('real-world', 'inertia'), 'Show me inertia in the real world.');
+  assert.equal(studyActionVisibleText('sketch', 'inertia'), 'Give me a quick sketch challenge for inertia.');
+  assert.equal(studyActionVisibleText('trivia', 'inertia'), 'Tell me one memorable fact about inertia.');
+  assert.equal(studyActionVisibleText('where-next', 'inertia'), 'Help me choose where to go next after inertia.');
+});
+
+test('Study controls show a human learner request while model instructions stay private', () => {
+  const detailed = studyLessonAsk("Newton's laws");
+  const visible = studyActionVisibleText('lesson', "Newton's laws");
+  assert.match(detailed, /Do not invent a specific YouTube/i);
+  assert.equal(visible, "Explain Newton's laws like a real tutor.");
+  assert.doesNotMatch(visible, /Do not|context-aware|wait for the learner|picture tag/i);
+});
+
+test('Study lesson guidance asks for natural tutoring instead of robotic labels', () => {
+  const ask = studyLessonAsk('inertia');
+  assert.match(ask, /two or three natural paragraphs/i);
+  assert.match(ask, /Do not use labels/i);
+  assert.match(ask, /End on one short question/i);
+  assert.doesNotMatch(ask, /End with one context-aware question/i);
 });
