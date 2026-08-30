@@ -9,6 +9,28 @@ const MAX_FIELD_LEN = 280;
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;
 const CTX_START = /<!--\s*quantora-ctx:/i;
 
+/*
+ * A known legacy cross-workspace prompt was once persisted as generic project
+ * memory. Because project memory is intentionally reused across sessions, that
+ * one bad value could reappear long after the original turn and masquerade as
+ * the current Study topic. Quarantine the SHAPE of that legacy repository-scan
+ * task at normalization time, which protects local restore, remote project
+ * restore, handover and the API request path. A genuine learning ask such as
+ * "Explain how GitHub branches work" does not match this pattern.
+ */
+const LEGACY_REPOSITORY_SCAN = /\bscan\s+through\b[\s\S]{0,120}\bgithub\b[\s\S]{0,120}\bpublic\s+repositor(?:y|ies)\b[\s\S]{0,160}\bfind\s+out\s+if\s+we\s+can\b/i;
+
+export function isLegacySessionContamination(text) {
+  return typeof text === 'string' && LEGACY_REPOSITORY_SCAN.test(text.replace(/\s+/g, ' ').trim());
+}
+
+function cleanMemoryText(text, max) {
+  if (typeof text !== 'string') return undefined;
+  const value = text.trim().slice(0, max);
+  if (!value || isLegacySessionContamination(value)) return undefined;
+  return value;
+}
+
 export function emptySessionContext() {
   return {};
 }
@@ -19,12 +41,11 @@ export function normalizeSessionContext(value) {
     ? value.facts
         .filter((f) => typeof f === 'string' && f.trim().length > 0)
         .map((f) => f.trim().slice(0, MAX_FIELD_LEN))
+        .filter((f) => !isLegacySessionContamination(f))
         .slice(-MAX_FACTS)
     : undefined;
-  const goal = typeof value.goal === 'string' ? value.goal.trim().slice(0, MAX_FIELD_LEN) : undefined;
-  const understanding = typeof value.understanding === 'string'
-    ? value.understanding.trim().slice(0, MAX_FIELD_LEN * 2)
-    : undefined;
+  const goal = cleanMemoryText(value.goal, MAX_FIELD_LEN);
+  const understanding = cleanMemoryText(value.understanding, MAX_FIELD_LEN * 2);
 
   return {
     ...(goal ? { goal } : {}),
