@@ -54,11 +54,15 @@ test('migrated Study controls do not use opacity to fake disabled or secondary s
 
 test('flashcards express reveal, disabled, and focus states without a third color', () => {
   const flashcards = read('src/components/StudyFlashcards.jsx');
+  const inheritedStyles = read('src/index.css');
+  const faceAnimation = inheritedStyles.match(/@keyframes study-flashcard-face\s*\{([\s\S]*?)\n\}/)?.[1] || '';
   assert.match(flashcards, /background:\s*revealed \? 'var\(--q-inverse-paper\)' : 'var\(--q-paper\)'/);
   assert.match(flashcards, /color:\s*revealed \? 'var\(--q-inverse-ink\)' : 'var\(--q-ink\)'/);
   assert.match(flashcards, /borderStyle:\s*disabled \? 'dashed' : 'solid'/);
   assert.match(flashcards, /className="q-mono-control"/);
   assert.doesNotMatch(flashcards, /boxShadow|textShadow/);
+  assert.ok(faceAnimation, 'the inherited flashcard animation must remain covered by this contract');
+  assert.doesNotMatch(faceAnimation, /\bopacity\s*:/i, 'the inherited flashcard animation must not manufacture gray');
 });
 
 test('tutor nudges keep the full visual vocabulary in black and white', () => {
