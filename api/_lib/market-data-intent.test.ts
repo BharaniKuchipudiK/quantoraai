@@ -18,6 +18,26 @@ test("uses the rate/convert hint fallback when two currencies appear without a c
   assert.deepEqual(parseMarketDataIntent("what is the USD SGD exchange rate"), { kind: "fx", base: "USD", quote: "SGD", amount: null });
 });
 
+test("grounds a conversion asked in spoken currency names, not just ISO codes", () => {
+  assert.deepEqual(
+    parseMarketDataIntent("How much is one Singapore dollar in Indian Rupees"),
+    { kind: "fx", base: "SGD", quote: "INR", amount: null },
+  );
+  assert.deepEqual(
+    parseMarketDataIntent("convert 500 euros to pounds"),
+    { kind: "fx", base: "EUR", quote: "GBP", amount: 500 },
+  );
+  assert.deepEqual(
+    parseMarketDataIntent("what's the US dollar worth in yen"),
+    { kind: "fx", base: "USD", quote: "JPY", amount: null },
+  );
+});
+
+test("a spoken-name pair still needs a conversion signal, not a passing mention", () => {
+  assert.equal(parseMarketDataIntent("I keep some euros and pounds in my wallet").kind, null);
+  assert.equal(parseMarketDataIntent("the Singapore dollar has been strong lately").kind, null);
+});
+
 test("does not match a single currency or same-currency pair", () => {
   assert.equal(parseMarketDataIntent("I have some USD saved").kind, null);
   assert.equal(parseMarketDataIntent("USD to USD").kind, null);

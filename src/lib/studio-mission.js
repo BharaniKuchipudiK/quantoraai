@@ -285,15 +285,26 @@ export function deriveStudioMission({
   const buildRequest = [...users].reverse().find((text) => isMissionBuildAsk(text))
     || users.find((text) => isMissionBuildAsk(text))
     || '';
-  // conversationContext.goal is sticky across turns (and can bleed from Study in
-  // a shared Personal Workspace). This chat's build request wins when they diverge.
-  // Complaint follow-ups must not become "Building: Why the images are not there…".
-  const goal = pickSessionMissionGoal(ctx.goal, buildRequest);
   const lifeDomain = studioDomain === 'travel'
     || studioDomain === 'education'
     || studioDomain === 'finance'
     || studioDomain === 'research';
-  const remembered = isCannedProjectDescription(ctx.understanding) ? '' : ctx.understanding;
+  // The pure-advice desks (Finance, Study, Research) answer questions; they do
+  // not run a curated, persistent build objective the way the Building desk and
+  // Travel trip-planning do. A single conversationContext.goal is sticky across
+  // turns and bleeds across the shared Personal Workspace — so an old build/scan
+  // ask ("Scan through the GitHub public repositories…") leaks in as
+  // "Working through: …" / "Learning: …" on an unrelated Finance or Study turn.
+  // In those desks, take a mission only from THIS session's own content and
+  // never resurrect the cross-session sticky goal/understanding.
+  const adviceDesk = studioDomain === 'finance'
+    || studioDomain === 'education'
+    || studioDomain === 'research';
+  // conversationContext.goal is sticky across turns (and can bleed from Study in
+  // a shared Personal Workspace). This chat's build request wins when they diverge.
+  // Complaint follow-ups must not become "Building: Why the images are not there…".
+  const goal = pickSessionMissionGoal(adviceDesk ? '' : ctx.goal, buildRequest);
+  const remembered = adviceDesk || isCannedProjectDescription(ctx.understanding) ? '' : ctx.understanding;
   const understanding = remembered
     || (hasPreview && officeKind
       ? 'An Office file is in Preview. This is not a website.'
