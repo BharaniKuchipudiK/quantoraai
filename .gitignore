@@ -25,8 +25,5 @@ coverage/
 /test_simulation.cjs
 .worktrees/
 
-# Browser release gate output. scripts/*-browser-gate.mjs write screenshots here
-# and CI uploads the directory as a build artifact — a CI upload path, not
-# repository content. Running the gates locally to verify a fix left 5.5 MB of
-# PNGs staged, and one `git add -A` swept them into a commit.
+# Gate output (browser gates, stress runs) — tens of MB, never source.
 artifacts/
