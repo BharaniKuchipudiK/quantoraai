@@ -5,6 +5,7 @@ import {
   ensureStudyTeachingVisual,
   pictureCaptionFitsLesson,
   splitStudySegments,
+  studyNumberLineLabel,
   studyNumberLineSpec,
   studyPicturePromptHint,
   studyPhysicsVisualVariant,
@@ -125,6 +126,29 @@ test('structured captions unlock deterministic process, timeline, and number-lin
   const numberLine = 'Number line from -3 to 5, mark 2';
   assert.equal(studyVisualKind(numberLine), 'number-line');
   assert.deepEqual(studyNumberLineSpec(numberLine), { min: -3, max: 5, mark: 2 });
+});
+
+test('explicit process grammar wins over broad subject keywords', () => {
+  assert.equal(studyVisualKind('Process: cell grows -> DNA replicates -> cell divides'), 'process-flow');
+  assert.equal(studyVisualKind('Process: reactants -> reaction -> products'), 'process-flow');
+  assert.equal(studyVisualKind('Process: force applied -> velocity changes -> object accelerates'), 'process-flow');
+});
+
+test('timeline years are chronological even when the caption mentions them out of order', () => {
+  const caption = 'Timeline: World War II began in 1939, after World War I began in 1914 and ended in 1918';
+  assert.deepEqual(studyTimelinePoints(caption), ['1914', '1918', '1939']);
+  assert.equal(studyVisualKind(caption), 'timeline');
+});
+
+test('narrow number lines preserve enough precision to keep tick labels distinct', () => {
+  const spec = studyNumberLineSpec('Number line from 0 to 0.04, mark 0.03');
+  assert.deepEqual(spec, { min: 0, max: 0.04, mark: 0.03 });
+  const labels = Array.from({ length: 7 }, (_, index) => {
+    const value = spec.min + (spec.max - spec.min) * (index / 6);
+    return studyNumberLineLabel(value, spec.min, spec.max);
+  });
+  assert.equal(new Set(labels).size, 7);
+  assert.equal(studyNumberLineLabel(spec.mark, spec.min, spec.max), '0.03');
 });
 
 test('structured visual grammar fails closed when the data needed to draw is missing', () => {
