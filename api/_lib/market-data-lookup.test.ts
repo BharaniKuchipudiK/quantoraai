@@ -151,3 +151,47 @@ test('when everything is stale it still names the date it is refusing', () => {
   assert.equal(result.stale, true);
   assert.match(result.text, /2026-08-01/);
 });
+
+/*
+ * Freshness is a property of WHEN the price was struck, not which feed carried
+ * it. Reported live: on Sunday 30 Aug, AAPL from Finnhub showed "(live)" with
+ * "As of 20:00 UTC" — that was Friday's closing print wearing a live badge, and
+ * with no date on screen it read as "20:00 UTC today".
+ */
+const finnhubBar = (asOf: string): PriceBar => ({
+  instrument_id: "AAPL.US", price_date: asOf.slice(0, 10), open: null, high: null, low: null,
+  close: 319.7, adj_close: null, volume: null, currency: "USD", source: "finnhub", as_of: asOf,
+});
+
+test("price: an intraday quote struck minutes ago is live", () => {
+  const now = new Date("2026-08-31T14:30:00Z");
+  const r = priceLookupResult({ kind: "price", symbol: "AAPL" }, finnhubBar("2026-08-31T14:25:00Z"), null, now);
+  assert.equal(r.resolved, true);
+  assert.match(r.text, /\(live\)/);
+  assert.match(r.text, /14:25 UTC today/);
+});
+
+test("price: Friday's close read on Sunday is a last trade, dated — never 'live'", () => {
+  const sunday = new Date("2026-08-30T11:50:00Z");
+  const r = priceLookupResult({ kind: "price", symbol: "AAPL" }, finnhubBar("2026-08-28T20:00:00Z"), null, sunday);
+  assert.equal(r.resolved, true);
+  assert.doesNotMatch(r.text, /\(live\)/, "a settled price must not wear a live badge");
+  assert.match(r.text, /\(last trade\)/);
+  assert.match(r.text, /Fri 28 Aug/, "the date must be on screen, not just the time");
+  assert.match(r.text, /not a moving price/);
+});
+
+test("price: a future timestamp falls back to the dated form rather than claiming live", () => {
+  const now = new Date("2026-08-31T14:00:00Z");
+  const r = priceLookupResult({ kind: "price", symbol: "AAPL" }, finnhubBar("2026-08-31T18:00:00Z"), null, now);
+  assert.doesNotMatch(r.text, /\(live\)/);
+  assert.match(r.text, /\(last trade\)/);
+});
+
+test("price: an end-of-day bar stays a dated close", () => {
+  const now = new Date("2026-08-31T14:00:00Z");
+  const stooq: PriceBar = { ...finnhubBar("2026-08-30T20:00:00Z"), source: "stooq" };
+  const r = priceLookupResult({ kind: "price", symbol: "AAPL" }, stooq, null, now);
+  assert.match(r.text, /\(last close\)/);
+  assert.match(r.text, /Sun 30 Aug/);
+});
