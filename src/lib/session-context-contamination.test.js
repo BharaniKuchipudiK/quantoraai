@@ -33,3 +33,9 @@ test('normal GitHub learning topics are not quarantined', () => {
   const normalized = normalizeSessionContext({ goal: 'Explain how GitHub branches work' });
   assert.equal(normalized.goal, 'Explain how GitHub branches work');
 });
+
+test('global Coding or Research memory can still legitimately scan repositories', () => {
+  const legitimate = ['Scan through GitHub', ' public repositories for React authentication patterns'].join('');
+  const normalized = normalizeSessionContext({ goal: legitimate });
+  assert.equal(normalized.goal, legitimate);
+});
