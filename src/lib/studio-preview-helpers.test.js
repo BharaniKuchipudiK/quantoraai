@@ -130,13 +130,24 @@ test('the first build does not force the coding desk open', () => {
   assert.equal(first.reopenDesk, false);
 });
 
-test('plain chat does not revive or reopen a project', () => {
-  const follow = applyWorkspaceFromChat('Looks good. What next?', {
+test('plain chat does not revive or reopen a project, and does not erase it either', () => {
+  const desk = {
     'index.html': { content: '<!DOCTYPE html><html><body>Hi</body></html>', language: 'html' },
-  });
+  };
+  const follow = applyWorkspaceFromChat('Looks good. What next?', desk);
   assert.equal(follow.didUpdate, false);
   assert.equal(follow.reopenDesk, false);
-  assert.deepEqual(follow.vfs, {});
+
+  /*
+   * `vfs` used to be {} here, and that emptiness was the hazard: any caller
+   * reading it without first checking didUpdate replaced a working project with
+   * an empty desk. The desk that should EXIST after a chat turn is the one that
+   * already existed.
+   */
+  assert.deepEqual(follow.vfs, desk, 'a chat turn must not blank the desk');
+
+  // What the turn PRODUCED is still nothing, and the proof plane reads that.
+  assert.deepEqual(follow.producedVfs, {}, 'nothing was built this turn');
 });
 
 test('error-path provider death still exposes extractable fences for workspace apply', () => {
