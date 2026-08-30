@@ -61,6 +61,26 @@ test('routes deep Study turns within the existing eligible ladder', () => {
   assert.ok(!decision.fallbackModelIds.includes('paid/model-that-was-not-eligible'));
 });
 
+test('routes ordinary Study explanation and practice to the eligible fast Gemini model', () => {
+  const slowFirst = {
+    primaryModelId: 'nvidia/nemotron-3.5-lightning:free',
+    fallbackModelIds: ['gemini-flash-latest', 'openai/gpt-oss-120b:free'],
+    reason: 'ranked_free',
+    provider: 'openrouter' as const,
+    hasVisionSupport: false,
+    selectionSource: 'ranked_free',
+  };
+  for (const message of ['Explain entropy in simple terms.', 'Give me one practice question on entropy.']) {
+    const routed = applyStudyCapabilityRouting({
+      interpretation: interpretStudyTurn({ studioDomain: 'education', message }),
+      baseDecision: slowFirst,
+    });
+    assert.equal(routed.primaryModelId, 'gemini-flash-latest');
+    assert.equal(routed.reason, 'study_fast_response');
+    assert.deepEqual(new Set([routed.primaryModelId, ...routed.fallbackModelIds]), new Set([slowFirst.primaryModelId, ...slowFirst.fallbackModelIds]));
+  }
+});
+
 test('does not override explicit model choices or vision routing', () => {
   const interpretation = interpretStudyTurn({ studioDomain: 'education', message: 'Prove this theorem.' });
   assert.strictEqual(applyStudyCapabilityRouting({ interpretation, baseDecision, explicitModelSelected: true }), baseDecision);

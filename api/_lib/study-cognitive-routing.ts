@@ -121,8 +121,20 @@ function reasoningScore(model: ModelLike, interpretation: StudyCognitiveInterpre
 export function applyStudyCapabilityRouting(input: { interpretation: StudyCognitiveInterpretation | null; baseDecision: RoutingDecision; models?: ModelLike[]; explicitModelSelected?: boolean; hasImages?: boolean }): RoutingDecision {
   const { interpretation, baseDecision } = input;
   if (!interpretation || input.explicitModelSelected || input.hasImages) return baseDecision;
-  if (interpretation.difficulty === 'foundational' && !interpretation.requiresVerification) return baseDecision;
   const ladder = [baseDecision.primaryModelId, ...(baseDecision.fallbackModelIds || [])];
+  if (interpretation.difficulty !== 'advanced' && !interpretation.requiresVerification) {
+    const fastModelId = ladder.find((id) => id.startsWith('gemini'));
+    if (!fastModelId || fastModelId === baseDecision.primaryModelId) return baseDecision;
+    return {
+      ...baseDecision,
+      primaryModelId: fastModelId,
+      fallbackModelIds: ladder.filter((id) => id !== fastModelId),
+      provider: 'gemini',
+      hasVisionSupport: true,
+      reason: 'study_fast_response',
+      selectionSource: 'study_capability_route',
+    };
+  }
   const modelById = new Map((input.models || []).map((model) => [String(model.id || ''), model]));
   const ordered = ladder.map((id, index) => ({ id, index, score: reasoningScore(modelById.get(id) || { id }, interpretation) }))
     .sort((a, b) => b.score - a.score || a.index - b.index).map((item) => item.id);
