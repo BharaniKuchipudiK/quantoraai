@@ -59,11 +59,24 @@ export type BaseRates = {
   yearsCovered: number;
 };
 
+export type StagedEntry = {
+  /** Median 12-month return going in all at once, across the history. */
+  lumpMedianPct: number;
+  /** Median 12-month return spreading entry over `tranches` monthly buys. */
+  stagedMedianPct: number;
+  /** The bad case (10th percentile) for each approach. */
+  lumpP10Pct: number;
+  stagedP10Pct: number;
+  tranches: number;
+  windows: number;
+};
+
 export type SignalRead = {
   symbol: string;
   range: RangePosition | null;
   annualisedVolPct: number | null;
   baseRates: BaseRates | null;
+  stagedEntry: StagedEntry | null;
   spark: string | null;
 };
 
@@ -91,11 +104,21 @@ export function rangePosition(series: PriceBar[], latest: number): RangePosition
   if (prices.length < MIN_BARS_FOR_RANGE) return null;
   if (!Number.isFinite(latest) || latest <= 0) return null;
 
+  /*
+   * A "52-week range" means the intraday extremes, which is what every broker
+   * screen shows. Built from closes alone the band is narrower than advertised
+   * and the marker sits wrong — a stock that spiked to 340 intraday but closed
+   * at 331 would be drawn as if 331 were its high. Highs and lows are used when
+   * the feed carries them, falling back to closes when it does not.
+   */
+  const highs = series.map((b) => b?.high).filter((n): n is number => Number.isFinite(n as number) && (n as number) > 0);
+  const lows = series.map((b) => b?.low).filter((n): n is number => Number.isFinite(n as number) && (n as number) > 0);
+
   // The live price can sit outside the stored range (a fresh high, or a stale
   // series). Widening to include it keeps the marker on the bar and honest:
   // clamping would draw "at the high" for a price well above it.
-  const low = Math.min(...prices, latest);
-  const high = Math.max(...prices, latest);
+  const low = Math.min(...prices, ...lows, latest);
+  const high = Math.max(...prices, ...highs, latest);
   if (!(high > low)) return null;
 
   return {
@@ -159,6 +182,69 @@ export function rollingReturnBaseRates(
     bestPct: Number(sorted[sorted.length - 1].toFixed(1)),
     windows: returns.length,
     yearsCovered: Number((prices.length / TRADING_DAYS_YEAR).toFixed(1)),
+  };
+}
+
+/** Approx. trading days in a month, for spacing the staged buys. */
+const TRADING_DAYS_MONTH = 21;
+
+function percentileOf(sorted: number[], p: number): number {
+  if (!sorted.length) return 0;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))));
+  return sorted[idx];
+}
+
+/**
+ * Going in all at once versus spreading entry, measured on THIS history.
+ *
+ * The card used to assert that staging entry "costs a little of the median and
+ * meaningfully narrows the bad case". That is the received wisdom about
+ * dollar-cost averaging, and it was stated as though it followed from the
+ * calculations — while nothing computed it. Depending on the series it can be
+ * false, and a desk built on computed figures cannot ship an asserted one.
+ *
+ * So it is computed. For every start point, one unit is either deployed
+ * entirely at t0 or in equal monthly tranches, and both are valued at the same
+ * 12-month horizon. The caller reports whichever way the numbers actually fall.
+ */
+export function stagedEntryComparison(
+  series: PriceBar[],
+  tranches = 3,
+  windowDays = TRADING_DAYS_YEAR,
+): StagedEntry | null {
+  const prices = closes(series);
+  const span = Math.max(1, Math.floor(windowDays));
+  const spread = (tranches - 1) * TRADING_DAYS_MONTH;
+  if (tranches < 2 || prices.length - span - spread < MIN_WINDOWS_FOR_BASE_RATES) return null;
+
+  const lump: number[] = [];
+  const staged: number[] = [];
+  for (let i = 0; i + span < prices.length; i += 1) {
+    // Every tranche must land inside the window, so the last start is bounded.
+    if (i + spread >= prices.length) break;
+    const exit = prices[i + span];
+
+    lump.push((exit / prices[i] - 1) * 100);
+
+    let units = 0;
+    for (let t = 0; t < tranches; t += 1) {
+      const at = prices[Math.min(prices.length - 1, i + t * TRADING_DAYS_MONTH)];
+      units += (1 / tranches) / at;
+    }
+    staged.push((units * exit - 1) * 100);
+  }
+  if (lump.length < MIN_WINDOWS_FOR_BASE_RATES) return null;
+
+  const lumpSorted = [...lump].sort((a, b) => a - b);
+  const stagedSorted = [...staged].sort((a, b) => a - b);
+
+  return {
+    lumpMedianPct: Number(median(lumpSorted).toFixed(1)),
+    stagedMedianPct: Number(median(stagedSorted).toFixed(1)),
+    lumpP10Pct: Number(percentileOf(lumpSorted, 10).toFixed(1)),
+    stagedP10Pct: Number(percentileOf(stagedSorted, 10).toFixed(1)),
+    tranches,
+    windows: lump.length,
   };
 }
 
@@ -236,13 +322,15 @@ export function buildSignalRead(
     range: rangePosition(recent, latest),
     annualisedVolPct: annualisedVolatility(recent),
     baseRates: rollingReturnBaseRates(series, thresholdPct),
+    stagedEntry: stagedEntryComparison(series),
     spark: sparklineBlocks(recent),
   };
 }
 
 /** True when nothing beyond the bare price could be computed. */
 export function isSignalEmpty(read: SignalRead): boolean {
-  return !read.range && read.annualisedVolPct === null && !read.baseRates && !read.spark;
+  return !read.range && read.annualisedVolPct === null && !read.baseRates
+    && !read.stagedEntry && !read.spark;
 }
 
 /*
@@ -295,12 +383,49 @@ function theView(read: SignalRead): string {
     );
   }
 
-  lines.push(
-    "**My lean: timing is not your lever here.** Over a five-year horizon the *month* you enter explains "
-    + "little of your outcome; how much you put in, and how regularly, explains most of it. If regret is "
-    + "what you are managing, spreading entry over three to six months costs a little of the median and "
-    + "meaningfully narrows the bad case.",
-  );
+  /*
+   * The staging claim is now DERIVED. Whether spreading entry helped is a
+   * property of this series, and the sentence follows whichever way the numbers
+   * fell — including saying it did not help, which is the case the received
+   * wisdom about dollar-cost averaging quietly assumes away.
+   */
+  const staged = read.stagedEntry;
+  if (staged) {
+    const medianCost = staged.lumpMedianPct - staged.stagedMedianPct;
+    const badCaseGain = staged.stagedP10Pct - staged.lumpP10Pct;
+    lines.push(
+      `Going in all at once versus spreading it over ${staged.tranches} monthly buys, across `
+      + `${staged.windows} historical windows: median **${pct(staged.lumpMedianPct)}** against `
+      + `**${pct(staged.stagedMedianPct)}**, and the bad case **${pct(staged.lumpP10Pct)}** against `
+      + `**${pct(staged.stagedP10Pct)}**.`,
+    );
+
+    if (badCaseGain > 0.5 && medianCost > 0) {
+      lines.push(
+        `**My lean: timing is not your lever — but staging is a real one here.** On this history spreading `
+        + `entry cost about ${Math.abs(medianCost).toFixed(1)} points of median return and lifted the bad `
+        + `case by roughly ${badCaseGain.toFixed(1)}. If regret is what you are managing, that is the trade `
+        + "you are buying.",
+      );
+    } else if (badCaseGain > 0.5) {
+      lines.push(
+        "**My lean: staging entry looks worth it here.** On this history it improved both the middle and "
+        + "the bad case — unusual, and worth taking while it holds.",
+      );
+    } else {
+      lines.push(
+        "**My lean: timing is not your lever here, and staging did not rescue the bad case either.** On this "
+        + "history spreading entry did not meaningfully narrow the downside. What moved outcomes was how "
+        + "much went in and how regularly — not which month it started.",
+      );
+    }
+  } else {
+    lines.push(
+      "**My lean: timing is not your lever here.** Over a five-year horizon the *month* you enter explains "
+      + "little of your outcome; how much you put in, and how regularly, explains most of it. I don't have "
+      + "enough history on this one to put numbers behind a staged-entry comparison, so I won't pretend to.",
+    );
+  }
 
   lines.push(
     "**What would change this:** a horizon under three years, or money you might need back early. "

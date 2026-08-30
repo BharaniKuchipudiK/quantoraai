@@ -138,15 +138,31 @@ export function tickerForName(name: string): string | null {
  * Aliases are matched longest-first so "coca cola" wins over a bare "coke", and
  * the free-text ticker scan requires at least two characters: a lone capital
  * letter in ordinary prose is far more likely to be a word than Visa.
+ *
+ * `matchedAs` matters to the caller: an explicit ticker ("should I buy AAPL")
+ * is unambiguously about the security, while a company NAME ("should I buy an
+ * Apple Watch") is very often about the product. The caller uses this to demand
+ * more context before treating a bare name as an investment question.
  */
-export function findTickerInText(message: string): string | null {
+export type TextTickerMatch = {
+  symbol: string;
+  matchedAs: "ticker" | "name";
+  /** Where the mention starts, so the caller can read the words around it. */
+  index: number;
+  /** The literal text that matched, for the same reason. */
+  matchedText: string;
+};
+
+export function findTickerInText(message: string): TextTickerMatch | null {
   const text = String(message || "");
   if (!text.trim()) return null;
 
   // An explicit uppercase ticker is the least ambiguous signal available.
   for (const match of text.matchAll(/\b([A-Z]{2,5})\b/g)) {
     const entry = BY_SYMBOL.get(match[1]);
-    if (entry) return entry.symbol;
+    if (entry) {
+      return { symbol: entry.symbol, matchedAs: "ticker", index: match.index ?? 0, matchedText: match[1] };
+    }
   }
 
   const lower = text.toLowerCase();
@@ -164,5 +180,11 @@ export function findTickerInText(message: string): string | null {
       best = { symbol, index: at, length: alias.length };
     }
   }
-  return best ? best.symbol : null;
+  if (!best) return null;
+  return {
+    symbol: best.symbol,
+    matchedAs: "name",
+    index: best.index,
+    matchedText: text.slice(best.index, best.index + best.length),
+  };
 }

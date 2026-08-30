@@ -24,7 +24,7 @@ import { realtimeQuote } from "./market-data/finnhub-provider.js";
 import { liveStockQuoteOutcome, stooqDailyHistory } from "./market-data/stooq-provider.js";
 import { resolveTicker } from "./market-data/ticker-resolve.js";
 import { priceLookupResult, feedUnreachableText } from "./market-data-lookup.js";
-import type { PriceBar } from "./market-data-store.js";
+import { isBarStale, type PriceBar } from "./market-data-store.js";
 import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
@@ -61,13 +61,26 @@ export function handleSignalRead(req: any, res: any): Promise<boolean> {
   return guardFinanceGateway("signal-read", res, () => runSignalRead(req, res));
 }
 
-/** The freshest price available, preferring the intraday feed over end-of-day. */
+/**
+ * The freshest USABLE price, preferring intraday over end-of-day.
+ *
+ * "The feed answered" and "the answer is usable" are different facts. A stale
+ * intraday bar used to win outright, which both blocked a fresher stored close
+ * from being reached and — worse — fed a price the desk was about to refuse
+ * into the analysis below.
+ */
 async function latestPrice(symbol: string): Promise<{ bar: PriceBar | null; feedDown: boolean }> {
   const realtime = await realtimeQuote(symbol);
-  if (realtime.status === "ok") return { bar: realtime.bar, feedDown: false };
+  const realtimeBar = realtime.status === "ok" ? realtime.bar : null;
+  if (realtimeBar && !isBarStale(realtimeBar)) return { bar: realtimeBar, feedDown: false };
 
   const eod = await liveStockQuoteOutcome(symbol);
-  if (eod.status === "ok") return { bar: eod.bar, feedDown: false };
+  if (eod.status === "ok" && !isBarStale(eod.bar)) return { bar: eod.bar, feedDown: false };
+
+  // Nothing fresh. Hand back the best bar there is so the caller can name the
+  // date it is refusing, rather than claiming to have no price at all.
+  const fallback = realtimeBar || (eod.status === "ok" ? eod.bar : null);
+  if (fallback) return { bar: fallback, feedDown: false };
 
   // Only an outage counts as the feed being down; "no-data" is a verdict on the
   // symbol and the caller should say so rather than blaming the plumbing.
@@ -101,7 +114,18 @@ async function runSignalRead(req: any, res: any): Promise<boolean> {
     return true;
   }
 
-  const priceLine = priceLookupResult({ kind: "price", symbol }, bar, null).text;
+  /*
+   * A stale bar is REFUSED by the price desk, and that refusal has to end the
+   * turn. Taking only `.text` and carrying on produced a reply that declined to
+   * quote the price and then described where "today sits" using it — the desk
+   * contradicting itself inside one message.
+   */
+  const price = priceLookupResult({ kind: "price", symbol }, bar, null);
+  if (!price.resolved) {
+    sendStream(res, requestId, price.text);
+    return true;
+  }
+  const priceLine = price.text;
 
   /*
    * History is a separate call and a separate failure. A thrown request here

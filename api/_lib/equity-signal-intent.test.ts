@@ -69,3 +69,60 @@ test("ignores an implausible or malformed return target", () => {
   assert.equal((parseSignalIntent("should I buy AAPL for 9000% returns") as any).thresholdPct, 10);
   assert.equal((parseSignalIntent("should I buy AAPL for 0% returns") as any).thresholdPct, 10);
 });
+
+/*
+ * Codex, on #385: "should I buy an Apple Watch?" and "should I buy a Visa gift
+ * card?" both matched the generic buy pattern, both found a company alias, and
+ * both were answered with equity analytics. Shopping is not investing.
+ */
+test("a generic 'buy' about a PRODUCT is not an investment question", () => {
+  const shopping = [
+    "should I buy an Apple Watch?",
+    "should I buy a Visa gift card",
+    "shall I buy a Tesla",
+    "thinking of buying a Microsoft keyboard",
+    "should I buy Disney tickets for the kids",
+  ];
+  for (const ask of shopping) {
+    assert.equal(parseSignalIntent(ask).kind, null, `wrongly intercepted: ${ask}`);
+  }
+});
+
+test("a generic 'buy' still counts when the security is explicit", () => {
+  // An uppercase ticker is unambiguous — nobody buys a wristwatch called AAPL.
+  assert.equal((parseSignalIntent("should I buy AAPL") as any).symbol, "AAPL");
+  // ...as is naming the instrument.
+  assert.equal((parseSignalIntent("should I buy Apple stock") as any).symbol, "AAPL");
+  assert.equal((parseSignalIntent("should I buy Tesla shares") as any).symbol, "TSLA");
+  assert.equal((parseSignalIntent("worth buying Apple on the dip?") as any).symbol, "AAPL");
+});
+
+test("explicit investment language needs no extra context", () => {
+  assert.equal((parseSignalIntent("should I invest in Apple") as any).symbol, "AAPL");
+  assert.equal((parseSignalIntent("is Apple a good investment") as any).symbol, "AAPL");
+  assert.equal((parseSignalIntent("best time to invest in Apple") as any).symbol, "AAPL");
+});
+
+/*
+ * Codex, on #385: every word after the percentage was optional, so any figure
+ * in the sentence became the target. "Apple is down 20%" is an observation
+ * about the past, not a request for a 20% return.
+ */
+test("an observed decline is not a requested return target", () => {
+  const observed = [
+    "Apple is down 20%, should I invest?",
+    "should I invest in Apple if it drops 15%?",
+    "Apple fell 30% last year — worth investing?",
+  ];
+  for (const ask of observed) {
+    const intent = parseSignalIntent(ask) as any;
+    assert.equal(intent.kind, "signal", `should still be a signal: ${ask}`);
+    assert.equal(intent.thresholdPct, 10, `wrongly took the decline as a target: ${ask}`);
+  }
+});
+
+test("a genuinely requested return target is still honoured", () => {
+  assert.equal((parseSignalIntent("can I get 20% returns investing in Apple") as any).thresholdPct, 20);
+  assert.equal((parseSignalIntent("I want 15% a year — should I invest in Apple") as any).thresholdPct, 15);
+  assert.equal((parseSignalIntent("investing in Apple for 25% growth") as any).thresholdPct, 25);
+});

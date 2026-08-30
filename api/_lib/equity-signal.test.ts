@@ -7,8 +7,10 @@ import {
   rollingReturnBaseRates,
   sparklineBlocks,
   rangeBar,
+  stagedEntryComparison,
   buildSignalRead,
   isSignalEmpty,
+  formatSignalRead,
 } from "./equity-signal.js";
 import type { PriceBar } from "./market-data-store.js";
 
@@ -205,4 +207,56 @@ test("a short series labels the range by what it actually covers", () => {
   const read = buildSignalRead("TEST", series(120, (_, i) => 100 + i), 220);
   assert.ok(read.range, "expected a range from 120 bars");
   assert.ok(read.range!.periodDays < 240, "must not claim a 52-week band from 120 bars");
+});
+
+/*
+ * Codex, on #385: the card asserted that staging entry "costs a little of the
+ * median and meaningfully narrows the bad case" while computing nothing. That
+ * is the received wisdom about dollar-cost averaging presented as though it
+ * followed from the calculation. It is now derived, and these pin the two
+ * directions it can fall.
+ */
+test("staged entry costs median on a steadily rising series", () => {
+  // Rising every day: buying later always costs you. Lump sum must win.
+  const rising = series(900, (_, i) => 100 * Math.pow(1.0008, i));
+  const cmp = stagedEntryComparison(rising, 3)!;
+  assert.ok(cmp, "expected a comparison");
+  assert.ok(cmp.lumpMedianPct > cmp.stagedMedianPct,
+    `lump ${cmp.lumpMedianPct} should beat staged ${cmp.stagedMedianPct} on a rising series`);
+  assert.equal(cmp.tranches, 3);
+});
+
+test("staged entry beats lump sum on a steadily falling series", () => {
+  // Falling every day: buying later is always cheaper.
+  const falling = series(900, (_, i) => 300 * Math.pow(0.9992, i));
+  const cmp = stagedEntryComparison(falling, 3)!;
+  assert.ok(cmp.stagedMedianPct > cmp.lumpMedianPct,
+    `staged ${cmp.stagedMedianPct} should beat lump ${cmp.lumpMedianPct} on a falling series`);
+});
+
+test("staged entry refuses a series too short to compare", () => {
+  assert.equal(stagedEntryComparison(series(260, (_, i) => 100 + i), 3), null);
+  assert.equal(stagedEntryComparison(series(900, () => 100), 1), null, "needs at least two tranches");
+});
+
+test("the view reports the staging numbers it computed, never a stock phrase", () => {
+  const rising = series(900, (_, i) => 100 * Math.pow(1.0008, i));
+  const read = buildSignalRead("TEST", rising, 200);
+  const card = formatSignalRead(read, "**TEST — 200.00 USD** (live)");
+  assert.match(card, /historical windows/, "the comparison must be shown");
+  assert.match(card, /monthly buys/);
+  // The old asserted phrasing must not survive anywhere.
+  assert.doesNotMatch(card, /meaningfully narrows the bad case/);
+  assert.ok(
+    /staging did not rescue the bad case|staging is a real one here|staging entry looks worth it/.test(card),
+    "the lean must follow the computed direction",
+  );
+});
+
+test("without enough history the view says so instead of claiming a comparison", () => {
+  const short = series(300, (_, i) => 100 + i * 0.2);
+  const read = buildSignalRead("TEST", short, 155);
+  assert.equal(read.stagedEntry, null);
+  const card = formatSignalRead(read, "**TEST — 155.00 USD** (live)");
+  assert.match(card, /won't pretend to/, "must admit the missing comparison");
 });
