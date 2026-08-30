@@ -1445,7 +1445,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
   };
 
-  const handleSendMessage = (overrideText = null) => {
+  const handleSendMessage = (overrideText = null, sendOptions = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
 
@@ -1508,7 +1508,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
-    streamSendMessage(overrideText);
+    streamSendMessage(overrideText, null, sendOptions);
   };
 
   const commitStudySyllabusChip = (item) => {
@@ -3538,7 +3538,7 @@ Paused — ${autoPauseRef.current}.`
                   textColor={textColor}
                   subtextColor={subtextColor}
                   onAsk={(text) => setInputText(text)}
-                  onSend={(text) => handleSendMessage(text)}
+                  onSend={(text, sendOptions) => handleSendMessage(text, sendOptions)}
                 />
               </Suspense>
             ) : null}
@@ -3952,7 +3952,11 @@ Paused — ${autoPauseRef.current}.`
                       return;
                     }
                     if (action.kind === STUDIO_PLUS_ACTION.PROMPT && action.text) {
-                      if (String(tool).startsWith('study-') || String(tool).startsWith('travel-')) {
+                      if (String(tool).startsWith('study-')) {
+                        handleSendMessage(action.text, { visibleUserText: action.visibleText });
+                        return;
+                      }
+                      if (String(tool).startsWith('travel-')) {
                         handleSendMessage(action.text);
                         return;
                       }

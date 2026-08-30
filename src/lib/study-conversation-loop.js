@@ -78,11 +78,10 @@ export function isStudyQuestionCompleted(state, item) {
 /*
  * A closing phrase is not a question.
  *
- * The tutor prompt instructs the model to END with "Write your attempt. I will
- * wait." — so it says that line even on an opening turn where the learner
- * explicitly asked it NOT to quiz them yet. Matching the phrase put an answer
- * box under a lesson that had asked nothing, which is a control that reaches
- * nothing: the learner is invited to reply to a question that does not exist.
+ * Older tutor replies ended with "Write your attempt. I will wait." even when
+ * the learner had not been asked anything. Matching that phrase put an answer
+ * state under a lesson with no task. We still strip legacy endings, but current
+ * tutoring ends naturally on the actual question.
  *
  * The question itself is the evidence. Strip the closing lines and the picture
  * tags, then look for something actually addressed to the learner.
@@ -92,13 +91,12 @@ const STUDY_TAG = /<quantora-study-[a-z-]+\b[^>]*\/?>/gi;
 
 export function studyAwaitsAnswer(text) {
   const raw = String(text || '');
-  if (!WAITING_PHRASE.test(raw)) {
-    WAITING_PHRASE.lastIndex = 0;
-    return false;
-  }
-  WAITING_PHRASE.lastIndex = 0;
   const body = raw.replace(WAITING_PHRASE, ' ').replace(STUDY_TAG, ' ');
-  // A question mark is the cheapest honest proxy for "something was asked".
-  // An imperative task counts too: "Solve for x" needs no question mark.
-  return /\?/.test(body) || /\b(solve|calculate|work out|try|find|show that|prove|sketch|estimate)\b/i.test(body);
+  WAITING_PHRASE.lastIndex = 0;
+  const clean = body.trim();
+  // A natural tutor can end on the question itself. A question buried earlier
+  // in an explanation ("Why? Because...") does not make the composer an answer.
+  if (/\?\s*(?:[*_`~]|\s)*$/.test(clean)) return true;
+  const lastSentence = clean.split(/[.!?]\s+/).pop() || '';
+  return /^\s*(?:please\s+)?(?:solve|calculate|work out|try|find|show that|prove|sketch|estimate)\b/i.test(lastSentence);
 }

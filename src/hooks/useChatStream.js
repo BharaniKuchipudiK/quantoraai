@@ -290,7 +290,7 @@ export function useChatStream({
     });
   };
 
-  const handleSendMessage = async (textToSend, targetModelOverride = null) => {
+  const handleSendMessage = async (textToSend, targetModelOverride = null, sendOptions = null) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     if (isGenerating) return;
@@ -299,7 +299,8 @@ export function useChatStream({
     generationTokenRef.current = generationToken;
     const stillCurrent = () => isActiveGeneration(generationTokenRef.current, generationToken);
 
-    const visibleUserText = text.trim();
+    const requestedVisibleText = String(sendOptions?.visibleUserText || '').trim();
+    const visibleUserText = requestedVisibleText || text.trim();
     const priorUserTexts = (messages || [])
       .filter((message) => message?.sender === 'user' && message.text)
       .map((message) => String(message.text));
@@ -377,7 +378,9 @@ export function useChatStream({
       id: createMessageId('user'),
       sender: 'user',
       // Keep the short typed accept in the transcript; the model still gets the expanded brief.
-      text: intakeAccept.expanded ? visibleUserText : text.trim(),
+      text: requestedVisibleText
+        ? visibleUserText
+        : (intakeAccept.expanded ? visibleUserText : text.trim()),
       attachments: [...attachments]
     };
 
