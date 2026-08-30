@@ -32,6 +32,7 @@ import {
 import { liveFxRate } from "./market-data/frankfurter-provider.js";
 import { resolveTicker } from "./market-data/ticker-resolve.js";
 import { liveStockQuoteOutcome, usInstrumentId } from "./market-data/stooq-provider.js";
+import { realtimeQuote } from "./market-data/finnhub-provider.js";
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { withNextMoves } from "./deterministic-turn.js";
 import { applyCors, clientIp, isRateLimited } from "./rate-limit.js";
@@ -166,6 +167,22 @@ async function runMarketDataLookup(req: any, res: any): Promise<boolean> {
   if (isPriceIntent(intent)) {
     const resolution = resolveTicker(intent.symbol);
     const target = resolution.status === "known" ? resolution.symbol : intent.symbol;
+
+    /*
+     * Freshest source first, with a working fallback beneath it.
+     *
+     * Finnhub carries an intraday price but needs a key; Stooq is keyless and
+     * end-of-day. Trying real-time first and falling back means a deployment
+     * with no key keeps quoting exactly as before, and adding a key upgrades
+     * freshness without touching this logic. A real-time OUTAGE must also fall
+     * through rather than end the turn — a settled close beats no answer.
+     */
+    const realtime = await realtimeQuote(target);
+    if (realtime.status === "ok") {
+      sendStream(res, requestId, priceLookupResult({ ...intent, symbol: target }, realtime.bar, null).text);
+      return true;
+    }
+
     const outcome = await liveStockQuoteOutcome(target);
 
     if (outcome.status === "ok") {

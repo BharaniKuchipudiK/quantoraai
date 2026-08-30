@@ -7,6 +7,7 @@
  * fully unit-testable, mirroring evaluateAffordability.
  */
 
+import { FINNHUB_SOURCE } from "./market-data/finnhub-provider.js";
 import { isBarStale, type FxRate, type PriceBar, type Instrument } from "./market-data-store.js";
 import type { FxIntent, PriceIntent } from "./market-data-intent.js";
 
@@ -128,14 +129,26 @@ export function priceLookupResult(
       return {
         resolved: false,
         stale: true,
-        text: `I have a price for **${sym}**, but its last bar is from **${bar.price_date}**, which is stale. I won't present a stale close as the current price — refresh the market-data ingestion first.`,
+        text: `I have a price for **${sym}**, but its last bar is from **${bar.price_date}**, which is stale. I won't present a stale close as the current price. Try again shortly.`,
       };
     }
     const cur = bar.currency || "";
+    /*
+     * "(last close)" was hardcoded, which was true while every bar came from an
+     * end-of-day feed and became a lie the moment a real-time one was added.
+     * A live intraday price labelled "last close" understates its freshness; a
+     * settled close labelled "live" overstates it, and that direction is the
+     * dangerous one. The label follows the bar's actual source.
+     */
+    const live = bar.source === FINNHUB_SOURCE;
+    const label = live ? "live" : "last close";
+    const stamp = live
+      ? `As of ${bar.as_of.slice(11, 16)} UTC · source: ${bar.source}. This is a real, sourced figure — not a model estimate.`
+      : asOfLine(bar.source, bar.as_of);
     return {
       resolved: true,
       stale: false,
-      text: `**${sym} — ${fmt(bar.close)} ${cur}** (last close)\n\n${asOfLine(bar.source, bar.as_of)}`,
+      text: `**${sym} — ${fmt(bar.close)} ${cur}** (${label})\n\n${stamp}`,
     };
   }
 
