@@ -202,18 +202,8 @@ try {
     'Fork Chat is still incorrectly pinned to the top of Travel.',
   );
 
-  const arena = page.locator('[data-quantora-dual-arena]').first();
-  await visible(arena, 'Dual Arena is missing from Travel.');
-  await arena.click();
-  await page.waitForTimeout(120);
-  if (!/Arena Active/i.test(await arena.innerText())) {
-    throw new Error('Dual Arena did not activate the real React arena state in Travel.');
-  }
-  await arena.click();
-  await page.waitForTimeout(120);
-  if (/Arena Active/i.test(await arena.innerText())) {
-    throw new Error('Dual Arena could not be switched off again.');
-  }
+  // Dual Arena is intentionally hidden across all workspaces now — assert its absence.
+  await hidden(page.locator('[data-quantora-dual-arena]').first(), 'Dual Arena should be hidden in Travel.');
 
   const textarea = page.locator('.app-shell--studio textarea').first();
   await visible(textarea, 'Travel prompt input is missing.');
