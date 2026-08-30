@@ -30,21 +30,7 @@
  */
 
 import { monthsToReach, type SavingsInputs, type SavingsProjection } from "./savings-goal.js";
-
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-/**
- * Deliberately month-precision: a day on a savings projection is false
- * precision. Built from a fixed table rather than a locale formatter so the
- * same inputs produce the same string on every machine that runs the tests.
- */
-function monthLabel(from: Date, monthsAhead: number): string {
-  const at = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + Math.round(monthsAhead), 1));
-  return `${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()}`;
-}
+import { monthLabel } from "./program-dates.js";
 
 export type Milestone = {
   /** "A quarter of the way" — written for a person, not a progress bar. */
