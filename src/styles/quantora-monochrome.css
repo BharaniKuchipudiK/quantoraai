@@ -39,6 +39,53 @@
   outline-offset: 3px;
 }
 
+.q-study-reinforcement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  color: var(--q-ink);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.q-study-reinforcement__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+}
+
+[data-quantora-motion="repair"] {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: q-study-repair 520ms ease-out both;
+}
+
+[data-quantora-motion="progress"] {
+  animation: q-study-progress 480ms ease-out both;
+}
+
+[data-quantora-motion="mastery"] {
+  stroke-dasharray: 51;
+  animation: q-study-mastery 650ms ease-out both;
+}
+
+@keyframes q-study-repair {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes q-study-progress {
+  from { transform: translateX(-8px); }
+  to { transform: translateX(0); }
+}
+
+@keyframes q-study-mastery {
+  from { stroke-dashoffset: 51; }
+  to { stroke-dashoffset: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-quantora-motion] {
     animation: none !important;

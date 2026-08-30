@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
+import StudyReinforcementCue from './StudyReinforcementCue.jsx';
 import {
   studyActionVisibleText,
   studyExplainDifferentlyAsk,
@@ -235,8 +236,9 @@ export default function StudyTutorShell({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 800, color: assessment.result.correct ? (isLight ? '#047857' : '#6ee7b7') : (isLight ? '#92400e' : '#fcd34d') }}>
                   {assessment.result.correct ? <Check size={15} /> : <Lightbulb size={15} />}
-                  {assessment.result.correct ? 'Exactly — that fits.' : 'Good attempt — here is the key distinction.'}
+                  {assessment.result.correct ? 'Answer verified.' : 'Good attempt — here is the key distinction.'}
                 </div>
+                <StudyReinforcementCue outcome={assessment.result} />
                 {!assessment.result.correct && assessment?.selectedOptionId ? (
                   <div style={{ marginTop: '5px', color: subtextColor }}>
                     You chose “{assessment.item.options.find((option) => option.id === assessment.selectedOptionId)?.text}”.
