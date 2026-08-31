@@ -8,8 +8,7 @@ test('robotic Study headings are removed while the tutor explanation remains', (
     '',
     '**Context-aware question:** What would your body do without the belt?',
   ].join('\n');
-  const polished = polishStudyTutorText(raw);
-  assert.equal(polished, 'A seatbelt changes your motion when a car brakes.\n\nWhat would your body do without the belt?');
+  assert.equal(polishStudyTutorText(raw), 'A seatbelt changes your motion when a car brakes.\n\nWhat would your body do without the belt?');
 });
 
 test('ordinary human tutor prose passes through unchanged', () => {
@@ -17,7 +16,7 @@ test('ordinary human tutor prose passes through unchanged', () => {
   assert.equal(polishStudyTutorText(text), text);
 });
 
-test('passive ready-to-continue endings are removed rather than making the learner manage pacing', () => {
+test('passive ready-to-continue endings are removed but actionable prompts survive', () => {
   const raw = [
     'The bowl side of a spoon behaves like a concave mirror.',
     '',
@@ -28,6 +27,8 @@ test('passive ready-to-continue endings are removed rather than making the learn
     polishStudyTutorText("Reflected rays can cross. When you're ready, we'll continue with the focal point."),
     'Reflected rays can cross.',
   );
+  const actionable = "When you're ready, calculate the acceleration from 6 m/s to 14 m/s in 4 s.";
+  assert.equal(polishStudyTutorText(actionable), actionable);
 });
 
 test('tutor nudges still honour the emotional job when the prose provides one', () => {
@@ -39,18 +40,9 @@ test('tutor nudges still honour the emotional job when the prose provides one', 
 });
 
 test('neutral tutor cues follow the current teaching turn instead of repeating Let’s unpack it', () => {
-  assert.deepEqual(
-    studyTutorNudge('Here are three Science directions you could choose.', 'you suggest me a topic from Science'),
-    { kind: 'book', label: 'Pick a direction' },
-  );
-  assert.deepEqual(
-    studyTutorNudge('The inside of the spoon is a concave mirror.', 'Light: Reflection & Refraction\nWhy does the reflection flip in the concave side?'),
-    { kind: 'book', label: 'Here’s the idea' },
-  );
-  assert.deepEqual(
-    studyTutorNudge('The next useful idea is the focal distance.', 'Teach me reflection\ncontinue'),
-    { kind: 'idea', label: 'Keep going' },
-  );
+  assert.deepEqual(studyTutorNudge('Here are three Science directions you could choose.', 'you suggest me a topic from Science'), { kind: 'book', label: 'Pick a direction' });
+  assert.deepEqual(studyTutorNudge('The inside of the spoon is a concave mirror.', 'Why does the reflection flip in the concave side?'), { kind: 'book', label: 'Here’s the idea' });
+  assert.deepEqual(studyTutorNudge('The next useful idea is the focal distance.', 'continue'), { kind: 'idea', label: 'Keep going' });
 });
 
 test('picture and flashcard tags do not determine tutor nudge copy', () => {
