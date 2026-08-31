@@ -39,6 +39,18 @@
   outline-offset: 3px;
 }
 
+/*
+ * Inversion is the system's highlight. With no accent colour available, a chip
+ * signals "this one" by swapping paper and ink rather than by tinting, which
+ * keeps the emphasis just as strong in either theme and adds no third value.
+ * Applied alongside .q-mono-control, so focus keeps its outline too.
+ */
+.q-mono-chip:hover,
+.q-mono-chip:focus-visible {
+  background: var(--q-inverse-paper);
+  color: var(--q-inverse-ink);
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-quantora-motion] {
     animation: none !important;
