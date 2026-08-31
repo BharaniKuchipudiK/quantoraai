@@ -17,14 +17,16 @@ test('active on the first user turn, with nothing invented', () => {
   assert.equal(brief.canSearchFlights, false);
   assert.equal(brief.canSearchHotels, false);
   assert.equal(brief.destinationLabel, '');
-  assert.match(brief.next, /city or area/);
+  assert.deepEqual(brief.missing, ['place', 'origin', 'destination', 'departureDate']);
+  assert.match(brief.next, /Where are you heading/i);
 });
 
 test('a named city enables stays and is never asked for again', () => {
   const brief = deriveTravelBrief(from('I am going to Singapore in December'));
   assert.equal(brief.destinationLabel, 'Singapore');
   assert.equal(brief.canSearchHotels, true);
-  assert.doesNotMatch(brief.next, /city or area/);
+  assert.equal(brief.missing.includes('place'), false, 'a city already given is never asked for again');
+  assert.doesNotMatch(brief.next, /Where are you heading/i);
 });
 
 test('a bare city reply answers the question', () => {
@@ -43,7 +45,7 @@ test('a preference is not a city, so stays stay disabled', () => {
   const brief = deriveTravelBrief(from('beach resorts with kids clubs'));
   assert.equal(brief.destinationLabel, '');
   assert.equal(brief.canSearchHotels, false);
-  assert.match(brief.next, /city or area/);
+  assert.equal(brief.missing.includes('place'), true);
 });
 
 test('multi-word places survive, trailing prose does not', () => {
@@ -96,11 +98,47 @@ test('an airport code is not offered to Places as a city', () => {
 test('a route without a date cannot search flights, and says what is missing', () => {
   const brief = deriveTravelBrief(from('SIN to DPS'));
   assert.equal(brief.canSearchFlights, false);
-  assert.match(brief.next, /departure date/);
-  assert.doesNotMatch(brief.next, /airport you fly/);
+  assert.deepEqual(brief.missing, ['departureDate']);
+  assert.match(brief.next, /date/i);
+  assert.doesNotMatch(brief.next, /airport/i, 'both airports are known, so neither is asked for');
 });
 
 test('the newest dates replace an earlier answer', () => {
   const brief = deriveTravelBrief(from('SIN to DPS on 2026-09-12', 'actually 2026-10-01'));
   assert.equal(brief.departureDate, '2026-10-01');
+});
+
+/*
+ * The board's own real estate is part of its promise. "Your trip — one screen"
+ * was spending two wrapped lines of prose on a sentence that re-stated the
+ * chips directly underneath it. A complete trip has nothing left to ask for,
+ * so it should ask for nothing.
+ */
+test('a complete trip says nothing, so the board shrinks', () => {
+  const brief = deriveTravelBrief(from('SIN to DPS on 2026-09-12', 'going to Bali'));
+  assert.equal(brief.canSearchFlights, true);
+  assert.equal(brief.canSearchHotels, true);
+  assert.deepEqual(brief.missing, []);
+  assert.equal(brief.next, '');
+});
+
+test('the next line stays short enough not to wrap the board', () => {
+  const cases = [
+    from('I want to plan a trip'),
+    from('going to Bali'),
+    from('SIN to DPS'),
+    from('flying to Uluwatu, Bali'),
+    from('leaving 2026-09-12'),
+  ];
+  for (const messages of cases) {
+    const { next } = deriveTravelBrief(messages);
+    assert.equal(next.length <= 80, true, `too long to sit on one line: ${next}`);
+  }
+});
+
+test('stays already working is said as such, not as a blocked trip', () => {
+  const brief = deriveTravelBrief(from('going to Bali'));
+  assert.equal(brief.canSearchHotels, true);
+  assert.match(brief.next, /^For flights:/);
+  assert.deepEqual(brief.missing, ['origin', 'destination', 'departureDate']);
 });
