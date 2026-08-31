@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { studyVerifiedObservationSourceRef } from './study-evidence-admission.js';
 import type { StudyMasteryEvidenceEvent, StudyEvidenceKind } from "./study-truth-layer.js";
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 
 let sequence = 0;
+
+function verifiedObservationRef(kind: Exclude<StudyEvidenceKind, 'assessment_item' | 'self_confidence'>, ref: string) {
+  return `quantora:study-verified:${kind}:${ref}`;
+}
 
 function evidence(
   kind: StudyEvidenceKind,
@@ -22,7 +25,7 @@ function evidence(
       }
     : kind === 'self_confidence'
       ? {}
-      : { sourceRef: studyVerifiedObservationSourceRef(kind, `test:${sequence}`) };
+      : { sourceRef: verifiedObservationRef(kind, `test:${sequence}`) };
   return {
     id: `${kind}-${sequence}`,
     conceptId: "concept-1",
