@@ -90,36 +90,51 @@ test('a provider slug is shortened so it cannot swallow the desk header row', ()
  * Node has all of them, so the tests pass; they are real methods, so typecheck
  * and eslint pass. Only an old browser disagrees, and none of them run here.
  *
- * This started as a fixed ban list written when build.target was still Vite's
- * "modules" default (chrome87). The target is now stated explicitly, so the
- * list is derived from it instead — raise the target and a built-in stops being
- * banned on its own, with no second place to remember.
+ * Two earlier versions of this were wrong in ways worth recording, because both
+ * failures were silent — the guard passed while catching nothing.
  *
- * The floors below are the first version of each engine to ship the method.
+ * It matched literal strings like "Array.prototype.findLast". Nobody writes
+ * that. Real code writes `items.findLast(...)`, so those entries could never
+ * match anything and the ban existed only in the list. Call syntax is matched
+ * now, and every entry is proved against a call written the way a person
+ * writes it.
+ *
+ * And it read only the chrome version out of build.target. The floors differ
+ * per engine — structuredClone is Chrome 98 but Firefox 94, findLast is
+ * Chrome 97 but Firefox 104 — so a target of chrome98 with firefox92 would
+ * have unbanned both while Firefox still lacked them. Every declared engine is
+ * compared now, and a built-in is banned if any one of them is below its floor.
+ *
  * Only bare calls matter: a feature-detected use with a fallback is safe at any
- * target, which is why `structuredClone` sits in the bundle today from a
- * dependency that guards it, while three un-guarded `Object.hasOwn` calls from
+ * target, which is why structuredClone sits in the bundle today from a
+ * dependency that guards it, while three un-guarded Object.hasOwn calls from
  * react-markdown are what set the floor in the first place.
  */
-const CHROME_FLOOR = {
-  'Object.hasOwn': 93,
-  'Array.prototype.at': 92,
-  structuredClone: 98,
-  'Array.prototype.findLast': 97,
+const BROWSER_FLOORS = {
+  'Object.hasOwn()': { call: /\bObject\.hasOwn\s*\(/, chrome: 93, edge: 93, firefox: 92, safari: 15.4 },
+  'structuredClone()': { call: /\bstructuredClone\s*\(/, chrome: 98, edge: 98, firefox: 94, safari: 15.4 },
+  '.at()': { call: /\.at\s*\(/, chrome: 92, edge: 92, firefox: 90, safari: 15.4 },
+  '.findLast()': { call: /\.findLast(?:Index)?\s*\(/, chrome: 97, edge: 97, firefox: 104, safari: 15.4 },
 };
 
 test('src never calls a built-in the declared browser target cannot provide', () => {
   const viteConfig = readFileSync('vite.config.ts', 'utf8');
-  const declared = /['"]chrome(\d+)['"]/.exec(viteConfig);
+  const target = /target:\s*\[([^\]]+)\]/.exec(viteConfig);
   assert.ok(
-    declared,
+    target,
     'vite.config.ts must state build.target explicitly — the default silently claims chrome87',
   );
-  const target = Number(declared[1]);
 
-  const banned = Object.entries(CHROME_FLOOR)
-    .filter(([, floor]) => floor > target)
-    .map(([name]) => name);
+  const declared = {};
+  for (const [, engine, version] of target[1].matchAll(/['"](chrome|edge|firefox|safari)([\d.]+)['"]/g)) {
+    declared[engine] = Number(version);
+  }
+  assert.ok(Object.keys(declared).length, `build.target names no browser engines: ${target[1]}`);
+
+  // Banned if ANY declared engine sits below that built-in's floor for it.
+  const banned = Object.entries(BROWSER_FLOORS).filter(([, floors]) => Object
+    .entries(declared)
+    .some(([engine, version]) => floors[engine] !== undefined && version < floors[engine]));
 
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = join(dir, entry.name);
@@ -135,8 +150,13 @@ test('src never calls a built-in the declared browser target cannot provide', ()
   for (const file of walk('src')) {
     if (file.endsWith('desk-ladder-status.test.js')) continue;
     const source = code(readFileSync(file, 'utf8'));
-    for (const method of banned) {
-      if (source.includes(method)) offenders.push(`${file}: ${method} (needs chrome${CHROME_FLOOR[method]}, target is chrome${target})`);
+    for (const [name, floors] of banned) {
+      if (!floors.call.test(source)) continue;
+      const short = Object.entries(declared)
+        .filter(([engine, version]) => floors[engine] !== undefined && version < floors[engine])
+        .map(([engine, version]) => `${engine}${version} < ${floors[engine]}`)
+        .join(', ');
+      offenders.push(`${file}: ${name} — ${short}`);
     }
   }
 
