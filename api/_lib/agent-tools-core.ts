@@ -8,6 +8,8 @@
 
 import { Duffel } from '@duffel/api';
 import { describeDoors, doorsBlocking } from '../../src/lib/capability-doors.js';
+import { defaultSerpApiKey, isSerpApiConfigured, resolveFlightProvider, searchSerpApiFlights } from './serpapi-flights.js';
+import { duffelKeyShape } from './duffel-key.js';
 
 const defaultDuffelClient = process.env.DUFFEL_API_KEY
   ? new Duffel({ token: process.env.DUFFEL_API_KEY })
@@ -339,9 +341,32 @@ export async function executeToolCall(
 
   switch (name) {
     case 'search_flights': {
-      if (!duffelClient) {
+      /*
+       * Every provider that can issue tickets gates on business identity, so a
+       * deployment may legitimately have no Duffel at all — and one that has a
+       * sandbox token has something worse than nothing: plausible fares nobody
+       * can buy. resolveFlightProvider owns that ordering, and the health
+       * endpoint reads the same rule so it cannot promise a source the search
+       * does not use.
+       */
+      const serpApiKey = Object.prototype.hasOwnProperty.call(dependencies, 'serpApiKey')
+        ? (dependencies as any).serpApiKey
+        : defaultSerpApiKey;
+      const duffelMode = Object.prototype.hasOwnProperty.call(dependencies, 'duffelMode')
+        ? (dependencies as any).duffelMode
+        : duffelKeyShape(process.env.DUFFEL_API_KEY);
+      const provider = resolveFlightProvider({
+        duffelConnected: Boolean(duffelClient),
+        duffelMode,
+        serpApiConfigured: isSerpApiConfigured(serpApiKey),
+      });
+
+      if (provider === 'serpapi') {
+        return searchSerpApiFlights(serpApiKey, fetchFn, args as any);
+      }
+      if (provider === 'none' || !duffelClient) {
         return unavailable(
-          'Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.',
+          'Live flight search is unavailable because no flight provider is connected. No mock fares were returned.',
           'NOT_CONFIGURED',
         );
       }

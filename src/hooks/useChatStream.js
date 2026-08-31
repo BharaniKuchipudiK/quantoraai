@@ -1836,6 +1836,8 @@ export function useChatStream({
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
               turnDeadlineSec: Math.round(turnDeadlineMs / 1000),
+              // A running job turns a deadline from lost work into a checkpoint.
+              job: buildJob,
               errorMessage: error.message || 'Unable to reach the AI gateway.',
               shopIntakeAsk,
               isShopPhotoTurn,
