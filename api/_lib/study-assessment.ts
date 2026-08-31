@@ -11,12 +11,10 @@ import {
   findStudyAssessmentItem,
   publicStudyAssessmentItem,
   studyAssessmentItemsForConcept,
-  type StudyAssessmentItem,
 } from "./study-assessment-items.js";
+import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel } from "./study-learner-model.js";
-import { buildStudyVerificationPlan } from "./study-verification.js";
-import { executeStudyVerificationPlan } from "./study-verification-runtime.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,23 +23,6 @@ const ATTEMPT_TTL_MS = 15 * 60 * 1000;
 
 function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-
-function verifyReleasedAssessmentItem(item: StudyAssessmentItem) {
-  const plan = buildStudyVerificationPlan({
-    claimId: `assessment-key:${item.key}@${item.version}`,
-    claimKind: "assessment_key",
-    mode: "exam_grounded",
-    subject: item.conceptKey.split(".")[0] || null,
-    assessmentReviewStatus: item.reviewStatus,
-  });
-  return executeStudyVerificationPlan({
-    plan,
-    reviewedAssessment: {
-      reviewStatus: item.reviewStatus,
-      evidenceRef: `quantora:study-assessment-bank:${item.key}@${item.version}`,
-    },
-  }).outcome;
 }
 
 export type StudyAssessmentIssueRequest = {
@@ -119,12 +100,12 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         fallbackAllowed: true,
       });
     }
-    const releaseVerification = verifyReleasedAssessmentItem(item);
-    if (!releaseVerification.canClaimVerified) {
-      console.warn("Study assessment release blocked by verification contract", {
-        itemKey: item.key,
-        itemVersion: item.version,
-        reasonCodes: releaseVerification.reasonCodes,
+    const release = verifyStudyAssessmentRelease(item);
+    if (!release.canIssueVerifiedAttempt) {
+      console.warn("Study assessment release blocked by governance", {
+        itemRef: release.itemRef,
+        releaseMode: release.releaseMode,
+        reasonCodes: release.reasonCodes,
       });
       return res.status(422).json({
         error: "This assessment is not approved for verified learning.",
