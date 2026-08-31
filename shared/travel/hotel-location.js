@@ -71,7 +71,19 @@ export function resolveHotelSearchLocation(toolLocation = '', recentUserTexts = 
   return fromChat || (direct && !hotelLocationNeedsCity(direct) ? direct : '') || direct;
 }
 
-export function hotelProviderFailureAsk(location = '', { configured = true, kind = 'hotels' } = {}) {
+/**
+ * Reasons that mean Places REFUSED the request rather than failed to answer.
+ *
+ * The distinction is the whole point of this function. A refusal is decided by
+ * the key, the project and the enabled APIs — none of which change between two
+ * identical calls a second apart. An outage is decided by the network, which
+ * does. Telling a traveller to "retry in a moment" is useful advice for the
+ * second and a dead control for the first: the retry issues a byte-identical
+ * request and gets a byte-identical refusal, forever.
+ */
+const PLACES_REFUSED = new Set(['PROVIDER_REJECTED', 'NOT_CONFIGURED']);
+
+export function hotelProviderFailureAsk(location = '', { configured = true, kind = 'hotels', reason = '' } = {}) {
   const place = String(location || '').trim();
   const known = place && !hotelLocationNeedsCity(place);
   const noun = kind === 'attractions' ? 'attractions' : 'hotels';
@@ -80,8 +92,23 @@ export function hotelProviderFailureAsk(location = '', { configured = true, kind
       ? `Live Places lookup is not connected, so I cannot list ${noun} in ${place}. I will not invent a list.`
       : `Live Places lookup is not connected. I will not invent a ${noun} list.`;
   }
+
+  /*
+   * Refused. Say that it is refused, and never offer the retry — a traveller
+   * who follows that advice spends their patience proving our configuration is
+   * still wrong. Naming it as ours also stops them re-typing the place name on
+   * the theory that they spelled it badly, which is what the old wording
+   * ("Places did not return a list") invited: it reads as "there is nothing
+   * there", which is a claim about their trip rather than about our setup.
+   */
+  if (PLACES_REFUSED.has(String(reason || ''))) {
+    return known
+      ? `I could not look up live ${noun} in ${place}: Places refused the request, so trying again will not change it. That is a setup problem on our side, not a gap in ${place} — and I will not invent a list to cover it.`
+      : `I could not look up live ${noun}: Places refused the request, so trying again will not change it. That is a setup problem on our side, and I will not invent a list to cover it.`;
+  }
+
   if (known) {
-    return `I could not look up live ${noun} in ${place} just now. Places did not return a list — I will not invent one. Retry in a moment.`;
+    return `I could not reach Places for live ${noun} in ${place} just now — the lookup did not complete, and I will not invent one. This one is worth retrying.`;
   }
   return kind === 'attractions'
     ? 'I could not look up live attractions just now. Name the city or area and I will try again — I will not invent a list.'
@@ -92,7 +119,13 @@ export function hotelEmptyResultsAsk(location = '', { kind = 'hotels' } = {}) {
   const place = String(location || '').trim();
   const noun = kind === 'attractions' ? 'attractions' : 'stays';
   if (place && !hotelLocationNeedsCity(place)) {
-    return `Places returned no ${noun} for ${place}. I will not invent a list. Try a neighbourhood, or retry.`;
+    /*
+     * Widen, never narrow. The old advice here was "try a neighbourhood", which
+     * is backwards: Places returns fewer results as a query gets more specific,
+     * so a neighbourhood that came back empty cannot be fixed by naming a
+     * smaller one. Retrying is no better — the query is deterministic.
+     */
+    return `Places returned no ${noun} for ${place}. I will not invent a list. Try a wider area or a nearby town.`;
   }
   return `Places returned no ${noun}. Tell me a city or area — I will not invent a list.`;
 }

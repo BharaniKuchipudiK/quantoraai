@@ -309,7 +309,8 @@ test('Google provider errors fail closed and terminate the interactive agent ste
   });
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.executed, false);
-  assert.equal(hotel.reason, 'PROVIDER_ERROR');
+  // A 403 is a refusal, not an outage: Google answered, and it answered "no".
+  assert.equal(hotel.reason, 'PROVIDER_REJECTED');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
   assert.match(hotel.providerMessage, /Google Places API \(New\)/i);
   assert.match(hotel.providerMessage, /rejected|unavailable|not enabled|billing|restriction/i);
@@ -324,7 +325,7 @@ test('Google provider errors fail closed and terminate the interactive agent ste
   });
   assert.equal(route.status, 'unavailable');
   assert.equal(route.executed, false);
-  assert.equal(route.reason, 'PROVIDER_ERROR');
+  assert.equal(route.reason, 'PROVIDER_REJECTED');
   assert.equal(route.action, 'PAUSE_AND_ASK');
   assert.equal('route' in route, false);
 });
@@ -482,3 +483,62 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   assert.match(second.message, /quantora-modal/);
 });
 
+
+/*
+ * The Uluwatu turn, end to end.
+ *
+ * Places refused the request (a 403 from an unenabled API or a restricted key)
+ * and the desk answered "Places did not return a list — I will not invent one.
+ * Retry in a moment." Three things were wrong at once: it described a refusal
+ * as an empty result, it blamed the destination for our configuration, and it
+ * advised a retry that would reissue the identical request and be refused
+ * identically. The last one is a dead control written as a sentence.
+ */
+test('a refused Places lookup never reaches the traveller as a retry', async () => {
+  let calls = 0;
+  const refusing = (async () => {
+    calls += 1;
+    return {
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ error: { message: 'Places API (New) has not been used in this project before or it is disabled.' } }),
+      json: async () => ({}),
+    };
+  }) as unknown as typeof fetch;
+
+  const hotel: any = await executeToolCall('search_hotels', { location: 'Uluwatu, Bali' }, {
+    duffelClient: null,
+    googleMapsApiKey: 'test-google-key',
+    fetchFn: refusing,
+  });
+
+  assert.equal(calls > 0, true, 'the call was actually attempted');
+  assert.equal(hotel.status, 'unavailable');
+  assert.equal(hotel.reason, 'PROVIDER_REJECTED', 'a refusal is not a generic provider error');
+  assert.equal(hotel.retryable, false, 'and nothing upstream should schedule another attempt');
+  assert.equal(hotel.providerStatus, 403, 'the status survives for a diagnosis to name');
+
+  assert.match(hotel.message, /Uluwatu, Bali/, 'the place is named, so nobody re-types it');
+  assert.match(hotel.message, /refused/i);
+  assert.doesNotMatch(hotel.message, /retry|try again|in a moment/i);
+  assert.match(hotel.message, /not invent/i, 'the no-fabrication guarantee still holds');
+  assert.equal('hotels' in hotel, false, 'and no substitute list appears');
+
+  // The operator's diagnosis is kept, not replaced by the traveller's sentence.
+  assert.match(hotel.providerMessage, /enabled|billing|restrictions/i);
+});
+
+test('a dropped connection stays retryable, because that one can succeed', async () => {
+  const flaky = (async () => { throw new Error('socket hang up'); }) as unknown as typeof fetch;
+
+  const hotel: any = await executeToolCall('search_hotels', { location: 'Uluwatu, Bali' }, {
+    duffelClient: null,
+    googleMapsApiKey: 'test-google-key',
+    fetchFn: flaky,
+  });
+
+  assert.equal(hotel.status, 'unavailable');
+  assert.equal(hotel.retryable, true);
+  assert.match(hotel.message, /retrying|retry/i);
+  assert.doesNotMatch(hotel.message, /refused/i);
+});

@@ -8,6 +8,7 @@ import { fetchApiGatewayKey } from '../../autocomplete.js';
 import { authenticateAdminRequest } from '../admin-auth.js';
 import { probeGemini } from '../gemini-probe.js';
 import { probeOpenRouter } from '../openrouter-probe.js';
+import { probePlaces, resolvePlacesKey } from '../places-probe.js';
 import { paidRouteAllowed } from "../paid-route-gate.js";
 
 /**
@@ -108,6 +109,30 @@ export default async function handler(req: any, res: any) {
       generate: String(req.query?.generate ?? '0') === '1',
     });
     return res.status(200).json({ probe: 'openrouter', ...report });
+  }
+
+  /*
+   * The Places probe.
+   *
+   * `placesConfigured` below is key PRESENCE, and that is not the same question
+   * as "does Places answer". A key with Places API (New) unenabled, or with
+   * restrictions that forbid a server call, reports configured and refuses
+   * every request — which reaches a traveller as "Places did not return a
+   * list" and reaches the operator as nothing at all.
+   *
+   * Admin-gated because it reports a key's shape and costs one text search.
+   */
+  if (String(req.query?.probe || '') === 'places') {
+    const failure = await authenticateAdminRequest(req);
+    if (failure) return res.status(failure.status).json({ ok: false, error: failure.error });
+
+    const places = resolvePlacesKey();
+    const report = await probePlaces({
+      key: places.key,
+      source: places.source,
+      ...(typeof req.query?.q === 'string' && req.query.q ? { query: req.query.q } : {}),
+    });
+    return res.status(200).json({ probe: 'places', ...report });
   }
 
   const openRouterHint = openRouterEnvPublicHint();

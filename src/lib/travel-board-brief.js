@@ -153,24 +153,50 @@ function listPhrase(items) {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-/** Name only what is still missing — never re-ask for something already said. */
-function describeNext({ destinationLabel, origin, destination, departureDate, canSearchFlights, canSearchHotels }) {
-  if (canSearchFlights && canSearchHotels) return 'search live flights and stays — we do not book from here';
-  if (canSearchFlights) return 'search live flights, or name the city so I can shortlist stays';
-
+/** What the trip is still short of, as facts rather than a sentence. */
+function describeMissing({ destinationLabel, origin, destination, departureDate }) {
   const missing = [];
-  if (!origin) missing.push('the airport you fly from');
-  if (!destination) missing.push('the airport you fly into');
-  if (!ISO_DATE.test(departureDate)) missing.push('a departure date (YYYY-MM-DD)');
+  // Asked for only when nothing at all has been said about where they are
+  // going. Once a route or a city exists, asking again is the thing this desk
+  // gets wrong most often.
+  if (!destinationLabel && !destination) missing.push('place');
+  if (!origin) missing.push('origin');
+  if (!destination) missing.push('destination');
+  if (!ISO_DATE.test(departureDate)) missing.push('departureDate');
+  return missing;
+}
 
-  // Ask where they are going only when nothing has been said about it. Once a
-  // route or a city exists, name the blocker that is actually in the way —
-  // asking for a city we already have is the thing this desk gets wrong.
-  if (!destinationLabel && !destination) return 'tell me the city or area you are heading to';
-  if (canSearchHotels) {
-    return `stays are ready for ${destinationLabel} — for live flights I still need ${listPhrase(missing)}`;
-  }
-  return `I still need ${listPhrase(missing)}`;
+const MISSING_LABEL = {
+  place: 'where you are heading',
+  origin: 'departure airport',
+  destination: 'arrival airport',
+  departureDate: 'a date (YYYY-MM-DD)',
+};
+
+/**
+ * One short line, or none at all.
+ *
+ * This used to be a full sentence of prose that wrapped to two lines on the
+ * board and re-stated what the chips underneath it already offered — the
+ * single most expensive row on a surface whose whole promise is "one screen".
+ * A board with nothing left to ask for now says nothing, and shrinks.
+ */
+function describeNext(missing, { destinationLabel, canSearchHotels }) {
+  if (!missing.length) return '';
+
+  // Where they are going comes first and alone. A traveller who has said
+  // nothing yet must not be met with a demand for two airport codes and a date
+  // — that is the verbose version's one genuinely good instinct, kept.
+  if (missing.includes('place')) return 'Where are you heading?';
+
+  const wanted = missing.map((key) => MISSING_LABEL[key]).filter(Boolean);
+  if (!wanted.length) return '';
+
+  // Stays already work, so name the one thing flights are still short of
+  // rather than implying the whole trip is blocked.
+  return canSearchHotels && destinationLabel
+    ? `For flights: ${listPhrase(wanted)}.`
+    : `Need ${listPhrase(wanted)}.`;
 }
 
 /**
@@ -190,7 +216,8 @@ export function deriveTravelBrief({ messages = [] } = {}) {
       destinationLabel: '',
       canSearchFlights: false,
       canSearchHotels: false,
-      next: 'tell me the city or area you are heading to',
+      missing: ['place', 'origin', 'destination', 'departureDate'],
+      next: 'Where are you heading?',
     };
   }
 
@@ -201,6 +228,8 @@ export function deriveTravelBrief({ messages = [] } = {}) {
   const canSearchFlights = IATA.test(origin) && IATA.test(destination) && ISO_DATE.test(departureDate);
   const canSearchHotels = isUsablePlace(destinationLabel);
 
+  const missing = describeMissing({ destinationLabel, origin, destination, departureDate });
+
   return {
     active: true,
     origin,
@@ -210,6 +239,12 @@ export function deriveTravelBrief({ messages = [] } = {}) {
     destinationLabel,
     canSearchFlights,
     canSearchHotels,
-    next: describeNext({ destinationLabel, origin, destination, departureDate, canSearchFlights, canSearchHotels }),
+    /*
+     * Structured, so the board can offer a chip for exactly the gap in the way
+     * and the wording stays in one place. A chip that asks for something
+     * already known is the same dead control as a search that cannot run.
+     */
+    missing,
+    next: describeNext(missing, { destinationLabel, canSearchHotels }),
   };
 }

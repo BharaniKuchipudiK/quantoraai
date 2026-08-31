@@ -2428,9 +2428,6 @@ Paused — ${autoPauseRef.current}.`
                           <Suspense fallback={null}>
                             <TravelTripBoard
                               messages={messages}
-                              isLight={isLight}
-                              textColor={textColor}
-                              subtextColor={subtextColor}
                               signedIn={Boolean(user)}
                               onAsk={(text) => setInputText(text)}
                               onRequireAuth={onOpenAuth}

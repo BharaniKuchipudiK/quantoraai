@@ -205,17 +205,27 @@ function stopAgentLoopOnProviderFailure(
     };
   }
 
+  const reason = String(result?.reason || '');
+  const refused = reason === 'PROVIDER_REJECTED' || reason === 'NOT_CONFIGURED';
   const message = name === 'search_hotels'
-    ? hotelProviderFailureAsk(location, { configured, kind: 'hotels' })
+    ? hotelProviderFailureAsk(location, { configured, kind: 'hotels', reason })
     : name === 'search_attractions'
-      ? hotelProviderFailureAsk(location, { configured, kind: 'attractions' })
-      : 'I could not get live map or routing results just now. I will not invent a route.';
+      ? hotelProviderFailureAsk(location, { configured, kind: 'attractions', reason })
+      : refused
+        ? 'I could not get live map or routing results: Places refused the request, so trying again will not change it. I will not invent a route.'
+        : 'I could not get live map or routing results just now. I will not invent a route.';
 
   return {
     ...result,
     action: 'PAUSE_AND_ASK',
     providerMessage,
     message,
+    /*
+     * A refusal is settled, so nothing upstream should schedule another
+     * attempt at it. Flights already draw this line through
+     * resolveFlightToolRecovery; the Places tools had no line at all.
+     */
+    retryable: !refused,
   };
 }
 

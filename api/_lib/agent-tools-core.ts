@@ -227,7 +227,17 @@ async function searchGooglePlaces(
     if (!response.ok) {
       const providerBody = await response.text().catch(() => '');
       console.error('[Google Places API Error]', response.status, providerBody.slice(0, 1000));
-      return unavailable('Google Places API (New) rejected the request. Check that the API is enabled, billing is active, and the Vercel server-side key restrictions permit Places API (New).', 'PROVIDER_ERROR');
+      /*
+       * PROVIDER_REJECTED, not PROVIDER_ERROR. Places answered — it answered
+       * "no". Enablement, key restrictions and billing all decide that answer
+       * and none of them change between two identical calls, so the desk must
+       * not go on to offer the traveller a retry. Carrying the status lets a
+       * diagnosis name which of the three it was.
+       */
+      return {
+        ...unavailable('Google Places API (New) rejected the request. Check that the API is enabled, billing is active, and the Vercel server-side key restrictions permit Places API (New).', 'PROVIDER_REJECTED'),
+        providerStatus: response.status,
+      };
     }
 
     const payload: any = await response.json();
@@ -281,7 +291,12 @@ async function computeGoogleRoute(
     if (!response.ok) {
       const providerBody = await response.text().catch(() => '');
       console.error('[Google Routes API Error]', response.status, providerBody.slice(0, 1000));
-      return unavailable('Google Routes API rejected the request. Places can still work independently; enable Routes API for this Google Maps Platform project if you want distance and travel-time calculations.', 'PROVIDER_ERROR');
+      // Refused, on the same terms as Places above: enablement and key
+      // restrictions do not change between two identical calls.
+      return {
+        ...unavailable('Google Routes API rejected the request. Places can still work independently; enable Routes API for this Google Maps Platform project if you want distance and travel-time calculations.', 'PROVIDER_REJECTED'),
+        providerStatus: response.status,
+      };
     }
 
     const payload: any = await response.json();
