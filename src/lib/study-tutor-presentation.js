@@ -1,8 +1,11 @@
+import { studyTeachingTurnKind, studyTeachingTurnNudge } from './study-teaching-turn.js';
+
 /*
  * Small client-side guardrails for weaker tutor models. They remove narration
  * about the response format without rewriting the learner-facing explanation.
  */
 const ROBOTIC_SECTION_LABEL = /(^|\n)[ \t]*(?:\*\*)?(?:why (?:it(?:'|’)s|this is) relevant|context-aware question|key takeaway|tutor question)[ \t]*(?::[ \t]*(?:\*\*)?|(?:\*\*)[ \t]*:)[ \t]*/gi;
+const PASSIVE_READY_CLOSER = /(?:\n\s*)?(?:(?:let me know (?:once|when)|tell me when) you(?:'|’)re ready|when you(?:'|’)re ready,?)[^\n.!?]*(?:[.!?])?\s*$/i;
 
 const NUDGE_RULES = [
   {
@@ -35,16 +38,17 @@ const NUDGE_RULES = [
 export function polishStudyTutorText(text = '') {
   return normalizeStudyFlashcards(String(text || ''))
     .replace(ROBOTIC_SECTION_LABEL, '$1')
+    .replace(PASSIVE_READY_CLOSER, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 /**
  * Give each tutor turn a quiet visual cue without asking the model to decorate
- * its prose. The cue follows the learner-facing tone of the response: welcome,
- * recognition, repair, practice, insight, or a neutral book for explanation.
+ * its prose. Evidence-significant reinforcement remains a separate concern;
+ * this cue only describes the teaching job of the current conversational beat.
  */
-export function studyTutorNudge(text = '') {
+export function studyTutorNudge(text = '', topicHistory = '') {
   const source = polishStudyTutorText(text)
     .replace(/<quantora-study-(?:picture|lab|flashcard)\b[^>]*\/?\s*>/gi, ' ')
     .replace(/\s+/g, ' ')
@@ -55,7 +59,8 @@ export function studyTutorNudge(text = '') {
   const match = NUDGE_RULES.find((rule) => rule.pattern.test(openingBeat));
   if (match) return { kind: match.kind, label: match.label };
 
-  return { kind: 'book', label: 'Let’s unpack it' };
+  const turnKind = studyTeachingTurnKind(topicHistory, source);
+  return studyTeachingTurnNudge(turnKind);
 }
 
 function cleanCardCell(value = '') {
