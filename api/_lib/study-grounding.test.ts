@@ -34,8 +34,9 @@ test('look-alike official domains cannot satisfy canonical authority', () => {
   assert.equal(spoof?.authorityId, null);
 });
 
-test('official grounding requires HTTPS and rejects opaque caller-made authority refs', () => {
+test('official grounding requires normal HTTPS and rejects opaque caller-made authority refs', () => {
   assert.equal(classifyStudyGroundingSource({ ref: 'http://ncert.nic.in/textbook.php', kind: 'official' }), null);
+  assert.equal(classifyStudyGroundingSource({ ref: 'https://ncert.nic.in:8443/textbook.php', kind: 'official' }), null);
   assert.equal(classifyStudyGroundingSource({ ref: 'ncert:physics:class-11:chapter-5', kind: 'official' }), null);
 });
 
@@ -65,6 +66,7 @@ test('Exam Grounded accepts canonical official sources while Explore may cite or
   assert.equal(studyGroundingSourceAllowedForMode(connected, 'exam_grounded'), false);
   assert.equal(studyGroundingSourceAllowedForMode(web, 'explore'), true);
   assert.equal(studyGroundingSourceAllowedForMode(connected, 'explore'), true);
+  assert.equal(studyGroundingSourceAllowedForMode(official, 'invalid-mode' as never), false);
 });
 
 test('grounding evidence must bind back to the admitted source', () => {
