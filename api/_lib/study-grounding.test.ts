@@ -40,6 +40,15 @@ test('official grounding requires normal HTTPS and rejects opaque caller-made au
   assert.equal(classifyStudyGroundingSource({ ref: 'ncert:physics:class-11:chapter-5', kind: 'official' }), null);
 });
 
+test('oversized source and evidence refs are rejected instead of truncated', () => {
+  const longOfficial = `https://ncert.nic.in/${'a'.repeat(2_100)}`;
+  assert.equal(classifyStudyGroundingSource({ ref: longOfficial }), null);
+
+  const source = 'https://ncert.nic.in/textbook.php';
+  const oversizedEvidence = `${source}#${'x'.repeat(2_100)}`;
+  assert.equal(studyGroundingEvidenceMatchesSource(oversizedEvidence, source), false);
+});
+
 test('recognized exam and board authorities are canonical', () => {
   const refs = [
     ['https://cbseacademic.nic.in/curriculum_2027.html', 'cbse-academic'],
