@@ -1,4 +1,13 @@
-export const STUDY_VERIFICATION_VERSION = 'study-verification-2026-08-31.1';
+import {
+  normalizeStudyGroundingSources,
+  studyGroundingEvidenceAllowed,
+  studyGroundingSourceAllowedForMode,
+  type StudyGroundingSource,
+  type StudyGroundingSourceInput,
+  type StudyGroundingSourceKind,
+} from './study-grounding.js';
+
+export const STUDY_VERIFICATION_VERSION = 'study-verification-2026-08-31.3';
 
 export type StudyVerificationMode = 'exam_grounded' | 'explore';
 
@@ -24,17 +33,7 @@ export type StudyVerificationCheckStatus =
 
 export type StudyVerificationDecision = 'verified' | 'rejected' | 'insufficient';
 
-export type StudyGroundingSourceKind =
-  | 'official'
-  | 'open_licensed'
-  | 'quantora_reviewed'
-  | 'connected_source'
-  | 'web';
-
-export type StudyGroundingSource = {
-  ref: string;
-  kind: StudyGroundingSourceKind;
-};
+export type { StudyGroundingSource, StudyGroundingSourceInput, StudyGroundingSourceKind };
 
 export type StudyAssessmentReviewStatus = 'approved' | 'draft' | 'rejected' | 'unknown';
 
@@ -44,7 +43,7 @@ export type StudyVerificationRequest = {
   mode: StudyVerificationMode;
   subject?: string | null;
   formalizable?: boolean;
-  groundingSources?: StudyGroundingSource[] | null;
+  groundingSources?: StudyGroundingSourceInput[] | null;
   assessmentReviewStatus?: StudyAssessmentReviewStatus | null;
 };
 
@@ -57,6 +56,7 @@ export type StudyVerificationPlan = {
   optional: StudyVerifierKind[];
   blockers: string[];
   canAttempt: boolean;
+  groundingSources: StudyGroundingSource[];
 };
 
 export type StudyVerificationCheck = {
@@ -75,35 +75,26 @@ export type StudyVerificationOutcome = {
   evidenceRefs: string[];
 };
 
-const EXAM_GROUNDED_SOURCE_KINDS = new Set<StudyGroundingSourceKind>([
-  'official',
-  'open_licensed',
-  'quantora_reviewed',
-]);
-
 function clean(value: unknown, max = 240): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
+}
+
+function cleanEvidenceRef(value: unknown, max = 2000): string {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length <= max ? normalized : '';
 }
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
-function normalizedSources(input: StudyGroundingSource[] | null | undefined): StudyGroundingSource[] {
-  if (!Array.isArray(input)) return [];
-  const result: StudyGroundingSource[] = [];
-  const seen = new Set<string>();
-  for (const source of input) {
-    const ref = clean(source?.ref, 1000);
-    if (!ref || seen.has(ref)) continue;
-    seen.add(ref);
-    result.push({ ref, kind: source.kind });
-  }
-  return result;
+function isVerificationMode(value: unknown): value is StudyVerificationMode {
+  return value === 'exam_grounded' || value === 'explore';
 }
 
-function hasAllowedExamSource(sources: StudyGroundingSource[]): boolean {
-  return sources.some((source) => EXAM_GROUNDED_SOURCE_KINDS.has(source.kind));
+function hasAllowedGroundingSource(sources: StudyGroundingSource[], mode: StudyVerificationMode): boolean {
+  return sources.some((source) => studyGroundingSourceAllowedForMode(source, mode));
 }
 
 /**
@@ -113,15 +104,21 @@ function hasAllowedExamSource(sources: StudyGroundingSource[]): boolean {
  * provider. It defines the trust contract those implementations must satisfy.
  * A caller may propose a claim freely; it may only label the claim verified
  * after every required verifier has returned auditable evidence.
+ *
+ * Curriculum source authority is derived by study-grounding.ts. A caller's
+ * `kind: official` label cannot elevate an arbitrary URL into Exam Grounded
+ * evidence.
  */
 export function buildStudyVerificationPlan(input: StudyVerificationRequest): StudyVerificationPlan {
   const claimId = clean(input?.claimId, 200);
   const required: StudyVerifierKind[] = [];
   const optional: StudyVerifierKind[] = [];
   const blockers: string[] = [];
-  const sources = normalizedSources(input?.groundingSources);
+  const sources = normalizeStudyGroundingSources(input?.groundingSources);
+  const validMode = isVerificationMode(input?.mode);
 
   if (!claimId) blockers.push('invalid_claim_id');
+  if (!validMode) blockers.push('invalid_verification_mode');
 
   switch (input?.claimKind) {
     case 'numeric':
@@ -138,8 +135,11 @@ export function buildStudyVerificationPlan(input: StudyVerificationRequest): Stu
       break;
     case 'curriculum_fact':
       required.push('grounded_source');
-      if (input.mode === 'exam_grounded' && !hasAllowedExamSource(sources)) {
-        blockers.push('canonical_source_required');
+      if (!sources.length) blockers.push('grounding_source_required');
+      if (validMode && !hasAllowedGroundingSource(sources, input.mode)) {
+        blockers.push(input.mode === 'exam_grounded'
+          ? 'canonical_source_required'
+          : 'citable_source_required');
       }
       break;
     case 'assessment_key':
@@ -162,12 +162,23 @@ export function buildStudyVerificationPlan(input: StudyVerificationRequest): Stu
     optional: unique(optional.filter((verifier) => !required.includes(verifier))),
     blockers: unique(blockers),
     canAttempt: blockers.length === 0 && required.length > 0,
+    groundingSources: sources,
   };
 }
 
 function normalizedEvidenceRefs(check: StudyVerificationCheck): string[] {
   if (!Array.isArray(check?.evidenceRefs)) return [];
-  return unique(check.evidenceRefs.map((ref) => clean(ref, 1000)).filter(Boolean));
+  return unique(check.evidenceRefs.map((ref) => cleanEvidenceRef(ref)).filter(Boolean));
+}
+
+function admittedEvidenceRefs(
+  plan: StudyVerificationPlan,
+  verifier: StudyVerifierKind,
+  check: StudyVerificationCheck,
+): string[] {
+  const refs = normalizedEvidenceRefs(check);
+  if (verifier !== 'grounded_source') return refs;
+  return refs.filter((ref) => studyGroundingEvidenceAllowed(ref, plan.groundingSources || [], plan.mode));
 }
 
 /**
@@ -176,6 +187,8 @@ function normalizedEvidenceRefs(check: StudyVerificationCheck): string[] {
  * - Any required rejection rejects the claim.
  * - Missing/insufficient required checks leave the claim insufficient.
  * - A required check cannot count as verified without an evidence reference.
+ * - Grounded-source evidence must bind to a source admitted by the plan.
+ * - Oversized evidence references are rejected, never truncated.
  * - Optional checks can add evidence but can never rescue a failed requirement.
  */
 export function resolveStudyVerification(
@@ -211,8 +224,11 @@ export function resolveStudyVerification(
       reasonCodes.push(`missing_${verifier}`);
       continue;
     }
-    const refs = normalizedEvidenceRefs(check);
+
+    const rawRefs = normalizedEvidenceRefs(check);
+    const refs = admittedEvidenceRefs(plan, verifier, check);
     evidenceRefs.push(...refs);
+
     if (check.status === 'rejected') {
       reasonCodes.push(check.reasonCode || `${verifier}_rejected`);
       return {
@@ -224,17 +240,22 @@ export function resolveStudyVerification(
         evidenceRefs: unique(evidenceRefs),
       };
     }
+
     if (check.status !== 'verified' || refs.length === 0) {
       hasInsufficient = true;
-      reasonCodes.push(check.reasonCode || (check.status === 'verified'
-        ? `${verifier}_missing_evidence`
-        : `${verifier}_insufficient`));
+      if (check.status === 'verified' && rawRefs.length > 0 && verifier === 'grounded_source') {
+        reasonCodes.push('grounded_source_unbound_evidence');
+      } else {
+        reasonCodes.push(check.reasonCode || (check.status === 'verified'
+          ? `${verifier}_missing_evidence`
+          : `${verifier}_insufficient`));
+      }
     }
   }
 
   for (const verifier of plan.optional) {
     const check = byVerifier.get(verifier);
-    if (check?.status === 'verified') evidenceRefs.push(...normalizedEvidenceRefs(check));
+    if (check?.status === 'verified') evidenceRefs.push(...admittedEvidenceRefs(plan, verifier, check));
   }
 
   if (hasInsufficient) {
