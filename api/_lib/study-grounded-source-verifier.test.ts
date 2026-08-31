@@ -5,17 +5,13 @@ import {
   verifyStudyGroundedSourceClaim,
 } from "./study-grounded-source-verifier.js";
 
-test("Exam Grounded verifies exact support from an admitted official source", () => {
+test("Exam Grounded verifies an exact complete statement from an admitted official source", () => {
   const result = verifyStudyGroundedSourceClaim({
     claimId: "reflection-law",
     mode: "exam_grounded",
     sourceRef: "https://ncert.nic.in/textbook.php?gesc1=1-10",
     claimText: "The angle of incidence is equal to the angle of reflection.",
-    sourceText: [
-      "Laws of reflection of light:",
-      "The angle of incidence is equal to the angle of reflection.",
-      "The incident ray, reflected ray and normal lie in the same plane.",
-    ].join(" "),
+    sourceExcerpt: "The angle of incidence is equal to the angle of reflection.",
   });
 
   assert.equal(result.check.status, "verified");
@@ -32,7 +28,7 @@ test("harmless Unicode and whitespace differences do not break exact support", (
     mode: "exam_grounded",
     sourceRef: "https://cbseacademic.nic.in/reference.html",
     claimText: "Water is at 100 °C.",
-    sourceText: "Water   is at 100°C.",
+    sourceExcerpt: "Water   is at 100°C.",
   });
   assert.equal(result.check.status, "verified");
 });
@@ -43,7 +39,7 @@ test("caller labels cannot elevate an ordinary web source into Exam Grounded evi
     mode: "exam_grounded",
     sourceRef: "https://example.com/ncert-notes",
     claimText: "The angle of incidence is equal to the angle of reflection.",
-    sourceText: "The angle of incidence is equal to the angle of reflection.",
+    sourceExcerpt: "The angle of incidence is equal to the angle of reflection.",
   });
   assert.equal(result.check.status, "insufficient");
   assert.equal(result.check.reasonCode, "grounding_canonical_source_required");
@@ -55,19 +51,19 @@ test("Explore mode may use a normal cited web source", () => {
     mode: "explore",
     sourceRef: "https://example.com/reference",
     claimText: "A prism can disperse white light into component colours.",
-    sourceText: "A prism can disperse white light into component colours.",
+    sourceExcerpt: "A prism can disperse white light into component colours.",
   });
   assert.equal(result.check.status, "verified");
   assert.equal(result.trace?.sourceKind, "web");
 });
 
-test("authority alone never proves a claim when the retrieved text does not support it", () => {
+test("authority alone never proves a claim when the retrieved statement does not support it", () => {
   const result = verifyStudyGroundedSourceClaim({
     claimId: "unsupported-official",
     mode: "exam_grounded",
     sourceRef: "https://ncert.nic.in/textbook.php?gesc1=1-10",
     claimText: "Concave mirrors always form upright images.",
-    sourceText: "A concave mirror can form real or virtual images depending on object position.",
+    sourceExcerpt: "A concave mirror can form real or virtual images depending on object position.",
   });
   assert.equal(result.check.status, "insufficient");
   assert.equal(result.check.reasonCode, "grounding_exact_support_not_found");
@@ -80,7 +76,19 @@ test("paraphrase is deliberately insufficient rather than guessed semantic equiv
     mode: "exam_grounded",
     sourceRef: "https://ncert.nic.in/textbook.php?gesc1=1-10",
     claimText: "Incidence angle equals reflection angle.",
-    sourceText: "The angle of incidence is equal to the angle of reflection.",
+    sourceExcerpt: "The angle of incidence is equal to the angle of reflection.",
+  });
+  assert.equal(result.check.status, "insufficient");
+  assert.equal(result.check.reasonCode, "grounding_exact_support_not_found");
+});
+
+test("a matching substring inside a negated or misconception sentence is not verified", () => {
+  const result = verifyStudyGroundedSourceClaim({
+    claimId: "negated-context",
+    mode: "exam_grounded",
+    sourceRef: "https://ncert.nic.in/textbook.php?gesc1=1-10",
+    claimText: "Concave mirrors always form upright images.",
+    sourceExcerpt: "It is false that concave mirrors always form upright images.",
   });
   assert.equal(result.check.status, "insufficient");
   assert.equal(result.check.reasonCode, "grounding_exact_support_not_found");
@@ -88,20 +96,20 @@ test("paraphrase is deliberately insufficient rather than guessed semantic equiv
 
 test("missing and tiny claims fail closed", () => {
   const missing = verifyStudyGroundedSourceClaim({
-    claimId: "missing-source-text",
+    claimId: "missing-source-excerpt",
     mode: "exam_grounded",
     sourceRef: "https://ncert.nic.in/textbook.php",
     claimText: "A meaningful curriculum fact.",
-    sourceText: "",
+    sourceExcerpt: "",
   });
-  assert.equal(missing.check.reasonCode, "grounding_source_text_missing");
+  assert.equal(missing.check.reasonCode, "grounding_source_excerpt_missing");
 
   const tiny = verifyStudyGroundedSourceClaim({
     claimId: "tiny",
     mode: "exam_grounded",
     sourceRef: "https://ncert.nic.in/textbook.php",
     claimText: "force",
-    sourceText: "force",
+    sourceExcerpt: "force",
   });
   assert.equal(tiny.check.reasonCode, "grounding_claim_too_short");
 });
@@ -112,7 +120,7 @@ test("look-alike authority domains remain insufficient", () => {
     mode: "exam_grounded",
     sourceRef: "https://ncert.nic.in.evil.example/textbook.pdf",
     claimText: "The angle of incidence is equal to the angle of reflection.",
-    sourceText: "The angle of incidence is equal to the angle of reflection.",
+    sourceExcerpt: "The angle of incidence is equal to the angle of reflection.",
   });
   assert.equal(result.check.status, "insufficient");
   assert.equal(result.check.reasonCode, "grounding_canonical_source_required");
@@ -124,7 +132,7 @@ test("invalid modes fail closed instead of inheriting Explore permissions", () =
     mode: "anything" as never,
     sourceRef: "https://example.com/reference",
     claimText: "A prism can disperse white light into component colours.",
-    sourceText: "A prism can disperse white light into component colours.",
+    sourceExcerpt: "A prism can disperse white light into component colours.",
   });
   assert.equal(result.check.status, "insufficient");
   assert.equal(result.check.reasonCode, "grounding_invalid_mode");
