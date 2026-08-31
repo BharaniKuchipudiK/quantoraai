@@ -1,11 +1,17 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+
+import { deriveTravelBrief } from '../lib/travel-board-brief.js';
 
 /**
  * One trip board: what we know, chips to move the plan, live flights and
  * places on this screen. Does not book. Not a coding workspace.
+ *
+ * The board reads the trip itself rather than being handed a brief. It loads
+ * on demand, so keeping that logic in here is what keeps a travel-only surface
+ * out of the desk entry chunk every other desk downloads.
  */
 export default function TravelTripBoard({
-  brief,
+  messages,
   isLight,
   textColor,
   subtextColor,
@@ -18,6 +24,8 @@ export default function TravelTripBoard({
   const [flights, setFlights] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [note, setNote] = useState('');
+
+  const brief = useMemo(() => deriveTravelBrief({ messages }), [messages]);
 
   const runSearch = async (kind) => {
     if (!signedIn) {
@@ -70,6 +78,9 @@ export default function TravelTripBoard({
       setBusy(null);
     }
   };
+
+  // Nothing to show until the traveller has actually said something.
+  if (!brief.active) return null;
 
   const chip = (label, onClick, enabled = true) => (
     <button

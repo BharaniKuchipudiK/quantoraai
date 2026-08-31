@@ -96,6 +96,10 @@ import {
 
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
 const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
+// Only a travel thread ever renders the trip board, and code-highlight-browser-gate
+// holds the desk entry chunk to 300 KB gzipped. Loading it on demand keeps a
+// travel-only surface off every other desk's download.
+const TravelTripBoard = lazy(() => import('./TravelTripBoard.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -2268,6 +2272,19 @@ Paused — ${autoPauseRef.current}.`
                             onSend={(text) => handleSendMessage(text)}
                           />
                         ) : null}
+                        {studioDomain === 'travel' && msg.id === latestAiId ? (
+                          <Suspense fallback={null}>
+                            <TravelTripBoard
+                              messages={messages}
+                              isLight={isLight}
+                              textColor={textColor}
+                              subtextColor={subtextColor}
+                              signedIn={Boolean(user)}
+                              onAsk={(text) => setInputText(text)}
+                              onRequireAuth={onOpenAuth}
+                            />
+                          </Suspense>
+                        ) : null}
                         </>
                         );
                       })()}
@@ -2388,7 +2405,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {

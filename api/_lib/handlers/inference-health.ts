@@ -2,6 +2,7 @@ import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
 import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
+import { duffelEnvPublicHint } from '../duffel-key.js';
 import { fetchApiGatewayKey } from '../../autocomplete.js';
 import { authenticateAdminRequest } from '../admin-auth.js';
 import { probeGemini } from '../gemini-probe.js';
@@ -138,6 +139,7 @@ export default async function handler(req: any, res: any) {
   // would actually be charged.
   const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
   const paid = await paidRouteAllowed(spendKey);
+  const duffel = duffelEnvPublicHint();
 
   return res.status(summary.ready ? 200 : 503).json({
     ready: summary.ready,
@@ -148,6 +150,18 @@ export default async function handler(req: any, res: any) {
     openRouterEnvHint: openRouterHint.hint,
     openRouterViaGateway,
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
+    /*
+     * Flights were the one provider this endpoint could not see. Hotels had
+     * placesConfigured; flight search had nothing, so "are these fares real?"
+     * could only be answered by running a search and trusting the result — and
+     * a Duffel sandbox token returns real-looking offers for fares nobody can
+     * buy. Mode, not just presence, is the part worth reporting.
+     */
+    flightsConfigured: duffel.configured,
+    flightsEnvShape: duffel.shape,
+    flightsEnvHint: duffel.hint,
+    flightsFallbackShape: duffel.fallbackShape,
+    flightsMixedModes: duffel.mixedModes,
     routeCount: summary.routeCount,
     usedLastResort: summary.usedLastResort,
     spend: {

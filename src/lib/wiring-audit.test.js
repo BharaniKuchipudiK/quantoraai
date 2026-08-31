@@ -3,7 +3,10 @@ import test from 'node:test';
 import {
   compareToBaseline,
   exportedNames,
+  findOrphanComponents,
   findOrphanExports,
+  hasDefaultExport,
+  importedModulePaths,
   isTestPath,
   orphanKey,
   stripNonCode,
@@ -188,4 +191,131 @@ test('root config files are production code', () => {
     'src/lib/headers.test.js': 'crossOriginHeadersForPath("/");',
   };
   assert.deepEqual(findOrphanExports(files), [], 'a config file is a caller like any other');
+});
+
+/*
+ * THE SECOND KIND OF ORPHAN: A COMPONENT NOTHING RENDERS.
+ *
+ * TravelTripBoard shipped as a finished trip board — live flight and hotel
+ * search, its own error states — that AiStudio never imported. It was the only
+ * caller of /api/travel-search, so that endpoint was unreachable from the
+ * running product while every gate in the repository stayed green.
+ */
+test('the real case: a component nothing renders', () => {
+  const files = {
+    'src/components/TravelTripBoard.jsx': `
+      export default function TravelTripBoard({ messages }) {
+        return fetch('/api/travel-search');
+      }`,
+    'src/components/FinanceBoard.jsx': 'export default function FinanceBoard() {}',
+    'src/components/AiStudio.jsx': `
+      import FinanceBoard from './FinanceBoard.jsx';
+      export default function AiStudio() { return <FinanceBoard />; }`,
+    'src/App.jsx': "import AiStudio from './components/AiStudio.jsx';",
+  };
+  assert.deepEqual(findOrphanComponents(files), [
+    { name: 'TravelTripBoard', file: 'src/components/TravelTripBoard.jsx' },
+  ], 'the board beside it is rendered; this one is not');
+});
+
+test('a component is wired by path, whatever binding the importer chose', () => {
+  const files = {
+    'src/components/TravelTripBoard.jsx': 'export default function TravelTripBoard() {}',
+    'src/components/AiStudio.jsx': "import TripPanel from './TravelTripBoard.jsx';\nTripPanel;",
+  };
+  assert.deepEqual(findOrphanComponents(files), [],
+    'renaming the import does not un-render the component');
+});
+
+test('a lazily imported component is wired', () => {
+  const files = {
+    'src/components/StudyTutorWorkspace.jsx': 'export default function StudyTutorWorkspace() {}',
+    'src/components/AiStudio.jsx': "const W = lazy(() => import('./StudyTutorWorkspace.jsx'));",
+  };
+  assert.deepEqual(findOrphanComponents(files), [],
+    'a dynamic import is how half this studio renders');
+});
+
+test('an extensionless specifier still resolves', () => {
+  const files = {
+    'src/components/interactive/LiveBeatMaker.jsx': 'export default function LiveBeatMaker() {}',
+    'src/components/AiStudio.jsx': "const B = lazy(() => import('./interactive/LiveBeatMaker'));",
+  };
+  assert.deepEqual(findOrphanComponents(files), []);
+});
+
+test('a component only its own test imports is still an orphan', () => {
+  const files = {
+    'src/components/DeadBoard.jsx': 'export default function DeadBoard() {}',
+    'src/components/DeadBoard.test.jsx': "import DeadBoard from './DeadBoard.jsx';\nDeadBoard();",
+  };
+  assert.deepEqual(findOrphanComponents(files), [
+    { name: 'DeadBoard', file: 'src/components/DeadBoard.jsx' },
+  ], 'a green tick over a dead wire is the failure, not the absence of one');
+});
+
+test('a commented-out import does not count as rendering', () => {
+  const files = {
+    'src/components/DeadBoard.jsx': 'export default function DeadBoard() {}',
+    'src/components/AiStudio.jsx': `
+      // import DeadBoard from './DeadBoard.jsx';
+      /* import DeadBoard from './DeadBoard.jsx'; */
+      export default function AiStudio() {}`,
+    'src/App.jsx': "import AiStudio from './components/AiStudio.jsx';",
+  };
+  assert.deepEqual(findOrphanComponents(files), [
+    { name: 'DeadBoard', file: 'src/components/DeadBoard.jsx' },
+  ], 'commenting out the render is exactly how a board becomes an orphan');
+});
+
+test('a file with no default export is not a component this audit judges', () => {
+  const files = {
+    'src/components/helpers.js': 'export function formatPrice() {}',
+  };
+  assert.deepEqual(findOrphanComponents(files), [],
+    'named exports in components stay findOrphanExports business, and it skips them');
+});
+
+test('only src/components is judged this way', () => {
+  const files = {
+    'src/lib/thing.js': 'export default function thing() {}',
+    'scripts/one-off.mjs': 'export default function helper() {}',
+  };
+  assert.deepEqual(findOrphanComponents(files), [],
+    'a script is an entry point; nothing importing it is the normal case');
+});
+
+test('keepStrings keeps specifiers but still drops comments', () => {
+  const source = "// import Ghost from './Ghost.jsx';\nimport Real from './Real.jsx';";
+  const scanned = stripNonCode(source, { keepStrings: true });
+  assert.match(scanned, /\.\/Real\.jsx/, 'a live specifier survives the scan');
+  assert.doesNotMatch(scanned, /Ghost/, 'a commented-out one does not');
+  assert.doesNotMatch(stripNonCode(source), /Real\.jsx/, 'the default mode is unchanged');
+});
+
+test('specifiers resolve across directories, and only to files that exist', () => {
+  const known = new Set([
+    'src/components/AiStudio.jsx',
+    'src/components/panels/TripPanel.jsx',
+    'src/lib/travel-board-brief.js',
+  ]);
+  const fromPanel = importedModulePaths(
+    'src/components/panels/TripPanel.jsx',
+    "import { deriveTravelBrief } from '../../lib/travel-board-brief.js';\nimport('../AiStudio.jsx');\nimport React from 'react';",
+    known,
+  );
+  assert.deepEqual([...fromPanel].sort(), ['src/components/AiStudio.jsx', 'src/lib/travel-board-brief.js']);
+  assert.equal(fromPanel.has('react'), false, 'a package is not a file in this repository');
+
+  assert.deepEqual(
+    [...importedModulePaths('src/components/AiStudio.jsx', "import X from './Missing.jsx';", known)],
+    [],
+    'a specifier pointing at nothing resolves to nothing',
+  );
+});
+
+test('a default export named in a string is not a default export', () => {
+  assert.equal(hasDefaultExport('export default function Board() {}'), true);
+  assert.equal(hasDefaultExport('export { Board };'), false);
+  assert.equal(hasDefaultExport("const help = 'write export default here';"), false);
 });
