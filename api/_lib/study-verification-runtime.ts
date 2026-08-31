@@ -11,6 +11,11 @@ import {
   type StudyNumericVerificationRequest,
   type StudyNumericVerificationTrace,
 } from "./study-numeric-verifier.js";
+import {
+  verifyStudySymbolicClaim,
+  type StudySymbolicVerificationRequest,
+  type StudySymbolicVerificationTrace,
+} from "./study-symbolic-verifier.js";
 
 export type StudyReviewedAssessmentVerificationInput = {
   reviewStatus: StudyAssessmentReviewStatus;
@@ -20,6 +25,7 @@ export type StudyReviewedAssessmentVerificationInput = {
 export type StudyVerificationRuntimeRequest = {
   plan: StudyVerificationPlan;
   numeric?: StudyNumericVerificationRequest | null;
+  symbolic?: StudySymbolicVerificationRequest | null;
   reviewedAssessment?: StudyReviewedAssessmentVerificationInput | null;
 };
 
@@ -27,6 +33,7 @@ export type StudyVerificationRuntimeResult = {
   outcome: StudyVerificationOutcome;
   checks: StudyVerificationCheck[];
   numericTrace: StudyNumericVerificationTrace | null;
+  symbolicTrace: StudySymbolicVerificationTrace | null;
 };
 
 function insufficient(verifier: StudyVerifierKind, reasonCode: string): StudyVerificationCheck {
@@ -67,6 +74,7 @@ export function executeStudyVerificationPlan(
   const plan = request.plan;
   const checks: StudyVerificationCheck[] = [];
   let numericTrace: StudyNumericVerificationTrace | null = null;
+  let symbolicTrace: StudySymbolicVerificationTrace | null = null;
   const requested = [...new Set([...plan.required, ...plan.optional])];
 
   for (const verifier of requested) {
@@ -80,6 +88,19 @@ export function executeStudyVerificationPlan(
       const result = verifyStudyNumericClaim({ ...request.numeric, claimId: plan.claimId });
       checks.push(result.check);
       numericTrace = result.trace;
+      continue;
+    }
+
+    if (verifier === "symbolic") {
+      if (!request.symbolic) {
+        if (plan.required.includes("symbolic")) {
+          checks.push(insufficient("symbolic", "symbolic_input_missing"));
+        }
+        continue;
+      }
+      const result = verifyStudySymbolicClaim({ ...request.symbolic, claimId: plan.claimId });
+      checks.push(result.check);
+      symbolicTrace = result.trace;
       continue;
     }
 
@@ -97,5 +118,6 @@ export function executeStudyVerificationPlan(
     outcome: resolveStudyVerification(plan, checks),
     checks,
     numericTrace,
+    symbolicTrace,
   };
 }

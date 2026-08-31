@@ -35,6 +35,41 @@ test("numeric plan without numeric data remains insufficient", () => {
   assert.ok(result.outcome.reasonCodes.includes("numeric_input_missing"));
 });
 
+test("symbolic plan resolves an exact identity through the deterministic runtime", () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: "symbolic-check",
+    claimKind: "symbolic",
+    mode: "exam_grounded",
+  });
+  const result = executeStudyVerificationPlan({
+    plan,
+    symbolic: {
+      claimId: "caller-cannot-rebind-this",
+      actual: "(x + 1)^2",
+      expected: "x^2 + 2*x + 1",
+      relation: "expression",
+      domain: "real",
+      variables: ["x"],
+    },
+  });
+  assert.equal(result.outcome.decision, "verified");
+  assert.equal(result.outcome.canClaimVerified, true);
+  assert.equal(result.symbolicTrace?.claimId, "symbolic-check");
+  assert.equal(result.checks.find((check) => check.verifier === "symbolic")?.status, "verified");
+});
+
+test("symbolic plan without symbolic data remains insufficient", () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: "missing-symbolic",
+    claimKind: "symbolic",
+    mode: "exam_grounded",
+  });
+  const result = executeStudyVerificationPlan({ plan });
+  assert.equal(result.outcome.decision, "insufficient");
+  assert.equal(result.outcome.canClaimVerified, false);
+  assert.ok(result.outcome.reasonCodes.includes("symbolic_input_missing"));
+});
+
 test("reviewed assessment plan remains verified through the shared runtime", () => {
   const plan = buildStudyVerificationPlan({
     claimId: "assessment-key:item@1",
@@ -68,16 +103,4 @@ test("approved review without auditable evidence is still insufficient", () => {
   assert.equal(result.outcome.decision, "insufficient");
   assert.equal(result.outcome.canClaimVerified, false);
   assert.ok(result.outcome.reasonCodes.includes("assessment_item_missing_review_evidence"));
-});
-
-test("unimplemented symbolic requirement never silently succeeds", () => {
-  const plan = buildStudyVerificationPlan({
-    claimId: "symbolic-check",
-    claimKind: "symbolic",
-    mode: "exam_grounded",
-  });
-  const result = executeStudyVerificationPlan({ plan });
-  assert.equal(result.outcome.decision, "insufficient");
-  assert.equal(result.outcome.canClaimVerified, false);
-  assert.ok(result.outcome.reasonCodes.includes("symbolic_implementation_unavailable"));
 });
