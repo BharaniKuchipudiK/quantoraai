@@ -81,39 +81,110 @@ test('formal proof claims are blocked until the claim is formalizable', () => {
   assert.equal(routable.canAttempt, true);
 });
 
-test('exam-grounded curriculum facts require a canonical source class', () => {
+test('exam-grounded curriculum facts derive canonical authority instead of trusting source labels', () => {
   const webOnly = buildStudyVerificationPlan({
     claimId: 'claim-5',
     claimKind: 'curriculum_fact',
     mode: 'exam_grounded',
-    groundingSources: [{ ref: 'https://example.com/post', kind: 'web' }],
+    groundingSources: [{ ref: 'https://example.com/post', kind: 'official' }],
   });
   assert.equal(webOnly.canAttempt, false);
   assert.ok(webOnly.blockers.includes('canonical_source_required'));
+  assert.equal(webOnly.groundingSources[0]?.kind, 'web');
 
   const official = buildStudyVerificationPlan({
     claimId: 'claim-5b',
     claimKind: 'curriculum_fact',
     mode: 'exam_grounded',
-    groundingSources: [{ ref: 'ncert:physics:class-11:chapter-5', kind: 'official' }],
+    groundingSources: [{ ref: 'https://ncert.nic.in/textbook.php?gesc1=1-10', kind: 'web' }],
   });
   assert.equal(official.canAttempt, true);
   assert.deepEqual(official.required, ['grounded_source']);
+  assert.equal(official.groundingSources[0]?.kind, 'official');
+  assert.equal(official.groundingSources[0]?.authorityId, 'ncert');
+});
+
+test('curriculum facts cannot be routed without a citable source in either mode', () => {
+  for (const mode of ['exam_grounded', 'explore'] as const) {
+    const plan = buildStudyVerificationPlan({
+      claimId: `claim-source-${mode}`,
+      claimKind: 'curriculum_fact',
+      mode,
+      groundingSources: [],
+    });
+    assert.equal(plan.canAttempt, false);
+    assert.ok(plan.blockers.includes('grounding_source_required'));
+  }
 });
 
 test('explore mode may verify a factual claim against a cited web source', () => {
+  const source = 'https://example.com/reference';
   const plan = buildStudyVerificationPlan({
     claimId: 'claim-6',
     claimKind: 'curriculum_fact',
     mode: 'explore',
-    groundingSources: [{ ref: 'web:https://example.com/reference', kind: 'web' }],
+    groundingSources: [{ ref: `web:${source}`, kind: 'official' }],
   });
   assert.equal(plan.canAttempt, true);
+  assert.equal(plan.groundingSources[0]?.kind, 'web');
 
   const result = resolveStudyVerification(plan, [
-    verified('grounded_source', 'web:https://example.com/reference#support'),
+    verified('grounded_source', `${source}#support`),
   ]);
   assert.equal(result.decision, 'verified');
+  assert.equal(result.canClaimVerified, true);
+});
+
+test('grounded-source success is insufficient when evidence is not bound to an admitted source', () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: 'claim-6b',
+    claimKind: 'curriculum_fact',
+    mode: 'exam_grounded',
+    groundingSources: [{ ref: 'https://ncert.nic.in/textbook.php?gesc1=1-10' }],
+  });
+  const result = resolveStudyVerification(plan, [
+    verified('grounded_source', 'https://example.com/article#support'),
+  ]);
+  assert.equal(result.decision, 'insufficient');
+  assert.equal(result.canClaimVerified, false);
+  assert.ok(result.reasonCodes.includes('grounded_source_unbound_evidence'));
+  assert.deepEqual(result.evidenceRefs, []);
+});
+
+test('Exam Grounded evidence must bind to the canonical source admitted by the plan', () => {
+  const source = 'https://ncert.nic.in/textbook.php?gesc1=1-10';
+  const plan = buildStudyVerificationPlan({
+    claimId: 'claim-6c',
+    claimKind: 'curriculum_fact',
+    mode: 'exam_grounded',
+    groundingSources: [
+      { ref: source },
+      { ref: 'https://example.com/secondary-reference' },
+    ],
+  });
+  const result = resolveStudyVerification(plan, [
+    verified('grounded_source', `${source}#chapter-10`),
+  ]);
+  assert.equal(result.decision, 'verified');
+  assert.equal(result.canClaimVerified, true);
+  assert.deepEqual(result.evidenceRefs, [`${source}#chapter-10`]);
+});
+
+test('oversized evidence refs are rejected rather than truncated into a valid source', () => {
+  const source = 'https://ncert.nic.in/textbook.php';
+  const plan = buildStudyVerificationPlan({
+    claimId: 'claim-oversized-evidence',
+    claimKind: 'curriculum_fact',
+    mode: 'exam_grounded',
+    groundingSources: [{ ref: source }],
+  });
+  const result = resolveStudyVerification(plan, [
+    verified('grounded_source', `${source}#${'x'.repeat(2_100)}`),
+  ]);
+  assert.equal(result.decision, 'insufficient');
+  assert.equal(result.canClaimVerified, false);
+  assert.deepEqual(result.evidenceRefs, []);
+  assert.ok(result.reasonCodes.includes('grounded_source_missing_evidence'));
 });
 
 test('unreviewed assessment keys can never become verified learner evidence', () => {
@@ -150,4 +221,18 @@ test('missing required checks remain insufficient rather than guessing', () => {
   assert.equal(result.decision, 'insufficient');
   assert.equal(result.canClaimVerified, false);
   assert.ok(result.reasonCodes.includes('missing_numeric'));
+});
+
+test('invalid verification modes are blockers rather than falling back to Explore', () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: 'claim-invalid-mode',
+    claimKind: 'curriculum_fact',
+    mode: 'anything' as never,
+    groundingSources: [{ ref: 'https://example.com/reference' }],
+  });
+  assert.equal(plan.canAttempt, false);
+  assert.ok(plan.blockers.includes('invalid_verification_mode'));
+  assert.equal(resolveStudyVerification(plan, [
+    verified('grounded_source', 'https://example.com/reference'),
+  ]).decision, 'insufficient');
 });

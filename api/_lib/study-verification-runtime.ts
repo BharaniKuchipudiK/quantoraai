@@ -16,6 +16,11 @@ import {
   type StudySymbolicVerificationRequest,
   type StudySymbolicVerificationTrace,
 } from "./study-symbolic-verifier.js";
+import {
+  verifyStudyGroundedSourceClaim,
+  type StudyGroundedSourceVerificationRequest,
+  type StudyGroundedSourceVerificationTrace,
+} from "./study-grounded-source-verifier.js";
 
 export type StudyReviewedAssessmentVerificationInput = {
   reviewStatus: StudyAssessmentReviewStatus;
@@ -26,6 +31,7 @@ export type StudyVerificationRuntimeRequest = {
   plan: StudyVerificationPlan;
   numeric?: StudyNumericVerificationRequest | null;
   symbolic?: StudySymbolicVerificationRequest | null;
+  grounding?: StudyGroundedSourceVerificationRequest | null;
   reviewedAssessment?: StudyReviewedAssessmentVerificationInput | null;
 };
 
@@ -34,6 +40,7 @@ export type StudyVerificationRuntimeResult = {
   checks: StudyVerificationCheck[];
   numericTrace: StudyNumericVerificationTrace | null;
   symbolicTrace: StudySymbolicVerificationTrace | null;
+  groundingTrace: StudyGroundedSourceVerificationTrace | null;
 };
 
 function insufficient(verifier: StudyVerifierKind, reasonCode: string): StudyVerificationCheck {
@@ -75,6 +82,7 @@ export function executeStudyVerificationPlan(
   const checks: StudyVerificationCheck[] = [];
   let numericTrace: StudyNumericVerificationTrace | null = null;
   let symbolicTrace: StudySymbolicVerificationTrace | null = null;
+  let groundingTrace: StudyGroundedSourceVerificationTrace | null = null;
   const requested = [...new Set([...plan.required, ...plan.optional])];
 
   for (const verifier of requested) {
@@ -104,6 +112,23 @@ export function executeStudyVerificationPlan(
       continue;
     }
 
+    if (verifier === "grounded_source") {
+      if (!request.grounding) {
+        if (plan.required.includes("grounded_source")) {
+          checks.push(insufficient("grounded_source", "grounding_input_missing"));
+        }
+        continue;
+      }
+      const result = verifyStudyGroundedSourceClaim({
+        ...request.grounding,
+        claimId: plan.claimId,
+        mode: plan.mode,
+      });
+      checks.push(result.check);
+      groundingTrace = result.trace;
+      continue;
+    }
+
     if (verifier === "reviewed_assessment") {
       checks.push(reviewedAssessmentCheck(request.reviewedAssessment));
       continue;
@@ -119,5 +144,6 @@ export function executeStudyVerificationPlan(
     checks,
     numericTrace,
     symbolicTrace,
+    groundingTrace,
   };
 }
