@@ -117,3 +117,15 @@ test("look-alike authority domains remain insufficient", () => {
   assert.equal(result.check.status, "insufficient");
   assert.equal(result.check.reasonCode, "grounding_canonical_source_required");
 });
+
+test("invalid modes fail closed instead of inheriting Explore permissions", () => {
+  const result = verifyStudyGroundedSourceClaim({
+    claimId: "invalid-mode",
+    mode: "anything" as never,
+    sourceRef: "https://example.com/reference",
+    claimText: "A prism can disperse white light into component colours.",
+    sourceText: "A prism can disperse white light into component colours.",
+  });
+  assert.equal(result.check.status, "insufficient");
+  assert.equal(result.check.reasonCode, "grounding_invalid_mode");
+});
