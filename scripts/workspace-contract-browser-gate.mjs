@@ -26,6 +26,32 @@ await page.addInitScript(() => {
   localStorage.removeItem('quantora_profile_avatar_v1');
 });
 
+/*
+ * The avatar host is served locally, never fetched.
+ *
+ * The session stub below deliberately sets picture: null, and the app falls
+ * back to ui-avatars.com for an unset avatar (src/App.jsx). That made this gate
+ * depend on a third party being reachable: on 2026-08-31 it failed CI with
+ * "Profile editor contains broken visible images: https://ui-avatars.com/..."
+ * and passed on a re-run of the identical commit. A gate that someone else's
+ * CDN can turn red blocks merges for a reason that has nothing to do with the
+ * diff, and costs a re-run to disprove every time.
+ *
+ * A real 1x1 PNG, so the image decodes and naturalWidth is non-zero. The
+ * assertion still proves the app asked for an avatar and rendered it; it just
+ * no longer also proves the internet was up.
+ */
+const AVATAR_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBASfYyG4AAAAASUVORK5CYII=',
+  'base64',
+);
+
+await page.route('https://ui-avatars.com/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'image/png',
+  body: AVATAR_PNG,
+}));
+
 await page.route('**/api/**', async (route) => {
   const url = new URL(route.request().url());
   if (url.pathname === '/api/auth/session') {
