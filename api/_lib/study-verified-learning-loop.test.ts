@@ -31,7 +31,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-test('reviewed assessment flows atomically into attempt-validated evidence, diagnosis, and repeat protection', async () => {
+test('reviewed assessment flows atomically into specific diagnosis, targeted remediation, and repeat protection', async () => {
   const originalFetch = global.fetch;
   const attempts = new Map<string, any>();
   const evidenceRows: any[] = [];
@@ -58,6 +58,7 @@ test('reviewed assessment flows atomically into attempt-validated evidence, diag
           concept_id: attempt.concept_id,
           item_key: attempt.item_key,
           item_version: attempt.item_version,
+          submitted_option_id: attempt.submitted_option_id,
           submitted_at: attempt.submitted_at,
           correct: attempt.correct,
           score: attempt.score,
@@ -141,7 +142,11 @@ test('reviewed assessment flows atomically into attempt-validated evidence, diag
     assert.equal(firstGrade.state.body.mastery.evidenceCount, 1);
     assert.equal(firstGrade.state.body.learnerModel.understanding.evidenceCount, 1);
     assert.equal(firstGrade.state.body.learnerModel.misconception.state, 'signal_observed');
+    assert.equal(firstGrade.state.body.learnerModel.misconception.code, 'representation_misread');
+    assert.equal(firstGrade.state.body.learnerModel.misconception.confidence, 1);
+    assert.equal(firstGrade.state.body.learnerModel.misconception.remediation.strategy, 'representation_bridge');
     assert.equal(firstGrade.state.body.learnerModel.nextLearningMove.type, 'diagnose_misconception');
+    assert.equal(firstGrade.state.body.learnerModel.nextLearningMove.reasonCode, 'active_misconception:representation_misread');
     assert.equal(evidenceRows.length, 1);
     assert.equal(evidenceRows[0].independent, true);
     assert.equal(evidenceRows[0].assessment_ref, `attempt:${firstAttemptId}`);
@@ -153,6 +158,7 @@ test('reviewed assessment flows atomically into attempt-validated evidence, diag
     assert.equal(duplicateGrade.state.body.correct, false);
     assert.equal(duplicateGrade.state.body.mastery.learningState, 'misconception_detected');
     assert.equal(duplicateGrade.state.body.mastery.evidenceCount, 1);
+    assert.equal(duplicateGrade.state.body.learnerModel.misconception.code, 'representation_misread');
     assert.equal(evidenceRows.length, 1, 'regrading one attempt must not append evidence');
 
     const issueTwo = responseHarness();
@@ -169,6 +175,7 @@ test('reviewed assessment flows atomically into attempt-validated evidence, diag
     assert.equal(repeatedItemGrade.state.body.mastery.learningState, 'misconception_detected');
     assert.equal(repeatedItemGrade.state.body.mastery.evidenceCount, 1);
     assert.equal(repeatedItemGrade.state.body.learnerModel.understanding.evidenceCount, 1);
+    assert.equal(repeatedItemGrade.state.body.learnerModel.misconception.code, 'representation_misread');
     assert.equal(repeatedItemGrade.state.body.learnerModel.nextLearningMove.type, 'diagnose_misconception');
     assert.equal(savedEstimates.at(-1).evidence_count, 1);
   } finally {
