@@ -131,10 +131,20 @@ The user is thinking about money — budgets, savings, investing concepts, perso
 - Do not invent market data or rates; say when live data is not available.`,
 
   research: `DOMAIN FOCUS: RESEARCH
-The user wants to investigate a topic — compare options, gather perspectives, or go deeper than a quick answer.
-- Synthesize clearly; cite uncertainty where evidence is thin.
-- Ask one clarifying question when scope, audience, or depth would change the approach.
-- You may not have live web search in this session unless tools are enabled; be transparent about limits.`,
+The user is running an investigation with a research analyst. The deliverable is a defensible brief — every material claim traceable to evidence — not a chat reply that merely sounds informed.
+
+ANALYST POSTURE
+1. Pin the actual question when it is ambiguous: scope, time frame, and what a good answer would settle. At most one clarifying question, and only when the answer would change the approach.
+2. Live web search runs on this desk. Lead with what current sources say; do not answer from memory when the claim is checkable.
+3. State findings as short declarative bullets, one finding per bullet. A finding is a claim the evidence supports, not a topic heading.
+4. Distinguish explicitly what the sources show from what you infer or recall. When a material claim has no live source this turn, say so in line — "not verified against a live source".
+5. When credible sources disagree, surface the disagreement as its own finding. Never average it away.
+6. Never fabricate a source, a quote, a number, or a publication date. A weaker honest answer beats a confident invented one. Source links are appended to your reply automatically — do not write your own sources section.
+
+OUTPUT STYLE
+- Sound like a senior analyst: specific, plainly worded, decisive about what is and is not established.
+- Short paragraphs for reasoning; bullets for findings; tables only for genuine comparisons.
+- End substantive answers with the sharpest open question or the next thing worth checking, not a generic offer of more help.`,
 };
 
 export function buildDomainDirective(domain: StudioDomain | null): string {
@@ -142,4 +152,22 @@ export function buildDomainDirective(domain: StudioDomain | null): string {
   const base = DOMAIN_DIRECTIVES[domain];
   const studyTeaching = domain === "education" ? `\n\n${STUDY_TEACHING_TURN_DIRECTIVE}` : "";
   return `\n\n${base}${studyTeaching}`;
+}
+
+/**
+ * Whether this turn runs live web search. The desk decides, not a user
+ * toggle: the Research desk's board counts an answer as "backed by live
+ * sources" only when the turn actually searched, so a research chat turn
+ * grounds and every other surface stays off (advisors are frozen; BUILD,
+ * repair and verify never search).
+ */
+export function shouldGroundTurn(input: {
+  domain: StudioDomain | null;
+  buildMode: boolean;
+  task?: string | null;
+}): boolean {
+  return input.domain === "research"
+    && !input.buildMode
+    && input.task !== "repair"
+    && input.task !== "verify-build";
 }

@@ -18,6 +18,7 @@ import { evaluateSafetyText } from "./safety-policy.js";
 import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-store.js";
 import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
+import { shouldGroundTurn } from './studio-domains.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -530,9 +531,11 @@ export default async function handler(req: any, res: any) {
       studioModeExplicit: communicationRequest.studioModeExplicit,
       buildMode: buildMode || isRefine,
     }) || isRefine;
-    // Studio users should not toggle web search. Live search is off until a
-    // product surface needs it (advisors are frozen; BUILD does not use it).
-    const grounding = false;
+    const grounding = shouldGroundTurn({
+      domain: normalizedStudioDomain,
+      buildMode: effectiveBuildMode,
+      task,
+    });
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') dynamicTemperature = 0.3;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildDomainDirective, normalizeStudioDomain } from "./studio-domains.js";
+import { buildDomainDirective, normalizeStudioDomain, shouldGroundTurn } from "./studio-domains.js";
 
 test("normalizeStudioDomain accepts known domains", () => {
   assert.equal(normalizeStudioDomain("travel"), "travel");
@@ -81,4 +81,33 @@ test("the Study teaching policy is isolated from non-education domains", () => {
 
 test("buildDomainDirective is empty for general chat", () => {
   assert.equal(buildDomainDirective(null), "");
+});
+
+test("Research directive is an analyst evidence contract, not a vibe", () => {
+  const directive = buildDomainDirective("research");
+  assert.match(directive, /DOMAIN FOCUS: RESEARCH/);
+  assert.match(directive, /ANALYST POSTURE/);
+  assert.match(directive, /defensible brief/i);
+  assert.match(directive, /Live web search runs on this desk/i);
+  assert.match(directive, /do not answer from memory when the claim is checkable/i);
+  assert.match(directive, /findings as short declarative bullets/i);
+  assert.match(directive, /not verified against a live source/i);
+  assert.match(directive, /disagree.*Never average it away/is);
+  assert.match(directive, /Never fabricate a source/i);
+  // The server appends the numbered Sources block itself; a model-written one
+  // would duplicate it and break the board's parser.
+  assert.match(directive, /do not write your own sources section/i);
+  assert.match(directive, /At most one clarifying question/i);
+});
+
+test("only a research chat turn grounds — build, repair and verify never search", () => {
+  assert.equal(shouldGroundTurn({ domain: "research", buildMode: false }), true);
+  assert.equal(shouldGroundTurn({ domain: "research", buildMode: false, task: "chat" }), true);
+  assert.equal(shouldGroundTurn({ domain: "research", buildMode: true }), false);
+  assert.equal(shouldGroundTurn({ domain: "research", buildMode: false, task: "repair" }), false);
+  assert.equal(shouldGroundTurn({ domain: "research", buildMode: false, task: "verify-build" }), false);
+  assert.equal(shouldGroundTurn({ domain: "travel", buildMode: false }), false);
+  assert.equal(shouldGroundTurn({ domain: "finance", buildMode: false }), false);
+  assert.equal(shouldGroundTurn({ domain: "education", buildMode: false }), false);
+  assert.equal(shouldGroundTurn({ domain: null, buildMode: false }), false);
 });
