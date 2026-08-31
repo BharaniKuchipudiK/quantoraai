@@ -10,7 +10,7 @@ import type {
 } from "./study-verification.js";
 
 export const STUDY_GROUNDED_SOURCE_VERIFIER_VERSION =
-  "study-grounded-source-verifier-2026-08-31.2";
+  "study-grounded-source-verifier-2026-08-31.3";
 
 export type StudyGroundedSourceVerificationRequest = {
   claimId: string;
@@ -51,8 +51,8 @@ function cleanId(value: unknown): string {
     : "";
 }
 
-function cleanText(value: unknown, max: number): string {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
+function rawText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function isVerificationMode(value: unknown): value is StudyVerificationMode {
@@ -136,6 +136,10 @@ function buildVerified(
  * a larger block can be wrong when the source is negating the sentence, quoting
  * it as a misconception, or discussing it as a false option.
  *
+ * Inputs above the policy caps are rejected, never truncated. Truncating either
+ * side could discard a contradictory suffix and accidentally verify only the
+ * retained prefix.
+ *
  * This function does not fetch URLs and does not treat URL authority as semantic
  * support. Callers must pass a complete statement obtained server-side from
  * `sourceRef` (or from a reviewed corpus bound to that ref). Paraphrase,
@@ -157,10 +161,14 @@ export function verifyStudyGroundedSourceClaim(
       : "grounding_citable_source_required");
   }
 
-  const rawClaim = cleanText(request?.claimText, MAX_CLAIM_CHARS);
-  const rawSourceExcerpt = cleanText(request?.sourceExcerpt, MAX_SOURCE_EXCERPT_CHARS);
+  const rawClaim = rawText(request?.claimText);
+  const rawSourceExcerpt = rawText(request?.sourceExcerpt);
   if (!rawClaim) return insufficient("grounding_claim_text_missing");
   if (!rawSourceExcerpt) return insufficient("grounding_source_excerpt_missing");
+  if (rawClaim.length > MAX_CLAIM_CHARS) return insufficient("grounding_claim_too_long");
+  if (rawSourceExcerpt.length > MAX_SOURCE_EXCERPT_CHARS) {
+    return insufficient("grounding_source_excerpt_too_long");
+  }
 
   const claim = canonicalSupportText(rawClaim);
   const sourceExcerpt = canonicalSupportText(rawSourceExcerpt);
