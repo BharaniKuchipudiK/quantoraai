@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileCode, GitBranch, Play, Terminal } from 'lucide-react';
+import { FileCode } from 'lucide-react';
 import { listStudioFiles, studioFileLabel } from '../lib/studio-file-tree.js';
 import { checkState } from '../lib/studio-desk-criteria.js';
 
@@ -87,32 +87,6 @@ export default function StudioFileTree({
           ) : null}
         </div>
       ) : null}
-      <button
-        type="button"
-        onClick={() => onSelect('preview')}
-        style={rowStyle(activePath === 'preview', isLight, textColor, subtextColor)}
-      >
-        <Play size={12} />
-        Preview
-      </button>
-      <button
-        type="button"
-        data-quantora-studio-terminal-nav="true"
-        onClick={() => onSelect('terminal')}
-        style={rowStyle(activePath === 'terminal', isLight, textColor, subtextColor)}
-      >
-        <Terminal size={12} />
-        Terminal
-      </button>
-      <button
-        type="button"
-        data-quantora-studio-git-nav="true"
-        onClick={() => onSelect('git')}
-        style={rowStyle(activePath === 'git', isLight, textColor, subtextColor)}
-      >
-        <GitBranch size={12} />
-        Git
-      </button>
       {Array.isArray(review) && review.length > 0 ? (
         <div data-quantora-desk-review="true" style={{ padding: '8px 4px 6px' }}>
           <div style={{
