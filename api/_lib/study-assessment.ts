@@ -12,6 +12,7 @@ import {
   studyAssessmentItemsForConcept,
 } from "./study-assessment-items.js";
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
+import { selectStudyAssessmentItem } from './study-assessment-selector.js';
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel, type StudyLearnerModel } from "./study-learner-model.js";
@@ -93,7 +94,29 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         fallbackAllowed: true,
       });
     }
-    const item = studyAssessmentItemsForConcept(concept.canonicalKey)[0];
+
+    const candidates = studyAssessmentItemsForConcept(concept.canonicalKey);
+    let priorEvidence = await readVerifiedStudyMasteryEvidence(userSub, concept.id, concept.canonicalKey);
+    let priorLearnerModel: StudyLearnerModel | null = null;
+    if (priorEvidence) {
+      const priorEstimate = estimateStudyMastery(priorEvidence);
+      priorLearnerModel = buildStudyLearnerModel({
+        conceptId: concept.id,
+        conceptKey: concept.canonicalKey,
+        evidence: priorEvidence,
+        estimate: priorEstimate,
+      });
+    } else {
+      // Selection may fall back to the first reviewed item, but unverified state
+      // is never invented when the validation store cannot answer.
+      priorEvidence = [];
+    }
+
+    const item = selectStudyAssessmentItem({
+      items: candidates,
+      evidence: priorEvidence,
+      learnerModel: priorLearnerModel,
+    });
     if (!item) {
       return res.status(422).json({
         error: "This mapped topic does not have a released assessment item yet.",
@@ -187,7 +210,6 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       status: estimate.status,
       learningState: learningState(learnerModel),
       evidenceCount: estimate.evidenceCount,
-      // The UI receives one evidence-backed state, not a grade-local shadow state.
     } : null,
     learnerModel,
   });
