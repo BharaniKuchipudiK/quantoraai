@@ -2,7 +2,7 @@ import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.2';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.3';
 
 const GRAPH_TIMEOUT_MS = 4_000;
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
@@ -33,6 +33,7 @@ type StudyPrerequisiteScan =
 type StudyScanContext = {
   userSub: string;
   inspectedPrerequisiteIds: Set<string>;
+  conceptById: Map<string, StudyConceptRef | null>;
   modelByConceptId: Map<string, StudyLearnerModel>;
   prerequisitesByTargetId: Map<string, StudyPrerequisiteRef[]>;
 };
@@ -82,7 +83,10 @@ function conceptRecord(value: any): StudyConceptRef | null {
   return id && canonicalKey && label ? { id, canonicalKey, label } : null;
 }
 
-async function readImmediatePrerequisites(targetConceptId: string): Promise<StudyPrerequisiteRef[] | null> {
+async function readImmediatePrerequisites(
+  targetConceptId: string,
+  conceptById: Map<string, StudyConceptRef | null>,
+): Promise<StudyPrerequisiteRef[] | null> {
   const edgeRows = await readRows(
     `study_concept_edges?select=source_concept_id,confidence&relation=eq.prerequisite_of&target_concept_id=eq.${encodeURIComponent(targetConceptId)}&order=confidence.desc&limit=${MAX_PREREQUISITE_CONCEPTS}`,
   );
@@ -96,23 +100,26 @@ async function readImmediatePrerequisites(targetConceptId: string): Promise<Stud
     .filter((row) => row.sourceConceptId && row.confidence >= MIN_PREREQUISITE_CONFIDENCE);
   if (!edges.length) return [];
 
-  // Resolve the bounded edge set in one query. The previous one-query-per-edge
-  // shape made graph latency grow linearly even though the planner itself was
-  // bounded. Concept ids are DB-owned UUIDs, not caller text.
+  // Resolve the bounded edge set in one query, and retain the result across
+  // converging branches. The previous one-query-per-edge shape made graph
+  // latency grow linearly even though the planner itself was bounded.
   const sourceIds = [...new Set(edges.map((edge) => edge.sourceConceptId))];
-  const conceptRows = await readRows(
-    `study_concepts?select=id,canonical_key,label&id=in.(${sourceIds.map((id) => encodeURIComponent(id)).join(',')})&status=eq.active&limit=${MAX_PREREQUISITE_CONCEPTS}`,
-  );
-  if (conceptRows === null) return null;
-  const conceptsById = new Map<string, StudyConceptRef>();
-  for (const row of conceptRows) {
-    const concept = conceptRecord(row);
-    if (concept) conceptsById.set(concept.id, concept);
+  const unresolvedIds = sourceIds.filter((id) => !conceptById.has(id));
+  if (unresolvedIds.length) {
+    const conceptRows = await readRows(
+      `study_concepts?select=id,canonical_key,label&id=in.(${unresolvedIds.map((id) => encodeURIComponent(id)).join(',')})&status=eq.active&limit=${MAX_PREREQUISITE_CONCEPTS}`,
+    );
+    if (conceptRows === null) return null;
+    for (const id of unresolvedIds) conceptById.set(id, null);
+    for (const row of conceptRows) {
+      const concept = conceptRecord(row);
+      if (concept && unresolvedIds.includes(concept.id)) conceptById.set(concept.id, concept);
+    }
   }
 
   const unique = new Map<string, StudyPrerequisiteRef>();
   for (const edge of edges) {
-    const concept = conceptsById.get(edge.sourceConceptId);
+    const concept = conceptById.get(edge.sourceConceptId);
     if (!concept) continue;
     const candidate = { ...concept, edgeConfidence: edge.confidence };
     const prior = unique.get(candidate.id);
@@ -125,7 +132,7 @@ async function readImmediatePrerequisites(targetConceptId: string): Promise<Stud
 async function prerequisitesFor(context: StudyScanContext, targetConceptId: string): Promise<StudyPrerequisiteRef[] | null> {
   const cached = context.prerequisitesByTargetId.get(targetConceptId);
   if (cached) return cached;
-  const prerequisites = await readImmediatePrerequisites(targetConceptId);
+  const prerequisites = await readImmediatePrerequisites(targetConceptId, context.conceptById);
   if (prerequisites !== null) context.prerequisitesByTargetId.set(targetConceptId, prerequisites);
   return prerequisites;
 }
@@ -239,6 +246,7 @@ export async function applyStudyPrerequisiteNextBestAction(input: {
   const context: StudyScanContext = {
     userSub: input.userSub,
     inspectedPrerequisiteIds: new Set(),
+    conceptById: new Map(),
     modelByConceptId: new Map(),
     prerequisitesByTargetId: new Map(),
   };
