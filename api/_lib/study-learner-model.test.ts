@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { studyVerifiedObservationSourceRef } from './study-evidence-admission.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 import { buildStudyLearnerModel } from './study-learner-model.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
+
+function verifiedObservationRef(kind: Exclude<StudyEvidenceKind, 'assessment_item' | 'self_confidence'>, ref: string) {
+  return `quantora:study-verified:${kind}:${ref}`;
+}
 
 function evidence(kind: StudyEvidenceKind, correct: boolean | null, index: number, overrides: Partial<StudyMasteryEvidenceEvent> = {}): StudyMasteryEvidenceEvent {
   const attemptId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
@@ -16,7 +19,7 @@ function evidence(kind: StudyEvidenceKind, correct: boolean | null, index: numbe
       }
     : kind === 'self_confidence'
       ? {}
-      : { sourceRef: studyVerifiedObservationSourceRef(kind, `test:${index}`) };
+      : { sourceRef: verifiedObservationRef(kind, `test:${index}`) };
   return {
     id: `event-${index}`,
     conceptId: 'concept-1',
