@@ -11,9 +11,11 @@ import {
   findStudyAssessmentItem,
   publicStudyAssessmentItem,
   studyAssessmentItemsForConcept,
+  type StudyAssessmentItem,
 } from "./study-assessment-items.js";
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel } from "./study-learner-model.js";
+import { buildStudyVerificationPlan, resolveStudyVerification } from "./study-verification.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -22,6 +24,24 @@ const ATTEMPT_TTL_MS = 15 * 60 * 1000;
 
 function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function verifyReleasedAssessmentItem(item: StudyAssessmentItem) {
+  const plan = buildStudyVerificationPlan({
+    claimId: `assessment-key:${item.key}@${item.version}`,
+    claimKind: "assessment_key",
+    mode: "exam_grounded",
+    subject: item.conceptKey.split(".")[0] || null,
+    assessmentReviewStatus: item.reviewStatus,
+  });
+  return resolveStudyVerification(plan, [{
+    verifier: "reviewed_assessment",
+    status: item.reviewStatus === "approved" ? "verified" : "rejected",
+    evidenceRefs: item.reviewStatus === "approved"
+      ? [`quantora:study-assessment-bank:${item.key}@${item.version}`]
+      : [],
+    reasonCode: item.reviewStatus === "approved" ? "assessment_item_approved" : "assessment_item_not_approved",
+  }]);
 }
 
 export type StudyAssessmentIssueRequest = {
@@ -95,6 +115,19 @@ export default async function studyAssessmentHandler(req: any, res: any) {
     if (!item) {
       return res.status(422).json({
         error: "This mapped topic does not have a released assessment item yet.",
+        code: "verified_assessment_unavailable",
+        fallbackAllowed: true,
+      });
+    }
+    const releaseVerification = verifyReleasedAssessmentItem(item);
+    if (!releaseVerification.canClaimVerified) {
+      console.warn("Study assessment release blocked by verification contract", {
+        itemKey: item.key,
+        itemVersion: item.version,
+        reasonCodes: releaseVerification.reasonCodes,
+      });
+      return res.status(422).json({
+        error: "This assessment is not approved for verified learning.",
         code: "verified_assessment_unavailable",
         fallbackAllowed: true,
       });
