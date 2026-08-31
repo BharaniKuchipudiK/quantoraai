@@ -10,17 +10,17 @@ import type {
 } from "./study-verification.js";
 
 export const STUDY_GROUNDED_SOURCE_VERIFIER_VERSION =
-  "study-grounded-source-verifier-2026-08-31.1";
+  "study-grounded-source-verifier-2026-08-31.2";
 
 export type StudyGroundedSourceVerificationRequest = {
   claimId: string;
   mode: StudyVerificationMode;
-  /** Source URL/ref that supplied the retrieved text. */
+  /** Source URL/ref that supplied the retrieved support excerpt. */
   sourceRef: string;
   /** Atomic learner-facing factual claim to support. */
   claimText: string;
-  /** Text retrieved server-side (or from a reviewed corpus) from sourceRef. */
-  sourceText: string;
+  /** Complete support statement retrieved server-side from sourceRef. */
+  sourceExcerpt: string;
 };
 
 export type StudyGroundedSourceVerificationTrace = {
@@ -31,7 +31,7 @@ export type StudyGroundedSourceVerificationTrace = {
   sourceKind: StudyGroundingSource["kind"];
   authorityId: string | null;
   claimDigest: string;
-  sourceTextDigest: string;
+  sourceExcerptDigest: string;
   decision: "verified";
   reasonCode: string;
 };
@@ -42,7 +42,7 @@ export type StudyGroundedSourceVerificationResult = {
 };
 
 const MAX_CLAIM_CHARS = 2_000;
-const MAX_SOURCE_TEXT_CHARS = 80_000;
+const MAX_SOURCE_EXCERPT_CHARS = 8_000;
 const MIN_CLAIM_CHARS = 8;
 
 function cleanId(value: unknown): string {
@@ -97,7 +97,7 @@ function buildVerified(
   mode: StudyVerificationMode,
   source: StudyGroundingSource,
   claim: string,
-  sourceText: string,
+  sourceExcerpt: string,
 ): StudyGroundedSourceVerificationResult {
   const trace: StudyGroundedSourceVerificationTrace = {
     version: STUDY_GROUNDED_SOURCE_VERIFIER_VERSION,
@@ -107,7 +107,7 @@ function buildVerified(
     sourceKind: source.kind,
     authorityId: source.authorityId,
     claimDigest: digest(claim),
-    sourceTextDigest: digest(sourceText),
+    sourceExcerptDigest: digest(sourceExcerpt),
     decision: "verified",
     reasonCode: "grounding_exact_support_found",
   };
@@ -128,14 +128,19 @@ function buildVerified(
 
 /**
  * Deterministically verifies the narrow grounding case V3 can prove safely:
- * an atomic claim appears verbatim after harmless Unicode/spacing normalization
- * in text retrieved from an authority admitted for the current Study mode.
+ * an atomic claim exactly matches a complete support statement after harmless
+ * Unicode/spacing normalization, and that statement came from an authority
+ * admitted for the current Study mode.
+ *
+ * Requiring equality is deliberate. Merely finding the claim as a substring in
+ * a larger block can be wrong when the source is negating the sentence, quoting
+ * it as a misconception, or discussing it as a false option.
  *
  * This function does not fetch URLs and does not treat URL authority as semantic
- * support. Callers must pass text obtained server-side from `sourceRef` (or from
- * a reviewed corpus bound to that ref). Paraphrase, entailment, contradiction,
- * OCR uncertainty, or missing source text return `insufficient` rather than a
- * guessed verdict.
+ * support. Callers must pass a complete statement obtained server-side from
+ * `sourceRef` (or from a reviewed corpus bound to that ref). Paraphrase,
+ * entailment, contradiction, OCR uncertainty, clipped context, or missing
+ * source text return `insufficient` rather than a guessed verdict.
  */
 export function verifyStudyGroundedSourceClaim(
   request: StudyGroundedSourceVerificationRequest,
@@ -153,16 +158,16 @@ export function verifyStudyGroundedSourceClaim(
   }
 
   const rawClaim = cleanText(request?.claimText, MAX_CLAIM_CHARS);
-  const rawSourceText = cleanText(request?.sourceText, MAX_SOURCE_TEXT_CHARS);
+  const rawSourceExcerpt = cleanText(request?.sourceExcerpt, MAX_SOURCE_EXCERPT_CHARS);
   if (!rawClaim) return insufficient("grounding_claim_text_missing");
-  if (!rawSourceText) return insufficient("grounding_source_text_missing");
+  if (!rawSourceExcerpt) return insufficient("grounding_source_excerpt_missing");
 
   const claim = canonicalSupportText(rawClaim);
-  const sourceText = canonicalSupportText(rawSourceText);
+  const sourceExcerpt = canonicalSupportText(rawSourceExcerpt);
   if (claim.length < MIN_CLAIM_CHARS) return insufficient("grounding_claim_too_short");
-  if (!sourceText.includes(claim)) {
+  if (sourceExcerpt !== claim) {
     return insufficient("grounding_exact_support_not_found");
   }
 
-  return buildVerified(claimId, request.mode, source, claim, sourceText);
+  return buildVerified(claimId, request.mode, source, claim, sourceExcerpt);
 }
