@@ -1,6 +1,8 @@
+import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
+import { findStudyAssessmentItem } from './study-assessment-items.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.1';
+export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.2';
 
 const VERIFIED_KINDS = new Set<StudyEvidenceKind>([
   'assessment_item',
@@ -30,12 +32,26 @@ function hasValidObservation(event: StudyMasteryEvidenceEvent): boolean {
 }
 
 function reviewedAssessmentEvidence(event: StudyMasteryEvidenceEvent): boolean {
-  return event.provenance === 'quantora_authored'
-    && event.sourceRef === 'quantora:study-assessment-bank'
-    && typeof event.assessmentRef === 'string'
-    && ATTEMPT_REF.test(event.assessmentRef)
-    && typeof event.itemRef === 'string'
-    && ITEM_REF.test(event.itemRef);
+  if (event.provenance !== 'quantora_authored'
+    || event.sourceRef !== 'quantora:study-assessment-bank'
+    || typeof event.assessmentRef !== 'string'
+    || !ATTEMPT_REF.test(event.assessmentRef)
+    || typeof event.itemRef !== 'string'
+    || !ITEM_REF.test(event.itemRef)) {
+    return false;
+  }
+
+  const attemptId = event.assessmentRef.slice('attempt:'.length);
+  if (event.id !== `study.assessment.${attemptId}`) return false;
+
+  const separator = event.itemRef.lastIndexOf('@');
+  const key = event.itemRef.slice(0, separator);
+  const version = event.itemRef.slice(separator + 1);
+  const item = findStudyAssessmentItem(key, version);
+  if (!item) return false;
+
+  const release = verifyStudyAssessmentRelease(item);
+  return release.canIssueVerifiedAttempt && release.itemRef === event.itemRef;
 }
 
 /**
