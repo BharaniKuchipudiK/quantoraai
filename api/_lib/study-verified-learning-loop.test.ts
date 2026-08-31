@@ -32,7 +32,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-test('wrong reviewed distractor drives targeted repair, verified correction, and repeat protection', async () => {
+test('wrong reviewed distractor drives targeted repair, verified correction, and bank-exhaustion protection', async () => {
   const originalFetch = global.fetch;
   const attempts = new Map<string, any>();
   const evidenceRows: any[] = [];
@@ -171,19 +171,10 @@ test('wrong reviewed distractor drives targeted repair, verified correction, and
 
     const issueAfterBankUsed = responseHarness();
     await studyAssessmentHandler(authenticatedRequest({ action: 'issue', conceptKey: 'physics.kinematics.motion-graphs', conceptLabel: 'Motion graphs', sessionId: 'session-1' }), issueAfterBankUsed.res);
-    assert.equal(issueAfterBankUsed.state.status, 201);
-    assert.equal(issueAfterBankUsed.state.body.item.itemKey, FIRST_ITEM_KEY, 'after all reviewed items are used the selector may repeat deterministically');
-    const repeatAttemptId = issueAfterBankUsed.state.body.attemptId;
-
-    const repeatGrade = responseHarness();
-    await studyAssessmentHandler(authenticatedRequest({ action: 'grade', attemptId: repeatAttemptId, optionId: 'c' }), repeatGrade.res);
-    assert.equal(repeatGrade.state.status, 200);
-    assert.equal(repeatGrade.state.body.correct, true);
-    assert.equal(evidenceRows.length, 3);
-    assert.equal(evidenceRows[2].independent, false, 'repeated item/version cannot manufacture fresh independent evidence');
-    assert.equal(repeatGrade.state.body.mastery.evidenceCount, 2);
-    assert.equal(repeatGrade.state.body.learnerModel.understanding.evidenceCount, 2);
-    assert.equal(repeatGrade.state.body.learnerModel.misconception.state, 'none_observed');
+    assert.equal(issueAfterBankUsed.state.status, 422);
+    assert.equal(issueAfterBankUsed.state.body.code, 'verified_assessment_bank_exhausted');
+    assert.equal(issueAfterBankUsed.state.body.fallbackAllowed, true);
+    assert.equal(evidenceRows.length, 2, 'bank exhaustion must not create a repeated assessment attempt or new evidence');
     assert.equal(savedEstimates.at(-1).evidence_count, 2);
   } finally {
     global.fetch = originalFetch;
