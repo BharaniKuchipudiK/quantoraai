@@ -37,8 +37,11 @@ V6 only refines the existing `guided_repair` path.
 - prerequisite edges must have confidence >= 0.80;
 - maximum prerequisite depth: 4;
 - maximum inspected prerequisite concepts: 12;
+- every prerequisite frontier is capped before concept fan-out;
+- uncached sibling prerequisite concepts are resolved in one bounded PostgREST `in.(...)` request rather than N+1 reads;
+- shared concept, learner-model and prerequisite-frontier reads are cached across converging branches;
 - only active canonical concepts are eligible;
-- cycles are bounded by a visited set;
+- cycles are bounded with branch-local path state, so one sibling cannot suppress a valid shared prerequisite reached through another branch;
 - storage/provider unavailability never becomes a guessed prerequisite.
 
 ## Evidence boundary
@@ -65,6 +68,8 @@ A conversational prerequisite question may guide the lesson, but it is **not** a
 - a generic verified miss can select a missing prerequisite evidence frontier;
 - a prerequisite with a verified misconception can become the next repair target;
 - unverified non-assessment rows cannot make a prerequisite look mastered;
+- converging prerequisite DAGs remain sibling-order independent;
+- prerequisite concept resolution does not regress into per-concept N+1 reads;
 - graph/store unavailability cannot invent a prerequisite;
 - wiring gate proves the planner is reachable from the production Study adaptive path;
 - Study evidence/assessment suites, full regression, synthetic Studio checks, outcome navigation, wiring, typecheck/lint and production build are green;
