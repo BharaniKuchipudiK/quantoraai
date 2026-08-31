@@ -5,6 +5,8 @@
  * Always: what failed → what we will do → optional Agree chips.
  */
 
+import { buildJobIsComplete, completedCount, nextStep } from './build-job.js';
+
 import { SHOP_INTAKE_CATALOG_SIZE, shopPhotoTurnFailureCopy } from './shop-catalog-scale.js';
 
 /**
@@ -36,6 +38,8 @@ export function resolveCodingTurnOutcome({
   errorMessage = '',
   shopIntakeAsk = null,
   isShopPhotoTurn = false,
+  /** The build job, when one is running. Decides whether a timeout loses work. */
+  job = null,
 } = {}) {
   if (kind === 'stopped') {
     return {
@@ -47,6 +51,45 @@ export function resolveCodingTurnOutcome({
   }
 
   if (kind === 'timeout') {
+    /*
+     * A timeout mid-job ends the TURN, not the JOB.
+     *
+     * The advice below this branch — "retry a smaller build" — is right when a
+     * turn produced nothing. It is destructive when a job is running and steps
+     * are already proved on the desk: it throws that work away and asks the
+     * model to start over with less. A big build is exactly the case that runs
+     * long, so the deadline was hardest on the builds most worth keeping.
+     *
+     * A step only goes green when the files it named actually exist, so
+     * progress here is measured, not claimed. The continue value is the bare
+     * word the resume path already recognises, which restates the goal and
+     * names the files the next step owes.
+     */
+    const done = completedCount(job);
+    if (job && !buildJobIsComplete(job) && done > 0) {
+      const total = Array.isArray(job.steps) ? job.steps.length : 0;
+      const next = nextStep(job);
+      return {
+        kind: 'timeout-checkpoint',
+        text: (
+          `That turn hit the ${Math.round(turnDeadlineSec)}s limit, but the build is not lost.\n\n`
+          + `**Done so far:** ${done} of ${total} step${total === 1 ? '' : 's'}, proved by the files on the desk.\n`
+          + (next?.title ? `**Next:** ${next.title}\n` : '')
+          + '\nContinue picks up at the next step — it does not start again.'
+        ),
+        // Not an error. Work was done and kept; calling it a failure would be
+        // the same overstatement the desk refuses everywhere else.
+        isError: false,
+        continueSet: {
+          items: [{
+            id: 'outcome-continue-job',
+            label: `Continue — step ${done + 1} of ${total}`,
+            value: 'Continue',
+            priority: 120,
+          }],
+        },
+      };
+    }
     if (shopIntakeAsk?.oversize || isShopPhotoTurn) {
       return {
         kind,
