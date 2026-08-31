@@ -70,6 +70,89 @@ test("symbolic plan without symbolic data remains insufficient", () => {
   assert.ok(result.outcome.reasonCodes.includes("symbolic_input_missing"));
 });
 
+test("Exam Grounded curriculum facts resolve through the deterministic grounding runtime", () => {
+  const sourceRef = "https://ncert.nic.in/textbook.php?gesc1=1-10";
+  const plan = buildStudyVerificationPlan({
+    claimId: "reflection-law",
+    claimKind: "curriculum_fact",
+    mode: "exam_grounded",
+    groundingSources: [{ ref: sourceRef }],
+  });
+  const result = executeStudyVerificationPlan({
+    plan,
+    grounding: {
+      claimId: "caller-cannot-rebind-this",
+      mode: "explore",
+      sourceRef,
+      claimText: "The angle of incidence is equal to the angle of reflection.",
+      sourceText: "The angle of incidence is equal to the angle of reflection.",
+    },
+  });
+  assert.equal(result.outcome.decision, "verified");
+  assert.equal(result.outcome.canClaimVerified, true);
+  assert.equal(result.groundingTrace?.claimId, "reflection-law");
+  assert.equal(result.groundingTrace?.mode, "exam_grounded");
+  assert.equal(result.groundingTrace?.authorityId, "ncert");
+  assert.deepEqual(result.outcome.evidenceRefs, [sourceRef]);
+});
+
+test("curriculum fact without grounding input remains insufficient", () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: "missing-grounding",
+    claimKind: "curriculum_fact",
+    mode: "exam_grounded",
+    groundingSources: [{ ref: "https://ncert.nic.in/textbook.php" }],
+  });
+  const result = executeStudyVerificationPlan({ plan });
+  assert.equal(result.outcome.decision, "insufficient");
+  assert.ok(result.outcome.reasonCodes.includes("grounding_input_missing"));
+});
+
+test("grounding runtime cannot verify against a canonical source absent from the plan", () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: "wrong-admitted-source",
+    claimKind: "curriculum_fact",
+    mode: "exam_grounded",
+    groundingSources: [{ ref: "https://ncert.nic.in/textbook.php" }],
+  });
+  const result = executeStudyVerificationPlan({
+    plan,
+    grounding: {
+      claimId: "ignored",
+      mode: "exam_grounded",
+      sourceRef: "https://cbseacademic.nic.in/reference.html",
+      claimText: "The angle of incidence is equal to the angle of reflection.",
+      sourceText: "The angle of incidence is equal to the angle of reflection.",
+    },
+  });
+  assert.equal(result.checks.find((check) => check.verifier === "grounded_source")?.status, "verified");
+  assert.equal(result.outcome.decision, "insufficient");
+  assert.equal(result.outcome.canClaimVerified, false);
+  assert.ok(result.outcome.reasonCodes.includes("grounded_source_unbound_evidence"));
+  assert.deepEqual(result.outcome.evidenceRefs, []);
+});
+
+test("official source authority cannot rescue unsupported source text", () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: "unsupported-curriculum-fact",
+    claimKind: "curriculum_fact",
+    mode: "exam_grounded",
+    groundingSources: [{ ref: "https://ncert.nic.in/textbook.php" }],
+  });
+  const result = executeStudyVerificationPlan({
+    plan,
+    grounding: {
+      claimId: "ignored",
+      mode: "exam_grounded",
+      sourceRef: "https://ncert.nic.in/textbook.php",
+      claimText: "Concave mirrors always form upright images.",
+      sourceText: "Concave mirrors can form different image types depending on object position.",
+    },
+  });
+  assert.equal(result.outcome.decision, "insufficient");
+  assert.ok(result.outcome.reasonCodes.includes("grounding_exact_support_not_found"));
+});
+
 test("reviewed assessment plan remains verified through the shared runtime", () => {
   const plan = buildStudyVerificationPlan({
     claimId: "assessment-key:item@1",
