@@ -2,7 +2,7 @@ import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.5';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.6';
 
 const GRAPH_TIMEOUT_MS = 4_000;
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
@@ -100,18 +100,18 @@ async function readImmediatePrerequisites(
     .filter((row) => row.sourceConceptId && row.confidence >= MIN_PREREQUISITE_CONFIDENCE);
   if (!edges.length) return [];
 
-  // The graph frontier is hard-capped before concept resolution. Resolve every
-  // uncached source concept in one bounded PostgREST request, then cache both
-  // hits and misses across converging branches. This avoids an N+1 read pattern
-  // while preserving the same canonical-concept trust boundary.
+  // The graph frontier is hard-capped before concept resolution. Multi-source
+  // frontiers are resolved in one bounded PostgREST request; a one-source
+  // frontier keeps the simpler exact lookup. Cache both hits and misses across
+  // converging branches so the planner avoids per-sibling N+1 reads.
   const sourceIds = [...new Set(edges.map((edge) => edge.sourceConceptId))];
   const unresolvedSourceIds = sourceIds.filter((sourceId) => !conceptById.has(sourceId));
   if (unresolvedSourceIds.length) {
     const requestedIds = new Set(unresolvedSourceIds);
-    const encodedIds = unresolvedSourceIds.map((sourceId) => encodeURIComponent(sourceId)).join(',');
-    const conceptRows = await readRows(
-      `study_concepts?select=id,canonical_key,label&id=in.(${encodedIds})&status=eq.active&limit=${unresolvedSourceIds.length}`,
-    );
+    const conceptPath = unresolvedSourceIds.length === 1
+      ? `study_concepts?select=id,canonical_key,label&id=eq.${encodeURIComponent(unresolvedSourceIds[0])}&status=eq.active&order=updated_at.desc&limit=1`
+      : `study_concepts?select=id,canonical_key,label&id=in.(${unresolvedSourceIds.map((sourceId) => encodeURIComponent(sourceId)).join(',')})&status=eq.active&limit=${unresolvedSourceIds.length}`;
+    const conceptRows = await readRows(conceptPath);
     if (conceptRows === null) return null;
 
     const resolvedIds = new Set<string>();
