@@ -3,12 +3,15 @@ import test from 'node:test';
 import {
   admittedStudyMasteryEvidence,
   evaluateStudyEvidenceAdmission,
-  studyVerifiedObservationSourceRef,
 } from './study-evidence-admission.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 const ATTEMPT_ONE = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_TWO = '22222222-2222-4222-8222-222222222222';
+
+function verifiedObservationRef(kind: Exclude<StudyEvidenceKind, 'assessment_item' | 'self_confidence'>, ref: string) {
+  return `quantora:study-verified:${kind}:${ref}`;
+}
 
 function event(
   kind: StudyEvidenceKind,
@@ -77,7 +80,7 @@ test('future verified observation kinds require an explicit governed receipt', (
     reasonCode: 'verified_observation_receipt_required',
   });
 
-  const sourceRef = studyVerifiedObservationSourceRef('application', 'numeric:sha256:test');
+  const sourceRef = verifiedObservationRef('application', 'numeric:sha256:test');
   assert.equal(evaluateStudyEvidenceAdmission(event('application', { sourceRef })).admitted, true);
 });
 
@@ -100,7 +103,7 @@ test('mastery and learner state receive one chronological deduplicated evidence 
   const application = event('application', {
     id: 'application',
     observedAt: '2026-08-03T00:00:00.000Z',
-    sourceRef: studyVerifiedObservationSourceRef('application', 'numeric:sha256:application'),
+    sourceRef: verifiedObservationRef('application', 'numeric:sha256:application'),
   });
 
   const admitted = admittedStudyMasteryEvidence([application, repeated, first]);
