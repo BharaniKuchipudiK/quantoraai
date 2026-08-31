@@ -85,7 +85,7 @@ test("Exam Grounded curriculum facts resolve through the deterministic grounding
       mode: "explore",
       sourceRef,
       claimText: "The angle of incidence is equal to the angle of reflection.",
-      sourceText: "The angle of incidence is equal to the angle of reflection.",
+      sourceExcerpt: "The angle of incidence is equal to the angle of reflection.",
     },
   });
   assert.equal(result.outcome.decision, "verified");
@@ -122,7 +122,7 @@ test("grounding runtime cannot verify against a canonical source absent from the
       mode: "exam_grounded",
       sourceRef: "https://cbseacademic.nic.in/reference.html",
       claimText: "The angle of incidence is equal to the angle of reflection.",
-      sourceText: "The angle of incidence is equal to the angle of reflection.",
+      sourceExcerpt: "The angle of incidence is equal to the angle of reflection.",
     },
   });
   assert.equal(result.checks.find((check) => check.verifier === "grounded_source")?.status, "verified");
@@ -132,7 +132,7 @@ test("grounding runtime cannot verify against a canonical source absent from the
   assert.deepEqual(result.outcome.evidenceRefs, []);
 });
 
-test("official source authority cannot rescue unsupported source text", () => {
+test("official source authority cannot rescue unsupported source excerpts", () => {
   const plan = buildStudyVerificationPlan({
     claimId: "unsupported-curriculum-fact",
     claimKind: "curriculum_fact",
@@ -146,7 +146,7 @@ test("official source authority cannot rescue unsupported source text", () => {
       mode: "exam_grounded",
       sourceRef: "https://ncert.nic.in/textbook.php",
       claimText: "Concave mirrors always form upright images.",
-      sourceText: "Concave mirrors can form different image types depending on object position.",
+      sourceExcerpt: "Concave mirrors can form different image types depending on object position.",
     },
   });
   assert.equal(result.outcome.decision, "insufficient");
