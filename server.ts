@@ -157,6 +157,12 @@ async function startServer() {
   route("all", "/api/enhance", enhance);
   route("all", "/api/generate-office", generateOffice);
   route("all", "/api/domains", domains);
+  // Health rides on domains, not pipeline, so it stays alive when the
+  // pipeline mega-function is the thing that is down. Mirrors vercel.json.
+  route("get", "/api/inference-health", (req, res) => {
+    req.query = { ...(req.query || {}), route: "inference-health" };
+    return domains(req, res);
+  });
   route("all", "/api/deploy", deploy);
   route("all", "/api/pipeline", pipeline);
   route("all", "/api/moderate", (req, res) => {
