@@ -15,6 +15,9 @@ import {
   studioSidebarHistoryTitle,
   studioSidebarMembershipCopy,
   studioSidebarYieldingSectionStyle,
+  relativeChatTime,
+  filterChatSessions,
+  chatSearchEmptyCopy,
 } from './studio-sidebar.js';
 
 function memoryStorage(seed = {}) {
@@ -91,4 +94,77 @@ test('section persistence keeps agents open unless the user collapsed them', () 
   persistStudioSidebarSections({ projectDetails: true, agents: false }, storage);
   assert.deepEqual(loadStudioSidebarSections(storage), { projectDetails: true, agents: false });
   assert.deepEqual(loadStudioSidebarSections(memoryStorage()), defaultStudioSidebarSections());
+});
+
+const AT = Date.parse('2026-08-31T12:00:00Z');
+
+test('chat age reads in the shortest unambiguous form', () => {
+  assert.equal(relativeChatTime(AT - 30_000, AT), 'now');
+  assert.equal(relativeChatTime(AT - 5 * 60_000, AT), '5m');
+  assert.equal(relativeChatTime(AT - 3 * 3_600_000, AT), '3h');
+  assert.equal(relativeChatTime(AT - 2 * 86_400_000, AT), '2d');
+});
+
+test('anything past a week gets a date, because "38d" is not read as one', () => {
+  const old = relativeChatTime(AT - 38 * 86_400_000, AT);
+  assert.doesNotMatch(old, /^\d+d$/);
+  assert.ok(old.length > 0);
+});
+
+test('a clock skew never renders a negative age', () => {
+  assert.equal(relativeChatTime(AT + 5 * 60_000, AT), 'now');
+});
+
+test('a missing or junk timestamp renders nothing rather than "NaN"', () => {
+  for (const bad of [undefined, null, 0, -1, 'yesterday', NaN]) {
+    assert.equal(relativeChatTime(bad, AT), '', String(bad));
+  }
+});
+
+test('search looks at what was said, not just the auto-generated title', () => {
+  const sessions = [
+    { title: 'New Chat', messages: [{ text: 'help me refinance the mortgage' }] },
+    { title: 'New Chat', messages: [{ text: 'flights to Bali' }] },
+  ];
+  const hit = filterChatSessions(sessions, 'mortgage');
+  assert.equal(hit.length, 1);
+  assert.match(hit[0].messages[0].text, /refinance/);
+});
+
+test('every term must match, so adding a word narrows the list', () => {
+  const sessions = [
+    { title: 'Dashboard', messages: [{ text: 'revenue chart' }] },
+    { title: 'Dashboard', messages: [{ text: 'settings page' }] },
+  ];
+  assert.equal(filterChatSessions(sessions, 'dashboard').length, 2);
+  assert.equal(filterChatSessions(sessions, 'dashboard revenue').length, 1);
+});
+
+test('search is case insensitive and ignores stray whitespace', () => {
+  const sessions = [{ title: 'Trip to BALI', messages: [] }];
+  assert.equal(filterChatSessions(sessions, '  bali  ').length, 1);
+});
+
+test('an empty query returns every chat untouched', () => {
+  const sessions = [{ title: 'a', messages: [] }, { title: 'b', messages: [] }];
+  assert.equal(filterChatSessions(sessions, '').length, 2);
+  assert.equal(filterChatSessions(sessions, '   ').length, 2);
+});
+
+test('search survives malformed sessions rather than throwing', () => {
+  assert.deepEqual(filterChatSessions(null, 'x'), []);
+  assert.equal(filterChatSessions([{}, { messages: null }, { title: null }], 'x').length, 0);
+  assert.equal(filterChatSessions([{ title: 'x' }], 'x').length, 1);
+});
+
+test('a very long chat is still searchable without scanning all of it', () => {
+  const huge = { title: 'Long', messages: Array.from({ length: 5000 }, () => ({ text: 'padding ' })) };
+  const started = Date.now();
+  assert.equal(filterChatSessions([huge], 'padding').length, 1);
+  assert.ok(Date.now() - started < 200, 'search should stay fast on a long chat');
+});
+
+test('the empty-search line names what was searched for, and is blank without a query', () => {
+  assert.match(chatSearchEmptyCopy('bali'), /bali/);
+  assert.equal(chatSearchEmptyCopy('  '), '');
 });
