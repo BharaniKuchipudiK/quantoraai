@@ -14,7 +14,7 @@ import {
 } from "./study-assessment-items.js";
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
-import { buildStudyLearnerModel } from "./study-learner-model.js";
+import { buildStudyLearnerModel, type StudyLearnerModel } from "./study-learner-model.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -58,9 +58,10 @@ export function normalizeStudyAssessmentRequest(
   return null;
 }
 
-function learningState(status: string, correct: boolean | null, misconception: boolean | null): string {
-  if (misconception) return "misconception_detected";
-  if (status === "established" && correct) return "verified_understanding";
+function learningState(model: StudyLearnerModel | null): string {
+  if (!model || model.understanding.state === "unverified") return "unverified";
+  if (model.misconception.state === "signal_observed") return "misconception_detected";
+  if (model.understanding.state === "verified") return "verified_understanding";
   return "emerging_understanding";
 }
 
@@ -184,9 +185,9 @@ export default async function studyAssessmentHandler(req: any, res: any) {
     masteryUpdated,
     mastery: estimate ? {
       status: estimate.status,
-      learningState: learningState(estimate.status, grade.correct, grade.misconception),
+      learningState: learningState(learnerModel),
       evidenceCount: estimate.evidenceCount,
-      // The UI receives an interpretable state, not a fake exam rank or pass probability.
+      // The UI receives one evidence-backed state, not a grade-local shadow state.
     } : null,
     learnerModel,
   });
