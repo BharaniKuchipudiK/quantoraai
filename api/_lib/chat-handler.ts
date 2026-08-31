@@ -19,6 +19,7 @@ import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-
 import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
 import { shouldGroundTurn } from './studio-domains.js';
+import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -551,7 +552,10 @@ export default async function handler(req: any, res: any) {
 
     const isRepairTask = task === "repair";
     const isVerifyTask = task === "verify-build";
-    const isArtifactTask = isRepairTask || isVerifyTask;
+    const isResearchVerifyTask = task === "research-verify";
+    // Tasks that carry code or claims instead of a chat message, and so skip
+    // the message/session/safety validation below.
+    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask;
 
     if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
@@ -647,6 +651,32 @@ export default async function handler(req: any, res: any) {
       } catch (err: any) {
         console.error("Error in /api/chat verify-build task:", err);
         return res.status(500).json({ error: err?.message || "Verification failed." });
+      }
+    }
+
+    if (isResearchVerifyTask) {
+      // The Research desk's evidence check: fetch the cited public sources,
+      // have a model nominate verbatim passages, and let the deterministic
+      // verifier grant or refuse each standing. Research-only — no other desk
+      // pays for this pass.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Verification runs on the research desk only." });
+      }
+      const normalized = normalizeResearchVerifyRequest(req.body);
+      if (!normalized.ok || !normalized.claims || !normalized.sources) {
+        return res.status(400).json({ error: normalized.error || "Invalid verification request." });
+      }
+      try {
+        const report = await runResearchVerification({
+          claims: normalized.claims,
+          sources: normalized.sources,
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
+        return res.status(200).json(report);
+      } catch (err: any) {
+        console.error("Error in /api/chat research-verify task:", err);
+        return res.status(500).json({ error: err?.message || "Evidence verification failed." });
       }
     }
 
