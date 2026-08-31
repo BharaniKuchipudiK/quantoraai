@@ -9,10 +9,11 @@ on:
 permissions:
   contents: read
 
-# One source of truth for the browser gates: the cache key and the install must
-# name the same version, or every run silently restores a cache it cannot use.
+# Cache key only. The version itself now lives in package.json, pinned exactly,
+# so this must be bumped in step with it or the gates restore a cache built for
+# a different browser build.
 env:
-  PLAYWRIGHT_VERSION: 1.55.0
+  PLAYWRIGHT_VERSION: 1.55.1
 
 concurrency:
   group: quantora-ci-${{ github.workflow }}-${{ github.ref }}
@@ -101,22 +102,23 @@ jobs:
       - name: Build production frontend
         run: npm run build
 
-      # Playwright is not a project dependency — it exists only for these gates,
-      # and --no-save keeps it out of the npm cache setup-node restores. So a
-      # fresh ~50s Chromium download was paid on every single run. The binary
-      # never changes for a pinned version, so it is cached on that version
-      # alone; `playwright install` is then a no-op that finds it already there.
+      # Only the browser binary is fetched here now. Playwright itself is a
+      # pinned devDependency, so `npm ci` above already installed it from the
+      # lockfile using the cache setup-node restores.
       #
-      # No --with-deps. The ubuntu-24.04 runner image already carries Chromium's
-      # system libraries, and apt was the expensive half: with --with-deps still
-      # running, a cache hit saved 23s of a 217s job, which GitHub rounds away
-      # to nothing because it bills whole minutes per job. Without it the job
-      # drops under three minutes and the saving becomes real.
+      # It used to be installed here with --no-save --package-lock=false, which
+      # forced a full registry resolution on every run: measured at ~51s, and
+      # the reason a cache hit still saved nothing GitHub would bill. That flag
+      # combination also kept Playwright out of package.json, and so out of the
+      # audit gate — which is how CI ran 1.55.0 for months against a high
+      # severity advisory (GHSA-7mvr-c777-76hp, browsers downloaded without
+      # verifying certificate authenticity) that the gate could not see.
       #
-      # This fails loudly rather than subtly if that ever stops being true. A
-      # missing library makes Chromium fail to launch, which fails the first
-      # gate on every run, not one gate sometimes. Should the image change,
-      # restore `--with-deps` here.
+      # No --with-deps: the ubuntu-24.04 image already carries Chromium's system
+      # libraries, confirmed by a full gate run without them. If that ever stops
+      # being true it fails loudly — Chromium will not launch, so the first gate
+      # fails on every run rather than one gate sometimes — and the fix is to
+      # restore --with-deps on this step.
       - name: Restore Playwright browser cache
         id: playwright-cache
         uses: actions/cache@v4
@@ -124,10 +126,8 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ env.PLAYWRIGHT_VERSION }}-${{ runner.os }}
 
-      - name: Install browser test runtime
-        run: |
-          npm install --no-save --package-lock=false "playwright@${PLAYWRIGHT_VERSION}"
-          npx playwright install chromium
+      - name: Install browser binary
+        run: npx playwright install chromium
 
       - name: Start production-like Vite preview
         run: |
