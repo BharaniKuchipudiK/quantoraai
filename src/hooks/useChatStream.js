@@ -32,6 +32,7 @@ import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
+import { describeTurnFailure } from '../lib/turn-failure-sentence.js';
 import {
   assessShopBuildAsk,
   messageLooksLikeShopBuild,
@@ -1869,11 +1870,21 @@ export function useChatStream({
             } : m));
             return;
           }
-          const failureNote = stopped
-            ? '⚠️ **Generation Stopped**'
-            : timedOut
-              ? `⚠️ **Request timed out:** Quantora stopped this turn after ${Math.round(turnDeadlineMs / 1000)} seconds instead of leaving it running indefinitely.`
-              : `⚠️ **Connection Error:** ${error.message || 'Unable to reach the AI gateway.'}`;
+          /*
+           * The one terminal path that still spoke in the browser's words
+           * rather than ours. A non-coding turn that died on the network
+           * rendered "Connection Error: Failed to fetch" — true, and useless:
+           * it does not say whether the work survived, that a retry already
+           * happened, or what to do next. Every other terminal path here goes
+           * through responseErrorMessage or resolveCodingTurnOutcome; this one
+           * now has an owner too.
+           */
+          const failureNote = describeTurnFailure({
+            kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'network',
+            errorMessage: error.message,
+            deadlineSec: turnDeadlineMs / 1000,
+            partialText: Boolean(streamedSoFar),
+          }).text;
           updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
             ...m,
             // Stopping a turn - by timeout, by Stop, or by a dead connection -
