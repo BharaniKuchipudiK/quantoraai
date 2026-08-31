@@ -27,20 +27,38 @@ test("uses exact rational arithmetic instead of floating-point sampling", () => 
   assert.equal(result.check.status, "verified");
 });
 
-test("rejects a provably different polynomial", () => {
+test("uses standard exponent precedence for unary minus", () => {
+  const result = verify({ actual: "-x^2", expected: "-(x^2)" });
+  assert.equal(result.check.status, "verified");
+
+  const different = verify({ actual: "-x^2", expected: "(-x)^2" });
+  assert.equal(different.check.status, "rejected");
+});
+
+test("rejects a provably different polynomial expression", () => {
   const result = verify({ actual: "x + 1", expected: "x - 1" });
   assert.equal(result.check.status, "rejected");
   assert.equal(result.check.reasonCode, "symbolic_not_equivalent");
   assert.ok(result.trace);
 });
 
-test("equations are equivalent only under exact zero-set normalization", () => {
+test("proportional equations verify under exact zero-set normalization", () => {
   const result = verify({
     actual: "2*x + 2 = 4",
     expected: "x + 1 = 2",
     relation: "equation",
   });
   assert.equal(result.check.status, "verified");
+});
+
+test("non-proportional equations remain insufficient rather than falsely rejected", () => {
+  const result = verify({
+    actual: "x^2 = 0",
+    expected: "x = 0",
+    relation: "equation",
+  });
+  assert.equal(result.check.status, "insufficient");
+  assert.equal(result.check.reasonCode, "symbolic_equation_equivalence_not_proven");
 });
 
 test("undeclared variables never enter verified algebra", () => {
@@ -50,17 +68,6 @@ test("undeclared variables never enter verified algebra", () => {
 });
 
 test("domain must be explicit", () => {
-  const result = verifyStudySymbolicClaim({
-    claimId: "missing-domain",
-    actual: "x + 1",
-    expected: "1 + x",
-    relation: "expression",
-    domain: "real" as any,
-    variables: ["x"],
-  });
-  // Runtime type guarantees the field; this pins the verifier's valid explicit domain.
-  assert.equal(result.check.status, "verified");
-
   const invalid = verifyStudySymbolicClaim({
     claimId: "invalid-domain",
     actual: "x + 1",
