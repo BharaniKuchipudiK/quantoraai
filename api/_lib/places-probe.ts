@@ -39,11 +39,19 @@ const PROBE_FIELD_MASK = [
 
 const REDACTION_PLACEHOLDER = /redacted|sensitive|^\[.*\]$|^\*+$|^x{6,}$/i;
 
+/*
+ * The sentences Google uses when the key STRING itself is not recognised, as
+ * opposed to a key that is real but blocked. It sends these with a 400, so the
+ * status alone points at the wrong culprit.
+ */
+const INVALID_KEY_TEXT = /api\s*key\s*not\s*valid|invalid\s*api\s*key|api\s*key\s*expired|API_KEY_INVALID|keyInvalid/i;
+
 export type PlacesKeyShape = {
   present: boolean;
   source: string | null;
   length: number;
   last4: string;
+  matchesKnownKeyFormat: boolean;
   looksRedacted: boolean;
 };
 
@@ -78,6 +86,14 @@ export function describePlacesKey(key: string | null | undefined, source: string
     source: value ? source : null,
     length: value.length,
     last4: value.length >= 4 ? value.slice(-4) : '',
+    /*
+     * A HINT, never a verdict — the same line the OpenRouter probe draws.
+     * Google decides whether this key is valid; a pattern written from an
+     * assumption may not overrule it. It is useful only for telling "the wrong
+     * secret is in this variable" from "the right kind of secret is here and
+     * Google still says no".
+     */
+    matchesKnownKeyFormat: /^AIza[\w-]{35}$/.test(value),
     looksRedacted: value.length > 0 && REDACTION_PLACEHOLDER.test(value),
   };
 }
@@ -159,6 +175,26 @@ export function verdictForPlaces(key: PlacesKeyShape, search: PlacesSearchResult
     return `A Places key is present in ${key.source} (${key.length} chars ending ${key.last4}), but it has not been exercised, so nothing is proven about it.`;
   }
   if (!search.ok) {
+    /*
+     * READ THE MESSAGE BEFORE THE STATUS.
+     *
+     * Google answers an unrecognised key with HTTP 400 INVALID_ARGUMENT and
+     * the text "API key not valid", not the 401 the status alone implies. This
+     * probe's first real call hit exactly that and was told "the key is not the
+     * suspect — the request body or field mask is", which would have sent
+     * somebody hunting through request code that was completely fine.
+     *
+     * A diagnostic built to stop a failure being mis-described must not
+     * mis-describe one itself. The provider's own sentence is the evidence; the
+     * status is a hint, and a 400 can still be our malformed request, so this
+     * narrows on the text rather than replacing the branch.
+     */
+    if (INVALID_KEY_TEXT.test(search.error || '')) {
+      const shapeHint = key.matchesKnownKeyFormat
+        ? 'It is shaped like a Google key, so the likely causes are a key that was deleted or regenerated, or one belonging to a project that no longer exists.'
+        : `It does not match the AIza… format either (${key.length} chars ending ${key.last4}), so the wrong secret in the right variable is worth ruling out.`;
+      return `Google does not recognise this key (HTTP ${search.status}: ${search.error}). The value in ${key.source} is not a valid API key. ${shapeHint} Replace it with a key from a project that has Places API (New) enabled and billing active — no change to our request can fix this, and every stay lookup fails identically until it is replaced.`;
+    }
     if (search.status === 403) {
       return `Places refused the key with HTTP 403: ${search.error}. Either Places API (New) is not enabled on this project, or the key's restrictions do not permit a server-side call. Both are settled per request, so every stay lookup fails identically and no retry can help — which is exactly what a traveller sees as "Places did not return a list".`;
     }
@@ -166,7 +202,8 @@ export function verdictForPlaces(key: PlacesKeyShape, search: PlacesSearchResult
       return `Places rejected the credential outright (HTTP 401: ${search.error}). The value in ${key.source} is not a valid key.`;
     }
     if (search.status === 400) {
-      return `Places rejected the request as malformed (HTTP 400: ${search.error}). The key is not the suspect — the request body or field mask is, which makes this ours to fix.`;
+      // A 400 that did NOT name the key: a malformed body or field mask, ours.
+      return `Places rejected the request as malformed (HTTP 400: ${search.error}). The credential was not named in the refusal, so the request body or field mask is the suspect, which makes this ours to fix.`;
     }
     if (search.status === 429) {
       return `Places is rate limiting or quota-blocking this key (HTTP 429: ${search.error}). This one does clear on its own, unlike a 403.`;
