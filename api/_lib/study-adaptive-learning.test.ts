@@ -17,14 +17,15 @@ const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 function event(correct: boolean, misconceptionSignal = false): StudyMasteryEvidenceEvent {
   const kind = misconceptionSignal ? 'misconception_probe' : 'assessment_item';
   return {
-    id: 'event-1', conceptId: 'concept-1', kind,
+    id: kind === 'assessment_item' ? `study.assessment.${ATTEMPT_ID}` : 'event-1',
+    conceptId: 'concept-1', kind,
     correct, score: correct ? 1 : 0, difficulty: 0.5, hintsUsed: 0, responseMs: 1000,
     selfConfidence: null, independent: true, misconceptionSignal, delayDays: null,
     provenance: 'quantora_authored',
     ...(kind === 'assessment_item' ? {
       sourceRef: 'quantora:study-assessment-bank',
       assessmentRef: `attempt:${ATTEMPT_ID}`,
-      itemRef: 'adaptive-test@1',
+      itemRef: 'motion-graphs-velocity-slope@1',
     } : {
       sourceRef: studyVerifiedObservationSourceRef('misconception_probe', 'test:diagnostic'),
     }),
@@ -69,10 +70,10 @@ test('consented Study turns load the canonical evidence-backed learner model', a
     }
     if (target.includes('/rest/v1/study_mastery_events?')) {
       return new Response(JSON.stringify([{
-        event_key: 'event-1', event_kind: 'assessment_item', correct: true, score: 1,
+        event_key: `study.assessment.${ATTEMPT_ID}`, event_kind: 'assessment_item', correct: true, score: 1,
         difficulty: 0.5, hints_used: 0, independent: true, misconception_signal: false,
         provenance: 'quantora_authored', source_ref: 'quantora:study-assessment-bank',
-        assessment_ref: `attempt:${ATTEMPT_ID}`, item_ref: 'adaptive-test@1',
+        assessment_ref: `attempt:${ATTEMPT_ID}`, item_ref: 'motion-graphs-velocity-slope@1',
         observed_at: '2026-08-29T00:00:00.000Z',
       }]), { status: 200 });
     }
