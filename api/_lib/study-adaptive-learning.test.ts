@@ -19,7 +19,8 @@ const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 const CONCEPT_KEY = 'physics.kinematics.motion-graphs';
 const OBSERVED_AT = '2026-08-29T00:00:00.000Z';
 
-function event(correct: boolean, misconceptionSignal = false): StudyMasteryEvidenceEvent {
+function event(correct: boolean): StudyMasteryEvidenceEvent {
+  const submittedOptionId = correct ? 'c' : 'a';
   const row: StudyMasteryEvidenceEvent = {
     id: `study.assessment.${ATTEMPT_ID}`,
     conceptId: 'concept-1',
@@ -31,7 +32,7 @@ function event(correct: boolean, misconceptionSignal = false): StudyMasteryEvide
     responseMs: 1000,
     selfConfidence: null,
     independent: true,
-    misconceptionSignal,
+    misconceptionSignal: !correct,
     delayDays: null,
     provenance: 'quantora_authored',
     sourceRef: 'quantora:study-assessment-bank',
@@ -45,6 +46,7 @@ function event(correct: boolean, misconceptionSignal = false): StudyMasteryEvide
     conceptKey: CONCEPT_KEY,
     itemKey: 'motion-graphs-velocity-slope',
     itemVersion: '1',
+    submittedOptionId,
     correct,
     score: correct ? 1 : 0,
     submittedAt: OBSERVED_AT,
@@ -76,7 +78,7 @@ test('non-Study and non-consented turns do not touch learner evidence storage', 
   }
 });
 
-test('consented Study turns validate assessment evidence against submitted attempts before adaptation', async () => {
+test('consented Study turns validate assessment option receipts before adaptation', async () => {
   const originalFetch = global.fetch;
   const originalUrl = process.env.SUPABASE_URL;
   const originalKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -89,8 +91,8 @@ test('consented Study turns validate assessment evidence against submitted attem
     }
     if (target.includes('/rest/v1/study_mastery_events?')) {
       return new Response(JSON.stringify([{
-        event_key: `study.assessment.${ATTEMPT_ID}`, event_kind: 'assessment_item', correct: true, score: 1,
-        difficulty: 0.5, hints_used: 0, independent: true, misconception_signal: false,
+        event_key: `study.assessment.${ATTEMPT_ID}`, event_kind: 'assessment_item', correct: false, score: 0,
+        difficulty: 0.5, hints_used: 0, independent: true, misconception_signal: true,
         provenance: 'quantora_authored', source_ref: 'quantora:study-assessment-bank',
         assessment_ref: `attempt:${ATTEMPT_ID}`, item_ref: 'motion-graphs-velocity-slope@1',
         observed_at: OBSERVED_AT,
@@ -102,9 +104,10 @@ test('consented Study turns validate assessment evidence against submitted attem
         concept_id: 'concept-1',
         item_key: 'motion-graphs-velocity-slope',
         item_version: '1',
+        submitted_option_id: 'a',
         submitted_at: OBSERVED_AT,
-        correct: true,
-        score: 1,
+        correct: false,
+        score: 0,
       }]), { status: 200 });
     }
     throw new Error(`Unexpected fetch: ${target}`);
@@ -114,8 +117,10 @@ test('consented Study turns validate assessment evidence against submitted attem
       studioDomain: 'education', userSub: 'learner-1', memoryConsented: true,
       studyContext: { conceptKey: CONCEPT_KEY, conceptLabel: 'Motion graphs' },
     });
-    assert.equal(model?.understanding.state, 'emerging');
-    assert.equal(model?.nextLearningMove.type, 'vary_evidence');
+    assert.equal(model?.misconception.state, 'signal_observed');
+    assert.equal(model?.misconception.code, 'representation_misread');
+    assert.equal(model?.misconception.remediation?.strategy, 'representation_bridge');
+    assert.equal(model?.nextLearningMove.type, 'diagnose_misconception');
   } finally {
     global.fetch = originalFetch;
     if (originalUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = originalUrl;
@@ -136,8 +141,8 @@ test('stored assessment-shaped rows without an authoritative attempt cannot acti
     }
     if (target.includes('/rest/v1/study_mastery_events?')) {
       return new Response(JSON.stringify([{
-        event_key: `study.assessment.${ATTEMPT_ID}`, event_kind: 'assessment_item', correct: true, score: 1,
-        difficulty: 0.5, hints_used: 0, independent: true, misconception_signal: false,
+        event_key: `study.assessment.${ATTEMPT_ID}`, event_kind: 'assessment_item', correct: false, score: 0,
+        difficulty: 0.5, hints_used: 0, independent: true, misconception_signal: true,
         provenance: 'quantora_authored', source_ref: 'quantora:study-assessment-bank',
         assessment_ref: `attempt:${ATTEMPT_ID}`, item_ref: 'motion-graphs-velocity-slope@1',
         observed_at: OBSERVED_AT,
@@ -154,6 +159,7 @@ test('stored assessment-shaped rows without an authoritative attempt cannot acti
       studyContext: { conceptKey: CONCEPT_KEY, conceptLabel: 'Motion graphs' },
     });
     assert.equal(model?.understanding.state, 'unverified');
+    assert.equal(model?.misconception.code, null);
     assert.equal(model?.nextLearningMove.type, 'independent_retrieval');
   } finally {
     global.fetch = originalFetch;
@@ -162,11 +168,17 @@ test('stored assessment-shaped rows without an authoritative attempt cannot acti
   }
 });
 
-test('attested assessment misconception selects repair and produces a bounded directive', () => {
-  const model = learner([event(false, true)]);
+test('attested assessment misconception produces specific repair directive and metadata', () => {
+  const model = learner([event(false)]);
   assert.equal(teachingStrategyFor(model), 'misconception_repair');
-  assert.match(formatStudyAdaptiveDirective(model), /Teaching strategy: misconception_repair/);
-  assert.equal(publicStudyAdaptiveMetadata(model)?.misconception, 'signal_observed');
+  const directive = formatStudyAdaptiveDirective(model);
+  assert.match(directive, /code: representation_misread/);
+  assert.match(directive, /remediation: representation_bridge/);
+  assert.match(directive, /never invent another diagnosis from prose/i);
+  const metadata = publicStudyAdaptiveMetadata(model);
+  assert.equal(metadata?.misconception, 'signal_observed');
+  assert.equal(metadata?.misconceptionCode, 'representation_misread');
+  assert.equal(metadata?.misconceptionRemediation, 'representation_bridge');
 });
 
 test('no learner model is an exact prompt and metadata no-op', () => {
@@ -178,4 +190,5 @@ test('provisional attested success selects a new application strategy instead of
   const model = learner([event(true)]);
   assert.equal(model.nextLearningMove.type, 'vary_evidence');
   assert.equal(teachingStrategyFor(model), 'socratic_application');
+  assert.equal(publicStudyAdaptiveMetadata(model)?.misconceptionCode, null);
 });

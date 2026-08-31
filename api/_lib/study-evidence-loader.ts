@@ -8,6 +8,17 @@ import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 const VALIDATION_TIMEOUT_MS = 4_000;
 const ATTEMPT_REF = /^attempt:([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 
+type AttemptRow = {
+  id: string;
+  concept_id: string;
+  item_key: string;
+  item_version: string;
+  submitted_option_id: string;
+  submitted_at: string;
+  correct: boolean;
+  score: number;
+};
+
 function config() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -15,22 +26,14 @@ function config() {
   return { url: url.replace(/\/+$/, ''), key };
 }
 
-type AttemptRow = {
-  id: string;
-  concept_id: string;
-  item_key: string;
-  item_version: string;
-  submitted_at: string;
-  correct: boolean;
-  score: number;
-};
-
 function attemptReceipt(row: AttemptRow, conceptKey: string): StudyAssessmentAttemptReceipt | null {
   if (!row
     || typeof row.id !== 'string'
     || typeof row.concept_id !== 'string'
     || typeof row.item_key !== 'string'
     || typeof row.item_version !== 'string'
+    || typeof row.submitted_option_id !== 'string'
+    || !row.submitted_option_id
     || typeof row.submitted_at !== 'string'
     || !Number.isFinite(Date.parse(row.submitted_at))
     || typeof row.correct !== 'boolean'
@@ -44,6 +47,7 @@ function attemptReceipt(row: AttemptRow, conceptKey: string): StudyAssessmentAtt
     conceptKey,
     itemKey: row.item_key,
     itemVersion: row.item_version,
+    submittedOptionId: row.submitted_option_id,
     correct: row.correct,
     score: row.score,
     submittedAt: row.submitted_at,
@@ -53,7 +57,8 @@ function attemptReceipt(row: AttemptRow, conceptKey: string): StudyAssessmentAtt
 /**
  * Read learner evidence and cross-check every assessment event against the
  * authoritative submitted-attempt table before it can carry the module-private
- * admission attestation. A malformed or missing attempt stays untrusted.
+ * admission attestation. V5 also binds the submitted option so diagnosis can
+ * be derived from reviewed distractor metadata rather than model inference.
  *
  * Validation-store unavailability returns null: callers must not overwrite a
  * prior mastery projection with an artificial zero-evidence state.
@@ -73,7 +78,7 @@ export async function readVerifiedStudyMasteryEvidence(
 
   let response: Response;
   try {
-    const path = `study_assessment_attempts?select=id,concept_id,item_key,item_version,submitted_at,correct,score&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&submitted_at=not.is.null&order=submitted_at.desc&limit=500`;
+    const path = `study_assessment_attempts?select=id,concept_id,item_key,item_version,submitted_option_id,submitted_at,correct,score&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&submitted_at=not.is.null&order=submitted_at.desc&limit=500`;
     response = await fetch(`${cfg.url}/rest/v1/${path}`, {
       method: 'GET',
       headers: {

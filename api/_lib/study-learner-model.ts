@@ -1,8 +1,16 @@
 import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
+import {
+  assessmentConfirmsMisconceptionRepair,
+  diagnoseStudyMisconception,
+} from './study-misconception-intelligence.js';
+import type {
+  StudyMisconceptionCode,
+  StudyMisconceptionRemediation,
+} from './study-misconception-taxonomy.js';
 import type { StudyMasteryEstimate } from './study-mastery-estimator.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-31.2';
+export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-31.3';
 
 export type StudyUnderstandingState = 'unverified' | 'emerging' | 'verified';
 export type StudyMisconceptionState = 'none_observed' | 'signal_observed' | 'needs_confirmation';
@@ -28,6 +36,11 @@ export type StudyLearnerModel = {
     state: StudyMisconceptionState;
     signalCount: number;
     latestSignalAt: string | null;
+    code: StudyMisconceptionCode | null;
+    confidence: number | null;
+    reasonCodes: string[];
+    remediation: StudyMisconceptionRemediation | null;
+    lastResolvedCode: StudyMisconceptionCode | null;
   };
   retention: {
     state: 'untested' | 'needs_support' | 'supported';
@@ -59,24 +72,51 @@ function verifiedRows(events: StudyMasteryEvidenceEvent[]) {
     .filter((row): row is { event: StudyMasteryEvidenceEvent; score: number; observedAt: string } => row.score !== null && row.observedAt !== null);
 }
 
-function misconceptionProjection(rows: ReturnType<typeof verifiedRows>) {
-  const signals = rows.filter((row) => row.event.misconceptionSignal === true);
-  const latestSignal = signals[signals.length - 1] || null;
-  const laterSuccess = latestSignal
-    ? rows.some((row) => Date.parse(row.observedAt) > Date.parse(latestSignal.observedAt) && row.score >= 0.75 && !row.event.misconceptionSignal)
-    : false;
-  const laterDiagnosticSuccess = latestSignal
-    ? rows.some((row) => Date.parse(row.observedAt) > Date.parse(latestSignal.observedAt) && row.score >= 0.75 && row.event.kind === 'misconception_probe' && !row.event.misconceptionSignal)
-    : false;
-  const state: StudyMisconceptionState = latestSignal && !laterSuccess
-    ? 'signal_observed'
-    : latestSignal && !laterDiagnosticSuccess
-      ? 'needs_confirmation'
-      : 'none_observed';
+function misconceptionProjection(rows: ReturnType<typeof verifiedRows>): StudyLearnerModel['misconception'] {
+  const diagnosed = rows
+    .map((row) => ({ row, diagnosis: diagnoseStudyMisconception(row.event) }))
+    .filter((entry): entry is { row: (typeof rows)[number]; diagnosis: NonNullable<ReturnType<typeof diagnoseStudyMisconception>> } => entry.diagnosis !== null);
+  const latest = diagnosed[diagnosed.length - 1] || null;
+  if (!latest) {
+    return {
+      state: 'none_observed',
+      signalCount: 0,
+      latestSignalAt: null,
+      code: null,
+      confidence: null,
+      reasonCodes: [],
+      remediation: null,
+      lastResolvedCode: null,
+    };
+  }
+
+  const laterRows = rows.filter((row) => Date.parse(row.observedAt) > Date.parse(latest.row.observedAt));
+  const targetedCorrection = laterRows.some((row) =>
+    row.score >= 0.75 && assessmentConfirmsMisconceptionRepair(row.event, latest.diagnosis.code));
+  if (targetedCorrection) {
+    return {
+      state: 'none_observed',
+      signalCount: diagnosed.length,
+      latestSignalAt: latest.row.observedAt,
+      code: null,
+      confidence: null,
+      reasonCodes: ['targeted_independent_correction'],
+      remediation: null,
+      lastResolvedCode: latest.diagnosis.code,
+    };
+  }
+
+  const laterSuccess = laterRows.some((row) => row.score >= 0.75 && !row.event.misconceptionSignal);
+  const state: StudyMisconceptionState = laterSuccess ? 'needs_confirmation' : 'signal_observed';
   return {
     state,
-    signalCount: signals.length,
-    latestSignalAt: latestSignal?.observedAt || null,
+    signalCount: diagnosed.length,
+    latestSignalAt: latest.row.observedAt,
+    code: latest.diagnosis.code,
+    confidence: latest.diagnosis.confidence,
+    reasonCodes: latest.diagnosis.reasonCodes,
+    remediation: latest.diagnosis.remediation,
+    lastResolvedCode: null,
   };
 }
 
@@ -93,18 +133,28 @@ function retentionProjection(rows: ReturnType<typeof verifiedRows>, estimate: St
 function chooseNextMove(input: {
   rows: ReturnType<typeof verifiedRows>;
   estimate: StudyMasteryEstimate;
-  misconception: ReturnType<typeof misconceptionProjection>;
+  misconception: StudyLearnerModel['misconception'];
   retention: ReturnType<typeof retentionProjection>;
 }): StudyLearnerModel['nextLearningMove'] {
   const { rows, estimate, misconception, retention } = input;
   if (!rows.length) {
     return { type: 'independent_retrieval', reasonCode: 'no_verified_evidence', instruction: 'Ask for one independent answer without hints before adapting the lesson.', learnerFacingText: 'Next: try one independent answer without hints.' };
   }
-  if (misconception.state === 'signal_observed') {
-    return { type: 'diagnose_misconception', reasonCode: 'active_misconception_signal', instruction: 'Use one targeted contrast or counterexample, then ask the learner to explain the corrected distinction.', learnerFacingText: 'Next: compare the two ideas, then explain the corrected distinction.' };
+  if (misconception.state === 'signal_observed' && misconception.code && misconception.remediation) {
+    return {
+      type: 'diagnose_misconception',
+      reasonCode: `active_misconception:${misconception.code}`,
+      instruction: misconception.remediation.instruction,
+      learnerFacingText: misconception.remediation.learnerFacingText,
+    };
   }
-  if (misconception.state === 'needs_confirmation') {
-    return { type: 'confirm_misconception', reasonCode: 'misconception_confirmation_needed', instruction: 'Use a fresh targeted misconception probe before treating the earlier signal as resolved.', learnerFacingText: 'Next: try a fresh targeted check to confirm the earlier gap is repaired.' };
+  if (misconception.state === 'needs_confirmation' && misconception.code) {
+    return {
+      type: 'confirm_misconception',
+      reasonCode: `misconception_confirmation_needed:${misconception.code}`,
+      instruction: `Use a fresh independent reviewed item that explicitly tests ${misconception.code}; do not treat unrelated correctness as repair evidence.`,
+      learnerFacingText: 'Next: try one fresh check that targets the same earlier mistake.',
+    };
   }
   const latest = rows[rows.length - 1];
   if (latest.score < 0.75) {
@@ -120,10 +170,7 @@ function chooseNextMove(input: {
   return { type: 'transfer_task', reasonCode: 'understanding_and_retention_supported', instruction: 'Use a novel transfer problem that requires the concept in a different representation or context.', learnerFacingText: 'Next: try the idea in a new context.' };
 }
 
-/**
- * Evidence-backed, read-only projection. It never mutates or replaces mastery,
- * and self-confidence cannot enter verified understanding.
- */
+/** Evidence-backed, read-only projection over the single admitted evidence set. */
 export function buildStudyLearnerModel(input: {
   conceptId: string;
   conceptKey?: string | null;
