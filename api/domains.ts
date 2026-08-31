@@ -6,6 +6,7 @@ import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
 import { isPublishedSiteOwner } from './_lib/store.js';
 import { normalizeDomainName } from './_lib/publish-policy.js';
 import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
+import inferenceHealth from './_lib/handlers/inference-health.js';
 
 /** Google-maintained alias for the current Flash model. A pinned id rots. */
 const GEMINI_FLASH = "gemini-flash-latest";
@@ -14,6 +15,15 @@ const MAX_CONTEXT_CHARS = 10_000;
 const REQUESTS_PER_MINUTE = 20;
 
 export default async function handler(req: any, res: any) {
+  /*
+   * /api/inference-health rides on this function, NOT on pipeline: the health
+   * probe must stay alive when the pipeline mega-function is the thing that is
+   * down. This function is the lightest TS hub, so it is the shelter.
+   * The handler does its own CORS, method check, and rate limit.
+   */
+  const routed = typeof req.query?.route === 'string' ? req.query.route : '';
+  if (routed === 'inference-health') return inferenceHealth(req, res);
+
   applyCors(req, res, 'POST,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') {
