@@ -112,10 +112,3 @@ export function admittedStudyMasteryEvidence(
     return true;
   });
 }
-
-/** Test/future-writer helper for governed non-assessment evidence receipts. */
-export function studyVerifiedObservationSourceRef(kind: Exclude<StudyEvidenceKind, 'assessment_item' | 'self_confidence'>, evidenceRef: string): string {
-  const clean = String(evidenceRef || '').trim().replace(/\s+/g, ' ');
-  if (!clean || clean.length > 500) return '';
-  return `quantora:study-verified:${kind}:${clean}`;
-}
