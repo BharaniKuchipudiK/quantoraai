@@ -7,7 +7,8 @@ import {
 } from './study-evidence-admission.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+const ATTEMPT_ONE = '11111111-1111-4111-8111-111111111111';
+const ATTEMPT_TWO = '22222222-2222-4222-8222-222222222222';
 
 function event(
   kind: StudyEvidenceKind,
@@ -29,10 +30,14 @@ function event(
   };
 }
 
-function reviewedAssessment(overrides: Partial<StudyMasteryEvidenceEvent> = {}) {
+function reviewedAssessment(
+  overrides: Partial<StudyMasteryEvidenceEvent> = {},
+  attemptId = ATTEMPT_ONE,
+) {
   return event('assessment_item', {
+    id: `study.assessment.${attemptId}`,
     sourceRef: 'quantora:study-assessment-bank',
-    assessmentRef: `attempt:${ATTEMPT_ID}`,
+    assessmentRef: `attempt:${attemptId}`,
     itemRef: 'motion-graphs-velocity-slope@1',
     ...overrides,
   });
@@ -52,12 +57,14 @@ test('server-issued reviewed assessment evidence is admitted', () => {
   });
 });
 
-test('assessment evidence fails closed on forged provenance or malformed references', () => {
+test('assessment evidence fails closed on forged provenance, identity, or unknown item versions', () => {
   for (const candidate of [
     reviewedAssessment({ provenance: 'connected_source' }),
     reviewedAssessment({ sourceRef: 'quantora:study-assessment-bank-copy' }),
     reviewedAssessment({ assessmentRef: 'attempt:not-a-uuid' }),
     reviewedAssessment({ itemRef: 'missing-version' }),
+    reviewedAssessment({ itemRef: 'unknown-item@1' }),
+    reviewedAssessment({ id: 'study.assessment.33333333-3333-4333-8333-333333333333' }),
   ]) {
     assert.equal(evaluateStudyEvidenceAdmission(candidate).admitted, false);
   }
@@ -88,8 +95,8 @@ test('invalid timestamps and unscored observations fail closed', () => {
 });
 
 test('mastery and learner state receive one chronological deduplicated evidence set', () => {
-  const first = reviewedAssessment({ id: 'first', correct: false, score: 0, observedAt: '2026-08-01T00:00:00.000Z' });
-  const repeated = reviewedAssessment({ id: 'repeat', correct: true, score: 1, observedAt: '2026-08-02T00:00:00.000Z' });
+  const first = reviewedAssessment({ correct: false, score: 0, observedAt: '2026-08-01T00:00:00.000Z' }, ATTEMPT_ONE);
+  const repeated = reviewedAssessment({ correct: true, score: 1, observedAt: '2026-08-02T00:00:00.000Z' }, ATTEMPT_TWO);
   const application = event('application', {
     id: 'application',
     observedAt: '2026-08-03T00:00:00.000Z',
@@ -97,6 +104,6 @@ test('mastery and learner state receive one chronological deduplicated evidence 
   });
 
   const admitted = admittedStudyMasteryEvidence([application, repeated, first]);
-  assert.deepEqual(admitted.map((row) => row.id), ['first', 'application']);
+  assert.deepEqual(admitted.map((row) => row.id), [`study.assessment.${ATTEMPT_ONE}`, 'application']);
   assert.equal(admitted[0].correct, false);
 });
