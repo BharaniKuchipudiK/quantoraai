@@ -15,7 +15,8 @@ import {
 } from "./study-assessment-items.js";
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel } from "./study-learner-model.js";
-import { buildStudyVerificationPlan, resolveStudyVerification } from "./study-verification.js";
+import { buildStudyVerificationPlan } from "./study-verification.js";
+import { executeStudyVerificationPlan } from "./study-verification-runtime.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -34,14 +35,13 @@ function verifyReleasedAssessmentItem(item: StudyAssessmentItem) {
     subject: item.conceptKey.split(".")[0] || null,
     assessmentReviewStatus: item.reviewStatus,
   });
-  return resolveStudyVerification(plan, [{
-    verifier: "reviewed_assessment",
-    status: item.reviewStatus === "approved" ? "verified" : "rejected",
-    evidenceRefs: item.reviewStatus === "approved"
-      ? [`quantora:study-assessment-bank:${item.key}@${item.version}`]
-      : [],
-    reasonCode: item.reviewStatus === "approved" ? "assessment_item_approved" : "assessment_item_not_approved",
-  }]);
+  return executeStudyVerificationPlan({
+    plan,
+    reviewedAssessment: {
+      reviewStatus: item.reviewStatus,
+      evidenceRef: `quantora:study-assessment-bank:${item.key}@${item.version}`,
+    },
+  }).outcome;
 }
 
 export type StudyAssessmentIssueRequest = {
