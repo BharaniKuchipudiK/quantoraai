@@ -2,7 +2,7 @@ import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import { findStudyAssessmentItem } from './study-assessment-items.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.4';
+export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.5';
 
 const VERIFIED_KINDS = new Set<StudyEvidenceKind>([
   'assessment_item',
@@ -71,8 +71,11 @@ export function attestStudyAssessmentEvidence(
   if (!release.canIssueVerifiedAttempt) return event;
   if (!item.options.some((option) => option.id === receipt.submittedOptionId)) return event;
 
+  const optionCorrect = receipt.submittedOptionId === item.correctOptionId;
+  if (receipt.correct !== optionCorrect || receipt.score !== (optionCorrect ? 1 : 0)) return event;
+
   const expectedItemRef = `${receipt.itemKey}@${receipt.itemVersion}`;
-  const expectedMisconception = receipt.correct === false
+  const expectedMisconception = !optionCorrect
     && item.misconceptionOptionIds.includes(receipt.submittedOptionId);
   if (event.conceptId !== receipt.conceptId
     || event.id !== `study.assessment.${receipt.attemptId}`
