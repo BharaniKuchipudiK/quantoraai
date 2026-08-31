@@ -1,6 +1,7 @@
 export type { StudioDomain } from "../../shared/studio/domains.js";
 export { normalizeStudioDomain, STUDIO_DOMAINS } from "../../shared/studio/domains.js";
 import type { StudioDomain } from "../../shared/studio/domains.js";
+import { STUDY_TEACHING_TURN_DIRECTIVE } from "./study-teaching-policy.js";
 
 const DOMAIN_DIRECTIVES: Record<StudioDomain, string> = {
   travel: `DOMAIN FOCUS: TRAVEL ADVISOR
@@ -138,5 +139,7 @@ The user wants to investigate a topic — compare options, gather perspectives, 
 
 export function buildDomainDirective(domain: StudioDomain | null): string {
   if (!domain) return "";
-  return `\n\n${DOMAIN_DIRECTIVES[domain]}`;
+  const base = DOMAIN_DIRECTIVES[domain];
+  const studyTeaching = domain === "education" ? `\n\n${STUDY_TEACHING_TURN_DIRECTIVE}` : "";
+  return `\n\n${base}${studyTeaching}`;
 }
