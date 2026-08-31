@@ -498,8 +498,14 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // Auth Check
-    const mayUseServerKeys = Boolean(sessionUser);
+    // Auth Check — server keys need an *active* session, not just a valid
+    // signature: blocked accounts keep a signed cookie until it expires.
+    let mayUseServerKeys = false;
+    if (sessionUser) {
+      const auth = await requireActiveSession(req, res);
+      if (!auth.ok) return;
+      mayUseServerKeys = true;
+    }
     const effectiveGeminiKey = mayUseServerKeys ? await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY : undefined;
 
     if (!effectiveGeminiKey && !sessionUser) {
