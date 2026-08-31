@@ -23,6 +23,42 @@ import { polishStudyTutorText, studyTutorNudge } from '../lib/study-tutor-presen
 
 const STUDY_READING_FONT = 'Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
 
+function splitLeadParagraph(text = '') {
+  const source = String(text || '');
+  const breakMatch = /\n\s*\n/.exec(source);
+  if (!breakMatch) return { lead: source, rest: '' };
+  return {
+    lead: source.slice(0, breakMatch.index),
+    rest: source.slice(breakMatch.index + breakMatch[0].length),
+  };
+}
+
+function StudyReadingBlock({ text, textColor, components, blockKey }) {
+  if (!String(text || '').trim()) return null;
+  return (
+    <div
+      key={blockKey}
+      data-quantora-study-reading-copy="true"
+      style={{
+        color: textColor,
+        fontFamily: STUDY_READING_FONT,
+        fontSize: '1.035rem',
+        lineHeight: 1.7,
+        letterSpacing: '-0.006em',
+        textWrap: 'pretty',
+      }}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={components}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export default function StudyMarkdown({
   text = '',
   topic = '',
@@ -52,6 +88,7 @@ export default function StudyMarkdown({
   const segments = splitStudySegments(decorateStudyMessage(illustrated, topic), topic);
   const flashcards = segments.filter((segment) => segment.type === 'flashcard');
   const firstFlashcardIndex = segments.findIndex((segment) => segment.type === 'flashcard');
+  const firstMarkdownIndex = segments.findIndex((segment) => segment.type === 'md');
   const opticsVisual = studyOpticsVisualSpec(polished, topic);
 
   return (
@@ -61,7 +98,6 @@ export default function StudyMarkdown({
       style={{ color: textColor, width: '100%' }}
     >
       {nudge ? <StudyTutorNudge kind={nudge.kind} label={nudge.label} isLight={isLight} /> : null}
-      {opticsVisual ? <StudyOpticsDiagram spec={opticsVisual} isLight={isLight} /> : null}
       {segments.map((segment, index) => {
         if (segment.type === 'flashcard') {
           return index === firstFlashcardIndex ? (
@@ -87,26 +123,34 @@ export default function StudyMarkdown({
             />
           );
         }
+        if (opticsVisual && index === firstMarkdownIndex) {
+          const { lead, rest } = splitLeadParagraph(segment.text);
+          return (
+            <React.Fragment key={`md-optics-${index}`}>
+              <StudyReadingBlock
+                text={lead}
+                textColor={textColor}
+                components={components}
+                blockKey={`md-${index}-lead`}
+              />
+              <StudyOpticsDiagram spec={opticsVisual} isLight={isLight} />
+              <StudyReadingBlock
+                text={rest}
+                textColor={textColor}
+                components={components}
+                blockKey={`md-${index}-rest`}
+              />
+            </React.Fragment>
+          );
+        }
         return (
-          <div
+          <StudyReadingBlock
             key={`md-${index}`}
-            data-quantora-study-reading-copy="true"
-            style={{
-              fontFamily: STUDY_READING_FONT,
-              fontSize: '1.035rem',
-              lineHeight: 1.7,
-              letterSpacing: '-0.006em',
-              textWrap: 'pretty',
-            }}
-          >
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={components}
-            >
-              {segment.text}
-            </ReactMarkdown>
-          </div>
+            text={segment.text}
+            textColor={textColor}
+            components={components}
+            blockKey={`md-${index}`}
+          />
         );
       })}
     </div>
