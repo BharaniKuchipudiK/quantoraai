@@ -1,6 +1,20 @@
 import React from 'react';
 import { GitBranch, Play, Terminal, Files } from 'lucide-react';
 
+const BUTTON_BASE = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  height: '28px',
+  border: 'none',
+  borderRadius: '8px',
+  fontSize: '0.72rem',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
+const BADGE_BASE = { fontSize: '0.66rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums' };
+
 /**
  * The desk's activity rail.
  *
@@ -82,21 +96,13 @@ export default function StudioActivityRail({
           title={title}
           onClick={onClick}
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            height: '28px',
+            ...BUTTON_BASE,
             padding: compact ? '0 7px' : '0 9px',
-            border: 'none',
-            borderRadius: '8px',
             background: active
               ? (isLight ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.16)')
               : 'transparent',
             color: active ? '#f97316' : subtextColor,
-            fontSize: '0.72rem',
             fontWeight: active ? 700 : 600,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
           }}
           onMouseEnter={(event) => {
             if (active) return;
@@ -114,7 +120,7 @@ export default function StudioActivityRail({
           {badge ? (
             <span
               data-quantora-desk-rail-changes="true"
-              style={{ fontSize: '0.66rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+              style={BADGE_BASE}
             >
               {addedLines > 0 ? <span style={{ color: '#22c55e' }}>+{addedLines}</span> : null}
               {addedLines > 0 && removedLines > 0 ? ' ' : null}

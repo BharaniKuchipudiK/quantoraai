@@ -25,9 +25,6 @@ import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
 import StudioTerminal from './StudioTerminal';
 import StudioGit from './StudioGit';
-import StudioTabBar from './StudioTabBar';
-import StudioActivityRail from './StudioActivityRail';
-import StudioFileFinder from './StudioFileFinder';
 import {
   PINNED_DESK_TAB,
   closeDeskTab,
@@ -35,7 +32,7 @@ import {
   openDeskTab,
   pruneDeskTabs,
 } from '../lib/desk-tabs.js';
-import { deskLadderStatus, deskLadderSummary } from '../lib/desk-ladder-status.js';
+import { deskLadderChipColors, deskLadderChipLabel, deskLadderStatus, deskLadderSummary } from '../lib/desk-ladder-status.js';
 import {
   GITHUB_IMPORT_ENDPOINT,
   buildGithubImportRequestBody,
@@ -105,6 +102,9 @@ import {
   saveFilesWidthPx,
 } from '../lib/studio-split-layout.js';
 
+const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
+const StudioTabBar = lazy(() => import('./StudioTabBar.jsx'));
+const StudioFileFinder = lazy(() => import('./StudioFileFinder.jsx'));
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
 const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 
@@ -4658,20 +4658,11 @@ Paused — ${autoPauseRef.current}.`
                     fontSize: '0.66rem',
                     fontWeight: 700,
                     whiteSpace: 'nowrap',
-                    color: deskLadder.tier === 'strong'
-                      ? (isLight ? '#7c3aed' : '#c4b5fd')
-                      : deskLadder.tier === 'held'
-                        ? (isLight ? '#b45309' : '#fcd34d')
-                        : subtextColor,
-                    background: deskLadder.tier === 'strong'
-                      ? (isLight ? 'rgba(124,58,237,0.10)' : 'rgba(167,139,250,0.16)')
-                      : deskLadder.tier === 'held'
-                        ? (isLight ? 'rgba(245,158,11,0.12)' : 'rgba(251,191,36,0.14)')
-                        : (isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.07)'),
+                    ...deskLadderChipColors(deskLadder.tier, isLight, subtextColor),
                   }}
                 >
                   <Layers size={10} />
-                  {deskLadder.title === 'Fast lane' ? deskLadder.model : `${deskLadder.title} · ${deskLadder.model}`}
+                  {deskLadderChipLabel(deskLadder)}
                 </span>
               ) : null}
               {deskJobLabel ? (
@@ -4693,6 +4684,7 @@ Paused — ${autoPauseRef.current}.`
               ) : null}
             </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
+              <Suspense fallback={<div aria-hidden="true" style={{ width: (!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060) ? '150px' : '330px', height: '28px' }} />}>
               <StudioActivityRail
                 activeTab={workspaceActiveTab}
                 onOpenTab={setWorkspaceActiveTab}
@@ -4706,6 +4698,7 @@ Paused — ${autoPauseRef.current}.`
                 subtextColor={subtextColor}
                 compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
               />
+              </Suspense>
               <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.12)' }} />
               {canOfferVercelPublish({
                 messages,
@@ -4787,6 +4780,7 @@ Paused — ${autoPauseRef.current}.`
             </div>
           </div>
 
+          <Suspense fallback={<div style={{ minHeight: '36px', flexShrink: 0, background: isLight ? '#f1f5f9' : '#070913', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
           <StudioTabBar
             tabs={openTabs}
             activeTab={workspaceActiveTab}
@@ -4797,6 +4791,7 @@ Paused — ${autoPauseRef.current}.`
             textColor={textColor}
             subtextColor={subtextColor}
           />
+          </Suspense>
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
             {deskFilesOpen ? (
@@ -4927,13 +4922,17 @@ Paused — ${autoPauseRef.current}.`
         </div>
       )}
 
-      <StudioFileFinder
-        open={deskFinderOpen}
-        vfs={vfs}
-        onPick={setWorkspaceActiveTab}
-        onClose={() => setDeskFinderOpen(false)}
-        isLight={isLight}
-      />
+      {deskFinderOpen ? (
+        <Suspense fallback={null}>
+          <StudioFileFinder
+            open
+            vfs={vfs}
+            onPick={setWorkspaceActiveTab}
+            onClose={() => setDeskFinderOpen(false)}
+            isLight={isLight}
+          />
+        </Suspense>
+      ) : null}
 
       {/* GitHub Import Modal */}
       {isGithubModalOpen && (

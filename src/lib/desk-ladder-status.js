@@ -90,3 +90,25 @@ export function deskLadderSummary(status) {
   if (!status) return '';
   return `${status.title}: ${status.model} — ${status.detail}`;
 }
+
+/** Chip colours per tier. Light and dark, resolved where the tier is defined. */
+const TIER_COLOR = {
+  strong: { light: '#7c3aed', dark: '#c4b5fd', bgLight: 'rgba(124,58,237,0.10)', bgDark: 'rgba(167,139,250,0.16)' },
+  held: { light: '#b45309', dark: '#fcd34d', bgLight: 'rgba(245,158,11,0.12)', bgDark: 'rgba(251,191,36,0.14)' },
+  fast: { light: '', dark: '', bgLight: 'rgba(15,23,42,0.06)', bgDark: 'rgba(255,255,255,0.07)' },
+};
+
+export function deskLadderChipColors(tier, isLight, fallbackColor) {
+  const tone = TIER_COLOR[tier] || TIER_COLOR.fast;
+  const color = isLight ? tone.light : tone.dark;
+  return {
+    color: color || fallbackColor,
+    background: isLight ? tone.bgLight : tone.bgDark,
+  };
+}
+
+/** The chip is terse when nothing was decided beyond "the usual model ran". */
+export function deskLadderChipLabel(status) {
+  if (!status) return '';
+  return status.tier === 'fast' ? status.model : `${status.title} · ${status.model}`;
+}

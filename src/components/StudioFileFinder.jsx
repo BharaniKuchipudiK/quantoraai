@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileCode, Search } from 'lucide-react';
-import { rankDeskFileMatches } from '../lib/desk-tabs.js';
+import { rankDeskFileMatches } from '../lib/desk-file-search.js';
 import { listStudioFiles } from '../lib/studio-file-tree.js';
 
 /**
