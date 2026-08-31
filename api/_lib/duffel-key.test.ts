@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { duffelEnvPublicHint, duffelKeyShape, isDuffelConfigured } from './duffel-key.js';
+import { duffelEnvPublicHint, duffelKeyShape, isDuffelConfigured, servingDuffelMode } from './duffel-key.js';
 
 test('a token carries its own environment', () => {
   assert.equal(duffelKeyShape('duffel_live_abc123'), 'live');
@@ -87,4 +87,56 @@ test('an unrecognised token says so rather than guessing', () => {
   assert.equal(odd.configured, true, 'it will still be handed to the SDK, so say it is set');
   assert.match(odd.hint || '', /unexpected/i);
   assert.doesNotMatch(JSON.stringify(odd), /stripe_maybe/, 'never echo an unknown secret');
+});
+
+/*
+ * BOTH OF THESE CAME FROM A CODEX REVIEW OF THE FIX THEY BREAK.
+ *
+ * executeFlightSearch tries DUFFEL_FALLBACK_API_KEY even when no primary
+ * client exists, and returns the fallback's result with fallbackUsed: true
+ * when the primary fails. Reading this report as if only the primary mattered
+ * reintroduces, through the fallback, exactly the false claim the report was
+ * added to prevent.
+ */
+test('a fallback-only deployment can search, so it reports as configured', () => {
+  const report = duffelEnvPublicHint({ DUFFEL_FALLBACK_API_KEY: 'duffel_live_abc' } as NodeJS.ProcessEnv);
+  assert.equal(report.configured, true, 'the fallback is tried with no primary present');
+  assert.equal(report.shape, 'live', 'and its mode is the one a user will get');
+  assert.match(report.hint || '', /bookable/i);
+});
+
+test('a present primary is still the key that serves first', () => {
+  const report = duffelEnvPublicHint({
+    DUFFEL_API_KEY: 'duffel_live_abc',
+    DUFFEL_FALLBACK_API_KEY: 'duffel_test_xyz',
+  } as NodeJS.ProcessEnv);
+  assert.equal(report.shape, 'live');
+  assert.equal(report.fallbackShape, 'test');
+});
+
+test('the fares are labelled by the client that returned them', () => {
+  const report = duffelEnvPublicHint({
+    DUFFEL_API_KEY: 'duffel_live_abc',
+    DUFFEL_FALLBACK_API_KEY: 'duffel_test_xyz',
+  } as NodeJS.ProcessEnv);
+
+  assert.equal(servingDuffelMode(report), 'live', 'the primary answered');
+  assert.equal(
+    servingDuffelMode(report, { fallbackUsed: true }),
+    'test',
+    'a live primary failing over to a sandbox fallback must not print "live"',
+  );
+});
+
+test('a fallback-only search reports that fallback, however it is asked', () => {
+  const report = duffelEnvPublicHint({ DUFFEL_FALLBACK_API_KEY: 'duffel_test_xyz' } as NodeJS.ProcessEnv);
+  // With no primary the fallback always answers, so both readings agree.
+  assert.equal(servingDuffelMode(report), 'test');
+  assert.equal(servingDuffelMode(report, { fallbackUsed: true }), 'test');
+});
+
+test('nothing configured still reports nothing', () => {
+  const none = duffelEnvPublicHint({} as NodeJS.ProcessEnv);
+  assert.equal(none.configured, false);
+  assert.equal(servingDuffelMode(none), 'missing');
 });
