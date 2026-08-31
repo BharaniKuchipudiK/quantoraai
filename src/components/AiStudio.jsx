@@ -7,7 +7,7 @@ import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import { deskChatClaimWasFiltered, filterDeskChatClaims } from '../lib/desk-chat-claim-filter.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
@@ -23,8 +23,14 @@ import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
-import StudioTerminal from './StudioTerminal';
-import StudioGit from './StudioGit';
+import {
+  PINNED_DESK_TAB,
+  closeDeskTab,
+  nextDeskTab,
+  openDeskTab,
+  pruneDeskTabs,
+} from '../lib/desk-tabs.js';
+import { deskLadderChipColors, deskLadderChipLabel, deskLadderStatus, deskLadderSummary } from '../lib/desk-ladder-status.js';
 import {
   GITHUB_IMPORT_ENDPOINT,
   buildGithubImportRequestBody,
@@ -94,6 +100,12 @@ import {
   saveFilesWidthPx,
 } from '../lib/studio-split-layout.js';
 
+const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
+const StudioGit = lazy(() => import('./StudioGit.jsx'));
+const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
+const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
+const StudioTabBar = lazy(() => import('./StudioTabBar.jsx'));
+const StudioFileFinder = lazy(() => import('./StudioFileFinder.jsx'));
 const WorkspaceCodeEditor = lazy(() => import('./WorkspaceCodeEditor.jsx'));
 const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 // Only a travel thread ever renders the trip board, and code-highlight-browser-gate
@@ -575,6 +587,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('preview');
+  /*
+   * The tab strip.
+   *
+   * `workspaceActiveTab` above is unchanged and still the single source of
+   * truth for which pane renders — every existing caller that sets it keeps
+   * working untouched. `openTabs` is the list beside it, and it is kept in
+   * sync by an effect rather than by editing those callers, so a build that
+   * opens a file gets a tab for free and nothing downstream had to learn a
+   * new API.
+   */
+  const [openTabs, setOpenTabs] = useState([PINNED_DESK_TAB]);
+  const [deskFullscreen, setDeskFullscreen] = useState(false);
+  const [deskFilesOpen, setDeskFilesOpen] = useState(true);
+  const [deskFinderOpen, setDeskFinderOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasCode, setCanvasCode] = useState('');
   const [canvasVfs, setCanvasVfs] = useState({});
@@ -587,6 +613,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const chatDeskSplitRef = useRef(null);
   const filesPreviewSplitRef = useRef(null);
   const deskPublishMenuRef = useRef(null);
+  const deskShellRef = useRef(null);
+  const [deskWidthPx, setDeskWidthPx] = useState(0);
+  // Reported by LivePreviewCanvas so its Download / Improve / viewport controls
+  // can live in the desk header instead of a second strip beneath it.
+  const [previewChrome, setPreviewChrome] = useState(null);
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
@@ -616,6 +647,105 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
   }, [studioDomain, handleCreateNewChat, setStudioDomain]);
 
+  /*
+   * Anything that activates a pane gets a tab, wherever it was activated from.
+   *
+   * This is deliberately an effect on `workspaceActiveTab` and not a wrapper
+   * around its setter. There are a dozen-odd places that switch the desk to
+   * Preview mid-turn; making each of them call a new opener would have been a
+   * dozen chances to miss one and leave the strip lying about what is open.
+   */
+  useEffect(() => {
+    setOpenTabs((prev) => openDeskTab(prev, workspaceActiveTab));
+  }, [workspaceActiveTab]);
+
+  /*
+   * A build rewrites the VFS. Tabs pointing at files it deleted would open an
+   * empty editor that reads as data loss, so they are dropped as soon as the
+   * file is gone.
+   */
+  useEffect(() => {
+    setOpenTabs((prev) => {
+      const pruned = pruneDeskTabs(prev, vfs, workspaceActiveTab);
+      if (pruned.active !== workspaceActiveTab) setWorkspaceActiveTab(pruned.active);
+      return pruned.tabs.length === prev.length ? prev : pruned.tabs;
+    });
+  }, [vfs, workspaceActiveTab]);
+
+  const closeDeskTabAt = useCallback((tabId) => {
+    setOpenTabs((prev) => {
+      const result = closeDeskTab(prev, tabId, workspaceActiveTab);
+      if (result.active !== workspaceActiveTab) setWorkspaceActiveTab(result.active);
+      return result.tabs;
+    });
+  }, [workspaceActiveTab]);
+
+  /*
+   * Desk keys.
+   *
+   * Only bindings a browser actually lets a page keep are offered here. Ctrl/Cmd
+   * + W is deliberately absent: browsers reserve it to close their own tab and
+   * will not hand it over, and a shortcut that works in one browser and closes
+   * your session in another is worse than no shortcut. Tabs close with the ×,
+   * or a middle click.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onKeyDown = (event) => {
+      // Escape leaves full screen from anywhere, including a focused editor.
+      if (event.key === 'Escape' && deskFullscreen && !deskFinderOpen) {
+        setDeskFullscreen(false);
+        return;
+      }
+      if (!codingDeskOpen) return;
+
+      const target = event.target;
+      const tag = String(target?.tagName || '').toLowerCase();
+      const typing = tag === 'input' || tag === 'textarea' || target?.isContentEditable;
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+
+      // Cmd/Ctrl + Shift + Enter — enter or leave the full-screen IDE.
+      if (event.shiftKey && (event.key === 'Enter' || event.key === 'Return')) {
+        event.preventDefault();
+        setDeskFullscreen((open) => !open);
+        return;
+      }
+      // Cmd/Ctrl + Alt + Arrow — walk the tab strip.
+      if (event.altKey && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+        event.preventDefault();
+        setWorkspaceActiveTab(nextDeskTab(openTabs, workspaceActiveTab, event.key === 'ArrowRight' ? 1 : -1));
+        return;
+      }
+      if (event.altKey || event.shiftKey) return;
+
+      // The rest would fight the field you are typing in.
+      if (typing && event.key.toLowerCase() !== 'p') return;
+
+      if (event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        setDeskFilesOpen((open) => !open);
+        return;
+      }
+      if (event.key === '`') {
+        event.preventDefault();
+        setWorkspaceActiveTab((current) => (current === 'terminal' ? PINNED_DESK_TAB : 'terminal'));
+        return;
+      }
+      if (event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        setDeskFinderOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [codingDeskOpen, deskFullscreen, deskFinderOpen, openTabs, workspaceActiveTab]);
+
+  /* Leaving the desk must never strand you in a full-screen shell with no desk. */
+  useEffect(() => {
+    if (!codingDeskOpen && deskFullscreen) setDeskFullscreen(false);
+  }, [codingDeskOpen, deskFullscreen]);
+
   const handleHealedPreview = useCallback((healedHtml) => {
     const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob);
     if (!next.wrote) return;
@@ -644,6 +774,23 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  /*
+   * The desk header carries a lot: title, ladder chip, job, run status, the
+   * activity rail and the actions. How much fits depends on the desk's real
+   * width — which the chat/desk splitter changes at will — so it is measured
+   * rather than guessed from the window or the split percentage.
+   */
+  useEffect(() => {
+    const node = deskShellRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width;
+      if (Number.isFinite(width)) setDeskWidthPx(Math.round(width));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [codingDeskOpen]);
 
   useEffect(() => {
     if (!deskPublishMenuOpen) return undefined;
@@ -2677,6 +2824,29 @@ Paused — ${autoPauseRef.current}.`
     : '';
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
+
+  /*
+   * What the model ladder actually did on the last turn.
+   *
+   * Read off the message the router already stamped — never re-decided here. If
+   * the turn carried no routing decision (a pinned model, or an older message
+   * from before the reason was recorded) this is null and the chip does not
+   * render. A ladder chip that guesses is worse than no chip.
+   */
+  const deskLadder = (() => {
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai');
+    if (!lastAi) return null;
+    return deskLadderStatus({
+      reason: lastAi.autoLadderReason,
+      modelName: lastAi.modelUsed,
+      autoRouted: lastAi.autoRouted,
+    });
+  })();
+
+  /* Screenshot-2 style change counters, straight off the review the desk already keeps. */
+  const deskChangedCount = Array.isArray(deskReview) ? deskReview.length : 0;
+  const deskAddedLines = (Array.isArray(deskReview) ? deskReview : []).reduce((sum, row) => sum + (Number(row?.added) || 0), 0);
+  const deskRemovedLines = (Array.isArray(deskReview) ? deskReview : []).reduce((sum, row) => sum + (Number(row?.removed) || 0), 0);
   const hasRunnablePreview = Boolean(previewRunCode || activeOfficeArtifact(messages));
   const hasDeskFiles = Boolean(vfs && Object.keys(vfs).some((path) => path && vfs[path]?.content));
   const shopIntake = assessShopBuildAsk(lastUserMessage?.text || '');
@@ -2782,15 +2952,17 @@ Paused — ${autoPauseRef.current}.`
       <div
         data-quantora-studio-sidebar="true"
         style={{
-        width: sidebarOpen ? (isIdeLayout ? '220px' : '260px') : '0px',
-        opacity: sidebarOpen ? 1 : 0,
-        pointerEvents: sidebarOpen ? 'auto' : 'none',
+        // deskFullscreen folds the sidebar without touching sidebarOpen, so
+        // leaving full screen restores whatever the user had chosen.
+        width: sidebarOpen && !deskFullscreen ? (isIdeLayout ? '220px' : '260px') : '0px',
+        opacity: sidebarOpen && !deskFullscreen ? 1 : 0,
+        pointerEvents: sidebarOpen && !deskFullscreen ? 'auto' : 'none',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         ...studioSidebarFrameStyle(),
         background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
         border: 'none',
         borderRadius: isIdeLayout ? '16px' : '0 24px 24px 0',
-        padding: sidebarOpen ? '14px 12px' : '0px',
+        padding: sidebarOpen && !deskFullscreen ? '14px 12px' : '0px',
         flexShrink: 0
       }}>
         {/* Sidebar Header */}
@@ -3238,7 +3410,9 @@ Paused — ${autoPauseRef.current}.`
       {/* Main Chat Interface (Center or Left if Workspace is Open) */}
       <div style={{
         flex: isIdeLayout ? `0 0 ${splitMobile ? 36 : chatWidthPct}%` : 1,
-        display: 'flex',
+        // Hidden, not unmounted: the composer's draft, the scroll position and
+        // every message stay exactly as they were while the IDE is full screen.
+        display: deskFullscreen ? 'none' : 'flex',
         flexDirection: 'column',
         maxWidth: isIdeLayout ? `${splitMobile ? 36 : chatWidthPct}%` : '100%',
         margin: '0 auto',
@@ -4436,7 +4610,7 @@ Paused — ${autoPauseRef.current}.`
       )}
 
       {/* Right Panel: Studio coding desk */}
-      {isCodingDesk && !splitMobile ? (
+      {isCodingDesk && !splitMobile && !deskFullscreen ? (
         <div
           ref={chatDeskSplitRef}
           data-quantora-chat-desk-split="true"
@@ -4448,16 +4622,34 @@ Paused — ${autoPauseRef.current}.`
         />
       ) : null}
       {isCodingDesk && (
-        <div data-quantora-code-workspace="true" data-quantora-studio-ide="true" style={{
+        <div
+          ref={deskShellRef}
+          data-quantora-code-workspace="true"
+          data-quantora-studio-ide="true"
+          data-quantora-desk-fullscreen={deskFullscreen ? 'true' : 'false'}
+          style={{
+          /*
+           * Full screen gives the desk the whole studio area by collapsing the
+           * chat column and the sidebar beside it — it is not a fixed overlay
+           * and not a portal.
+           *
+           * An overlay was tried first and lost: the desk sits inside a
+           * stacking context that the product header paints above, so the desk
+           * header — and with it the only way back out — ended up underneath
+           * the nav. Widening the element that is already mounted has no
+           * stacking to lose, keeps the product nav reachable, and never
+           * reparents the preview iframe, so nothing reloads on the way in or
+           * out.
+           */
           flex: 1,
-          background: isLight ? '#ffffff' : '#0d1127',
+          position: 'relative',
+          borderRadius: deskFullscreen ? '12px' : '16px',
           border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '16px',
+          background: isLight ? '#ffffff' : '#0d1127',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           boxShadow: isLight ? '0 10px 40px rgba(0,0,0,0.05)' : '0 20px 60px rgba(0,0,0,0.4)',
-          position: 'relative',
           minWidth: 0,
         }}>
           <div style={{
@@ -4470,8 +4662,30 @@ Paused — ${autoPauseRef.current}.`
             height: '48px',
             flexShrink: 0
           }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-              <span>Coding desk</span>
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
+              <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Coding desk</span>
+              {deskLadder ? (
+                <span
+                  data-quantora-desk-ladder="true"
+                  data-quantora-desk-ladder-tier={deskLadder.tier}
+                  title={deskLadderSummary(deskLadder)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    flexShrink: 0,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    fontSize: '0.66rem',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    ...deskLadderChipColors(deskLadder.tier, isLight, subtextColor),
+                  }}
+                >
+                  <Layers size={10} />
+                  {deskLadderChipLabel(deskLadder)}
+                </span>
+              ) : null}
               {deskJobLabel ? (
                 <span
                   data-quantora-desk-job="true"
@@ -4490,7 +4704,23 @@ Paused — ${autoPauseRef.current}.`
                 </span>
               ) : null}
             </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
+              <Suspense fallback={<div aria-hidden="true" style={{ width: (!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060) ? '150px' : '330px', height: '28px' }} />}>
+              <StudioActivityRail
+                activeTab={workspaceActiveTab}
+                onOpenTab={setWorkspaceActiveTab}
+                filesOpen={deskFilesOpen}
+                onToggleFiles={() => setDeskFilesOpen((open) => !open)}
+                changedCount={deskChangedCount}
+                addedLines={deskAddedLines}
+                removedLines={deskRemovedLines}
+                isLight={isLight}
+                textColor={textColor}
+                subtextColor={subtextColor}
+                compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
+              />
+              </Suspense>
+              <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.12)' }} />
               {canOfferVercelPublish({
                 messages,
                 vfs,
@@ -4519,6 +4749,20 @@ Paused — ${autoPauseRef.current}.`
                   ) : null}
                 </div>
               )}
+              {workspaceActiveTab === 'preview' && previewRunCode ? (
+                <Suspense fallback={null}>
+                  <StudioPreviewControls
+                    chrome={previewChrome}
+                    onDownload={() => previewCanvasRef.current?.download?.()}
+                    onImprove={() => previewCanvasRef.current?.improve?.()}
+                    onViewport={(next) => previewCanvasRef.current?.setViewport?.(next)}
+                    isLight={isLight}
+                    textColor={textColor}
+                    subtextColor={subtextColor}
+                    compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
+                  />
+                </Suspense>
+              ) : null}
               <button
                 type="button"
                 data-quantora-desk-canvas="true"
@@ -4536,6 +4780,31 @@ Paused — ${autoPauseRef.current}.`
                 <Layers size={12} /> Canvas
               </button>
               <button
+                type="button"
+                data-quantora-desk-ide="true"
+                data-quantora-desk-ide-open={deskFullscreen ? 'true' : 'false'}
+                onClick={() => setDeskFullscreen((open) => !open)}
+                title={deskFullscreen ? 'Leave full screen  (Esc)' : 'Open IDE full screen  (Ctrl/Cmd + Shift + Enter)'}
+                aria-label={deskFullscreen ? 'Leave full screen' : 'Open IDE full screen'}
+                aria-pressed={deskFullscreen}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: deskFullscreen ? (isLight ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.16)') : 'transparent',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
+                  color: deskFullscreen ? '#f97316' : subtextColor,
+                  padding: '4px 9px',
+                  borderRadius: '6px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                IDE
+                {deskFullscreen ? <Minimize2 size={11} /> : <ArrowUpRight size={11} />}
+              </button>
+              <button
                 onClick={closeStudioWorkspace}
                 title="Hide coding desk"
                 aria-label="Hide coding desk"
@@ -4546,7 +4815,21 @@ Paused — ${autoPauseRef.current}.`
             </div>
           </div>
 
+          <Suspense fallback={<div style={{ minHeight: '36px', flexShrink: 0, background: isLight ? '#f1f5f9' : '#070913', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
+          <StudioTabBar
+            tabs={openTabs}
+            activeTab={workspaceActiveTab}
+            onSelect={setWorkspaceActiveTab}
+            onClose={closeDeskTabAt}
+            onOpenFinder={() => setDeskFinderOpen(true)}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+          />
+          </Suspense>
+
           <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+            {deskFilesOpen ? (
             <StudioFileTree
               vfs={vfs}
               activePath={workspaceActiveTab}
@@ -4560,7 +4843,8 @@ Paused — ${autoPauseRef.current}.`
               job={deskJob}
               width={splitMobile ? 212 : filesWidthPx}
             />
-            {!splitMobile ? (
+            ) : null}
+            {deskFilesOpen && !splitMobile ? (
               <div
                 ref={filesPreviewSplitRef}
                 data-quantora-files-preview-split="true"
@@ -4601,6 +4885,7 @@ Paused — ${autoPauseRef.current}.`
                       vfs={vfs}
                       turnBusy={isGenerating}
                       onVerificationStatusChange={setPreviewRunStatus}
+                      onChromeChange={setPreviewChrome}
                       jobCard={deskJob}
                       onHealedPreview={handleHealedPreview}
                       onLiveDeskProbe={setLiveDeskProbe}
@@ -4643,13 +4928,16 @@ Paused — ${autoPauseRef.current}.`
                     )}
                   </div>
              ) : workspaceActiveTab === 'terminal' ? (
+               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#f8fafc' : '#0d1127' }} />}>
                <StudioTerminal
                  vfs={shellVfs}
                  isLight={isLight}
                  textColor={textColor}
                  subtextColor={subtextColor}
                />
+               </Suspense>
              ) : workspaceActiveTab === 'git' ? (
+               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#f8fafc' : '#0d1127' }} />}>
                <StudioGit
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
@@ -4658,6 +4946,7 @@ Paused — ${autoPauseRef.current}.`
                  isLight={isLight}
                  textColor={textColor}
                />
+               </Suspense>
              ) : (
                <Suspense fallback={<div style={{ padding: '24px', color: subtextColor }}>Loading editor…</div>}>
                  <WorkspaceCodeEditor
@@ -4672,6 +4961,18 @@ Paused — ${autoPauseRef.current}.`
           </div>
         </div>
       )}
+
+      {deskFinderOpen ? (
+        <Suspense fallback={null}>
+          <StudioFileFinder
+            open
+            vfs={vfs}
+            onPick={setWorkspaceActiveTab}
+            onClose={() => setDeskFinderOpen(false)}
+            isLight={isLight}
+          />
+        </Suspense>
+      ) : null}
 
       {/* GitHub Import Modal */}
       {isGithubModalOpen && (

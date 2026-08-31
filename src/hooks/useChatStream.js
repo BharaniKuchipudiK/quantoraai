@@ -734,10 +734,14 @@ export function useChatStream({
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
+    // The ladder's own reason for this turn, carried through so the desk can
+    // show what routing actually did instead of re-deciding it in the UI.
+    let autoLadderReason = '';
     const shopIntakeAsk = turnPlan.shop || assessShopBuildAsk(intakeAccept.expanded ? text : (visibleUserText || text));
     if (autoMode && isCodingRequest) {
       if (turnPlan.modelPlan?.modelId) {
         autoResolvedLabel = turnPlan.modelPlan.modelName || turnPlan.modelPlan.modelId;
+        autoLadderReason = turnPlan.modelPlan.reason || '';
         targetModel = {
           id: 'auto',
           name: 'Auto',
@@ -760,6 +764,7 @@ export function useChatStream({
           allowPaid: Boolean(openRouterApiKeyHint),
         });
         autoResolvedLabel = resolved.model?.name || resolved.modelId;
+        autoLadderReason = resolved.reason || '';
         targetModel = {
           id: 'auto',
           name: 'Auto',
@@ -1111,6 +1116,7 @@ export function useChatStream({
       sender: 'ai',
       modelUsed: autoMode ? (autoResolvedLabel || 'Auto') : targetModel.name,
       autoRouted: autoMode,
+      autoLadderReason,
       text: '',
       componentType: 'formatted_text',
       latencyMs: 0,
@@ -1297,7 +1303,25 @@ export function useChatStream({
                   provider: parsed.provider,
                   latencyMs: parsed.latencyMs || 0,
                   executionStatus: null,
-                  ...(parsed.modelId ? { modelUsed: parsed.modelId, resolvedModelId: parsed.modelId } : {}),
+                  ...(parsed.modelId ? {
+                    modelUsed: parsed.modelId,
+                    resolvedModelId: parsed.modelId,
+                    /*
+                     * The ladder's reason describes the model it PICKED at the
+                     * start of the turn. When the server finishes on a different
+                     * one — a provider fallback, or the Gemini safety net — that
+                     * reason no longer describes what ran, and pairing it with
+                     * the model that did run reads as "Escalated · <the fast
+                     * model>". The chip exists to say what routing actually did,
+                     * so a reason that has stopped being true is dropped and the
+                     * chip renders nothing rather than something false.
+                     */
+                    ...(autoMode
+                      && targetModel.resolvedModelId
+                      && parsed.modelId !== targetModel.resolvedModelId
+                      ? { autoLadderReason: '' }
+                      : {}),
+                  } : {}),
                   ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
