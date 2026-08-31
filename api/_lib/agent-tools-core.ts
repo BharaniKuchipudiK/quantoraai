@@ -8,6 +8,7 @@
 
 import { Duffel } from '@duffel/api';
 import { describeDoors, doorsBlocking } from '../../src/lib/capability-doors.js';
+import { defaultSerpApiKey, isSerpApiConfigured, searchSerpApiFlights } from './serpapi-flights.js';
 
 const defaultDuffelClient = process.env.DUFFEL_API_KEY
   ? new Duffel({ token: process.env.DUFFEL_API_KEY })
@@ -340,8 +341,22 @@ export async function executeToolCall(
   switch (name) {
     case 'search_flights': {
       if (!duffelClient) {
+        /*
+         * Duffel is the richer source when it is connected, but every provider
+         * that can issue tickets gates on business identity, so a deployment
+         * may legitimately have none. SerpApi answers with real Google Flights
+         * prices for an unregistered developer, which is worth more than an
+         * empty board — provided the caption says what it is, which is why the
+         * source travels back with the results rather than being assumed.
+         */
+        const serpApiKey = Object.prototype.hasOwnProperty.call(dependencies, 'serpApiKey')
+          ? (dependencies as any).serpApiKey
+          : defaultSerpApiKey;
+        if (isSerpApiConfigured(serpApiKey)) {
+          return searchSerpApiFlights(serpApiKey, fetchFn, args as any);
+        }
         return unavailable(
-          'Live flight search is unavailable because no Duffel provider is connected. No mock fares were returned.',
+          'Live flight search is unavailable because no flight provider is connected. No mock fares were returned.',
           'NOT_CONFIGURED',
         );
       }
