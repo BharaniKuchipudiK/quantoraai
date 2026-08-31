@@ -14,6 +14,7 @@ export default function StudioFileFinder({ open, vfs = {}, onPick, onClose, isLi
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef(null);
+  const cursorRef = useRef(null);
 
   const files = useMemo(() => listStudioFiles(vfs), [vfs]);
   const matches = useMemo(() => rankDeskFileMatches(files, query, 40), [files, query]);
@@ -27,10 +28,21 @@ export default function StudioFileFinder({ open, vfs = {}, onPick, onClose, isLi
     return () => cancelAnimationFrame(raf);
   }, [open]);
 
-  // A stale cursor after the list shrinks would open the wrong file on Enter.
+  /*
+   * Reset on the QUERY, not on the match count. Refining a query that happens
+   * to keep the same number of results — or stays pinned at the cap — left the
+   * cursor pointing into a re-ranked list, so Enter opened a file the user had
+   * not chosen.
+   */
+  useEffect(() => { setCursor(0); }, [query]);
   useEffect(() => {
     setCursor((current) => (current < matches.length ? current : 0));
   }, [matches.length]);
+
+  /* A selection that scrolls out of view reads as no selection at all. */
+  useEffect(() => {
+    cursorRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [cursor]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -133,6 +145,7 @@ export default function StudioFileFinder({ open, vfs = {}, onPick, onClose, isLi
           ) : matches.map((path, index) => (
             <button
               key={path}
+              ref={index === cursor ? cursorRef : null}
               type="button"
               data-quantora-desk-finder-row={path}
               onClick={() => commit(path)}

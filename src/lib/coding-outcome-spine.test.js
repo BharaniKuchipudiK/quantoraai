@@ -102,3 +102,32 @@ test('a malformed job falls back to the old advice rather than throwing', () => 
 test('a stopped turn never becomes a checkpoint, even mid-job', () => {
   assert.equal(resolveCodingTurnOutcome({ kind: 'stopped', job: jobWith(2) }).kind, 'stopped');
 });
+
+test('the Continue label names the step it actually resumes at, even out of order', () => {
+  // build-job proves each step independently, so a model writing step 3 first
+  // yields [not-done, not-done, done]. `done + 1` then disagreed with "Next:".
+  const job = { goal: 'x', steps: [{ title: 'One', done: false }, { title: 'Two', done: false }, { title: 'Three', done: true }] };
+  const outcome = resolveCodingTurnOutcome({ kind: 'timeout', job });
+  assert.match(outcome.text, /\*\*Next:\*\* One/);
+  assert.equal(outcome.continueSet.items[0].label, 'Continue — step 1 of 3');
+});
+
+test('an oversize catalogue keeps its chips alongside Continue', () => {
+  /*
+   * Continue alone re-runs the same oversized build into the same deadline —
+   * the loop the shop chips exist to break.
+   */
+  const job = { goal: 'shop', steps: [{ title: 'A', done: true }, { title: 'B', done: false }] };
+  const shopIntakeAsk = { oversize: true, chips: [{ id: 'shop-agree-smaller', label: 'Build 20', value: 'Build 20' }] };
+  const outcome = resolveCodingTurnOutcome({ kind: 'timeout', job, shopIntakeAsk });
+  const ids = outcome.continueSet.items.map((item) => item.id);
+  assert.deepEqual(ids, ['outcome-continue-job', 'shop-agree-smaller']);
+});
+
+test('an oversize catalogue with no proved step keeps the shop path entirely', () => {
+  const job = { goal: 'shop', steps: [{ title: 'A', done: false }] };
+  const shopIntakeAsk = { oversize: true, chips: [{ id: 'shop-agree-smaller', label: 'Build 20', value: 'Build 20' }] };
+  const outcome = resolveCodingTurnOutcome({ kind: 'timeout', job, shopIntakeAsk });
+  assert.notEqual(outcome.kind, 'timeout-checkpoint');
+  assert.deepEqual(outcome.continueSet.items.map((i) => i.id), ['shop-agree-smaller']);
+});

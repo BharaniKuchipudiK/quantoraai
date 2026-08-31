@@ -65,3 +65,20 @@ test('a planner lesson annotation on the reason still resolves', () => {
 test('an annotation on an unknown base reason still shows nothing', () => {
   assert.equal(deskLadderStatus({ reason: 'nonsense+lesson_escalate', modelName: 'X', autoRouted: true }), null);
 });
+
+test('an inherited Object member is not mistaken for a reason code', () => {
+  // Bracket lookup resolved the prototype: "constructor" was truthy, so the
+  // chip rendered "undefined · X" — breaking the never-guess contract.
+  for (const reason of ['constructor', 'toString', 'valueOf', '__proto__', 'hasOwnProperty']) {
+    assert.equal(deskLadderStatus({ reason, modelName: 'X', autoRouted: true }), null, reason);
+  }
+});
+
+test('a provider slug is shortened so it cannot swallow the desk header row', () => {
+  const status = deskLadderStatus({
+    reason: 'escalate_complex_coding',
+    modelName: 'qwen/qwen-2.5-coder-32b-instruct:free',
+    autoRouted: true,
+  });
+  assert.equal(status.model, 'qwen-2.5-coder-32b-instruct');
+});

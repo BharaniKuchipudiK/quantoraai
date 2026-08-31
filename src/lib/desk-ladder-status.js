@@ -78,9 +78,19 @@ export function deskLadderStatus({ reason = '', modelName = '', autoRouted = fal
    * ignore the annotation rather than dropping the chip entirely.
    */
   const base = String(reason || '').trim().split('+')[0];
-  const entry = LADDER_REASONS[base];
+  const entry = Object.hasOwn(LADDER_REASONS, base) ? LADDER_REASONS[base] : null;
   if (!entry) return null;
-  const model = String(modelName || '').replace(/\s*\(free\)/ig, '').trim();
+  /*
+   * The caller overwrites modelUsed with the server's raw id, so this receives
+   * provider slugs as well as display names. The chip is nowrap inside a 48px
+   * header, so a full slug consumes the row and clips the job and run status
+   * beside it. Take the last path segment and drop a ":free" tier suffix.
+   */
+  const model = String(modelName || '')
+    .split('/').pop()
+    .replace(/:free$/i, '')
+    .replace(/\s*\(free\)/ig, '')
+    .trim();
   if (!model) return null;
   return { ...entry, model };
 }
@@ -99,7 +109,7 @@ const TIER_COLOR = {
 };
 
 export function deskLadderChipColors(tier, isLight, fallbackColor) {
-  const tone = TIER_COLOR[tier] || TIER_COLOR.fast;
+  const tone = Object.hasOwn(TIER_COLOR, tier) ? TIER_COLOR[tier] : TIER_COLOR.fast;
   const color = isLight ? tone.light : tone.dark;
   return {
     color: color || fallbackColor,
