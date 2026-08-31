@@ -107,8 +107,8 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         estimate: priorEstimate,
       });
     } else {
-      // Selection may fall back to the first reviewed item, but unverified state
-      // is never invented when the validation store cannot answer.
+      // Do not invent a learner state when validation storage is unavailable.
+      // Any accidental repeat is still non-independent at the grading boundary.
       priorEvidence = [];
     }
 
@@ -118,6 +118,22 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       learnerModel: priorLearnerModel,
     });
     if (!item) {
+      const hasReleasedCandidate = candidates.some((candidate) => verifyStudyAssessmentRelease(candidate).canIssueVerifiedAttempt);
+      const activeDiagnosis = priorLearnerModel?.misconception.code || null;
+      if (activeDiagnosis) {
+        return res.status(422).json({
+          error: "A fresh reviewed confirmation check for this misconception is not available yet.",
+          code: "verified_misconception_confirmation_unavailable",
+          fallbackAllowed: true,
+        });
+      }
+      if (hasReleasedCandidate) {
+        return res.status(422).json({
+          error: "No fresh reviewed assessment item remains for this topic yet.",
+          code: "verified_assessment_bank_exhausted",
+          fallbackAllowed: true,
+        });
+      }
       return res.status(422).json({
         error: "This mapped topic does not have a released assessment item yet.",
         code: "verified_assessment_unavailable",
