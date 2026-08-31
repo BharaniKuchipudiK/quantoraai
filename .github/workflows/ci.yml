@@ -102,14 +102,21 @@ jobs:
         run: npm run build
 
       # Playwright is not a project dependency — it exists only for these gates,
-      # and --no-save keeps it out of the npm cache setup-node restores. So both
-      # halves were paid on every single run: the package install and a fresh
-      # ~50s Chromium download. The binary never changes for a pinned version,
-      # so it is cached on that version alone.
+      # and --no-save keeps it out of the npm cache setup-node restores. So a
+      # fresh ~50s Chromium download was paid on every single run. The binary
+      # never changes for a pinned version, so it is cached on that version
+      # alone; `playwright install` is then a no-op that finds it already there.
       #
-      # System libraries are still installed on a hit. GitHub's runner image
-      # carries most of them, but "most" is not "all", and a gate that cannot
-      # launch a browser is worse than the seconds this costs.
+      # No --with-deps. The ubuntu-24.04 runner image already carries Chromium's
+      # system libraries, and apt was the expensive half: with --with-deps still
+      # running, a cache hit saved 23s of a 217s job, which GitHub rounds away
+      # to nothing because it bills whole minutes per job. Without it the job
+      # drops under three minutes and the saving becomes real.
+      #
+      # This fails loudly rather than subtly if that ever stops being true. A
+      # missing library makes Chromium fail to launch, which fails the first
+      # gate on every run, not one gate sometimes. Should the image change,
+      # restore `--with-deps` here.
       - name: Restore Playwright browser cache
         id: playwright-cache
         uses: actions/cache@v4
@@ -120,11 +127,7 @@ jobs:
       - name: Install browser test runtime
         run: |
           npm install --no-save --package-lock=false "playwright@${PLAYWRIGHT_VERSION}"
-          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
-            npx playwright install-deps chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+          npx playwright install chromium
 
       - name: Start production-like Vite preview
         run: |
