@@ -205,3 +205,17 @@ test('missing required checks remain insufficient rather than guessing', () => {
   assert.equal(result.canClaimVerified, false);
   assert.ok(result.reasonCodes.includes('missing_numeric'));
 });
+
+test('invalid verification modes are blockers rather than falling back to Explore', () => {
+  const plan = buildStudyVerificationPlan({
+    claimId: 'claim-invalid-mode',
+    claimKind: 'curriculum_fact',
+    mode: 'anything' as never,
+    groundingSources: [{ ref: 'https://example.com/reference' }],
+  });
+  assert.equal(plan.canAttempt, false);
+  assert.ok(plan.blockers.includes('invalid_verification_mode'));
+  assert.equal(resolveStudyVerification(plan, [
+    verified('grounded_source', 'https://example.com/reference'),
+  ]).decision, 'insufficient');
+});
