@@ -167,7 +167,13 @@ export function deriveResearchBrief({ messages } = {}) {
       }
     }
     for (const finding of extractFindings(body)) {
-      findings.push({ text: finding, sourceCount: sources.length, turnIndex: index });
+      findings.push({
+        text: finding,
+        sourceCount: sources.length,
+        turnIndex: index,
+        // The verification pass fetches exactly what this turn cited.
+        sourceUris: sources.slice(0, 6).map((source) => source.uri),
+      });
     }
   });
 

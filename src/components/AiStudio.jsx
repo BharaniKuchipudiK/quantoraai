@@ -2481,8 +2481,10 @@ Paused — ${autoPauseRef.current}.`
                           <Suspense fallback={null}>
                             <ResearchBoard
                               messages={messages}
+                              signedIn={Boolean(user)}
                               onAsk={(text) => setInputText(text)}
                               onSend={(text) => handleSendMessage(text)}
+                              onRequireAuth={onOpenAuth}
                             />
                           </Suspense>
                         ) : null}

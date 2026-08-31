@@ -102,6 +102,8 @@ test('findings come only from grounded replies, as statements, capped per turn',
   assert.equal(brief.findings.length, 3);
   assert.ok(brief.findings.every((finding) => !finding.text.endsWith('?')));
   assert.ok(brief.findings.every((finding) => finding.sourceCount === 2));
+  assert.ok(brief.findings.every((finding) => finding.sourceUris.length === 2
+    && finding.sourceUris.includes('https://www.nature.com/articles/x123')));
   assert.ok(!brief.findings.some((finding) => finding.text.includes('no sources behind it')));
   assert.equal(brief.ungroundedTurns, 1);
 });
