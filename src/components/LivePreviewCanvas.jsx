@@ -89,6 +89,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   onLiveDeskProbe,
   /** True while chat/stream is still building — do not declare shell dead yet. */
   turnBusy = false,
+  /**
+   * Reports the state behind Download / Improve / viewport so a host can render
+   * them in its own chrome. Used by the Coding Desk, which puts them in the desk
+   * header rather than in a second strip of its own.
+   */
+  onChromeChange = null,
 }, ref) {
   const [viewport, setViewport] = useState('desktop');
   const [currentCode, setCurrentCode] = useState(code || '');
@@ -838,10 +844,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     }
   };
 
-  useImperativeHandle(ref, () => ({
-    openPublish: handlePublishClick,
-    openShare: handleSharePreview,
-  }), [handlePublishClick, handleSharePreview]);
 
   const retryVerification = () => {
     setLastError(null);
@@ -1145,6 +1147,43 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     </div>
   ));
 
+  const hasPresentationName = Object.keys(vfs || {}).some(name => /presentation|deck|slides|ppt/i.test(name)) || /presentation|deck|slides|ppt/i.test(suggestedProjectName || '');
+  // Prefer the explicit kind passed from the studio; fall back to the legacy
+  // presentation heuristics so existing decks still get a PPTX button.
+  const resolvedOfficeKind = officeKind
+    || (isPresentationIntent || /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName ? OFFICE_KIND.POWERPOINT : null);
+  const isOfficeDoc = Boolean(resolvedOfficeKind);
+  const officeLabel = OFFICE_LABEL[resolvedOfficeKind] || 'FILE';
+
+  /*
+   * The desk used to carry a second strip under its header holding the
+   * verification status, Improve, the viewport switcher, Download, Share and
+   * Publish. Status duplicated the desk header's own run label, and Share and
+   * Publish duplicated its Publish menu — so the strip spent a row of vertical
+   * space to repeat things and to hold three controls that had nowhere else to
+   * live. It reports them here instead, and the desk renders them in its header.
+   */
+  useEffect(() => {
+    if (!onChromeChange) return;
+    onChromeChange({
+      viewport,
+      isOfficeDoc,
+      officeLabel,
+      downloading: exportingOffice,
+      canImprove: Number(qualityReport?.issues?.length) > 0 && status !== 'healing',
+      improving,
+    });
+  }, [onChromeChange, viewport, isOfficeDoc, officeLabel, exportingOffice, qualityReport, status, improving]);
+  const showPublish = !isOfficeDoc && allowPublish !== false;
+
+  useImperativeHandle(ref, () => ({
+    openPublish: handlePublishClick,
+    openShare: handleSharePreview,
+    download: () => (isOfficeDoc ? handleOfficeDownload() : handleDownload()),
+    improve: handleImprove,
+    setViewport,
+  }), [handlePublishClick, handleSharePreview, isOfficeDoc, handleOfficeDownload, handleDownload, handleImprove]);
+
   if (headless) {
     return (
       <div aria-hidden="true" style={{ width: '100%', height: '480px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
@@ -1251,15 +1290,6 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   );
 
   const showHeader = !hideHeader;
-  const hasPresentationName = Object.keys(vfs || {}).some(name => /presentation|deck|slides|ppt/i.test(name)) || /presentation|deck|slides|ppt/i.test(suggestedProjectName || '');
-  // Prefer the explicit kind passed from the studio; fall back to the legacy
-  // presentation heuristics so existing decks still get a PPTX button.
-  const resolvedOfficeKind = officeKind
-    || (isPresentationIntent || /pptxgen|docx@/i.test(currentCode || '') || hasPresentationName ? OFFICE_KIND.POWERPOINT : null);
-  const isOfficeDoc = Boolean(resolvedOfficeKind);
-  const officeLabel = OFFICE_LABEL[resolvedOfficeKind] || 'FILE';
-  const showPublish = !isOfficeDoc && allowPublish !== false;
-
   return (
     <div
       data-quantora-canvas-root="true"
@@ -1307,42 +1337,12 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       </div>
       )}
 
-      {hideHeader && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px',
-          padding: '10px 14px', flexShrink: 0,
-          borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
-          background: isLight ? '#ffffff' : '#1e293b',
-        }}>
-          {statusUI && (
-            <span data-quantora-preview-status={status} style={{ marginRight: 'auto', fontSize: '0.72rem', fontWeight: 700, color: statusUI.color, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {statusUI.icon}
-              {verifyingQuality ? 'Checking the preview you see…' : statusUI.label}
-              {qualityReport && Number.isFinite(qualityReport.score) ? ` · ${qualityReport.score}/100` : ''}
-            </span>
-          )}
-          {qualityReport?.issues?.length > 0 && status !== 'healing' && (
-            <button type="button" onClick={handleImprove} disabled={improving} title="Fix the issues found in this preview" style={{ background: 'transparent', border: '1px solid rgba(249,115,22,0.35)', color: '#f97316', padding: '4px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700, cursor: improving ? 'wait' : 'pointer' }}>
-              {improving ? 'Improving…' : 'Improve'}
-            </button>
-          )}
-          {viewportSwitcher}
-          {isOfficeDoc && (
-            <button onClick={handleOfficeDownload} disabled={exportingOffice} title={`Download as .${officeLabel.toLowerCase()}`} style={{ background: 'transparent', border: 'none', cursor: exportingOffice ? 'wait' : 'pointer', color: isLight ? '#10b981' : '#34d399', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', opacity: exportingOffice ? 0.6 : 1 }}>
-              <Download size={16} /> {exportingOffice ? '…' : officeLabel}
-            </button>
-          )}
-          {!isOfficeDoc && (
-            <button onClick={handleDownload} title="Export to HTML" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isLight ? '#64748b' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
-              <Download size={18} />
-            </button>
-          )}
-          {!isOfficeDoc && shareButton}
-          {showPublish && publishButton}
-        </div>
-      )}
-
-
+      {/*
+        No second strip when the desk owns the header. Everything that used to
+        sit here is either already in the desk header (status, Share, Publish)
+        or is now rendered there from the state reported by onChromeChange
+        (Download, Improve, viewport). See the note beside that effect.
+      */}
 
       {isOfficeDoc ? (
         // Office artifacts get a format-faithful preview (spreadsheet grid /

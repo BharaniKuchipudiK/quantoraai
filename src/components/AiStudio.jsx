@@ -102,6 +102,7 @@ import {
   saveFilesWidthPx,
 } from '../lib/studio-split-layout.js';
 
+const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
 const StudioTabBar = lazy(() => import('./StudioTabBar.jsx'));
 const StudioFileFinder = lazy(() => import('./StudioFileFinder.jsx'));
@@ -614,6 +615,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const deskPublishMenuRef = useRef(null);
   const deskShellRef = useRef(null);
   const [deskWidthPx, setDeskWidthPx] = useState(0);
+  // Reported by LivePreviewCanvas so its Download / Improve / viewport controls
+  // can live in the desk header instead of a second strip beneath it.
+  const [previewChrome, setPreviewChrome] = useState(null);
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
@@ -4745,6 +4749,20 @@ Paused — ${autoPauseRef.current}.`
                   ) : null}
                 </div>
               )}
+              {workspaceActiveTab === 'preview' && previewRunCode ? (
+                <Suspense fallback={null}>
+                  <StudioPreviewControls
+                    chrome={previewChrome}
+                    onDownload={() => previewCanvasRef.current?.download?.()}
+                    onImprove={() => previewCanvasRef.current?.improve?.()}
+                    onViewport={(next) => previewCanvasRef.current?.setViewport?.(next)}
+                    isLight={isLight}
+                    textColor={textColor}
+                    subtextColor={subtextColor}
+                    compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
+                  />
+                </Suspense>
+              ) : null}
               <button
                 type="button"
                 data-quantora-desk-canvas="true"
@@ -4867,6 +4885,7 @@ Paused — ${autoPauseRef.current}.`
                       vfs={vfs}
                       turnBusy={isGenerating}
                       onVerificationStatusChange={setPreviewRunStatus}
+                      onChromeChange={setPreviewChrome}
                       jobCard={deskJob}
                       onHealedPreview={handleHealedPreview}
                       onLiveDeskProbe={setLiveDeskProbe}
