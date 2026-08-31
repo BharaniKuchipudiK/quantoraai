@@ -84,13 +84,15 @@ test("issue stores the answer server-side but returns only the public item", asy
     assert.equal(state.body.item.options.length, 4);
     assert.equal("correctOptionId" in state.body.item, false);
     assert.equal("explanation" in state.body.item, false);
+    assert.equal("reviewStatus" in state.body.item, false);
+    assert.equal("releaseMode" in state.body.item, false);
     assert.equal(JSON.stringify(state.body).includes("The slope is change"), false);
   } finally {
     global.fetch = originalFetch;
   }
 });
 
-test("grade trusts the atomic server result, records evidence, and saves a provisional estimate", async () => {
+test("grade trusts the atomic server result, admits its reviewed evidence, and saves a provisional estimate", async () => {
   const originalFetch = global.fetch;
   let savedEstimate: any = null;
   let evidenceRequestUrl = "";
@@ -122,6 +124,9 @@ test("grade trusts the atomic server result, records evidence, and saves a provi
         independent: true,
         misconception_signal: false,
         provenance: "quantora_authored",
+        source_ref: "quantora:study-assessment-bank",
+        assessment_ref: `attempt:${ATTEMPT_ID}`,
+        item_ref: "motion-graphs-velocity-slope@1",
         observed_at: "2026-08-26T00:00:00.000Z",
       }]);
     }
@@ -147,12 +152,68 @@ test("grade trusts the atomic server result, records evidence, and saves a provi
     assert.equal(state.body.score, 1);
     assert.equal(state.body.evidenceKind, "assessment_item");
     assert.equal(state.body.mastery.status, "provisional");
+    assert.equal(state.body.mastery.evidenceCount, 1);
     assert.equal(state.body.learnerModel.understanding.state, "emerging");
+    assert.equal(state.body.learnerModel.understanding.evidenceCount, 1);
     assert.equal(state.body.learnerModel.nextLearningMove.type, "vary_evidence");
     assert.equal(savedEstimate.user_sub, "learner-1");
     assert.equal(savedEstimate.status, "provisional");
     assert.equal(savedEstimate.evidence_count, 1);
     assert.match(evidenceRequestUrl, /order=observed_at\.desc/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("unreceipted assessment-shaped rows cannot change mastery after an otherwise valid grade", async () => {
+  const originalFetch = global.fetch;
+  let savedEstimate: any = null;
+  global.fetch = async (url: any, init: any = {}) => {
+    const target = String(url);
+    if (target.includes("/rest/v1/users?select=")) {
+      return json([{ google_sub: "learner-1", email: "learner@example.com", blocked_at: null }]);
+    }
+    if (target.endsWith("/rest/v1/rpc/complete_study_assessment_attempt")) {
+      return json([{
+        result_status: "graded",
+        result_correct: true,
+        result_score: 1,
+        result_concept_id: CONCEPT_ID,
+        result_item_key: "motion-graphs-velocity-slope",
+        result_item_version: "1",
+        result_misconception: false,
+      }]);
+    }
+    if (target.includes("/rest/v1/study_mastery_events?")) {
+      return json([{
+        event_key: "forged-row",
+        event_kind: "assessment_item",
+        correct: true,
+        score: 1,
+        difficulty: 0.35,
+        hints_used: 0,
+        independent: true,
+        misconception_signal: false,
+        provenance: "quantora_authored",
+        observed_at: "2026-08-26T00:00:00.000Z",
+      }]);
+    }
+    if (target.includes("/rest/v1/study_mastery_estimates?on_conflict=")) {
+      savedEstimate = JSON.parse(init.body)[0];
+      return new Response(null, { status: 201 });
+    }
+    throw new Error(`Unexpected fetch: ${target}`);
+  };
+  try {
+    const { state, res } = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: "grade", attemptId: ATTEMPT_ID, optionId: "c" }), res);
+    assert.equal(state.status, 200);
+    assert.equal(state.body.correct, true);
+    assert.equal(state.body.mastery.status, "insufficient_evidence");
+    assert.equal(state.body.mastery.evidenceCount, 0);
+    assert.equal(state.body.learnerModel.understanding.state, "unverified");
+    assert.equal(state.body.learnerModel.nextLearningMove.type, "independent_retrieval");
+    assert.equal(savedEstimate.evidence_count, 0);
   } finally {
     global.fetch = originalFetch;
   }
