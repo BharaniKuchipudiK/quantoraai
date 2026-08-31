@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { deskLadderStatus, deskLadderSummary } from './desk-ladder-status.js';
 
 test('the fast default reads as the fast lane', () => {
@@ -81,4 +83,46 @@ test('a provider slug is shortened so it cannot swallow the desk header row', ()
     autoRouted: true,
   });
   assert.equal(status.model, 'qwen-2.5-coder-32b-instruct');
+});
+
+/*
+ * Guarding the fix for the prototype-key guard, which is not as circular as it
+ * sounds. `Object.hasOwn` is the obvious way to write that check and it is what
+ * went in first — but Vite 6 still defaults build.target to "modules"
+ * (chrome87, firefox78, safari14, edge88) and Object.hasOwn needs Chrome 93,
+ * Firefox 92, Safari 15.4. esbuild rewrites syntax, never built-in methods, so
+ * it shipped untransformed and threw on those browsers: a crashed desk in place
+ * of a chip.
+ *
+ * Nothing in the fast lane can see that. Node has Object.hasOwn, so the tests
+ * pass; it is a real method, so typecheck and eslint pass. Only an old browser
+ * disagrees, and none of them run here. So the source is scanned instead —
+ * cheap, and the same trick this repo already uses to stop "Live from" being
+ * written directly into the trip board.
+ *
+ * If the build target is ever raised past those versions, delete this test
+ * rather than working around it.
+ */
+test('src never calls a built-in the browser target cannot provide', () => {
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) return walk(full);
+    return /\.(js|jsx)$/.test(entry.name) ? [full] : [];
+  });
+
+  // Comments are stripped first: naming a banned method in prose — as the note
+  // above this test does, and as the fix in desk-ladder-status.js does — is how
+  // the reason survives, and must not itself trip the gate.
+  const code = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+  const offenders = [];
+  for (const file of walk('src')) {
+    if (file.endsWith('desk-ladder-status.test.js')) continue;
+    const source = code(readFileSync(file, 'utf8'));
+    for (const method of ['Object.hasOwn', 'Array.prototype.at', 'structuredClone']) {
+      if (source.includes(method)) offenders.push(`${file}: ${method}`);
+    }
+  }
+
+  assert.deepEqual(offenders, [], `unsupported built-ins reach the browser bundle:\n${offenders.join('\n')}`);
 });
