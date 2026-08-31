@@ -15,6 +15,7 @@ import {
   splitStudySegments,
 } from '../lib/study-pictures.js';
 import {
+  studyActiveConcept,
   studyAllowsAutomaticTeachingVisual,
   studyOpticsVisualSpec,
   studyPictureFitsTopic,
@@ -77,19 +78,21 @@ export default function StudyMarkdown({
   const polished = polishStudyTutorText(text);
   const nudge = studyTutorNudge(polished);
   /*
-   * Automatic pictures are now topic-locked. The old fallback searched the
-   * entire answer, so "Chemical Reactions and Equations" could summon Algebra
-   * on a science-topic chooser and "curves inward" could summon a slope graph
-   * in an optics lesson. Unknown/broad topics fail closed instead.
+   * AiStudio currently supplies the Study syllabus haystack here so historical
+   * messages can be rendered from one feed. Resolve the concept that belongs to
+   * this specific answer first; otherwise a later Newton turn could reclassify
+   * an earlier Algebra answer, or an old topic-selection request could suppress
+   * visuals forever.
    */
-  const illustrated = studyAllowsAutomaticTeachingVisual(topic)
-    ? ensureStudyTeachingVisual(polished, topic)
+  const activeTopic = studyActiveConcept(topic, polished);
+  const illustrated = studyAllowsAutomaticTeachingVisual(activeTopic)
+    ? ensureStudyTeachingVisual(polished, activeTopic)
     : polished;
-  const segments = splitStudySegments(decorateStudyMessage(illustrated, topic), topic);
+  const segments = splitStudySegments(decorateStudyMessage(illustrated, activeTopic), activeTopic);
   const flashcards = segments.filter((segment) => segment.type === 'flashcard');
   const firstFlashcardIndex = segments.findIndex((segment) => segment.type === 'flashcard');
   const firstMarkdownIndex = segments.findIndex((segment) => segment.type === 'md');
-  const opticsVisual = studyOpticsVisualSpec(polished, topic);
+  const opticsVisual = studyOpticsVisualSpec(polished, activeTopic);
 
   return (
     <div
@@ -105,7 +108,7 @@ export default function StudyMarkdown({
           ) : null;
         }
         if (segment.type === 'picture') {
-          if (!studyPictureFitsTopic(segment.caption, topic)) return null;
+          if (!studyPictureFitsTopic(segment.caption, activeTopic)) return null;
           return (
             <StudyPicture
               key={`pic-${index}-${segment.caption}`}
