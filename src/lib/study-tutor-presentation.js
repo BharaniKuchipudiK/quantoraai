@@ -19,7 +19,7 @@ export function polishStudyTutorText(text = '') {
     .trim();
 }
 
-export function studyTutorNudge(text = '', topicHistory = '') {
+export function studyTutorNudge(text = '') {
   const source = polishStudyTutorText(text)
     .replace(/<quantora-study-(?:picture|lab|flashcard)\b[^>]*\/?\s*>/gi, ' ')
     .replace(/\s+/g, ' ')
@@ -28,7 +28,7 @@ export function studyTutorNudge(text = '', topicHistory = '') {
   const openingBeat = source.slice(0, 260);
   const match = NUDGE_RULES.find((rule) => rule.pattern.test(openingBeat));
   if (match) return { kind: match.kind, label: match.label };
-  return studyTeachingTurnNudge(studyTeachingTurnKind(topicHistory, source));
+  return studyTeachingTurnNudge(studyTeachingTurnKind('', source));
 }
 
 function cleanCardCell(value = '') {
