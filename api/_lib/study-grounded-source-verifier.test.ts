@@ -114,6 +114,29 @@ test("missing and tiny claims fail closed", () => {
   assert.equal(tiny.check.reasonCode, "grounding_claim_too_short");
 });
 
+test("oversized claims and excerpts are rejected instead of truncated into apparent support", () => {
+  const supportedPrefix = "A".repeat(2_000);
+  const tooLongClaim = verifyStudyGroundedSourceClaim({
+    claimId: "claim-too-long",
+    mode: "exam_grounded",
+    sourceRef: "https://ncert.nic.in/textbook.php",
+    claimText: `${supportedPrefix} unsupported suffix`,
+    sourceExcerpt: supportedPrefix,
+  });
+  assert.equal(tooLongClaim.check.status, "insufficient");
+  assert.equal(tooLongClaim.check.reasonCode, "grounding_claim_too_long");
+
+  const tooLongExcerpt = verifyStudyGroundedSourceClaim({
+    claimId: "excerpt-too-long",
+    mode: "exam_grounded",
+    sourceRef: "https://ncert.nic.in/textbook.php",
+    claimText: "A complete factual statement.",
+    sourceExcerpt: `${"A complete factual statement. ".repeat(320)}contradictory tail`,
+  });
+  assert.equal(tooLongExcerpt.check.status, "insufficient");
+  assert.equal(tooLongExcerpt.check.reasonCode, "grounding_source_excerpt_too_long");
+});
+
 test("look-alike authority domains remain insufficient", () => {
   const result = verifyStudyGroundedSourceClaim({
     claimId: "lookalike",
