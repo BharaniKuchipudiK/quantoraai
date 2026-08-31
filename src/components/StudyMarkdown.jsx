@@ -8,11 +8,17 @@ import StudyPicture from './StudyPicture.jsx';
 import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
+import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
 import {
   decorateStudyMessage,
   ensureStudyTeachingVisual,
   splitStudySegments,
 } from '../lib/study-pictures.js';
+import {
+  studyAllowsAutomaticTeachingVisual,
+  studyOpticsVisualSpec,
+  studyPictureFitsTopic,
+} from '../lib/study-concept-visual.js';
 import { polishStudyTutorText, studyTutorNudge } from '../lib/study-tutor-presentation.js';
 
 const STUDY_READING_FONT = 'Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
@@ -34,10 +40,19 @@ export default function StudyMarkdown({
    */
   const polished = polishStudyTutorText(text);
   const nudge = studyTutorNudge(polished);
-  const illustrated = ensureStudyTeachingVisual(polished, topic);
+  /*
+   * Automatic pictures are now topic-locked. The old fallback searched the
+   * entire answer, so "Chemical Reactions and Equations" could summon Algebra
+   * on a science-topic chooser and "curves inward" could summon a slope graph
+   * in an optics lesson. Unknown/broad topics fail closed instead.
+   */
+  const illustrated = studyAllowsAutomaticTeachingVisual(topic)
+    ? ensureStudyTeachingVisual(polished, topic)
+    : polished;
   const segments = splitStudySegments(decorateStudyMessage(illustrated, topic), topic);
   const flashcards = segments.filter((segment) => segment.type === 'flashcard');
   const firstFlashcardIndex = segments.findIndex((segment) => segment.type === 'flashcard');
+  const opticsVisual = studyOpticsVisualSpec(polished, topic);
 
   return (
     <div
@@ -46,6 +61,7 @@ export default function StudyMarkdown({
       style={{ color: textColor, width: '100%' }}
     >
       {nudge ? <StudyTutorNudge kind={nudge.kind} label={nudge.label} isLight={isLight} /> : null}
+      {opticsVisual ? <StudyOpticsDiagram spec={opticsVisual} isLight={isLight} /> : null}
       {segments.map((segment, index) => {
         if (segment.type === 'flashcard') {
           return index === firstFlashcardIndex ? (
@@ -53,6 +69,7 @@ export default function StudyMarkdown({
           ) : null;
         }
         if (segment.type === 'picture') {
+          if (!studyPictureFitsTopic(segment.caption, topic)) return null;
           return (
             <StudyPicture
               key={`pic-${index}-${segment.caption}`}
