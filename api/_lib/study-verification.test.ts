@@ -170,6 +170,23 @@ test('Exam Grounded evidence must bind to the canonical source admitted by the p
   assert.deepEqual(result.evidenceRefs, [`${source}#chapter-10`]);
 });
 
+test('oversized evidence refs are rejected rather than truncated into a valid source', () => {
+  const source = 'https://ncert.nic.in/textbook.php';
+  const plan = buildStudyVerificationPlan({
+    claimId: 'claim-oversized-evidence',
+    claimKind: 'curriculum_fact',
+    mode: 'exam_grounded',
+    groundingSources: [{ ref: source }],
+  });
+  const result = resolveStudyVerification(plan, [
+    verified('grounded_source', `${source}#${'x'.repeat(2_100)}`),
+  ]);
+  assert.equal(result.decision, 'insufficient');
+  assert.equal(result.canClaimVerified, false);
+  assert.deepEqual(result.evidenceRefs, []);
+  assert.ok(result.reasonCodes.includes('grounded_source_missing_evidence'));
+});
+
 test('unreviewed assessment keys can never become verified learner evidence', () => {
   const draft = buildStudyVerificationPlan({
     claimId: 'claim-7',
