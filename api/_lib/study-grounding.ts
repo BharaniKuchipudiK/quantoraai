@@ -1,4 +1,4 @@
-export const STUDY_GROUNDING_VERSION = 'study-grounding-2026-08-31.1';
+export const STUDY_GROUNDING_VERSION = 'study-grounding-2026-08-31.2';
 
 export type StudyGroundingSourceKind =
   | 'official'
@@ -49,7 +49,9 @@ const OFFICIAL_AUTHORITIES: readonly OfficialAuthority[] = Object.freeze([
 ]);
 
 function clean(value: unknown, max = 2000): string {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length <= max ? normalized : '';
 }
 
 function hostMatches(hostname: string, allowedHost: string): boolean {
@@ -167,7 +169,11 @@ export function studyGroundingEvidenceMatchesSource(evidenceRef: string, sourceR
   const evidence = evidenceUrl(evidenceRef);
   const source = normalizedHttpsUrl(sourceRef);
   if (!evidence || !source) {
-    return clean(evidenceRef) === clean(sourceRef) && /^connected:/i.test(clean(sourceRef));
+    const cleanEvidence = clean(evidenceRef);
+    const cleanSource = clean(sourceRef);
+    return Boolean(cleanEvidence && cleanSource)
+      && cleanEvidence === cleanSource
+      && /^connected:/i.test(cleanSource);
   }
 
   if (evidence.origin !== source.origin) return false;
