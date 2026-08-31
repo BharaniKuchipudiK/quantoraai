@@ -1,6 +1,7 @@
 export const STUDY_ASSESSMENT_ITEM_BANK_VERSION = "study-assessment-items-2026-08-26.1";
 
 export type StudyAssessmentOption = { id: string; text: string };
+export type StudyAssessmentReviewStatus = "approved" | "draft" | "rejected";
 
 export type StudyAssessmentItem = {
   key: string;
@@ -14,6 +15,7 @@ export type StudyAssessmentItem = {
   objectiveCode: string;
   cognitiveOperation: "recall" | "representation" | "application" | "error_detection";
   misconceptionOptionIds: string[];
+  reviewStatus: StudyAssessmentReviewStatus;
 };
 
 const ITEMS: StudyAssessmentItem[] = [
@@ -34,6 +36,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "trig-signs-q2",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["b", "c", "d"],
+    reviewStatus: "approved",
   },
   {
     key: "trig-identities-unit-circle",
@@ -52,6 +55,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "trig-pythagorean-identity",
     cognitiveOperation: "recall",
     misconceptionOptionIds: ["a", "c", "d"],
+    reviewStatus: "approved",
   },
   {
     key: "scalar-vector-classification",
@@ -70,6 +74,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "vector-scalar-classification",
     cognitiveOperation: "recall",
     misconceptionOptionIds: ["a", "b", "d"],
+    reviewStatus: "approved",
   },
   {
     key: "vector-resultant-perpendicular",
@@ -88,6 +93,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "vector-resultant-perpendicular",
     cognitiveOperation: "application",
     misconceptionOptionIds: ["c"],
+    reviewStatus: "approved",
   },
   {
     key: "vector-components-angle",
@@ -106,6 +112,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "vector-resolve-x-component",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["a"],
+    reviewStatus: "approved",
   },
   {
     key: "kinematics-acceleration-change",
@@ -124,6 +131,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "kinematics-average-acceleration",
     cognitiveOperation: "application",
     misconceptionOptionIds: ["b", "c"],
+    reviewStatus: "approved",
   },
   {
     key: "motion-graphs-velocity-slope",
@@ -142,6 +150,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "motion-graph-displacement-slope",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["a"],
+    reviewStatus: "approved",
   },
   {
     key: "motion-plane-independent-components",
@@ -160,6 +169,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "motion-plane-component-independence",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["a", "c", "d"],
+    reviewStatus: "approved",
   },
   {
     key: "projectile-horizontal-velocity",
@@ -178,6 +188,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "projectile-horizontal-component",
     cognitiveOperation: "error_detection",
     misconceptionOptionIds: ["b", "d"],
+    reviewStatus: "approved",
   },
 ];
 
