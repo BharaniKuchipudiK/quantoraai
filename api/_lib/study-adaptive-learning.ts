@@ -1,8 +1,9 @@
+import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
-import { readStudyMasteryEvidence, resolveActiveStudyConcept } from './store.js';
+import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-29.1';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.2';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -51,7 +52,7 @@ export async function loadStudyLearnerModel(input: {
   if (input.studioDomain !== 'education' || !input.userSub || input.memoryConsented !== true || !input.studyContext) return null;
   const concept = await resolveActiveStudyConcept(input.studyContext);
   if (!concept || concept === 'unavailable') return null;
-  const evidence = await readStudyMasteryEvidence(input.userSub, concept.id);
+  const evidence = await readVerifiedStudyMasteryEvidence(input.userSub, concept.id, concept.canonicalKey);
   if (!evidence) return null;
   const estimate = estimateStudyMastery(evidence);
   return buildStudyLearnerModel({ conceptId: concept.id, conceptKey: concept.canonicalKey, evidence, estimate });
