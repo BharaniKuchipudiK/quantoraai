@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# One source of truth for the browser gates: the cache key and the install must
+# name the same version, or every run silently restores a cache it cannot use.
+env:
+  PLAYWRIGHT_VERSION: 1.55.0
+
 concurrency:
   group: quantora-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -96,10 +101,30 @@ jobs:
       - name: Build production frontend
         run: npm run build
 
+      # Playwright is not a project dependency — it exists only for these gates,
+      # and --no-save keeps it out of the npm cache setup-node restores. So both
+      # halves were paid on every single run: the package install and a fresh
+      # ~50s Chromium download. The binary never changes for a pinned version,
+      # so it is cached on that version alone.
+      #
+      # System libraries are still installed on a hit. GitHub's runner image
+      # carries most of them, but "most" is not "all", and a gate that cannot
+      # launch a browser is worse than the seconds this costs.
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ env.PLAYWRIGHT_VERSION }}-${{ runner.os }}
+
       - name: Install browser test runtime
         run: |
-          npm install --no-save --package-lock=false playwright@1.55.0
-          npx playwright install --with-deps chromium
+          npm install --no-save --package-lock=false "playwright@${PLAYWRIGHT_VERSION}"
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Start production-like Vite preview
         run: |

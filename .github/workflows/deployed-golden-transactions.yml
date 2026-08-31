@@ -9,8 +9,17 @@ permissions:
   contents: read
   deployments: read
 
+# Keyed on the PR, not the commit. With head.sha in the group every push
+# opened a group of its own, so cancel-in-progress had nothing to cancel and
+# every superseded commit ran this job to completion — on 2026-08-31 a single
+# branch paid for five full runs against commits that were already obsolete.
+# The job checks out the PR head itself, so cancelling an older run loses
+# nothing: the run that replaces it tests the newer commit.
+#
+# deployment_status keeps its own key. Deployment ids are already unique, and
+# each deployment is a distinct thing worth testing.
 concurrency:
-  group: deployed-golden-${{ github.event.pull_request.number || github.event.deployment.id }}-${{ github.event.pull_request.head.sha || github.event_name }}
+  group: deployed-golden-${{ github.event.pull_request.number || github.event.deployment.id }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
