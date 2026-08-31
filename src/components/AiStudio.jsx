@@ -7,7 +7,7 @@ import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import { deskChatClaimWasFiltered, filterDeskChatClaims } from '../lib/desk-chat-claim-filter.js';
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Search, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
@@ -22,7 +22,6 @@ import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
-import StudioFileTree from './StudioFileTree';
 import {
   PINNED_DESK_TAB,
   closeDeskTab,
@@ -71,6 +70,9 @@ import {
   studioSidebarHistoryTitle,
   studioSidebarMembershipCopy,
   studioSidebarYieldingSectionStyle,
+  relativeChatTime,
+  filterChatSessions,
+  chatSearchEmptyCopy,
 } from '../lib/studio-sidebar.js';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
@@ -100,6 +102,7 @@ import {
   saveFilesWidthPx,
 } from '../lib/studio-split-layout.js';
 
+const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
@@ -618,6 +621,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Reported by LivePreviewCanvas so its Download / Improve / viewport controls
   // can live in the desk header instead of a second strip beneath it.
   const [previewChrome, setPreviewChrome] = useState(null);
+  // Sidebar chat search. Filters what is rendered — never the stored sessions.
+  const [chatQuery, setChatQuery] = useState('');
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
@@ -2823,6 +2828,9 @@ Paused — ${autoPauseRef.current}.`
     )?.items?.[0]?.label || '')
     : '';
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
+  /* Filters the rendered list only; stored sessions are never touched. */
+  const visibleChatSessions = filterChatSessions(chatSessions, chatQuery);
+
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
 
   /*
@@ -3222,20 +3230,62 @@ Paused — ${autoPauseRef.current}.`
             >
               {studioSidebarHistoryHint(chatSessions.length, activeProject?.name)}
             </div>
-            <div
-              data-quantora-sidebar-history-membership="true"
-              style={{ fontSize: '0.66rem', fontWeight: '500', color: subtextColor, marginTop: '3px', lineHeight: 1.35 }}
-            >
-              {studioSidebarMembershipCopy(activeProject?.name)}
+            {/*
+              Which project new chats land in is worth saying — but not while
+              someone is searching, when it is two lines of noise above the
+              results they are looking at.
+            */}
+            {chatQuery.trim() ? null : (
+              <div
+                data-quantora-sidebar-history-membership="true"
+                style={{ fontSize: '0.66rem', fontWeight: '500', color: subtextColor, marginTop: '3px', lineHeight: 1.35 }}
+              >
+                {studioSidebarMembershipCopy(activeProject?.name)}
+              </div>
+            )}
+            {/*
+              Search the chats, not just their titles. A title is generated from
+              the opening line, so it cannot find the chat where the thing was
+              discussed halfway through — which is the search people need.
+            */}
+            <div style={{ position: 'relative', marginTop: '8px', marginRight: '4px' }}>
+              <Search
+                size={13}
+                color={subtextColor}
+                style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              />
+              <input
+                data-quantora-sidebar-chat-search="true"
+                value={chatQuery}
+                onChange={(event) => setChatQuery(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Escape') setChatQuery(''); }}
+                placeholder="Search chats"
+                aria-label="Search chats"
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '6px 8px 6px 27px',
+                  borderRadius: '9px',
+                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
+                  background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)',
+                  color: textColor,
+                  fontSize: '0.74rem',
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                }}
+              />
             </div>
           </div>
 
           <div data-quantora-sidebar-history-list="true" style={studioSidebarHistoryListStyle()}>
-            {chatSessions.length === 0 ? (
+            {visibleChatSessions.length === 0 ? (
               <div style={{ color: subtextColor, fontSize: '0.78rem', lineHeight: 1.4, padding: '8px 4px' }}>
-                {studioSidebarHistoryHint(0, activeProject?.name)}
+                {/* A search that found nothing is a different fact from having no chats. */}
+                {chatQuery.trim()
+                  ? chatSearchEmptyCopy(chatQuery)
+                  : studioSidebarHistoryHint(0, activeProject?.name)}
               </div>
-            ) : chatSessions.map((session) => {
+            ) : visibleChatSessions.map((session) => {
             const isActive = session.id === activeSessionId;
             const resume = deriveSessionResume(session);
             const showResumeChip = isResumeSession(session, projectResume);
@@ -3271,9 +3321,27 @@ Paused — ${autoPauseRef.current}.`
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: '1 1 120px', minWidth: 0 }}>
                   <MessageSquare size={15} color={isActive ? '#f97316' : subtextColor} style={{ flexShrink: 0 }} />
-                  <div style={{ minWidth: 0, overflow: 'hidden' }}>
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
-                      {session.title || 'New Chat'}
+                  <div style={{ minWidth: 0, overflow: 'hidden', flex: 1 }}>
+                    <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+                        {session.title || 'New Chat'}
+                      </span>
+                      {/*
+                        Age, so a long list is scannable. updatedAt is what the
+                        reader cares about — "when did I last touch this" — and
+                        createdAt only stands in for a chat that predates it.
+                      */}
+                      {(() => {
+                        const age = relativeChatTime(session.updatedAt || session.createdAt);
+                        return age ? (
+                          <span
+                            data-quantora-sidebar-chat-age="true"
+                            style={{ fontSize: '0.66rem', fontWeight: 500, color: subtextColor, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}
+                          >
+                            {age}
+                          </span>
+                        ) : null;
+                      })()}
                     </span>
                     {resume?.next ? (
                       <span style={{
@@ -4830,6 +4898,7 @@ Paused — ${autoPauseRef.current}.`
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
             {deskFilesOpen ? (
+            <Suspense fallback={<div aria-hidden="true" style={{ width: `${splitMobile ? 212 : filesWidthPx}px`, flexShrink: 0, height: '100%', background: isLight ? '#f8fafc' : '#070913', borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
             <StudioFileTree
               vfs={vfs}
               activePath={workspaceActiveTab}
@@ -4843,6 +4912,7 @@ Paused — ${autoPauseRef.current}.`
               job={deskJob}
               width={splitMobile ? 212 : filesWidthPx}
             />
+            </Suspense>
             ) : null}
             {deskFilesOpen && !splitMobile ? (
               <div
