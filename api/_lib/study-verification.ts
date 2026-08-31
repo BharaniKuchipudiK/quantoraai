@@ -83,6 +83,10 @@ function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
+function isVerificationMode(value: unknown): value is StudyVerificationMode {
+  return value === 'exam_grounded' || value === 'explore';
+}
+
 function hasAllowedGroundingSource(sources: StudyGroundingSource[], mode: StudyVerificationMode): boolean {
   return sources.some((source) => studyGroundingSourceAllowedForMode(source, mode));
 }
@@ -105,8 +109,10 @@ export function buildStudyVerificationPlan(input: StudyVerificationRequest): Stu
   const optional: StudyVerifierKind[] = [];
   const blockers: string[] = [];
   const sources = normalizeStudyGroundingSources(input?.groundingSources);
+  const validMode = isVerificationMode(input?.mode);
 
   if (!claimId) blockers.push('invalid_claim_id');
+  if (!validMode) blockers.push('invalid_verification_mode');
 
   switch (input?.claimKind) {
     case 'numeric':
@@ -124,7 +130,7 @@ export function buildStudyVerificationPlan(input: StudyVerificationRequest): Stu
     case 'curriculum_fact':
       required.push('grounded_source');
       if (!sources.length) blockers.push('grounding_source_required');
-      if (!hasAllowedGroundingSource(sources, input.mode)) {
+      if (validMode && !hasAllowedGroundingSource(sources, input.mode)) {
         blockers.push(input.mode === 'exam_grounded'
           ? 'canonical_source_required'
           : 'citable_source_required');
