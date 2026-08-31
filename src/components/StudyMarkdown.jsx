@@ -76,7 +76,7 @@ export default function StudyMarkdown({
    * costs no vertical space and keeps every capability.
    */
   const polished = polishStudyTutorText(text);
-  const nudge = studyTutorNudge(polished);
+  const nudge = studyTutorNudge(polished, topic);
   /*
    * AiStudio currently supplies the Study syllabus haystack here so historical
    * messages can be rendered from one feed. Resolve the concept that belongs to
