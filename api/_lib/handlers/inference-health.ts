@@ -3,6 +3,7 @@ import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
 import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
 import { duffelEnvPublicHint } from '../duffel-key.js';
+import { defaultSerpApiKey, isSerpApiConfigured, resolveFlightProvider } from '../serpapi-flights.js';
 import { fetchApiGatewayKey } from '../../autocomplete.js';
 import { authenticateAdminRequest } from '../admin-auth.js';
 import { probeGemini } from '../gemini-probe.js';
@@ -140,6 +141,18 @@ export default async function handler(req: any, res: any) {
   const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
   const paid = await paidRouteAllowed(spendKey);
   const duffel = duffelEnvPublicHint();
+  const serpApiConfigured = isSerpApiConfigured(defaultSerpApiKey);
+  /*
+   * Which provider actually answers, by the same rule the search path uses.
+   * Reporting Duffel's mode alone would name a source that no longer serves
+   * once SerpApi outranks a sandbox token — a health endpoint promising a
+   * source the search does not use is worse than one that says nothing.
+   */
+  const flightProvider = resolveFlightProvider({
+    duffelConnected: duffel.configured,
+    duffelMode: duffel.shape,
+    serpApiConfigured,
+  });
 
   return res.status(summary.ready ? 200 : 503).json({
     ready: summary.ready,
@@ -157,7 +170,9 @@ export default async function handler(req: any, res: any) {
      * a Duffel sandbox token returns real-looking offers for fares nobody can
      * buy. Mode, not just presence, is the part worth reporting.
      */
-    flightsConfigured: duffel.configured,
+    flightsConfigured: duffel.configured || serpApiConfigured,
+    flightsProvider: flightProvider,
+    flightsSerpApiConfigured: serpApiConfigured,
     flightsEnvShape: duffel.shape,
     flightsEnvHint: duffel.hint,
     flightsFallbackShape: duffel.fallbackShape,

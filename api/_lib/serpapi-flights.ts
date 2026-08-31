@@ -208,3 +208,31 @@ export async function searchSerpApiFlights(
     };
   }
 }
+
+export type FlightProvider = 'duffel' | 'serpapi' | 'none';
+
+/**
+ * Which provider answers a flight search.
+ *
+ * Real prices beat sample ones. A `duffel_test_` token returns Duffel's
+ * sandbox — plausible fares nobody can buy — while SerpApi returns what Google
+ * Flights actually shows. So a live Duffel token outranks everything, SerpApi
+ * outranks a sandbox one, and a sandbox token is only used when it is all
+ * there is.
+ *
+ * One rule, read by both the search path and the health endpoint, because the
+ * endpoint's whole job is saying what a user will actually get. Two copies of
+ * this ordering would drift, and the half that drifted would be the one making
+ * a promise the other half does not keep.
+ */
+export function resolveFlightProvider(input: {
+  duffelConnected?: boolean;
+  duffelMode?: string | null;
+  serpApiConfigured?: boolean;
+} = {}): FlightProvider {
+  const { duffelConnected = false, duffelMode = null, serpApiConfigured = false } = input;
+  if (duffelConnected && duffelMode !== 'test') return 'duffel';
+  if (serpApiConfigured) return 'serpapi';
+  if (duffelConnected) return 'duffel';
+  return 'none';
+}

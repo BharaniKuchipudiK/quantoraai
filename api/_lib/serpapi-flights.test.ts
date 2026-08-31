@@ -5,6 +5,7 @@ import {
   minutesToIsoDuration,
   normalizeLocalTime,
   normalizeSerpApiFlights,
+  resolveFlightProvider,
   searchSerpApiFlights,
 } from './serpapi-flights.js';
 
@@ -225,4 +226,48 @@ test('a return date makes it a round trip, and is sent', async () => {
   });
   assert.match(oneWay, /type=2/);
   assert.doesNotMatch(oneWay, /return_date/);
+});
+
+/*
+ * PROVIDER PRIORITY: REAL BEATS SAMPLE.
+ *
+ * A duffel_test_ token is worse than no Duffel at all when a real source
+ * exists — it returns plausible fares nobody can buy, and the desk would show
+ * them over Google Flights prices that are actually real. One rule, read by
+ * both the search path and the health endpoint, so the endpoint cannot promise
+ * a source the search does not use.
+ */
+test('a live Duffel token outranks everything', () => {
+  assert.equal(resolveFlightProvider({
+    duffelConnected: true, duffelMode: 'live', serpApiConfigured: true,
+  }), 'duffel', 'real bookable inventory is the best answer available');
+});
+
+test('real Google prices outrank Duffel sandbox fares', () => {
+  assert.equal(resolveFlightProvider({
+    duffelConnected: true, duffelMode: 'test', serpApiConfigured: true,
+  }), 'serpapi', 'sample fares nobody can buy lose to prices that are real');
+});
+
+test('a sandbox token is still used when it is all there is', () => {
+  assert.equal(resolveFlightProvider({
+    duffelConnected: true, duffelMode: 'test', serpApiConfigured: false,
+  }), 'duffel', 'sandbox data, honestly labelled, beats an empty board');
+});
+
+test('SerpApi answers when no Duffel exists', () => {
+  assert.equal(resolveFlightProvider({
+    duffelConnected: false, serpApiConfigured: true,
+  }), 'serpapi');
+});
+
+test('an unrecognised Duffel token is not demoted like a sandbox one', () => {
+  assert.equal(resolveFlightProvider({
+    duffelConnected: true, duffelMode: 'other', serpApiConfigured: true,
+  }), 'duffel', 'only a known sandbox loses priority; unknown is not assumed fake');
+});
+
+test('nothing configured is none, never a guess', () => {
+  assert.equal(resolveFlightProvider({}), 'none');
+  assert.equal(resolveFlightProvider({ duffelConnected: false, serpApiConfigured: false }), 'none');
 });
