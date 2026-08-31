@@ -25,12 +25,13 @@
  * ('constructor', 'toString') reads as absent rather than returning a function
  * the chip would try to render.
  *
- * Deliberately not Object.hasOwn. Vite 6 still defaults build.target to
- * "modules" — chrome87, firefox78, safari14, edge88 — and Object.hasOwn needs
- * Chrome 93, Firefox 92, Safari 15.4. esbuild rewrites syntax, never built-in
- * methods, so it would ship untransformed and throw on those browsers, taking
- * the whole desk down to fix a chip. This is the form the rest of the codebase
- * already uses.
+ * hasOwnProperty rather than Object.hasOwn, which is now a style choice and no
+ * longer a correctness one. It was the latter: build.target was Vite's silent
+ * "modules" default (chrome87, firefox78, safari14) and Object.hasOwn needs
+ * Chrome 93, so it shipped untransformed — esbuild rewrites syntax, never
+ * built-in methods — and threw, taking the whole desk down to render a chip.
+ * The target now states the real floor, so either form is safe; this one stays
+ * because it is what the rest of the codebase uses.
  */
 function ownProperty(table, key) {
   return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null;
