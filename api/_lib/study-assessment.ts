@@ -3,7 +3,6 @@ import { requireActiveSession } from "./authz.js";
 import {
   completeStudyAssessmentAttempt,
   issueStudyAssessmentAttempt,
-  readStudyMasteryEvidence,
   resolveActiveStudyConcept,
   saveStudyMasteryEstimate,
 } from "./store.js";
@@ -11,12 +10,11 @@ import {
   findStudyAssessmentItem,
   publicStudyAssessmentItem,
   studyAssessmentItemsForConcept,
-  type StudyAssessmentItem,
 } from "./study-assessment-items.js";
+import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
+import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
-import { buildStudyLearnerModel } from "./study-learner-model.js";
-import { buildStudyVerificationPlan } from "./study-verification.js";
-import { executeStudyVerificationPlan } from "./study-verification-runtime.js";
+import { buildStudyLearnerModel, type StudyLearnerModel } from "./study-learner-model.js";
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,23 +23,6 @@ const ATTEMPT_TTL_MS = 15 * 60 * 1000;
 
 function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-
-function verifyReleasedAssessmentItem(item: StudyAssessmentItem) {
-  const plan = buildStudyVerificationPlan({
-    claimId: `assessment-key:${item.key}@${item.version}`,
-    claimKind: "assessment_key",
-    mode: "exam_grounded",
-    subject: item.conceptKey.split(".")[0] || null,
-    assessmentReviewStatus: item.reviewStatus,
-  });
-  return executeStudyVerificationPlan({
-    plan,
-    reviewedAssessment: {
-      reviewStatus: item.reviewStatus,
-      evidenceRef: `quantora:study-assessment-bank:${item.key}@${item.version}`,
-    },
-  }).outcome;
 }
 
 export type StudyAssessmentIssueRequest = {
@@ -77,9 +58,10 @@ export function normalizeStudyAssessmentRequest(
   return null;
 }
 
-function learningState(status: string, correct: boolean | null, misconception: boolean | null): string {
-  if (misconception) return "misconception_detected";
-  if (status === "established" && correct) return "verified_understanding";
+function learningState(model: StudyLearnerModel | null): string {
+  if (!model || model.understanding.state === "unverified") return "unverified";
+  if (model.misconception.state === "signal_observed") return "misconception_detected";
+  if (model.understanding.state === "verified") return "verified_understanding";
   return "emerging_understanding";
 }
 
@@ -119,12 +101,12 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         fallbackAllowed: true,
       });
     }
-    const releaseVerification = verifyReleasedAssessmentItem(item);
-    if (!releaseVerification.canClaimVerified) {
-      console.warn("Study assessment release blocked by verification contract", {
-        itemKey: item.key,
-        itemVersion: item.version,
-        reasonCodes: releaseVerification.reasonCodes,
+    const release = verifyStudyAssessmentRelease(item);
+    if (!release.canIssueVerifiedAttempt) {
+      console.warn("Study assessment release blocked by governance", {
+        itemRef: release.itemRef,
+        releaseMode: release.releaseMode,
+        reasonCodes: release.reasonCodes,
       });
       return res.status(422).json({
         error: "This assessment is not approved for verified learning.",
@@ -178,7 +160,7 @@ export default async function studyAssessmentHandler(req: any, res: any) {
 
   const item = findStudyAssessmentItem(grade.itemKey, grade.itemVersion);
   if (!item) return res.status(503).json({ error: "The assessment version is no longer available." });
-  const evidence = await readStudyMasteryEvidence(userSub, grade.conceptId);
+  const evidence = await readVerifiedStudyMasteryEvidence(userSub, grade.conceptId, item.conceptKey);
   const estimate = evidence ? estimateStudyMastery(evidence) : null;
   const masteryUpdated = estimate
     ? await saveStudyMasteryEstimate({ userSub, conceptId: grade.conceptId, estimate })
@@ -203,9 +185,9 @@ export default async function studyAssessmentHandler(req: any, res: any) {
     masteryUpdated,
     mastery: estimate ? {
       status: estimate.status,
-      learningState: learningState(estimate.status, grade.correct, grade.misconception),
+      learningState: learningState(learnerModel),
       evidenceCount: estimate.evidenceCount,
-      // The UI receives an interpretable state, not a fake exam rank or pass probability.
+      // The UI receives one evidence-backed state, not a grade-local shadow state.
     } : null,
     learnerModel,
   });

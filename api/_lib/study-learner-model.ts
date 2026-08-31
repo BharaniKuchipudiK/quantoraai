@@ -1,7 +1,8 @@
+import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
 import type { StudyMasteryEstimate } from './study-mastery-estimator.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-29.1';
+export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-31.2';
 
 export type StudyUnderstandingState = 'unverified' | 'emerging' | 'verified';
 export type StudyMisconceptionState = 'none_observed' | 'signal_observed' | 'needs_confirmation';
@@ -40,10 +41,6 @@ export type StudyLearnerModel = {
   };
 };
 
-const VERIFIED_KINDS = new Set([
-  'assessment_item', 'retrieval', 'application', 'transfer', 'teach_back', 'retention_probe', 'misconception_probe',
-]);
-
 function eventScore(event: StudyMasteryEvidenceEvent): number | null {
   if (typeof event.score === 'number' && Number.isFinite(event.score)) return Math.max(0, Math.min(1, event.score));
   if (typeof event.correct === 'boolean') return event.correct ? 1 : 0;
@@ -57,18 +54,9 @@ function validDate(value: unknown): string | null {
 }
 
 function verifiedRows(events: StudyMasteryEvidenceEvent[]) {
-  const seenAssessmentItems = new Set<string>();
-  return (Array.isArray(events) ? events : [])
-    .filter((event) => event?.independent === true && VERIFIED_KINDS.has(event.kind))
-    .filter((event) => {
-      if (event.kind !== 'assessment_item' || !event.itemRef) return true;
-      if (seenAssessmentItems.has(event.itemRef)) return false;
-      seenAssessmentItems.add(event.itemRef);
-      return true;
-    })
+  return admittedStudyMasteryEvidence(events)
     .map((event) => ({ event, score: eventScore(event), observedAt: validDate(event.observedAt) }))
-    .filter((row): row is { event: StudyMasteryEvidenceEvent; score: number; observedAt: string } => row.score !== null && row.observedAt !== null)
-    .sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt));
+    .filter((row): row is { event: StudyMasteryEvidenceEvent; score: number; observedAt: string } => row.score !== null && row.observedAt !== null);
 }
 
 function misconceptionProjection(rows: ReturnType<typeof verifiedRows>) {
