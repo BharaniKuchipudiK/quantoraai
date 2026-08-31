@@ -2,7 +2,7 @@ import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.1';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.2';
 
 const GRAPH_TIMEOUT_MS = 4_000;
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
@@ -29,6 +29,13 @@ type StudyPrerequisiteCandidate = {
 type StudyPrerequisiteScan =
   | { status: 'ok'; candidate: StudyPrerequisiteCandidate | null }
   | { status: 'unavailable' };
+
+type StudyScanContext = {
+  userSub: string;
+  inspectedPrerequisiteIds: Set<string>;
+  modelByConceptId: Map<string, StudyLearnerModel>;
+  prerequisitesByTargetId: Map<string, StudyPrerequisiteRef[]>;
+};
 
 function config() {
   const url = process.env.SUPABASE_URL;
@@ -77,7 +84,7 @@ function conceptRecord(value: any): StudyConceptRef | null {
 
 async function readImmediatePrerequisites(targetConceptId: string): Promise<StudyPrerequisiteRef[] | null> {
   const edgeRows = await readRows(
-    `study_concept_edges?select=source_concept_id,confidence&relation=eq.prerequisite_of&target_concept_id=eq.${encodeURIComponent(targetConceptId)}&order=confidence.desc&limit=50`,
+    `study_concept_edges?select=source_concept_id,confidence&relation=eq.prerequisite_of&target_concept_id=eq.${encodeURIComponent(targetConceptId)}&order=confidence.desc&limit=${MAX_PREREQUISITE_CONCEPTS}`,
   );
   if (edgeRows === null) return null;
 
@@ -89,37 +96,53 @@ async function readImmediatePrerequisites(targetConceptId: string): Promise<Stud
     .filter((row) => row.sourceConceptId && row.confidence >= MIN_PREREQUISITE_CONFIDENCE);
   if (!edges.length) return [];
 
-  const resolved = await Promise.all(edges.map(async (edge) => {
-    const conceptRows = await readRows(
-      `study_concepts?select=id,canonical_key,label&id=eq.${encodeURIComponent(edge.sourceConceptId)}&status=eq.active&order=updated_at.desc&limit=1`,
-    );
-    if (conceptRows === null) return { status: 'unavailable' as const };
-    const concept = conceptRecord(conceptRows[0]);
-    return concept
-      ? { status: 'ok' as const, concept: { ...concept, edgeConfidence: edge.confidence } }
-      : { status: 'missing' as const };
-  }));
-  if (resolved.some((entry) => entry.status === 'unavailable')) return null;
+  // Resolve the bounded edge set in one query. The previous one-query-per-edge
+  // shape made graph latency grow linearly even though the planner itself was
+  // bounded. Concept ids are DB-owned UUIDs, not caller text.
+  const sourceIds = [...new Set(edges.map((edge) => edge.sourceConceptId))];
+  const conceptRows = await readRows(
+    `study_concepts?select=id,canonical_key,label&id=in.(${sourceIds.map((id) => encodeURIComponent(id)).join(',')})&status=eq.active&limit=${MAX_PREREQUISITE_CONCEPTS}`,
+  );
+  if (conceptRows === null) return null;
+  const conceptsById = new Map<string, StudyConceptRef>();
+  for (const row of conceptRows) {
+    const concept = conceptRecord(row);
+    if (concept) conceptsById.set(concept.id, concept);
+  }
 
   const unique = new Map<string, StudyPrerequisiteRef>();
-  for (const entry of resolved) {
-    if (entry.status !== 'ok') continue;
-    const prior = unique.get(entry.concept.id);
-    if (!prior || entry.concept.edgeConfidence > prior.edgeConfidence) unique.set(entry.concept.id, entry.concept);
+  for (const edge of edges) {
+    const concept = conceptsById.get(edge.sourceConceptId);
+    if (!concept) continue;
+    const candidate = { ...concept, edgeConfidence: edge.confidence };
+    const prior = unique.get(candidate.id);
+    if (!prior || candidate.edgeConfidence > prior.edgeConfidence) unique.set(candidate.id, candidate);
   }
   return [...unique.values()].sort((left, right) =>
     right.edgeConfidence - left.edgeConfidence || left.canonicalKey.localeCompare(right.canonicalKey));
 }
 
-async function learnerModelFor(userSub: string, concept: StudyConceptRef): Promise<StudyLearnerModel | null> {
-  const evidence = await readVerifiedStudyMasteryEvidence(userSub, concept.id, concept.canonicalKey);
+async function prerequisitesFor(context: StudyScanContext, targetConceptId: string): Promise<StudyPrerequisiteRef[] | null> {
+  const cached = context.prerequisitesByTargetId.get(targetConceptId);
+  if (cached) return cached;
+  const prerequisites = await readImmediatePrerequisites(targetConceptId);
+  if (prerequisites !== null) context.prerequisitesByTargetId.set(targetConceptId, prerequisites);
+  return prerequisites;
+}
+
+async function learnerModelFor(context: StudyScanContext, concept: StudyConceptRef): Promise<StudyLearnerModel | null> {
+  const cached = context.modelByConceptId.get(concept.id);
+  if (cached) return cached;
+  const evidence = await readVerifiedStudyMasteryEvidence(context.userSub, concept.id, concept.canonicalKey);
   if (!evidence) return null;
-  return buildStudyLearnerModel({
+  const model = buildStudyLearnerModel({
     conceptId: concept.id,
     conceptKey: concept.canonicalKey,
     evidence,
     estimate: estimateStudyMastery(evidence),
   });
+  context.modelByConceptId.set(concept.id, model);
+  return model;
 }
 
 function recoveryPriority(candidate: StudyPrerequisiteCandidate): number {
@@ -146,58 +169,54 @@ function isSpecificMisconceptionMove(model: StudyLearnerModel): boolean {
 }
 
 async function scanPrerequisites(input: {
-  userSub: string;
+  context: StudyScanContext;
   targetConcept: StudyConceptRef;
   depth: number;
-  visited: Set<string>;
+  path: Set<string>;
 }): Promise<StudyPrerequisiteScan> {
-  if (input.depth >= MAX_PREREQUISITE_DEPTH || input.visited.size >= MAX_PREREQUISITE_CONCEPTS) {
-    return { status: 'ok', candidate: null };
-  }
+  if (input.depth >= MAX_PREREQUISITE_DEPTH) return { status: 'ok', candidate: null };
 
-  const prerequisites = await readImmediatePrerequisites(input.targetConcept.id);
+  const prerequisites = await prerequisitesFor(input.context, input.targetConcept.id);
   if (prerequisites === null) return { status: 'unavailable' };
   if (!prerequisites.length) return { status: 'ok', candidate: null };
 
-  const eligible = prerequisites
-    .filter((concept) => !input.visited.has(concept.id))
-    .slice(0, Math.max(0, MAX_PREREQUISITE_CONCEPTS - input.visited.size));
-  if (!eligible.length) return { status: 'ok', candidate: null };
-
-  const evaluated = await Promise.all(eligible.map(async (concept) => ({
-    concept,
-    model: await learnerModelFor(input.userSub, concept),
-  })));
-  if (evaluated.some((entry) => entry.model === null)) return { status: 'unavailable' };
-
   const candidates: StudyPrerequisiteCandidate[] = [];
-  for (const entry of evaluated) {
-    const model = entry.model as StudyLearnerModel;
-    input.visited.add(entry.concept.id);
+  for (const concept of prerequisites) {
+    // `path` is branch-local. A shared mutable visited set makes a converging
+    // prerequisite DAG depend on which sibling happens to be scanned first.
+    if (input.path.has(concept.id)) continue;
+
+    if (!input.context.inspectedPrerequisiteIds.has(concept.id)) {
+      if (input.context.inspectedPrerequisiteIds.size >= MAX_PREREQUISITE_CONCEPTS) continue;
+      input.context.inspectedPrerequisiteIds.add(concept.id);
+    }
+
+    const model = await learnerModelFor(input.context, concept);
+    if (model === null) return { status: 'unavailable' };
 
     if (model.nextLearningMove.type === 'independent_retrieval') {
-      candidates.push({ kind: 'diagnostic', concept: entry.concept, model, depth: input.depth + 1 });
+      candidates.push({ kind: 'diagnostic', concept, model, depth: input.depth + 1 });
       continue;
     }
 
     // A specific, evidence-backed misconception is already a smaller and more
     // defensible intervention than speculating about an even deeper cause.
     if (isSpecificMisconceptionMove(model)) {
-      candidates.push({ kind: 'recovery', concept: entry.concept, model, depth: input.depth + 1 });
+      candidates.push({ kind: 'recovery', concept, model, depth: input.depth + 1 });
       continue;
     }
 
     if (model.nextLearningMove.type !== 'guided_repair') continue;
 
     const deeper = await scanPrerequisites({
-      userSub: input.userSub,
-      targetConcept: entry.concept,
+      context: input.context,
+      targetConcept: concept,
       depth: input.depth + 1,
-      visited: input.visited,
+      path: new Set([...input.path, concept.id]),
     });
     if (deeper.status === 'unavailable') return deeper;
     if (deeper.candidate) candidates.push(deeper.candidate);
-    else candidates.push({ kind: 'recovery', concept: entry.concept, model, depth: input.depth + 1 });
+    else candidates.push({ kind: 'recovery', concept, model, depth: input.depth + 1 });
   }
 
   return { status: 'ok', candidate: chooseCandidate(candidates) };
@@ -217,11 +236,17 @@ export async function applyStudyPrerequisiteNextBestAction(input: {
 }): Promise<StudyLearnerModel> {
   if (input.learnerModel.nextLearningMove.type !== 'guided_repair') return input.learnerModel;
 
-  const scan = await scanPrerequisites({
+  const context: StudyScanContext = {
     userSub: input.userSub,
+    inspectedPrerequisiteIds: new Set(),
+    modelByConceptId: new Map(),
+    prerequisitesByTargetId: new Map(),
+  };
+  const scan = await scanPrerequisites({
+    context,
     targetConcept: input.activeConcept,
     depth: 0,
-    visited: new Set([input.activeConcept.id]),
+    path: new Set([input.activeConcept.id]),
   });
 
   if (scan.status === 'unavailable') {
