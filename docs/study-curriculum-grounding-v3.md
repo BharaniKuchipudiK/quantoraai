@@ -50,11 +50,13 @@ A curriculum fact is verified only when:
 
 1. the claim is atomic and non-trivial;
 2. the source is allowed for the current Study mode;
-3. source text retrieved server-side (or supplied by a reviewed corpus) is available;
-4. the claim appears in that text after harmless Unicode and whitespace normalization; and
+3. a complete support statement retrieved server-side (or supplied by a reviewed corpus) is available;
+4. that complete statement equals the atomic claim after harmless Unicode and whitespace normalization; and
 5. the resulting evidence ref binds back to a source admitted by the verification plan.
 
-Paraphrase, semantic entailment, contradiction detection, OCR uncertainty and missing source text are deliberately `insufficient` in V3. They are never guessed from model prose.
+Equality is deliberate. Substring presence is not sufficient: a larger passage can contain the same words while negating them, quoting them as a misconception, or presenting them as a false option.
+
+Paraphrase, semantic entailment, contradiction detection, OCR uncertainty, clipped context and missing support excerpts are deliberately `insufficient` in V3. They are never guessed from model prose.
 
 ## Shared runtime
 
@@ -74,14 +76,14 @@ Successful deterministic grounding emits a trace containing:
 - normalized source ref;
 - source kind and authority id;
 - SHA-256-derived claim digest;
-- SHA-256-derived retrieved-text digest;
+- SHA-256-derived support-excerpt digest;
 - deterministic decision/reason code.
 
 The learner-facing evidence ref remains the source URL/ref so it is auditable and navigable.
 
 ## Security and trust boundary
 
-The grounded-source verifier does not fetch the internet itself. `sourceText` is a server-side trust boundary: production callers must populate it from Quantora-controlled retrieval or a reviewed corpus bound to `sourceRef`, never from model-generated text or an untrusted client payload.
+The grounded-source verifier does not fetch the internet itself. `sourceExcerpt` is a server-side trust boundary: production callers must populate it with a complete statement from Quantora-controlled retrieval or a reviewed corpus bound to `sourceRef`, never with model-generated text, a clipped phrase, or an untrusted client payload.
 
 This PR establishes the verifier contract and runtime seam. A future retrieval/ingestion adapter can plug into it without changing learner truth, mastery semantics or the verification resolver.
 
@@ -92,13 +94,13 @@ V3 does not:
 - hardcode textbook chapter lists;
 - claim that every page on an official domain is correct for every exam year;
 - use embeddings or model similarity to manufacture verification;
-- treat a paraphrase as proven support;
+- treat a paraphrase or substring match as proven support;
 - implement OCR, PDF ingestion or web crawling;
 - change learner mastery, assessment grading or Study UI;
 - implement theorem proving.
 
 ## Failure policy
 
-When authority, provenance or textual support is uncertain, the result is `insufficient`.
+When authority, provenance, context or textual support is uncertain, the result is `insufficient`.
 
 That is intentional. For learner truth, abstention is safer than false mastery or false curriculum certainty.
