@@ -40,7 +40,7 @@ export default function StudyOpticsDiagram({ spec, isLight = false }) {
           viewBox="0 0 440 220"
           width="100%"
           role="img"
-          aria-label="Concave mirror ray diagram showing reflected rays crossing to form an inverted real image"
+          aria-label="Example concave mirror ray diagram with an object beyond the focal distance and an inverted real image"
         >
           <rect width="440" height="220" rx="18" fill={panel} />
 
@@ -49,20 +49,20 @@ export default function StudyOpticsDiagram({ spec, isLight = false }) {
 
           <line x1="76" y1="120" x2="76" y2="58" stroke={ink} strokeWidth="4" />
           <polygon points="76,48 68,62 84,62" fill={ink} />
-          <text x="76" y="157" textAnchor="middle" fill={muted} fontSize="11">object</text>
+          <text x="76" y="157" textAnchor="middle" fill={muted} fontSize="11">object beyond F</text>
 
-          <circle cx="166" cy="120" r="4" fill={muted} />
-          <text x="166" y="142" textAnchor="middle" fill={muted} fontSize="12" fontWeight="700">C</text>
           <circle cx="244" cy="120" r="4" fill={muted} />
           <text x="244" y="142" textAnchor="middle" fill={muted} fontSize="12" fontWeight="700">F</text>
 
           <path d="M326 32 Q366 120 326 208" fill="none" stroke={ink} strokeWidth="4" />
           <text x="352" y="26" textAnchor="middle" fill={muted} fontSize="11">concave mirror</text>
 
+          {/* Ray parallel to the principal axis reflects through F. */}
           <Ray x1="76" y1="58" x2="334" y2="58" color={rayA} />
           <Ray x1="334" y1="58" x2="244" y2="120" color={rayA} />
           <Ray x1="244" y1="120" x2="197" y2="152" color={rayA} />
 
+          {/* Ray directed through F reflects parallel to the principal axis. */}
           <Ray x1="76" y1="58" x2="244" y2="120" color={rayB} />
           <Ray x1="244" y1="120" x2="334" y2="153" color={rayB} />
           <Ray x1="334" y1="153" x2="197" y2="153" color={rayB} />
@@ -70,10 +70,10 @@ export default function StudyOpticsDiagram({ spec, isLight = false }) {
           <circle cx="197" cy="153" r="5" fill={ink} />
           <line x1="197" y1="120" x2="197" y2="153" stroke={ink} strokeWidth="4" />
           <polygon points="197,163 189,149 205,149" fill={ink} />
-          <text x="197" y="185" textAnchor="middle" fill={muted} fontSize="11">inverted image</text>
+          <text x="197" y="185" textAnchor="middle" fill={muted} fontSize="11">inverted real image</text>
 
           <text x="220" y="208" textAnchor="middle" fill={muted} fontSize="11">
-            reflected rays cross → top becomes bottom
+            example, not to scale · reflected rays cross
           </text>
         </svg>
       </div>
