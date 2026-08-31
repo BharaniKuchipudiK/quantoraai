@@ -3,7 +3,6 @@ import { requireActiveSession } from "./authz.js";
 import {
   completeStudyAssessmentAttempt,
   issueStudyAssessmentAttempt,
-  readStudyMasteryEvidence,
   resolveActiveStudyConcept,
   saveStudyMasteryEstimate,
 } from "./store.js";
@@ -13,6 +12,7 @@ import {
   studyAssessmentItemsForConcept,
 } from "./study-assessment-items.js";
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
+import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel, type StudyLearnerModel } from "./study-learner-model.js";
 
@@ -160,7 +160,7 @@ export default async function studyAssessmentHandler(req: any, res: any) {
 
   const item = findStudyAssessmentItem(grade.itemKey, grade.itemVersion);
   if (!item) return res.status(503).json({ error: "The assessment version is no longer available." });
-  const evidence = await readStudyMasteryEvidence(userSub, grade.conceptId);
+  const evidence = await readVerifiedStudyMasteryEvidence(userSub, grade.conceptId, item.conceptKey);
   const estimate = evidence ? estimateStudyMastery(evidence) : null;
   const masteryUpdated = estimate
     ? await saveStudyMasteryEstimate({ userSub, conceptId: grade.conceptId, estimate })
