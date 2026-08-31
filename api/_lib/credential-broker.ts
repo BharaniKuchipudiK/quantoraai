@@ -91,8 +91,16 @@ async function fetchWithDeadline(
  *
  * Process-local by design (serverless instances each keep their own) — this is
  * a resilience buffer, never a source of truth.
+ *
+ * The TTL is outage tolerance, not freshness: the cache is consulted ONLY when
+ * a live read fails (every call attempts Supabase first, and a 4xx or empty
+ * row drains the entry immediately, so revocation is honored whenever the
+ * backend answers). At 10 minutes, any Supabase incident longer than a
+ * coffee break turned into a 503 for every managed-key user; an hour rides
+ * out most real incidents, and a key rotated mid-outage would be rejected by
+ * the provider itself, which the circuits already handle.
  */
-const CREDENTIAL_CACHE_TTL_MS = 10 * 60 * 1000;
+const CREDENTIAL_CACHE_TTL_MS = 60 * 60 * 1000;
 const credentialCache = new Map<string, { value: string; storedAt: number }>();
 
 /** Test seam: drop every cached credential. */

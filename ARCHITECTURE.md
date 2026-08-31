@@ -32,7 +32,9 @@ There are **two** ways the server code runs, and they are not the same:
   a persistent host.
 - **Serverless function budget.** Every top-level `api/*.ts|js` is a function
   (target **≤12** on Hobby; thin routes fold into `pipeline` / `auth` / `admin`
-  via `vercel.json` rewrites). Do **not** add a new top-level file for a new
+  / `domains` via `vercel.json` rewrites — `/api/inference-health` rides on
+  `domains`, deliberately NOT on `pipeline`, so the health probe outlives a
+  pipeline failure). Do **not** add a new top-level file for a new
   capability — **fold it into an existing handler via task routing.** `/api/chat`
   already multiplexes `chat`, `repair`, `verify-build`, and `feedback` this way.
   Shared logic goes in `api/_lib/**`, which are modules, not functions.
@@ -46,9 +48,8 @@ src/                      FRONTEND (bundled into dist/)
   components/             React UI (AiStudio, LivePreviewCanvas, LandingPage, …)
   hooks/                  useChatStream (the chat send loop), useStudioSession, usePCLMemory
   lib/                    Frontend logic (+ shims re-exporting shared/)
-    communication/        intent / routing / policy / evaluation (typed)
-    intelligence/         blueprint · executor · memory · orchestrator
-    (misc)                studio-domains catalog, studio-choices, session-context, …
+    communication/        routing / policy / evaluation (typed; imported by api/_lib too)
+    (misc)                studio-choices, session-context, outcome-state, …
 
 shared/                   PURE FE+BE modules (no DOM, no Node secrets/DB)
   build-intent, workspace-intent, coding-desk-auto-model
@@ -86,18 +87,18 @@ Task branches short-circuit this: `task:"repair"`, `task:"verify-build"`,
 Cross-boundary **pure** logic now lives under **`shared/`** (Vite alias
 `@shared/*`; API uses relative `../../shared/...`):
 
-- `shared/build-intent.js`, `shared/workspace-intent.js`
+- `shared/build-intent.js`, `shared/workspace-intent.js`, `shared/request-kind.js`
 - `shared/coding-desk-auto-model.js`
+- `shared/{session-context,studio-choices,studio-continues}.js`
 - `shared/travel/{flight-resilience,place-shortlist,hotel-location}.js`
 - `shared/studio/{domains,domain-inference}.ts`
 
 `src/lib/*` and `api/_lib/studio-domain-inference.ts` keep thin **re-export
 shims** so existing imports keep working.
 
-**Still duplicated (do not delete one side):** `session-context`,
-`studio-choices`, `studio-continues`, full `studio-domains` UI catalog vs server
-directives, `conversation-policy` / `conversation-engine` (different modules,
-same names), `outcome-state`, `repository-preview`.
+**Still duplicated (do not delete one side):** full `studio-domains` UI catalog
+vs server directives, `conversation-policy` / `conversation-engine` (different
+modules, same names), `outcome-state` (client `.js` vs server `.ts`).
 
 **Rule for remaining forks:** change both sides in the same PR until each lands
 in `shared/`. Keep anything `api/` or `shared/` imports free of `window`/DOM.
@@ -126,7 +127,7 @@ response contract. Don't add a third.)
 ## 5. Conventions (so parallel work converges instead of colliding)
 
 1. **Branch off the latest `main`** and run `npm test` before merging. There is
-   good coverage (~30 `*.test` files) — lean on it.
+   good coverage (~270 `*.test` files) — lean on it.
 2. **TypeScript** for new shared logic; colocate tests as `*.test.ts`.
 3. **No duplicate basenames** for different concerns; **no new top-level `api/`
    function** for a capability that can be a task branch.
@@ -148,6 +149,12 @@ response contract. Don't add a third.)
   client-side only and sent as `x-quantora-*-key` headers (never JSON body
   fields). Server secrets never reach the client. Dev Live WS authenticates to
   Gemini with `x-goog-api-key`, not a query-string key.
+  **Outage posture:** the gateway read is per-turn with a process-local
+  last-known-good cache (~1 h, served only when Supabase is unreachable or
+  5xx; a 4xx or empty row drains it). Set `GEMINI_API_KEY` /
+  `OPENROUTER_API_KEY` env vars in production alongside the gateway table —
+  they are the fallback that keeps cold instances serving through a Supabase
+  incident.
 - **Headers**: CSP (app/`desk` `script-src` without `unsafe-inline`; `/preview/`
   keeps inline scripts for user artifacts), HSTS, `X-Frame-Options: DENY`,
   `nosniff`, referrer & permissions policy in `vercel.json`.
@@ -158,7 +165,8 @@ response contract. Don't add a third.)
   (open after ~half the normal failures) so cold instances do not keep hammering
   a broken upstream. `/api/inference-health` reports `circuitStore` mode.
   Moderation pass on prompts; safety-policy checks.
-- **Published sites**: `/api/deploy` allows `*` CORS *only* so a published shop
-  can call the Stripe checkout bridge; the Vercel/Stripe secrets stay server-side.
+- **Published sites**: `/api/deploy` reflects CORS only for the exact `APP_URL`
+  origin (via `applyCors`), like every other route; the Vercel/Stripe secrets
+  stay server-side.
 
 See §7 of the review notes for hardening suggestions.

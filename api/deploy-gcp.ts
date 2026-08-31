@@ -4,6 +4,7 @@ import { requireActiveSession } from "./_lib/authz.js";
 import { ownedProjectName } from './_lib/publish-policy.js';
 import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
 import deployStatus from './_lib/handlers/deploy-status.js';
+import { fetchWithTimeout } from './_lib/fetch-timeout.js';
 import { GoogleAuth } from 'google-auth-library';
 import archiver from 'archiver';
 import { Writable } from 'stream';
@@ -118,17 +119,17 @@ export default async function handler(req: any, res: any) {
     
     // Check if bucket exists, if not create it (best effort)
     try {
-      await fetch(`https://storage.googleapis.com/storage/v1/b`, {
+      await fetchWithTimeout(`https://storage.googleapis.com/storage/v1/b`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token.token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: bucketName, location: 'US' })
-      });
+      }, 15_000);
     } catch (e) {
       // Ignore if exists
     }
 
     const objectName = `source-${safeName}-${Date.now()}.zip`;
-    const uploadRes = await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${objectName}`, {
+    const uploadRes = await fetchWithTimeout(`https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${objectName}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token.token}`,
@@ -136,7 +137,7 @@ export default async function handler(req: any, res: any) {
         'Content-Length': zipBuffer.length.toString()
       },
       body: zipBuffer
-    });
+    }, 60_000);
 
     if (!uploadRes.ok) {
       const err = await uploadRes.text();
@@ -184,14 +185,14 @@ export default async function handler(req: any, res: any) {
       }
     };
 
-    const buildRes = await fetch(`https://cloudbuild.googleapis.com/v1/projects/${projectId}/locations/us-central1/builds`, {
+    const buildRes = await fetchWithTimeout(`https://cloudbuild.googleapis.com/v1/projects/${projectId}/locations/us-central1/builds`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token.token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(buildPayload)
-    });
+    }, 15_000);
 
     const buildData = await buildRes.json();
     if (!buildRes.ok) {

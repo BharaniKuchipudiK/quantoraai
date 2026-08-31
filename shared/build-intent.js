@@ -1,4 +1,4 @@
-import { requestIsAnalysisNotBuild } from '../src/lib/request-kind.js';
+import { requestIsAnalysisNotBuild } from './request-kind.js';
 /**
  * When should Studio generate a runnable artifact vs run website intake?
  *

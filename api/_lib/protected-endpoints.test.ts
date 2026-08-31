@@ -203,6 +203,20 @@ test("repository-preview revokes blocked signed-in sessions", async () => {
   assert.equal(state.body?.sessionRevoked, true);
 });
 
+test("legacy pipeline model stages revoke blocked signed-in sessions", async () => {
+  const blocked = await blockedSessionCookie("blocked-pipeline");
+  const { state, res } = responseHarness();
+  await pipeline({
+    method: "POST",
+    headers: { cookie: blocked.cookie },
+    socket: {},
+    body: { targetStage: "idea", node: { dreamText: "A landing page" } },
+  }, res);
+  blocked.restore();
+  assert.equal(state.status, 403);
+  assert.equal(state.body?.sessionRevoked, true);
+});
+
 test("Office generation refuses anonymous server-key usage", async () => {
   const saved = {
     anthropic: process.env.ANTHROPIC_API_KEY,
