@@ -35,6 +35,9 @@ function submittedAttempt(correct = true) {
   return {
     id: ATTEMPT_ID,
     concept_id: CONCEPT_ID,
+    evidence_concept_id: null,
+    evidence_kind: "assessment_item",
+    retention_anchor_at: null,
     item_key: "motion-graphs-velocity-slope",
     item_version: "1",
     submitted_option_id: correct ? "c" : "a",
@@ -77,6 +80,9 @@ test("issue stores the answer server-side but returns only the public item", asy
     await studyAssessmentHandler(authenticatedRequest({ action: "issue", conceptKey: "physics.kinematics.motion-graphs", conceptLabel: "Motion graphs", sessionId: "session-1" }), res);
     assert.equal(state.status, 201);
     assert.equal(storedAttempt.correct_option_id, "c");
+    assert.equal(storedAttempt.evidence_kind, "assessment_item");
+    assert.equal(storedAttempt.evidence_concept_id, null);
+    assert.equal(storedAttempt.retention_anchor_at, null);
     assert.equal(state.body.item.options.length, 4);
     for (const hidden of ["correctOptionId", "explanation", "misconceptionByOptionId", "reviewStatus", "releaseMode"]) assert.equal(hidden in state.body.item, false);
     assert.equal(JSON.stringify(state.body).includes("The slope is change"), false);
@@ -93,7 +99,8 @@ test("grade requires authoritative submitted-attempt validation before evidence 
     if (target.includes("/rest/v1/users?select=")) return json([{ google_sub: "learner-1", email: "learner@example.com", blocked_at: null }]);
     if (target.endsWith("/rest/v1/rpc/complete_study_assessment_attempt")) {
       return json([{ result_status: "graded", result_correct: true, result_score: 1, result_concept_id: CONCEPT_ID,
-        result_item_key: "motion-graphs-velocity-slope", result_item_version: "1", result_misconception: false }]);
+        result_item_key: "motion-graphs-velocity-slope", result_item_version: "1", result_misconception: false,
+        result_evidence_kind: "assessment_item", result_evidence_concept_id: CONCEPT_ID, result_delay_days: null }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) {
       evidenceRequestUrl = target;
@@ -114,6 +121,9 @@ test("grade requires authoritative submitted-attempt validation before evidence 
     await studyAssessmentHandler(authenticatedRequest({ action: "grade", attemptId: ATTEMPT_ID, optionId: "c", correct: false, score: 0, userSub: "forged-user" }), res);
     assert.equal(state.status, 200);
     assert.equal(state.body.correct, true);
+    assert.equal(state.body.evidenceKind, "assessment_item");
+    assert.equal(state.body.delayDays, null);
+    assert.deepEqual(state.body.evidenceConcept, { key: "physics.kinematics.motion-graphs", label: "physics.kinematics.motion-graphs" });
     assert.equal(state.body.mastery.status, "provisional");
     assert.equal(state.body.mastery.learningState, "emerging_understanding");
     assert.equal(state.body.mastery.evidenceCount, 1);
@@ -133,7 +143,8 @@ test("assessment-shaped rows without a matching submitted attempt cannot change 
     if (target.includes("/rest/v1/users?select=")) return json([{ google_sub: "learner-1", email: "learner@example.com", blocked_at: null }]);
     if (target.endsWith("/rest/v1/rpc/complete_study_assessment_attempt")) {
       return json([{ result_status: "graded", result_correct: true, result_score: 1, result_concept_id: CONCEPT_ID,
-        result_item_key: "motion-graphs-velocity-slope", result_item_version: "1", result_misconception: false }]);
+        result_item_key: "motion-graphs-velocity-slope", result_item_version: "1", result_misconception: false,
+        result_evidence_kind: "assessment_item", result_evidence_concept_id: CONCEPT_ID, result_delay_days: null }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) {
       return json([{ event_key: `study.assessment.${ATTEMPT_ID}`, event_kind: "assessment_item", correct: true, score: 1,

@@ -240,6 +240,9 @@ test('V6 checks an unverified canonical prerequisite before generic repair and i
         submitted_option_id: 'a', submitted_at: activeObservedAt, correct: false, score: 0,
       }]), { status: 200 });
     }
+    if (target.includes('/rest/v1/study_assessment_attempts?') && target.includes(`concept_id=eq.${prerequisiteId}`)) {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
     if (target.includes('/rest/v1/study_concept_edges?') && target.includes(`target_concept_id=eq.${activeId}`)) {
       return new Response(JSON.stringify([{ source_concept_id: prerequisiteId, confidence: 0.95 }]), { status: 200 });
     }
