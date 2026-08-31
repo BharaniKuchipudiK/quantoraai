@@ -1,18 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import './study-assessment-governance.test.js';
+import './study-evidence-admission.test.js';
+import './study-verified-learning-loop.test.js';
 import {
   findStudyAssessmentItem,
   publicStudyAssessmentItem,
   studyAssessmentItemsForConcept,
 } from "./study-assessment-items.js";
 
-test("public Study assessment items never expose grading fields", () => {
+test("public Study assessment items never expose grading or governance fields", () => {
   const item = studyAssessmentItemsForConcept("physics.kinematics.motion-graphs")[0];
   assert.ok(item);
   const publicItem = publicStudyAssessmentItem(item);
-  assert.equal("correctOptionId" in publicItem, false);
-  assert.equal("explanation" in publicItem, false);
-  assert.equal("misconceptionOptionIds" in publicItem, false);
+  for (const hidden of [
+    "correctOptionId",
+    "explanation",
+    "misconceptionOptionIds",
+    "reviewStatus",
+    "releaseMode",
+    "objectiveCode",
+    "cognitiveOperation",
+    "difficulty",
+  ]) {
+    assert.equal(hidden in publicItem, false, `${hidden} must remain server-side`);
+  }
   assert.deepEqual(publicItem.options, item.options);
 });
 
