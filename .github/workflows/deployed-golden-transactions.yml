@@ -9,6 +9,12 @@ permissions:
   contents: read
   deployments: read
 
+# Cache key only. The version itself lives in package.json, pinned exactly, and
+# must be bumped in step with this or the gates restore a cache built for a
+# different browser build. ci.yml carries the same pair.
+env:
+  PLAYWRIGHT_VERSION: 1.55.1
+
 # Keyed on the PR, not the commit. With head.sha in the group every push
 # opened a group of its own, so cancel-in-progress had nothing to cancel and
 # every superseded commit ran this job to completion — on 2026-08-31 a single
@@ -80,10 +86,22 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Install browser runtime
-        run: |
-          npm install --no-save --package-lock=false playwright@1.55.0
-          npx playwright install --with-deps chromium
+      # `npm ci` above already installed Playwright from the lockfile. This step
+      # used to reinstall it as playwright@1.55.0 with --no-save
+      # --package-lock=false, which silently downgraded the locked version to
+      # the one carrying GHSA-7mvr-c777-76hp — browsers downloaded without
+      # verifying certificate authenticity — and kept it out of package.json,
+      # and so out of the audit gate. Only the browser binary is fetched here
+      # now, and the cache usually already holds it.
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ env.PLAYWRIGHT_VERSION }}-${{ runner.os }}
+
+      - name: Install browser binary
+        run: npx playwright install chromium
 
       - name: Prove prompt to rendered calculator and website
         id: golden_chat
