@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { studyVerifiedObservationSourceRef } from './study-evidence-admission.js';
 import { buildStudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
-import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
+import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 import {
   formatStudyAdaptiveDirective,
   loadStudyLearnerModel,
@@ -13,6 +12,10 @@ import {
 } from './study-adaptive-learning.js';
 
 const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+
+function verifiedObservationRef(kind: Exclude<StudyEvidenceKind, 'assessment_item' | 'self_confidence'>, ref: string) {
+  return `quantora:study-verified:${kind}:${ref}`;
+}
 
 function event(correct: boolean, misconceptionSignal = false): StudyMasteryEvidenceEvent {
   const kind = misconceptionSignal ? 'misconception_probe' : 'assessment_item';
@@ -27,7 +30,7 @@ function event(correct: boolean, misconceptionSignal = false): StudyMasteryEvide
       assessmentRef: `attempt:${ATTEMPT_ID}`,
       itemRef: 'motion-graphs-velocity-slope@1',
     } : {
-      sourceRef: studyVerifiedObservationSourceRef('misconception_probe', 'test:diagnostic'),
+      sourceRef: verifiedObservationRef('misconception_probe', 'test:diagnostic'),
     }),
     observedAt: '2026-08-29T00:00:00.000Z',
   };
