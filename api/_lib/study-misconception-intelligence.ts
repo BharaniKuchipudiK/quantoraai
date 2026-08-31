@@ -1,6 +1,7 @@
 import { studyAssessmentReceiptForAttestedEvidence } from './study-evidence-admission.js';
 import { findStudyAssessmentItem } from './study-assessment-items.js';
 import {
+  isStudyMisconceptionCode,
   studyMisconceptionRemediation,
   type StudyMisconceptionCode,
   type StudyMisconceptionRemediation,
@@ -35,10 +36,10 @@ export function diagnoseStudyMisconception(
 ): StudyMisconceptionDiagnosis | null {
   const resolved = itemFor(event);
   if (!resolved || resolved.receipt.correct !== false) return null;
-  const code = resolved.item.misconceptionByOptionId[resolved.receipt.submittedOptionId];
-  if (!code) return null;
+  const rawCode = resolved.item.misconceptionByOptionId[resolved.receipt.submittedOptionId];
+  if (!isStudyMisconceptionCode(rawCode)) return null;
   return {
-    code,
+    code: rawCode,
     confidence: 1,
     reasonCodes: [
       'reviewed_distractor_mapping',
@@ -48,7 +49,7 @@ export function diagnoseStudyMisconception(
     itemRef: `${resolved.item.key}@${resolved.item.version}`,
     optionId: resolved.receipt.submittedOptionId,
     observedAt: event.observedAt,
-    remediation: studyMisconceptionRemediation(code),
+    remediation: studyMisconceptionRemediation(rawCode),
   };
 }
 
@@ -63,5 +64,7 @@ export function assessmentConfirmsMisconceptionRepair(
 ): boolean {
   const resolved = itemFor(event);
   if (!resolved || resolved.receipt.correct !== true) return false;
-  return Object.values(resolved.item.misconceptionByOptionId).includes(code);
+  return Object.values(resolved.item.misconceptionByOptionId)
+    .filter(isStudyMisconceptionCode)
+    .includes(code);
 }
