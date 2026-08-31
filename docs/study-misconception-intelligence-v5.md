@@ -73,13 +73,15 @@ A repeated attempt of the same item/version remains non-independent and cannot m
 
 The browser never chooses a diagnosis or answer key.
 
-When issuing a new verified check, the server prefers:
+When issuing a new verified check, the server considers only governance-approved items and follows these rules:
 
-1. a fresh reviewed item that explicitly targets the active misconception;
-2. otherwise, any fresh reviewed item for the concept;
-3. only after the reviewed bank is exhausted, a deterministic repeat.
+1. with an active diagnosis, issue only a **fresh reviewed item that explicitly targets that misconception**;
+2. without an active diagnosis, issue only a **fresh reviewed item** for the concept;
+3. when no eligible fresh reviewed item exists, return a transparent unavailable/exhausted result and allow the tutor to fall back to non-verified teaching rather than reissuing non-independent evidence as progress.
 
-If learner-evidence validation is temporarily unavailable, item selection fails soft to the reviewed bank without inventing learner state.
+Draft, rejected, parametric, or generated candidates cannot block an available released item because they are excluded before selection.
+
+If learner-evidence validation is temporarily unavailable, item selection fails soft to the governed bank without inventing learner state; any accidental duplicate remains non-independent at the grading boundary and cannot change mastery.
 
 ## Fail-closed boundaries
 
@@ -88,6 +90,7 @@ If learner-evidence validation is temporarily unavailable, item selection fails 
 - Invalid taxonomy mappings produce no diagnosis.
 - A wrong option without reviewed misconception metadata may remain a generic wrong answer; V5 does not invent a cause.
 - Self-confidence remains context only.
+- An active diagnosis without a fresh targeted reviewed confirmation item stays unresolved; the system does not pretend that repeating the original item confirmed repair.
 
 ## Release coverage
 
@@ -98,9 +101,11 @@ The protected Study assessment suite must prove:
 - authoritative submitted option and reviewed answer key must agree before evidence admission;
 - a reviewed wrong option produces the expected specific diagnosis and remediation;
 - unverified future evidence cannot clear a diagnosis;
-- repeating the same item cannot manufacture repair;
+- a used sole item is not reissued as a fake confirmation probe;
+- unreleased candidates are skipped before selection;
 - a distinct reviewed confirmation item targeting the same code can clear the diagnosis;
 - the live issue path selects that targeted fresh item;
+- reviewed-bank exhaustion does not create a repeated assessment attempt or new evidence;
 - mastery evidence count and learner-state evidence count remain identical.
 
 ## Payload budget
