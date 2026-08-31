@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import './study-assessment-governance.test.js';
+import './study-evidence-admission.test.js';
+import './study-verified-learning-loop.test.js';
 import {
   findStudyAssessmentItem,
   publicStudyAssessmentItem,
