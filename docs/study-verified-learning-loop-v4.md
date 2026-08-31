@@ -10,7 +10,7 @@ V4 connects the existing reviewed assessment path to the existing learner model 
 
 The loop is:
 
-**Issue governed item → grade server-side → append evidence atomically → admit evidence → estimate mastery → project learner state → choose next learning move**
+**Issue governed item → grade server-side → append evidence atomically → validate authoritative receipt → admit evidence → estimate mastery → project learner state → choose next learning move**
 
 Quantora continues to have exactly one learner truth: the learner model is a projection over admitted evidence, not a second mutable source of mastery.
 
@@ -18,18 +18,19 @@ Quantora continues to have exactly one learner truth: the learner model is a pro
 
 1. **Event kind is not proof.** An event named `assessment_item`, `application`, `retrieval`, or similar does not influence mastery unless it passes the central evidence-admission policy.
 2. **Mastery and learner state consume the same evidence set.** There is one chronological, deduplicated admission function used by both.
-3. **Reviewed assessment evidence requires the full server provenance chain.** V4 requires Quantora-authored provenance, the canonical assessment-bank source, a valid server attempt reference, a versioned item reference, an independent observation, a valid timestamp, and a score/correctness signal.
+3. **Reviewed assessment evidence requires authoritative attempt validation.** V4 re-reads the submitted `study_assessment_attempts` record for the same learner and concept, then matches attempt id, event id, item/version, correctness, score and submission timestamp before adding a module-private attestation. Provenance strings or UUID syntax alone cannot create that attestation.
 4. **Repeated item versions cannot manufacture progress.** Only the first independent observation of a reviewed assessment item/version is admitted. Later repeats may still be useful conversationally, but they do not create fresh independent mastery evidence.
-5. **Future evidence families fail closed.** Retrieval, application, transfer, teach-back, retention and misconception probes require a governed verified-source receipt before admission. V4 does not grant them trust merely because the event kind exists.
-6. **Self-confidence remains context, never mastery proof.**
-7. **Generated/parametric assessment families are not silently upgraded.** An approved family label is insufficient; instance-level verification must exist before those families can issue verified attempts.
-8. **False mastery is a severe defect.** Missing provenance or verification results in no mastery contribution rather than optimistic inference.
+5. **Future evidence families are completely fail-closed in V4.** Retrieval, application, transfer, teach-back, retention and misconception-probe rows do not enter mastery yet. A verified-looking source prefix is not a receipt. Each future writer must ship with a real authoritative verifier/receipt validation path before its evidence kind can be admitted.
+6. **Validation-store failure does not erase learner truth.** If the authoritative attempt read is unavailable, V4 returns no validated evidence projection rather than saving an artificial zero-evidence mastery estimate.
+7. **Self-confidence remains context, never mastery proof.**
+8. **Generated/parametric assessment families are not silently upgraded.** An approved family label is insufficient; instance-level verification must exist before those families can issue verified attempts.
+9. **False mastery is a severe defect.** Missing provenance, attempt identity or verification results in no mastery contribution rather than optimistic inference.
 
 ## Existing atomic boundary
 
 `complete_study_assessment_attempt` remains the production atomic boundary for reviewed assessment grading and evidence insertion. V4 does not split this into multiple browser/server writes.
 
-The handler then reads the ledger, estimates mastery and builds the learner model from the centrally admitted evidence set.
+After grading, the server reads both the evidence ledger and the authoritative submitted-attempt records. Only matching assessment evidence receives the in-memory attestation required by the shared admission layer. The handler then estimates mastery and builds the learner model from that same admitted set.
 
 ## V4 release coverage
 
@@ -37,11 +38,13 @@ The protected Study assessment suite must prove:
 
 - assessment governance blocks draft/rejected/generated/parametric items from verified issuance;
 - grading/governance metadata never leaks in the public item payload;
-- assessment-shaped rows without reviewed provenance cannot influence mastery;
-- a wrong misconception answer produces admitted evidence and selects `diagnose_misconception`;
+- assessment-shaped rows without a matching submitted attempt cannot influence mastery;
+- mismatched score, timestamp, item/version, concept or attempt identity cannot be attested;
+- verified-looking prefixes cannot admit non-assessment evidence;
+- a wrong misconception answer produces attempt-validated evidence and selects `diagnose_misconception`;
 - re-grading the same attempt does not append evidence;
 - a fresh attempt of the same item/version is not fresh independent mastery evidence;
-- mastery and learner-state evidence counts remain identical.
+- mastery summary and learner-state evidence remain aligned.
 
 ## Payload budget rule
 
