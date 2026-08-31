@@ -32,7 +32,9 @@ There are **two** ways the server code runs, and they are not the same:
   a persistent host.
 - **Serverless function budget.** Every top-level `api/*.ts|js` is a function
   (target **≤12** on Hobby; thin routes fold into `pipeline` / `auth` / `admin`
-  via `vercel.json` rewrites). Do **not** add a new top-level file for a new
+  / `domains` via `vercel.json` rewrites — `/api/inference-health` rides on
+  `domains`, deliberately NOT on `pipeline`, so the health probe outlives a
+  pipeline failure). Do **not** add a new top-level file for a new
   capability — **fold it into an existing handler via task routing.** `/api/chat`
   already multiplexes `chat`, `repair`, `verify-build`, and `feedback` this way.
   Shared logic goes in `api/_lib/**`, which are modules, not functions.
@@ -147,6 +149,12 @@ response contract. Don't add a third.)
   client-side only and sent as `x-quantora-*-key` headers (never JSON body
   fields). Server secrets never reach the client. Dev Live WS authenticates to
   Gemini with `x-goog-api-key`, not a query-string key.
+  **Outage posture:** the gateway read is per-turn with a process-local
+  last-known-good cache (~1 h, served only when Supabase is unreachable or
+  5xx; a 4xx or empty row drains it). Set `GEMINI_API_KEY` /
+  `OPENROUTER_API_KEY` env vars in production alongside the gateway table —
+  they are the fallback that keeps cold instances serving through a Supabase
+  incident.
 - **Headers**: CSP (app/`desk` `script-src` without `unsafe-inline`; `/preview/`
   keeps inline scripts for user artifacts), HSTS, `X-Frame-Options: DENY`,
   `nosniff`, referrer & permissions policy in `vercel.json`.

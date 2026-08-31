@@ -3,7 +3,6 @@ import chat from "./_lib/chat-handler.js";
 import moderate from "./_lib/handlers/moderate.js";
 import productEvent from "./_lib/handlers/product-event.js";
 import travelSearch from "./_lib/handlers/travel-search.js";
-import inferenceHealth from "./_lib/handlers/inference-health.js";
 import youtubeValidate from "./_lib/handlers/youtube-validate.js";
 import previewImage from "./_lib/handlers/preview-image.js";
 import account from "./_lib/handlers/account.js";
@@ -139,7 +138,6 @@ export default async function handler(req: any, res: any) {
   if (routed === "moderate") return moderate(req, res);
   if (routed === "product-event") return productEvent(req, res);
   if (routed === "travel-search") return travelSearch(req, res);
-  if (routed === "inference-health") return inferenceHealth(req, res);
   if (routed === "youtube-validate") return youtubeValidate(req, res);
   if (routed === "preview-image") return previewImage(req, res);
   if (routed === "account") return account(req, res);

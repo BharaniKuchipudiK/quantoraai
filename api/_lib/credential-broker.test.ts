@@ -43,7 +43,14 @@ test("the cached key expires so a rotated credential drains out", async () => {
   const t0 = 1_000_000;
   await fetchGatewayCredential("GEMINI", { ...DEPS, fetchFn: respond(200, [{ api_key: "gem-key" }]), now: t0 });
   assert.equal(await fetchGatewayCredential("GEMINI", { ...DEPS, fetchFn: boom(), now: t0 + 60_000 }), "gem-key");
-  assert.equal(await fetchGatewayCredential("GEMINI", { ...DEPS, fetchFn: boom(), now: t0 + 11 * 60_000 }), null);
+  assert.equal(await fetchGatewayCredential("GEMINI", { ...DEPS, fetchFn: boom(), now: t0 + 61 * 60_000 }), null);
+});
+
+test("a warm instance rides out a Supabase incident far longer than one refresh window", async () => {
+  clearGatewayCredentialCache();
+  const t0 = 1_000_000;
+  await fetchGatewayCredential("GEMINI", { ...DEPS, fetchFn: respond(200, [{ api_key: "gem-key" }]), now: t0 });
+  assert.equal(await fetchGatewayCredential("GEMINI", { ...DEPS, fetchFn: boom(), now: t0 + 45 * 60_000 }), "gem-key");
 });
 
 test("an unconfigured deployment never serves a cached key", async () => {
