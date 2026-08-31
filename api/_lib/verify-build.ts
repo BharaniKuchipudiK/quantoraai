@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { fetchWithTimeout } from "./fetch-timeout.js";
 import { stripDataUris } from "./model-payload.js";
 import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
 import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
@@ -136,7 +137,7 @@ function stripJsonFence(text: string): string {
 async function critiqueWithOpenRouter(apiKey: string, model: string, code: string, brief: string) {
   const system = `You are a senior design + QA reviewer for shipped websites. Judge the given self-contained HTML against professional standards and the user's brief. Reply with ONLY compact JSON: {"score": <0-100 integer>, "issues": ["short concrete fixable problem", ...], "summary": "one sentence"}. Issues must be specific and actionable (e.g. "hero text has poor contrast on the image", "mobile layout overflows at 375px", "prices are inconsistent"). No prose outside the JSON.`;
   const user = `USER BRIEF:\n${brief || "(none provided — judge on universal quality only)"}\n\nHTML:\n${code.slice(0, 60_000)}`;
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -145,7 +146,7 @@ async function critiqueWithOpenRouter(apiKey: string, model: string, code: strin
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: user }], temperature: 0.2, stream: false }),
-  });
+  }, 45_000);
   if (!resp.ok) throw new Error(`Critic request failed (${resp.status})`);
   const json = await resp.json();
   return stripJsonFence(json?.choices?.[0]?.message?.content || "");

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { createRequire } from "node:module";
+import { fetchWithTimeout } from './_lib/fetch-timeout.js';
 import { OFFICE_SCHEMAS, OFFICE_GENERATION_DIRECTIVE } from './_lib/conversation-policy.js';
 import { OFFICE_OUTPUT_JSON_SCHEMAS } from './_lib/office-output-schemas.js';
 import {
@@ -625,7 +626,7 @@ async function callOpenRouter(systemPrompt, promptWithContext, openRouterKey, fo
   const key = openRouterKey || process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error('OpenRouter credential unavailable');
   const schema = outputSchemaFor(format);
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
@@ -647,7 +648,7 @@ async function callOpenRouter(systemPrompt, promptWithContext, openRouterKey, fo
         },
       },
     }),
-  });
+  }, 120_000);
 
   const raw = await response.text();
   let data;
@@ -737,7 +738,7 @@ async function callAnthropic(systemPrompt, promptWithContext, anthropicKey, form
   const key = anthropicKey || process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('Anthropic credential unavailable');
   const model = process.env.ANTHROPIC_OFFICE_MODEL || 'claude-sonnet-5';
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': key,
@@ -756,7 +757,7 @@ async function callAnthropic(systemPrompt, promptWithContext, anthropicKey, form
         },
       },
     }),
-  });
+  }, 120_000);
   const raw = await response.text();
   let data: any;
   try {
