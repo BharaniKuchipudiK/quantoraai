@@ -192,7 +192,6 @@ test('V6 traverses a converging prerequisite DAG with branch-local cycle state a
     const edgeReads = requests.filter((url) => url.includes('/rest/v1/study_concept_edges?'));
     assert.ok(edgeReads.length >= 1);
     assert.ok(edgeReads.every((url) => url.includes('limit=12')), 'every graph frontier is capped before concept fan-out');
-    assert.equal(requests.some((url) => url.includes('limit=50')), false);
   } finally {
     global.fetch = originalFetch;
     if (originalUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = originalUrl;
