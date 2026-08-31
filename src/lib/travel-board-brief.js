@@ -16,6 +16,11 @@ import { hotelLocationNeedsCity, inferStayLocation } from './travel-hotel-locati
 
 const IATA = /^[A-Z]{3}$/;
 const ISO_DATE = /^20\d{2}-\d{2}-\d{2}$/;
+
+/** Today in UTC, comparable against a zero-padded ISO date without parsing. */
+function todayIso(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
 const ISO_DATE_SCAN = /\b20\d{2}-\d{2}-\d{2}\b/g;
 
 /**
@@ -253,7 +258,7 @@ function describeMissing({ destinationLabel, origin, destination, departureDate 
   if (!destinationLabel && !destination) missing.push('place');
   if (!origin) missing.push('origin');
   if (!destination) missing.push('destination');
-  if (!ISO_DATE.test(departureDate)) missing.push('departureDate');
+  if (!ISO_DATE.test(departureDate) || departureDate < todayIso()) missing.push('departureDate');
   return missing;
 }
 
@@ -318,7 +323,14 @@ export function deriveTravelBrief({ messages = [] } = {}) {
   const destinationLabel = readDestinationLabel(texts);
   const originLabel = readOriginLabel(texts);
 
-  const canSearchFlights = IATA.test(origin) && IATA.test(destination) && ISO_DATE.test(departureDate);
+  /*
+   * A departure that has already happened is not a searchable trip. The board
+   * lit the Flights chip for any well-formed 20xx date, so a date the model had
+   * resolved against the wrong year offered a search that could only fail — the
+   * same dead control as a chip with no provider behind it.
+   */
+  const departureInFuture = ISO_DATE.test(departureDate) && departureDate >= todayIso();
+  const canSearchFlights = IATA.test(origin) && IATA.test(destination) && departureInFuture;
   const canSearchHotels = isUsablePlace(destinationLabel);
 
   const missing = describeMissing({ destinationLabel, origin, destination, departureDate });

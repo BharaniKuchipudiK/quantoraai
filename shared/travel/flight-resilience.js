@@ -56,8 +56,27 @@ export function flightProviderFailureAsk(args = {}, { configured = true, include
   ].join('\n');
 }
 
-export function flightInvalidArgsAsk(args = {}, issues = []) {
+/** Today in UTC as a comparable YYYY-MM-DD string. Injectable so tests can pin it. */
+export function todayIso(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+export function flightInvalidArgsAsk(args = {}, issues = [], { now = new Date() } = {}) {
   if (!flightArgsComplete(args)) return flightIncompleteAsk(args);
+
+  /*
+   * Name the past date, because it is the one invalid argument a traveller did
+   * not choose. A model with no clock resolved "next 2-4 weeks" to 2025-05-08,
+   * sixteen months behind, and the generic wording sent the traveller to check
+   * their passenger count. Saying which date and what today is turns a baffling
+   * refusal into a one-word correction.
+   */
+  const today = todayIso(now);
+  const departure = String(args?.departureDate || '');
+  if (departure && departure < today) {
+    return `That search was for ${departure}, which is in the past — today is ${today}. I did not run it and I will not invent fares. Tell me the dates you actually want and I will search those.`;
+  }
+
   const detail = Array.isArray(issues) && issues.length
     ? ` (${issues.slice(0, 3).join(', ')})`
     : '';

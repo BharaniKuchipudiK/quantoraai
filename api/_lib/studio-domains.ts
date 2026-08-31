@@ -143,9 +143,29 @@ The user wants to investigate a topic — compare options, gather perspectives, 
 - You may not have live web search in this session unless tools are enabled; be transparent about limits.`,
 };
 
-export function buildDomainDirective(domain: StudioDomain | null): string {
+/**
+ * Today, stated plainly, because a model has no clock.
+ *
+ * A traveller said "next 2-4 weeks" and the desk searched 2025-05-08 — sixteen
+ * months in the PAST. Nothing leaked that date: the model was never told what
+ * day it is, so it worked forward from its own training era and landed there.
+ * Every relative date a traveller gives ("next month", "in two weeks", "the
+ * long weekend") is unanswerable without this line, and answering it anyway is
+ * how a confident wrong date reaches a provider.
+ */
+export function buildTodayDirective(now: Date = new Date()): string {
+  const today = now.toISOString().slice(0, 10);
+  return `
+CURRENT DATE
+- Today is ${today} (UTC). Resolve every relative date from this, never from memory.
+- "next week", "next month", "in 2-4 weeks", "the summer" are all relative to ${today}.
+- Never emit a departure, check-in or return date earlier than ${today}. A past date cannot be searched and will be rejected before it reaches a provider.
+- If you are unsure which year a date falls in, ask rather than guess.`;
+}
+
+export function buildDomainDirective(domain: StudioDomain | null, now: Date = new Date()): string {
   if (!domain) return "";
   const base = DOMAIN_DIRECTIVES[domain];
   const studyTeaching = domain === "education" ? `\n\n${STUDY_TEACHING_TURN_DIRECTIVE}` : "";
-  return `\n\n${base}${studyTeaching}`;
+  return `\n\n${base}${studyTeaching}\n${buildTodayDirective(now)}`;
 }
