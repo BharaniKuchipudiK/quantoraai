@@ -4,7 +4,6 @@ import { studyVerifiedObservationSourceRef } from './study-evidence-admission.js
 import type { StudyMasteryEvidenceEvent, StudyEvidenceKind } from "./study-truth-layer.js";
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 
-const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 let sequence = 0;
 
 function evidence(
@@ -13,11 +12,13 @@ function evidence(
   overrides: Partial<StudyMasteryEvidenceEvent> = {},
 ): StudyMasteryEvidenceEvent {
   sequence += 1;
+  const attemptId = `00000000-0000-4000-8000-${String(sequence).padStart(12, '0')}`;
   const governedSource = kind === 'assessment_item'
     ? {
+        id: `study.assessment.${attemptId}`,
         sourceRef: 'quantora:study-assessment-bank',
-        assessmentRef: `attempt:${ATTEMPT_ID}`,
-        itemRef: `test-item-${sequence}@1`,
+        assessmentRef: `attempt:${attemptId}`,
+        itemRef: 'motion-graphs-velocity-slope@1',
       }
     : kind === 'self_confidence'
       ? {}
@@ -66,11 +67,9 @@ test("assessment-shaped data without reviewed provenance cannot inflate mastery"
 test("repeating the same assessment item does not create fresh mastery evidence", () => {
   const result = estimateStudyMastery([
     evidence("assessment_item", false, {
-      itemRef: "motion-graphs-velocity-slope@1",
       observedAt: "2026-08-26T00:00:00.000Z",
     }),
     evidence("assessment_item", true, {
-      itemRef: "motion-graphs-velocity-slope@1",
       observedAt: "2026-08-27T00:00:00.000Z",
     }),
   ]);
