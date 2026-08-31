@@ -173,6 +173,7 @@ test('reviewed assessment flows atomically into admitted evidence, mastery, diag
     assert.equal(firstGrade.state.body.correct, false);
     assert.equal(firstGrade.state.body.misconceptionSignal, true);
     assert.equal(firstGrade.state.body.mastery.status, 'provisional');
+    assert.equal(firstGrade.state.body.mastery.learningState, 'misconception_detected');
     assert.equal(firstGrade.state.body.mastery.evidenceCount, 1);
     assert.equal(firstGrade.state.body.learnerModel.understanding.evidenceCount, 1);
     assert.equal(firstGrade.state.body.learnerModel.misconception.state, 'signal_observed');
@@ -193,6 +194,7 @@ test('reviewed assessment flows atomically into admitted evidence, mastery, diag
     assert.equal(duplicateGrade.state.status, 200);
     assert.equal(duplicateGrade.state.body.duplicate, true);
     assert.equal(duplicateGrade.state.body.correct, false);
+    assert.equal(duplicateGrade.state.body.mastery.learningState, 'misconception_detected');
     assert.equal(duplicateGrade.state.body.mastery.evidenceCount, 1);
     assert.equal(duplicateGrade.state.body.learnerModel.nextLearningMove.type, 'diagnose_misconception');
     assert.equal(evidenceRows.length, 1, 'regrading one attempt must not append evidence');
@@ -219,6 +221,7 @@ test('reviewed assessment flows atomically into admitted evidence, mastery, diag
     assert.equal(repeatedItemGrade.state.body.correct, true);
     assert.equal(evidenceRows.length, 2);
     assert.equal(evidenceRows[1].independent, false, 'a repeated version cannot manufacture fresh independent evidence');
+    assert.equal(repeatedItemGrade.state.body.mastery.learningState, 'misconception_detected');
     assert.equal(repeatedItemGrade.state.body.mastery.evidenceCount, 1);
     assert.equal(repeatedItemGrade.state.body.learnerModel.understanding.evidenceCount, 1);
     assert.equal(repeatedItemGrade.state.body.learnerModel.misconception.state, 'signal_observed');
