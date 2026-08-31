@@ -17,6 +17,7 @@ function evidence(
 ): StudyMasteryEvidenceEvent {
   sequence += 1;
   const attemptId = `00000000-0000-4000-8000-${String(sequence).padStart(12, '0')}`;
+  const submittedOptionId = correct === true ? 'c' : 'a';
   const row: StudyMasteryEvidenceEvent = {
     id: `${kind}-${sequence}`,
     conceptId: "concept-1",
@@ -26,7 +27,7 @@ function evidence(
     difficulty: 0.5,
     hintsUsed: 0,
     independent: true,
-    misconceptionSignal: false,
+    misconceptionSignal: kind === 'assessment_item' && correct === false,
     provenance: "quantora_authored",
     observedAt: "2026-08-26T00:00:00.000Z",
     ...(kind === 'assessment_item' ? {
@@ -45,6 +46,7 @@ function evidence(
       conceptKey: CONCEPT_KEY,
       itemKey: 'motion-graphs-velocity-slope',
       itemVersion: '1',
+      submittedOptionId,
       correct: row.correct,
       score: row.score,
       submittedAt: row.observedAt,
@@ -100,7 +102,7 @@ test("unverified future evidence kinds cannot manufacture established mastery", 
 
 test("misconception risk can come from an attested assessment answer", () => {
   const result = estimateStudyMastery([
-    evidence("assessment_item", false, { misconceptionSignal: true }),
+    evidence("assessment_item", false),
   ]);
   assert.equal(result.status, "provisional");
   assert.ok(result.mastery !== null);

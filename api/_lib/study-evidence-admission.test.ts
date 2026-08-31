@@ -4,6 +4,7 @@ import {
   admittedStudyMasteryEvidence,
   attestStudyAssessmentEvidence,
   evaluateStudyEvidenceAdmission,
+  studyAssessmentReceiptForAttestedEvidence,
   type StudyAssessmentAttemptReceipt,
 } from './study-evidence-admission.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
@@ -46,13 +47,15 @@ function reviewedAssessment(
 }
 
 function attest(eventRow: StudyMasteryEvidenceEvent, attemptId = ATTEMPT_ONE) {
+  const correct = eventRow.correct === true;
   const receipt: StudyAssessmentAttemptReceipt = {
     attemptId,
     conceptId: eventRow.conceptId,
     conceptKey: CONCEPT_KEY,
     itemKey: 'motion-graphs-velocity-slope',
     itemVersion: '1',
-    correct: eventRow.correct === true,
+    submittedOptionId: correct ? 'c' : 'a',
+    correct,
     score: typeof eventRow.score === 'number' ? eventRow.score : Number.NaN,
     submittedAt: eventRow.observedAt,
   };
@@ -66,16 +69,18 @@ test('assessment event shape and provenance strings alone cannot enter mastery',
   });
 });
 
-test('authoritatively attested reviewed assessment evidence is admitted', () => {
+test('authoritatively attested reviewed assessment evidence is admitted with a private receipt', () => {
   const row = reviewedAssessment();
   attest(row);
   assert.deepEqual(evaluateStudyEvidenceAdmission(row), {
     admitted: true,
     reasonCode: 'reviewed_assessment_evidence',
   });
+  assert.equal(studyAssessmentReceiptForAttestedEvidence(row)?.submittedOptionId, 'c');
+  assert.equal(Object.keys(row).includes('submittedOptionId'), false);
 });
 
-test('assessment evidence fails closed on forged provenance, identity, item, score, or timestamp', () => {
+test('assessment evidence fails closed on forged provenance, identity, item, score, timestamp, or submitted option', () => {
   const candidates = [
     reviewedAssessment({ provenance: 'connected_source' }),
     reviewedAssessment({ sourceRef: 'quantora:study-assessment-bank-copy' }),
@@ -95,6 +100,7 @@ test('assessment evidence fails closed on forged provenance, identity, item, sco
     conceptKey: CONCEPT_KEY,
     itemKey: 'motion-graphs-velocity-slope',
     itemVersion: '1',
+    submittedOptionId: 'c',
     correct: true,
     score: 0,
     submittedAt: wrongScore.observedAt,
@@ -108,11 +114,26 @@ test('assessment evidence fails closed on forged provenance, identity, item, sco
     conceptKey: CONCEPT_KEY,
     itemKey: 'motion-graphs-velocity-slope',
     itemVersion: '1',
+    submittedOptionId: 'c',
     correct: true,
     score: 1,
     submittedAt: '2026-08-30T00:00:00.000Z',
   });
   assert.equal(evaluateStudyEvidenceAdmission(wrongTime).admitted, false);
+
+  const wrongOption = reviewedAssessment();
+  attestStudyAssessmentEvidence(wrongOption, {
+    attemptId: ATTEMPT_ONE,
+    conceptId: wrongOption.conceptId,
+    conceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    submittedOptionId: 'a',
+    correct: true,
+    score: 1,
+    submittedAt: wrongOption.observedAt,
+  });
+  assert.equal(evaluateStudyEvidenceAdmission(wrongOption).admitted, false);
 });
 
 test('non-assessment evidence stays fail-closed even with a verified-looking prefix', () => {
@@ -146,7 +167,7 @@ test('invalid timestamps and unscored observations fail closed', () => {
 });
 
 test('mastery and learner state receive one chronological deduplicated assessment set', () => {
-  const first = reviewedAssessment({ correct: false, score: 0, observedAt: '2026-08-01T00:00:00.000Z' }, ATTEMPT_ONE);
+  const first = reviewedAssessment({ correct: false, score: 0, misconceptionSignal: true, observedAt: '2026-08-01T00:00:00.000Z' }, ATTEMPT_ONE);
   attest(first, ATTEMPT_ONE);
   const repeated = reviewedAssessment({ correct: true, score: 1, observedAt: '2026-08-02T00:00:00.000Z' }, ATTEMPT_TWO);
   attest(repeated, ATTEMPT_TWO);

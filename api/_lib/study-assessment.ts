@@ -12,6 +12,7 @@ import {
   studyAssessmentItemsForConcept,
 } from "./study-assessment-items.js";
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
+import { selectStudyAssessmentItem } from './study-assessment-selector.js';
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel, type StudyLearnerModel } from "./study-learner-model.js";
@@ -93,8 +94,46 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         fallbackAllowed: true,
       });
     }
-    const item = studyAssessmentItemsForConcept(concept.canonicalKey)[0];
+
+    const candidates = studyAssessmentItemsForConcept(concept.canonicalKey);
+    let priorEvidence = await readVerifiedStudyMasteryEvidence(userSub, concept.id, concept.canonicalKey);
+    let priorLearnerModel: StudyLearnerModel | null = null;
+    if (priorEvidence) {
+      const priorEstimate = estimateStudyMastery(priorEvidence);
+      priorLearnerModel = buildStudyLearnerModel({
+        conceptId: concept.id,
+        conceptKey: concept.canonicalKey,
+        evidence: priorEvidence,
+        estimate: priorEstimate,
+      });
+    } else {
+      // Do not invent a learner state when validation storage is unavailable.
+      // Any accidental repeat is still non-independent at the grading boundary.
+      priorEvidence = [];
+    }
+
+    const item = selectStudyAssessmentItem({
+      items: candidates,
+      evidence: priorEvidence,
+      learnerModel: priorLearnerModel,
+    });
     if (!item) {
+      const hasReleasedCandidate = candidates.some((candidate) => verifyStudyAssessmentRelease(candidate).canIssueVerifiedAttempt);
+      const activeDiagnosis = priorLearnerModel?.misconception.code || null;
+      if (activeDiagnosis) {
+        return res.status(422).json({
+          error: "A fresh reviewed confirmation check for this misconception is not available yet.",
+          code: "verified_misconception_confirmation_unavailable",
+          fallbackAllowed: true,
+        });
+      }
+      if (hasReleasedCandidate) {
+        return res.status(422).json({
+          error: "No fresh reviewed assessment item remains for this topic yet.",
+          code: "verified_assessment_bank_exhausted",
+          fallbackAllowed: true,
+        });
+      }
       return res.status(422).json({
         error: "This mapped topic does not have a released assessment item yet.",
         code: "verified_assessment_unavailable",
@@ -187,7 +226,6 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       status: estimate.status,
       learningState: learningState(learnerModel),
       evidenceCount: estimate.evidenceCount,
-      // The UI receives one evidence-backed state, not a grade-local shadow state.
     } : null,
     learnerModel,
   });
