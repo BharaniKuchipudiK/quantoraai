@@ -66,6 +66,30 @@ function vercelParityHeaders() {
 export default defineConfig(() => {
   return {
     plugins: [vercelParityHeaders(), react(), tailwindcss(), copyMonacoAssets()],
+    /*
+     * State the browsers this app actually runs on.
+     *
+     * Vite 6 defaults build.target to "modules" — chrome87, firefox78,
+     * safari14, edge88 — and nothing here overrode it, so the project declared
+     * support it does not have. react-markdown ships three bare, un-guarded
+     * `Object.hasOwn` calls into the bundle, and that needs Chrome 93 /
+     * Firefox 92 / Safari 15.4. On anything older the desk threw before it
+     * finished rendering; the config simply said otherwise.
+     *
+     * These numbers are the measured floor of the dependency tree, not a
+     * preference. Deliberately not raised further: a higher target would let
+     * esbuild emit syntax that breaks browsers which run the app today, and
+     * "honest" means declaring what works, not the newest thing available.
+     *
+     * Re-measure before lowering, and when a dependency bump adds a newer
+     * built-in. `structuredClone` is already in the bundle at Chrome 98 but
+     * does not count — it is feature-detected with a fallback, which is the
+     * distinction that matters: a bare call sets the floor, a guarded one
+     * does not.
+     */
+    build: {
+      target: ['es2022', 'chrome93', 'edge93', 'firefox92', 'safari15.4'],
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
