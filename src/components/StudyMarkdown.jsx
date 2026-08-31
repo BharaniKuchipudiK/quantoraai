@@ -76,15 +76,15 @@ export default function StudyMarkdown({
    * costs no vertical space and keeps every capability.
    */
   const polished = polishStudyTutorText(text);
-  const nudge = studyTutorNudge(polished, topic);
   /*
    * AiStudio currently supplies the Study syllabus haystack here so historical
    * messages can be rendered from one feed. Resolve the concept that belongs to
    * this specific answer first; otherwise a later Newton turn could reclassify
    * an earlier Algebra answer, or an old topic-selection request could suppress
-   * visuals forever.
+   * visuals and teaching cues forever.
    */
   const activeTopic = studyActiveConcept(topic, polished);
+  const nudge = studyTutorNudge(polished, activeTopic);
   const illustrated = studyAllowsAutomaticTeachingVisual(activeTopic)
     ? ensureStudyTeachingVisual(polished, activeTopic)
     : polished;
