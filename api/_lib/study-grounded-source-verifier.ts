@@ -55,6 +55,10 @@ function cleanText(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function isVerificationMode(value: unknown): value is StudyVerificationMode {
+  return value === "exam_grounded" || value === "explore";
+}
+
 /**
  * Conservative textual canonicalization only. This is intentionally not a
  * semantic similarity algorithm: V3 verifies exact support after harmless
@@ -138,11 +142,12 @@ export function verifyStudyGroundedSourceClaim(
 ): StudyGroundedSourceVerificationResult {
   const claimId = cleanId(request?.claimId);
   if (!claimId) return insufficient("grounding_invalid_claim_id");
+  if (!isVerificationMode(request?.mode)) return insufficient("grounding_invalid_mode");
 
   const source = classifyStudyGroundingSource({ ref: request?.sourceRef });
   if (!source) return insufficient("grounding_invalid_source_ref");
-  if (!studyGroundingSourceAllowedForMode(source, request?.mode)) {
-    return insufficient(request?.mode === "exam_grounded"
+  if (!studyGroundingSourceAllowedForMode(source, request.mode)) {
+    return insufficient(request.mode === "exam_grounded"
       ? "grounding_canonical_source_required"
       : "grounding_citable_source_required");
   }
