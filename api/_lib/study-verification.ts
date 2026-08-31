@@ -7,7 +7,7 @@ import {
   type StudyGroundingSourceKind,
 } from './study-grounding.js';
 
-export const STUDY_VERIFICATION_VERSION = 'study-verification-2026-08-31.2';
+export const STUDY_VERIFICATION_VERSION = 'study-verification-2026-08-31.3';
 
 export type StudyVerificationMode = 'exam_grounded' | 'explore';
 
@@ -77,6 +77,12 @@ export type StudyVerificationOutcome = {
 
 function clean(value: unknown, max = 240): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
+}
+
+function cleanEvidenceRef(value: unknown, max = 2000): string {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length <= max ? normalized : '';
 }
 
 function unique<T>(values: T[]): T[] {
@@ -162,7 +168,7 @@ export function buildStudyVerificationPlan(input: StudyVerificationRequest): Stu
 
 function normalizedEvidenceRefs(check: StudyVerificationCheck): string[] {
   if (!Array.isArray(check?.evidenceRefs)) return [];
-  return unique(check.evidenceRefs.map((ref) => clean(ref, 1000)).filter(Boolean));
+  return unique(check.evidenceRefs.map((ref) => cleanEvidenceRef(ref)).filter(Boolean));
 }
 
 function admittedEvidenceRefs(
@@ -182,6 +188,7 @@ function admittedEvidenceRefs(
  * - Missing/insufficient required checks leave the claim insufficient.
  * - A required check cannot count as verified without an evidence reference.
  * - Grounded-source evidence must bind to a source admitted by the plan.
+ * - Oversized evidence references are rejected, never truncated.
  * - Optional checks can add evidence but can never rescue a failed requirement.
  */
 export function resolveStudyVerification(
