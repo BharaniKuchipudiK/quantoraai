@@ -46,9 +46,8 @@ src/                      FRONTEND (bundled into dist/)
   components/             React UI (AiStudio, LivePreviewCanvas, LandingPage, …)
   hooks/                  useChatStream (the chat send loop), useStudioSession, usePCLMemory
   lib/                    Frontend logic (+ shims re-exporting shared/)
-    communication/        intent / routing / policy / evaluation (typed)
-    intelligence/         blueprint · executor · memory · orchestrator
-    (misc)                studio-domains catalog, studio-choices, session-context, …
+    communication/        routing / policy / evaluation (typed; imported by api/_lib too)
+    (misc)                studio-choices, session-context, outcome-state, …
 
 shared/                   PURE FE+BE modules (no DOM, no Node secrets/DB)
   build-intent, workspace-intent, coding-desk-auto-model
@@ -97,7 +96,7 @@ shims** so existing imports keep working.
 **Still duplicated (do not delete one side):** `session-context`,
 `studio-choices`, `studio-continues`, full `studio-domains` UI catalog vs server
 directives, `conversation-policy` / `conversation-engine` (different modules,
-same names), `outcome-state`, `repository-preview`.
+same names), `outcome-state` (client `.js` vs server `.ts`).
 
 **Rule for remaining forks:** change both sides in the same PR until each lands
 in `shared/`. Keep anything `api/` or `shared/` imports free of `window`/DOM.
@@ -126,7 +125,7 @@ response contract. Don't add a third.)
 ## 5. Conventions (so parallel work converges instead of colliding)
 
 1. **Branch off the latest `main`** and run `npm test` before merging. There is
-   good coverage (~30 `*.test` files) — lean on it.
+   good coverage (~270 `*.test` files) — lean on it.
 2. **TypeScript** for new shared logic; colocate tests as `*.test.ts`.
 3. **No duplicate basenames** for different concerns; **no new top-level `api/`
    function** for a capability that can be a task branch.
@@ -158,7 +157,8 @@ response contract. Don't add a third.)
   (open after ~half the normal failures) so cold instances do not keep hammering
   a broken upstream. `/api/inference-health` reports `circuitStore` mode.
   Moderation pass on prompts; safety-policy checks.
-- **Published sites**: `/api/deploy` allows `*` CORS *only* so a published shop
-  can call the Stripe checkout bridge; the Vercel/Stripe secrets stay server-side.
+- **Published sites**: `/api/deploy` reflects CORS only for the exact `APP_URL`
+  origin (via `applyCors`), like every other route; the Vercel/Stripe secrets
+  stay server-side.
 
 See §7 of the review notes for hardening suggestions.

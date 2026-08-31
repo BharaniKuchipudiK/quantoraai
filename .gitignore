@@ -27,3 +27,6 @@ coverage/
 
 # Gate output (browser gates, stress runs) — tens of MB, never source.
 artifacts/
+
+# Vercel project linkage — local metadata; Vercel says not to commit it.
+.vercel/
