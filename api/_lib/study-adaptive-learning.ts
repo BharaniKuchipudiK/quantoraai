@@ -1,9 +1,13 @@
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
+import {
+  applyStudyPrerequisiteNextBestAction,
+  STUDY_NEXT_BEST_ACTION_VERSION,
+} from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.3';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.4';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -55,7 +59,12 @@ export async function loadStudyLearnerModel(input: {
   const evidence = await readVerifiedStudyMasteryEvidence(input.userSub, concept.id, concept.canonicalKey);
   if (!evidence) return null;
   const estimate = estimateStudyMastery(evidence);
-  return buildStudyLearnerModel({ conceptId: concept.id, conceptKey: concept.canonicalKey, evidence, estimate });
+  const learnerModel = buildStudyLearnerModel({ conceptId: concept.id, conceptKey: concept.canonicalKey, evidence, estimate });
+  return applyStudyPrerequisiteNextBestAction({
+    userSub: input.userSub,
+    activeConcept: concept,
+    learnerModel,
+  });
 }
 
 export function formatStudyAdaptiveDirective(model: StudyLearnerModel | null): string {
@@ -67,20 +76,23 @@ export function formatStudyAdaptiveDirective(model: StudyLearnerModel | null): s
       ? `; last resolved code: ${model.misconception.lastResolvedCode}`
       : '';
   return `\n\nSTUDY ADAPTIVE LEARNING (${STUDY_ADAPTIVE_LEARNING_VERSION})
-This evidence-backed learner state applies only to the active Study concept.
+This evidence-backed learner state applies to the active Study concept. The next-best-action planner may step to a canonical prerequisite only when a verified generic failure makes prerequisite recovery relevant.
+- Planner: ${STUDY_NEXT_BEST_ACTION_VERSION}
 - Understanding: ${model.understanding.state}; verified evidence: ${model.understanding.evidenceCount}; evidence kinds: ${model.understanding.evidenceKinds.join(', ') || 'none'}
 - Misconception state: ${model.misconception.state}${misconceptionDetail}
 - Retention: ${model.retention.state}
 - Next learning move: ${model.nextLearningMove.type}
+- Next learning reason: ${model.nextLearningMove.reasonCode}
 - Teaching strategy: ${strategy}
 - Required intervention: ${model.nextLearningMove.instruction}
-Execute the required intervention using that strategy. Treat the misconception code as evidence-backed only when present; never invent another diagnosis from prose. Do not claim stronger understanding than the evidence state. Ask at most one focused learner check, then wait.`;
+Execute the required intervention using that strategy. Treat the misconception code as evidence-backed only when present; never invent another diagnosis from prose. When the intervention names a prerequisite, that target came from the canonical prerequisite graph plus admitted learner evidence; do not substitute a different prerequisite from model intuition. Do not claim stronger understanding than the evidence state. Ask at most one focused learner check, then wait.`;
 }
 
 export function publicStudyAdaptiveMetadata(model: StudyLearnerModel | null) {
   if (!model) return undefined;
   return {
     version: STUDY_ADAPTIVE_LEARNING_VERSION,
+    plannerVersion: STUDY_NEXT_BEST_ACTION_VERSION,
     understanding: model.understanding.state,
     misconception: model.misconception.state,
     misconceptionCode: model.misconception.code,
@@ -88,6 +100,7 @@ export function publicStudyAdaptiveMetadata(model: StudyLearnerModel | null) {
     lastResolvedMisconception: model.misconception.lastResolvedCode,
     retention: model.retention.state,
     nextLearningMove: model.nextLearningMove.type,
+    nextLearningReason: model.nextLearningMove.reasonCode,
     teachingStrategy: teachingStrategyFor(model),
   };
 }
