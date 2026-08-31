@@ -2,7 +2,7 @@ import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { requireActiveSession } from '../authz.js';
 import { executeToolCall } from '../agent-tools.js';
 import { parseTravelSearchRequest } from '../travel-search-request.js';
-import { duffelEnvPublicHint } from '../duffel-key.js';
+import { duffelEnvPublicHint, servingDuffelMode } from '../duffel-key.js';
 
 /**
  * Live Travel search for the trip board. Search only — never book.
@@ -34,6 +34,8 @@ export default async function handler(req: any, res: any) {
   return res.status(200).json({
     kind: flights ? 'flights' : 'hotels',
     result,
-    ...(flights ? { providerMode: duffelEnvPublicHint().shape } : {}),
+    ...(flights
+      ? { providerMode: servingDuffelMode(duffelEnvPublicHint(), { fallbackUsed: Boolean(result?.fallbackUsed) }) }
+      : {}),
   });
 }

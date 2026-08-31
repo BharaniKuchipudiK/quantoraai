@@ -36,6 +36,7 @@ export function isDuffelConfigured(value: unknown): boolean {
 
 type DuffelEnvReport = {
   configured: boolean;
+  /** The mode of the key that serves first, which is the fallback's when there is no primary. */
   shape: DuffelKeyShape;
   hint: string | null;
   fallbackShape: DuffelKeyShape;
@@ -49,8 +50,15 @@ type DuffelEnvReport = {
 };
 
 export function duffelEnvPublicHint(env: NodeJS.ProcessEnv = process.env): DuffelEnvReport {
-  const shape = duffelKeyShape(env.DUFFEL_API_KEY);
+  const primaryShape = duffelKeyShape(env.DUFFEL_API_KEY);
   const fallbackShape = duffelKeyShape(env.DUFFEL_FALLBACK_API_KEY);
+  /*
+   * executeFlightSearch tries the fallback even when no primary client exists,
+   * so a fallback-only deployment really can search. Reading either field from
+   * the primary alone would report flights dead where they work, and the board
+   * consuming that would dark its chips on a deployment that answers fine.
+   */
+  const shape = primaryShape !== 'missing' ? primaryShape : fallbackShape;
   const modes = [shape, fallbackShape].filter((value) => value === 'live' || value === 'test');
   const mixedModes = new Set(modes).size > 1;
 
@@ -63,10 +71,26 @@ export function duffelEnvPublicHint(env: NodeJS.ProcessEnv = process.env): Duffe
         : '(unexpected — not a duffel_live_/duffel_test_ token)';
 
   return {
-    configured: isDuffelConfigured(env.DUFFEL_API_KEY),
+    configured: isDuffelConfigured(env.DUFFEL_API_KEY) || isDuffelConfigured(env.DUFFEL_FALLBACK_API_KEY),
     shape,
     hint,
     fallbackShape,
     mixedModes,
   };
+}
+
+/**
+ * The mode of the client that actually returned the fares.
+ *
+ * The fallback answers when the primary fails, and the two can be different
+ * modes. Reporting the primary's mode for a result the fallback produced puts
+ * "Live from Duffel" over sandbox fares — the exact claim this reporting
+ * exists to prevent, arriving through the one path nobody watches, because it
+ * only opens when something else has already failed.
+ */
+export function servingDuffelMode(
+  report: DuffelEnvReport,
+  { fallbackUsed = false }: { fallbackUsed?: boolean } = {},
+): DuffelKeyShape {
+  return fallbackUsed ? report.fallbackShape : report.shape;
 }
