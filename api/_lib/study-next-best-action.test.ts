@@ -105,9 +105,13 @@ function targetConceptId(url: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function exactConceptId(url: string): string | null {
-  const match = url.match(/&id=eq\.([^&]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+function conceptIds(url: string): string[] {
+  const exact = url.match(/&id=eq\.([^&]+)/);
+  if (exact) return [decodeURIComponent(exact[1])];
+  const batch = url.match(/&id=in\.\(([^)]*)\)/);
+  return batch
+    ? batch[1].split(',').filter(Boolean).map((value) => decodeURIComponent(value))
+    : [];
 }
 
 function evidenceConceptId(url: string): string | null {
@@ -147,10 +151,12 @@ test('V6 traverses a converging prerequisite DAG with branch-local cycle state a
       const id = targetConceptId(target);
       return new Response(JSON.stringify(id ? (edges.get(id) || []) : []), { status: 200 });
     }
-    if (target.includes('/rest/v1/study_concepts?') && target.includes('&id=eq.')) {
-      const id = exactConceptId(target);
-      const fixture = id ? byId.get(id) : null;
-      return new Response(JSON.stringify(fixture ? [{ id: fixture.id, canonical_key: fixture.key, label: fixture.label }] : []), { status: 200 });
+    if (target.includes('/rest/v1/study_concepts?') && target.includes('&id=')) {
+      const rows = conceptIds(target)
+        .map((id) => byId.get(id))
+        .filter((fixture): fixture is EvidenceFixture => Boolean(fixture))
+        .map((fixture) => ({ id: fixture.id, canonical_key: fixture.key, label: fixture.label }));
+      return new Response(JSON.stringify(rows), { status: 200 });
     }
     if (target.includes('/rest/v1/study_mastery_events?')) {
       const id = evidenceConceptId(target);
@@ -186,8 +192,16 @@ test('V6 traverses a converging prerequisite DAG with branch-local cycle state a
     assert.equal(dEvidenceReads.length, 1, 'shared prerequisite learner evidence is cached across converging branches');
 
     const dConceptReads = requests.filter((url) =>
-      url.includes('/rest/v1/study_concepts?') && url.includes('&id=eq.d-id'));
+      url.includes('/rest/v1/study_concepts?') && url.includes('d-id'));
     assert.equal(dConceptReads.length, 1, 'shared canonical concept resolution is cached across converging branches');
+
+    const rootConceptReads = requests.filter((url) =>
+      url.includes('/rest/v1/study_concepts?') && url.includes('b-id') && url.includes('a-id'));
+    assert.equal(rootConceptReads.length, 1, 'sibling prerequisite concepts are resolved in one bounded batch');
+
+    const conceptReads = requests.filter((url) => url.includes('/rest/v1/study_concepts?') && url.includes('&id='));
+    assert.ok(conceptReads.length >= 1);
+    assert.ok(conceptReads.every((url) => url.includes('&id=in.(')), 'canonical prerequisite resolution avoids per-concept N+1 reads');
 
     const edgeReads = requests.filter((url) => url.includes('/rest/v1/study_concept_edges?'));
     assert.ok(edgeReads.length >= 1);
