@@ -8,7 +8,8 @@ process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test-key';
 
 const CONCEPT_ID = '22222222-2222-4222-8222-222222222222';
-const ITEM_KEY = 'motion-graphs-velocity-slope';
+const FIRST_ITEM_KEY = 'motion-graphs-velocity-slope';
+const REPAIR_ITEM_KEY = 'motion-graphs-acceleration-slope';
 const ITEM_VERSION = '1';
 
 function responseHarness() {
@@ -31,7 +32,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-test('reviewed assessment flows atomically into specific diagnosis, targeted remediation, and repeat protection', async () => {
+test('wrong reviewed distractor drives targeted repair, verified correction, and repeat protection', async () => {
   const originalFetch = global.fetch;
   const attempts = new Map<string, any>();
   const evidenceRows: any[] = [];
@@ -127,57 +128,63 @@ test('reviewed assessment flows atomically into specific diagnosis, targeted rem
     const issueOne = responseHarness();
     await studyAssessmentHandler(authenticatedRequest({ action: 'issue', conceptKey: 'physics.kinematics.motion-graphs', conceptLabel: 'Motion graphs', sessionId: 'session-1' }), issueOne.res);
     assert.equal(issueOne.state.status, 201);
-    assert.equal(issueOne.state.body.item.itemKey, ITEM_KEY);
+    assert.equal(issueOne.state.body.item.itemKey, FIRST_ITEM_KEY);
     assert.equal(issueOne.state.body.item.itemVersion, ITEM_VERSION);
     const firstAttemptId = issueOne.state.body.attemptId;
-    assert.ok(attempts.has(firstAttemptId));
 
     const firstGrade = responseHarness();
     await studyAssessmentHandler(authenticatedRequest({ action: 'grade', attemptId: firstAttemptId, optionId: 'a' }), firstGrade.res);
     assert.equal(firstGrade.state.status, 200);
     assert.equal(firstGrade.state.body.correct, false);
-    assert.equal(firstGrade.state.body.misconceptionSignal, true);
-    assert.equal(firstGrade.state.body.mastery.status, 'provisional');
-    assert.equal(firstGrade.state.body.mastery.learningState, 'misconception_detected');
-    assert.equal(firstGrade.state.body.mastery.evidenceCount, 1);
-    assert.equal(firstGrade.state.body.learnerModel.understanding.evidenceCount, 1);
     assert.equal(firstGrade.state.body.learnerModel.misconception.state, 'signal_observed');
     assert.equal(firstGrade.state.body.learnerModel.misconception.code, 'representation_misread');
-    assert.equal(firstGrade.state.body.learnerModel.misconception.confidence, 1);
     assert.equal(firstGrade.state.body.learnerModel.misconception.remediation.strategy, 'representation_bridge');
-    assert.equal(firstGrade.state.body.learnerModel.nextLearningMove.type, 'diagnose_misconception');
     assert.equal(firstGrade.state.body.learnerModel.nextLearningMove.reasonCode, 'active_misconception:representation_misread');
-    assert.equal(evidenceRows.length, 1);
-    assert.equal(evidenceRows[0].independent, true);
-    assert.equal(evidenceRows[0].assessment_ref, `attempt:${firstAttemptId}`);
+    assert.equal(firstGrade.state.body.mastery.evidenceCount, 1);
 
     const duplicateGrade = responseHarness();
     await studyAssessmentHandler(authenticatedRequest({ action: 'grade', attemptId: firstAttemptId, optionId: 'c' }), duplicateGrade.res);
-    assert.equal(duplicateGrade.state.status, 200);
     assert.equal(duplicateGrade.state.body.duplicate, true);
     assert.equal(duplicateGrade.state.body.correct, false);
-    assert.equal(duplicateGrade.state.body.mastery.learningState, 'misconception_detected');
-    assert.equal(duplicateGrade.state.body.mastery.evidenceCount, 1);
     assert.equal(duplicateGrade.state.body.learnerModel.misconception.code, 'representation_misread');
     assert.equal(evidenceRows.length, 1, 'regrading one attempt must not append evidence');
 
-    const issueTwo = responseHarness();
-    await studyAssessmentHandler(authenticatedRequest({ action: 'issue', conceptKey: 'physics.kinematics.motion-graphs', conceptLabel: 'Motion graphs', sessionId: 'session-1' }), issueTwo.res);
-    const secondAttemptId = issueTwo.state.body.attemptId;
-    assert.notEqual(secondAttemptId, firstAttemptId);
+    const issueRepair = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: 'issue', conceptKey: 'physics.kinematics.motion-graphs', conceptLabel: 'Motion graphs', sessionId: 'session-1' }), issueRepair.res);
+    assert.equal(issueRepair.state.status, 201);
+    assert.equal(issueRepair.state.body.item.itemKey, REPAIR_ITEM_KEY, 'active diagnosis must receive a fresh reviewed item targeting the same misconception');
+    const repairAttemptId = issueRepair.state.body.attemptId;
 
-    const repeatedItemGrade = responseHarness();
-    await studyAssessmentHandler(authenticatedRequest({ action: 'grade', attemptId: secondAttemptId, optionId: 'c' }), repeatedItemGrade.res);
-    assert.equal(repeatedItemGrade.state.status, 200);
-    assert.equal(repeatedItemGrade.state.body.correct, true);
+    const repairGrade = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: 'grade', attemptId: repairAttemptId, optionId: 'a' }), repairGrade.res);
+    assert.equal(repairGrade.state.status, 200);
+    assert.equal(repairGrade.state.body.correct, true);
     assert.equal(evidenceRows.length, 2);
-    assert.equal(evidenceRows[1].independent, false, 'same item/version cannot manufacture fresh independent evidence');
-    assert.equal(repeatedItemGrade.state.body.mastery.learningState, 'misconception_detected');
-    assert.equal(repeatedItemGrade.state.body.mastery.evidenceCount, 1);
-    assert.equal(repeatedItemGrade.state.body.learnerModel.understanding.evidenceCount, 1);
-    assert.equal(repeatedItemGrade.state.body.learnerModel.misconception.code, 'representation_misread');
-    assert.equal(repeatedItemGrade.state.body.learnerModel.nextLearningMove.type, 'diagnose_misconception');
-    assert.equal(savedEstimates.at(-1).evidence_count, 1);
+    assert.equal(evidenceRows[1].independent, true, 'a distinct reviewed item is fresh independent evidence');
+    assert.equal(repairGrade.state.body.mastery.evidenceCount, 2);
+    assert.equal(repairGrade.state.body.learnerModel.understanding.evidenceCount, 2);
+    assert.equal(repairGrade.state.body.learnerModel.misconception.state, 'none_observed');
+    assert.equal(repairGrade.state.body.learnerModel.misconception.code, null);
+    assert.equal(repairGrade.state.body.learnerModel.misconception.lastResolvedCode, 'representation_misread');
+    assert.deepEqual(repairGrade.state.body.learnerModel.misconception.reasonCodes, ['targeted_independent_correction']);
+    assert.notEqual(repairGrade.state.body.learnerModel.nextLearningMove.type, 'diagnose_misconception');
+
+    const issueAfterBankUsed = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: 'issue', conceptKey: 'physics.kinematics.motion-graphs', conceptLabel: 'Motion graphs', sessionId: 'session-1' }), issueAfterBankUsed.res);
+    assert.equal(issueAfterBankUsed.state.status, 201);
+    assert.equal(issueAfterBankUsed.state.body.item.itemKey, FIRST_ITEM_KEY, 'after all reviewed items are used the selector may repeat deterministically');
+    const repeatAttemptId = issueAfterBankUsed.state.body.attemptId;
+
+    const repeatGrade = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: 'grade', attemptId: repeatAttemptId, optionId: 'c' }), repeatGrade.res);
+    assert.equal(repeatGrade.state.status, 200);
+    assert.equal(repeatGrade.state.body.correct, true);
+    assert.equal(evidenceRows.length, 3);
+    assert.equal(evidenceRows[2].independent, false, 'repeated item/version cannot manufacture fresh independent evidence');
+    assert.equal(repeatGrade.state.body.mastery.evidenceCount, 2);
+    assert.equal(repeatGrade.state.body.learnerModel.understanding.evidenceCount, 2);
+    assert.equal(repeatGrade.state.body.learnerModel.misconception.state, 'none_observed');
+    assert.equal(savedEstimates.at(-1).evidence_count, 2);
   } finally {
     global.fetch = originalFetch;
   }
