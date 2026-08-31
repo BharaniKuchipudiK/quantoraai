@@ -30,6 +30,8 @@ test('a key is described, never disclosed', () => {
   assert.equal(shape.last4, '1234');
   assert.equal(shape.length, 20);
   assert.equal(shape.looksRedacted, false);
+  assert.equal(shape.matchesKnownKeyFormat, false, 'too short to be a real Google key — a hint, not a verdict');
+  assert.equal(describePlacesKey(`AIza${'x'.repeat(35)}`, 'GOOGLE_MAPS_API_KEY').matchesKnownKeyFormat, true);
   assert.equal(JSON.stringify(shape).includes('AIzaSyEXAMPLEKEY'), false);
 });
 
@@ -122,4 +124,65 @@ test('a network failure is reported as retryable, unlike a refusal', async () =>
   assert.equal(report.search.ok, false);
   assert.equal(report.search.status, null);
   assert.match(report.verdict, /worth retrying/i);
+});
+
+/*
+ * The first real call this probe ever made, verbatim from production:
+ *
+ *   {"status":400,"error":"API key not valid. Please pass a valid API key.",
+ *    "verdict":"Places rejected the request as malformed (HTTP 400 …). The key
+ *               is not the suspect — the request body or field mask is …"}
+ *
+ * Google answers an unrecognised key with 400 INVALID_ARGUMENT, not 401, so
+ * branching on the status alone accused our own request code while Google was
+ * plainly naming the credential. A probe written to stop a failure being
+ * mis-described had mis-described the first one it saw.
+ */
+test('an unrecognised key is named as the key, whatever status Google used', () => {
+  const shape = describePlacesKey(`AIza${'x'.repeat(35)}`, 'GOOGLE_PLACES_API_KEY');
+  const verdict = verdictForPlaces(shape, {
+    attempted: true, ok: false, status: 400, places: 0, query: 'hotels in Singapore',
+    error: 'API key not valid. Please pass a valid API key.', ms: 210,
+  });
+
+  assert.match(verdict, /does not recognise this key/i);
+  assert.match(verdict, /GOOGLE_PLACES_API_KEY/, 'and names the variable holding it');
+  assert.doesNotMatch(verdict, /field mask/i, 'never sends anyone into our request code for this');
+  assert.doesNotMatch(verdict, /ours to fix/i);
+  assert.match(verdict, /deleted or regenerated/i, 'a well-shaped key points at the project, not a typo');
+});
+
+test('a wrongly-shaped value says so, without claiming that is the verdict', () => {
+  const verdict = verdictForPlaces(describePlacesKey('sk-or-v1-wrong-secret-entirely', 'GOOGLE_MAPS_API_KEY'), {
+    attempted: true, ok: false, status: 400, places: 0, query: 'hotels in Singapore',
+    error: 'API key not valid. Please pass a valid API key.', ms: 12,
+  });
+  assert.match(verdict, /does not match the AIza/i);
+  assert.match(verdict, /wrong secret in the right variable/i);
+});
+
+/*
+ * A 400 that does NOT name the key is still ours — a bad body or field mask.
+ * Narrowing on the message must not swallow that case.
+ */
+test('a malformed request is still diagnosed as ours', () => {
+  const verdict = verdictForPlaces(describePlacesKey(`AIza${'x'.repeat(35)}`, 'GOOGLE_MAPS_API_KEY'), {
+    attempted: true, ok: false, status: 400, places: 0, query: 'hotels in Singapore',
+    error: 'Invalid field mask: places.notAField', ms: 12,
+  });
+  assert.match(verdict, /ours to fix/i);
+  assert.doesNotMatch(verdict, /does not recognise/i);
+});
+
+/*
+ * A key Google recognises but blocks is a different fault with a different fix,
+ * and must not be collapsed into "invalid key".
+ */
+test('an enabled-but-blocked key stays a 403, not an invalid one', () => {
+  const verdict = verdictForPlaces(describePlacesKey(`AIza${'x'.repeat(35)}`, 'GOOGLE_MAPS_API_KEY'), {
+    attempted: true, ok: false, status: 403, places: 0, query: 'hotels in Singapore',
+    error: 'Places API (New) has not been used in project 123 before or it is disabled.', ms: 12,
+  });
+  assert.match(verdict, /not enabled|restrictions/i);
+  assert.doesNotMatch(verdict, /does not recognise this key/i);
 });
