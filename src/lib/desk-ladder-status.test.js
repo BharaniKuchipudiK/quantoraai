@@ -86,24 +86,41 @@ test('a provider slug is shortened so it cannot swallow the desk header row', ()
 });
 
 /*
- * Guarding the fix for the prototype-key guard, which is not as circular as it
- * sounds. `Object.hasOwn` is the obvious way to write that check and it is what
- * went in first — but Vite 6 still defaults build.target to "modules"
- * (chrome87, firefox78, safari14, edge88) and Object.hasOwn needs Chrome 93,
- * Firefox 92, Safari 15.4. esbuild rewrites syntax, never built-in methods, so
- * it shipped untransformed and threw on those browsers: a crashed desk in place
- * of a chip.
+ * A built-in the browser target cannot provide is invisible to the fast lane.
+ * Node has all of them, so the tests pass; they are real methods, so typecheck
+ * and eslint pass. Only an old browser disagrees, and none of them run here.
  *
- * Nothing in the fast lane can see that. Node has Object.hasOwn, so the tests
- * pass; it is a real method, so typecheck and eslint pass. Only an old browser
- * disagrees, and none of them run here. So the source is scanned instead —
- * cheap, and the same trick this repo already uses to stop "Live from" being
- * written directly into the trip board.
+ * This started as a fixed ban list written when build.target was still Vite's
+ * "modules" default (chrome87). The target is now stated explicitly, so the
+ * list is derived from it instead — raise the target and a built-in stops being
+ * banned on its own, with no second place to remember.
  *
- * If the build target is ever raised past those versions, delete this test
- * rather than working around it.
+ * The floors below are the first version of each engine to ship the method.
+ * Only bare calls matter: a feature-detected use with a fallback is safe at any
+ * target, which is why `structuredClone` sits in the bundle today from a
+ * dependency that guards it, while three un-guarded `Object.hasOwn` calls from
+ * react-markdown are what set the floor in the first place.
  */
-test('src never calls a built-in the browser target cannot provide', () => {
+const CHROME_FLOOR = {
+  'Object.hasOwn': 93,
+  'Array.prototype.at': 92,
+  structuredClone: 98,
+  'Array.prototype.findLast': 97,
+};
+
+test('src never calls a built-in the declared browser target cannot provide', () => {
+  const viteConfig = readFileSync('vite.config.ts', 'utf8');
+  const declared = /['"]chrome(\d+)['"]/.exec(viteConfig);
+  assert.ok(
+    declared,
+    'vite.config.ts must state build.target explicitly — the default silently claims chrome87',
+  );
+  const target = Number(declared[1]);
+
+  const banned = Object.entries(CHROME_FLOOR)
+    .filter(([, floor]) => floor > target)
+    .map(([name]) => name);
+
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) return walk(full);
@@ -111,18 +128,17 @@ test('src never calls a built-in the browser target cannot provide', () => {
   });
 
   // Comments are stripped first: naming a banned method in prose — as the note
-  // above this test does, and as the fix in desk-ladder-status.js does — is how
-  // the reason survives, and must not itself trip the gate.
+  // above does — is how the reason survives, and must not itself trip the gate.
   const code = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
   const offenders = [];
   for (const file of walk('src')) {
     if (file.endsWith('desk-ladder-status.test.js')) continue;
     const source = code(readFileSync(file, 'utf8'));
-    for (const method of ['Object.hasOwn', 'Array.prototype.at', 'structuredClone']) {
-      if (source.includes(method)) offenders.push(`${file}: ${method}`);
+    for (const method of banned) {
+      if (source.includes(method)) offenders.push(`${file}: ${method} (needs chrome${CHROME_FLOOR[method]}, target is chrome${target})`);
     }
   }
 
-  assert.deepEqual(offenders, [], `unsupported built-ins reach the browser bundle:\n${offenders.join('\n')}`);
+  assert.deepEqual(offenders, [], `built-ins the declared target cannot provide:\n${offenders.join('\n')}`);
 });
