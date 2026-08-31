@@ -23,8 +23,6 @@ import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
 import StudioToolsMenu from './StudioToolsMenu';
 import StudioFileTree from './StudioFileTree';
-import StudioTerminal from './StudioTerminal';
-import StudioGit from './StudioGit';
 import {
   PINNED_DESK_TAB,
   closeDeskTab,
@@ -102,6 +100,8 @@ import {
   saveFilesWidthPx,
 } from '../lib/studio-split-layout.js';
 
+const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
+const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
 const StudioTabBar = lazy(() => import('./StudioTabBar.jsx'));
@@ -4928,13 +4928,16 @@ Paused — ${autoPauseRef.current}.`
                     )}
                   </div>
              ) : workspaceActiveTab === 'terminal' ? (
+               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#f8fafc' : '#0d1127' }} />}>
                <StudioTerminal
                  vfs={shellVfs}
                  isLight={isLight}
                  textColor={textColor}
                  subtextColor={subtextColor}
                />
+               </Suspense>
              ) : workspaceActiveTab === 'git' ? (
+               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#f8fafc' : '#0d1127' }} />}>
                <StudioGit
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
@@ -4943,6 +4946,7 @@ Paused — ${autoPauseRef.current}.`
                  isLight={isLight}
                  textColor={textColor}
                />
+               </Suspense>
              ) : (
                <Suspense fallback={<div style={{ padding: '24px', color: subtextColor }}>Loading editor…</div>}>
                  <WorkspaceCodeEditor
