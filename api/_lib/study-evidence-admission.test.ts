@@ -2,16 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   admittedStudyMasteryEvidence,
+  attestStudyAssessmentEvidence,
   evaluateStudyEvidenceAdmission,
+  type StudyAssessmentAttemptReceipt,
 } from './study-evidence-admission.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 const ATTEMPT_ONE = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_TWO = '22222222-2222-4222-8222-222222222222';
-
-function verifiedObservationRef(kind: Exclude<StudyEvidenceKind, 'assessment_item' | 'self_confidence'>, ref: string) {
-  return `quantora:study-verified:${kind}:${ref}`;
-}
+const CONCEPT_KEY = 'physics.kinematics.motion-graphs';
 
 function event(
   kind: StudyEvidenceKind,
@@ -46,67 +45,113 @@ function reviewedAssessment(
   });
 }
 
-test('assessment event kind alone cannot enter mastery', () => {
-  assert.deepEqual(evaluateStudyEvidenceAdmission(event('assessment_item')), {
+function attest(eventRow: StudyMasteryEvidenceEvent, attemptId = ATTEMPT_ONE) {
+  const receipt: StudyAssessmentAttemptReceipt = {
+    attemptId,
+    conceptId: eventRow.conceptId,
+    conceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    correct: eventRow.correct === true,
+    score: typeof eventRow.score === 'number' ? eventRow.score : Number.NaN,
+    submittedAt: eventRow.observedAt,
+  };
+  return attestStudyAssessmentEvidence(eventRow, receipt);
+}
+
+test('assessment event shape and provenance strings alone cannot enter mastery', () => {
+  assert.deepEqual(evaluateStudyEvidenceAdmission(reviewedAssessment()), {
     admitted: false,
-    reasonCode: 'reviewed_assessment_provenance_required',
+    reasonCode: 'authoritative_assessment_receipt_required',
   });
 });
 
-test('server-issued reviewed assessment evidence is admitted', () => {
-  assert.deepEqual(evaluateStudyEvidenceAdmission(reviewedAssessment()), {
+test('authoritatively attested reviewed assessment evidence is admitted', () => {
+  const row = reviewedAssessment();
+  attest(row);
+  assert.deepEqual(evaluateStudyEvidenceAdmission(row), {
     admitted: true,
     reasonCode: 'reviewed_assessment_evidence',
   });
 });
 
-test('assessment evidence fails closed on forged provenance, identity, or unknown item versions', () => {
-  for (const candidate of [
+test('assessment evidence fails closed on forged provenance, identity, item, score, or timestamp', () => {
+  const candidates = [
     reviewedAssessment({ provenance: 'connected_source' }),
     reviewedAssessment({ sourceRef: 'quantora:study-assessment-bank-copy' }),
     reviewedAssessment({ assessmentRef: 'attempt:not-a-uuid' }),
-    reviewedAssessment({ itemRef: 'missing-version' }),
     reviewedAssessment({ itemRef: 'unknown-item@1' }),
     reviewedAssessment({ id: 'study.assessment.33333333-3333-4333-8333-333333333333' }),
-  ]) {
+  ];
+  for (const candidate of candidates) {
+    attest(candidate);
     assert.equal(evaluateStudyEvidenceAdmission(candidate).admitted, false);
   }
+
+  const wrongScore = reviewedAssessment();
+  attestStudyAssessmentEvidence(wrongScore, {
+    attemptId: ATTEMPT_ONE,
+    conceptId: wrongScore.conceptId,
+    conceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    correct: true,
+    score: 0,
+    submittedAt: wrongScore.observedAt,
+  });
+  assert.equal(evaluateStudyEvidenceAdmission(wrongScore).admitted, false);
+
+  const wrongTime = reviewedAssessment();
+  attestStudyAssessmentEvidence(wrongTime, {
+    attemptId: ATTEMPT_ONE,
+    conceptId: wrongTime.conceptId,
+    conceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    correct: true,
+    score: 1,
+    submittedAt: '2026-08-30T00:00:00.000Z',
+  });
+  assert.equal(evaluateStudyEvidenceAdmission(wrongTime).admitted, false);
 });
 
-test('future verified observation kinds require an explicit governed receipt', () => {
-  const plain = event('application');
-  assert.deepEqual(evaluateStudyEvidenceAdmission(plain), {
+test('non-assessment evidence stays fail-closed even with a verified-looking prefix', () => {
+  const prefixed = event('application', {
+    sourceRef: 'quantora:study-verified:application:numeric:sha256:test',
+  });
+  assert.deepEqual(evaluateStudyEvidenceAdmission(prefixed), {
     admitted: false,
     reasonCode: 'verified_observation_receipt_required',
   });
-
-  const sourceRef = verifiedObservationRef('application', 'numeric:sha256:test');
-  assert.equal(evaluateStudyEvidenceAdmission(event('application', { sourceRef })).admitted, true);
 });
 
 test('self-confidence and non-independent observations never enter mastery', () => {
   assert.equal(evaluateStudyEvidenceAdmission(event('self_confidence', { score: null, correct: null })).admitted, false);
-  assert.deepEqual(evaluateStudyEvidenceAdmission(reviewedAssessment({ independent: false })), {
+  const row = reviewedAssessment({ independent: false });
+  attest(row);
+  assert.deepEqual(evaluateStudyEvidenceAdmission(row), {
     admitted: false,
     reasonCode: 'independent_evidence_required',
   });
 });
 
 test('invalid timestamps and unscored observations fail closed', () => {
-  assert.equal(evaluateStudyEvidenceAdmission(reviewedAssessment({ observedAt: 'not-a-date' })).admitted, false);
-  assert.equal(evaluateStudyEvidenceAdmission(reviewedAssessment({ score: null, correct: null })).admitted, false);
+  const invalidDate = reviewedAssessment({ observedAt: 'not-a-date' });
+  attest(invalidDate);
+  assert.equal(evaluateStudyEvidenceAdmission(invalidDate).admitted, false);
+
+  const unscored = reviewedAssessment({ score: null, correct: null });
+  attest(unscored);
+  assert.equal(evaluateStudyEvidenceAdmission(unscored).admitted, false);
 });
 
-test('mastery and learner state receive one chronological deduplicated evidence set', () => {
+test('mastery and learner state receive one chronological deduplicated assessment set', () => {
   const first = reviewedAssessment({ correct: false, score: 0, observedAt: '2026-08-01T00:00:00.000Z' }, ATTEMPT_ONE);
+  attest(first, ATTEMPT_ONE);
   const repeated = reviewedAssessment({ correct: true, score: 1, observedAt: '2026-08-02T00:00:00.000Z' }, ATTEMPT_TWO);
-  const application = event('application', {
-    id: 'application',
-    observedAt: '2026-08-03T00:00:00.000Z',
-    sourceRef: verifiedObservationRef('application', 'numeric:sha256:application'),
-  });
+  attest(repeated, ATTEMPT_TWO);
 
-  const admitted = admittedStudyMasteryEvidence([application, repeated, first]);
-  assert.deepEqual(admitted.map((row) => row.id), [`study.assessment.${ATTEMPT_ONE}`, 'application']);
+  const admitted = admittedStudyMasteryEvidence([repeated, first]);
+  assert.deepEqual(admitted.map((row) => row.id), [`study.assessment.${ATTEMPT_ONE}`]);
   assert.equal(admitted[0].correct, false);
 });
