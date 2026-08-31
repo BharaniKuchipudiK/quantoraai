@@ -2,7 +2,7 @@ import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import { findStudyAssessmentItem } from './study-assessment-items.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.3';
+export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.4';
 
 const VERIFIED_KINDS = new Set<StudyEvidenceKind>([
   'assessment_item',
@@ -17,6 +17,7 @@ const VERIFIED_KINDS = new Set<StudyEvidenceKind>([
 const ATTEMPT_REF = /^attempt:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ITEM_REF = /^[a-z0-9][a-z0-9._:-]*@[a-z0-9][a-z0-9._:-]*$/i;
 const REVIEWED_ASSESSMENT_ATTESTED = Symbol('study-reviewed-assessment-attested');
+const ATTESTED_RECEIPTS = new WeakMap<object, StudyAssessmentAttemptReceipt>();
 
 type AttestedStudyEvidence = StudyMasteryEvidenceEvent & {
   [REVIEWED_ASSESSMENT_ATTESTED]?: true;
@@ -28,6 +29,7 @@ export type StudyAssessmentAttemptReceipt = {
   conceptKey: string;
   itemKey: string;
   itemVersion: string;
+  submittedOptionId: string;
   correct: boolean;
   score: number;
   submittedAt: string;
@@ -67,14 +69,18 @@ export function attestStudyAssessmentEvidence(
   if (!item || item.conceptKey !== receipt.conceptKey) return event;
   const release = verifyStudyAssessmentRelease(item);
   if (!release.canIssueVerifiedAttempt) return event;
+  if (!item.options.some((option) => option.id === receipt.submittedOptionId)) return event;
 
   const expectedItemRef = `${receipt.itemKey}@${receipt.itemVersion}`;
+  const expectedMisconception = receipt.correct === false
+    && item.misconceptionOptionIds.includes(receipt.submittedOptionId);
   if (event.conceptId !== receipt.conceptId
     || event.id !== `study.assessment.${receipt.attemptId}`
     || event.assessmentRef !== `attempt:${receipt.attemptId}`
     || event.itemRef !== expectedItemRef
     || release.itemRef !== expectedItemRef
     || event.correct !== receipt.correct
+    || event.misconceptionSignal !== expectedMisconception
     || typeof event.score !== 'number'
     || !Number.isFinite(event.score)
     || event.score !== receipt.score
@@ -88,7 +94,21 @@ export function attestStudyAssessmentEvidence(
     configurable: false,
     writable: false,
   });
+  ATTESTED_RECEIPTS.set(event, { ...receipt });
   return event;
+}
+
+/**
+ * Return the authoritative submitted-attempt receipt only for evidence that
+ * passed the private V4/V5 attestation boundary. This is intentionally not
+ * serialized into the learner ledger or browser payload.
+ */
+export function studyAssessmentReceiptForAttestedEvidence(
+  event: StudyMasteryEvidenceEvent,
+): StudyAssessmentAttemptReceipt | null {
+  if ((event as AttestedStudyEvidence)?.[REVIEWED_ASSESSMENT_ATTESTED] !== true) return null;
+  const receipt = ATTESTED_RECEIPTS.get(event);
+  return receipt ? { ...receipt } : null;
 }
 
 function reviewedAssessmentEvidence(event: StudyMasteryEvidenceEvent): boolean {
@@ -111,10 +131,7 @@ function reviewedAssessmentEvidence(event: StudyMasteryEvidenceEvent): boolean {
   return release.canIssueVerifiedAttempt && release.itemRef === event.itemRef;
 }
 
-/**
- * Decide whether one persisted Study event is allowed to influence mastery.
- * Event kind alone is never a trust signal.
- */
+/** Decide whether one persisted Study event is allowed to influence mastery. */
 export function evaluateStudyEvidenceAdmission(event: StudyMasteryEvidenceEvent): StudyEvidenceAdmission {
   if (!event || !VERIFIED_KINDS.has(event.kind)) {
     return { admitted: false, reasonCode: 'unverified_evidence_kind' };
@@ -134,8 +151,7 @@ export function evaluateStudyEvidenceAdmission(event: StudyMasteryEvidenceEvent)
       : { admitted: false, reasonCode: 'authoritative_assessment_receipt_required' };
   }
 
-  // V4 deliberately has no production writer/receipt registry for these kinds.
-  // A sourceRef prefix, model claim, or caller label is not a verifier receipt.
+  // Still fail-closed: V5 diagnoses reviewed assessment evidence only.
   return { admitted: false, reasonCode: 'verified_observation_receipt_required' };
 }
 
