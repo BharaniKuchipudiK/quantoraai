@@ -5,14 +5,14 @@ import { estimateStudyMastery } from './study-mastery-estimator.js';
 import { buildStudyLearnerModel } from './study-learner-model.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
-
 function evidence(kind: StudyEvidenceKind, correct: boolean | null, index: number, overrides: Partial<StudyMasteryEvidenceEvent> = {}): StudyMasteryEvidenceEvent {
+  const attemptId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
   const governedSource = kind === 'assessment_item'
     ? {
+        id: `study.assessment.${attemptId}`,
         sourceRef: 'quantora:study-assessment-bank',
-        assessmentRef: `attempt:${ATTEMPT_ID}`,
-        itemRef: `test-item-${index}@1`,
+        assessmentRef: `attempt:${attemptId}`,
+        itemRef: 'motion-graphs-velocity-slope@1',
       }
     : kind === 'self_confidence'
       ? {}
@@ -127,8 +127,8 @@ test('supported retention advances to a transfer task', () => {
 
 test('mastery estimate and learner projection cannot disagree on repeated assessment evidence', () => {
   const events = [
-    evidence('assessment_item', false, 0, { itemRef: 'repeat@1', observedAt: '2026-08-01T00:00:00.000Z' }),
-    evidence('assessment_item', true, 1, { itemRef: 'repeat@1', observedAt: '2026-08-02T00:00:00.000Z' }),
+    evidence('assessment_item', false, 0, { observedAt: '2026-08-01T00:00:00.000Z' }),
+    evidence('assessment_item', true, 1, { observedAt: '2026-08-02T00:00:00.000Z' }),
   ];
   const estimate = estimateStudyMastery(events);
   const result = buildStudyLearnerModel({ conceptId: 'concept-1', conceptKey: 'physics.motion', evidence: events, estimate });
