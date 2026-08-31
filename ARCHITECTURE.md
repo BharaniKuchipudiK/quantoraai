@@ -85,18 +85,18 @@ Task branches short-circuit this: `task:"repair"`, `task:"verify-build"`,
 Cross-boundary **pure** logic now lives under **`shared/`** (Vite alias
 `@shared/*`; API uses relative `../../shared/...`):
 
-- `shared/build-intent.js`, `shared/workspace-intent.js`
+- `shared/build-intent.js`, `shared/workspace-intent.js`, `shared/request-kind.js`
 - `shared/coding-desk-auto-model.js`
+- `shared/{session-context,studio-choices,studio-continues}.js`
 - `shared/travel/{flight-resilience,place-shortlist,hotel-location}.js`
 - `shared/studio/{domains,domain-inference}.ts`
 
 `src/lib/*` and `api/_lib/studio-domain-inference.ts` keep thin **re-export
 shims** so existing imports keep working.
 
-**Still duplicated (do not delete one side):** `session-context`,
-`studio-choices`, `studio-continues`, full `studio-domains` UI catalog vs server
-directives, `conversation-policy` / `conversation-engine` (different modules,
-same names), `outcome-state` (client `.js` vs server `.ts`).
+**Still duplicated (do not delete one side):** full `studio-domains` UI catalog
+vs server directives, `conversation-policy` / `conversation-engine` (different
+modules, same names), `outcome-state` (client `.js` vs server `.ts`).
 
 **Rule for remaining forks:** change both sides in the same PR until each lands
 in `shared/`. Keep anything `api/` or `shared/` imports free of `window`/DOM.
