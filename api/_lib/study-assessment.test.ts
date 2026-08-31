@@ -37,6 +37,7 @@ function submittedAttempt(correct = true) {
     concept_id: CONCEPT_ID,
     item_key: "motion-graphs-velocity-slope",
     item_version: "1",
+    submitted_option_id: correct ? "c" : "a",
     submitted_at: OBSERVED_AT,
     correct,
     score: correct ? 1 : 0,
@@ -64,6 +65,7 @@ test("issue stores the answer server-side but returns only the public item", asy
     if (target.includes("/rest/v1/study_concepts?") && target.includes("canonical_key=eq.physics.kinematics.motion-graphs")) {
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
+    if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       storedAttempt = JSON.parse(init.body)[0];
       return new Response(null, { status: 201 });
@@ -76,8 +78,9 @@ test("issue stores the answer server-side but returns only the public item", asy
     assert.equal(state.status, 201);
     assert.equal(storedAttempt.correct_option_id, "c");
     assert.equal(state.body.item.options.length, 4);
-    for (const hidden of ["correctOptionId", "explanation", "reviewStatus", "releaseMode"]) assert.equal(hidden in state.body.item, false);
+    for (const hidden of ["correctOptionId", "explanation", "misconceptionByOptionId", "reviewStatus", "releaseMode"]) assert.equal(hidden in state.body.item, false);
     assert.equal(JSON.stringify(state.body).includes("The slope is change"), false);
+    assert.equal(JSON.stringify(state.body).includes("representation_misread"), false);
   } finally { global.fetch = originalFetch; }
 });
 
@@ -115,6 +118,7 @@ test("grade requires authoritative submitted-attempt validation before evidence 
     assert.equal(state.body.mastery.learningState, "emerging_understanding");
     assert.equal(state.body.mastery.evidenceCount, 1);
     assert.equal(state.body.learnerModel.understanding.evidenceCount, 1);
+    assert.equal(state.body.learnerModel.misconception.code, null);
     assert.equal(state.body.learnerModel.nextLearningMove.type, "vary_evidence");
     assert.equal(savedEstimate.evidence_count, 1);
     assert.match(evidenceRequestUrl, /order=observed_at\.desc/);
@@ -152,6 +156,7 @@ test("assessment-shaped rows without a matching submitted attempt cannot change 
     assert.equal(state.body.mastery.learningState, "unverified");
     assert.equal(state.body.mastery.evidenceCount, 0);
     assert.equal(state.body.learnerModel.understanding.state, "unverified");
+    assert.equal(state.body.learnerModel.misconception.code, null);
     assert.equal(savedEstimate.evidence_count, 0);
   } finally { global.fetch = originalFetch; }
 });

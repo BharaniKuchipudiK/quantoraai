@@ -25,7 +25,6 @@ export default function StudioTabBar({
   textColor,
   subtextColor,
 }) {
-  const stripRef = useRef(null);
   const activeRef = useRef(null);
 
   // A tab opened by the keyboard, or by a build writing a new file, is useless
@@ -40,7 +39,6 @@ export default function StudioTabBar({
 
   return (
     <div
-      ref={stripRef}
       data-quantora-desk-tabstrip="true"
       role="tablist"
       aria-label="Open desk tabs"
@@ -75,6 +73,14 @@ export default function StudioTabBar({
             ref={active ? activeRef : null}
             data-quantora-desk-tab={tab}
             data-quantora-desk-tab-active={active ? 'true' : 'false'}
+            onMouseDown={(event) => {
+              /*
+               * Autoscroll is initiated on mousedown, so preventing it on
+               * auxclick is too late — the tab closed and the page was left in
+               * autoscroll with the four-way cursor stuck on.
+               */
+              if (event.button === 1 && !pinned) event.preventDefault();
+            }}
             onAuxClick={(event) => {
               // Middle-click closes, the way every editor does.
               if (event.button === 1 && !pinned) {

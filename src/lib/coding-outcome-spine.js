@@ -67,8 +67,22 @@ export function resolveCodingTurnOutcome({
      */
     const done = completedCount(job);
     if (job && !buildJobIsComplete(job) && done > 0) {
-      const total = Array.isArray(job.steps) ? job.steps.length : 0;
+      const steps = Array.isArray(job.steps) ? job.steps : [];
+      const total = steps.length;
       const next = nextStep(job);
+      // Position of the step Continue actually resumes at. `done + 1` is only
+      // the same number while steps complete in order, and nothing enforces
+      // that — so it disagreed with the Next line in the same message.
+      const resumeAt = steps.findIndex((step) => !step.done) + 1;
+      /*
+       * An oversize catalogue still needs its own chips. Continuing re-runs the
+       * same oversized build into the same deadline, so offering it alone would
+       * hand the user a loop; the shop chips are what let them agree to a
+       * smaller catalogue. Continue leads because progress is real.
+       */
+      const shopItems = (shopIntakeAsk?.oversize || isShopPhotoTurn)
+        ? (shopChips(shopIntakeAsk)?.items || [])
+        : [];
       return {
         kind: 'timeout-checkpoint',
         text: (
@@ -81,12 +95,15 @@ export function resolveCodingTurnOutcome({
         // the same overstatement the desk refuses everywhere else.
         isError: false,
         continueSet: {
-          items: [{
-            id: 'outcome-continue-job',
-            label: `Continue — step ${done + 1} of ${total}`,
-            value: 'Continue',
-            priority: 120,
-          }],
+          items: [
+            {
+              id: 'outcome-continue-job',
+              label: `Continue — step ${resumeAt} of ${total}`,
+              value: 'Continue',
+              priority: 120,
+            },
+            ...shopItems,
+          ],
         },
       };
     }

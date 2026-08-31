@@ -16,8 +16,17 @@
  */
 export function rankDeskFileMatches(paths = [], query = '', limit = 50) {
   const list = (Array.isArray(paths) ? paths : []).filter(Boolean).map(String);
-  const q = String(query || '').trim().toLowerCase();
-  if (!q) return list.slice(0, limit);
+  /*
+   * Terms, not one literal string.
+   *
+   * The query used to be matched as a single subsequence including its spaces,
+   * so "button jsx" required a literal space in the path and every multi-word
+   * query returned nothing — while "buttonjsx" worked. Typing a space is the
+   * most natural way to narrow a search, so the most natural input was the one
+   * that silently failed.
+   */
+  const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return list.slice(0, limit);
 
   /*
    * Try the basename on its own before the whole path.
@@ -28,7 +37,7 @@ export function rankDeskFileMatches(paths = [], query = '', limit = 50) {
    * `app/page.jsx`. Matching the basename independently is what makes an exact
    * filename win, which is the whole reason a file finder exists.
    */
-  const subsequence = (hay, from) => {
+  const subsequence = (hay, from, q) => {
     let first = -1;
     let last = -1;
     let cursor = from;
@@ -42,21 +51,46 @@ export function rankDeskFileMatches(paths = [], query = '', limit = 50) {
     return { first, last };
   };
 
+  /** Every term must match, so adding a word narrows rather than widens. */
+  const matchAll = (hay, from) => {
+    let first = Infinity;
+    let last = -1;
+    for (const term of terms) {
+      const hit = subsequence(hay, from, term);
+      if (!hit) return null;
+      first = Math.min(first, hit.first);
+      last = Math.max(last, hit.last);
+    }
+    return { first, last };
+  };
+
   const scored = [];
   for (const path of list) {
     const hay = path.toLowerCase();
     const baseAt = hay.lastIndexOf('/') + 1;
 
-    const inBase = baseAt > 0 ? subsequence(hay, baseAt) : null;
-    const hit = inBase || subsequence(hay, 0);
+    const inBase = baseAt > 0 ? matchAll(hay, baseAt) : null;
+    const hit = inBase || matchAll(hay, 0);
     if (!hit) continue;
 
     const isBasenameHit = Boolean(inBase) || hit.first >= baseAt;
+    /*
+     * Offset is measured from where the match is allowed to start, not from the
+     * front of the path. Using the absolute offset cancelled the basename bonus
+     * for anything deeply nested: src/app/components/ui/app.jsx scored worse
+     * than a shallow fuzzy hit inside "zapper.jsx", which defeats the point.
+     */
+    const offset = isBasenameHit ? Math.max(0, hit.first - baseAt) : hit.first;
     const span = hit.last - hit.first;
-    // Lower is better. The basename bonus dominates; span and offset break ties.
-    scored.push({ path, score: (isBasenameHit ? 0 : 1000) + span * 4 + hit.first });
+    scored.push({
+      path,
+      score: (isBasenameHit ? 0 : 1000) + span * 4 + offset,
+      // Tiebreak: "comp" covers all of comp.js but only a prefix of
+      // component.jsx, so the tighter match on the shorter name wins.
+      baseLen: hay.length - baseAt,
+    });
   }
 
-  scored.sort((a, b) => (a.score - b.score) || a.path.localeCompare(b.path));
+  scored.sort((a, b) => (a.score - b.score) || (a.baseLen - b.baseLen) || a.path.localeCompare(b.path));
   return scored.slice(0, limit).map((row) => row.path);
 }

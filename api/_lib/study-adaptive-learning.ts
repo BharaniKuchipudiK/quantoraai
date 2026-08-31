@@ -3,7 +3,7 @@ import { estimateStudyMastery } from './study-mastery-estimator.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.2';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.3';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -61,14 +61,20 @@ export async function loadStudyLearnerModel(input: {
 export function formatStudyAdaptiveDirective(model: StudyLearnerModel | null): string {
   if (!model) return '';
   const strategy = teachingStrategyFor(model);
+  const misconceptionDetail = model.misconception.code
+    ? `; code: ${model.misconception.code}; remediation: ${model.misconception.remediation?.strategy || 'targeted_clarification'}`
+    : model.misconception.lastResolvedCode
+      ? `; last resolved code: ${model.misconception.lastResolvedCode}`
+      : '';
   return `\n\nSTUDY ADAPTIVE LEARNING (${STUDY_ADAPTIVE_LEARNING_VERSION})
 This evidence-backed learner state applies only to the active Study concept.
 - Understanding: ${model.understanding.state}; verified evidence: ${model.understanding.evidenceCount}; evidence kinds: ${model.understanding.evidenceKinds.join(', ') || 'none'}
-- Misconception state: ${model.misconception.state}
+- Misconception state: ${model.misconception.state}${misconceptionDetail}
 - Retention: ${model.retention.state}
 - Next learning move: ${model.nextLearningMove.type}
 - Teaching strategy: ${strategy}
-Execute the next learning move using that strategy. Do not claim stronger understanding than the evidence state. Do not repeat the previous representation when the move calls for repair or confirmation. Ask at most one focused learner check, then wait.`;
+- Required intervention: ${model.nextLearningMove.instruction}
+Execute the required intervention using that strategy. Treat the misconception code as evidence-backed only when present; never invent another diagnosis from prose. Do not claim stronger understanding than the evidence state. Ask at most one focused learner check, then wait.`;
 }
 
 export function publicStudyAdaptiveMetadata(model: StudyLearnerModel | null) {
@@ -77,6 +83,9 @@ export function publicStudyAdaptiveMetadata(model: StudyLearnerModel | null) {
     version: STUDY_ADAPTIVE_LEARNING_VERSION,
     understanding: model.understanding.state,
     misconception: model.misconception.state,
+    misconceptionCode: model.misconception.code,
+    misconceptionRemediation: model.misconception.remediation?.strategy || null,
+    lastResolvedMisconception: model.misconception.lastResolvedCode,
     retention: model.retention.state,
     nextLearningMove: model.nextLearningMove.type,
     teachingStrategy: teachingStrategyFor(model),

@@ -1,6 +1,7 @@
 import type { StudyAssessmentReleaseMode } from './study-assessment-governance.js';
+import type { StudyMisconceptionCode } from './study-misconception-taxonomy.js';
 
-export const STUDY_ASSESSMENT_ITEM_BANK_VERSION = "study-assessment-items-2026-08-31.2";
+export const STUDY_ASSESSMENT_ITEM_BANK_VERSION = "study-assessment-items-2026-08-31.3";
 
 export type StudyAssessmentOption = { id: string; text: string };
 export type StudyAssessmentReviewStatus = "approved" | "draft" | "rejected";
@@ -17,6 +18,7 @@ export type StudyAssessmentItem = {
   objectiveCode: string;
   cognitiveOperation: "recall" | "representation" | "application" | "error_detection";
   misconceptionOptionIds: string[];
+  misconceptionByOptionId: Partial<Record<string, StudyMisconceptionCode>>;
   reviewStatus: StudyAssessmentReviewStatus;
   releaseMode: StudyAssessmentReleaseMode;
 };
@@ -39,6 +41,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "trig-signs-q2",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["b", "c", "d"],
+    misconceptionByOptionId: { b: "sign_error", c: "sign_error", d: "sign_error" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -59,6 +62,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "trig-pythagorean-identity",
     cognitiveOperation: "recall",
     misconceptionOptionIds: ["a", "c", "d"],
+    misconceptionByOptionId: { a: "formula_selection", c: "formula_selection", d: "formula_selection" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -79,6 +83,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "vector-scalar-classification",
     cognitiveOperation: "recall",
     misconceptionOptionIds: ["a", "b", "d"],
+    misconceptionByOptionId: { a: "conceptual_inversion", b: "conceptual_inversion", d: "conceptual_inversion" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -99,6 +104,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "vector-resultant-perpendicular",
     cognitiveOperation: "application",
     misconceptionOptionIds: ["c"],
+    misconceptionByOptionId: { c: "rule_outside_domain" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -119,6 +125,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "vector-resolve-x-component",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["a"],
+    misconceptionByOptionId: { a: "representation_misread" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -139,6 +146,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "kinematics-average-acceleration",
     cognitiveOperation: "application",
     misconceptionOptionIds: ["b", "c"],
+    misconceptionByOptionId: { b: "formula_selection", c: "rule_outside_domain" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -159,6 +167,28 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "motion-graph-displacement-slope",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["a"],
+    misconceptionByOptionId: { a: "representation_misread" },
+    reviewStatus: "approved",
+    releaseMode: "reviewed_static",
+  },
+  {
+    key: "motion-graphs-acceleration-slope",
+    version: "1",
+    conceptKey: "physics.kinematics.motion-graphs",
+    prompt: "On a velocity-time graph, what does the slope at a point represent?",
+    options: [
+      { id: "a", text: "Acceleration" },
+      { id: "b", text: "Velocity" },
+      { id: "c", text: "Displacement" },
+      { id: "d", text: "Distance travelled" },
+    ],
+    correctOptionId: "a",
+    explanation: "The slope is change in velocity divided by change in time, which is acceleration.",
+    difficulty: 0.4,
+    objectiveCode: "motion-graph-velocity-slope",
+    cognitiveOperation: "representation",
+    misconceptionOptionIds: ["b", "c", "d"],
+    misconceptionByOptionId: { b: "representation_misread", c: "representation_misread", d: "representation_misread" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -179,6 +209,7 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "motion-plane-component-independence",
     cognitiveOperation: "representation",
     misconceptionOptionIds: ["a", "c", "d"],
+    misconceptionByOptionId: { a: "component_confusion", c: "component_confusion", d: "component_confusion" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
@@ -199,22 +230,28 @@ const ITEMS: StudyAssessmentItem[] = [
     objectiveCode: "projectile-horizontal-component",
     cognitiveOperation: "error_detection",
     misconceptionOptionIds: ["b", "d"],
+    misconceptionByOptionId: { b: "component_confusion", d: "component_confusion" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
   },
 ];
 
-export function studyAssessmentItemsForConcept(conceptKey: string): StudyAssessmentItem[] {
-  return ITEMS.filter((item) => item.conceptKey === conceptKey).map((item) => ({
+function cloneItem(item: StudyAssessmentItem): StudyAssessmentItem {
+  return {
     ...item,
     options: item.options.map((option) => ({ ...option })),
     misconceptionOptionIds: [...item.misconceptionOptionIds],
-  }));
+    misconceptionByOptionId: { ...item.misconceptionByOptionId },
+  };
+}
+
+export function studyAssessmentItemsForConcept(conceptKey: string): StudyAssessmentItem[] {
+  return ITEMS.filter((item) => item.conceptKey === conceptKey).map(cloneItem);
 }
 
 export function findStudyAssessmentItem(itemKey: string, version: string): StudyAssessmentItem | null {
   const item = ITEMS.find((candidate) => candidate.key === itemKey && candidate.version === version);
-  return item ? { ...item, options: item.options.map((option) => ({ ...option })), misconceptionOptionIds: [...item.misconceptionOptionIds] } : null;
+  return item ? cloneItem(item) : null;
 }
 
 export function publicStudyAssessmentItem(item: StudyAssessmentItem) {
