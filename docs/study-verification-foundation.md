@@ -1,8 +1,8 @@
 # Quantora Study — Verification Foundation
 
-**Status:** Foundation contract  
+**Status:** Foundation contract + first production seam  
 **Effective:** 2026-08-31  
-**Scope:** Study backend trust contract only. No live tutor routing or learner-state behavior changes in this PR.
+**Scope:** Study backend trust contract. No tutor-model routing, DB migration, UI, or learner-model behavior change in this PR.
 
 ## Product rule
 
@@ -53,7 +53,19 @@ Cited web or connected sources may support a factual claim, but the claim must s
 7. The verification layer does not mutate mastery or learner truth directly.
 8. Verification provenance must remain traceable as implementations are added.
 
-## Why this PR is intentionally small
+## First production seam: verified assessment issuance
+
+The verification contract is intentionally wired at the earliest safe assessment boundary instead of being left as a tested but unreachable helper.
+
+- Every production assessment item now carries explicit review status.
+- `study-assessment` builds and resolves an `assessment_key` verification plan before issuing an attempt.
+- Only an `approved` item with an auditable bank/version evidence reference can be issued as a verified Study check.
+- A blocked item fails closed with `verified_assessment_unavailable`; it cannot create a server-side assessment attempt.
+- The existing atomic grade RPC remains unchanged. It can only grade an attempt that was previously issued through this reviewed-item gate.
+
+This preserves the current atomic answer/evidence flow without a new migration or an extra grade-time database round trip.
+
+## Why this PR stays small
 
 The existing Study code already has:
 
@@ -63,7 +75,7 @@ The existing Study code already has:
 - deterministic next-learning-move selection
 - a conversation-first Study surface
 
-The safest next step is therefore a pure, tested verification contract before wiring symbolic engines, source retrieval, or formal proof tooling into production paths.
+The foundation therefore adds one trust contract and one real production caller before symbolic engines, source retrieval, or formal proof tooling are introduced.
 
 ## Follow-on PR sequence
 
@@ -88,11 +100,11 @@ The safest next step is therefore a pure, tested verification contract before wi
 - citations/provenance in verifier evidence
 - no open-web answer key creation
 
-### V4 — Assessment integration
+### V4 — Assessment verification expansion
 
-- connect governed assessment item versions to `reviewed_assessment`
-- prevent draft/generated answer keys from contributing verified mastery
-- add the full issue → answer → verify → evidence → learner-model integration test
+- add full issue → answer → verify → evidence → learner-model integration coverage
+- add release governance for future generated/parametric item families
+- preserve the rule that deterministic grading never upgrades an unreviewed item into verified evidence
 
 ### V5 — Formal verifier pilot
 
@@ -113,4 +125,4 @@ The safest next step is therefore a pure, tested verification contract before wi
 - Production deployment
 - automatic learner-state mutation
 
-The goal of this PR is to make later verification implementations plug into one conservative contract instead of inventing trust semantics independently in each Study feature.
+The goal is to make later verification implementations plug into one conservative, reachable contract instead of inventing trust semantics independently in each Study feature.
