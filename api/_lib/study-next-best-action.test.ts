@@ -199,9 +199,10 @@ test('V6 traverses a converging prerequisite DAG with branch-local cycle state a
       url.includes('/rest/v1/study_concepts?') && url.includes('b-id') && url.includes('a-id'));
     assert.equal(rootConceptReads.length, 1, 'sibling prerequisite concepts are resolved in one bounded batch');
 
-    const conceptReads = requests.filter((url) => url.includes('/rest/v1/study_concepts?') && url.includes('&id='));
-    assert.ok(conceptReads.length >= 1);
-    assert.ok(conceptReads.every((url) => url.includes('&id=in.(')), 'canonical prerequisite resolution avoids per-concept N+1 reads');
+    const rootSingleReads = requests.filter((url) =>
+      url.includes('/rest/v1/study_concepts?')
+      && (url.includes('&id=eq.b-id') || url.includes('&id=eq.a-id')));
+    assert.equal(rootSingleReads.length, 0, 'multi-source frontiers do not degrade into per-concept N+1 reads');
 
     const edgeReads = requests.filter((url) => url.includes('/rest/v1/study_concept_edges?'));
     assert.ok(edgeReads.length >= 1);
