@@ -1303,7 +1303,25 @@ export function useChatStream({
                   provider: parsed.provider,
                   latencyMs: parsed.latencyMs || 0,
                   executionStatus: null,
-                  ...(parsed.modelId ? { modelUsed: parsed.modelId, resolvedModelId: parsed.modelId } : {}),
+                  ...(parsed.modelId ? {
+                    modelUsed: parsed.modelId,
+                    resolvedModelId: parsed.modelId,
+                    /*
+                     * The ladder's reason describes the model it PICKED at the
+                     * start of the turn. When the server finishes on a different
+                     * one — a provider fallback, or the Gemini safety net — that
+                     * reason no longer describes what ran, and pairing it with
+                     * the model that did run reads as "Escalated · <the fast
+                     * model>". The chip exists to say what routing actually did,
+                     * so a reason that has stopped being true is dropped and the
+                     * chip renders nothing rather than something false.
+                     */
+                    ...(autoMode
+                      && targetModel.resolvedModelId
+                      && parsed.modelId !== targetModel.resolvedModelId
+                      ? { autoLadderReason: '' }
+                      : {}),
+                  } : {}),
                   ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),

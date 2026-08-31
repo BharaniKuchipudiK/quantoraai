@@ -19,27 +19,42 @@ export function rankDeskFileMatches(paths = [], query = '', limit = 50) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return list.slice(0, limit);
 
+  /*
+   * Try the basename on its own before the whole path.
+   *
+   * A single greedy pass over the full path takes the earliest occurrence of
+   * each character, so "page" consumes the `p` in `app/` and the match is then
+   * classified as a directory hit — ranking `src/PageUtils.jsx` above the exact
+   * `app/page.jsx`. Matching the basename independently is what makes an exact
+   * filename win, which is the whole reason a file finder exists.
+   */
+  const subsequence = (hay, from) => {
+    let first = -1;
+    let last = -1;
+    let cursor = from;
+    for (const char of q) {
+      const found = hay.indexOf(char, cursor);
+      if (found === -1) return null;
+      if (first === -1) first = found;
+      last = found;
+      cursor = found + 1;
+    }
+    return { first, last };
+  };
+
   const scored = [];
   for (const path of list) {
     const hay = path.toLowerCase();
     const baseAt = hay.lastIndexOf('/') + 1;
 
-    let first = -1;
-    let last = -1;
-    let cursor = 0;
-    for (const char of q) {
-      const found = hay.indexOf(char, cursor);
-      if (found === -1) { cursor = -1; break; }
-      if (first === -1) first = found;
-      last = found;
-      cursor = found + 1;
-    }
-    if (cursor === -1) continue;
+    const inBase = baseAt > 0 ? subsequence(hay, baseAt) : null;
+    const hit = inBase || subsequence(hay, 0);
+    if (!hit) continue;
 
-    const inBasename = first >= baseAt;
-    const span = last - first;
+    const isBasenameHit = Boolean(inBase) || hit.first >= baseAt;
+    const span = hit.last - hit.first;
     // Lower is better. The basename bonus dominates; span and offset break ties.
-    scored.push({ path, score: (inBasename ? 0 : 1000) + span * 4 + first });
+    scored.push({ path, score: (isBasenameHit ? 0 : 1000) + span * 4 + hit.first });
   }
 
   scored.sort((a, b) => (a.score - b.score) || a.path.localeCompare(b.path));

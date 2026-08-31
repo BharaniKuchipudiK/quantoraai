@@ -35,3 +35,20 @@ test('the finder survives junk input', () => {
   assert.deepEqual(rankDeskFileMatches(null, 'a'), []);
   assert.deepEqual(rankDeskFileMatches(['a.js', null, ''], 'a'), ['a.js']);
 });
+
+test('an exact basename beats a directory hit that starts earlier in the path', () => {
+  // A single greedy pass over the full path consumes the `p` in `app/`, which
+  // used to classify app/page.jsx as a directory hit and rank PageUtils above it.
+  assert.deepEqual(
+    rankDeskFileMatches(['src/PageUtils.jsx', 'app/page.jsx'], 'page'),
+    ['app/page.jsx', 'src/PageUtils.jsx'],
+  );
+});
+
+test('a basename match still wins when the directory could also satisfy the query', () => {
+  assert.equal(rankDeskFileMatches(['components/component.jsx', 'lib/comp.js'], 'comp')[0], 'lib/comp.js');
+});
+
+test('a path with no directory still matches', () => {
+  assert.deepEqual(rankDeskFileMatches(['index.html'], 'index'), ['index.html']);
+});
