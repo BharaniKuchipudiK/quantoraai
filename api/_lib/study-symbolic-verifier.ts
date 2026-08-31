@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { StudyVerificationCheck } from "./study-verification.js";
 
-export const STUDY_SYMBOLIC_VERIFIER_VERSION = "study-symbolic-verifier-2026-08-31.1";
+export const STUDY_SYMBOLIC_VERIFIER_VERSION = "study-symbolic-verifier-2026-08-31.2";
 
 export type StudySymbolicDomain = "real" | "complex";
 export type StudySymbolicRelation = "expression" | "equation";
@@ -49,11 +49,11 @@ type RationalExpression = {
   denominator: Polynomial;
   constraints: Set<string>;
 };
-
+type Operator = "+" | "-" | "*" | "/" | "^" | "(" | ")";
 type Token =
   | { kind: "number"; value: string }
   | { kind: "identifier"; value: string }
-  | { kind: "operator"; value: "+" | "-" | "*" | "/" | "^" | "(" | ")" };
+  | { kind: "operator"; value: Operator };
 
 const MAX_EXPRESSION_LENGTH = 500;
 const MAX_TOKENS = 240;
@@ -102,10 +102,6 @@ function fDiv(a: Fraction, b: Fraction): Fraction {
   return fraction(a.n * b.d, a.d * b.n);
 }
 
-function fNeg(a: Fraction): Fraction {
-  return { n: -a.n, d: a.d };
-}
-
 function fEqual(a: Fraction, b: Fraction): boolean {
   return a.n === b.n && a.d === b.d;
 }
@@ -128,8 +124,7 @@ function parseExactNumber(raw: string): Fraction {
   if (!Number.isInteger(exponent) || Math.abs(exponent) > 20) {
     throw new SymbolicError("symbolic_number_out_of_range");
   }
-  const mantissa = match[1];
-  const [whole, decimal = ""] = mantissa.split(".");
+  const [whole, decimal = ""] = match[1].split(".");
   const digits = `${whole || "0"}${decimal}`;
   let numerator = BigInt(digits || "0");
   let denominator = pow10(decimal.length);
@@ -326,9 +321,7 @@ function rationalMultiply(a: RationalExpression, b: RationalExpression): Rationa
 function rationalDivide(a: RationalExpression, b: RationalExpression): RationalExpression {
   if (polynomialIsZero(b.numerator)) throw new SymbolicError("symbolic_division_by_zero_expression");
   const constraints = mergeConstraints(a.constraints, b.constraints);
-  if (!polynomialIsConstant(b.numerator)) {
-    constraints.add(polynomialZeroSetCanonical(b.numerator));
-  }
+  if (!polynomialIsConstant(b.numerator)) constraints.add(polynomialZeroSetCanonical(b.numerator));
   return {
     numerator: polynomialMultiply(a.numerator, b.denominator),
     denominator: polynomialMultiply(a.denominator, b.numerator),
@@ -378,7 +371,7 @@ function tokenize(expression: string): Token[] {
     }
     const operator = rest[0];
     if ("+-*/^()".includes(operator)) {
-      tokens.push({ kind: "operator", value: operator as Token & never });
+      tokens.push({ kind: "operator", value: operator as Operator });
       index += 1;
       continue;
     }
@@ -404,7 +397,7 @@ class Parser {
     return this.tokens[this.index];
   }
 
-  private consumeOperator(value: string): boolean {
+  private consumeOperator(value: Operator): boolean {
     const token = this.peek();
     if (token?.kind === "operator" && token.value === value) {
       this.index += 1;
@@ -423,16 +416,23 @@ class Parser {
   }
 
   private parseTerm(): RationalExpression {
-    let result = this.parsePower();
+    let result = this.parseUnary();
     while (true) {
-      if (this.consumeOperator("*")) result = rationalMultiply(result, this.parsePower());
-      else if (this.consumeOperator("/")) result = rationalDivide(result, this.parsePower());
+      if (this.consumeOperator("*")) result = rationalMultiply(result, this.parseUnary());
+      else if (this.consumeOperator("/")) result = rationalDivide(result, this.parseUnary());
       else return result;
     }
   }
 
+  /** Unary signs bind less tightly than exponentiation: -x^2 means -(x^2). */
+  private parseUnary(): RationalExpression {
+    if (this.consumeOperator("+")) return this.parseUnary();
+    if (this.consumeOperator("-")) return rationalNegate(this.parseUnary());
+    return this.parsePower();
+  }
+
   private parsePower(): RationalExpression {
-    let result = this.parseUnary();
+    let result = this.parsePrimary();
     if (this.consumeOperator("^")) {
       const token = this.peek();
       if (token?.kind !== "number" || !/^\d+$/.test(token.value)) {
@@ -443,12 +443,6 @@ class Parser {
       if (this.consumeOperator("^")) throw new SymbolicError("symbolic_exponent_unsupported");
     }
     return result;
-  }
-
-  private parseUnary(): RationalExpression {
-    if (this.consumeOperator("+")) return this.parseUnary();
-    if (this.consumeOperator("-")) return rationalNegate(this.parseUnary());
-    return this.parsePrimary();
   }
 
   private parsePrimary(): RationalExpression {
@@ -517,15 +511,6 @@ function parseRelation(
   };
 }
 
-function relationEquivalent(
-  actual: RationalExpression,
-  expected: RationalExpression,
-  relation: StudySymbolicRelation,
-): boolean {
-  if (relation === "expression") return rationalEquivalent(actual, expected);
-  return polynomialZeroSetCanonical(actual.numerator) === polynomialZeroSetCanonical(expected.numerator);
-}
-
 function cleanClaimId(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, 200) : "";
 }
@@ -581,9 +566,7 @@ function insufficient(reasonCode: string): StudySymbolicVerificationResult {
   };
 }
 
-function resolved(
-  trace: StudySymbolicVerificationTrace,
-): StudySymbolicVerificationResult {
+function resolved(trace: StudySymbolicVerificationTrace): StudySymbolicVerificationResult {
   return {
     check: {
       verifier: "symbolic",
@@ -599,8 +582,8 @@ function resolved(
  * Exact symbolic verification for a deliberately restricted algebraic subset.
  *
  * Supported: multivariate polynomials, rational expressions, + - * /,
- * parentheses, integer powers 0..8, exact decimals, and equation equivalence
- * up to a non-zero scalar multiple. Every variable and domain is explicit.
+ * parentheses, integer powers 0..8, exact decimals, and a conservative class
+ * of equation equivalence. Every variable and domain is explicit.
  *
  * Unsupported functions (trig/log/root), implicit multiplication, symbolic
  * exponents, inequalities, and expressions beyond complexity guards return
@@ -628,7 +611,6 @@ export function verifyStudySymbolicClaim(
     }
 
     const nonZeroAssumptions = normalizeAssumptions(request.assumptions, declaredVariables);
-    const equivalent = relationEquivalent(actual.value, expected.value, request.relation);
     const traceBase = {
       version: STUDY_SYMBOLIC_VERIFIER_VERSION,
       claimId,
@@ -642,12 +624,14 @@ export function verifyStudySymbolicClaim(
       nonZeroAssumptions: [...nonZeroAssumptions].sort(),
     };
 
-    if (!equivalent) {
-      return resolved({
-        ...traceBase,
-        decision: "rejected",
-        reasonCode: "symbolic_not_equivalent",
-      });
+    if (request.relation === "expression") {
+      if (!rationalEquivalent(actual.value, expected.value)) {
+        return resolved({ ...traceBase, decision: "rejected", reasonCode: "symbolic_not_equivalent" });
+      }
+    } else if (actual.canonical !== expected.canonical) {
+      // Non-proportional equation polynomials are not enough to prove different
+      // solution sets (for example x=0 and x^2=0). Fail closed instead.
+      return insufficient("symbolic_equation_equivalence_not_proven");
     }
 
     const unmatchedDomainConstraints = symmetricDifference(actual.value.constraints, expected.value.constraints);
@@ -655,11 +639,7 @@ export function verifyStudySymbolicClaim(
       return insufficient("symbolic_domain_assumption_required");
     }
 
-    return resolved({
-      ...traceBase,
-      decision: "verified",
-      reasonCode: "symbolic_exact_equivalence",
-    });
+    return resolved({ ...traceBase, decision: "verified", reasonCode: "symbolic_exact_equivalence" });
   } catch (error) {
     if (error instanceof SymbolicError) return insufficient(error.code);
     return insufficient("symbolic_verifier_internal_error");
