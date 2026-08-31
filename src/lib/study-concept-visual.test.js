@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   isStudyTopicSelection,
+  studyActiveConcept,
   studyAllowsAutomaticTeachingVisual,
   studyOpticsVisualSpec,
   studyPictureFitsTopic,
+  studySubjectFamily,
   studyTopicVisualFamily,
 } from './study-concept-visual.js';
 
@@ -26,7 +28,46 @@ test('a science topic list containing equations cannot render an Algebra picture
   ), false);
 });
 
-test('optics is locked as its own visual family', () => {
+test('message-local concept resolution escapes an earlier topic-selection turn', () => {
+  const history = [
+    'you suggest me a topic from Science',
+    'teach me Newtonian inertia',
+  ].join('\n');
+  assert.equal(
+    studyActiveConcept(history, 'Inertia explains why a moving passenger keeps moving when a car brakes.'),
+    'teach me Newtonian inertia',
+  );
+});
+
+test('historical answers keep their original subject after the learner changes topic', () => {
+  const history = [
+    'teach me Algebra equations',
+    'teach me Newtonian inertia',
+  ].join('\n');
+  assert.equal(
+    studyActiveConcept(history, 'For the equation x + 3 = 7, subtract 3 from both sides.'),
+    'teach me Algebra equations',
+  );
+});
+
+test('generic continuation falls back to the nearest established concept', () => {
+  const history = [
+    'Light: Reflection & Refraction',
+    'ready',
+  ].join('\n');
+  assert.equal(
+    studyActiveConcept(history, 'Let us continue with the same idea.'),
+    'Light: Reflection & Refraction',
+  );
+});
+
+test('subject classification is independent of renderer shape', () => {
+  assert.equal(studySubjectFamily('Chemical reactions'), 'chemistry');
+  assert.equal(studySubjectFamily('Newtonian inertia'), 'mechanics');
+  assert.equal(studySubjectFamily('Light: Reflection & Refraction'), 'optics');
+});
+
+test('optics is locked as its own automatic visual family', () => {
   assert.equal(studyTopicVisualFamily('Light: Reflection & Refraction'), 'optics');
   assert.equal(studyAllowsAutomaticTeachingVisual('Light: Reflection & Refraction'), false);
   assert.equal(studyPictureFitsTopic(
@@ -35,18 +76,54 @@ test('optics is locked as its own visual family', () => {
   ), false);
 });
 
-test('concave mirror explanations earn the dedicated optics diagram', () => {
+test('structured diagrams remain available inside a recognized subject', () => {
+  assert.equal(studyPictureFitsTopic(
+    'Process: reactants -> reaction -> products',
+    'Chemical reactions',
+  ), true);
+  assert.equal(studyPictureFitsTopic(
+    'Process: parent cell -> chromosome separation -> daughter cells',
+    'Cell division and mitosis',
+  ), true);
+});
+
+test('strong cross-subject pictures are still rejected', () => {
+  assert.equal(studyPictureFitsTopic(
+    'An equation balance showing the same operation applied to both sides',
+    'Chemical reactions',
+  ), false);
+  assert.equal(studyPictureFitsTopic(
+    'A labelled cell showing the membrane, cytoplasm, and nucleus',
+    'Newtonian inertia',
+  ), false);
+});
+
+test('concave mirror diagram requires an explicitly beyond-focus lesson', () => {
   const spec = studyOpticsVisualSpec(
-    'The concave side curves inward like a cave. Reflected rays from the object cross after reflection, so the image flips.',
+    'On the concave side, once the object is beyond the focal point F, the reflected rays cross and the image is inverted.',
     'Light: Reflection & Refraction',
   );
   assert.equal(spec?.kind, 'concave-mirror');
-  assert.match(spec?.caption || '', /beyond F/);
+  assert.match(spec?.caption || '', /beyond the focal distance F/i);
 });
 
-test('a spoon bowl-side explanation also earns the concave mirror diagram', () => {
+test('unknown concave-mirror region fails closed rather than guessing a ray diagram', () => {
+  assert.equal(studyOpticsVisualSpec(
+    'The concave side curves inward like a cave and can form different kinds of images.',
+    'Light: Reflection & Refraction',
+  ), null);
+});
+
+test('inside-focus concave lessons never receive the inverted real-image diagram', () => {
+  assert.equal(studyOpticsVisualSpec(
+    'Hold your face close to the concave spoon, inside the focal distance. The image is upright and magnified.',
+    'Light: Reflection & Refraction',
+  ), null);
+});
+
+test('a spoon bowl-side lesson earns the diagram only after the focal region is established', () => {
   const spec = studyOpticsVisualSpec(
-    'Look into the bowl side of a spoon and move it slowly away from your face.',
+    'Look into the bowl side of a spoon and move it away. When your face is beyond the focal distance, the image flips upside-down.',
     'Light: Reflection & Refraction',
   );
   assert.equal(spec?.kind, 'concave-mirror');
