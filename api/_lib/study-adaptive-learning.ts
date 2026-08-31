@@ -7,7 +7,7 @@ import {
 } from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.4';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.5';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -75,17 +75,21 @@ export function formatStudyAdaptiveDirective(model: StudyLearnerModel | null): s
     : model.misconception.lastResolvedCode
       ? `; last resolved code: ${model.misconception.lastResolvedCode}`
       : '';
+  const retentionSchedule = model.retention.targetDelayDays == null
+    ? 'no further scheduled tier'
+    : `${model.retention.targetDelayDays}d target; due=${model.retention.due === true}; dueAt=${model.retention.dueAt || 'unknown'}`;
   return `\n\nSTUDY ADAPTIVE LEARNING (${STUDY_ADAPTIVE_LEARNING_VERSION})
 This evidence-backed learner state applies to the active Study concept. The next-best-action planner may step to a canonical prerequisite only when a verified generic failure makes prerequisite recovery relevant.
 - Planner: ${STUDY_NEXT_BEST_ACTION_VERSION}
 - Understanding: ${model.understanding.state}; verified evidence: ${model.understanding.evidenceCount}; evidence kinds: ${model.understanding.evidenceKinds.join(', ') || 'none'}
 - Misconception state: ${model.misconception.state}${misconceptionDetail}
-- Retention: ${model.retention.state}
+- Retention: ${model.retention.state}; ${retentionSchedule}
+- Transfer: ${model.transfer?.state || 'untested'}; verified transfer evidence: ${model.transfer?.evidenceCount || 0}
 - Next learning move: ${model.nextLearningMove.type}
 - Next learning reason: ${model.nextLearningMove.reasonCode}
 - Teaching strategy: ${strategy}
 - Required intervention: ${model.nextLearningMove.instruction}
-Execute the required intervention using that strategy. Treat the misconception code as evidence-backed only when present; never invent another diagnosis from prose. When the intervention names a prerequisite, that target came from the canonical prerequisite graph plus admitted learner evidence; do not substitute a different prerequisite from model intuition. Do not claim stronger understanding than the evidence state. Ask at most one focused learner check, then wait.`;
+Execute the required intervention using that strategy. Treat the misconception code as evidence-backed only when present; never invent another diagnosis from prose. When the intervention names a prerequisite, that target came from the canonical prerequisite graph plus admitted learner evidence; do not substitute a different prerequisite from model intuition. Retention is only verified after a genuinely delayed governed probe, and transfer is only verified through a governed novel-context item reached by the canonical transfer graph. Do not relabel ordinary conversation or immediate correctness as either. Do not claim stronger understanding than the evidence state. Ask at most one focused learner check, then wait.`;
 }
 
 export function publicStudyAdaptiveMetadata(model: StudyLearnerModel | null) {
@@ -99,6 +103,11 @@ export function publicStudyAdaptiveMetadata(model: StudyLearnerModel | null) {
     misconceptionRemediation: model.misconception.remediation?.strategy || null,
     lastResolvedMisconception: model.misconception.lastResolvedCode,
     retention: model.retention.state,
+    retentionTargetDays: model.retention.targetDelayDays ?? null,
+    retentionDueAt: model.retention.dueAt ?? null,
+    retentionDue: model.retention.due === true,
+    transfer: model.transfer?.state || 'untested',
+    transferEvidenceCount: model.transfer?.evidenceCount || 0,
     nextLearningMove: model.nextLearningMove.type,
     nextLearningReason: model.nextLearningMove.reasonCode,
     teachingStrategy: teachingStrategyFor(model),
