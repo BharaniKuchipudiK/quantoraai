@@ -1,6 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { deriveTravelBrief } from '../lib/travel-board-brief.js';
+import {
+  blockedReason,
+  chipEnabled,
+  flightSourceNote,
+} from '../lib/travel-provider-notice.js';
 
 /**
  * One trip board: what we know, chips to move the plan, live flights and
@@ -26,6 +31,29 @@ export default function TravelTripBoard({
   const [note, setNote] = useState('');
 
   const brief = useMemo(() => deriveTravelBrief({ messages }), [messages]);
+  // null until the health endpoint answers. A diagnostic that fails must not
+  // dark a working board, so unknown stays permissive.
+  const [ready, setReady] = useState({ flights: null, stays: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/inference-health', { credentials: 'include' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((health) => {
+        if (cancelled || !health) return;
+        setReady({
+          flights: typeof health.flightsConfigured === 'boolean' ? health.flightsConfigured : null,
+          stays: typeof health.placesConfigured === 'boolean' ? health.placesConfigured : null,
+        });
+      })
+      .catch(() => { /* unknown readiness is the safe default */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const canFlights = chipEnabled({ tripReady: brief.canSearchFlights, configured: ready.flights });
+  const canStays = chipEnabled({ tripReady: brief.canSearchHotels, configured: ready.stays });
+  const providerBlocked = blockedReason({ kind: 'flights', tripReady: brief.canSearchFlights, configured: ready.flights })
+    || blockedReason({ kind: 'hotels', tripReady: brief.canSearchHotels, configured: ready.stays });
 
   const runSearch = async (kind) => {
     if (!signedIn) {
@@ -67,7 +95,8 @@ export default function TravelTripBoard({
       }
       if (kind === 'flights') {
         setFlights(Array.isArray(result.flights) ? result.flights : []);
-        setNote(result.source ? `Live from ${result.source}. We do not book from here.` : 'We do not book from here.');
+        // Never "Live from Duffel" over sandbox fares: the mode decides.
+        setNote(flightSourceNote(data.providerMode, result.source));
       } else {
         setHotels(Array.isArray(result.hotels) ? result.hotels : []);
         setNote(result.searchContext?.note || 'Ratings are from Google, not official hotel stars. We do not book from here.');
@@ -132,17 +161,20 @@ export default function TravelTripBoard({
         Next: {brief.next}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-        {chip('Flights', () => runSearch('flights'), brief.canSearchFlights)}
-        {chip('Hotels', () => runSearch('hotels'), brief.canSearchHotels)}
+        {chip('Flights', () => runSearch('flights'), canFlights)}
+        {chip('Hotels', () => runSearch('hotels'), canStays)}
         {chip('Attractions', () => onAsk?.('Suggest attractions that fit this trip. Keep it on this board — not a website.'), true)}
         {chip('Itineraries', () => onAsk?.('Draft a balanced day-by-day itinerary for this trip.'), true)}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
         {chip('I am flying from…', () => onAsk?.('I am flying from '), true)}
         {chip('My dates are…', () => onAsk?.('My travel dates are '), true)}
-        {chip('Show live flights', () => runSearch('flights'), brief.canSearchFlights)}
-        {chip('Show places to stay', () => runSearch('hotels'), brief.canSearchHotels)}
+        {chip('Show live flights', () => runSearch('flights'), canFlights)}
+        {chip('Show places to stay', () => runSearch('hotels'), canStays)}
       </div>
+      {providerBlocked ? (
+        <div style={{ marginTop: '10px', fontSize: '0.78rem', color: subtextColor }}>{providerBlocked}</div>
+      ) : null}
       {error ? (
         <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#ef4444' }}>{error}</div>
       ) : null}
