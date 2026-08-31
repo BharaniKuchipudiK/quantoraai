@@ -63,6 +63,22 @@ test("Education directive behaves as an evidence-backed Study Advisor instead of
   assert.doesNotMatch(directive, /Newton's laws of motion/i);
 });
 
+test("Education directive appends the finite real-world teaching turn policy", () => {
+  const directive = buildDomainDirective("education");
+  assert.match(directive, /STUDY TEACHING TURN POLICY \(study-teaching-policy-/);
+  assert.match(directive, /TOPIC_SELECTION.*NEW_CONCEPT.*DIRECT_QUESTION.*CONTINUATION.*LEARNER_ATTEMPT/is);
+  assert.match(directive, /DIRECT_QUESTION: ANSWER THE QUESTION FIRST/i);
+  assert.match(directive, /HOOK → PREDICT → SEE → EXPLAIN → TRY → VERIFY → EXAM_READY/);
+  assert.match(directive, /supersedes any earlier Study instruction.*wait for the learner to say “I’m with you”/is);
+  assert.match(directive, /No “let me know when you’re ready”/i);
+});
+
+test("the Study teaching policy is isolated from non-education domains", () => {
+  assert.doesNotMatch(buildDomainDirective("travel"), /STUDY TEACHING TURN POLICY/);
+  assert.doesNotMatch(buildDomainDirective("finance"), /STUDY TEACHING TURN POLICY/);
+  assert.doesNotMatch(buildDomainDirective("research"), /STUDY TEACHING TURN POLICY/);
+});
+
 test("buildDomainDirective is empty for general chat", () => {
   assert.equal(buildDomainDirective(null), "");
 });

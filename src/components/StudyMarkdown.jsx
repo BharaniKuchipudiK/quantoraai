@@ -9,11 +9,7 @@ import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
-import {
-  decorateStudyMessage,
-  ensureStudyTeachingVisual,
-  splitStudySegments,
-} from '../lib/study-pictures.js';
+import { decorateStudyMessage, ensureStudyTeachingVisual, splitStudySegments } from '../lib/study-pictures.js';
 import {
   studyActiveConcept,
   studyAllowsAutomaticTeachingVisual,
@@ -28,10 +24,7 @@ function splitLeadParagraph(text = '') {
   const source = String(text || '');
   const breakMatch = /\n\s*\n/.exec(source);
   if (!breakMatch) return { lead: source, rest: '' };
-  return {
-    lead: source.slice(0, breakMatch.index),
-    rest: source.slice(breakMatch.index + breakMatch[0].length),
-  };
+  return { lead: source.slice(0, breakMatch.index), rest: source.slice(breakMatch.index + breakMatch[0].length) };
 }
 
 function StudyReadingBlock({ text, textColor, components, blockKey }) {
@@ -49,41 +42,20 @@ function StudyReadingBlock({ text, textColor, components, blockKey }) {
         textWrap: 'pretty',
       }}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={components}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
         {text}
       </ReactMarkdown>
     </div>
   );
 }
 
-export default function StudyMarkdown({
-  text = '',
-  topic = '',
-  isLight = false,
-  textColor,
-  components,
-}) {
-  /*
-   * There is no answer box here any more. It was a second composer: a plain
-   * text input calling the same send path as the one at the bottom of the
-   * screen, with none of its capabilities — no attachment, no voice, no
-   * enhance — and two inputs on one screen is an ambiguity, not a convenience.
-   * The question is anchored by the composer's placeholder instead, which
-   * costs no vertical space and keeps every capability.
-   */
+export default function StudyMarkdown({ text = '', topic = '', isLight = false, textColor, components }) {
   const polished = polishStudyTutorText(text);
+  // Teaching chrome is intentionally message-local. It must not depend on the
+  // mutable conversation haystack or historical messages change labels later.
   const nudge = studyTutorNudge(polished);
-  /*
-   * AiStudio currently supplies the Study syllabus haystack here so historical
-   * messages can be rendered from one feed. Resolve the concept that belongs to
-   * this specific answer first; otherwise a later Newton turn could reclassify
-   * an earlier Algebra answer, or an old topic-selection request could suppress
-   * visuals forever.
-   */
+  // Visual truth still needs the message-local concept resolver so diagrams are
+  // tied to the correct subject and fail closed when the concept is ambiguous.
   const activeTopic = studyActiveConcept(topic, polished);
   const illustrated = studyAllowsAutomaticTeachingVisual(activeTopic)
     ? ensureStudyTeachingVisual(polished, activeTopic)
@@ -95,66 +67,30 @@ export default function StudyMarkdown({
   const opticsVisual = studyOpticsVisualSpec(polished, activeTopic);
 
   return (
-    <div
-      className="study-lesson markdown-prose"
-      data-quantora-study-lesson="true"
-      style={{ color: textColor, width: '100%' }}
-    >
+    <div className="study-lesson markdown-prose" data-quantora-study-lesson="true" style={{ color: textColor, width: '100%' }}>
       {nudge ? <StudyTutorNudge kind={nudge.kind} label={nudge.label} isLight={isLight} /> : null}
       {segments.map((segment, index) => {
         if (segment.type === 'flashcard') {
-          return index === firstFlashcardIndex ? (
-            <StudyFlashcards key="study-flashcard-deck" cards={flashcards} isLight={isLight} />
-          ) : null;
+          return index === firstFlashcardIndex ? <StudyFlashcards key="study-flashcard-deck" cards={flashcards} isLight={isLight} /> : null;
         }
         if (segment.type === 'picture') {
           if (!studyPictureFitsTopic(segment.caption, activeTopic)) return null;
-          return (
-            <StudyPicture
-              key={`pic-${index}-${segment.caption}`}
-              caption={segment.caption}
-              isLight={isLight}
-            />
-          );
+          return <StudyPicture key={`pic-${index}-${segment.caption}`} caption={segment.caption} isLight={isLight} />;
         }
         if (segment.type === 'lab') {
-          return (
-            <StudyVisualLab
-              key={`lab-${index}-${segment.kind}`}
-              kind={segment.kind}
-              isLight={isLight}
-            />
-          );
+          return <StudyVisualLab key={`lab-${index}-${segment.kind}`} kind={segment.kind} isLight={isLight} />;
         }
         if (opticsVisual && index === firstMarkdownIndex) {
           const { lead, rest } = splitLeadParagraph(segment.text);
           return (
             <React.Fragment key={`md-optics-${index}`}>
-              <StudyReadingBlock
-                text={lead}
-                textColor={textColor}
-                components={components}
-                blockKey={`md-${index}-lead`}
-              />
+              <StudyReadingBlock text={lead} textColor={textColor} components={components} blockKey={`md-${index}-lead`} />
               <StudyOpticsDiagram spec={opticsVisual} isLight={isLight} />
-              <StudyReadingBlock
-                text={rest}
-                textColor={textColor}
-                components={components}
-                blockKey={`md-${index}-rest`}
-              />
+              <StudyReadingBlock text={rest} textColor={textColor} components={components} blockKey={`md-${index}-rest`} />
             </React.Fragment>
           );
         }
-        return (
-          <StudyReadingBlock
-            key={`md-${index}`}
-            text={segment.text}
-            textColor={textColor}
-            components={components}
-            blockKey={`md-${index}`}
-          />
-        );
+        return <StudyReadingBlock key={`md-${index}`} text={segment.text} textColor={textColor} components={components} blockKey={`md-${index}`} />;
       })}
     </div>
   );

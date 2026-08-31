@@ -8,8 +8,7 @@ test('robotic Study headings are removed while the tutor explanation remains', (
     '',
     '**Context-aware question:** What would your body do without the belt?',
   ].join('\n');
-  const polished = polishStudyTutorText(raw);
-  assert.equal(polished, 'A seatbelt changes your motion when a car brakes.\n\nWhat would your body do without the belt?');
+  assert.equal(polishStudyTutorText(raw), 'A seatbelt changes your motion when a car brakes.\n\nWhat would your body do without the belt?');
 });
 
 test('ordinary human tutor prose passes through unchanged', () => {
@@ -17,13 +16,33 @@ test('ordinary human tutor prose passes through unchanged', () => {
   assert.equal(polishStudyTutorText(text), text);
 });
 
-test('tutor nudges follow the emotional job of the response', () => {
+test('passive ready-to-continue endings are removed but actionable prompts survive', () => {
+  const raw = [
+    'The bowl side of a spoon behaves like a concave mirror.',
+    '',
+    "Let me know once you're ready, and we'll break down the two types of spherical mirrors.",
+  ].join('\n');
+  assert.equal(polishStudyTutorText(raw), 'The bowl side of a spoon behaves like a concave mirror.');
+  assert.equal(
+    polishStudyTutorText("Reflected rays can cross. When you're ready, we'll continue with the focal point."),
+    'Reflected rays can cross.',
+  );
+  const actionable = "When you're ready, calculate the acceleration from 6 m/s to 14 m/s in 4 s.";
+  assert.equal(polishStudyTutorText(actionable), actionable);
+});
+
+test('tutor nudges still honour the emotional job when the prose provides one', () => {
   assert.deepEqual(studyTutorNudge('Okay — let’s start with what you already know.'), { kind: 'wave', label: 'I’m with you' });
   assert.deepEqual(studyTutorNudge('Exactly — you separated the two forces correctly.'), { kind: 'spark', label: 'Good thinking' });
   assert.deepEqual(studyTutorNudge('You are close, but there is one mix-up in the sign.'), { kind: 'magnify', label: 'Let’s look closer' });
   assert.deepEqual(studyTutorNudge('Try this short practice problem before we continue.'), { kind: 'pencil', label: 'Let’s work it out' });
   assert.deepEqual(studyTutorNudge('Notice how the slope changes here.'), { kind: 'idea', label: 'Notice this' });
-  assert.deepEqual(studyTutorNudge('Inertia is resistance to a change in velocity.'), { kind: 'book', label: 'Let’s unpack it' });
+});
+
+test('neutral tutor cues follow the current teaching turn instead of repeating Let’s unpack it', () => {
+  assert.deepEqual(studyTutorNudge('Here are three Science directions you could choose.', 'you suggest me a topic from Science'), { kind: 'book', label: 'Pick a direction' });
+  assert.deepEqual(studyTutorNudge('The inside of the spoon is a concave mirror.', 'Why does the reflection flip in the concave side?'), { kind: 'book', label: 'Here’s the idea' });
+  assert.deepEqual(studyTutorNudge('The next useful idea is the focal distance.', 'continue'), { kind: 'idea', label: 'Keep going' });
 });
 
 test('picture and flashcard tags do not determine tutor nudge copy', () => {
