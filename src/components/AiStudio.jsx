@@ -42,6 +42,7 @@ import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
+import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -106,6 +107,7 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
+const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
 const StudioTabBar = lazy(() => import('./StudioTabBar.jsx'));
 const StudioFileFinder = lazy(() => import('./StudioFileFinder.jsx'));
@@ -555,6 +557,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const deskSaveSessionRef = useRef(null);
   const activeSessionIdRef = useRef(null);
   const [deskReview, setDeskReview] = useState([]);
+  // Every accepted state, oldest first — the rewind menu's restore points.
+  const [deskCheckpoints, setDeskCheckpoints] = useState([]);
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
   const commitDeskVfs = useCallback((nextVfs) => {
@@ -565,6 +569,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // whether the commit was accepted so callers can gate their follow-up state.
     if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
     setDeskReview((prev) => mergeDeskReview(prev, before, nextVfs));
+    setDeskCheckpoints((prev) => recordDeskCheckpoint(prev, nextVfs, { label: 'Build update' }));
     vfsRef.current = nextVfs;
     setVfs(nextVfs);
     return true;
@@ -768,6 +773,29 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
   }, [vfs, deskJob]);
 
+  /*
+   * Rewind bypasses commitDeskVfs on purpose: the regression guard exists to
+   * stop a MODEL turn destroying a working preview, but going back to an older
+   * working state is the user's explicit intent — and the engine has already
+   * preserved the current state as its own checkpoint, so nothing is lost.
+   */
+  const handleDeskRewind = useCallback((checkpointId) => {
+    const current = vfsRef.current || {};
+    const plan = planDeskRestore(deskCheckpoints, checkpointId, current);
+    if (!plan.ok) return;
+    setDeskCheckpoints(plan.history);
+    setDeskReview(diffVfsReview(current, plan.vfs));
+    vfsRef.current = plan.vfs;
+    setVfs(plan.vfs);
+    const code = pickPreviewEntry(plan.vfs);
+    if (code) setWorkspaceCode(code);
+    setPreviewRunStatus('');
+  }, [deskCheckpoints]);
+  const deskCheckpointRows = useMemo(
+    () => describeDeskCheckpoints(deskCheckpoints, vfs),
+    [deskCheckpoints, vfs],
+  );
+
   // Make the model's OWN shop images load in Preview: wire its image files in as
   // data-URIs and proxy the remote image URLs it chose. This never fabricates
   // products or injects stock photos — a shop the model shipped without images
@@ -867,6 +895,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     vfsRef.current = {};
     setWorkspaceCode('');
     setDeskReview([]);
+    setDeskCheckpoints([]);
     setDeskJob(null);
     setPreviewRunStatus('');
     setLiveDeskProbe(null);
@@ -892,6 +921,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCodingDeskOpen(false);
       setIsWorkspaceMode(false);
       setDeskReview([]);
+      setDeskCheckpoints([]);
       vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
@@ -909,6 +939,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setIsWorkspaceMode(false);
       setLastProcessedMessageId(null);
       setDeskReview([]);
+      setDeskCheckpoints([]);
       vfsRef.current = {};
       setDeskJob(null);
       setPreviewRunStatus('');
@@ -919,6 +950,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
     setVfs(restored.vfs);
     vfsRef.current = restored.vfs || {};
+    // The reopened session's files are the first restore point; history from
+    // earlier visits is in-memory only and does not survive a reload.
+    setDeskCheckpoints(recordDeskCheckpoint([], restored.vfs, { label: 'Session opened', origin: 'baseline' }));
     setWorkspaceCode(restored.workspaceCode);
     setWorkspaceActiveTab('preview');
     setIsWorkspaceMode(true);
@@ -4835,6 +4869,17 @@ Paused — ${autoPauseRef.current}.`
                   ) : null}
                 </div>
               )}
+              {deskCheckpointRows.length ? (
+                <Suspense fallback={null}>
+                  <DeskRewindMenu
+                    checkpoints={deskCheckpointRows}
+                    onRestore={handleDeskRewind}
+                    isLight={isLight}
+                    textColor={textColor}
+                    subtextColor={subtextColor}
+                  />
+                </Suspense>
+              ) : null}
               {workspaceActiveTab === 'preview' && previewRunCode ? (
                 <Suspense fallback={null}>
                   <StudioPreviewControls
