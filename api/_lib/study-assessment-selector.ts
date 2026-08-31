@@ -1,12 +1,13 @@
 import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
 import type { StudyAssessmentItem } from './study-assessment-items.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
+import type { StudyMisconceptionCode } from './study-misconception-taxonomy.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-08-31.1';
 
-function coversMisconception(item: StudyAssessmentItem, code: string): boolean {
-  return Object.values(item.misconceptionByOptionId).includes(code as any);
+function coversMisconception(item: StudyAssessmentItem, code: StudyMisconceptionCode): boolean {
+  return Object.values(item.misconceptionByOptionId).includes(code);
 }
 
 /**
