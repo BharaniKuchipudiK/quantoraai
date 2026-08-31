@@ -1,6 +1,7 @@
-import type { StudyMasteryEvidenceEvent } from "./study-truth-layer.js";
+import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
+import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_MASTERY_ESTIMATOR_VERSION = "study-mastery-estimator-2026-08-26.1";
+export const STUDY_MASTERY_ESTIMATOR_VERSION = "study-mastery-estimator-2026-08-31.2";
 
 export type StudyMasteryEstimate = {
   status: "insufficient_evidence" | "provisional" | "established";
@@ -13,10 +14,6 @@ export type StudyMasteryEstimate = {
   observedThrough: string | null;
   reasonCodes: string[];
 };
-
-const VERIFIED_KINDS = new Set([
-  "assessment_item", "retrieval", "application", "transfer", "teach_back", "retention_probe", "misconception_probe",
-]);
 
 const KIND_WEIGHT: Record<string, number> = {
   assessment_item: 1,
@@ -49,17 +46,7 @@ function eventWeight(event: StudyMasteryEvidenceEvent, score: number): number {
 
 /** Transparent, replaceable estimate. Self-confidence never enters mastery. */
 export function estimateStudyMastery(events: StudyMasteryEvidenceEvent[]): StudyMasteryEstimate {
-  const seenAssessmentItems = new Set<string>();
-  const chronological = [...(Array.isArray(events) ? events : [])]
-    .sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt));
-  const scored = chronological
-    .filter((event) => event?.independent === true && VERIFIED_KINDS.has(event.kind))
-    .filter((event) => {
-      if (event.kind !== "assessment_item" || !event.itemRef) return true;
-      if (seenAssessmentItems.has(event.itemRef)) return false;
-      seenAssessmentItems.add(event.itemRef);
-      return true;
-    })
+  const scored = admittedStudyMasteryEvidence(events)
     .map((event) => ({ event, score: eventScore(event) }))
     .filter((row): row is { event: StudyMasteryEvidenceEvent; score: number } => row.score !== null);
 
