@@ -163,7 +163,7 @@
     },
     {
       "source": "/api/inference-health",
-      "destination": "/api/pipeline?route=inference-health"
+      "destination": "/api/domains?route=inference-health"
     },
     {
       "source": "/api/youtube-validate",

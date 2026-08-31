@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { applyCors, isRateLimited } from '../rate-limit.js';
 import { requireActiveSession } from "../authz.js";
 import { fetchApiGatewayKey } from "../../autocomplete.js";
+import { fetchWithTimeout } from "../fetch-timeout.js";
 
 const REQUESTS_PER_MINUTE = 60;
 const OFFICE_KINDS = new Set(['powerpoint', 'word', 'excel']);
@@ -50,7 +51,7 @@ function parseJsonText(value: any) {
 }
 
 async function callAnthropicRouter(prompt: string, apiKey: string) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
@@ -69,7 +70,7 @@ async function callAnthropicRouter(prompt: string, apiKey: string) {
         },
       },
     }),
-  });
+  }, 20_000);
   const raw = await response.text();
   const data = parseJsonText(raw);
   if (!response.ok || data?.error) throw new Error(data?.error?.message || `Anthropic router HTTP ${response.status}`);
@@ -94,7 +95,7 @@ async function callGeminiRouter(prompt: string, apiKey: string) {
 }
 
 async function callOpenRouterRouter(prompt: string, apiKey: string) {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -116,7 +117,7 @@ async function callOpenRouterRouter(prompt: string, apiKey: string) {
         },
       },
     }),
-  });
+  }, 20_000);
   const raw = await response.text();
   const data = parseJsonText(raw);
   if (!response.ok || data?.error) throw new Error(data?.error?.message || `OpenRouter router HTTP ${response.status}`);

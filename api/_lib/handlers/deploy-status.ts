@@ -1,5 +1,6 @@
 import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { requireActiveSession } from "../authz.js";
+import { fetchWithTimeout } from "../fetch-timeout.js";
 import { GoogleAuth } from 'google-auth-library';
 
 export default async function handler(req: any, res: any) {
@@ -41,11 +42,11 @@ export default async function handler(req: any, res: any) {
     const client = await googleAuth.getClient();
     const token = await client.getAccessToken();
 
-    const buildRes = await fetch(`https://cloudbuild.googleapis.com/v1/projects/${projectId}/locations/us-central1/builds/${buildId}`, {
+    const buildRes = await fetchWithTimeout(`https://cloudbuild.googleapis.com/v1/projects/${projectId}/locations/us-central1/builds/${buildId}`, {
       headers: {
         'Authorization': `Bearer ${token.token}`
       }
-    });
+    }, 10_000);
 
     const buildData = await buildRes.json();
     if (!buildRes.ok) {
@@ -64,9 +65,9 @@ export default async function handler(req: any, res: any) {
       const safeName = buildData.steps[1]?.args[2]; // The service name was the 3rd arg in the gcloud run deploy step
       
       if (safeName) {
-         const runRes = await fetch(`https://us-central1-run.googleapis.com/apis/serving.knative.dev/v1/namespaces/${projectId}/services/${safeName}`, {
+         const runRes = await fetchWithTimeout(`https://us-central1-run.googleapis.com/apis/serving.knative.dev/v1/namespaces/${projectId}/services/${safeName}`, {
            headers: { 'Authorization': `Bearer ${token.token}` }
-         });
+         }, 10_000);
          const runData = await runRes.json();
          if (runRes.ok && runData.status?.url) {
            url = runData.status.url;
