@@ -2,7 +2,7 @@ import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.4';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.5';
 
 const GRAPH_TIMEOUT_MS = 4_000;
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
@@ -100,18 +100,30 @@ async function readImmediatePrerequisites(
     .filter((row) => row.sourceConceptId && row.confidence >= MIN_PREREQUISITE_CONFIDENCE);
   if (!edges.length) return [];
 
-  // The graph frontier is hard-capped before concept resolution. Cache source
-  // concepts across converging branches so a shared prerequisite is not fetched
-  // again. This keeps the existing simple PostgREST contract while preventing
-  // the previous unbounded (limit=50) fan-out.
+  // The graph frontier is hard-capped before concept resolution. Resolve every
+  // uncached source concept in one bounded PostgREST request, then cache both
+  // hits and misses across converging branches. This avoids an N+1 read pattern
+  // while preserving the same canonical-concept trust boundary.
   const sourceIds = [...new Set(edges.map((edge) => edge.sourceConceptId))];
-  for (const sourceId of sourceIds) {
-    if (conceptById.has(sourceId)) continue;
+  const unresolvedSourceIds = sourceIds.filter((sourceId) => !conceptById.has(sourceId));
+  if (unresolvedSourceIds.length) {
+    const requestedIds = new Set(unresolvedSourceIds);
+    const encodedIds = unresolvedSourceIds.map((sourceId) => encodeURIComponent(sourceId)).join(',');
     const conceptRows = await readRows(
-      `study_concepts?select=id,canonical_key,label&id=eq.${encodeURIComponent(sourceId)}&status=eq.active&order=updated_at.desc&limit=1`,
+      `study_concepts?select=id,canonical_key,label&id=in.(${encodedIds})&status=eq.active&limit=${unresolvedSourceIds.length}`,
     );
     if (conceptRows === null) return null;
-    conceptById.set(sourceId, conceptRecord(conceptRows[0]));
+
+    const resolvedIds = new Set<string>();
+    for (const row of conceptRows) {
+      const concept = conceptRecord(row);
+      if (!concept || !requestedIds.has(concept.id)) continue;
+      conceptById.set(concept.id, concept);
+      resolvedIds.add(concept.id);
+    }
+    for (const sourceId of unresolvedSourceIds) {
+      if (!resolvedIds.has(sourceId)) conceptById.set(sourceId, null);
+    }
   }
 
   const unique = new Map<string, StudyPrerequisiteRef>();
