@@ -74,7 +74,10 @@ function normalizedHttpsUrl(ref: string): URL | null {
   if (!candidate) return null;
   try {
     const url = new URL(candidate);
-    if (url.protocol !== 'https:' || !url.hostname) return null;
+    // Canonical authority is HTTPS on the authority's normal origin. Refuse
+    // non-standard ports rather than assuming an arbitrary listener on the same
+    // hostname is part of the reviewed curriculum surface.
+    if (url.protocol !== 'https:' || !url.hostname || url.port) return null;
     url.username = '';
     url.password = '';
     return url;
@@ -139,7 +142,10 @@ export function studyGroundingSourceAllowedForMode(
   mode: 'exam_grounded' | 'explore',
 ): boolean {
   if (mode === 'exam_grounded') return source.canonical === true && source.kind === 'official';
-  return source.kind === 'official' || source.kind === 'web' || source.kind === 'connected_source';
+  if (mode === 'explore') {
+    return source.kind === 'official' || source.kind === 'web' || source.kind === 'connected_source';
+  }
+  return false;
 }
 
 function evidenceUrl(ref: string): URL | null {
