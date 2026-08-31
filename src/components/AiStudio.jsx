@@ -6,7 +6,7 @@ import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import { deskChatClaimWasFiltered, filterDeskChatClaims } from '../lib/desk-chat-claim-filter.js';
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Search, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -601,6 +601,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * new API.
    */
   const [openTabs, setOpenTabs] = useState([PINNED_DESK_TAB]);
+  const openTabsRef = useRef(openTabs);
+  openTabsRef.current = openTabs;
   const [deskFullscreen, setDeskFullscreen] = useState(false);
   const [deskFilesOpen, setDeskFilesOpen] = useState(true);
   const [deskFinderOpen, setDeskFinderOpen] = useState(false);
@@ -653,36 +655,41 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [studioDomain, handleCreateNewChat, setStudioDomain]);
 
   /*
-   * Anything that activates a pane gets a tab, wherever it was activated from.
+   * One effect owns the strip: open the active pane, then drop tabs the VFS no
+   * longer backs.
    *
    * This is deliberately an effect on `workspaceActiveTab` and not a wrapper
    * around its setter. There are a dozen-odd places that switch the desk to
    * Preview mid-turn; making each of them call a new opener would have been a
    * dozen chances to miss one and leave the strip lying about what is open.
+   *
+   * Open and prune must share one pass. They were two effects on the same
+   * dependency, and the prune read a ref the open had not written yet: clicking
+   * Terminal or Git set the active pane to a tab the stale list did not contain,
+   * so prune called it unknown and bounced the desk back to Preview. Splitting
+   * them made the rail's own buttons dead. Computed here, prune sees the tab the
+   * open just added.
+   *
+   * Both values are computed in the effect body rather than inside a state
+   * updater. An updater must be pure — React double-invokes them in StrictMode
+   * and may replay them when the queue is rebased behind a higher-priority
+   * update — so calling a second setter from inside one queues an update
+   * mid-render. That converged only because the value happened to be idempotent.
    */
   useEffect(() => {
-    setOpenTabs((prev) => openDeskTab(prev, workspaceActiveTab));
-  }, [workspaceActiveTab]);
-
-  /*
-   * A build rewrites the VFS. Tabs pointing at files it deleted would open an
-   * empty editor that reads as data loss, so they are dropped as soon as the
-   * file is gone.
-   */
-  useEffect(() => {
-    setOpenTabs((prev) => {
-      const pruned = pruneDeskTabs(prev, vfs, workspaceActiveTab);
-      if (pruned.active !== workspaceActiveTab) setWorkspaceActiveTab(pruned.active);
-      return pruned.tabs.length === prev.length ? prev : pruned.tabs;
-    });
+    const opened = openDeskTab(openTabsRef.current, workspaceActiveTab);
+    const pruned = pruneDeskTabs(opened, vfs, workspaceActiveTab);
+    const current = openTabsRef.current;
+    const sameStrip = pruned.tabs.length === current.length
+      && pruned.tabs.every((tab, i) => tab === current[i]);
+    if (!sameStrip) setOpenTabs(pruned.tabs);
+    if (pruned.active !== workspaceActiveTab) setWorkspaceActiveTab(pruned.active);
   }, [vfs, workspaceActiveTab]);
 
   const closeDeskTabAt = useCallback((tabId) => {
-    setOpenTabs((prev) => {
-      const result = closeDeskTab(prev, tabId, workspaceActiveTab);
-      if (result.active !== workspaceActiveTab) setWorkspaceActiveTab(result.active);
-      return result.tabs;
-    });
+    const result = closeDeskTab(openTabsRef.current, tabId, workspaceActiveTab);
+    setOpenTabs(result.tabs);
+    if (result.active !== workspaceActiveTab) setWorkspaceActiveTab(result.active);
   }, [workspaceActiveTab]);
 
   /*
@@ -2826,7 +2833,10 @@ Paused — ${autoPauseRef.current}.`
     : '';
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   /* Filters the rendered list only; stored sessions are never touched. */
-  const visibleChatSessions = filterChatSessions(chatSessions, chatQuery);
+  const visibleChatSessions = useMemo(
+    () => filterChatSessions(chatSessions, chatQuery),
+    [chatSessions, chatQuery],
+  );
 
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
 

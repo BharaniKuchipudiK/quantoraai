@@ -150,16 +150,30 @@ export function relativeChatTime(timestamp, now = Date.now()) {
   }
 }
 
-/** Text of one chat that a search should look at: its title, then what was said. */
+/**
+ * Text of one chat that a search should look at: its title, then what was said.
+ *
+ * The cap used to be taken from the FRONT, which reproduced the exact blind
+ * spot this search exists to remove: a term discussed halfway through a long
+ * chat was unfindable, because only the opening was ever scanned. The test that
+ * covered it padded the START, so it passed while the feature failed.
+ *
+ * Recent messages are scanned first — what you are trying to find again is far
+ * more often near the end of a chat than at its beginning — and the budget is
+ * then spent backwards through the history.
+ */
 function searchableChatText(session) {
   const title = String(session?.title || '');
-  let body = '';
-  for (const message of Array.isArray(session?.messages) ? session.messages : []) {
-    if (body.length >= SEARCH_SCAN_LIMIT) break;
-    const text = typeof message?.text === 'string' ? message.text : '';
-    if (text) body += ` ${text}`;
+  const messages = Array.isArray(session?.messages) ? session.messages : [];
+  const parts = [];
+  let budget = SEARCH_SCAN_LIMIT;
+  for (let i = messages.length - 1; i >= 0 && budget > 0; i -= 1) {
+    const text = typeof messages[i]?.text === 'string' ? messages[i].text : '';
+    if (!text) continue;
+    parts.push(text.length > budget ? text.slice(-budget) : text);
+    budget -= text.length;
   }
-  return `${title} ${body.slice(0, SEARCH_SCAN_LIMIT)}`.toLowerCase();
+  return `${title} ${parts.join(' ')}`.toLowerCase();
 }
 
 /**

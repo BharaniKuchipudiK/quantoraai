@@ -168,3 +168,22 @@ test('the empty-search line names what was searched for, and is blank without a 
   assert.match(chatSearchEmptyCopy('bali'), /bali/);
   assert.equal(chatSearchEmptyCopy('  '), '');
 });
+
+test('a term discussed mid-conversation is findable, not just one near the start', () => {
+  /*
+   * The scan budget used to be taken from the FRONT, which reproduced exactly
+   * the blind spot this search exists to remove. The original test padded the
+   * START, so it passed while the feature failed.
+   */
+  const messages = Array.from({ length: 51 }, (_, i) => ({
+    text: i === 41 ? 'we settled on the postgres migration plan' : 'x'.repeat(400),
+  }));
+  assert.equal(filterChatSessions([{ title: 'Chat', messages }], 'postgres').length, 1);
+});
+
+test('a term in the newest message is findable in a very long chat', () => {
+  const messages = Array.from({ length: 60 }, (_, i) => ({
+    text: i === 59 ? 'the kubernetes rollout' : 'y'.repeat(400),
+  }));
+  assert.equal(filterChatSessions([{ title: 'Chat', messages }], 'kubernetes').length, 1);
+});

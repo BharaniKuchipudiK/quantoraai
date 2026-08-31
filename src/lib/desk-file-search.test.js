@@ -52,3 +52,28 @@ test('a basename match still wins when the directory could also satisfy the quer
 test('a path with no directory still matches', () => {
   assert.deepEqual(rankDeskFileMatches(['index.html'], 'index'), ['index.html']);
 });
+
+/* Two defects a code review found. The originals passed while these failed. */
+
+test('a multi-word query narrows instead of matching nothing', () => {
+  // A space had to be found literally in the path, so every multi-word query
+  // returned [] while the same letters without a space worked.
+  const files = ['src/components/Button.jsx', 'src/lib/util.js'];
+  assert.deepEqual(rankDeskFileMatches(files, 'button jsx'), ['src/components/Button.jsx']);
+  assert.deepEqual(rankDeskFileMatches(files, 'src util'), ['src/lib/util.js']);
+});
+
+test('every term must match, so adding a word narrows', () => {
+  const files = ['src/a/report.jsx', 'src/b/report.js'];
+  assert.equal(rankDeskFileMatches(files, 'report').length, 2);
+  assert.deepEqual(rankDeskFileMatches(files, 'report jsx'), ['src/a/report.jsx']);
+});
+
+test('a deeply nested exact filename still beats a shallow fuzzy hit', () => {
+  // Scoring added the ABSOLUTE offset, so the basename bonus was cancelled for
+  // anything more than a couple of directories deep.
+  assert.deepEqual(
+    rankDeskFileMatches(['zapper.jsx', 'src/app/components/ui/app.jsx'], 'app'),
+    ['src/app/components/ui/app.jsx', 'zapper.jsx'],
+  );
+});

@@ -129,3 +129,31 @@ test('kind separates panes from files', () => {
   assert.ok(isSystemDeskTab('git'));
   assert.ok(!isSystemDeskTab('src/a.js'));
 });
+
+/*
+ * The desk runs open-then-prune as one pass, because prune decides whether the
+ * active pane survives. Run against a list that does not yet contain the pane
+ * being activated, prune calls it unknown and sends the desk home — which is
+ * how the rail's Terminal and Git buttons became dead clicks that bounced
+ * straight back to Preview.
+ */
+test('activating a pane survives the prune that follows it', () => {
+  for (const pane of ['preview', 'terminal', 'git']) {
+    const opened = openDeskTab(['preview'], pane);
+    const pruned = pruneDeskTabs(opened, {}, pane);
+    assert.equal(pruned.active, pane, `${pane} lost its own activation`);
+    assert.ok(pruned.tabs.includes(pane), `${pane} was dropped from the strip`);
+  }
+});
+
+test('activating a file the VFS backs survives the prune that follows it', () => {
+  const vfs = { 'src/App.jsx': { content: 'x' } };
+  const pruned = pruneDeskTabs(openDeskTab(['preview'], 'src/App.jsx'), vfs, 'src/App.jsx');
+  assert.equal(pruned.active, 'src/App.jsx');
+});
+
+test('activating a file the VFS does not back still goes home', () => {
+  const pruned = pruneDeskTabs(openDeskTab(['preview'], 'gone.js'), {}, 'gone.js');
+  assert.equal(pruned.active, PINNED_DESK_TAB);
+  assert.ok(!pruned.tabs.includes('gone.js'));
+});

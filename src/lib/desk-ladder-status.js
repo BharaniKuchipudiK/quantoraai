@@ -20,6 +20,22 @@
  * does not render — silence is correct when we do not know.
  */
 
+/*
+ * Own-key lookup, so a reason or tier named after something on Object.prototype
+ * ('constructor', 'toString') reads as absent rather than returning a function
+ * the chip would try to render.
+ *
+ * Deliberately not Object.hasOwn. Vite 6 still defaults build.target to
+ * "modules" — chrome87, firefox78, safari14, edge88 — and Object.hasOwn needs
+ * Chrome 93, Firefox 92, Safari 15.4. esbuild rewrites syntax, never built-in
+ * methods, so it would ship untransformed and throw on those browsers, taking
+ * the whole desk down to fix a chip. This is the form the rest of the codebase
+ * already uses.
+ */
+function ownProperty(table, key) {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null;
+}
+
 /**
  * tier: 'fast' — the quick default carried it.
  *       'strong' — the ladder climbed to a heavier coder.
@@ -78,9 +94,19 @@ export function deskLadderStatus({ reason = '', modelName = '', autoRouted = fal
    * ignore the annotation rather than dropping the chip entirely.
    */
   const base = String(reason || '').trim().split('+')[0];
-  const entry = LADDER_REASONS[base];
+  const entry = ownProperty(LADDER_REASONS, base);
   if (!entry) return null;
-  const model = String(modelName || '').replace(/\s*\(free\)/ig, '').trim();
+  /*
+   * The caller overwrites modelUsed with the server's raw id, so this receives
+   * provider slugs as well as display names. The chip is nowrap inside a 48px
+   * header, so a full slug consumes the row and clips the job and run status
+   * beside it. Take the last path segment and drop a ":free" tier suffix.
+   */
+  const model = String(modelName || '')
+    .split('/').pop()
+    .replace(/:free$/i, '')
+    .replace(/\s*\(free\)/ig, '')
+    .trim();
   if (!model) return null;
   return { ...entry, model };
 }
@@ -99,7 +125,7 @@ const TIER_COLOR = {
 };
 
 export function deskLadderChipColors(tier, isLight, fallbackColor) {
-  const tone = TIER_COLOR[tier] || TIER_COLOR.fast;
+  const tone = ownProperty(TIER_COLOR, tier) || TIER_COLOR.fast;
   const color = isLight ? tone.light : tone.dark;
   return {
     color: color || fallbackColor,
