@@ -42,6 +42,27 @@ test('the desk publishes a durable hook for a terminally failed turn', () => {
   assert.match(studio, /data-quantora-last-turn-failed=/);
 });
 
+test('the failed-turn hook excludes error turns that still land an artifact', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  /*
+   * A stream can die after emitting complete fenced files; the workspace-apply
+   * path deliberately lands those, so such a turn can still render and pass.
+   * Publishing the bare isError would make the deployed gate abort a
+   * transaction that was about to succeed. Found in review of #430.
+   */
+  const bound = studio.match(/data-quantora-last-turn-failed=\{([^}]*)\}/);
+  assert.ok(bound, 'the shell must publish the failed-turn hook');
+  const expression = bound[1];
+  assert.doesNotMatch(
+    expression,
+    /^\s*lastTurnFailed\s*\?/,
+    'the hook must not be the bare isError fact — it must exclude turns that still produce an artifact',
+  );
+  // The narrowing has to use the same predicate the apply path uses, or the
+  // hook and the behaviour it describes can drift apart.
+  assert.match(studio, /lastTurnFailedWithoutArtifact\s*=\s*lastTurnFailed\s*\n?\s*&&\s*!messageHasExtractableWorkspaceCode\(/);
+});
+
 test('the golden gate fails fast on that hook rather than on the failure copy', () => {
   const gate = read('scripts/deployed-golden-transactions.mjs');
   assert.match(gate, /\[data-quantora-last-turn-failed="true"\]/);

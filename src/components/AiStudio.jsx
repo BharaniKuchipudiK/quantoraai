@@ -2958,6 +2958,24 @@ Paused — ${autoPauseRef.current}.`
    * free to change, this is not.
    */
   const lastTurnFailed = Boolean(lastAiMessage?.isError) && !isGenerating;
+  /*
+   * The hook is the NARROWER fact: the turn failed and left nothing to render.
+   *
+   * A stream can die after emitting complete fenced files. useChatStream keeps
+   * that output and still marks the message an error, and the workspace-apply
+   * effect above deliberately lands those files ("error turns with extractable
+   * fences still land the partial workspace"). Publishing the bare isError
+   * would tell the deployed gate to abort a transaction that was about to
+   * render a working preview and pass.
+   *
+   * Same predicate the apply path uses, so the hook cannot disagree with the
+   * behaviour it describes; it reads currentVfs too, so an error turn that is
+   * still recoverable from existing desk files does not raise it either.
+   * lastTurnFailed itself is left alone -- studioMission has always been given
+   * the broad fact, and this is not the PR to change what the mission says.
+   */
+  const lastTurnFailedWithoutArtifact = lastTurnFailed
+    && !messageHasExtractableWorkspaceCode(lastAiMessage?.text || '', vfs);
   const studioMission = deriveStudioMission({
     conversationContext,
     messages,
@@ -2977,7 +2995,7 @@ Paused — ${autoPauseRef.current}.`
   return (
     <div
       className="ai-studio-shell"
-      data-quantora-last-turn-failed={lastTurnFailed ? 'true' : undefined}
+      data-quantora-last-turn-failed={lastTurnFailedWithoutArtifact ? 'true' : undefined}
       style={{
       display: 'flex',
       gap: '12px',
