@@ -20,6 +20,7 @@ import {
   attachPhotoUrls,
   firstPhotoName,
   isSafePhotoUri,
+  isValidPhotoName,
   resolvePhotoUri,
 } from './places-photos.js';
 
@@ -166,4 +167,48 @@ test('a timeout resolves to null without hanging the caller', async () => {
   const result = await resolvePhotoUri(KEY, photoName(1), { fetchFn, timeoutMs: 50 });
   assert.equal(result, null);
   assert.ok(Date.now() - started < 2_000, 'the timeout must fire well before the default');
+});
+
+/*
+ * Found by an adversarial pass over this file rather than by a reviewer, after
+ * Codex hit its usage limit. A photo reference arrives inside a network
+ * response and is then interpolated into the URL that carries our API key, so
+ * its charset is a security boundary and not a formatting preference.
+ */
+
+test('SECURITY: a photo name cannot rewrite the request URL', async () => {
+  const injections = [
+    'places/x/photos/abc?evil=1',        // swallows skipHttpRedirect into a value
+    'places/x/photos/abc&maxWidthPx=99',  // smuggles a second parameter
+    'places/x/photos/abc#frag',           // truncates the URL
+    'places/x/photos/..%2F..%2Fadmin',    // encoded traversal
+    'places/x/photos/a b',                // whitespace
+    'places/x/photos/a/b',                // extra segment
+    'https://evil.test/places/x/photos/a',
+  ];
+  for (const name of injections) {
+    assert.equal(isValidPhotoName(name), false, `must refuse ${name}`);
+    // And the exported resolver refuses it too, without making a request.
+    const { fetchFn, calls } = recordingFetch({ photoUri: GOOD_URI });
+    assert.equal(await resolvePhotoUri(KEY, name, { fetchFn }), null);
+    assert.equal(calls.length, 0, `${name} must not reach the network`);
+  }
+});
+
+test('SECURITY: a legitimate photo name is still accepted', async () => {
+  const real = 'places/ChIJN1t_tDeuEmsRUsoyG83frY4/photos/AeJbb3eR-x_9Yq0';
+  assert.equal(isValidPhotoName(real), true);
+  const { fetchFn, calls } = recordingFetch({ photoUri: GOOD_URI });
+  assert.equal(await resolvePhotoUri(KEY, real, { fetchFn }), GOOD_URI);
+  assert.equal(calls.length, 1);
+  // The parameters we rely on must survive intact.
+  const url = new URL(calls[0].url);
+  assert.equal(url.searchParams.get('skipHttpRedirect'), 'true');
+  assert.ok(url.pathname.endsWith('/media'), 'the media segment must survive');
+});
+
+test('SECURITY: a redirect is refused rather than followed', async () => {
+  const { fetchFn, calls } = recordingFetch({ photoUri: GOOD_URI });
+  await resolvePhotoUri(KEY, photoName(1), { fetchFn });
+  assert.equal(calls[0].init?.redirect, 'error', 'we asked for JSON, not a Location header');
 });

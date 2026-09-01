@@ -92,14 +92,39 @@ export function isSafePhotoUri(value: unknown): boolean {
   return true;
 }
 
+/**
+ * A photo resource name, strictly: places/<id>/photos/<ref>, where both
+ * segments are the unreserved base64url alphabet Google actually issues.
+ *
+ * The charset is the security-relevant half, not the shape. An earlier version
+ * accepted `[^/]+` per segment, which admits `?`, `&` and `#` — and this name
+ * is interpolated into a URL. `places/x/photos/abc?evil=1` produced:
+ *
+ *   path   /v1/places/x/photos/abc                    <- /media segment gone
+ *   query  ?evil=1/media?maxWidthPx=800&skipHttpRedirect=true
+ *
+ * skipHttpRedirect is swallowed into another parameter's value, so the endpoint
+ * answers with a 302 instead of JSON and fetch follows it — quietly disabling
+ * the one property this whole module is built on. A `#` truncates the URL
+ * outright. That requires a compromised or intercepted Places response to
+ * reach us, which TLS already guards, but a value taken from a network
+ * response must not be able to rewrite the request that carries our key.
+ */
+const PHOTO_NAME = /^places\/[A-Za-z0-9_-]+\/photos\/[A-Za-z0-9_-]+$/;
+
+/** True when a photo reference is safe to interpolate into a request URL. */
+export function isValidPhotoName(value: unknown): boolean {
+  return PHOTO_NAME.test(String(value || ''));
+}
+
 /** The first usable photo reference on a raw Places result, or null. */
 export function firstPhotoName(place: any): string | null {
   const photos = Array.isArray(place?.photos) ? place.photos : [];
   for (const photo of photos) {
     const name = typeof photo?.name === 'string' ? photo.name.trim() : '';
-    // A photo resource name is "places/<id>/photos/<ref>". Anything else is not
-    // one, and guessing at a malformed reference just wastes a round trip.
-    if (name && /^places\/[^/]+\/photos\/[^/]+$/.test(name)) return name;
+    // Anything else is not a photo reference, and guessing at a malformed one
+    // just wastes a round trip.
+    if (isValidPhotoName(name)) return name;
   }
   return null;
 }
@@ -113,7 +138,9 @@ export async function resolvePhotoUri(
   photoName: string,
   options: { fetchFn?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<string | null> {
-  if (!apiKey || !photoName) return null;
+  // Validated here as well as at the call site: this function is exported, and
+  // a future caller must not be able to reach the URL builder with a raw name.
+  if (!apiKey || !isValidPhotoName(photoName)) return null;
   const fetchFn = options.fetchFn || fetch;
   const timeoutMs = options.timeoutMs ?? PHOTO_TIMEOUT_MS;
 
@@ -125,6 +152,10 @@ export async function resolvePhotoUri(
   try {
     const response = await fetchFn(url, {
       headers: { 'X-Goog-Api-Key': apiKey },
+      // We asked for JSON, not a redirect. Refusing to follow one means a
+      // request that somehow loses skipHttpRedirect fails closed instead of
+      // chasing a Location header with our key still on the client.
+      redirect: 'error',
       ...(controller ? { signal: controller.signal } : {}),
     });
     if (!response?.ok) return null;
