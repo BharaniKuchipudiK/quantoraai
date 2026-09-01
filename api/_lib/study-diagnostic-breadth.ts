@@ -1,7 +1,5 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
 
-export const STUDY_DIAGNOSTIC_BREADTH_VERSION = 'study-diagnostic-breadth-2026-09-02.1';
-
 export type StudyDiagnosticConcept = {
   id: string;
   canonicalKey: string;
@@ -50,9 +48,6 @@ function diagnosticPriority(model: StudyLearnerModel): number {
     case 'guided_repair': return 80;
     case 'independent_retrieval': return model.understanding.evidenceCount === 0 ? 75 : 70;
     case 'vary_evidence': return 55;
-    // Retention and transfer belong to the verified-learning loop, but they are
-    // deliberately not pulled into a short diagnostic session. H2.3 still has
-    // parked reviewed-content gates for these evidence purposes.
     case 'retention_probe':
     case 'transfer_task':
     default:
@@ -83,8 +78,10 @@ export function planStudyDiagnosticBreadth(input: {
   checksCompleted?: number;
   maxChecks?: number;
 }): StudyDiagnosticPlan {
-  const maxChecks = Math.max(1, Math.min(12, Math.trunc(input.maxChecks ?? DEFAULT_MAX_CHECKS)));
-  const checksCompleted = Math.max(0, Math.trunc(input.checksCompleted ?? 0));
+  const suppliedMaxChecks = Number.isFinite(input.maxChecks) ? Number(input.maxChecks) : DEFAULT_MAX_CHECKS;
+  const suppliedCompleted = Number.isFinite(input.checksCompleted) ? Number(input.checksCompleted) : 0;
+  const maxChecks = Math.max(1, Math.min(12, Math.trunc(suppliedMaxChecks)));
+  const checksCompleted = Math.max(0, Math.trunc(suppliedCompleted));
   if (checksCompleted >= maxChecks) {
     return { action: 'stop', reasonCode: 'diagnostic_budget_exhausted' };
   }
