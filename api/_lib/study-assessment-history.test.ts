@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { buildStudyAssessmentHistory, learnerAssessmentType } from './study-assessment-history.js';
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 test('history projects only learner-safe assessment fields', () => {
   const history = buildStudyAssessmentHistory([
@@ -12,9 +17,6 @@ test('history projects only learner-safe assessment fields', () => {
       submitted_at: '2026-09-01T08:00:00.000Z',
       correct: true,
       score: 1,
-      correct_option_id: 'secret-answer',
-      submitted_option_id: 'a',
-      user_sub: 'private-user',
     },
   ], [
     {
@@ -39,6 +41,16 @@ test('history projects only learner-safe assessment fields', () => {
   assert.equal('correct_option_id' in history[0], false);
   assert.equal('submitted_option_id' in history[0], false);
   assert.equal('user_sub' in history[0], false);
+});
+
+test('history storage read does not request answer-key or submitted-option columns', () => {
+  const source = fs.readFileSync(path.join(root, 'api/_lib/study-assessment-history.ts'), 'utf8');
+  const select = source.match(/study_assessment_attempts\?select=([^`&]+)/)?.[1] || '';
+  assert.match(select, /concept_id/);
+  assert.match(select, /submitted_at/);
+  assert.match(select, /correct/);
+  assert.match(select, /score/);
+  assert.doesNotMatch(select, /correct_option_id|submitted_option_id|option_ids|misconception_option_ids/);
 });
 
 test('transfer history preserves target concept and source evidence context', () => {
