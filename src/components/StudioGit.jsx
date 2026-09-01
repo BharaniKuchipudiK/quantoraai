@@ -8,6 +8,17 @@ import {
 } from '../lib/github-import.js';
 import { runGitInWorkspace } from '../lib/webcontainer.js';
 
+/*
+ * Security containment for #452.
+ *
+ * The backend shared-token write seam is fail-closed until Quantora can prove
+ * the signed-in principal is authorized for the target GitHub repository and
+ * exact action. Keep the existing request code wired so the permanent fix has
+ * one path to re-enable, but do not paint a clickable door that is guaranteed
+ * to fail while containment is active.
+ */
+const SHARED_GITHUB_WRITES_AVAILABLE = false;
+
 export default function StudioGit({
   vfs = {},
   workspaceKey = '',
@@ -96,6 +107,13 @@ export default function StudioGit({
   }
 
   async function createPullRequest() {
+    if (!SHARED_GITHUB_WRITES_AVAILABLE) {
+      setLog((prev) => [
+        ...prev,
+        'Create PR is temporarily unavailable while Quantora hardens repository authorization. Open the GitHub compare and create the PR there for now.',
+      ]);
+      return;
+    }
     if (prBusy) return;
     if (!githubRepoUrl) {
       setLog((prev) => [
@@ -155,7 +173,7 @@ export default function StudioGit({
       }}
     >
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
-        Git is for this app’s files on the desk. Status, diff, and commit only — not Quantora’s GitHub. Push still happens outside the desk; Create PR needs GITHUB_TOKEN and an existing head branch.
+        Git is for this app’s files on the desk. Status, diff, and commit run locally. Push still happens outside the desk. Create PR is temporarily unavailable while repository authorization is hardened; Open on GitHub remains available.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>
@@ -181,11 +199,12 @@ export default function StudioGit({
         <button
           type="button"
           data-quantora-studio-git-create-pr="true"
-          disabled={busy || prBusy || !githubRepoUrl}
+          disabled={!SHARED_GITHUB_WRITES_AVAILABLE || busy || prBusy || !githubRepoUrl}
           onClick={createPullRequest}
+          title={!SHARED_GITHUB_WRITES_AVAILABLE ? 'Temporarily unavailable while repository authorization is hardened' : undefined}
           style={gitButtonStyle}
         >
-          {prBusy ? 'Creating PR…' : 'Create PR'}
+          {SHARED_GITHUB_WRITES_AVAILABLE ? (prBusy ? 'Creating PR…' : 'Create PR') : 'Create PR unavailable'}
         </button>
       </div>
       {githubRepoUrl ? (
