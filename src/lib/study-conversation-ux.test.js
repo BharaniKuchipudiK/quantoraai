@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('the lesson never renders a second composer', () => {
   /*
    * This first replaced a vague "Your turn" banner with an embedded input, then
@@ -30,8 +34,8 @@ test('the question is anchored in the composer, and only when one was asked', ()
 test('incorrect resolution offers repair choices without punitive red failure styling', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   assert.match(shell, /Good attempt — here is the key distinction/);
-  assert.match(shell, />Another example</);
-  assert.match(shell, />Useful reference</);
+  assert.match(shell, />\s*Another example\s*</);
+  assert.match(shell, />\s*Useful reference\s*</);
   assert.match(shell, /onRemediation\?\.\('retry'\)/);
   assert.doesNotMatch(shell, /#9f1239|#fb7185/);
 });
@@ -95,12 +99,48 @@ test('Study flashcards are an interactive hidden-answer deck, not a Front/Back t
   assert.match(markdown, /<StudyFlashcards/);
 });
 
-test('Study gives the learner compact next-path choices instead of dumping activities into the lesson', () => {
+test('Study keeps exactly three permanent learner moves and moves secondary tools behind the Hub', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
+  const hub = read('src/components/StudyHubLauncher.jsx');
+
   assert.match(shell, /data-quantora-study-next-choices="true"/);
-  for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
-    assert.match(shell, new RegExp(label.replace('?', '\\?')));
+  assert.match(shell, />\s*Explain\s*</);
+  assert.match(shell, />\s*Practice\s*</);
+  assert.match(shell, /:\s*'Check'/);
+
+  for (const label of ['Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
+    assert.match(hub, new RegExp(escapeRegExp(label)));
   }
+  /*
+   * Check rendered button copy, not arbitrary comments or implementation prose.
+   * A raw source substring made this gate capable of failing on documentation
+   * even when no permanent secondary control existed.
+   */
+  for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
+    assert.doesNotMatch(shell, new RegExp(`${escapeRegExp(label)}\\s*<\\/button>`));
+  }
+
+  assert.match(hub, /data-quantora-study-hub-launcher="true"/);
+  assert.match(hub, /aria-expanded=\{open\}/);
+  /*
+   * Future surfaces may be named in design comments. What this gate forbids is
+   * shipping them as live Hub actions or visible placeholder copy before their
+   * real data contracts exist.
+   */
+  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard|Assessment History|Notebook)['"]/i);
+  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard|Assessment History|Notebook)\s*</i);
+});
+
+test('H1 Study controls are monochrome and do not revive the legacy accent palette', () => {
+  const shell = read('src/components/StudyTutorShell.jsx');
+  const hub = read('src/components/StudyHubLauncher.jsx');
+  const css = read('src/components/study-h1.css');
+  const h1 = `${shell}\n${hub}\n${css}`;
+
+  assert.doesNotMatch(h1, /#f97316|#fff7ed|#ecfdf5|#fde68a|#92400e|#6ee7b7|#fcd34d/i);
+  assert.match(css, /--study-h1-strong: #111111/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /focus-visible/);
 });
 
 test('persisted private Study prompts are removed from both rendering and model history', () => {

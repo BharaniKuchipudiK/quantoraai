@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import StudyHubLauncher from './StudyHubLauncher.jsx';
 import StudyTutorShell from './StudyTutorShell.jsx';
+import './study-h1.css';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import {
   gradeStudyAssessment,
@@ -23,16 +25,13 @@ const EMPTY_ASSESSMENT = Object.freeze({ status: 'idle', item: null, attemptId: 
 /**
  * Persistent Study feature boundary. It is intentionally a sibling of the chat
  * feed, so streaming a new message cannot unmount an in-progress learner task.
- * The rendered shell is compact by default; rich learning activities expand
- * only when the learner asks for them.
+ * The rendered shell is compact by default; secondary capabilities are exposed
+ * through the progressive-disclosure Study Hub.
  */
 export default function StudyTutorWorkspace({
   activeSessionId,
   conversationContext,
   messages,
-  isLight,
-  textColor,
-  subtextColor,
   onAsk,
   onSend,
 }) {
@@ -47,6 +46,7 @@ export default function StudyTutorWorkspace({
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
   );
+
   useEffect(() => {
     assessmentGeneration.current += 1;
     dispatchLoop({ type: 'RESET' });
@@ -123,20 +123,26 @@ export default function StudyTutorWorkspace({
 
   if (!brief?.active) return null;
   return (
-    <StudyTutorShell
-      key={`${activeSessionId}:${brief.conceptId}`}
-      brief={brief}
-      isLight={isLight}
-      textColor={textColor}
-      subtextColor={subtextColor}
-      onAsk={onAsk}
-      onSend={onSend}
-      assessment={assessment}
-      loop={loop}
-      onRequestAssessment={handleRequestAssessment}
-      onSubmitAssessment={handleSubmitAssessment}
-      onAdvance={handleAdvance}
-      onRemediation={handleRemediation}
-    />
+    <>
+      <StudyTutorShell
+        key={`${activeSessionId}:${brief.conceptId}`}
+        brief={brief}
+        onAsk={onAsk}
+        onSend={onSend}
+        assessment={assessment}
+        loop={loop}
+        onRequestAssessment={handleRequestAssessment}
+        onSubmitAssessment={handleSubmitAssessment}
+        onAdvance={handleAdvance}
+        onRemediation={handleRemediation}
+      />
+      <StudyHubLauncher
+        key={`${activeSessionId}:${brief.conceptId}:hub`}
+        topic={brief.label}
+        learnerModel={assessment?.result?.learnerModel || null}
+        onAsk={onAsk}
+        onSend={onSend}
+      />
+    </>
   );
 }
