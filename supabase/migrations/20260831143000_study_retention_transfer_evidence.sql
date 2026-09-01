@@ -61,6 +61,11 @@ create index if not exists study_assessment_attempts_owner_item_submitted_idx
   on public.study_assessment_attempts (user_sub, item_key, item_version)
   where submitted_at is not null;
 
+-- The insert-time active-attempt guard must remain item-scoped as history grows.
+create index if not exists study_assessment_attempts_owner_item_open_idx
+  on public.study_assessment_attempts (user_sub, item_key, item_version, expires_at)
+  where submitted_at is null;
+
 -- Close the read-before-insert race without burning abandoned/expired attempts.
 -- The grading RPC uses the same learner + item/version advisory-lock key below.
 -- A second concurrent issue request therefore cannot create another live copy of
