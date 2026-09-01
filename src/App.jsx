@@ -491,7 +491,17 @@ export default function App() {
     }
   }, [sessionReady, user]);
 
-  const openAuth = () => {
+  /*
+   * Stable for the life of the app, deliberately.
+   *
+   * onOpenAuth={openAuth} reaches AiStudio and is a dependency of the
+   * renderedChatFeed memo — the one thing keeping the conversation from
+   * re-rendering all of its messages. As a plain arrow this was rebuilt on
+   * every App render, so any App-level state change silently invalidated that
+   * memo and re-rendered the whole thread. It closes over nothing but state
+   * setters and module-level helpers, so [] is the honest dependency list.
+   */
+  const openAuth = useCallback(() => {
     if (typeof window !== 'undefined' && isIsolatedStudioPath(window.location.pathname)) {
       window.location.assign(`/?signin=1&next=${encodeURIComponent(isolatedStudioHref())}`);
       return;
@@ -499,7 +509,7 @@ export default function App() {
     const storedReset = peekPasswordResetToken();
     if (storedReset) setAuthResetToken(storedReset);
     setShowAuthModal(true);
-  };
+  }, []);
 
   const handleSendToCanvas = (payload) => {
     const node = createJourneyNode(

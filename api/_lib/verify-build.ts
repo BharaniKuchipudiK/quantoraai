@@ -5,6 +5,7 @@ import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFai
 import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
 // Commerce intent lives in ONE place — see src/lib/commerce-intent.js for why.
 import { briefWantsOnlineSelling, briefWantsProductCatalog } from "../../src/lib/commerce-intent.js";
+import { inspectBuildTruth } from "../../src/lib/build-truth.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -57,7 +58,37 @@ function hasRealStyling(src: string): boolean {
  * spine of the verdict. Feature checks activate only when the brief asks for
  * them, so a simple landing page is not penalised for lacking a cart.
  */
-export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
+/*
+ * Controls a person would click that a machine can prove are wired.
+ *
+ * Everything else in this file asks whether a STRING is present. "Add to
+ * Cart" as text passed feat-cart; a <button> existing passed interactive. A
+ * boutique page whose nav, Add to Cart and Checkout were all dead scored
+ * 100/100 and passed, because every question asked was about the source
+ * rather than about the page. The person who asked for that shop finds out by
+ * clicking.
+ *
+ * build-truth.js already answers the harder question and nothing here was
+ * asking it. It is deliberately silent when it cannot be sure — a component
+ * framework owning the wiring, or a delegated listener it cannot follow — so
+ * the checks below are only added for the categories it actually ran. A check
+ * that is green because it never executed is worse than no check.
+ */
+const SELL_CONTROL = /add[\s-]?to[\s-]?(?:cart|bag|basket)|buy\s?now|checkout|place\s+order/i;
+
+/*
+ * A page that loads script it did not inline.
+ *
+ * build-truth reads script BODIES, so `<script src="https://cdn/commerce.js">`
+ * is invisible to it and a storefront that delegates its cart to a commerce SDK
+ * reads as a dead Add to Cart. Capping such a build at 45 asserts knowledge we
+ * do not have — the wiring may be perfectly real in code we cannot see. The
+ * finding is still worth surfacing, so the check stays and only the CAP stands
+ * down. Silent when unsure is the rule; silent about everything is not.
+ */
+const LOADS_EXTERNAL_SCRIPT = /<script\b[^>]*\bsrc\s*=/i;
+
+export function heuristicChecks(code: string, brief = "", opts: { files?: string[] } = {}): BuildCheck[] {
   const src = String(code || "");
   const lower = src.toLowerCase();
   const b = String(brief || "").toLowerCase();
@@ -113,6 +144,52 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
   if (/\b(gallery|portfolio|photos|showcase)\b/.test(b)) {
     const enough = imgTags.length >= 3;
     checks.push({ id: "feat-gallery", label: "Gallery with multiple images", ok: enough, weight: 2, detail: enough ? undefined : "Brief asks for a gallery, but few/no images were built" });
+  }
+
+  const truth = inspectBuildTruth(src, { files: opts.files || [] });
+  const stoodDown = new Set(truth.skipped.map((s: any) => s.check));
+  const say = (findings: any[]) => findings.slice(0, 3).map((f) => f.what).join(" ");
+
+  if (!stoodDown.has("controls")) {
+    const dead = truth.findings.filter((f: any) => f.kind === "dead-control");
+    /*
+     * Critical only when the brief asked to SELL and the dead control is the
+     * one that sells. A dead footer link on a landing page is a defect worth
+     * scoring down; a dead Add to Cart on a shop is the shop not existing.
+     * Same shape as feat-photos above, and for the same reason: a gate that
+     * caps the score on ambiguous evidence is a gate the next person mutes.
+     */
+    /*
+     * Match the control's SOURCE, not just its derived label. build-truth
+     * prefers an accessible name, so `<button aria-label="Add dress">Add to
+     * Cart</button>` stores "Add dress" and a label-only test misses the very
+     * control that sells. data.at locates the exact occurrence, so the element
+     * itself — attributes and visible text alike — is what gets classified.
+     */
+    const deadSellControl = dead.filter((f: any) => {
+      if (SELL_CONTROL.test(String(f.data?.label || ""))) return true;
+      const at = Number(f.data?.at);
+      return Number.isFinite(at) && SELL_CONTROL.test(src.slice(at, at + 200));
+    });
+    checks.push({
+      id: "controls-wired",
+      label: "Buttons and links actually do something",
+      ok: dead.length === 0,
+      weight: 3,
+      critical: briefWantsOnlineSelling(b) && deadSellControl.length > 0 && !LOADS_EXTERNAL_SCRIPT.test(src),
+      detail: dead.length ? `${dead.length} control(s) do nothing when clicked. ${say(dead)}` : undefined,
+    });
+  }
+
+  if (!stoodDown.has("links")) {
+    const broken = truth.findings.filter((f: any) => f.kind === "broken-link");
+    checks.push({
+      id: "links-resolve",
+      label: "Links go where they say",
+      ok: broken.length === 0,
+      weight: 2,
+      detail: broken.length ? `${broken.length} link(s) point nowhere. ${say(broken)}` : undefined,
+    });
   }
 
   return checks;
@@ -200,7 +277,7 @@ export async function verifyBuild(opts: {
 
   const assembled = prepareCodeForPreview(code, vfs);
   const judgedBrief = formatJobCardForVerify(job, brief);
-  const checks = heuristicChecks(assembled, judgedBrief);
+  const checks = heuristicChecks(assembled, judgedBrief, { files: Object.keys(vfs || {}) });
   const heuristicScore = scoreFromChecks(checks);
   const heuristicIssues = checks.filter((c) => !c.ok).map((c) => c.detail || `Missing: ${c.label}`);
 
