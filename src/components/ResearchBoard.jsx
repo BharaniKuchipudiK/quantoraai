@@ -12,8 +12,40 @@ const UNVERIFIED_REASONS = {
 
 function standingLabel(result) {
   if (result.standing === 'supported') return 'Verified — supporting quote found in source';
-  if (result.standing === 'contested') return 'Contested — a cited source disagrees';
+  if (result.standing === 'contested') {
+    return result.reasonCode === 'sources_disagree'
+      ? 'Contested — verified sources disagree'
+      : 'Contested — a cited source disagrees';
+  }
   return `Unverified — ${UNVERIFIED_REASONS[result.reasonCode] || 'evidence could not be confirmed'}`;
+}
+
+/** One verified quote, attributed. Disagreements render two of these, labeled. */
+function EvidenceQuote({ label, excerpt, sourceUrl }) {
+  return (
+    <div
+      style={{
+        marginTop: '5px',
+        paddingLeft: '8px',
+        borderLeft: '2px solid var(--q-border)',
+        fontSize: '0.71rem',
+        fontWeight: 400,
+        lineHeight: 1.45,
+        fontStyle: 'italic',
+      }}
+    >
+      {label ? <span style={{ fontStyle: 'normal', fontWeight: 700 }}>{label} </span> : null}
+      “{excerpt}”
+      {sourceUrl ? (
+        <>
+          {' — '}
+          <a href={sourceUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>
+            source
+          </a>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -177,6 +209,25 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
             : ''}
         </div>
       ) : null}
+      {brief.plan.length > 0 ? (
+        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          {/*
+            The question, decomposed. An open sub-question is a chip — click
+            it and the desk pursues it; the brief marks it explored when the
+            reply lands. An explored one collapses to a quiet line: the work
+            is in the findings, not here.
+          */}
+          {brief.plan.map((item) => (item.explored ? (
+            <div key={item.text} style={{ fontSize: '0.73rem', fontWeight: 400, opacity: 0.65 }}>
+              ✓ {item.text}
+            </div>
+          ) : (
+            <div key={item.text}>
+              {chip(item.text, () => onSend?.(item.text))}
+            </div>
+          )))}
+        </div>
+      ) : null}
       {brief.findings.length > 0 ? (
         <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {brief.findings.map((finding) => {
@@ -195,27 +246,18 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
                     : `Backed by that reply's ${finding.sourceCount} live source${finding.sourceCount === 1 ? '' : 's'}`}
                 </div>
                 {standing?.excerpt ? (
-                  <div
-                    style={{
-                      marginTop: '5px',
-                      paddingLeft: '8px',
-                      borderLeft: '2px solid var(--q-border)',
-                      fontSize: '0.71rem',
-                      fontWeight: 400,
-                      lineHeight: 1.45,
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    “{standing.excerpt}”
-                    {standing.sourceUrl ? (
-                      <>
-                        {' — '}
-                        <a href={standing.sourceUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>
-                          source
-                        </a>
-                      </>
-                    ) : null}
-                  </div>
+                  <EvidenceQuote
+                    label={standing.counter ? 'Supports:' : null}
+                    excerpt={standing.excerpt}
+                    sourceUrl={standing.sourceUrl}
+                  />
+                ) : null}
+                {standing?.counter ? (
+                  <EvidenceQuote
+                    label="Disagrees:"
+                    excerpt={standing.counter.excerpt}
+                    sourceUrl={standing.counter.sourceUrl}
+                  />
                 ) : null}
               </div>
             );

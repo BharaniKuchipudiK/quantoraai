@@ -119,6 +119,31 @@ test("a proposal citing an unfetched source index earns nothing", async () => {
   assert.equal(response.results[0].reasonCode, "evidence_source_not_fetched");
 });
 
+test("verified evidence pointing both ways surfaces as disagreement, never a winner", async () => {
+  const COUNTER = "A later meta-analysis found newly built nuclear undercut utility-scale solar in three of the twelve surveyed markets.";
+  const response = await runResearchVerification({
+    claims: [CLAIM],
+    sources: [SOURCE_URL, "https://www.example.org/counter"],
+    fetchText: async (url) => ({
+      ok: true,
+      url,
+      finalUrl: url,
+      text: url.includes("counter") ? `Preamble. ${COUNTER} Appendix.` : SOURCE_TEXT,
+    }),
+    proposeEvidence: async () => [
+      { claimId: "f1", sourceIndex: 0, excerpt: EXCERPT, stance: "supports" },
+      { claimId: "f1", sourceIndex: 1, excerpt: COUNTER, stance: "contradicts" },
+    ],
+  });
+  const [result] = response.results;
+  assert.equal(result.standing, "contested");
+  assert.equal(result.reasonCode, "sources_disagree");
+  assert.equal(result.excerpt, EXCERPT);
+  assert.equal(result.sourceUrl, SOURCE_URL);
+  assert.equal(result.counter?.excerpt, COUNTER);
+  assert.equal(result.counter?.sourceUrl, "https://www.example.org/counter");
+});
+
 test("a supported verdict beats an earlier failed proposal for the same claim", async () => {
   const response = await runResearchVerification({
     claims: [CLAIM],

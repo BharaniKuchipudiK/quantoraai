@@ -51,6 +51,12 @@ export type ResearchVerifyResponse = {
     reasonCode: string;
     excerpt: string | null;
     sourceUrl: string | null;
+    /**
+     * When verified evidence points BOTH ways, the supporting passage lives in
+     * `excerpt` and the contradicting one lives here — the disagreement is
+     * surfaced side by side, never averaged into a winner.
+     */
+    counter: { excerpt: string; sourceUrl: string } | null;
   }>;
   sources: Array<{ url: string; fetched: boolean; reason?: string }>;
 };
@@ -224,6 +230,7 @@ export async function runResearchVerification(input: {
       reasonCode,
       excerpt: null,
       sourceUrl: null,
+      counter: null,
     })),
     sources: sourcesReport,
   });
@@ -247,9 +254,15 @@ export async function runResearchVerification(input: {
   const textByIndex = new Map(reachable.map((source) => [source.index, source]));
   const results = input.claims.map((claim) => {
     const own = proposals.filter((proposal) => proposal.claimId === claim.id);
-    let best: ResearchClaimVerificationResult | null = null;
+    // Keep the first verified verdict of EACH stance: when the evidence
+    // points both ways, the claim is a live disagreement, and picking the
+    // supporting side would be exactly the averaging-away the analyst
+    // directive forbids.
+    let supporting: ResearchClaimVerificationResult | null = null;
+    let contradicting: ResearchClaimVerificationResult | null = null;
     let lastReason = "no_evidence_proposed";
     for (const proposal of own) {
+      if (supporting && contradicting) break;
       const source = textByIndex.get(proposal.sourceIndex);
       if (!source) { lastReason = "evidence_source_not_fetched"; continue; }
       const verdict = verifyResearchClaimEvidence({
@@ -260,10 +273,21 @@ export async function runResearchVerification(input: {
         proposedExcerpt: proposal.excerpt,
         stance: proposal.stance,
       });
-      if (verdict.standing === "supported") { best = verdict; break; }
-      if (verdict.standing === "contested" && !best) { best = verdict; continue; }
-      lastReason = verdict.reasonCode;
+      if (verdict.standing === "supported" && !supporting) { supporting = verdict; continue; }
+      if (verdict.standing === "contested" && !contradicting) { contradicting = verdict; continue; }
+      if (verdict.standing === "unverified") lastReason = verdict.reasonCode;
     }
+    if (supporting && contradicting) {
+      return {
+        claimId: claim.id,
+        standing: "contested" as const,
+        reasonCode: "sources_disagree",
+        excerpt: supporting.excerpt,
+        sourceUrl: supporting.sourceUrl,
+        counter: { excerpt: contradicting.excerpt as string, sourceUrl: contradicting.sourceUrl as string },
+      };
+    }
+    const best = supporting || contradicting;
     if (best) {
       return {
         claimId: claim.id,
@@ -271,9 +295,17 @@ export async function runResearchVerification(input: {
         reasonCode: best.reasonCode,
         excerpt: best.excerpt,
         sourceUrl: best.sourceUrl,
+        counter: null,
       };
     }
-    return { claimId: claim.id, standing: "unverified" as const, reasonCode: lastReason, excerpt: null, sourceUrl: null };
+    return {
+      claimId: claim.id,
+      standing: "unverified" as const,
+      reasonCode: lastReason,
+      excerpt: null,
+      sourceUrl: null,
+      counter: null,
+    };
   });
 
   return { version: RESEARCH_VERIFY_VERSION, results, sources: sourcesReport };
