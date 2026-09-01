@@ -695,6 +695,27 @@ export default async function handler(req: any, res: any) {
       if (!normalized.ok || !normalized.question) {
         return res.status(400).json({ error: normalized.error || "Invalid deep-dive request." });
       }
+      // The question is user-authored text bound for the model and live web
+      // search — it gets the same safety policy as an ordinary research turn,
+      // which the artifact-task exemption above skipped.
+      {
+        const requestGeo = getRequestGeo(req);
+        const safety = evaluateSafetyText(normalized.question, requestGeo?.countryCode);
+        if (safety.action !== "allow") {
+          return res.status(422).json({
+            error: safety.userMessage,
+            safety: {
+              action: safety.action,
+              category: safety.category,
+              severity: safety.severity,
+              reasonCode: safety.reasonCode,
+              policyVersion: safety.policyVersion,
+              crisisResource: safety.crisisResource,
+            },
+            requestId,
+          });
+        }
+      }
       if (!effectiveGeminiKey) {
         // Grounded search for the dive currently rides the Gemini tool path;
         // saying so beats a silent generic failure.

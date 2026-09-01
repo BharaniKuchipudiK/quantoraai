@@ -213,12 +213,15 @@ export function deriveResearchBrief({ messages } = {}) {
     const { body, sources } = parseSourcesBlock(text);
     if (sources.length === 0) {
       /*
-       * A reply that is essentially just the plan is bookkeeping, not an
-       * answer — counting it as "unverified" would ding the standing line
-       * for a message that claimed nothing.
+       * A reply that introduces the plan and states no findings outside it
+       * is bookkeeping, not an answer — counting it as "unverified" would
+       * ding the standing line for a message that claimed nothing. The test
+       * is structural (does anything finding-shaped survive removing the
+       * plan block?), never a length heuristic that a long question defeats.
        */
-      const prose = stripPlanBlock(body).replace(/\s+/g, ' ').trim();
-      if (!(planAdoptedHere && prose.length < 160)) ungroundedTurns += 1;
+      const bookkeeping = planAdoptedHere
+        && extractFindings(stripPlanBlock(body)).length === 0;
+      if (!bookkeeping) ungroundedTurns += 1;
       return;
     }
     groundedTurns += 1;

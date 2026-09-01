@@ -72,6 +72,45 @@ test("a failed lookup leaves its plan item an open chip, never an invented answe
   assert.deepEqual(brief.plan.map((item: any) => item.explored), [true, false, true]);
 });
 
+test("a long root question does not turn the plan message into a fake unverified answer", async () => {
+  const longQuestion = "Given the sharp fall in utility-scale solar costs and the rise of grid firming requirements across many regional markets, is newly built nuclear capacity cheaper than solar per MWh today?";
+  const result = await runResearchDeepDive({
+    question: longQuestion,
+    decompose: async () => SUBS,
+    groundedAnswer: async (sub) => ANSWER(SUBS.indexOf(sub) + 1),
+  });
+  assert.equal(result.ok, true);
+  const brief = deriveResearchBrief({
+    messages: [{ sender: "user", text: longQuestion }, ...(result.messages || [])],
+  });
+  assert.equal(brief.ungroundedTurns, 0);
+  assert.equal(brief.groundedTurns, 3);
+});
+
+test("an oversized answer is rejected — its plan item stays open, nothing is clipped", async () => {
+  const oversized = { answer: `- ${"x".repeat(4_100)}`, sources: ANSWER(1).sources };
+  const result = await runResearchDeepDive({
+    question: QUESTION,
+    decompose: async () => SUBS,
+    groundedAnswer: async (sub) => (sub === SUBS[1] ? oversized : ANSWER(1)),
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.grounded, 2);
+  assert.ok(!(result.messages || []).some((message) => message.text.includes("xxxx")));
+  const brief = deriveResearchBrief({
+    messages: [{ sender: "user", text: QUESTION }, ...(result.messages || [])],
+  });
+  assert.deepEqual(brief.plan.map((item: any) => item.explored), [true, false, true]);
+
+  const allOversized = await runResearchDeepDive({
+    question: QUESTION,
+    decompose: async () => SUBS,
+    groundedAnswer: async () => oversized,
+  });
+  assert.equal(allOversized.ok, false);
+});
+
 test("an answer with no admissible sources carries no Sources block", () => {
   const messages = composeDeepDiveMessages(QUESTION, [SUBS[0]], [{
     answer: "- A claim with nothing behind it worth citing here at all.",

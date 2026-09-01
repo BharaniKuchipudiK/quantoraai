@@ -85,6 +85,20 @@ function sourcesBlock(sources: Array<{ uri: string; title: string }>): string {
   return block;
 }
 
+/**
+ * An answer is usable only when it exists and fits the cap. Oversize is
+ * REJECTED, never truncated — cutting research text at a character boundary
+ * can silently drop a final qualifier, negation, or whole finding, and the
+ * exported brief would then differ materially from what the model said.
+ * A rejected answer leaves its plan item an open chip, like any failed
+ * lookup.
+ */
+function usableAnswer(answer: DeepDiveGroundedAnswer | null): answer is DeepDiveGroundedAnswer {
+  if (!answer) return false;
+  const text = answer.answer.trim();
+  return text.length > 0 && text.length <= MAX_ANSWER_CHARS;
+}
+
 export function composeDeepDiveMessages(
   question: string,
   subQuestions: string[],
@@ -98,11 +112,11 @@ export function composeDeepDiveMessages(
   });
   subQuestions.forEach((subQuestion, index) => {
     const answer = answers[index];
-    if (!answer || !answer.answer.trim()) return; // failed lookup → open chip, no invented answer
+    if (!usableAnswer(answer)) return; // failed or oversized lookup → open chip, no invented or clipped answer
     messages.push({ sender: "user", text: subQuestion });
     messages.push({
       sender: "ai",
-      text: `${answer.answer.trim().slice(0, MAX_ANSWER_CHARS)}${sourcesBlock(answer.sources || [])}`,
+      text: `${answer.answer.trim()}${sourcesBlock(answer.sources || [])}`,
     });
   });
   return messages;
@@ -201,7 +215,7 @@ export async function runResearchDeepDive(input: {
     }
   }));
 
-  const grounded = answers.filter((answer) => answer && answer.answer.trim()).length;
+  const grounded = answers.filter(usableAnswer).length;
   if (grounded === 0) {
     return { ok: false, error: "No sub-question could be answered against live sources. Try again in a moment." };
   }
