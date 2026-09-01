@@ -12,8 +12,6 @@ import {
   studyPracticeAsk,
   studyQuizAsk,
   studyRealWorldAsk,
-  studySketchChallengeAsk,
-  studyTriviaAsk,
   studyVisualExplainAsk,
   studyWhereNextAsk,
 } from './study-learning-resources.js';
@@ -36,8 +34,6 @@ test('Study asks stay context-aware and fail closed on invented media', () => {
   assert.match(studyFlashcardAsk("Newton's laws"), /Do not use a Markdown table/i);
   assert.match(studyApplicationAsk("Newton's laws"), /current learning context/i);
   assert.match(studyRealWorldAsk("Newton's laws"), /real-world application/i);
-  assert.match(studySketchChallengeAsk("Newton's laws"), /under two minutes/i);
-  assert.match(studyTriviaAsk("Newton's laws"), /never invent an age, date, quote/i);
   assert.match(studyWhereNextAsk("Newton's laws"), /three concise next moves/i);
   assert.match(studyPlanAsk("Newton's laws"), /context already known/i);
   assert.match(studyNotesAsk("Newton's laws"), /actually established/i);
@@ -47,8 +43,6 @@ test('learner-directed Study paths stay focused and appear as natural requests',
   assert.equal(studyActionVisibleText('different', 'inertia'), 'Explain inertia a different way.');
   assert.equal(studyActionVisibleText('visual', 'inertia'), 'Show me inertia visually.');
   assert.equal(studyActionVisibleText('real-world', 'inertia'), 'Show me inertia in the real world.');
-  assert.equal(studyActionVisibleText('sketch', 'inertia'), 'Give me a quick sketch challenge for inertia.');
-  assert.equal(studyActionVisibleText('trivia', 'inertia'), 'Tell me one memorable fact about inertia.');
   assert.equal(studyActionVisibleText('where-next', 'inertia'), 'Help me choose where to go next after inertia.');
 });
 

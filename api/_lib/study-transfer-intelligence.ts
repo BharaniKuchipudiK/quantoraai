@@ -6,10 +6,10 @@ import {
   type StudyAssessmentItem,
 } from './study-assessment-items.js';
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
+import { readStudySupabaseRows } from './study-supabase.js';
 
-export const STUDY_TRANSFER_INTELLIGENCE_VERSION = 'study-transfer-intelligence-2026-09-01.2';
+export const STUDY_TRANSFER_INTELLIGENCE_VERSION = 'study-transfer-intelligence-2026-09-01.3';
 
-const REQUEST_TIMEOUT_MS = 4_000;
 const MIN_TRANSFER_CONFIDENCE = 0.8;
 const MAX_TRANSFER_TARGETS = 8;
 
@@ -17,6 +17,17 @@ type StudyConceptRef = {
   id: string;
   canonicalKey: string;
   label: string;
+};
+
+type TransferCandidate = {
+  targetId: string;
+  confidence: number;
+};
+
+type FreshnessCandidate = {
+  candidate: TransferCandidate;
+  targetConcept: StudyConceptRef;
+  applicationItems: StudyAssessmentItem[];
 };
 
 export type StudyTransferAttemptPlan = {
@@ -30,34 +41,6 @@ export type StudyTransferResolution =
   | { status: 'ready'; plan: StudyTransferAttemptPlan }
   | { status: 'none' }
   | { status: 'unavailable' };
-
-function config() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return { url: url.replace(/\/+$/, ''), key };
-}
-
-async function readRows(path: string): Promise<any[] | null> {
-  const cfg = config();
-  if (!cfg) return null;
-  try {
-    const response = await fetch(`${cfg.url}/rest/v1/${path}`, {
-      method: 'GET',
-      headers: {
-        apikey: cfg.key,
-        Authorization: `Bearer ${cfg.key}`,
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) return null;
-    const parsed = await response.json();
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return null;
-  }
-}
 
 function conceptRecord(row: any): StudyConceptRef | null {
   const id = typeof row?.id === 'string' ? row.id : '';
@@ -86,12 +69,13 @@ export async function resolveStudyTransferAttempt(input: {
   userSub: string;
   sourceConcept: StudyConceptRef;
 }): Promise<StudyTransferResolution> {
-  const edges = await readRows(
+  const edges = await readStudySupabaseRows(
     `study_concept_edges?select=target_concept_id,confidence&relation=eq.supports_transfer_to&source_concept_id=eq.${encodeURIComponent(input.sourceConcept.id)}&confidence=gte.${MIN_TRANSFER_CONFIDENCE}&order=confidence.desc&limit=${MAX_TRANSFER_TARGETS}`,
+    { operation: 'transfer_edges' },
   );
   if (edges === null) return { status: 'unavailable' };
 
-  const candidates = edges
+  const candidates: TransferCandidate[] = edges
     .map((row: any) => ({
       targetId: typeof row?.target_concept_id === 'string' ? row.target_concept_id : '',
       confidence: typeof row?.confidence === 'number' && Number.isFinite(row.confidence)
@@ -105,8 +89,9 @@ export async function resolveStudyTransferAttempt(input: {
   const targetFilter = targetIds.length === 1
     ? `id=eq.${encodeURIComponent(targetIds[0])}`
     : `id=in.(${targetIds.map((id) => encodeURIComponent(id)).join(',')})`;
-  const conceptRows = await readRows(
+  const conceptRows = await readStudySupabaseRows(
     `study_concepts?select=id,canonical_key,label&${targetFilter}&status=eq.active&limit=${targetIds.length}`,
+    { operation: 'transfer_target_concepts' },
   );
   if (conceptRows === null) return { status: 'unavailable' };
   const concepts = new Map<string, StudyConceptRef>();
@@ -115,6 +100,12 @@ export async function resolveStudyTransferAttempt(input: {
     if (concept) concepts.set(concept.id, concept);
   }
 
+  // Preserve the old candidate-order failure contract while removing the
+  // per-target item-freshness N+1. If a later target's authoritative evidence
+  // is unavailable, stop scanning there, but first allow any earlier viable
+  // candidate to win exactly as the previous sequential resolver would have.
+  const freshnessCandidates: FreshnessCandidate[] = [];
+  let evidenceUnavailable = false;
   for (const candidate of candidates) {
     const targetConcept = concepts.get(candidate.targetId);
     if (!targetConcept) continue;
@@ -124,7 +115,10 @@ export async function resolveStudyTransferAttempt(input: {
       targetConcept.id,
       targetConcept.canonicalKey,
     );
-    if (targetEvidence === null) return { status: 'unavailable' };
+    if (targetEvidence === null) {
+      evidenceUnavailable = true;
+      break;
+    }
     if (admittedStudyMasteryEvidence(targetEvidence).length > 0) continue;
 
     const applicationItems = studyAssessmentItemsForConcept(targetConcept.canonicalKey)
@@ -132,11 +126,21 @@ export async function resolveStudyTransferAttempt(input: {
         && verifyStudyAssessmentRelease(candidateItem).canIssueVerifiedAttempt);
     if (!applicationItems.length) continue;
 
-    const usedItemRefs = await readStudyUsedAssessmentItemRefs(
-      input.userSub,
-      applicationItems.map((candidateItem) => `${candidateItem.key}@${candidateItem.version}`),
-    );
-    if (usedItemRefs === null) return { status: 'unavailable' };
+    freshnessCandidates.push({ candidate, targetConcept, applicationItems });
+  }
+
+  if (!freshnessCandidates.length) {
+    return evidenceUnavailable ? { status: 'unavailable' } : { status: 'none' };
+  }
+
+  const usedItemRefs = await readStudyUsedAssessmentItemRefs(
+    input.userSub,
+    freshnessCandidates.flatMap(({ applicationItems }) =>
+      applicationItems.map((candidateItem) => `${candidateItem.key}@${candidateItem.version}`)),
+  );
+  if (usedItemRefs === null) return { status: 'unavailable' };
+
+  for (const { candidate, targetConcept, applicationItems } of freshnessCandidates) {
     const item = applicationItems.find(
       (candidateItem) => !usedItemRefs.has(`${candidateItem.key}@${candidateItem.version}`),
     );
@@ -153,5 +157,5 @@ export async function resolveStudyTransferAttempt(input: {
     };
   }
 
-  return { status: 'none' };
+  return evidenceUnavailable ? { status: 'unavailable' } : { status: 'none' };
 }

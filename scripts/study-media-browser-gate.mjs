@@ -290,14 +290,29 @@ try {
   await visible(board, 'Study answered about a concept but showed no tutor focus.');
   await visible(board.getByText("Newton's laws", { exact: false }).first(), 'Tutor focus did not name the concept the student asked about.');
   await visible(board.getByRole('button', { name: 'Explain', exact: true }), 'Compact Study focus has no Explain action.');
-  await visible(board.getByRole('button', { name: /Mini practice/, exact: false }), 'Compact Study focus has no Mini practice action.');
+  await visible(board.getByRole('button', { name: 'Practice', exact: true }), 'Compact Study focus has no Practice action.');
   await visible(board.locator('[data-quantora-study-next-choices="true"]'), 'Study did not offer learner-directed next paths.');
-  await visible(board.getByRole('button', { name: /Real world/ }), 'Study has no real-world application path.');
-  await visible(board.getByRole('button', { name: /Quick sketch/ }), 'Study has no quick-sketch path.');
-  await visible(board.getByRole('button', { name: /Did you know/ }), 'Study has no accurate quick-fact path.');
-  await visible(board.getByRole('button', { name: /Where next/ }), 'Study has no learner-directed next-step path.');
   await visible(board.getByRole('button', { name: 'Test me on this', exact: true }), 'Compact Study focus has no Check action.');
   await hidden(board.getByRole('button', { name: 'More', exact: true }), 'Legacy Tutor Board More action is still present.');
+
+  for (const oldAlwaysVisibleAction of [/Mini practice/, /Real world/, /Quick sketch/, /Did you know/, /Where next/]) {
+    if (await board.getByRole('button', { name: oldAlwaysVisibleAction }).count()) {
+      throw new Error(`Study revived a secondary tool as a permanent action (${oldAlwaysVisibleAction}).`);
+    }
+  }
+
+  const studyHub = page.locator('[data-quantora-study-hub-launcher="true"]').first();
+  await visible(studyHub, 'Study progressive-disclosure Hub launcher is missing.');
+  const openStudyHub = studyHub.getByRole('button', { name: 'Open Study tools', exact: true });
+  await visible(openStudyHub, 'Study Hub has no accessible open action.');
+  await openStudyHub.click();
+  const studyHubPanel = page.locator('#quantora-study-hub-panel').first();
+  await visible(studyHubPanel, 'Study Hub did not open.');
+  for (const actionName of ['Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
+    await visible(studyHubPanel.getByRole('button', { name: actionName, exact: true }), `Study Hub is missing ${actionName}.`);
+  }
+  await page.keyboard.press('Escape');
+  await hidden(studyHubPanel, 'Escape did not close the Study Hub.');
 
   const explainRequestPromise = page.waitForRequest((candidate) => {
     if (new URL(candidate.url()).pathname !== '/api/chat') return false;
