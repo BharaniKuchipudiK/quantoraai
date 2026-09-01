@@ -101,7 +101,7 @@ export default function StudioDecisionModal({
   };
 
   return (
-    <div style={{
+    <div data-quantora-decision-modal="true" style={{
       width: '100%',
       maxWidth: '700px',
       margin: '16px 0',
@@ -147,6 +147,7 @@ export default function StudioDecisionModal({
             return (
               <div
                 key={option.id}
+                data-quantora-decision-option={option.id}
                 onClick={() => handleOptionClick(option)}
                 onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = hoverBg; }}
                 onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}

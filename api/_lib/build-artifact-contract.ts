@@ -68,10 +68,38 @@ export function hasBrowserPreviewArtifact(text: unknown): boolean {
   ));
 }
 
-export function validateBuildArtifactResponse(text: unknown, transaction: string | null = null): BuildArtifactContractResult {
+/**
+ * A genuine guided-intake move: the reply asks the user something through the
+ * platform's own choice markers. Anchored on the durable marker tags (the same
+ * law as data-quantora-* hooks, §6), never on question-mark prose — a plan
+ * that muses "shall we?" is not an intake move.
+ */
+function hasGuidedIntakeMove(source: string) {
+  return /<quantora-(modal|choices)>[\s\S]*?<\/quantora-\1>/.test(source);
+}
+
+export function validateBuildArtifactResponse(
+  text: unknown,
+  transaction: string | null = null,
+  options: { allowIntake?: boolean } = {},
+): BuildArtifactContractResult {
   const source = typeof text === 'string' ? text : '';
   const files = fencedFiles(source);
-  if (!files.length && !isHtmlDocument(source)) return { ok: false, detailCode: 'code-fences-missing' };
+  if (!files.length && !isHtmlDocument(source)) {
+    /*
+     * THE GUIDED-INTAKE CONTRADICTION (2026-09-01). GUIDED_BUILD_DIRECTIVE
+     * orders the model's first turn on a website ask to output NO code and ask
+     * ONE question with <quantora-modal> — and this line then failed every
+     * reply that obeyed, burning the whole route ladder on compliant answers
+     * ("The model answered in chat without files" / "no healthy AI route").
+     * A guided turn owes EITHER a runnable artifact OR a genuine intake move;
+     * golden canary turns (transaction set) always owe the artifact.
+     */
+    if (options.allowIntake && !transaction && hasGuidedIntakeMove(source)) {
+      return { ok: true, detailCode: 'guided-intake-valid' };
+    }
+    return { ok: false, detailCode: 'code-fences-missing' };
+  }
 
   const code = files.length ? files.map((file) => file.content).join('\n') : source;
   if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(code)) {

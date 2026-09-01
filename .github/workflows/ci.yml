@@ -260,6 +260,16 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/coding-desk-must-write-files-browser-gate.mjs
 
+      # The 2026-09-01 boutique class: a first-turn website ask must get its
+      # designer question (modal, no false failure, no burned retry), and the
+      # answer must land a build. Neither deployed golden covers guided intake.
+      - name: Execute guided intake journey
+        id: guided_intake_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/guided-intake-browser-gate.mjs
+
       - name: Execute Coding Desk chrome journey
         id: coding_desk_chrome_gate
         continue-on-error: true
@@ -316,13 +326,14 @@ jobs:
           DESK_REVIEW_PATCH_OUTCOME: ${{ steps.desk_review_patch_gate.outcome }}
           DESK_CHAT_CLAIM_OUTCOME: ${{ steps.desk_chat_claim_gate.outcome }}
           CODING_DESK_FILES_OUTCOME: ${{ steps.coding_desk_files_gate.outcome }}
+          GUIDED_INTAKE_OUTCOME: ${{ steps.guided_intake_gate.outcome }}
           CODING_DESK_CHROME_OUTCOME: ${{ steps.coding_desk_chrome_gate.outcome }}
           DESK_RAIL_SMOKE_OUTCOME: ${{ steps.desk_rail_smoke_gate.outcome }}
           PREVIEW_READY_OUTCOME: ${{ steps.preview_ready_gate.outcome }}
           PREVIEW_SHELL_MUST_START_OUTCOME: ${{ steps.preview_shell_must_start_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
             outcome="${!gate}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then
