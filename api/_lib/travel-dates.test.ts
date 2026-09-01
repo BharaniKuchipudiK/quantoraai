@@ -68,7 +68,17 @@ test('the refusal names the past date and today, not the passenger count', () =>
   assert.match(ask, /in the past/i);
   assert.match(ask, /2026-08-31/, 'and says what today actually is');
   assert.doesNotMatch(ask, /passengers/i);
-  assert.match(ask, /not invent/i, 'the no-fabrication guarantee survives');
+  /*
+   * The no-fabrication guarantee survives, and is now wider than when this
+   * assertion was written. It used to read /not invent/, which the refusal
+   * satisfied with "I will not invent fares." — a promise about one field, in
+   * the exact moment a model is most tempted to be helpful with recalled
+   * schedules instead. It must cover the answer.
+   */
+  assert.match(ask, /will not fill the gap with flight details from memory/i);
+  for (const field of ['fares', 'carriers', 'schedules', 'durations']) {
+    assert.ok(ask.includes(field), `the past-date refusal must name ${field}`);
+  }
 });
 
 /* The Retry chip must not be offered for something a retry cannot change. */

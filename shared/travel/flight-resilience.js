@@ -15,30 +15,9 @@ export function flightArgsComplete(args = {}) {
   return Boolean(origin && destination && /^\d{4}-\d{2}-\d{2}$/.test(departureDate));
 }
 
-export function flightIncompleteAsk(args = {}) {
-  const origin = String(args?.origin || '').trim();
-  const destination = String(args?.destination || '').trim();
-  const departureDate = String(args?.departureDate || '').trim();
-  const known = [
-    origin ? `origin ${origin}` : null,
-    destination ? `destination ${destination}` : null,
-    departureDate ? `date ${departureDate}` : null,
-  ].filter(Boolean);
-  const noted = known.length ? ` I already have ${known.join(', ')}.` : '';
-  return `I can look up live flights once I have origin airport, destination airport, and a departure date (YYYY-MM-DD).${noted} I will not invent fares.`;
-}
-
-function routeLabel(args = {}) {
-  const origin = String(args?.origin || '').trim();
-  const destination = String(args?.destination || '').trim();
-  const departureDate = String(args?.departureDate || '').trim();
-  if (origin && destination && departureDate) return ` for ${origin} → ${destination} on ${departureDate}`;
-  if (origin && destination) return ` for ${origin} → ${destination}`;
-  return '';
-}
-
 /**
- * What the desk promises not to do when a flight lookup fails.
+ * What the desk promises not to do whenever it declines to answer from a
+ * provider. Every refusal in this module ends with it, and that is the point.
  *
  * "I will not invent fares" was the whole promise, and it was a loophole one
  * field wide. A traveller retried SIN to DPS, the provider was unreachable, the
@@ -51,8 +30,41 @@ function routeLabel(args = {}) {
  * everything adjacent is permitted. The promise now covers the whole answer,
  * because that is what a traveller would act on: a made-up schedule sends
  * someone to an airport just as surely as a made-up price.
+ *
+ * ONE CONSTANT, NOT FOUR STRINGS. The first fix changed only the outage
+ * refusal, because that is the one the screenshot showed. Three siblings in
+ * this same file — missing arguments, a past date, invalid arguments — still
+ * carried the one-field version, and they are the refusals a model is MOST
+ * tempted to soften: the desk has just declined to do the thing that was asked,
+ * for a reason the traveller may find pedantic, and recalled detail is the
+ * obvious way to seem useful anyway. Fixing the reported instance and leaving
+ * its siblings is how a closed class reopens, so the wording lives in exactly
+ * one place and every refusal reads from it.
  */
 const NO_SUBSTITUTE = 'I will not fill the gap with flight details from memory — no fares, carriers, schedules or durations.';
+
+export function flightIncompleteAsk(args = {}) {
+  const origin = String(args?.origin || '').trim();
+  const destination = String(args?.destination || '').trim();
+  const departureDate = String(args?.departureDate || '').trim();
+  const known = [
+    origin ? `origin ${origin}` : null,
+    destination ? `destination ${destination}` : null,
+    departureDate ? `date ${departureDate}` : null,
+  ].filter(Boolean);
+  const noted = known.length ? ` I already have ${known.join(', ')}.` : '';
+  return `I can look up live flights once I have origin airport, destination airport, and a departure date (YYYY-MM-DD).${noted} ${NO_SUBSTITUTE}`;
+}
+
+function routeLabel(args = {}) {
+  const origin = String(args?.origin || '').trim();
+  const destination = String(args?.destination || '').trim();
+  const departureDate = String(args?.departureDate || '').trim();
+  if (origin && destination && departureDate) return ` for ${origin} → ${destination} on ${departureDate}`;
+  if (origin && destination) return ` for ${origin} → ${destination}`;
+  return '';
+}
+
 
 export function flightProviderFailureAsk(args = {}, { configured = true, includeRetry = true } = {}) {
   if (!configured) {
@@ -91,13 +103,13 @@ export function flightInvalidArgsAsk(args = {}, issues = [], { now = new Date() 
   const today = todayIso(now);
   const departure = String(args?.departureDate || '');
   if (departure && departure < today) {
-    return `That search was for ${departure}, which is in the past — today is ${today}. I did not run it and I will not invent fares. Tell me the dates you actually want and I will search those.`;
+    return `That search was for ${departure}, which is in the past — today is ${today}. I did not run it. ${NO_SUBSTITUTE} Tell me the dates you actually want and I will search those.`;
   }
 
   const detail = Array.isArray(issues) && issues.length
     ? ` (${issues.slice(0, 3).join(', ')})`
     : '';
-  return `I could not run that flight search${detail}. Check passengers (1–9) and that any return date is on or after departure. I will not invent fares.`;
+  return `I could not run that flight search${detail}. Check passengers (1–9) and that any return date is on or after departure. ${NO_SUBSTITUTE}`;
 }
 
 export function resolveFlightToolRecovery({

@@ -31,7 +31,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { flightProviderFailureAsk } from './flight-resilience.js';
+import * as flightResilience from './flight-resilience.js';
+
+const { flightProviderFailureAsk } = flightResilience;
 
 const ARGS = { origin: 'SIN', destination: 'DPS', departureDate: '2026-10-01' };
 
@@ -70,6 +72,54 @@ test('an unconfigured provider makes the same whole-answer promise', () => {
   // Not connected and could-not-reach are different causes with the same duty:
   // neither is permission to answer from recall.
   for (const field of PROVIDER_FIELDS) assert.ok(copy.includes(field));
+});
+
+/**
+ * EVERY refusal, including ones written after this test.
+ *
+ * The first pass at this fix changed only flightProviderFailureAsk, because
+ * that is the function the screenshot caught. Three siblings in the same file
+ * still ended "I will not invent fares." — and they are the refusals a model is
+ * most tempted to soften, because the desk has just declined to do what was
+ * asked for a reason the traveller may find pedantic, and recalled detail is
+ * the obvious way to seem useful anyway.
+ *
+ * Enumerating the three by hand would have closed the instance and left the
+ * class open: a fourth refusal added next month would carry whatever wording
+ * its author typed, and nothing would notice. So this sweeps the module's own
+ * exports — a function whose name ends in `Ask` IS a refusal, and its existence
+ * IS its registration, the same principle that makes a test file on disk run.
+ */
+const REFUSAL_ARGS = [
+  {},                                                                   // nothing known yet
+  { origin: 'SIN' },                                                    // partly known
+  { origin: 'SIN', destination: 'DPS', departureDate: '2026-10-01' },   // complete, future
+  { origin: 'SIN', destination: 'DPS', departureDate: '2020-01-01' },   // complete, past
+];
+
+test('every refusal this module exports makes the whole-answer promise', () => {
+  const refusals = Object.entries(flightResilience)
+    .filter(([name, value]) => name.endsWith('Ask') && typeof value === 'function');
+
+  // A sweep that finds nothing passes vacuously, which is the one thing a gate
+  // must never do (CLAUDE.md §4). Three exist today.
+  assert.ok(refusals.length >= 3, `expected the module's *Ask refusals, found ${refusals.length}`);
+
+  for (const [name, refusal] of refusals) {
+    for (const args of REFUSAL_ARGS) {
+      const copy = refusal(args);
+      assert.ok(
+        !/I will not invent fares\./.test(copy),
+        `${name}(${JSON.stringify(args)}) still scopes its promise to one field`,
+      );
+      for (const field of PROVIDER_FIELDS) {
+        assert.ok(
+          copy.includes(field),
+          `${name}(${JSON.stringify(args)}) must name ${field}: ${copy}`,
+        );
+      }
+    }
+  }
 });
 
 /*
