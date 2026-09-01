@@ -2451,6 +2451,20 @@ Paused — ${autoPauseRef.current}.`
                                 }),
                               });
                               const chipText = `${item.label || ''} ${item.value || ''}`;
+                              /*
+                               * A chip that pins an engine (outcome spine's
+                               * "Retry on <engine>") sends its turn on that
+                               * model, not on whatever routing re-picks — the
+                               * prose alone was invisible to routing, so a
+                               * tapped retry could re-run the engine that just
+                               * failed. Only a model still present and
+                               * available in the catalog is honored.
+                               */
+                              const overrideModel = item.modelOverrideId
+                                ? (availableModels || []).find(
+                                  (m) => m?.id === item.modelOverrideId && m.available !== false,
+                                ) || null
+                                : null;
                               if (studioDomain === 'education' && wantsStudyLab(chipText)) {
                                 const labKind = /fbd|free-?body/i.test(chipText)
                                   ? 'fbd'
@@ -2468,7 +2482,7 @@ Paused — ${autoPauseRef.current}.`
                                 }]);
                                 return;
                               }
-                              feedHandleSendMessage(item.value);
+                              feedHandleSendMessage(item.value, overrideModel);
                             }}
                             onDismiss={() => {
                               if (studySyllabusSet && msg.id === latestAiId) {
@@ -2615,7 +2629,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, availableModels, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {

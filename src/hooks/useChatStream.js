@@ -1482,6 +1482,7 @@ export function useChatStream({
                 shopIntakeAsk,
                 attemptsMade: attempt,
                 triedEngines,
+                fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('provider-dead', {
                 shopIntakeAsk,
@@ -1548,6 +1549,7 @@ export function useChatStream({
                 shopIntakeAsk,
                 attemptsMade: attempt,
                 triedEngines,
+                fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('stream-ended', {
                 shopIntakeAsk,
@@ -1916,6 +1918,7 @@ export function useChatStream({
               isShopPhotoTurn,
               attemptsMade: attempt,
               triedEngines,
+              fallbackEngine: nextFallbackEngine(),
             });
             if (!stopped) {
               recordTurnLesson(timedOut ? 'timeout' : 'provider-dead', {

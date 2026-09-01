@@ -75,6 +75,10 @@ export function resolveCodingTurnOutcome({
   attemptsMade = 1,
   /** Engine names those attempts ran on, in order. */
   triedEngines = [],
+  /** The next untried engine ({ id, name }) the retry chip should pin, or
+   *  null when the catalog is exhausted. The chip only names an engine it
+   *  will actually use — same law as the recovery notice. */
+  fallbackEngine = null,
 } = {}) {
   if (kind === 'stopped') {
     return {
@@ -223,8 +227,19 @@ export function resolveCodingTurnOutcome({
         : {
           items: [{
             id: 'outcome-retry-fallback',
-            label: 'Retry with fallback',
+            /*
+             * The manual retry carries the override, not a prayer: prose like
+             * "the next available model" is invisible to routing, so a tapped
+             * retry used to re-run the exact engine that just died (observed
+             * 2026-09-01: two consecutive turns on the same engine, the second
+             * burning the full deadline). The label names the engine only when
+             * the id is really attached, so the promise stays checkable.
+             */
+            label: fallbackEngine?.id && fallbackEngine?.name
+              ? `Retry on ${fallbackEngine.name}`
+              : 'Retry with fallback',
             value: 'Retry this same job on the next available model. Keep scope small enough to finish in one turn.',
+            ...(fallbackEngine?.id ? { modelOverrideId: fallbackEngine.id } : {}),
             priority: 108,
           }],
         },

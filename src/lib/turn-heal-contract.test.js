@@ -142,3 +142,52 @@ test('the retry budget still bounds the loop whatever the diagnosis', () => {
     assert.equal(decision.retry, false, `${JSON.stringify(input)} must stop at the budget`);
   }
 });
+
+/*
+ * THE MANUAL-RETRY GAP (2026-09-01, second screenshot). The automatic loop
+ * switches engines, but the "Retry with fallback" chip sent only prose —
+ * "Retry this same job on the next available model" — which routing ignores.
+ * Two consecutive manual turns both ran Nemotron 3 Super 120B; the second
+ * burned the full 175s deadline re-proving what the first already proved.
+ * The chip must carry the override, not a prayer to the router.
+ */
+
+test('[was-red] the retry chip pins the next untried engine, not a prayer to routing', () => {
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'provider-dead',
+    errorMessage: 'no healthy AI route',
+    attemptsMade: 2,
+    triedEngines: ['Nemotron 3 Super 120B'],
+    fallbackEngine: { id: 'google/gemini-flash', name: 'Gemini Flash' },
+  });
+  const chip = outcome.continueSet.items.find((item) => /retry/i.test(item.label));
+  assert.ok(chip, 'the retry move survives');
+  assert.equal(chip.modelOverrideId, 'google/gemini-flash', 'the tap re-runs on the named engine, not the one that failed');
+  assert.match(chip.label, /Gemini Flash/, 'the label names the engine so the promise is checkable');
+});
+
+test('stream-ended offers the same pinned retry', () => {
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'stream-ended',
+    errorMessage: 'the response stream ended unexpectedly',
+    attemptsMade: 2,
+    triedEngines: ['Nemotron 3 Super 120B'],
+    fallbackEngine: { id: 'google/gemini-flash', name: 'Gemini Flash' },
+  });
+  const chip = outcome.continueSet.items.find((item) => /retry/i.test(item.label));
+  assert.equal(chip?.modelOverrideId, 'google/gemini-flash');
+});
+
+test('with no untried engine left, the chip claims nothing it cannot do', () => {
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'provider-dead',
+    errorMessage: 'no healthy AI route',
+    attemptsMade: 2,
+    triedEngines: ['Engine A', 'Engine B'],
+    fallbackEngine: null,
+  });
+  const chip = outcome.continueSet.items.find((item) => /retry/i.test(item.label));
+  assert.ok(chip, 'retry stays available even without an override');
+  assert.equal(chip.modelOverrideId, undefined, 'no override is stamped when none exists');
+  assert.doesNotMatch(chip.label, /retry on /i, 'the label never names an engine it will not use');
+});
