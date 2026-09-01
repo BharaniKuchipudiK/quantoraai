@@ -55,3 +55,18 @@ test('ordinary conversation still does not activate build context without a prio
   assert.equal(active, false);
   assert.equal(turnBelongsToBuild({ text: 'Boutique showcase + service booking', buildSessionActive: active }), false);
 });
+
+test('pre-desk continuity does not turn a non-software build phrase into a coding session', () => {
+  const prior = 'build me a business case for the board';
+  assert.equal(resolveIsCodingRequest(prior, { codingDeskOpen: true }), false, 'fixture must stay outside the software classifier');
+  assert.equal(
+    isBuildSessionActive({
+      priorUserMessages: [prior],
+      codingDeskOpen: false,
+      hasDeskFiles: false,
+      isCodingRequest,
+    }),
+    false,
+    'the broad imperative fallback is allowed only after the Coding Desk is already open',
+  );
+});
