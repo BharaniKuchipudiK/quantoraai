@@ -27,12 +27,40 @@ export function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): string
 }
 
 export function githubWriteAuthMessage(): string {
-  return "Creating or merging pull requests requires GITHUB_TOKEN (or GITHUB_PAT) in Vercel with repo scope, plus GITHUB_ALLOWED_REPOS (comma-separated owner/repo). Desk git still cannot push branches; push the head branch from your machine or a CI job first, then create the PR.";
+  return "Creating or merging pull requests with Quantora's shared GitHub credential is temporarily disabled until a server-authorized repository principal is enforced. GITHUB_TOKEN (or GITHUB_PAT) and GITHUB_ALLOWED_REPOS remain necessary but are not sufficient authorization. Desk git still cannot push branches.";
+}
+
+/**
+ * SECURITY CONTAINMENT (#452)
+ *
+ * An active Quantora session proves identity; GITHUB_ALLOWED_REPOS constrains
+ * which repository the platform token may touch. Neither proves that *this*
+ * user is allowed to exercise Quantora's shared GitHub credential against that
+ * repository.
+ *
+ * Until the pipeline can provide a server-verified administrator or
+ * repository-bound GitHub App/OAuth principal — plus exact-action approval for
+ * merge — all shared-token GitHub writes fail closed here, inside the adapter,
+ * before any provider request. Keeping the stop at the final write seam means a
+ * direct targetStage call cannot bypass it.
+ *
+ * The permanent fix must replace this unconditional gate and its was-red tests
+ * in the SAME change that wires principal authorization. Do not turn this into
+ * an environment flag: possession/configuration of a platform credential is
+ * precisely what must not become user authorization.
+ */
+export function assertGithubSharedWriteAuthorized(): never {
+  throw new Error(
+    "Shared GitHub write access is temporarily disabled until Quantora can verify that this signed-in principal is authorized for the target repository and exact action.",
+  );
 }
 
 /**
  * Prevent confused-deputy writes: the shared deployment token may only touch
  * repositories explicitly allowlisted in GITHUB_ALLOWED_REPOS.
+ *
+ * This remains defense in depth for the permanent path. It is a resource
+ * boundary, never a substitute for subject authorization.
  */
 export function assertGithubWriteAllowed(repoUrl: string, env: NodeJS.ProcessEnv = process.env): { owner: string; repo: string } {
   const { owner, repo } = parseGithubRepositoryUrl(repoUrl);
@@ -86,6 +114,9 @@ export async function createGithubPullRequest(
   if (!token) {
     throw new Error(githubWriteAuthMessage());
   }
+
+  // Must execute before parsing provider-bound arguments or contacting GitHub.
+  assertGithubSharedWriteAuthorized();
 
   const normalized = normalizeCreatePullRequestInput(input);
   assertGithubWriteAllowed(normalized.repoUrl);
@@ -148,6 +179,10 @@ export async function mergeGithubPullRequest(input: {
   if (!token) {
     throw new Error(`Merging pull requests is disabled until credentials exist. ${githubWriteAuthMessage()}`);
   }
+
+  // Same final write seam as Create PR. Merge is higher impact, but both are
+  // disabled until the permanent principal + exact-action authorization exists.
+  assertGithubSharedWriteAuthorized();
 
   const repoUrl = clean(input?.repoUrl, 500);
   const number = Number(input?.number);
