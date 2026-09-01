@@ -44,6 +44,13 @@ jobs:
       - name: Lint (no-undef, frontend)
         run: npm run lint:undef
 
+      # Runs before everything: it is instant, and it catches the one class of
+      # defect that typecheck, build AND the whole suite are all blind to —
+      # a relative import with no runtime extension, which resolves fine in
+      # tsc/tsx and dies with ERR_MODULE_NOT_FOUND in production.
+      - name: Runtime import gate (imports that only fail in production)
+        run: npm run test:imports
+
       # Runs before the suite because it takes a second and catches the one
       # thing 1400 passing tests cannot: a feature that is tested and reachable
       # by nothing. Also inside test:all, so it holds locally too.
