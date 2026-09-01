@@ -51,7 +51,9 @@ export function ensureReactNamespaceBinding(source = '', filePath = '') {
   if (!/\bReact\s*\./.test(content)) return content;
   const hasBinding = /\bimport\s+React(?:\s*,\s*\{[\s\S]*?\})?\s+from\s+['"]react['"]/.test(content)
     || /\bimport\s+\*\s+as\s+React\s+from\s+['"]react['"]/.test(content)
-    || /\bimport\s*\{[^}]*\bdefault\s+as\s+React\b[^}]*\}\s+from\s+['"]react['"]/.test(content);
+    || /\bimport\s*\{[^}]*\bdefault\s+as\s+React\b[^}]*\}\s+from\s+['"]react['"]/.test(content)
+    || /^[ \t]*import\s+React\s*=\s*require\s*\(\s*['"]react['"]\s*\)/m.test(content)
+    || /^[ \t]*(?:const|let|var|class|function)\s+React\b/m.test(content);
   return hasBinding ? content : `import React from 'react';\n${content}`;
 }
 
