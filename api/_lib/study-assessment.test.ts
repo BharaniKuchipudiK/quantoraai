@@ -69,6 +69,7 @@ test("issue stores the answer server-side but returns only the public item", asy
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) return json([]);
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       storedAttempt = JSON.parse(init.body)[0];
       return new Response(null, { status: 201 });
@@ -87,6 +88,35 @@ test("issue stores the answer server-side but returns only the public item", asy
     for (const hidden of ["correctOptionId", "explanation", "misconceptionByOptionId", "reviewStatus", "releaseMode"]) assert.equal(hidden in state.body.item, false);
     assert.equal(JSON.stringify(state.body).includes("The slope is change"), false);
     assert.equal(JSON.stringify(state.body).includes("representation_misread"), false);
+  } finally { global.fetch = originalFetch; }
+});
+
+test("issue skips an item already submitted elsewhere in the learner-global evidence history", async () => {
+  const originalFetch = global.fetch;
+  let storedAttempt: any = null;
+  global.fetch = async (url: any, init: any = {}) => {
+    const target = String(url);
+    if (target.includes("/rest/v1/users?select=")) return json([{ google_sub: "learner-1", email: "learner@example.com", blocked_at: null }]);
+    if (target.includes("/rest/v1/study_concepts?") && target.includes("canonical_key=eq.physics.kinematics.motion-graphs")) {
+      return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
+    }
+    if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) {
+      return json([{ item_key: "motion-graphs-velocity-slope", item_version: "1" }]);
+    }
+    if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
+      storedAttempt = JSON.parse(init.body)[0];
+      return new Response(null, { status: 201 });
+    }
+    throw new Error(`Unexpected fetch: ${target}`);
+  };
+  try {
+    const { state, res } = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: "issue", conceptKey: "physics.kinematics.motion-graphs", conceptLabel: "Motion graphs", sessionId: "session-global-freshness" }), res);
+    assert.equal(state.status, 201);
+    assert.equal(storedAttempt.item_key, "motion-graphs-acceleration-slope");
+    assert.equal(storedAttempt.correct_option_id, "a");
+    assert.equal(state.body.item.itemKey, "motion-graphs-acceleration-slope");
   } finally { global.fetch = originalFetch; }
 });
 
