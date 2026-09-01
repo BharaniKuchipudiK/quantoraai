@@ -1,16 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { replayStudyLearnerProjection } from './study-learner-projection.js';
+import {
+  attestStudyAssessmentEvidence,
+  type StudyAssessmentAttemptReceipt,
+} from './study-evidence-admission.js';
+import { findStudyAssessmentItem } from './study-assessment-items.js';
+import {
+  replayStudyLearnerProjection,
+  studyLearnerProjectionEquivalent,
+} from './study-learner-projection.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
+const CONCEPT_ID = 'concept-projection';
+const CONCEPT_KEY = 'physics.kinematics.motion-graphs';
+const ITEM_KEY = 'motion-graphs-velocity-slope';
+
 function evidence(index: number, observedAt: string): StudyMasteryEvidenceEvent {
-  return {
-    id: `projection-event-${index}`,
-    conceptId: 'concept-projection',
-    kind: 'teach_back',
+  const item = findStudyAssessmentItem(ITEM_KEY, '1');
+  assert.ok(item);
+  const attemptId = `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+  const row: StudyMasteryEvidenceEvent = {
+    id: `study.assessment.${attemptId}`,
+    conceptId: CONCEPT_ID,
+    kind: 'assessment_item',
     correct: true,
     score: 1,
-    difficulty: 0.5,
+    difficulty: item.difficulty,
     hintsUsed: 0,
     responseMs: 1200,
     selfConfidence: null,
@@ -18,11 +33,30 @@ function evidence(index: number, observedAt: string): StudyMasteryEvidenceEvent 
     misconceptionSignal: false,
     delayDays: null,
     provenance: 'quantora_authored',
-    sourceRef: 'quantora:test:projection',
-    assessmentRef: null,
-    itemRef: null,
+    sourceRef: 'quantora:study-assessment-bank',
+    assessmentRef: `attempt:${attemptId}`,
+    itemRef: `${item.key}@${item.version}`,
     observedAt,
   };
+  const receipt: StudyAssessmentAttemptReceipt = {
+    attemptId,
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
+    evidenceKind: 'assessment_item',
+    evidenceConceptId: CONCEPT_ID,
+    itemConceptId: CONCEPT_ID,
+    itemConceptKey: CONCEPT_KEY,
+    itemKey: item.key,
+    itemVersion: item.version,
+    submittedOptionId: item.correctOptionId,
+    correct: true,
+    score: 1,
+    submittedAt: observedAt,
+    retentionAnchorAt: null,
+    delayDays: null,
+  };
+  attestStudyAssessmentEvidence(row, receipt);
+  return row;
 }
 
 const replayAt = '2026-09-02T00:00:00.000Z';
@@ -33,50 +67,87 @@ test('H3.1 replay is deterministic for the same admitted ledger and clock', () =
     evidence(2, '2026-09-01T00:00:00.000Z'),
   ];
   const left = replayStudyLearnerProjection({
-    conceptId: 'concept-projection',
-    conceptKey: 'physics.kinematics.motion-graphs',
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
     evidence: events,
     asOf: replayAt,
   });
   const right = replayStudyLearnerProjection({
-    conceptId: 'concept-projection',
-    conceptKey: 'physics.kinematics.motion-graphs',
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
     evidence: [...events].reverse(),
     asOf: replayAt,
   });
 
   assert.deepEqual(left, right);
   assert.equal(left.observedThrough, '2026-09-01T00:00:00.000Z');
-  assert.deepEqual(left.evidenceKinds, ['teach_back']);
-  assert.ok(left.schemaVersion.startsWith('study-learner-projection-'));
-  assert.ok(left.learnerModelVersion.startsWith('study-learner-model-'));
-  assert.ok(left.estimatorVersion.startsWith('study-mastery-estimator-'));
+  assert.deepEqual(left.evidenceKinds, ['assessment_item']);
+  assert.equal(left.evidenceCount, 1, 'same governed item/version remains one independent mastery contribution');
 });
 
 test('H3.1 replay changes when admitted learner truth changes', () => {
   const base = replayStudyLearnerProjection({
-    conceptId: 'concept-projection',
-    conceptKey: 'physics.kinematics.motion-graphs',
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
     evidence: [evidence(1, '2026-09-01T00:00:00.000Z')],
     asOf: replayAt,
   });
+  const changedEvent = evidence(2, '2026-09-01T01:00:00.000Z');
+  changedEvent.correct = false;
+  changedEvent.score = 0;
+  changedEvent.itemRef = 'motion-graphs-acceleration-slope@1';
+  const changedItem = findStudyAssessmentItem('motion-graphs-acceleration-slope', '1');
+  assert.ok(changedItem);
+  const changedAttemptId = '20000000-0000-4000-8000-000000000002';
+  changedEvent.id = `study.assessment.${changedAttemptId}`;
+  changedEvent.assessmentRef = `attempt:${changedAttemptId}`;
+  changedEvent.difficulty = changedItem.difficulty;
+  attestStudyAssessmentEvidence(changedEvent, {
+    attemptId: changedAttemptId,
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
+    evidenceKind: 'assessment_item',
+    evidenceConceptId: CONCEPT_ID,
+    itemConceptId: CONCEPT_ID,
+    itemConceptKey: CONCEPT_KEY,
+    itemKey: changedItem.key,
+    itemVersion: changedItem.version,
+    submittedOptionId: changedItem.options.find((option) => option.id !== changedItem.correctOptionId)?.id || 'a',
+    correct: false,
+    score: 0,
+    submittedAt: changedEvent.observedAt,
+    retentionAnchorAt: null,
+    delayDays: null,
+  });
   const changed = replayStudyLearnerProjection({
-    conceptId: 'concept-projection',
-    conceptKey: 'physics.kinematics.motion-graphs',
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
     evidence: [
       evidence(1, '2026-09-01T00:00:00.000Z'),
-      evidence(2, '2026-09-01T01:00:00.000Z'),
+      changedEvent,
     ],
     asOf: replayAt,
   });
-  assert.notDeepEqual(base, changed);
-  assert.notEqual(base.evidenceCount, changed.evidenceCount);
+
+  assert.equal(studyLearnerProjectionEquivalent(base, changed), false);
+  assert.notDeepEqual(base.learnerModel, changed.learnerModel);
+});
+
+test('H3.1 equivalence ignores snapshot write time but not learner truth', () => {
+  const base = replayStudyLearnerProjection({
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
+    evidence: [evidence(1, '2026-09-01T00:00:00.000Z')],
+    asOf: replayAt,
+  });
+  const laterWrite = { ...base, projectedAt: '2026-09-02T01:00:00.000Z' };
+  assert.equal(studyLearnerProjectionEquivalent(base, laterWrite), true);
 });
 
 test('H3.1 replay rejects an invalid clock instead of silently using wall time', () => {
   assert.throws(() => replayStudyLearnerProjection({
-    conceptId: 'concept-projection',
-    conceptKey: 'physics.kinematics.motion-graphs',
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
     evidence: [],
     asOf: 'not-a-date',
   }), /study_projection_invalid_as_of/);
