@@ -153,9 +153,21 @@ export default function TravelTripBoard({
    * One line of facts. Anything unknown is simply absent — "Dates not set yet"
    * spent a whole row restating what the missing date chip already says.
    */
+  const routeCodes = brief.origin && brief.destination ? `${brief.origin} → ${brief.destination}` : '';
+  /*
+   * Cities, when we have no codes yet. "book tickets to Bali from Singapore"
+   * named both ends and the board showed neither, which is what made it look
+   * like it had not been listening. This never implies the route is
+   * searchable — the Flights chip stays dark and the line below still asks for
+   * the airport codes.
+   */
+  const routeCities = !routeCodes && brief.originLabel && brief.destinationLabel
+    ? `${brief.originLabel} → ${brief.destinationLabel}`
+    : '';
+
   const facts = [
-    brief.destinationLabel || brief.destination || '',
-    brief.origin && brief.destination ? `${brief.origin} → ${brief.destination}` : '',
+    routeCities || brief.destinationLabel || brief.destination || '',
+    routeCodes,
     brief.departureDate
       ? (brief.returnDate ? `${brief.departureDate} – ${brief.returnDate}` : brief.departureDate)
       : '',

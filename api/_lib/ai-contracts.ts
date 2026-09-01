@@ -23,6 +23,59 @@ export const PipelineActionSpecSchema = z.object({
   summary: boundedText(1_200),
 });
 
+/**
+ * Today in UTC, as a comparable YYYY-MM-DD string.
+ *
+ * Injectable so a test can pin it, and so the boundary is one function rather
+ * than a Date.now() sprinkled through the schemas.
+ */
+export function todayIso(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/**
+ * The earliest date still worth searching — UTC today, minus a day of slack.
+ *
+ * A bare UTC "today" refuses legitimate same-day travel for everyone west of
+ * UTC. At 2026-09-01T00:30Z it is still 31 August across the Americas, so a
+ * traveller in New York booking a flight for their own today had it rejected as
+ * a past date: a working booking refused for up to half of every day.
+ *
+ * Offsets run from UTC-12 to UTC+14, so a local date is never more than one day
+ * BEHIND the UTC one. One day of slack is therefore exact rather than a
+ * guess, and it needs no timezone from the traveller — which we do not have.
+ *
+ * This guard exists to catch a date that is obviously wrong (a model with no
+ * clock resolving "next 2-4 weeks" to sixteen months ago), not to police
+ * same-day precision. Refusing a real booking is the worse failure of the two,
+ * so the boundary errs toward letting a search run.
+ */
+export function earliestSearchableIso(now: Date = new Date()): string {
+  return new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+}
+
+/*
+ * A DATE IN THE PAST IS NOT A SEARCH.
+ *
+ * isoDate only ever asked "is this a real calendar date". 2025-05-08 is a real
+ * calendar date, so when a model that had never been told today's date emitted
+ * it, the value validated clean, reached the flight provider, and could only
+ * fail — and the traveller was then offered "Tap Retry to run the same search
+ * again", which would reissue the identical past date forever.
+ *
+ * Both halves of that were dead controls. This closes the first: no provider
+ * call is ever made for a departure that has already happened. Lexicographic
+ * comparison is exact for zero-padded ISO dates, so no parsing is needed.
+ */
+const notInThePast = (label: string) => (value: string, ctx: z.RefinementCtx) => {
+  if (value < earliestSearchableIso()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `${label} ${value} is in the past — today is ${todayIso()}`,
+    });
+  }
+};
+
 const FlightSearchArgsSchema = z.object({
   origin: boundedText(120),
   destination: boundedText(120),
@@ -32,6 +85,13 @@ const FlightSearchArgsSchema = z.object({
 }).superRefine((value, ctx) => {
   if (value.returnDate && value.returnDate < value.departureDate) {
     ctx.addIssue({ code: 'custom', path: ['returnDate'], message: 'Return date must not precede departure date' });
+  }
+  if (value.departureDate < earliestSearchableIso()) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['departureDate'],
+      message: `Departure date ${value.departureDate} is in the past — today is ${todayIso()}`,
+    });
   }
 });
 
@@ -45,6 +105,9 @@ const HotelSearchArgsSchema = z.object({
   if (value.checkInDate && value.checkOutDate && value.checkOutDate <= value.checkInDate) {
     ctx.addIssue({ code: 'custom', path: ['checkOutDate'], message: 'Check-out must be after check-in' });
   }
+  // Stays carry dates as context rather than as search terms, but a past
+  // check-in is still a wrong answer and must not be echoed back as fact.
+  if (value.checkInDate) notInThePast('Check-in date')(value.checkInDate, ctx);
 });
 
 const PlacesRoutingArgsSchema = z.object({
