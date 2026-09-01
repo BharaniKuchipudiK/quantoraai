@@ -37,15 +37,32 @@ function routeLabel(args = {}) {
   return '';
 }
 
+/**
+ * What the desk promises not to do when a flight lookup fails.
+ *
+ * "I will not invent fares" was the whole promise, and it was a loophole one
+ * field wide. A traveller retried SIN to DPS, the provider was unreachable, the
+ * desk said it would not invent fares — and then listed carriers, daily
+ * departure patterns and a flight duration of "~2 hours 45 minutes across all
+ * carriers", none of which came from a provider. It kept the letter of the
+ * promise exactly, because the promise named exactly one field.
+ *
+ * Naming a single forbidden field tells the reader — and the model — that
+ * everything adjacent is permitted. The promise now covers the whole answer,
+ * because that is what a traveller would act on: a made-up schedule sends
+ * someone to an airport just as surely as a made-up price.
+ */
+const NO_SUBSTITUTE = 'I will not fill the gap with flight details from memory — no fares, carriers, schedules or durations.';
+
 export function flightProviderFailureAsk(args = {}, { configured = true, includeRetry = true } = {}) {
   if (!configured) {
-    return 'Live flight search is not connected (DUFFEL_API_KEY is missing on the server). I will not invent fares. Connect Duffel, or keep planning with airports and dates without live prices.';
+    return `Live flight search is not connected (DUFFEL_API_KEY is missing on the server). ${NO_SUBSTITUTE} Connect Duffel, or keep planning with airports and dates without live prices.`;
   }
 
   const route = routeLabel(args);
   const prose = includeRetry
-    ? `I could not look up live flights${route} just now. I will not invent fares. Tap Retry to run the same search again.`
-    : `I could not look up live flights${route} just now. I will not invent fares. We can retry when the flight provider answers.`;
+    ? `I could not look up live flights${route} just now. ${NO_SUBSTITUTE} Tap Retry to run the same search again.`
+    : `I could not look up live flights${route} just now. ${NO_SUBSTITUTE} We can retry when the flight provider answers.`;
 
   if (!includeRetry) return prose;
 

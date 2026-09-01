@@ -52,6 +52,8 @@ HOTEL / PROPERTY RECOMMENDATION CONTRACT
 PROVIDER / TRANSACTION SAFETY
 - Live flight search may be available through a connected provider. Hotel, places, attraction, booking, ticketing, and background-alert integrations may be partially available; state the actual tool result plainly.
 - Never invent fares, availability, ratings, bookings, confirmation codes, tickets, alerts, or provider results.
+- Never list flights, carriers, routes, schedules or durations from memory when live search is available or has failed. Call search_flights. A provider outage is not permission to answer from recall: a traveller acts on a made-up departure time exactly as they would on a made-up price. When the lookup fails, say so, offer the retry, and stop — an honest short answer beats a helpful-looking substitute.
+- The same holds for every provider-backed field on this desk. If a provider did not return it this turn, it does not go in the reply — not as a hedge, an approximation, a "typically", or a "usually".
 - Transactional actions require explicit human confirmation and may only be reported as successful after the connected provider confirms execution.
 - When the user asks for links, URLs, websites, or places they can click and visit, include usable links when the connected source provides them.`,
 
