@@ -1,5 +1,9 @@
 import { buildStudyVerificationPlan, type StudyAssessmentReviewStatus, type StudyVerificationOutcome } from './study-verification.js';
 import { executeStudyVerificationPlan } from './study-verification-runtime.js';
+import {
+  validateStudyAssessmentCorpusRecord,
+  type StudyAssessmentCorpusMetadata,
+} from './study-assessment-corpus.js';
 
 export const STUDY_ASSESSMENT_GOVERNANCE_VERSION = 'study-assessment-governance-2026-08-31.1';
 
@@ -11,6 +15,9 @@ export type StudyAssessmentReleaseCandidate = {
   conceptKey: string;
   reviewStatus: StudyAssessmentReviewStatus;
   releaseMode: StudyAssessmentReleaseMode;
+  objectiveCode: string;
+  difficulty: number;
+  corpus: StudyAssessmentCorpusMetadata;
 };
 
 export type StudyAssessmentReleaseDecision = {
@@ -68,6 +75,18 @@ export function verifyStudyAssessmentRelease(
     };
   }
 
+  if (item.corpus?.lifecycle?.state !== 'released') {
+    return {
+      version: STUDY_ASSESSMENT_GOVERNANCE_VERSION,
+      itemRef,
+      releaseMode: item.releaseMode,
+      canIssueVerifiedAttempt: false,
+      reasonCodes: ['assessment_corpus_item_not_released'],
+      evidenceRefs: [],
+      verification: null,
+    };
+  }
+
   const plan = buildStudyVerificationPlan({
     claimId: `assessment-key:${itemRef}`,
     claimKind: 'assessment_key',
@@ -82,6 +101,31 @@ export function verifyStudyAssessmentRelease(
       evidenceRef: `quantora:study-assessment-bank:${itemRef}`,
     },
   }).outcome;
+
+  if (!verification.canClaimVerified) {
+    return {
+      version: STUDY_ASSESSMENT_GOVERNANCE_VERSION,
+      itemRef,
+      releaseMode: item.releaseMode,
+      canIssueVerifiedAttempt: false,
+      reasonCodes: verification.reasonCodes,
+      evidenceRefs: verification.evidenceRefs,
+      verification,
+    };
+  }
+
+  const corpusValidation = validateStudyAssessmentCorpusRecord(item);
+  if (!corpusValidation.valid) {
+    return {
+      version: STUDY_ASSESSMENT_GOVERNANCE_VERSION,
+      itemRef,
+      releaseMode: item.releaseMode,
+      canIssueVerifiedAttempt: false,
+      reasonCodes: corpusValidation.reasonCodes,
+      evidenceRefs: [],
+      verification,
+    };
+  }
 
   return {
     version: STUDY_ASSESSMENT_GOVERNANCE_VERSION,
