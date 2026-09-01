@@ -18,9 +18,9 @@
  *
  * Guided website intake adds one more pre-file state: the first turn correctly
  * asks a designer question before the Coding Desk opens. The user's answer is
- * still part of the build even though there are no files and no desk yet. A
- * build session therefore cannot depend on `codingDeskOpen`; the transcript's
- * prior build ask is the authority until an actual artifact exists.
+ * still part of the build even though there are no files and no desk yet. For
+ * a prior ask the strict coding classifier already recognizes, the transcript
+ * is therefore enough to preserve build context before the desk opens.
  *
  * What the person then experienced was the platform quietly becoming a
  * chatbot. And a general model asked for an app, with no desk and no preview,
@@ -78,8 +78,10 @@ const ARTIFACT_REFERENCE = /\b(it|this|that|these|those|my|the)\b[^?]{0,40}?\b(a
  * the circular lock survived intact for exactly the asks that trip it. A
  * recovery built on the thing that failed recovers nothing.
  *
- * An imperative build verb with an object is enough. It does not force a build
- * on its own — it only says this session was trying to make something.
+ * An imperative build verb with an object is enough only once the Coding Desk
+ * is already open. Before a desk exists, that broad fallback would also match
+ * non-software asks such as "build me a business case". Pre-desk continuity is
+ * therefore granted only to asks the strict coding classifier recognizes.
  */
 const IMPERATIVE_BUILD = /\b(build|create|make|generate|design|develop|code|prototype|scaffold|clone|rebuild)\b\s+(?:me\s+)?(?:a|an|the|my|us\s+a|some)?\s*\w/i;
 
@@ -89,12 +91,14 @@ const IMPERATIVE_BUILD = /\b(build|create|make|generate|design|develop|code|prot
  * Derived from the messages we already have rather than stored, so it cannot
  * drift out of step with the transcript or be lost by a reload.
  *
- * IMPORTANT: the Coding Desk does not have to be open. Guided intake is
- * intentionally pre-desk and pre-file; requiring the desk here turned the
- * user's answer to the designer question back into ordinary chat.
+ * Guided intake is intentionally pre-desk and pre-file. A prior ask that the
+ * strict coding classifier recognizes must therefore survive even when
+ * `codingDeskOpen` is false. The broader imperative fallback remains desk-gated
+ * to avoid turning generic "build me X" conversations into software builds.
  */
 export function isBuildSessionActive({
   priorUserMessages = [],
+  codingDeskOpen = false,
   hasDeskFiles = false,
   isCodingRequest = () => false,
 } = {}) {
@@ -103,9 +107,8 @@ export function isBuildSessionActive({
     if (typeof message !== 'string') return false;
     const t = message.trim();
     if (!t || QUESTION_ONLY.test(t)) return false;
-    // Two signals, deliberately: the strict classifier, and a plain imperative
-    // build ask it is known to miss.
-    return isCodingRequest(t) || IMPERATIVE_BUILD.test(t);
+    if (isCodingRequest(t)) return true;
+    return Boolean(codingDeskOpen) && IMPERATIVE_BUILD.test(t);
   });
 }
 
