@@ -76,6 +76,18 @@ function hasRealStyling(src: string): boolean {
  */
 const SELL_CONTROL = /add[\s-]?to[\s-]?(?:cart|bag|basket)|buy\s?now|checkout|place\s+order/i;
 
+/*
+ * A page that loads script it did not inline.
+ *
+ * build-truth reads script BODIES, so `<script src="https://cdn/commerce.js">`
+ * is invisible to it and a storefront that delegates its cart to a commerce SDK
+ * reads as a dead Add to Cart. Capping such a build at 45 asserts knowledge we
+ * do not have — the wiring may be perfectly real in code we cannot see. The
+ * finding is still worth surfacing, so the check stays and only the CAP stands
+ * down. Silent when unsure is the rule; silent about everything is not.
+ */
+const LOADS_EXTERNAL_SCRIPT = /<script\b[^>]*\bsrc\s*=/i;
+
 export function heuristicChecks(code: string, brief = "", opts: { files?: string[] } = {}): BuildCheck[] {
   const src = String(code || "");
   const lower = src.toLowerCase();
@@ -147,13 +159,24 @@ export function heuristicChecks(code: string, brief = "", opts: { files?: string
      * Same shape as feat-photos above, and for the same reason: a gate that
      * caps the score on ambiguous evidence is a gate the next person mutes.
      */
-    const deadSellControl = dead.filter((f: any) => SELL_CONTROL.test(String(f.data?.label || "")));
+    /*
+     * Match the control's SOURCE, not just its derived label. build-truth
+     * prefers an accessible name, so `<button aria-label="Add dress">Add to
+     * Cart</button>` stores "Add dress" and a label-only test misses the very
+     * control that sells. data.at locates the exact occurrence, so the element
+     * itself — attributes and visible text alike — is what gets classified.
+     */
+    const deadSellControl = dead.filter((f: any) => {
+      if (SELL_CONTROL.test(String(f.data?.label || ""))) return true;
+      const at = Number(f.data?.at);
+      return Number.isFinite(at) && SELL_CONTROL.test(src.slice(at, at + 200));
+    });
     checks.push({
       id: "controls-wired",
       label: "Buttons and links actually do something",
       ok: dead.length === 0,
       weight: 3,
-      critical: briefWantsOnlineSelling(b) && deadSellControl.length > 0,
+      critical: briefWantsOnlineSelling(b) && deadSellControl.length > 0 && !LOADS_EXTERNAL_SCRIPT.test(src),
       detail: dead.length ? `${dead.length} control(s) do nothing when clicked. ${say(dead)}` : undefined,
     });
   }

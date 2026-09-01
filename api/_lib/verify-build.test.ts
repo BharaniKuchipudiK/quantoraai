@@ -193,3 +193,32 @@ test("dead-control detail carries the specific controls, not just a count", () =
   const detail = checkById(heuristicChecks(DEAD_SHOP, "an online shop to sell dresses"), "controls-wired")?.detail || "";
   assert.match(detail, /Add to Cart/, "the failing control must be named");
 });
+
+/*
+ * Both found in review of #432, both reproduced before either was fixed.
+ */
+test("a dead cart is caught even when its accessible name hides the words", () => {
+  // build-truth prefers the accessible name, so aria-label wins over visible
+  // text and data.label reads "Add dress". Classifying on the label alone let
+  // this shop score 88 and pass with an Add to Cart that does nothing.
+  const aria = `<!doctype html><html lang="en"><head><title>S</title><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui;padding:2rem}</style></head><body><header><nav><a href="/shop">Shop</a></nav></header><main><h1>Shop</h1><img src="https://i.example/d.jpg" alt="Dress"><button aria-label="Add dress">Add to Cart</button></main><footer>&copy; S</footer></body></html>`;
+  const checks = heuristicChecks(aria, "an online shop to sell dresses with a product catalog");
+  assert.equal(checkById(checks, "controls-wired")?.critical, true, "the selling control must be classified by its source, not its label");
+  assert.ok(scoreOf(checks) <= 45);
+});
+
+test("a shop whose cart is wired by an external script is never destroyed", () => {
+  /*
+   * build-truth reads script BODIES, so a commerce SDK loaded by src is
+   * invisible to it and its Add to Cart reads as dead. Capping that build at
+   * 45 asserts knowledge we do not have. The finding still surfaces — only the
+   * cap stands down — so the page is annotated, not sentenced.
+   */
+  const ext = `<!doctype html><html lang="en"><head><title>S</title><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui;padding:2rem}</style></head><body><header><nav><a href="/shop">Shop</a></nav></header><main><h1>Shop</h1><img src="https://i.example/d.jpg" alt="Dress"><button class="buy">Add to Cart</button></main><footer>&copy; S</footer><script src="https://cdn.example/commerce.js"></script></body></html>`;
+  const checks = heuristicChecks(ext, "an online shop to sell dresses with a product catalog");
+  const wired = checkById(checks, "controls-wired");
+  assert.equal(wired?.ok, false, "the finding is still reported");
+  assert.notEqual(wired?.critical, true, "code we cannot read is not proof the shop is broken");
+  const score = scoreOf(checks);
+  assert.ok(score >= 80, `an externally wired shop must still pass, got ${score}`);
+});
