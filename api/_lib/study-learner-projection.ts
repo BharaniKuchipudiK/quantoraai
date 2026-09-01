@@ -7,7 +7,7 @@ import {
 } from './study-mastery-estimator.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_LEARNER_PROJECTION_SCHEMA_VERSION = 'study-learner-projection-2026-09-02.1';
+const STUDY_LEARNER_PROJECTION_SCHEMA_VERSION = 'study-learner-projection-2026-09-02.1';
 
 export type StudyLearnerProjection = {
   schemaVersion: string;
@@ -74,11 +74,4 @@ export function replayStudyLearnerProjection(input: {
     projectedAt,
     learnerModel,
   };
-}
-
-export function studyLearnerProjectionEquivalent(
-  left: StudyLearnerProjection,
-  right: StudyLearnerProjection,
-): boolean {
-  return JSON.stringify({ ...left, projectedAt: '' }) === JSON.stringify({ ...right, projectedAt: '' });
 }
