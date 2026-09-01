@@ -20,6 +20,10 @@
 
 const SOURCE_LINE = /^\s*\d+\.\s*\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*$/;
 const SOURCES_HEADING = /^\s*(?:-{3,}\s*)?\*\*Sources\*\*\s*$/;
+const PLAN_HEADING = /^\s*\*\*Plan\*\*\s*$/;
+const MAX_PLAN_ITEMS = 5;
+const MIN_PLAN_ITEM_LENGTH = 12;
+const MAX_PLAN_ITEM_LENGTH = 200;
 /** Prompts the board's own chips send; they steer the desk, they are not the question. */
 const BOARD_PROMPT = /\bthis board\b/i;
 const MAX_SOURCES = 24;
@@ -84,6 +88,32 @@ export function parseSourcesBlock(text) {
   return { body, sources };
 }
 
+/**
+ * The analyst's decomposition of a broad question: a `**Plan**` heading
+ * followed by sub-questions as bullets, each a complete standalone question.
+ * Only that exact shape counts, and only complete questions survive — a plan
+ * bullet that is not a question is a heading pretending to be work.
+ */
+export function parsePlanBlock(text) {
+  const lines = String(text || '').split('\n');
+  const headingAt = lines.findIndex((line) => PLAN_HEADING.test(line));
+  if (headingAt === -1) return [];
+  const items = [];
+  for (let index = headingAt + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === '') { if (items.length > 0) break; continue; }
+    if (!/^\s*(?:[-*+]|\d+\.)\s+/.test(line)) break;
+    const item = stripMarkdown(line);
+    if (item.endsWith('?')
+      && item.length >= MIN_PLAN_ITEM_LENGTH
+      && item.length <= MAX_PLAN_ITEM_LENGTH) {
+      items.push(item);
+    }
+    if (items.length >= MAX_PLAN_ITEMS) break;
+  }
+  return items;
+}
+
 function stripMarkdown(line) {
   return line
     .replace(/^\s*(?:[-*+]|\d+\.)\s+/, '')
@@ -131,6 +161,8 @@ export function deriveResearchBrief({ messages } = {}) {
   let question = '';
   const sourcesByUri = new Map();
   const findings = [];
+  const plan = [];
+  let pendingExplored = -1;
   let groundedTurns = 0;
   let ungroundedTurns = 0;
   let sawUser = false;
@@ -139,13 +171,32 @@ export function deriveResearchBrief({ messages } = {}) {
     const text = typeof message?.text === 'string' ? message.text : '';
     if (message?.sender === 'user') {
       const clean = text.trim();
-      if (clean.length >= MIN_QUESTION_LENGTH && !BOARD_PROMPT.test(clean)) {
+      /*
+       * A sub-question chip sends its plan item verbatim. That turn pursues
+       * the plan — it is not a new research question, so the heading stays
+       * on the root question and the item is marked explored once a reply
+       * lands.
+       */
+      const planIndex = plan.findIndex((item) => item.text === clean);
+      if (planIndex !== -1) {
+        pendingExplored = planIndex;
+      } else if (clean.length >= MIN_QUESTION_LENGTH && !BOARD_PROMPT.test(clean)) {
         question = clampQuestion(clean);
       }
       if (clean) sawUser = true;
       return;
     }
     if (message?.sender !== 'ai' || !sawUser) return;
+
+    if (pendingExplored !== -1) {
+      plan[pendingExplored].explored = true;
+      pendingExplored = -1;
+    }
+    // The first plan is the plan; a restated one later would renumber the
+    // investigation under the analyst's feet.
+    if (plan.length === 0) {
+      for (const item of parsePlanBlock(text)) plan.push({ text: item, explored: false });
+    }
 
     const { body, sources } = parseSourcesBlock(text);
     if (sources.length === 0) {
@@ -209,6 +260,7 @@ export function deriveResearchBrief({ messages } = {}) {
   return {
     active,
     question,
+    plan,
     sources,
     findings: recentFirst,
     groundedTurns,

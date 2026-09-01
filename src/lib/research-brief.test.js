@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveResearchBrief, parseSourcesBlock } from './research-brief.js';
+import { deriveResearchBrief, parsePlanBlock, parseSourcesBlock } from './research-brief.js';
 
 const SERVER_BLOCK = '\n\n---\n**Sources**\n1. [reuters.com](https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc)\n2. [Nature study](https://www.nature.com/articles/x123)\n';
 
@@ -144,6 +144,49 @@ test('an AI monologue before the user has asked anything counts for nothing', ()
   assert.equal(brief.active, false);
   assert.equal(brief.sources.length, 0);
   assert.equal(brief.groundedTurns, 0);
+});
+
+test('parsePlanBlock reads only complete sub-questions under a Plan heading', () => {
+  const plan = parsePlanBlock([
+    'Broad question — here is the plan.',
+    '',
+    '**Plan**',
+    '- What does current cost data say per MWh?',
+    '- Grid firming economics', // not a question — dropped
+    '- How do lifetime extensions change the comparison?',
+    '',
+    'Starting with the first.',
+  ].join('\n'));
+  assert.deepEqual(plan, [
+    'What does current cost data say per MWh?',
+    'How do lifetime extensions change the comparison?',
+  ]);
+  assert.deepEqual(parsePlanBlock('We should plan this out.\n- What about costs?'), []);
+});
+
+test('the plan lives on the brief; pursuing an item marks it explored, not a new question', () => {
+  const planReply = `Here is how I would break this down.\n\n**Plan**\n- What does current cost data say per MWh?\n- How do lifetime extensions change the comparison?\n${SERVER_BLOCK}`;
+  const brief = deriveResearchBrief({
+    messages: [
+      { sender: 'user', text: 'Is nuclear cheaper than solar per MWh today?' },
+      { sender: 'ai', text: planReply },
+      { sender: 'user', text: 'What does current cost data say per MWh?' },
+      { sender: 'ai', text: `- Cost data from 2024 puts utility solar well below new nuclear builds.\n${SERVER_BLOCK}` },
+    ],
+  });
+  assert.equal(brief.question, 'Is nuclear cheaper than solar per MWh today?');
+  assert.deepEqual(brief.plan.map((item) => item.explored), [true, false]);
+
+  // A second plan block later does not renumber the investigation.
+  const restated = deriveResearchBrief({
+    messages: [
+      { sender: 'user', text: 'Is nuclear cheaper than solar per MWh today?' },
+      { sender: 'ai', text: planReply },
+      { sender: 'ai', text: `**Plan**\n- A totally different question set?\n${SERVER_BLOCK}` },
+    ],
+  });
+  assert.equal(restated.plan.length, 2);
+  assert.match(restated.plan[0].text, /^What does current cost data/);
 });
 
 test('restated findings dedupe and the most recent lead the board', () => {

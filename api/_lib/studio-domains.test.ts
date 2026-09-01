@@ -98,6 +98,9 @@ test("Research directive is an analyst evidence contract, not a vibe", () => {
   // would duplicate it and break the board's parser.
   assert.match(directive, /do not write your own sources section/i);
   assert.match(directive, /At most one clarifying question/i);
+  // The board parses this exact shape (parsePlanBlock) — heading + question bullets.
+  assert.match(directive, /\*\*Plan\*\* heading followed by 2-5 sub-questions/);
+  assert.match(directive, /Never restate or renumber the plan/i);
 });
 
 test("only a research chat turn grounds — build, repair and verify never search", () => {
