@@ -26,21 +26,14 @@ test('preview compile HTTP 422 preserves the safe compiler message and becomes t
   );
 });
 
-test('a hung preview compile request is aborted by the client deadline instead of staying pending', async () => {
+test('a hung preview compile request hits the hard client deadline even when fetch ignores AbortSignal', async () => {
   const startedAt = Date.now();
   await assert.rejects(
     () => requestPreviewCompilation({
       vfs: { 'src/main.jsx': { content: 'export default 1' } },
       correlationId: 'studio-timeout',
       timeoutMs: 20,
-      fetchFn: async (_url, options = {}) => new Promise((resolve, reject) => {
-        void resolve;
-        options.signal?.addEventListener('abort', () => {
-          const aborted = new Error('aborted');
-          aborted.name = 'AbortError';
-          reject(aborted);
-        }, { once: true });
-      }),
+      fetchFn: async () => new Promise(() => {}),
     }),
     (error) => {
       assert.equal(error?.code, 'compile-timeout');
