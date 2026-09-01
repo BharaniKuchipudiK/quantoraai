@@ -56,10 +56,19 @@ M unverified") is the product's honesty made legible at a glance.
    the board showed. Chip prompts moved to `research-board-actions.js` under
    a tested contract: every steering prompt carries the marker the brief
    filters on, so a chip turn can never silently replace the question.
-5. **Depth & continuity** *(planned)* — decompose → search → synthesize
-   through the agent execution fabric for hard questions; persist
-   investigations across sessions; watch a standing question and surface
-   when the evidence changes.
+5. **The deep dive** *(shipped)* — task `research-deep-dive`
+   (`api/_lib/research-deep-dive.ts`, research desk only, Gemini search
+   path): decompose the question into ≤3 sub-questions, run one grounded
+   lookup each, and return TRANSCRIPT MESSAGES in the canonical shape the
+   brief already parses — a Plan block, then a pursuit turn and grounded
+   answer per sub-question. One machinery, no new parser: the test feeds the
+   dive's output straight into `deriveResearchBrief`. A failed lookup leaves
+   its plan item an open chip, never an invented answer; a total failure is
+   an error, not an empty success.
+6. **Continuity** — investigations already persist per device: sessions live
+   in localStorage and the board re-derives from the transcript on load.
+   Cross-device persistence and watched questions (surface when the evidence
+   changes) remain *planned*.
 
 ## Wiring map
 

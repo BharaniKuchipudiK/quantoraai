@@ -69,9 +69,10 @@ function EvidenceQuote({ label, excerpt, sourceUrl }) {
  * Monochrome (Quantora design system): tokens flip on [data-theme], hierarchy
  * is type, space and border. No accent colours, no isLight prop.
  */
-export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onRequireAuth }) {
+export default function ResearchBoard({ messages, onAsk, onSend, onAppendMessages, signedIn, onRequireAuth }) {
   const brief = useMemo(() => deriveResearchBrief({ messages }), [messages]);
   const [verifying, setVerifying] = useState(false);
+  const [diving, setDiving] = useState(false);
   const [verifyError, setVerifyError] = useState('');
   // Keyed by finding text — the finding's identity across brief re-derives.
   const [standings, setStandings] = useState({});
@@ -138,11 +139,12 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
   const shownSources = brief.sources.slice(0, 8);
   const hiddenSourceCount = brief.sources.length - shownSources.length;
 
-  const chip = (label, onActivate, { enabled = true, busyLabel = null } = {}) => (
+  const busy = verifying || diving;
+  const chip = (label, onActivate, { enabled = true, busyLabel = null, busyWhen = false } = {}) => (
     <button
       key={label}
       type="button"
-      disabled={!enabled || verifying}
+      disabled={!enabled || busy}
       onClick={onActivate}
       className="q-mono-control q-mono-chip"
       style={{
@@ -153,11 +155,11 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
         padding: '6px 11px',
         fontSize: '0.76rem',
         fontWeight: 700,
-        cursor: enabled && !verifying ? 'pointer' : 'default',
+        cursor: enabled && !busy ? 'pointer' : 'default',
         opacity: enabled ? 1 : 0.4,
       }}
     >
-      {busyLabel && verifying ? busyLabel : label}
+      {busyLabel && busyWhen ? busyLabel : label}
     </button>
   );
   const askChip = (label, prompt) => chip(label, () => onSend?.(prompt));
@@ -183,12 +185,54 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
    * every steering prompt carries the marker deriveResearchBrief filters on,
    * so a chip turn can never replace the research question.
    */
+  /*
+   * The dive decomposes the question server-side and comes back as canonical
+   * transcript messages; appending them is all the client does — the board
+   * derives plan, findings and sources through the same machinery as any
+   * hand-typed turn.
+   */
+  const runDeepDive = async () => {
+    if (!signedIn) {
+      onRequireAuth?.();
+      return;
+    }
+    setDiving(true);
+    setVerifyError('');
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: 'research-deep-dive',
+          studioDomain: 'research',
+          question: brief.question,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setVerifyError(data.error || 'The deep dive is unavailable right now.');
+        return;
+      }
+      if (Array.isArray(data.messages) && data.messages.length > 0) {
+        onAppendMessages?.(data.messages);
+      }
+    } catch {
+      setVerifyError('The deep dive could not run. Try again in a moment.');
+    } finally {
+      setDiving(false);
+    }
+  };
+
   const chips = [];
+  if (brief.plan.length === 0 && onAppendMessages) {
+    chips.push(chip('Deep dive', runDeepDive, { busyLabel: 'Diving…', busyWhen: diving }));
+  }
   if (brief.groundedTurns === 0 && answered) {
     chips.push(askChip('Get sources', RESEARCH_BOARD_PROMPTS.getSources));
   }
   if (brief.findings.length > 0) {
-    chips.push(chip('Verify evidence', runVerify, { busyLabel: 'Verifying…' }));
+    chips.push(chip('Verify evidence', runVerify, { busyLabel: 'Verifying…', busyWhen: verifying }));
     chips.push(askChip('Counter-evidence', RESEARCH_BOARD_PROMPTS.counterEvidence));
   }
   if (brief.sources.length > 0) {
