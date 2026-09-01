@@ -16,6 +16,12 @@
  * could never get back in. Every later message was judged cold, cold judgement
  * needs verb-plus-noun, and conversation does not talk that way.
  *
+ * Guided website intake adds one more pre-file state: the first turn correctly
+ * asks a designer question before the Coding Desk opens. The user's answer is
+ * still part of the build even though there are no files and no desk yet. A
+ * build session therefore cannot depend on `codingDeskOpen`; the transcript's
+ * prior build ask is the authority until an actual artifact exists.
+ *
  * What the person then experienced was the platform quietly becoming a
  * chatbot. And a general model asked for an app, with no desk and no preview,
  * answers the only way it can: open TextEdit, turn off smart quotes, paste
@@ -82,15 +88,17 @@ const IMPERATIVE_BUILD = /\b(build|create|make|generate|design|develop|code|prot
  *
  * Derived from the messages we already have rather than stored, so it cannot
  * drift out of step with the transcript or be lost by a reload.
+ *
+ * IMPORTANT: the Coding Desk does not have to be open. Guided intake is
+ * intentionally pre-desk and pre-file; requiring the desk here turned the
+ * user's answer to the designer question back into ordinary chat.
  */
 export function isBuildSessionActive({
   priorUserMessages = [],
-  codingDeskOpen = false,
   hasDeskFiles = false,
   isCodingRequest = () => false,
 } = {}) {
   if (hasDeskFiles) return true;
-  if (!codingDeskOpen) return false;
   return (priorUserMessages || []).some((message) => {
     if (typeof message !== 'string') return false;
     const t = message.trim();
