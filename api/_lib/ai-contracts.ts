@@ -67,6 +67,31 @@ export function earliestSearchableIso(now: Date = new Date()): string {
  * call is ever made for a departure that has already happened. Lexicographic
  * comparison is exact for zero-padded ISO dates, so no parsing is needed.
  */
+/**
+ * The furthest date still worth searching — UTC today plus eleven months.
+ *
+ * The past-date guard was built after a search ran for 2025-05-08, sixteen
+ * months before the day it ran, with nothing anywhere in the system noticing.
+ * It only ever looked backwards, so the identical bug pointed the other way
+ * sailed straight through: "next week" resolved to 2027 was accepted, and so
+ * was 2099.
+ *
+ * A wrong YEAR is the failure mode in both directions, and the far side is now
+ * the likelier of the two — the prompt states today's date, so a model that
+ * mis-resolves a relative phrase lands a year ahead rather than a year behind.
+ *
+ * Eleven months is not arbitrary: airline schedules generally open eleven to
+ * twelve months out, so a departure past it cannot be booked by anyone and is
+ * far more likely a typo in the year than a real intention. As with the past
+ * boundary this errs toward letting a search run, because refusing a real trip
+ * is the worse of the two failures.
+ */
+export function latestSearchableIso(now: Date = new Date()): string {
+  const limit = new Date(now.getTime());
+  limit.setUTCMonth(limit.getUTCMonth() + 11);
+  return limit.toISOString().slice(0, 10);
+}
+
 const notInThePast = (label: string) => (value: string, ctx: z.RefinementCtx) => {
   if (value < earliestSearchableIso()) {
     ctx.addIssue({
@@ -91,6 +116,13 @@ const FlightSearchArgsSchema = z.object({
       code: 'custom',
       path: ['departureDate'],
       message: `Departure date ${value.departureDate} is in the past — today is ${todayIso()}`,
+    });
+  }
+  if (value.departureDate > latestSearchableIso()) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['departureDate'],
+      message: `Departure date ${value.departureDate} is further out than airlines sell — today is ${todayIso()}, so check the year`,
     });
   }
 });

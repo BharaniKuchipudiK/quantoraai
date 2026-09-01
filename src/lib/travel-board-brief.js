@@ -141,7 +141,7 @@ const ROUTE_PLACES = /\bfrom\s+([\p{L}][\p{L}\s'’.-]{1,40}?)\s+to\s+([\p{L}][\
 const LABEL_STOP = new Set([
   'a', 'about', 'after', 'also', 'an', 'and', 'around', 'at', 'before',
   'between', 'during', 'for', 'from', 'i', 'if', 'in', 'include', 'including',
-  'my', 'near', 'next', 'on', 'onwards', 'our', 'over', 'please', 'plus', 'so',
+  'my', 'near', 'next', 'on', 'onwards', 'or', 'our', 'over', 'please', 'plus', 'so',
   'the', 'then', 'this', 'to', 'under', 'we', 'when', 'while', 'with',
 ]);
 
@@ -162,8 +162,11 @@ function tidyPlace(raw) {
   for (const piece of String(raw || '').trim().split(/\s+/)) {
     const token = piece.replace(/[^\p{L}\p{N}'’-]/gu, '');
     if (!token || LABEL_STOP.has(token.toLowerCase())) break;
+    // "Copenhagen. thoughts?" is one place and one question, not a two-word
+    // city — sentence punctuation ends a name as surely as a stop word does.
+    const ends = /[.,;:!?]/.test(piece);
     tokens.push(token);
-    if (tokens.length >= 3) break;
+    if (ends || tokens.length >= 3) break;
   }
   return tokens.join(' ');
 }
@@ -198,6 +201,148 @@ function isUsablePlace(place) {
   return !hotelLocationNeedsCity(place);
 }
 
+/**
+ * Capitalised words that open an English sentence without naming a place.
+ *
+ * Sentence-initial capitals are the one place the proper-noun signal below is
+ * ambiguous: "Planning our honeymoon" and "Bali is lovely" look identical to a
+ * capitalisation test. Only openers that can never be a destination belong
+ * here — the list is checked at position 0 only, so a real place that happens
+ * to start the sentence is untouched.
+ */
+const SENTENCE_OPENER = new Set([
+  'i', 'we', 'my', 'our', 'me', 'us', 'you', 'your', 'it', 'is', 'are', 'am',
+  'do', 'does', 'did', 'can', 'could', 'would', 'should', 'will', 'shall',
+  'what', 'whats', 'where', 'wheres', 'when', 'whens', 'why', 'how', 'hows',
+  'who', 'which', 'if', 'so', 'but', 'and', 'or', 'the', 'a', 'an', 'any',
+  'help', 'book', 'find', 'show', 'give', 'get', 'take', 'need', 'want',
+  'plan', 'planning', 'looking', 'thinking', 'flying', 'heading', 'going',
+  'travelling', 'traveling', 'visiting', 'trip', 'trips', 'holiday', 'holidays',
+  'vacation', 'vacations', 'family', 'weekend', 'free', 'available', 'hi',
+  'hello', 'hey', 'please', 'thanks', 'ok', 'okay', 'yes', 'no', 'maybe',
+  'also', 'just', 'lets', 'there', 'this', 'that', 'these', 'those', 'not',
+  'sure', 'still', 'now', 'then', 'from', 'to', 'in', 'at', 'on', 'for',
+]);
+
+/** Words that mark the proper noun after them as where the trip STARTS. */
+const ORIGIN_PREPOSITION = new Set(['from', 'of', 'leaving', 'departing']);
+
+/**
+ * Words that mark the proper noun after them as somewhere you GO.
+ *
+ * Capitalisation says a word is a proper noun; it does not say the noun is a
+ * place. An earlier pass here trusted the capital alone and promptly offered
+ * to search for hotels in "Sarah", "Emirates", "Marriott" and "Deloitte" —
+ * fourteen of fifteen non-place proper nouns read as destinations. Names,
+ * airlines, hotel chains, card networks and employers all arrive capitalised
+ * in a travel chat, and no blocklist of them ever finishes.
+ *
+ * A locative preposition is evidence of ROLE rather than of spelling, which is
+ * the thing actually being asserted: you travel TO, land IN, stay NEAR a
+ * place. You do not travel to Sarah. It costs recall on phrasings that name a
+ * place with no preposition at all ("probably Phuket") and that is the correct
+ * side to fail on — silence asks one extra question, invention searches for a
+ * city that does not exist.
+ */
+const DESTINATION_PREPOSITION = new Set([
+  'to', 'in', 'at', 'into', 'around', 'near', 'toward', 'towards',
+  'visit', 'visiting', 'explore', 'exploring', 'reach', 'reaching',
+  'see', 'seeing',
+]);
+
+/** A capitalised, non-shouting word — "Bali", "Lanka", but not "USD". */
+const PROPER_WORD = /^\p{Lu}[\p{Ll}'’.-]+$/u;
+
+/**
+ * Places named by capitalisation rather than by sentence pattern.
+ *
+ * The cue lists above match PHRASINGS, and there are infinitely many of those
+ * against a finite list — which is why the desk heard only half the people who
+ * told it where they were going, and answered "Where are you heading?" at
+ * someone who had just said Tromso. Adding cue number forty-seven does not fix
+ * a design that needs cue number forty-eight next week.
+ *
+ * The signal it was ignoring: people capitalise place names even when they
+ * capitalise nothing else. "whats the cheapest way to get to Bali in December"
+ * is lowercase throughout except the two words that are proper nouns. So a
+ * capitalised run that is not a sentence opener, not a time, and not shouting
+ * an airport code is almost always a place — and reading it costs no gazetteer.
+ *
+ * Precision is protected structurally rather than by hoping: the candidate must
+ * survive every stop list already in this module, and AMBIGUITY REPORTS
+ * NOTHING. "Japan or Korea, not sure yet" yields two candidates and therefore
+ * no answer, which is the honest reading of an undecided traveller.
+ */
+function properNounPlaces(text) {
+  const words = String(text || '').trim().split(/\s+/);
+  const spans = [];
+  let current = null;
+
+  words.forEach((word, index) => {
+    const bare = word.replace(/[^\p{L}\p{N}'’-]/gu, '');
+    const isProper = bare && PROPER_WORD.test(bare)
+      && !(index === 0 && SENTENCE_OPENER.has(bare.toLowerCase()))
+      && !TEMPORAL_WORD.has(bare.toLowerCase())
+      && !NOT_A_PLACE.has(bare.toLowerCase());
+
+    if (isProper) {
+      if (current) current.words.push(bare);
+      else current = { words: [bare], at: index };
+    } else if (current) {
+      spans.push(current);
+      current = null;
+    }
+    // A comma or full stop ends a name: "Chennai next week, want to end up in
+    // Bangkok" must not fuse across the break.
+    if (current && /[,.;:!?]$/.test(word)) { spans.push(current); current = null; }
+  });
+  if (current) spans.push(current);
+
+  return spans
+    .map((span) => ({
+      place: span.words.slice(0, 3).join(' '),
+      lead: (words[span.at - 1] || '').replace(/[^\p{L}]/gu, '').toLowerCase(),
+    }))
+    .filter((span) => isUsablePlace(span.place));
+}
+
+/**
+ * The destination a capitalised name implies, or '' when the sentence is
+ * ambiguous. One candidate is the answer; several mean the traveller is still
+ * choosing, and guessing between them is invention with better manners.
+ */
+function properNounDestination(text) {
+  const found = properNounPlaces(text).filter((span) => DESTINATION_PREPOSITION.has(span.lead));
+  return found.length === 1 ? found[0].place : '';
+}
+
+/** The origin a capitalised name implies, only when a from-word introduces it. */
+function properNounOrigin(text) {
+  const found = properNounPlaces(text).filter((span) => ORIGIN_PREPOSITION.has(span.lead));
+  return found.length === 1 ? found[0].place : '';
+}
+
+/**
+ * True when a short bare reply reads as a name rather than as a sentence.
+ *
+ * This path exists so "Singapore" answers "which city?" without being asked
+ * twice. It used to accept ANY phrase of three words or fewer, which made
+ * "is Skyscanner cheaper" a destination — a question read as a city, one tap
+ * from a live hotel search.
+ *
+ * A single word is still taken on trust: a one-word reply in a travel chat is
+ * overwhelmingly the answer to the question just asked, and people type "bali"
+ * without a capital. Beyond one word the phrase must carry capitals on every
+ * token, because that is what separates "New York City" from "is Skyscanner
+ * cheaper" without needing to know either of them.
+ */
+function looksLikeBareName(place) {
+  const tokens = String(place || '').trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.length === 1) return /^[\p{L}][\p{L}'’.-]*$/u.test(tokens[0]);
+  return tokens.every((token) => /^\p{Lu}/u.test(token));
+}
+
 function readPlace(text) {
   const value = String(text || '').trim();
   if (!value) return '';
@@ -225,9 +370,12 @@ function readPlace(text) {
   if (value.split(/\s+/).length <= 3) {
     const inferred = inferStayLocation(value);
     const place = tidyPlace(inferred);
-    if (place && isWholePhrase(inferred, place) && isUsablePlace(place)) return place;
+    if (place && looksLikeBareName(place) && isUsablePlace(place)) return place;
   }
-  return '';
+
+  // Last resort, once every phrasing rule above has declined: the sentence may
+  // still name a place in the only way people reliably mark one — a capital.
+  return properNounDestination(value);
 }
 
 /** Newest statement wins, so a correction replaces an earlier answer. */
@@ -250,11 +398,15 @@ function readOriginLabel(texts) {
       if (!looksTemporal(both, other) && isUsablePlace(both)) return both;
     }
     const match = text.match(FROM_PLACE);
-    if (!match) continue;
-    const place = tidyPlace(match[1]);
-    // "from Monday", "from next week": a bare from-phrase is a date at least as
-    // often as it is a city, and an origin nobody named is still an invention.
-    if (!looksTemporal(place) && isUsablePlace(place)) return place;
+    if (match) {
+      const place = tidyPlace(match[1]);
+      // "from Monday", "from next week": a bare from-phrase is a date at least
+      // as often as it is a city, and an origin nobody named is still an
+      // invention.
+      if (!looksTemporal(place) && isUsablePlace(place)) return place;
+    }
+    const proper = properNounOrigin(text);
+    if (proper) return proper;
   }
   return '';
 }
