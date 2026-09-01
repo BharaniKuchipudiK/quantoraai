@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Check, History, RotateCcw, X } from 'lucide-react';
 import { loadStudyAssessmentHistory } from '../lib/study-assessment-history-client.js';
+import './study-assessment-history.css';
 
 function titleCase(value) {
   return String(value || '')
