@@ -1306,6 +1306,10 @@ export default async function handler(req: any, res: any) {
             const artifactContract = validateBuildArtifactResponse(
               attemptReply,
               goldenCanary ? transaction : null,
+              // A guided first turn is TOLD not to output code (FIRST-TURN
+              // RULE) — failing it for complying burned every route on the
+              // same compliant reply. Golden canary turns still owe files.
+              { allowIntake: honorGuided && !goldenCanary },
             );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }

@@ -946,6 +946,23 @@ export function useChatStream({
       ? nextStepBrief(buildJob)
       : (text.trim() || 'I have attached an image. Describe what you see and help me with it.');
 
+    /*
+     * Whether THIS turn is a guided website intake — the designer question
+     * before a thousand lines. One flag, shared by the request body and every
+     * enforcement path below: on 2026-09-01 the server told the model to ask
+     * one question with NO code (FIRST-TURN RULE) while the artifact contract
+     * and this hook's own no-preview enforcement both punished exactly that
+     * reply — so a boutique-website ask failed deterministically on every
+     * engine that complied. An intake turn owes a question, not files.
+     */
+    const guidedIntakeTurn = shouldStartGuidedBuild({
+      text: visibleUserText,
+      hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+      isWorkspace: hasCodingWorkspace,
+      studioMode: refineDesk ? 'build' : 'ask',
+      isVisionQuestion: attachedImages.length > 0,
+    });
+
     const requestBodyFor = (model) => ({
       message: messageForRequest,
       attachedImages,
@@ -974,13 +991,7 @@ export function useChatStream({
        * and the shipping terms were assumed. One question first is cheaper
        * than a rebuild, for the user and for the credit meter.
        */
-      guidedBuild: shouldStartGuidedBuild({
-        text: visibleUserText,
-        hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
-        isWorkspace: hasCodingWorkspace,
-        studioMode: refineDesk ? 'build' : 'ask',
-        isVisionQuestion: attachedImages.length > 0,
-      }),
+      guidedBuild: guidedIntakeTurn,
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,
@@ -1147,6 +1158,35 @@ export function useChatStream({
     const messageForModel = extraContext ? `${text}\n\n${extraContext}` : text;
 
     const turnStartedAt = Date.now();
+    /*
+     * The heal loop's Apply state — what makes attempt 2 DIFFER from attempt 1.
+     *
+     * On 2026-09-01 a BUILD_ARTIFACT_CONTRACT retry re-sent the identical
+     * prompt to the identical model and failed identically, then closed with
+     * copy promising a "fallback engine" that nothing here ever selected. The
+     * repair now matches the diagnosis (turn-recovery.js decides which): a
+     * strengthened brief carries memory of what failed, and switchModel moves
+     * the retry onto a real fallback engine. triedEngines is the loop's own
+     * record, so the terminal message can report what actually ran instead of
+     * promising what never will.
+     */
+    const triedEngines = [];
+    const triedEngineIds = new Set();
+    let retryBrief = '';
+    const nextFallbackEngine = () => (availableModels || []).find((model) => (
+      model
+      && model.available !== false
+      && model.id
+      && model.id !== targetModel?.id
+      && !triedEngineIds.has(model.id)
+    )) || null;
+    const applyRecoveryRepairs = (recovery) => {
+      if (recovery.retryBrief) retryBrief = recovery.retryBrief;
+      if (recovery.switchModel) {
+        const fallback = nextFallbackEngine();
+        if (fallback) targetModel = fallback;
+      }
+    };
     const announceRecovery = (notice) => {
       if (!stillCurrent()) return;
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
@@ -1160,6 +1200,11 @@ export function useChatStream({
     try {
       for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
         if (!stillCurrent()) return;
+        // Record the engine this attempt actually runs on, for honest terminal copy.
+        if (targetModel?.id) triedEngineIds.add(targetModel.id);
+        if (targetModel?.name && triedEngines[triedEngines.length - 1] !== targetModel.name) {
+          triedEngines.push(targetModel.name);
+        }
         const controller = new AbortController();
         abortControllerRef.current = controller;
         /*
@@ -1193,7 +1238,10 @@ export function useChatStream({
             headers: chatRequestHeaders(),
             body: JSON.stringify({
               ...requestBodyFor(targetModel),
-              message: messageForModel,
+              // A retry with memory: the strengthened brief names what the
+              // failed attempt did wrong, so this attempt is a different
+              // experiment rather than the same one billed twice.
+              message: retryBrief ? `${messageForModel}\n\n${retryBrief}` : messageForModel,
               turnAttempt: attempt,
             })
           });
@@ -1222,8 +1270,11 @@ export function useChatStream({
               status: res.status,
               code: errData.code,
               retryable: errData.retryable === true,
+              failureDetail: errData.error || errData.message || '',
+              fallbackEngineName: nextFallbackEngine()?.name || null,
             });
             if (recovery.retry) {
+              applyRecoveryRepairs(recovery);
               announceRecovery(recovery.notice);
               continue;
             }
@@ -1341,8 +1392,11 @@ export function useChatStream({
               code: streamedError?.code,
               retryable: streamedError ? streamedError.retryable === true : true,
               hasPartialText: Boolean(currentText),
+              failureDetail: streamedError?.message || '',
+              fallbackEngineName: nextFallbackEngine()?.name || null,
             });
             if (recovery.retry) {
+              applyRecoveryRepairs(recovery);
               announceRecovery(recovery.notice);
               continue;
             }
@@ -1426,6 +1480,9 @@ export function useChatStream({
                     ? 'provider handoff failed after a partial reply'
                     : 'no healthy AI route'),
                 shopIntakeAsk,
+                attemptsMade: attempt,
+                triedEngines,
+                fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('provider-dead', {
                 shopIntakeAsk,
@@ -1490,6 +1547,9 @@ export function useChatStream({
                 kind: 'stream-ended',
                 errorMessage: 'the response stream ended unexpectedly',
                 shopIntakeAsk,
+                attemptsMade: attempt,
+                triedEngines,
+                fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('stream-ended', {
                 shopIntakeAsk,
@@ -1520,9 +1580,13 @@ export function useChatStream({
 
           // Coding Desk build turns must land files OR already-proved skills on the desk.
           // Advisor domains (Study flashcards, Travel, etc.) intentionally stay chat.
+          // A guided intake turn is exempt: its deliverable is the designer's one
+          // question (see guidedIntakeTurn above), and demanding files from it is
+          // the contradiction that burned the 2026-09-01 boutique build.
           if (
             isCodingRequest
             && !advisorBlocksPreviewBuild(turnDomain)
+            && !guidedIntakeTurn
             && !assembleStudioPreview(currentText).code
           ) {
             const shopOwned = Boolean(
@@ -1575,8 +1639,10 @@ export function useChatStream({
               attempt,
               code: 'BUILD_ARTIFACT_CONTRACT',
               hasPartialText: Boolean(currentText),
+              failureDetail: 'the reply was a chat plan with no runnable files',
             });
             if (recovery.retry) {
+              applyRecoveryRepairs(recovery);
               announceRecovery(recovery.notice);
               continue;
             }
@@ -1585,7 +1651,12 @@ export function useChatStream({
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
-                const outcome = resolveCodingTurnOutcome({ kind: 'no-preview', shopIntakeAsk });
+                const outcome = resolveCodingTurnOutcome({
+                  kind: 'no-preview',
+                  shopIntakeAsk,
+                  attemptsMade: attempt,
+                  triedEngines,
+                });
                 recordTurnLesson('no-preview', {
                   shopIntakeAsk,
                   detail: 'no-preview',
@@ -1613,7 +1684,9 @@ export function useChatStream({
           // A failed proof annotates the turn; it never replaces it. See below.
           let proofNote = '';
           let proofChips = [];
-          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain)) {
+          // An intake turn owes a question, not files — proving it would re-note
+          // the same false failure the no-preview exemption above just removed.
+          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain) && !guidedIntakeTurn) {
             const assembled = assembleStudioPreview(currentText, vfs || {});
             const seedVfs = {
               ...(vfs || {}),
@@ -1777,8 +1850,10 @@ export function useChatStream({
             networkError: true,
             timedOut,
             stoppedByUser: stopped,
+            failureDetail: error?.message || '',
           });
           if (recovery.retry) {
+            applyRecoveryRepairs(recovery);
             announceRecovery(recovery.notice);
             continue;
           }
@@ -1841,6 +1916,9 @@ export function useChatStream({
               errorMessage: error.message || 'Unable to reach the AI gateway.',
               shopIntakeAsk,
               isShopPhotoTurn,
+              attemptsMade: attempt,
+              triedEngines,
+              fallbackEngine: nextFallbackEngine(),
             });
             if (!stopped) {
               recordTurnLesson(timedOut ? 'timeout' : 'provider-dead', {

@@ -2,7 +2,15 @@
  * Coding Desk Outcome Spine — one partner voice for every failed coding turn.
  *
  * Contract: never dump a raw gateway string and walk away.
- * Always: what failed → what we will do → optional Agree chips.
+ * Always: what failed → what was already tried → the user's move (chips).
+ *
+ * HONESTY LAW (gated by turn-heal-contract.test.js): this copy renders in
+ * exactly one state — after the automatic recovery loop has returned. So it
+ * may state what the loop DID (attempts made, engines tried) and offer chips
+ * the USER can tap, but it must never say "what we'll do: retry": on
+ * 2026-09-01 that sentence shipped as the closing line of a turn whose retry
+ * budget was already spent, promising an action the code had just proved it
+ * would never take.
  */
 
 import { buildJobIsComplete, completedCount, nextStep } from './build-job.js';
@@ -17,6 +25,29 @@ import { SHOP_INTAKE_CATALOG_SIZE, shopPhotoTurnFailureCopy } from './shop-catal
  *   continueSet: { items: Array<{ id: string, label: string, value: string }> } | null,
  * }} CodingTurnOutcome
  */
+
+/** "Nemotron, then Gemini Flash" — the engines the loop actually ran. */
+function describeTriedEngines(triedEngines) {
+  const names = (Array.isArray(triedEngines) ? triedEngines : [])
+    .map((name) => String(name || '').trim())
+    .filter(Boolean);
+  return names.length ? names.join(', then ') : '';
+}
+
+/**
+ * The "what I tried" line for a turn whose automatic loop is finished. Facts
+ * only: attempts and engines come from the caller's real loop state, so a
+ * single-attempt failure never claims a history it did not have.
+ */
+function describeAttemptsSpent(attemptsMade, triedEngines) {
+  if (!(Number(attemptsMade) >= 2)) return '';
+  const engines = describeTriedEngines(triedEngines);
+  return (
+    `**What I tried:** ${Math.round(Number(attemptsMade))} attempts`
+    + (engines ? ` (${engines})` : '')
+    + ' — the automatic retry budget for this turn is spent.\n'
+  );
+}
 
 function shopChips(shopIntakeAsk) {
   if (!shopIntakeAsk?.oversize || !Array.isArray(shopIntakeAsk.chips)) return null;
@@ -40,6 +71,14 @@ export function resolveCodingTurnOutcome({
   isShopPhotoTurn = false,
   /** The build job, when one is running. Decides whether a timeout loses work. */
   job = null,
+  /** How many attempts the recovery loop actually ran before escalating here. */
+  attemptsMade = 1,
+  /** Engine names those attempts ran on, in order. */
+  triedEngines = [],
+  /** The next untried engine ({ id, name }) the retry chip should pin, or
+   *  null when the catalog is exhausted. The chip only names an engine it
+   *  will actually use — same law as the recovery notice. */
+  fallbackEngine = null,
 } = {}) {
   if (kind === 'stopped') {
     return {
@@ -124,7 +163,8 @@ export function resolveCodingTurnOutcome({
       text: (
         `That turn hit the ${Math.round(turnDeadlineSec)}s limit before Preview had a runnable page.\n\n`
         + `**What failed:** the model did not finish writing files in time.\n`
-        + `**What we’ll do:** retry a smaller, concrete slice — one working page first — instead of sitting on a dead spinner.`
+        + describeAttemptsSpent(attemptsMade, triedEngines)
+        + `**Your move:** tap **Retry a smaller build** — one working page first, instead of sitting on a dead spinner.`
       ),
       isError: true,
       continueSet: {
@@ -147,7 +187,10 @@ export function resolveCodingTurnOutcome({
       text: (
         `Preview cannot run — that turn produced a chat plan with no runnable files.\n\n`
         + `**What failed:** Coding Desk needs HTML/CSS/JS (or a React VFS) on the desk, not a description.\n`
-        + `**What we’ll do:** rebuild once into a complete page you can open in Preview.`
+        + (Number(attemptsMade) >= 2
+          ? `**What I tried:** an automatic rebuild with stricter instructions — it also came back without runnable files.\n`
+          : '')
+        + `**Your move:** tap **Rebuild a runnable page** and I will build it as files, not prose.`
       ),
       isError: true,
       continueSet: {
@@ -174,8 +217,9 @@ export function resolveCodingTurnOutcome({
           ? `The model route died under load before we got a usable Preview.\n\n`
           : `The connection to the model died before Preview was ready.\n\n`)
         + `**What failed:** ${detail || 'the AI gateway closed the stream without a runnable result.'}\n`
-        + `**What we’ll do:** retry once on a fallback engine, or shrink the job `
-        + `(about ${SHOP_INTAKE_CATALOG_SIZE} catalog photos if this is a shop) — not another silent retry loop.`
+        + describeAttemptsSpent(attemptsMade, triedEngines)
+        + `**Your move:** pick a chip below — retry on the next engine, or shrink the job `
+        + `(about ${SHOP_INTAKE_CATALOG_SIZE} catalog photos if this is a shop).`
       ),
       isError: true,
       continueSet: shopIntakeAsk?.oversize
@@ -183,8 +227,19 @@ export function resolveCodingTurnOutcome({
         : {
           items: [{
             id: 'outcome-retry-fallback',
-            label: 'Retry with fallback',
+            /*
+             * The manual retry carries the override, not a prayer: prose like
+             * "the next available model" is invisible to routing, so a tapped
+             * retry used to re-run the exact engine that just died (observed
+             * 2026-09-01: two consecutive turns on the same engine, the second
+             * burning the full deadline). The label names the engine only when
+             * the id is really attached, so the promise stays checkable.
+             */
+            label: fallbackEngine?.id && fallbackEngine?.name
+              ? `Retry on ${fallbackEngine.name}`
+              : 'Retry with fallback',
             value: 'Retry this same job on the next available model. Keep scope small enough to finish in one turn.',
+            ...(fallbackEngine?.id ? { modelOverrideId: fallbackEngine.id } : {}),
             priority: 108,
           }],
         },
@@ -193,7 +248,7 @@ export function resolveCodingTurnOutcome({
 
   return {
     kind: kind || 'provider-dead',
-    text: `That turn did not finish.\n\n**What we’ll do:** retry, or tell me a smaller outcome to ship first.`,
+    text: `That turn did not finish.\n\n**Your move:** retry it, or tell me a smaller outcome to ship first.`,
     isError: true,
     continueSet: null,
   };
