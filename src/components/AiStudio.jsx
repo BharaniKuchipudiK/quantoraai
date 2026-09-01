@@ -2946,6 +2946,36 @@ Paused — ${autoPauseRef.current}.`
     shopTurnFailureCopy,
     previewRunStatus,
   });
+  /*
+   * Whether the last AI turn ended in a terminal failure.
+   *
+   * The desk has always known this, but it lived only inside the component, so
+   * nothing outside could see it. The deployed golden gate therefore had no way
+   * to tell "the model never answered" from "the model is still thinking", and
+   * sat waiting out its full 150s timeout on a turn that had already failed in
+   * seconds. Publishing it as a durable hook (below, on the shell) lets a test
+   * anchor on state instead of on prose — the copy of the failure message is
+   * free to change, this is not.
+   */
+  const lastTurnFailed = Boolean(lastAiMessage?.isError) && !isGenerating;
+  /*
+   * The hook is the NARROWER fact: the turn failed and left nothing to render.
+   *
+   * A stream can die after emitting complete fenced files. useChatStream keeps
+   * that output and still marks the message an error, and the workspace-apply
+   * effect above deliberately lands those files ("error turns with extractable
+   * fences still land the partial workspace"). Publishing the bare isError
+   * would tell the deployed gate to abort a transaction that was about to
+   * render a working preview and pass.
+   *
+   * Same predicate the apply path uses, so the hook cannot disagree with the
+   * behaviour it describes; it reads currentVfs too, so an error turn that is
+   * still recoverable from existing desk files does not raise it either.
+   * lastTurnFailed itself is left alone -- studioMission has always been given
+   * the broad fact, and this is not the PR to change what the mission says.
+   */
+  const lastTurnFailedWithoutArtifact = lastTurnFailed
+    && !messageHasExtractableWorkspaceCode(lastAiMessage?.text || '', vfs);
   const studioMission = deriveStudioMission({
     conversationContext,
     messages,
@@ -2953,7 +2983,7 @@ Paused — ${autoPauseRef.current}.`
     continueLabel: partnerContinueLabel,
     officeKind: officeKindNow,
     studioDomain,
-    lastTurnFailed: Boolean(lastAiMessage?.isError) && !isGenerating,
+    lastTurnFailed,
   });
   const studyTopicLabel = studioDomain === 'education'
     ? deriveStudyTutorBrief({ conversationContext, messages }).label
@@ -2965,6 +2995,7 @@ Paused — ${autoPauseRef.current}.`
   return (
     <div
       className="ai-studio-shell"
+      data-quantora-last-turn-failed={lastTurnFailedWithoutArtifact ? 'true' : undefined}
       style={{
       display: 'flex',
       gap: '12px',

@@ -164,6 +164,34 @@ becomes safely more autonomous.
 | `npm run test:claims` | capability claims with no backing implementation |
 | `scripts/deployed-readiness-gate.mjs` | a deployed function that dies before its handler runs |
 | `node --test src/lib/refinement-loop.test.js` | a repair loop that burns the user's money without improving |
+| `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
+
+### Reachability is not correctness
+
+Every gate above this line asks whether something can be *reached*. None of
+them asked whether an answer was *right*, so a travel parser that heard 51% of
+the people who told it where they were going passed all of them, shipped, and
+was found by a screenshot.
+
+`travel-comprehension.test.js` measures two numbers that pull against each
+other — precision (of the places we report, how many were really said) with a
+floor of 100%, and recall (of the places really said, how many we heard) with a
+floor that may only ever rise. Recall bought by loosening the parser shows up
+immediately as an invention, which is the trade that has to stay visible: the
+first attempt at raising it reached 100% while offering hotels in "Sarah".
+
+Two properties make a correctness gate honest, and both were learned the hard
+way in the same afternoon:
+
+- **The corpus cannot only contain the cases that motivated the fix.** One that
+  does will read 100% for a parser that got far more dangerous. Hold an
+  adversarial set apart — for this desk, proper nouns that are *not* places.
+- **A deliberate loss is recorded, not absorbed.** `KNOWN_UNHEARD` names each
+  phrasing we knowingly cannot read and why, so a miss budget never quietly
+  swallows a decision.
+
+Self-healing cannot cover this class. Retries, circuit breakers and provider
+fallback all trigger on an **error**; a confidently wrong answer raises none.
 
 Run `npm run test:all` before pushing. If you add a class of defect to this
 repo's history, add the gate that closes it in the same PR.

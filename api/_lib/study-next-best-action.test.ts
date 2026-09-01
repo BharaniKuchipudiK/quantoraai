@@ -91,6 +91,9 @@ function attemptRow(fixture: EvidenceFixture) {
   return {
     id: fixture.attemptId,
     concept_id: fixture.id,
+    evidence_concept_id: null,
+    evidence_kind: 'assessment_item',
+    retention_anchor_at: null,
     item_key: fixture.itemKey,
     item_version: '1',
     submitted_option_id: fixture.optionId,
@@ -115,7 +118,7 @@ function conceptIds(url: string): string[] {
 }
 
 function evidenceConceptId(url: string): string | null {
-  const match = url.match(/concept_id=eq\.([^&]+)/);
+  const match = url.match(/concept_id(?:=eq\.|\.eq\.)([^,&)]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }
 
