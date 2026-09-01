@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 
 import { deriveResearchBrief } from '../lib/research-brief.js';
+import { RESEARCH_BOARD_PREFILLS, RESEARCH_BOARD_PROMPTS } from '../lib/research-board-actions.js';
+import { composeResearchBriefMarkdown, researchBriefFileName } from '../lib/research-brief-export.js';
 
 /** Reason codes worth a human sentence; anything else gets the honest default. */
 const UNVERIFIED_REASONS = {
@@ -161,25 +163,43 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
   const askChip = (label, prompt) => chip(label, () => onSend?.(prompt));
 
   /*
-   * Every chip prompt names "this board" — deriveResearchBrief uses that
-   * marker to keep chip turns from replacing the research question.
+   * The dossier leaves as a file: deterministic markdown of exactly what the
+   * board shows — findings with their standings and verified quotes, the
+   * plan, the source ledger. No model touches the export.
+   */
+  const exportBrief = () => {
+    const markdown = composeResearchBriefMarkdown({ brief, standings });
+    if (!markdown) return;
+    const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = researchBriefFileName(brief.question);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /*
+   * Chip prompts live in research-board-actions.js under a tested contract:
+   * every steering prompt carries the marker deriveResearchBrief filters on,
+   * so a chip turn can never replace the research question.
    */
   const chips = [];
   if (brief.groundedTurns === 0 && answered) {
-    chips.push(askChip('Get sources', 'Re-answer the question on this board using live web sources, and cite them.'));
+    chips.push(askChip('Get sources', RESEARCH_BOARD_PROMPTS.getSources));
   }
   if (brief.findings.length > 0) {
     chips.push(chip('Verify evidence', runVerify, { busyLabel: 'Verifying…' }));
-    chips.push(askChip('Counter-evidence', 'Find credible counter-evidence to the findings on this board, with live sources.'));
+    chips.push(askChip('Counter-evidence', RESEARCH_BOARD_PROMPTS.counterEvidence));
   }
   if (brief.sources.length > 0) {
-    chips.push(askChip('Cross-check', 'Cross-check the findings on this board against publishers not already in its source ledger, with live sources.'));
+    chips.push(askChip('Cross-check', RESEARCH_BOARD_PROMPTS.crossCheck));
   }
   if (brief.findings.length > 0) {
-    chips.push(askChip('Draft the brief', 'Draft a concise research brief from the findings and sources on this board, clearly marking anything that is still unverified.'));
+    chips.push(askChip('Draft the brief', RESEARCH_BOARD_PROMPTS.draftBrief));
+    chips.push(chip('Export brief', exportBrief));
   }
   if (chips.length === 0) {
-    chips.push(askChip('Go deeper', 'Investigate the question on this board using live web sources, and cite them.'));
+    chips.push(askChip('Go deeper', RESEARCH_BOARD_PROMPTS.goDeeper));
   }
 
   return (
@@ -308,7 +328,7 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
         }}
       >
         {chips}
-        {onAsk ? chip('Narrow it', () => onAsk('Narrow this down to ')) : null}
+        {onAsk ? chip('Narrow it', () => onAsk(RESEARCH_BOARD_PREFILLS.narrow)) : null}
       </div>
     </div>
   );

@@ -48,10 +48,18 @@ M unverified") is the product's honesty made legible at a glance.
    a picked winner. Broad questions open with a `**Plan**` block of
    sub-questions the board tracks: open ones are chips that pursue the item
    verbatim, explored ones collapse to a quiet line.
-4. **Depth, deliverable & continuity** *(planned)* — decompose → search →
-   synthesize through the agent execution fabric for hard questions; export
-   the dossier as a document; persist investigations across sessions; watch
-   a standing question and surface when the evidence changes.
+4. **The dossier as a deliverable** *(shipped)* — "Export brief" writes the
+   board to a markdown file of record (`src/lib/research-brief-export.js`):
+   plan with explored marks, findings with their standings and verified
+   quotes, the source ledger, and a footer stating exactly what "verified"
+   means. Deterministic — no model touches the export, so the file says what
+   the board showed. Chip prompts moved to `research-board-actions.js` under
+   a tested contract: every steering prompt carries the marker the brief
+   filters on, so a chip turn can never silently replace the question.
+5. **Depth & continuity** *(planned)* — decompose → search → synthesize
+   through the agent execution fabric for hard questions; persist
+   investigations across sessions; watch a standing question and surface
+   when the evidence changes.
 
 ## Wiring map
 
