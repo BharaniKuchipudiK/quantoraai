@@ -56,6 +56,22 @@ if (health.goldenCanaryHonored !== true) {
     + ' Without it every canary chat turn runs keyless and reports a provider outage that is not real.',
   );
 }
+/*
+ * The 2026-09-01 preview runs falsified the canary hypothesis: the handshake
+ * passed and the chat turn still found no routes — on previews only, 4/4,
+ * while production stayed green. The next discriminators are already in this
+ * health response: an empty route catalog fails here in one second naming
+ * itself, and the full readiness snapshot (routeCount, key flags, spend —
+ * no secret material) rides along in the evidence so a failed run carries
+ * its own diagnosis instead of demanding another round of guessing.
+ */
+if (Number(health.routeCount) === 0) {
+  throw new Error(
+    'The deployment reports ZERO inference routes despite ready=true — the '
+    + 'chat turn cannot succeed. Readiness snapshot: '
+    + JSON.stringify(health),
+  );
+}
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
@@ -180,6 +196,10 @@ const evidence = {
   baseUrl: BASE_URL,
   deploymentSha: process.env.QUANTORA_DEPLOYMENT_SHA || null,
   startedAt: new Date().toISOString(),
+  // The deployment's own account of its readiness, captured before any model
+  // turn — carries no secrets and answers "which key/route path differed"
+  // without a fifth round of hypothesis.
+  inferenceHealth: health,
   transactions: [],
 };
 
