@@ -1,10 +1,10 @@
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
+import { readStudySupabaseRows } from './study-supabase.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-08-31.6';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-09-01.7';
 
-const GRAPH_TIMEOUT_MS = 4_000;
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
 const MAX_PREREQUISITE_DEPTH = 4;
 const MAX_PREREQUISITE_CONCEPTS = 12;
@@ -38,13 +38,6 @@ type StudyScanContext = {
   prerequisitesByTargetId: Map<string, StudyPrerequisiteRef[]>;
 };
 
-function config() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return { url: url.replace(/\/+$/, ''), key };
-}
-
 function bounded(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, Math.min(1, value))
@@ -52,28 +45,7 @@ function bounded(value: unknown): number {
 }
 
 async function readRows(path: string): Promise<any[] | null> {
-  const cfg = config();
-  if (!cfg) return null;
-  try {
-    const response = await fetch(`${cfg.url}/rest/v1/${path}`, {
-      method: 'GET',
-      headers: {
-        apikey: cfg.key,
-        Authorization: `Bearer ${cfg.key}`,
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      console.warn(`Study prerequisite graph GET -> ${response.status}`);
-      return null;
-    }
-    const parsed = await response.json();
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error: any) {
-    console.warn('Study prerequisite graph read failed:', error?.message || error);
-    return null;
-  }
+  return readStudySupabaseRows(path, { operation: 'prerequisite_graph_read' });
 }
 
 function conceptRecord(value: any): StudyConceptRef | null {
