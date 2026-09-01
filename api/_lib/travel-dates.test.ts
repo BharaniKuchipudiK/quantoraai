@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { earliestSearchableIso, todayIso, validateTravelToolArgs } from './ai-contracts.js';
+import { earliestSearchableIso, latestSearchableIso, todayIso, validateTravelToolArgs } from './ai-contracts.js';
 import { buildTodayDirective } from './studio-domains.js';
 import { flightInvalidArgsAsk, resolveFlightToolRecovery } from '../../shared/travel/flight-resilience.js';
 
@@ -120,4 +120,57 @@ test('slack does not let a genuinely old date through', () => {
     origin: 'SIN', destination: 'DPS', departureDate: '2025-05-08',
   });
   assert.equal(result.status, 'invalid', 'sixteen months is not a timezone');
+});
+
+/*
+ * The guard above only ever looked backwards. A wrong YEAR is the same bug in
+ * both directions, and after the prompt started stating today's date, the far
+ * side became the likelier one: a mis-resolved "next week" now lands a year
+ * ahead rather than a year behind.
+ */
+
+test('a departure a year later than intended is refused, not searched', () => {
+  const nextYear = new Date();
+  nextYear.setUTCFullYear(nextYear.getUTCFullYear() + 1);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: nextYear.toISOString().slice(0, 10),
+  });
+  assert.equal(result.status, 'invalid', '"next week" resolved to next year is a typo, not a booking');
+});
+
+test('an absurd future date is refused', () => {
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: '2099-01-01',
+  });
+  assert.equal(result.status, 'invalid');
+});
+
+test('a booking inside the airline schedule window still runs', () => {
+  const soon = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: soon,
+  });
+  assert.equal(result.status, 'ok', 'two months out is an ordinary trip');
+});
+
+test('the far boundary is eleven months, matching when airlines open schedules', () => {
+  const now = new Date('2026-09-01T00:00:00.000Z');
+  assert.equal(latestSearchableIso(now), '2027-08-01');
+});
+
+test('a wrong year in the RETURN leg is refused too', () => {
+  const soon = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: soon, returnDate: '2099-01-01',
+  });
+  assert.equal(result.status, 'invalid', 'the return leg reaches the provider exactly as the outbound does');
+});
+
+test('an ordinary round trip still runs', () => {
+  const out = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const back = new Date(Date.now() + 44 * 86_400_000).toISOString().slice(0, 10);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: out, returnDate: back,
+  });
+  assert.equal(result.status, 'ok');
 });

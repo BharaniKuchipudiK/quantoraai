@@ -2,6 +2,7 @@
 import process from 'node:process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { describePageState } from './lib/golden-page-state.mjs';
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -106,13 +107,40 @@ async function correlationForPreview(previous = null) {
     const contractError = await page.locator('[data-quantora-preview-contract-error]').first()
       .getAttribute('data-quantora-preview-contract-error').catch(() => null);
     if (contractError) throw new Error(contractError);
+    /*
+     * A turn that has already failed is not worth waiting out.
+     *
+     * The desk publishes data-quantora-last-turn-failed once the last AI
+     * message is an error and nothing is still generating. Without it this
+     * loop burned its full 150s on a turn that died in seconds, and reported
+     * only that the artifact "never reached the preview" — the symptom of a
+     * dozen different causes. Anchored on the hook, never on the failure copy,
+     * which is free to change.
+     */
+    const turnFailed = await page.locator('[data-quantora-last-turn-failed="true"]').first()
+      .isVisible().catch(() => false);
+    if (turnFailed) {
+      throw new Error(
+        `The chat turn failed before any artifact was produced. `
+        + `Page state: ${await describePageState(page, consoleErrors)}`,
+      );
+    }
     if (await preview.isVisible().catch(() => false)) {
       const correlationId = await preview.getAttribute('data-quantora-correlation-id');
       if (correlationId && correlationId !== previous) return correlationId;
     }
     await page.waitForTimeout(250);
   }
-  throw new Error('The generated artifact never reached the deployed project preview.');
+  /*
+   * Say what the page was doing, not just that it did not finish. Without
+   * this the only way to tell a failed chat turn from a slow one was to
+   * download the run artifact, which is why this gate stayed mislabelled
+   * as flaky instead of being diagnosed.
+   */
+  throw new Error(
+    `The generated artifact never reached the deployed project preview after ${Math.round(TURN_TIMEOUT_MS / 1000)}s. `
+    + `Page state at timeout: ${await describePageState(page, consoleErrors)}`,
+  );
 }
 
 async function recordInteraction(correlationId, transaction) {
@@ -167,7 +195,7 @@ try {
   const calculatorCorrelationId = await correlationForPreview();
   markActiveTransaction('calculator', calculatorCorrelationId);
   const calculatorFrame = await frameWith('[data-testid="calculator-display"]');
-  if (!calculatorFrame) throw new Error('Calculator artifact compiled, but its rendered DOM never appeared.');
+  if (!calculatorFrame) throw new Error(`Calculator artifact compiled, but its rendered DOM never appeared. Page state: ${await describePageState(page, consoleErrors)}`);
   const calculatorDisplay = calculatorFrame.locator('[data-testid="calculator-display"]').first();
   if ((await calculatorDisplay.innerText()).trim() !== '0') throw new Error('Calculator rendered with the wrong initial value.');
   await calculatorFrame.locator('[data-testid="calculator-one"]').first().click();
@@ -197,7 +225,7 @@ try {
   const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   markActiveTransaction('simple-website', websiteCorrelationId);
   const websiteFrame = await frameWith('h1');
-  if (!websiteFrame) throw new Error('Website artifact compiled, but its rendered DOM never appeared.');
+  if (!websiteFrame) throw new Error(`Website artifact compiled, but its rendered DOM never appeared. Page state: ${await describePageState(page, consoleErrors)}`);
   const websiteHeading = await websiteFrame.locator('h1').first().innerText().catch(() => '');
   if (websiteHeading.trim() !== 'Sunrise Bakery') throw new Error(`Website rendered the wrong heading: ${websiteHeading}.`);
   const websiteCta = websiteFrame.locator('[data-testid="website-cta"]').first();
@@ -225,6 +253,8 @@ try {
   writeFileSync(`${ARTIFACT_DIR}/deployed-golden-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);
   await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-failure.png`, fullPage: true }).catch(() => {});
   console.error('Deployed golden transactions FAILED:', error?.stack || error);
+  // Whoever reads a failed run has the log; they may not have the artifact.
+  console.error('Deployed golden evidence:', JSON.stringify(evidence, null, 2));
   process.exitCode = 1;
 } finally {
   await browser.close();

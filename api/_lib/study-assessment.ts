@@ -1,21 +1,31 @@
 import { applyCors, isRateLimited } from "./rate-limit.js";
 import { requireActiveSession } from "./authz.js";
 import {
-  completeStudyAssessmentAttempt,
-  issueStudyAssessmentAttempt,
   resolveActiveStudyConcept,
   saveStudyMasteryEstimate,
 } from "./store.js";
 import {
+  completeStudyEvidenceAttempt,
+  issueStudyEvidenceAttempt,
+  readStudyUsedAssessmentItemRefs,
+  type StudyAssessmentEvidenceKind,
+} from './study-assessment-evidence-runtime.js';
+import {
   findStudyAssessmentItem,
   publicStudyAssessmentItem,
   studyAssessmentItemsForConcept,
+  type StudyAssessmentItem,
 } from "./study-assessment-items.js";
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
-import { selectStudyAssessmentItem } from './study-assessment-selector.js';
+import {
+  selectStudyAssessmentItem,
+  studyEvidenceKindForAssessmentItem,
+} from './study-assessment-selector.js';
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { estimateStudyMastery } from "./study-mastery-estimator.js";
 import { buildStudyLearnerModel, type StudyLearnerModel } from "./study-learner-model.js";
+import { readActiveStudyConceptById } from './study-concept-runtime.js';
+import { resolveStudyTransferAttempt } from './study-transfer-intelligence.js';
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -66,6 +76,41 @@ function learningState(model: StudyLearnerModel | null): string {
   return "emerging_understanding";
 }
 
+function noFreshItemResponse(
+  res: any,
+  candidates: StudyAssessmentItem[],
+  learnerModel: StudyLearnerModel | null,
+) {
+  const hasReleasedCandidate = candidates.some((candidate) => verifyStudyAssessmentRelease(candidate).canIssueVerifiedAttempt);
+  const activeDiagnosis = learnerModel?.misconception.code || null;
+  if (activeDiagnosis) {
+    return res.status(422).json({
+      error: "A fresh reviewed confirmation check for this misconception is not available yet.",
+      code: "verified_misconception_confirmation_unavailable",
+      fallbackAllowed: true,
+    });
+  }
+  if (learnerModel?.nextLearningMove.type === 'retention_probe') {
+    return res.status(422).json({
+      error: "A fresh reviewed item is not available for this delayed retention check yet.",
+      code: "verified_retention_probe_unavailable",
+      fallbackAllowed: true,
+    });
+  }
+  if (hasReleasedCandidate) {
+    return res.status(422).json({
+      error: "No fresh reviewed assessment item remains for this topic yet.",
+      code: "verified_assessment_bank_exhausted",
+      fallbackAllowed: true,
+    });
+  }
+  return res.status(422).json({
+    error: "This mapped topic does not have a released assessment item yet.",
+    code: "verified_assessment_unavailable",
+    fallbackAllowed: true,
+  });
+}
+
 export default async function studyAssessmentHandler(req: any, res: any) {
   applyCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -112,34 +157,76 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       priorEvidence = [];
     }
 
-    const item = selectStudyAssessmentItem({
-      items: candidates,
-      evidence: priorEvidence,
-      learnerModel: priorLearnerModel,
-    });
-    if (!item) {
-      const hasReleasedCandidate = candidates.some((candidate) => verifyStudyAssessmentRelease(candidate).canIssueVerifiedAttempt);
-      const activeDiagnosis = priorLearnerModel?.misconception.code || null;
-      if (activeDiagnosis) {
-        return res.status(422).json({
-          error: "A fresh reviewed confirmation check for this misconception is not available yet.",
-          code: "verified_misconception_confirmation_unavailable",
-          fallbackAllowed: true,
-        });
-      }
-      if (hasReleasedCandidate) {
-        return res.status(422).json({
-          error: "No fresh reviewed assessment item remains for this topic yet.",
-          code: "verified_assessment_bank_exhausted",
-          fallbackAllowed: true,
-        });
-      }
-      return res.status(422).json({
-        error: "This mapped topic does not have a released assessment item yet.",
-        code: "verified_assessment_unavailable",
-        fallbackAllowed: true,
+    let item: StudyAssessmentItem | null = null;
+    let attemptConcept = concept;
+    let evidenceKind: StudyAssessmentEvidenceKind = 'assessment_item';
+    let evidenceConceptId: string | null = null;
+    let retentionAnchorAt: string | null = null;
+    let transferSource: { key: string; label: string } | null = null;
+
+    if (priorLearnerModel?.nextLearningMove.type === 'transfer_task') {
+      const transfer = await resolveStudyTransferAttempt({
+        userSub,
+        sourceConcept: concept,
       });
+      if (transfer.status === 'unavailable') {
+        return res.status(503).json({ error: "Verified transfer checks are temporarily unavailable." });
+      }
+      if (transfer.status === 'none') {
+        return res.status(422).json({
+          error: "A governed novel-context transfer check is not available for this topic yet.",
+          code: "verified_transfer_unavailable",
+          fallbackAllowed: true,
+          nextRetentionAt: priorLearnerModel.retention.dueAt || null,
+        });
+      }
+      item = transfer.plan.item;
+      attemptConcept = transfer.plan.targetConcept;
+      evidenceKind = 'transfer';
+      evidenceConceptId = concept.id;
+      transferSource = { key: concept.canonicalKey, label: concept.label };
+    } else {
+      if (priorLearnerModel?.nextLearningMove.type === 'retention_probe') {
+        if (priorLearnerModel.retention.due !== true) {
+          return res.status(422).json({
+            error: "This retention check is not due yet. Waiting is part of the evidence.",
+            code: "verified_retention_probe_not_due",
+            retryAt: priorLearnerModel.retention.dueAt || null,
+            fallbackAllowed: false,
+          });
+        }
+        if (!priorLearnerModel.retention.anchorAt) {
+          return res.status(503).json({ error: "The retention evidence anchor is unavailable." });
+        }
+        evidenceKind = 'retention_probe';
+        retentionAnchorAt = priorLearnerModel.retention.anchorAt;
+      }
+
+      // The V7 grading RPC treats one learner + item/version as the independence
+      // boundary across all evidence kinds and concepts. Ask only about the
+      // governed candidates we might issue; this stays exact without a history
+      // scan or a correctness-breaking pagination cap.
+      const usedItemRefs = await readStudyUsedAssessmentItemRefs(
+        userSub,
+        candidates.map((candidate) => `${candidate.key}@${candidate.version}`),
+      );
+      if (usedItemRefs === null) {
+        return res.status(503).json({ error: "Verified Study item freshness could not be checked right now." });
+      }
+
+      item = selectStudyAssessmentItem({
+        items: candidates,
+        evidence: priorEvidence,
+        learnerModel: priorLearnerModel,
+        usedItemRefs,
+      });
+      if (!item) return noFreshItemResponse(res, candidates, priorLearnerModel);
+
+      if (priorLearnerModel?.nextLearningMove.type === 'vary_evidence') {
+        evidenceKind = studyEvidenceKindForAssessmentItem(item);
+      }
     }
+
     const release = verifyStudyAssessmentRelease(item);
     if (!release.canIssueVerifiedAttempt) {
       console.warn("Study assessment release blocked by governance", {
@@ -153,11 +240,12 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         fallbackAllowed: true,
       });
     }
+
     const expiresAt = new Date(Date.now() + ATTEMPT_TTL_MS).toISOString();
-    const issued = await issueStudyAssessmentAttempt({
+    const issued = await issueStudyEvidenceAttempt({
       userSub,
       sessionId: request.sessionId,
-      conceptId: concept.id,
+      conceptId: attemptConcept.id,
       itemKey: item.key,
       itemVersion: item.version,
       optionIds: item.options.map((option) => option.id),
@@ -165,14 +253,36 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       misconceptionOptionIds: item.misconceptionOptionIds,
       difficulty: item.difficulty,
       expiresAt,
+      evidenceKind,
+      evidenceConceptId,
+      retentionAnchorAt,
     });
-    if (issued.status !== "issued") {
-      return res.status(503).json({ error: "Verified Study checks are temporarily unavailable." });
+    if (issued.status === 'conflict') {
+      return res.status(409).json({
+        error: issued.reason === 'already_active'
+          ? "This reviewed check is already active from another request. Request the check again after it expires or complete the active one."
+          : "This reviewed item was completed by another request before issuance finished. Request a new check.",
+        code: 'verified_assessment_freshness_changed',
+        reason: issued.reason,
+        retryable: true,
+      });
     }
+    if (issued.status !== "issued") {
+      const migrationNeeded = evidenceKind === 'retention_probe' || evidenceKind === 'transfer';
+      return res.status(503).json({
+        error: migrationNeeded
+          ? "This verified evidence mode is not available until the Study V7 data migration is active."
+          : "Verified Study checks are temporarily unavailable.",
+        code: migrationNeeded ? 'study_v7_migration_required' : undefined,
+      });
+    }
+
     return res.status(201).json({
       attemptId: issued.attemptId,
       expiresAt,
-      concept: { key: concept.canonicalKey, label: concept.label },
+      concept: { key: attemptConcept.canonicalKey, label: attemptConcept.label },
+      evidenceKind: issued.evidenceKind,
+      evidenceFor: transferSource || { key: concept.canonicalKey, label: concept.label },
       item: publicStudyAssessmentItem(item),
     });
   }
@@ -181,7 +291,7 @@ export default async function studyAssessmentHandler(req: any, res: any) {
     return res.status(429).json({ error: "Too many Study answers. Please wait a minute and try again." });
   }
   const observedAt = new Date().toISOString();
-  const grade = await completeStudyAssessmentAttempt({
+  const grade = await completeStudyEvidenceAttempt({
     userSub,
     attemptId: request.attemptId,
     optionId: request.optionId,
@@ -199,15 +309,27 @@ export default async function studyAssessmentHandler(req: any, res: any) {
 
   const item = findStudyAssessmentItem(grade.itemKey, grade.itemVersion);
   if (!item) return res.status(503).json({ error: "The assessment version is no longer available." });
-  const evidence = await readVerifiedStudyMasteryEvidence(userSub, grade.conceptId, item.conceptKey);
+
+  const evidenceConceptId = grade.evidenceConceptId || grade.conceptId;
+  let evidenceConcept: { id: string; canonicalKey: string; label: string } | null = null;
+  if (evidenceConceptId === grade.conceptId) {
+    evidenceConcept = { id: evidenceConceptId, canonicalKey: item.conceptKey, label: item.conceptKey };
+  } else {
+    const resolved = await readActiveStudyConceptById(evidenceConceptId);
+    if (resolved && resolved !== 'unavailable') evidenceConcept = resolved;
+  }
+
+  const evidence = evidenceConcept
+    ? await readVerifiedStudyMasteryEvidence(userSub, evidenceConcept.id, evidenceConcept.canonicalKey)
+    : null;
   const estimate = evidence ? estimateStudyMastery(evidence) : null;
-  const masteryUpdated = estimate
-    ? await saveStudyMasteryEstimate({ userSub, conceptId: grade.conceptId, estimate })
+  const masteryUpdated = estimate && evidenceConcept
+    ? await saveStudyMasteryEstimate({ userSub, conceptId: evidenceConcept.id, estimate })
     : false;
-  const learnerModel = estimate && evidence
+  const learnerModel = estimate && evidence && evidenceConcept
     ? buildStudyLearnerModel({
-        conceptId: grade.conceptId,
-        conceptKey: item.conceptKey,
+        conceptId: evidenceConcept.id,
+        conceptKey: evidenceConcept.canonicalKey,
         evidence,
         estimate,
       })
@@ -220,7 +342,13 @@ export default async function studyAssessmentHandler(req: any, res: any) {
     score: grade.score,
     misconceptionSignal: grade.misconception === true,
     explanation: item.explanation,
-    evidenceKind: "assessment_item",
+    evidenceKind: grade.evidenceKind,
+    delayDays: grade.delayDays,
+    evidenceConcept: evidenceConcept ? {
+      key: evidenceConcept.canonicalKey,
+      label: evidenceConcept.label,
+    } : null,
+    transferTarget: grade.evidenceKind === 'transfer' ? item.conceptKey : null,
     masteryUpdated,
     mastery: estimate ? {
       status: estimate.status,

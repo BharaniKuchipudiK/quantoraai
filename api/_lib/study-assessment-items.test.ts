@@ -129,6 +129,26 @@ test("selector skips unreleased candidates and chooses the available governed it
   assert.equal(selected?.key, approved.key);
 });
 
+test("selector honors learner-global used item refs even without concept-local evidence", () => {
+  const items = studyAssessmentItemsForConcept('physics.kinematics.motion-graphs');
+  const firstRef = `${items[0].key}@${items[0].version}`;
+  const selected = selectStudyAssessmentItem({
+    items,
+    evidence: [],
+    learnerModel: null,
+    usedItemRefs: new Set([firstRef]),
+  });
+  assert.equal(selected?.key, items[1].key);
+
+  const exhausted = selectStudyAssessmentItem({
+    items: [items[0]],
+    evidence: [],
+    learnerModel: null,
+    usedItemRefs: new Set([firstRef]),
+  });
+  assert.equal(exhausted, null);
+});
+
 test("Study assessment lookup is bound to the exact released version", () => {
   assert.ok(findStudyAssessmentItem("motion-graphs-velocity-slope", "1"));
   assert.ok(findStudyAssessmentItem("motion-graphs-acceleration-slope", "1"));

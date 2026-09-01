@@ -146,6 +146,121 @@ test('non-assessment evidence stays fail-closed even with a verified-looking pre
   });
 });
 
+test('receipt-backed retrieval and application enter through the same private boundary', () => {
+  for (const kind of ['retrieval', 'application'] as const) {
+    const row = reviewedAssessment({ kind });
+    attestStudyAssessmentEvidence(row, {
+      attemptId: ATTEMPT_ONE,
+      conceptId: row.conceptId,
+      conceptKey: CONCEPT_KEY,
+      evidenceKind: kind,
+      evidenceConceptId: row.conceptId,
+      itemConceptId: row.conceptId,
+      itemConceptKey: CONCEPT_KEY,
+      itemKey: 'motion-graphs-velocity-slope',
+      itemVersion: '1',
+      submittedOptionId: 'c',
+      correct: true,
+      score: 1,
+      submittedAt: row.observedAt,
+    });
+    assert.deepEqual(evaluateStudyEvidenceAdmission(row), {
+      admitted: true,
+      reasonCode: `reviewed_assessment_backed_${kind}`,
+    });
+  }
+});
+
+test('retention evidence requires a matching delayed server receipt', () => {
+  const retained = reviewedAssessment({ kind: 'retention_probe', delayDays: 7 });
+  attestStudyAssessmentEvidence(retained, {
+    attemptId: ATTEMPT_ONE,
+    conceptId: retained.conceptId,
+    conceptKey: CONCEPT_KEY,
+    evidenceKind: 'retention_probe',
+    evidenceConceptId: retained.conceptId,
+    itemConceptId: retained.conceptId,
+    itemConceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    submittedOptionId: 'c',
+    correct: true,
+    score: 1,
+    submittedAt: retained.observedAt,
+    retentionAnchorAt: '2026-08-24T00:00:00.000Z',
+    delayDays: 7,
+  });
+  assert.equal(evaluateStudyEvidenceAdmission(retained).admitted, true);
+
+  const forgedDelay = reviewedAssessment({ kind: 'retention_probe', delayDays: 30 }, ATTEMPT_TWO);
+  attestStudyAssessmentEvidence(forgedDelay, {
+    attemptId: ATTEMPT_TWO,
+    conceptId: forgedDelay.conceptId,
+    conceptKey: CONCEPT_KEY,
+    evidenceKind: 'retention_probe',
+    evidenceConceptId: forgedDelay.conceptId,
+    itemConceptId: forgedDelay.conceptId,
+    itemConceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    submittedOptionId: 'c',
+    correct: true,
+    score: 1,
+    submittedAt: forgedDelay.observedAt,
+    retentionAnchorAt: '2026-08-30T00:00:00.000Z',
+    delayDays: 1,
+  });
+  assert.deepEqual(evaluateStudyEvidenceAdmission(forgedDelay), {
+    admitted: false,
+    reasonCode: 'verified_observation_receipt_required',
+  });
+});
+
+test('transfer evidence belongs to the source concept and requires a distinct governed item concept', () => {
+  const row = event('transfer', {
+    id: `study.assessment.${ATTEMPT_ONE}`,
+    conceptId: 'source-concept',
+    sourceRef: 'quantora:study-assessment-bank',
+    assessmentRef: `attempt:${ATTEMPT_ONE}`,
+    itemRef: 'vector-resultant-perpendicular@1',
+  });
+  attestStudyAssessmentEvidence(row, {
+    attemptId: ATTEMPT_ONE,
+    conceptId: 'source-concept',
+    conceptKey: CONCEPT_KEY,
+    evidenceKind: 'transfer',
+    evidenceConceptId: 'source-concept',
+    itemConceptId: 'target-concept',
+    itemConceptKey: 'math.vector.resultant',
+    itemKey: 'vector-resultant-perpendicular',
+    itemVersion: '1',
+    submittedOptionId: 'b',
+    correct: true,
+    score: 1,
+    submittedAt: row.observedAt,
+  });
+  assert.equal(evaluateStudyEvidenceAdmission(row).admitted, true);
+  assert.equal(studyAssessmentReceiptForAttestedEvidence(row)?.evidenceConceptId, 'source-concept');
+
+  const sameConcept = { ...row, id: `study.assessment.${ATTEMPT_TWO}`, assessmentRef: `attempt:${ATTEMPT_TWO}` };
+  attestStudyAssessmentEvidence(sameConcept, {
+    attemptId: ATTEMPT_TWO,
+    conceptId: 'source-concept',
+    conceptKey: 'math.vector.resultant',
+    evidenceKind: 'transfer',
+    evidenceConceptId: 'source-concept',
+    itemConceptId: 'source-concept',
+    itemConceptKey: 'math.vector.resultant',
+    itemKey: 'vector-resultant-perpendicular',
+    itemVersion: '1',
+    submittedOptionId: 'b',
+    correct: true,
+    score: 1,
+    submittedAt: sameConcept.observedAt,
+  });
+  assert.equal(evaluateStudyEvidenceAdmission(sameConcept).admitted, false);
+});
+
 test('self-confidence and non-independent observations never enter mastery', () => {
   assert.equal(evaluateStudyEvidenceAdmission(event('self_confidence', { score: null, correct: null })).admitted, false);
   const row = reviewedAssessment({ independent: false });
@@ -175,4 +290,25 @@ test('mastery and learner state receive one chronological deduplicated assessmen
   const admitted = admittedStudyMasteryEvidence([repeated, first]);
   assert.deepEqual(admitted.map((row) => row.id), [`study.assessment.${ATTEMPT_ONE}`]);
   assert.equal(admitted[0].correct, false);
+});
+
+test('one reviewed item cannot be relabelled into a second independent evidence kind', () => {
+  const assessment = reviewedAssessment({ observedAt: '2026-08-01T00:00:00.000Z' }, ATTEMPT_ONE);
+  attest(assessment, ATTEMPT_ONE);
+  const retrieval = reviewedAssessment({ kind: 'retrieval', observedAt: '2026-08-02T00:00:00.000Z' }, ATTEMPT_TWO);
+  attestStudyAssessmentEvidence(retrieval, {
+    attemptId: ATTEMPT_TWO,
+    conceptId: retrieval.conceptId,
+    conceptKey: CONCEPT_KEY,
+    evidenceKind: 'retrieval',
+    itemConceptId: retrieval.conceptId,
+    itemConceptKey: CONCEPT_KEY,
+    itemKey: 'motion-graphs-velocity-slope',
+    itemVersion: '1',
+    submittedOptionId: 'c',
+    correct: true,
+    score: 1,
+    submittedAt: retrieval.observedAt,
+  });
+  assert.deepEqual(admittedStudyMasteryEvidence([retrieval, assessment]).map((row) => row.id), [assessment.id]);
 });

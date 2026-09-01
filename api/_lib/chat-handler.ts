@@ -625,6 +625,9 @@ export default async function handler(req: any, res: any) {
           error: typeof error === "string" ? error : "",
           framework: framework === "react" ? "react" : "html",
           job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
+          // What earlier rounds scored and what stayed wrong. Bounded here
+          // rather than trusted: this arrives from the client.
+          attempts: Array.isArray(req.body?.attempts) ? req.body.attempts.slice(-6) : undefined,
           openRouterKey: effectiveOpenRouterKey,
           geminiKey: effectiveGeminiKey,
         });
