@@ -102,13 +102,14 @@ test('Study flashcards are an interactive hidden-answer deck, not a Front/Back t
 test('Study keeps exactly three permanent learner moves and moves secondary tools behind the Hub', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
+  const history = read('src/components/StudyAssessmentHistory.jsx');
 
   assert.match(shell, /data-quantora-study-next-choices="true"/);
   assert.match(shell, />\s*Explain\s*</);
   assert.match(shell, />\s*Practice\s*</);
   assert.match(shell, /:\s*'Check'/);
 
-  for (const label of ['Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
+  for (const label of ['Assessment history', 'Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
     assert.match(hub, new RegExp(escapeRegExp(label)));
   }
   /*
@@ -116,26 +117,30 @@ test('Study keeps exactly three permanent learner moves and moves secondary tool
    * A raw source substring made this gate capable of failing on documentation
    * even when no permanent secondary control existed.
    */
-  for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
+  for (const label of ['Assessment history', 'Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
     assert.doesNotMatch(shell, new RegExp(`${escapeRegExp(label)}\\s*<\\/button>`));
   }
 
   assert.match(hub, /data-quantora-study-hub-launcher="true"/);
   assert.match(hub, /aria-expanded=\{open\}/);
+  assert.match(hub, /<StudyAssessmentHistory/);
+  assert.match(history, /data-quantora-study-assessment-history="true"/);
+  assert.match(history, /Last \{state\.data\?\.windowDays \|\| 30\} days/);
   /*
    * Future surfaces may be named in design comments. What this gate forbids is
    * shipping them as live Hub actions or visible placeholder copy before their
    * real data contracts exist.
    */
-  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard|Assessment History|Notebook)['"]/i);
-  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard|Assessment History|Notebook)\s*</i);
+  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard|Notebook)['"]/i);
+  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard|Notebook)\s*</i);
 });
 
 test('H1 Study controls are monochrome and do not revive the legacy accent palette', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const css = read('src/components/study-h1.css');
-  const h1 = `${shell}\n${hub}\n${css}`;
+  const historyCss = read('src/components/study-assessment-history.css');
+  const h1 = `${shell}\n${hub}\n${css}\n${historyCss}`;
 
   assert.doesNotMatch(h1, /#f97316|#fff7ed|#ecfdf5|#fde68a|#92400e|#6ee7b7|#fcd34d/i);
   assert.match(css, /--study-h1-strong: #111111/);

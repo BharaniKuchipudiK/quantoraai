@@ -1,0 +1,114 @@
+.study-h1-hub__panel--history {
+  width: min(430px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 150px));
+  overflow: hidden;
+}
+
+.study-h1-history {
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+  max-height: inherit;
+}
+
+.study-h1-history__list {
+  display: grid;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+
+.study-h1-history__row {
+  border: 1px solid var(--study-h1-border);
+  background: var(--study-h1-surface);
+  border-radius: 12px;
+  padding: 10px 11px;
+}
+
+.study-h1-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  color: var(--study-h1-muted);
+  font-size: 0.66rem;
+  line-height: 1.3;
+}
+
+.study-h1-history__concept {
+  margin-top: 5px;
+  color: var(--study-h1-text);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  font-weight: 760;
+}
+
+.study-h1-history__transfer {
+  margin-top: 2px;
+  color: var(--study-h1-muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.study-h1-history__result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--study-h1-border);
+}
+
+.study-h1-history__score {
+  color: var(--study-h1-text);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.study-h1-history__outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--study-h1-muted);
+  font-size: 0.69rem;
+  font-weight: 700;
+}
+
+.study-h1-history__state {
+  min-height: 118px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 10px;
+  color: var(--study-h1-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.study-h1-history__state strong {
+  display: block;
+  color: var(--study-h1-text);
+  font-size: 0.76rem;
+}
+
+.study-h1-history__state span {
+  display: block;
+  margin-top: 2px;
+}
+
+.study-h1-history__state .study-h1-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .study-h1-hub__panel--history {
+    width: calc(100vw - 24px);
+    max-height: min(560px, calc(100vh - 132px));
+  }
+}
