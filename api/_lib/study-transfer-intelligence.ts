@@ -1,4 +1,5 @@
 import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
+import { readStudyUsedAssessmentItemRefs } from './study-assessment-evidence-runtime.js';
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import {
   studyAssessmentItemsForConcept,
@@ -6,7 +7,7 @@ import {
 } from './study-assessment-items.js';
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 
-export const STUDY_TRANSFER_INTELLIGENCE_VERSION = 'study-transfer-intelligence-2026-09-01.1';
+export const STUDY_TRANSFER_INTELLIGENCE_VERSION = 'study-transfer-intelligence-2026-09-01.2';
 
 const REQUEST_TIMEOUT_MS = 4_000;
 const MIN_TRANSFER_CONFIDENCE = 0.8;
@@ -84,7 +85,6 @@ function conceptRecord(row: any): StudyConceptRef | null {
 export async function resolveStudyTransferAttempt(input: {
   userSub: string;
   sourceConcept: StudyConceptRef;
-  usedItemRefs?: ReadonlySet<string> | null;
 }): Promise<StudyTransferResolution> {
   const edges = await readRows(
     `study_concept_edges?select=target_concept_id,confidence&relation=eq.supports_transfer_to&source_concept_id=eq.${encodeURIComponent(input.sourceConcept.id)}&confidence=gte.${MIN_TRANSFER_CONFIDENCE}&order=confidence.desc&limit=${MAX_TRANSFER_TARGETS}`,
@@ -115,7 +115,6 @@ export async function resolveStudyTransferAttempt(input: {
     if (concept) concepts.set(concept.id, concept);
   }
 
-  const usedItemRefs = input.usedItemRefs || new Set<string>();
   for (const candidate of candidates) {
     const targetConcept = concepts.get(candidate.targetId);
     if (!targetConcept) continue;
@@ -128,10 +127,19 @@ export async function resolveStudyTransferAttempt(input: {
     if (targetEvidence === null) return { status: 'unavailable' };
     if (admittedStudyMasteryEvidence(targetEvidence).length > 0) continue;
 
-    const item = studyAssessmentItemsForConcept(targetConcept.canonicalKey)
-      .find((candidateItem) => candidateItem.cognitiveOperation === 'application'
-        && verifyStudyAssessmentRelease(candidateItem).canIssueVerifiedAttempt
-        && !usedItemRefs.has(`${candidateItem.key}@${candidateItem.version}`));
+    const applicationItems = studyAssessmentItemsForConcept(targetConcept.canonicalKey)
+      .filter((candidateItem) => candidateItem.cognitiveOperation === 'application'
+        && verifyStudyAssessmentRelease(candidateItem).canIssueVerifiedAttempt);
+    if (!applicationItems.length) continue;
+
+    const usedItemRefs = await readStudyUsedAssessmentItemRefs(
+      input.userSub,
+      applicationItems.map((candidateItem) => `${candidateItem.key}@${candidateItem.version}`),
+    );
+    if (usedItemRefs === null) return { status: 'unavailable' };
+    const item = applicationItems.find(
+      (candidateItem) => !usedItemRefs.has(`${candidateItem.key}@${candidateItem.version}`),
+    );
     if (!item) continue;
 
     return {
