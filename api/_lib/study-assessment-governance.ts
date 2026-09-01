@@ -4,8 +4,10 @@ import {
   validateStudyAssessmentCorpusRecord,
   type StudyAssessmentCorpusMetadata,
 } from './study-assessment-corpus.js';
+import { validateStudyAssessmentItemQuality } from './study-assessment-quality.js';
+import { studyAssessmentCorpusReadiness } from './study-assessment-corpus-readiness.js';
 
-export const STUDY_ASSESSMENT_GOVERNANCE_VERSION = 'study-assessment-governance-2026-08-31.1';
+export const STUDY_ASSESSMENT_GOVERNANCE_VERSION = 'study-assessment-governance-2026-09-02.2';
 
 export type StudyAssessmentReleaseMode = 'reviewed_static' | 'parametric' | 'generated';
 
@@ -13,6 +15,10 @@ export type StudyAssessmentReleaseCandidate = {
   key: string;
   version: string;
   conceptKey: string;
+  prompt: string;
+  options: Array<{ id: string; text: string }>;
+  correctOptionId: string;
+  explanation: string;
   reviewStatus: StudyAssessmentReviewStatus;
   releaseMode: StudyAssessmentReleaseMode;
   objectiveCode: string;
@@ -37,9 +43,10 @@ function clean(value: unknown, max: number): string {
 /**
  * One release gate for every assessment family.
  *
- * V4 supports the existing reviewed static bank. Parametric/generated families
- * are named here now so they cannot accidentally inherit static-item trust;
- * they remain blocked until an instance-level verifier is wired for them.
+ * Reviewed-static items must satisfy verification, H2 corpus structure, H2.2
+ * item quality, and the explicit corpus-wide pilot readiness floor. Parametric
+ * and generated families remain blocked until an instance-level verifier is
+ * wired for them.
  */
 export function verifyStudyAssessmentRelease(
   item: StudyAssessmentReleaseCandidate,
@@ -122,6 +129,32 @@ export function verifyStudyAssessmentRelease(
       releaseMode: item.releaseMode,
       canIssueVerifiedAttempt: false,
       reasonCodes: corpusValidation.reasonCodes,
+      evidenceRefs: [],
+      verification,
+    };
+  }
+
+  const qualityValidation = validateStudyAssessmentItemQuality(item);
+  if (!qualityValidation.valid) {
+    return {
+      version: STUDY_ASSESSMENT_GOVERNANCE_VERSION,
+      itemRef,
+      releaseMode: item.releaseMode,
+      canIssueVerifiedAttempt: false,
+      reasonCodes: qualityValidation.reasonCodes,
+      evidenceRefs: [],
+      verification,
+    };
+  }
+
+  const corpusReadiness = studyAssessmentCorpusReadiness();
+  if (!corpusReadiness.valid) {
+    return {
+      version: STUDY_ASSESSMENT_GOVERNANCE_VERSION,
+      itemRef,
+      releaseMode: item.releaseMode,
+      canIssueVerifiedAttempt: false,
+      reasonCodes: ['assessment_corpus_quality_gate_failed'],
       evidenceRefs: [],
       verification,
     };
