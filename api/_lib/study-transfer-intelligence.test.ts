@@ -12,7 +12,11 @@ function json(value: unknown) {
   return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-async function withTransferTarget(targetKey: string, run: () => Promise<void>) {
+async function withTransferTarget(
+  targetKey: string,
+  run: () => Promise<void>,
+  options: { usedItemRef?: string | null } = {},
+) {
   const originalFetch = global.fetch;
   global.fetch = async (url: any) => {
     const target = String(url);
@@ -24,6 +28,18 @@ async function withTransferTarget(targetKey: string, run: () => Promise<void>) {
       return json([{ id: TARGET_ID, canonical_key: targetKey, label: 'Governed target' }]);
     }
     if (target.includes('/rest/v1/study_mastery_events?')) return json([]);
+    if (target.includes('/rest/v1/study_assessment_attempts?select=id')) {
+      const used = options.usedItemRef;
+      if (used) {
+        const separator = used.lastIndexOf('@');
+        const key = used.slice(0, separator);
+        const version = used.slice(separator + 1);
+        if (target.includes(`item_key=eq.${key}`) && target.includes(`item_version=eq.${version}`)) {
+          return json([{ id: '33333333-3333-4333-8333-333333333333' }]);
+        }
+      }
+      return json([]);
+    }
     throw new Error(`Unexpected fetch: ${target}`);
   };
   try {
@@ -62,8 +78,7 @@ test('resolver refuses a globally used application item even when target concept
     const result = await resolveStudyTransferAttempt({
       userSub: 'learner-v7',
       sourceConcept: { id: SOURCE_ID, canonicalKey: 'physics.kinematics.motion-graphs', label: 'Motion graphs' },
-      usedItemRefs: new Set(['vector-resultant-perpendicular@1']),
     });
     assert.deepEqual(result, { status: 'none' });
-  });
+  }, { usedItemRef: 'vector-resultant-perpendicular@1' });
 });
