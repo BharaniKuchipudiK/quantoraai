@@ -26,6 +26,8 @@ function safeCompilerMessage(value, fallback) {
  * A caller AbortSignal represents navigation/unmount and must stay silent.
  * The internal deadline is different: it is a terminal preview failure so the
  * desk can never remain on "Preview is starting…" behind a hung request.
+ * Promise.race makes the deadline hard even if a mocked/non-standard fetch
+ * ignores AbortSignal; the controller still cancels a real browser fetch.
  */
 export async function requestPreviewCompilation({
   vfs,
@@ -52,22 +54,29 @@ export async function requestPreviewCompilation({
   }
   signal?.addEventListener?.('abort', abortFromCaller, { once: true });
 
-  const deadline = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, Math.max(1, Number(timeoutMs) || PREVIEW_COMPILE_TIMEOUT_MS));
+  let deadline = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    deadline = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      reject(new PreviewCompileError('Preview compilation timed out. Please retry.', { code: 'compile-timeout' }));
+    }, Math.max(1, Number(timeoutMs) || PREVIEW_COMPILE_TIMEOUT_MS));
+  });
 
   try {
-    const response = await fetchFn('/api/preview-compile', {
-      method: 'POST',
-      headers: correlationHeaders(correlationId, { 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        vfs: vfs || {},
-        correlationId,
-        ...(goldenTransaction ? { goldenTransaction } : {}),
+    const response = await Promise.race([
+      fetchFn('/api/preview-compile', {
+        method: 'POST',
+        headers: correlationHeaders(correlationId, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          vfs: vfs || {},
+          correlationId,
+          ...(goldenTransaction ? { goldenTransaction } : {}),
+        }),
+        signal: controller.signal,
       }),
-      signal: controller.signal,
-    });
+      timeoutPromise,
+    ]);
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -84,7 +93,7 @@ export async function requestPreviewCompilation({
     }
     return payload;
   } catch (error) {
-    if (timedOut) {
+    if (timedOut || error?.code === 'compile-timeout') {
       throw new PreviewCompileError('Preview compilation timed out. Please retry.', { code: 'compile-timeout' });
     }
     if (callerAborted || signal?.aborted) {
@@ -95,7 +104,7 @@ export async function requestPreviewCompilation({
       code: 'compile-network-error',
     });
   } finally {
-    clearTimeout(deadline);
+    if (deadline) clearTimeout(deadline);
     signal?.removeEventListener?.('abort', abortFromCaller);
   }
 }
