@@ -2,7 +2,7 @@ import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import { findStudyAssessmentItem } from './study-assessment-items.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.5';
+export const STUDY_EVIDENCE_ADMISSION_VERSION = 'study-evidence-admission-2026-08-31.6';
 
 const VERIFIED_KINDS = new Set<StudyEvidenceKind>([
   'assessment_item',
@@ -10,6 +10,15 @@ const VERIFIED_KINDS = new Set<StudyEvidenceKind>([
   'application',
   'transfer',
   'teach_back',
+  'retention_probe',
+  'misconception_probe',
+]);
+
+const ASSESSMENT_BACKED_KINDS = new Set<StudyEvidenceKind>([
+  'assessment_item',
+  'retrieval',
+  'application',
+  'transfer',
   'retention_probe',
   'misconception_probe',
 ]);
@@ -25,6 +34,7 @@ type AttestedStudyEvidence = StudyMasteryEvidenceEvent & {
 
 export type StudyAssessmentAttemptReceipt = {
   attemptId: string;
+  /** Concept whose learner state receives this evidence. */
   conceptId: string;
   conceptKey: string;
   itemKey: string;
@@ -33,6 +43,13 @@ export type StudyAssessmentAttemptReceipt = {
   correct: boolean;
   score: number;
   submittedAt: string;
+  /** V7 fields are optional so pre-migration assessment receipts stay valid. */
+  evidenceKind?: StudyEvidenceKind;
+  evidenceConceptId?: string | null;
+  itemConceptId?: string | null;
+  itemConceptKey?: string | null;
+  retentionAnchorAt?: string | null;
+  delayDays?: number | null;
 };
 
 export type StudyEvidenceAdmission = {
@@ -55,18 +72,26 @@ function sameInstant(left: unknown, right: unknown): boolean {
   return Number.isFinite(a) && Number.isFinite(b) && a === b;
 }
 
+function receiptKind(receipt: StudyAssessmentAttemptReceipt): StudyEvidenceKind {
+  return receipt.evidenceKind || 'assessment_item';
+}
+
 /**
- * Brand one assessment event only after the server has read the authoritative
- * submitted attempt for the same learner/concept. Raw ledger strings cannot
- * manufacture this module-private attestation marker.
+ * Brand one assessment-backed event only after the server has read the
+ * authoritative submitted attempt. Raw ledger strings cannot manufacture this
+ * module-private attestation marker. V7 extends the same trust boundary to
+ * retrieval/application/retention/transfer without creating another store.
  */
 export function attestStudyAssessmentEvidence(
   event: StudyMasteryEvidenceEvent,
   receipt: StudyAssessmentAttemptReceipt,
 ): StudyMasteryEvidenceEvent {
-  if (event?.kind !== 'assessment_item') return event;
+  const kind = receiptKind(receipt);
+  if (!event || event.kind !== kind || !ASSESSMENT_BACKED_KINDS.has(kind)) return event;
+
   const item = findStudyAssessmentItem(receipt.itemKey, receipt.itemVersion);
-  if (!item || item.conceptKey !== receipt.conceptKey) return event;
+  const itemConceptKey = receipt.itemConceptKey || receipt.conceptKey;
+  if (!item || item.conceptKey !== itemConceptKey) return event;
   const release = verifyStudyAssessmentRelease(item);
   if (!release.canIssueVerifiedAttempt) return event;
   if (!item.options.some((option) => option.id === receipt.submittedOptionId)) return event;
@@ -74,10 +99,32 @@ export function attestStudyAssessmentEvidence(
   const optionCorrect = receipt.submittedOptionId === item.correctOptionId;
   if (receipt.correct !== optionCorrect || receipt.score !== (optionCorrect ? 1 : 0)) return event;
 
+  const evidenceConceptId = receipt.evidenceConceptId || receipt.conceptId;
   const expectedItemRef = `${receipt.itemKey}@${receipt.itemVersion}`;
-  const expectedMisconception = !optionCorrect
+  const diagnosisEligible = kind !== 'retention_probe' && kind !== 'transfer';
+  const expectedMisconception = diagnosisEligible
+    && !optionCorrect
     && item.misconceptionOptionIds.includes(receipt.submittedOptionId);
-  if (event.conceptId !== receipt.conceptId
+
+  if (kind === 'transfer') {
+    if (!receipt.itemConceptId || receipt.itemConceptId === evidenceConceptId) return event;
+  }
+
+  if (kind === 'retention_probe') {
+    const anchor = typeof receipt.retentionAnchorAt === 'string' ? Date.parse(receipt.retentionAnchorAt) : Number.NaN;
+    const observed = Date.parse(receipt.submittedAt);
+    if (!Number.isFinite(anchor)
+      || !Number.isFinite(observed)
+      || observed <= anchor
+      || typeof receipt.delayDays !== 'number'
+      || !Number.isInteger(receipt.delayDays)
+      || receipt.delayDays < 1
+      || event.delayDays !== receipt.delayDays) {
+      return event;
+    }
+  }
+
+  if (event.conceptId !== evidenceConceptId
     || event.id !== `study.assessment.${receipt.attemptId}`
     || event.assessmentRef !== `attempt:${receipt.attemptId}`
     || event.itemRef !== expectedItemRef
@@ -97,14 +144,14 @@ export function attestStudyAssessmentEvidence(
     configurable: false,
     writable: false,
   });
-  ATTESTED_RECEIPTS.set(event, { ...receipt });
+  ATTESTED_RECEIPTS.set(event, { ...receipt, evidenceKind: kind, evidenceConceptId });
   return event;
 }
 
 /**
  * Return the authoritative submitted-attempt receipt only for evidence that
- * passed the private V4/V5 attestation boundary. This is intentionally not
- * serialized into the learner ledger or browser payload.
+ * passed the private admission boundary. This is intentionally not serialized
+ * into the learner ledger or browser payload.
  */
 export function studyAssessmentReceiptForAttestedEvidence(
   event: StudyMasteryEvidenceEvent,
@@ -114,7 +161,7 @@ export function studyAssessmentReceiptForAttestedEvidence(
   return receipt ? { ...receipt } : null;
 }
 
-function reviewedAssessmentEvidence(event: StudyMasteryEvidenceEvent): boolean {
+function reviewedAssessmentBackedEvidence(event: StudyMasteryEvidenceEvent): boolean {
   if ((event as AttestedStudyEvidence)[REVIEWED_ASSESSMENT_ATTESTED] !== true
     || event.provenance !== 'quantora_authored'
     || event.sourceRef !== 'quantora:study-assessment-bank'
@@ -125,6 +172,8 @@ function reviewedAssessmentEvidence(event: StudyMasteryEvidenceEvent): boolean {
     return false;
   }
 
+  const receipt = ATTESTED_RECEIPTS.get(event);
+  if (!receipt || receiptKind(receipt) !== event.kind) return false;
   const separator = event.itemRef.lastIndexOf('@');
   const key = event.itemRef.slice(0, separator);
   const version = event.itemRef.slice(separator + 1);
@@ -148,20 +197,30 @@ export function evaluateStudyEvidenceAdmission(event: StudyMasteryEvidenceEvent)
   if (!hasScore(event)) {
     return { admitted: false, reasonCode: 'scored_evidence_required' };
   }
-  if (event.kind === 'assessment_item') {
-    return reviewedAssessmentEvidence(event)
-      ? { admitted: true, reasonCode: 'reviewed_assessment_evidence' }
-      : { admitted: false, reasonCode: 'authoritative_assessment_receipt_required' };
+
+  if (ASSESSMENT_BACKED_KINDS.has(event.kind)) {
+    if (!reviewedAssessmentBackedEvidence(event)) {
+      return {
+        admitted: false,
+        reasonCode: event.kind === 'assessment_item'
+          ? 'authoritative_assessment_receipt_required'
+          : 'verified_observation_receipt_required',
+      };
+    }
+    const reasonCode = event.kind === 'assessment_item'
+      ? 'reviewed_assessment_evidence'
+      : `reviewed_assessment_backed_${event.kind}`;
+    return { admitted: true, reasonCode };
   }
 
-  // Still fail-closed: V5 diagnoses reviewed assessment evidence only.
+  // Teach-back remains fail-closed until it has its own deterministic verifier.
   return { admitted: false, reasonCode: 'verified_observation_receipt_required' };
 }
 
 /**
  * One canonical evidence set for both mastery estimation and learner-state
- * projection. Rows are chronological and repeated assessment-item versions
- * contribute at most their first independent observation.
+ * projection. Rows are chronological and one reviewed item/version can
+ * contribute independent evidence only once, regardless of evidence label.
  */
 export function admittedStudyMasteryEvidence(
   events: StudyMasteryEvidenceEvent[] | null | undefined,
@@ -172,7 +231,8 @@ export function admittedStudyMasteryEvidence(
 
   const seenAssessmentItems = new Set<string>();
   return chronological.filter((event) => {
-    if (event.kind !== 'assessment_item' || !event.itemRef) return true;
+    const receipt = studyAssessmentReceiptForAttestedEvidence(event);
+    if (!receipt || !event.itemRef) return true;
     if (seenAssessmentItems.has(event.itemRef)) return false;
     seenAssessmentItems.add(event.itemRef);
     return true;

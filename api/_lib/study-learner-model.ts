@@ -10,7 +10,7 @@ import type {
 import type { StudyMasteryEstimate } from './study-mastery-estimator.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-31.3';
+export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-31.4';
 
 export type StudyUnderstandingState = 'unverified' | 'emerging' | 'verified';
 export type StudyMisconceptionState = 'none_observed' | 'signal_observed' | 'needs_confirmation';
@@ -45,6 +45,16 @@ export type StudyLearnerModel = {
   retention: {
     state: 'untested' | 'needs_support' | 'supported';
     evidenceCount: number;
+    /** V7 schedule fields are optional for compatibility with older fixtures. */
+    anchorAt?: string | null;
+    targetDelayDays?: number | null;
+    dueAt?: string | null;
+    due?: boolean;
+  };
+  transfer?: {
+    state: 'untested' | 'needs_support' | 'supported';
+    evidenceCount: number;
+    latestObservedAt: string | null;
   };
   nextLearningMove: {
     type: StudyNextLearningMove;
@@ -120,14 +130,99 @@ function misconceptionProjection(rows: ReturnType<typeof verifiedRows>): StudyLe
   };
 }
 
-function retentionProjection(rows: ReturnType<typeof verifiedRows>, estimate: StudyMasteryEstimate) {
+function addDays(iso: string | null, days: number | null): string | null {
+  if (!iso || days == null) return null;
+  const millis = Date.parse(iso);
+  if (!Number.isFinite(millis)) return null;
+  return new Date(millis + days * 86_400_000).toISOString();
+}
+
+function retentionProjection(rows: ReturnType<typeof verifiedRows>, asOf: string) {
   const retentionRows = rows.filter((row) => row.event.kind === 'retention_probe');
-  const state = retentionRows.length === 0 || estimate.retention == null
-    ? 'untested'
-    : estimate.retention >= 0.7
-      ? 'supported'
-      : 'needs_support';
-  return { state: state as 'untested' | 'needs_support' | 'supported', evidenceCount: retentionRows.length };
+  const latestRetention = retentionRows[retentionRows.length - 1] || null;
+  const laterSuccessfulLearning = latestRetention
+    ? rows.some((row) => row.event.kind !== 'retention_probe'
+      && row.score >= 0.75
+      && Date.parse(row.observedAt) > Date.parse(latestRetention.observedAt))
+    : false;
+  const effectiveRetention = laterSuccessfulLearning ? null : latestRetention;
+  const successfulRows = rows.filter((row) => row.score >= 0.75);
+  const latestSuccessful = successfulRows[successfulRows.length - 1] || null;
+
+  let state: 'untested' | 'needs_support' | 'supported' = 'untested';
+  let targetDelayDays: number | null = 1;
+  let anchorAt = latestSuccessful?.observedAt || null;
+
+  if (effectiveRetention) {
+    if (effectiveRetention.score >= 0.75) {
+      state = 'supported';
+      const observedDelay = typeof effectiveRetention.event.delayDays === 'number'
+        ? effectiveRetention.event.delayDays
+        : 1;
+      targetDelayDays = observedDelay >= 30 ? null : observedDelay >= 7 ? 30 : 7;
+      anchorAt = effectiveRetention.observedAt;
+    } else {
+      state = 'needs_support';
+      targetDelayDays = 1;
+    }
+  }
+
+  const dueAt = addDays(anchorAt, targetDelayDays);
+  const asOfMillis = Date.parse(asOf);
+  const dueAtMillis = dueAt ? Date.parse(dueAt) : Number.NaN;
+  const due = targetDelayDays !== null
+    && Number.isFinite(asOfMillis)
+    && Number.isFinite(dueAtMillis)
+    && asOfMillis >= dueAtMillis;
+
+  return {
+    state,
+    evidenceCount: retentionRows.length,
+    anchorAt,
+    targetDelayDays,
+    dueAt,
+    due,
+  };
+}
+
+function transferProjection(rows: ReturnType<typeof verifiedRows>) {
+  const transferRows = rows.filter((row) => row.event.kind === 'transfer');
+  const latest = transferRows[transferRows.length - 1] || null;
+  if (!latest) {
+    return { state: 'untested' as const, evidenceCount: 0, latestObservedAt: null };
+  }
+  const laterRepair = latest.score < 0.75 && rows.some((row) =>
+    row.event.kind !== 'transfer'
+    && row.score >= 0.75
+    && Date.parse(row.observedAt) > Date.parse(latest.observedAt));
+  if (laterRepair) {
+    return { state: 'untested' as const, evidenceCount: transferRows.length, latestObservedAt: latest.observedAt };
+  }
+  return {
+    state: latest.score >= 0.75 ? 'supported' as const : 'needs_support' as const,
+    evidenceCount: transferRows.length,
+    latestObservedAt: latest.observedAt,
+  };
+}
+
+function retentionInstruction(retention: ReturnType<typeof retentionProjection>): StudyLearnerModel['nextLearningMove'] {
+  const target = retention.targetDelayDays || 1;
+  if (retention.due === false && retention.dueAt) {
+    return {
+      type: 'retention_probe',
+      reasonCode: `retention_probe_scheduled:${target}d`,
+      instruction: `Do not administer the retention probe yet. Schedule a fresh no-hint reviewed check for ${retention.dueAt}; delayed evidence must remain genuinely delayed.`,
+      learnerFacingText: `Next retention check: ${retention.dueAt}.`,
+    };
+  }
+  return {
+    type: 'retention_probe',
+    reasonCode: retention.state === 'needs_support'
+      ? 'retention_needs_support'
+      : `retention_probe_due:${target}d`,
+    instruction: `Use one fresh independent reviewed item as a no-hint retention probe after at least ${target} delayed day${target === 1 ? '' : 's'}.`,
+    learnerFacingText: 'Next: try a delayed no-hint check.',
+  };
 }
 
 function chooseNextMove(input: {
@@ -135,8 +230,9 @@ function chooseNextMove(input: {
   estimate: StudyMasteryEstimate;
   misconception: StudyLearnerModel['misconception'];
   retention: ReturnType<typeof retentionProjection>;
+  transfer: ReturnType<typeof transferProjection>;
 }): StudyLearnerModel['nextLearningMove'] {
-  const { rows, estimate, misconception, retention } = input;
+  const { rows, estimate, misconception, retention, transfer } = input;
   if (!rows.length) {
     return { type: 'independent_retrieval', reasonCode: 'no_verified_evidence', instruction: 'Ask for one independent answer without hints before adapting the lesson.', learnerFacingText: 'Next: try one independent answer without hints.' };
   }
@@ -162,12 +258,32 @@ function chooseNextMove(input: {
   }
   const kinds = new Set(rows.map((row) => row.event.kind));
   if (estimate.status !== 'established' || rows.length < 4 || kinds.size < 2) {
-    return { type: 'vary_evidence', reasonCode: 'diverse_evidence_incomplete', instruction: 'Collect a different independent evidence kind, preferably application or teach-back, instead of repeating the same item.', learnerFacingText: 'Next: show the idea in a different way—application or teach-back.' };
+    return { type: 'vary_evidence', reasonCode: 'diverse_evidence_incomplete', instruction: 'Collect a different independent governed evidence kind, preferably retrieval or application, instead of repeating the same item.', learnerFacingText: 'Next: show the idea in a different governed way—retrieval or application.' };
   }
-  if (retention.state !== 'supported') {
-    return { type: 'retention_probe', reasonCode: retention.state === 'untested' ? 'retention_untested' : 'retention_needs_support', instruction: 'Schedule a delayed, no-hint retrieval check before treating the understanding as durable.', learnerFacingText: 'Next: return for a delayed no-hint check.' };
+
+  // A retention deadline that is actually due outranks transfer. While waiting
+  // for the clock, transfer can proceed instead of manufacturing immediate
+  // "retention" evidence.
+  if (retention.targetDelayDays !== null && retention.due) {
+    return retentionInstruction(retention);
   }
-  return { type: 'transfer_task', reasonCode: 'understanding_and_retention_supported', instruction: 'Use a novel transfer problem that requires the concept in a different representation or context.', learnerFacingText: 'Next: try the idea in a new context.' };
+  if (transfer.state !== 'supported') {
+    return {
+      type: 'transfer_task',
+      reasonCode: transfer.state === 'needs_support' ? 'transfer_needs_support' : 'transfer_untested',
+      instruction: 'Use a governed novel-context transfer item reached through a canonical supports_transfer_to edge. Do not count generic target-concept correctness as transfer.',
+      learnerFacingText: 'Next: try the idea in a genuinely new context.',
+    };
+  }
+  if (retention.targetDelayDays !== null) {
+    return retentionInstruction(retention);
+  }
+  return {
+    type: 'transfer_task',
+    reasonCode: 'retention_and_transfer_supported',
+    instruction: 'Durability and one governed transfer are supported. Use another genuinely novel governed transfer only if it adds independent evidence; otherwise advance the learning plan.',
+    learnerFacingText: 'Next: stretch the idea only with a genuinely new application.',
+  };
 }
 
 /** Evidence-backed, read-only projection over the single admitted evidence set. */
@@ -176,10 +292,14 @@ export function buildStudyLearnerModel(input: {
   conceptKey?: string | null;
   evidence?: StudyMasteryEvidenceEvent[] | null;
   estimate: StudyMasteryEstimate;
+  /** Injectable clock keeps retention scheduling deterministic in tests/replay. */
+  asOf?: string;
 }): StudyLearnerModel {
   const rows = verifiedRows(input.evidence || []);
   const misconception = misconceptionProjection(rows);
-  const retention = retentionProjection(rows, input.estimate);
+  const asOf = validDate(input.asOf) || new Date().toISOString();
+  const retention = retentionProjection(rows, asOf);
+  const transfer = transferProjection(rows);
   const evidenceKinds = [...new Set(rows.map((row) => row.event.kind))].sort();
   const verified = input.estimate.status === 'established' && misconception.state === 'none_observed';
   const understanding: StudyUnderstandingState = verified ? 'verified' : rows.length ? 'emerging' : 'unverified';
@@ -195,6 +315,7 @@ export function buildStudyLearnerModel(input: {
     },
     misconception,
     retention,
-    nextLearningMove: chooseNextMove({ rows, estimate: input.estimate, misconception, retention }),
+    transfer,
+    nextLearningMove: chooseNextMove({ rows, estimate: input.estimate, misconception, retention, transfer }),
   };
 }

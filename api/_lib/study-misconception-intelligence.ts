@@ -8,7 +8,7 @@ import {
 } from './study-misconception-taxonomy.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_MISCONCEPTION_INTELLIGENCE_VERSION = 'study-misconception-intelligence-2026-08-31.1';
+export const STUDY_MISCONCEPTION_INTELLIGENCE_VERSION = 'study-misconception-intelligence-2026-08-31.2';
 
 export type StudyMisconceptionDiagnosis = {
   code: StudyMisconceptionCode;
@@ -23,6 +23,11 @@ export type StudyMisconceptionDiagnosis = {
 function itemFor(event: StudyMasteryEvidenceEvent) {
   const receipt = studyAssessmentReceiptForAttestedEvidence(event);
   if (!receipt) return null;
+  // A failed delayed-retention or cross-context transfer probe says "not
+  // durable/transferable yet". It is not evidence that a reviewed distractor
+  // reflects the learner's active misconception, so V7 keeps those diagnoses
+  // separate rather than collapsing every failure into one label.
+  if (receipt.evidenceKind === 'retention_probe' || receipt.evidenceKind === 'transfer') return null;
   const item = findStudyAssessmentItem(receipt.itemKey, receipt.itemVersion);
   return item ? { item, receipt } : null;
 }
