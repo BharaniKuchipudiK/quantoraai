@@ -44,6 +44,7 @@ export async function pageStateSnapshot(page, consoleErrors = []) {
       previewCompiling: (await count('[data-quantora-preview-loading="true"]')) > 0,
       previewError: await preview.getAttribute('data-quantora-preview-error', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
       previewCorrelationId: await preview.getAttribute('data-quantora-correlation-id', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
+      lastTurnFailed: (await count('[data-quantora-last-turn-failed="true"]')) > 0,
       buildJobs: await count('[data-quantora-build-job]'),
       storageFault: await textOf(page.locator('[data-quantora-storage-fault]').first()),
       alert: await textOf(page.locator('[role="alert"]').first()),

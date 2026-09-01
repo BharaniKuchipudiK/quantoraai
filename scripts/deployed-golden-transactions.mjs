@@ -107,6 +107,24 @@ async function correlationForPreview(previous = null) {
     const contractError = await page.locator('[data-quantora-preview-contract-error]').first()
       .getAttribute('data-quantora-preview-contract-error').catch(() => null);
     if (contractError) throw new Error(contractError);
+    /*
+     * A turn that has already failed is not worth waiting out.
+     *
+     * The desk publishes data-quantora-last-turn-failed once the last AI
+     * message is an error and nothing is still generating. Without it this
+     * loop burned its full 150s on a turn that died in seconds, and reported
+     * only that the artifact "never reached the preview" — the symptom of a
+     * dozen different causes. Anchored on the hook, never on the failure copy,
+     * which is free to change.
+     */
+    const turnFailed = await page.locator('[data-quantora-last-turn-failed="true"]').first()
+      .isVisible().catch(() => false);
+    if (turnFailed) {
+      throw new Error(
+        `The chat turn failed before any artifact was produced. `
+        + `Page state: ${await describePageState(page, consoleErrors)}`,
+      );
+    }
     if (await preview.isVisible().catch(() => false)) {
       const correlationId = await preview.getAttribute('data-quantora-correlation-id');
       if (correlationId && correlationId !== previous) return correlationId;
