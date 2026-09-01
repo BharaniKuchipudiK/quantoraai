@@ -123,6 +123,34 @@ test("issue skips an item already submitted elsewhere in the learner-global evid
   } finally { global.fetch = originalFetch; }
 });
 
+test("atomic issue guard surfaces a retryable conflict without unsafe legacy fallback", async () => {
+  const originalFetch = global.fetch;
+  let insertCalls = 0;
+  global.fetch = async (url: any, init: any = {}) => {
+    const target = String(url);
+    if (target.includes("/rest/v1/users?select=")) return json([{ google_sub: "learner-1", email: "learner@example.com", blocked_at: null }]);
+    if (target.includes("/rest/v1/study_concepts?") && target.includes("canonical_key=eq.physics.kinematics.motion-graphs")) {
+      return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
+    }
+    if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=id")) return json([]);
+    if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
+      insertCalls += 1;
+      return json({ code: "P0001", message: "study_assessment_item_already_active" }, 400);
+    }
+    throw new Error(`Unexpected fetch: ${target}`);
+  };
+  try {
+    const { state, res } = responseHarness();
+    await studyAssessmentHandler(authenticatedRequest({ action: "issue", conceptKey: "physics.kinematics.motion-graphs", conceptLabel: "Motion graphs", sessionId: "session-race" }), res);
+    assert.equal(state.status, 409);
+    assert.equal(state.body.code, "verified_assessment_freshness_changed");
+    assert.equal(state.body.reason, "already_active");
+    assert.equal(state.body.retryable, true);
+    assert.equal(insertCalls, 1, "a V7 issuance conflict must not fall through to a second legacy insert");
+  } finally { global.fetch = originalFetch; }
+});
+
 test("grade requires authoritative submitted-attempt validation before evidence changes mastery", async () => {
   const originalFetch = global.fetch;
   let savedEstimate: any = null;
