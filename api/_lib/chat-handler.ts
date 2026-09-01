@@ -20,6 +20,7 @@ import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRou
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
 import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
+import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -553,9 +554,10 @@ export default async function handler(req: any, res: any) {
     const isRepairTask = task === "repair";
     const isVerifyTask = task === "verify-build";
     const isResearchVerifyTask = task === "research-verify";
-    // Tasks that carry code or claims instead of a chat message, and so skip
-    // the message/session/safety validation below.
-    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask;
+    const isResearchDeepDiveTask = task === "research-deep-dive";
+    // Tasks that carry code, claims or a bare question instead of a chat
+    // message, and so skip the message/session/safety validation below.
+    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask || isResearchDeepDiveTask;
 
     if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
@@ -680,6 +682,31 @@ export default async function handler(req: any, res: any) {
       } catch (err: any) {
         console.error("Error in /api/chat research-verify task:", err);
         return res.status(500).json({ error: err?.message || "Evidence verification failed." });
+      }
+    }
+
+    if (isResearchDeepDiveTask) {
+      // Decompose → search → synthesize, returned as canonical transcript
+      // messages the dossier brief already parses. Research desk only.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Deep dive runs on the research desk only." });
+      }
+      const normalized = normalizeResearchDeepDiveRequest(req.body);
+      if (!normalized.ok || !normalized.question) {
+        return res.status(400).json({ error: normalized.error || "Invalid deep-dive request." });
+      }
+      if (!effectiveGeminiKey) {
+        // Grounded search for the dive currently rides the Gemini tool path;
+        // saying so beats a silent generic failure.
+        return res.status(503).json({ error: "Deep dive needs the Gemini search path, which is not configured right now." });
+      }
+      try {
+        const result = await runResearchDeepDive({ question: normalized.question, geminiKey: effectiveGeminiKey });
+        if (!result.ok) return res.status(502).json({ error: result.error });
+        return res.status(200).json(result);
+      } catch (err: any) {
+        console.error("Error in /api/chat research-deep-dive task:", err);
+        return res.status(500).json({ error: err?.message || "Deep dive failed." });
       }
     }
 

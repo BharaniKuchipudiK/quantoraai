@@ -114,6 +114,16 @@ export function parsePlanBlock(text) {
   return items;
 }
 
+/** Remove a Plan block (heading + its bullets) from a reply body. */
+function stripPlanBlock(text) {
+  const lines = String(text || '').split('\n');
+  const headingAt = lines.findIndex((line) => PLAN_HEADING.test(line));
+  if (headingAt === -1) return String(text || '');
+  let end = headingAt + 1;
+  while (end < lines.length && (/^\s*(?:[-*+]|\d+\.)\s+/.test(lines[end]) || lines[end].trim() === '')) end += 1;
+  return [...lines.slice(0, headingAt), ...lines.slice(end)].join('\n');
+}
+
 function stripMarkdown(line) {
   return line
     .replace(/^\s*(?:[-*+]|\d+\.)\s+/, '')
@@ -194,13 +204,21 @@ export function deriveResearchBrief({ messages } = {}) {
     }
     // The first plan is the plan; a restated one later would renumber the
     // investigation under the analyst's feet.
+    let planAdoptedHere = false;
     if (plan.length === 0) {
       for (const item of parsePlanBlock(text)) plan.push({ text: item, explored: false });
+      planAdoptedHere = plan.length > 0;
     }
 
     const { body, sources } = parseSourcesBlock(text);
     if (sources.length === 0) {
-      ungroundedTurns += 1;
+      /*
+       * A reply that is essentially just the plan is bookkeeping, not an
+       * answer — counting it as "unverified" would ding the standing line
+       * for a message that claimed nothing.
+       */
+      const prose = stripPlanBlock(body).replace(/\s+/g, ' ').trim();
+      if (!(planAdoptedHere && prose.length < 160)) ungroundedTurns += 1;
       return;
     }
     groundedTurns += 1;
