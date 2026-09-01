@@ -195,6 +195,81 @@ export function heuristicChecks(code: string, brief = "", opts: { files?: string
   return checks;
 }
 
+/*
+ * IMAGE LIVENESS — the "confidently wrong raises no error" class.
+ *
+ * Every image check above asks about the STRING: src present, src shaped like
+ * a URL. On 2026-09-01 a boutique shipped with cart and checkout working and
+ * every product frame empty — invented Unsplash IDs and the retired
+ * source.unsplash.com — while the model claimed "verified photographs" three
+ * turns running. Whether a URL loads is network truth; this probe asks it and
+ * hands the dead URLs, by name, to the repair loop.
+ *
+ * Precision rule (§5): only a definitive upstream verdict is "dead" — HTTP
+ * 4xx, or a 2xx that is not an image. Timeouts and 5xx are indeterminate and
+ * never fail a build, so this cannot become the next muted gate.
+ */
+export function collectRemoteImageProbes(code: string, limit = 8): string[] {
+  const src = String(code || "");
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /\bsrc\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) && out.length < limit) {
+    let url = m[1].trim();
+    if (url.startsWith("/api/preview-image")) {
+      const idx = url.indexOf("u=");
+      if (idx === -1) continue;
+      // Same contract as the proxy: `u` owns everything after it, unencoded.
+      url = url.slice(idx + 2);
+      if (!/^https?:\/\//i.test(url)) {
+        try { url = decodeURIComponent(url); } catch { continue; }
+      }
+    }
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
+export async function probeImageLiveness(
+  urls: string[],
+  opts: { fetchFn?: typeof fetch; timeoutMs?: number } = {},
+): Promise<{ checked: number; dead: Array<{ url: string; why: string }>; indeterminate: number }> {
+  const fetchFn = opts.fetchFn || fetch;
+  const timeoutMs = opts.timeoutMs ?? 4_000;
+  const dead: Array<{ url: string; why: string }> = [];
+  let indeterminate = 0;
+  await Promise.all(urls.map(async (url) => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let upstream: any;
+      try {
+        upstream = await fetchFn(url, {
+          redirect: "follow",
+          signal: controller.signal,
+          headers: { Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      const type = String(upstream?.headers?.get?.("content-type") || "");
+      if (upstream.status >= 400 && upstream.status < 500) {
+        dead.push({ url, why: `HTTP ${upstream.status}` });
+      } else if (upstream.ok && type && !/^image\//i.test(type)) {
+        dead.push({ url, why: `not an image (${type.split(";")[0]})` });
+      } else if (!upstream.ok) {
+        indeterminate += 1;
+      }
+    } catch {
+      indeterminate += 1;
+    }
+  }));
+  return { checked: urls.length, dead, indeterminate };
+}
+
 function scoreFromChecks(checks: BuildCheck[]): number {
   const totalWeight = checks.reduce((s, c) => s + c.weight, 0) || 1;
   const earned = checks.reduce((s, c) => s + (c.ok ? c.weight : 0), 0);
@@ -269,6 +344,8 @@ export async function verifyBuild(opts: {
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
+  /** Injectable for the liveness gate; defaults to global fetch. */
+  fetchImage?: typeof fetch;
 }): Promise<BuildReport> {
   const { code, vfs = {}, brief = "", job, openRouterKey, geminiKey, model } = opts;
   if (!code || typeof code !== "string" || !code.trim()) {
@@ -278,6 +355,26 @@ export async function verifyBuild(opts: {
   const assembled = prepareCodeForPreview(code, vfs);
   const judgedBrief = formatJobCardForVerify(job, brief);
   const checks = heuristicChecks(assembled, judgedBrief, { files: Object.keys(vfs || {}) });
+
+  // Photos that actually load — network truth the string checks cannot see.
+  // Additive and fail-open: a probe crash never blocks verification.
+  try {
+    const probes = collectRemoteImageProbes(assembled);
+    if (probes.length) {
+      const live = await probeImageLiveness(probes, { fetchFn: opts.fetchImage });
+      checks.push({
+        id: "img-live",
+        label: "Photos actually load",
+        ok: live.dead.length === 0,
+        weight: 3,
+        critical: live.dead.length > 0 && briefWantsProductCatalog(judgedBrief.toLowerCase()),
+        detail: live.dead.length
+          ? `${live.dead.length} of ${live.checked} checked photo URL(s) are dead — replace them: ${live.dead.slice(0, 3).map((d) => `${d.url} (${d.why})`).join("; ")}`
+          : undefined,
+      });
+    }
+  } catch { /* liveness is additive; verification proceeds without it */ }
+
   const heuristicScore = scoreFromChecks(checks);
   const heuristicIssues = checks.filter((c) => !c.ok).map((c) => c.detail || `Missing: ${c.label}`);
 

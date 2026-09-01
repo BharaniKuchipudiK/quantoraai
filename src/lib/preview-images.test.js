@@ -33,3 +33,17 @@ test('Preview rewrites Unsplash photos to the Quantora proxy so they can load', 
   assert.match(out, /images\.unsplash\.com/);
   assert.equal(rewritePreviewImageUrls(html, ''), html);
 });
+
+/*
+ * source.unsplash.com was shut down in 2023. Keeping it on the allowlist
+ * handed every model a guaranteed dead frame that passed every shape check —
+ * the 2026-09-01 boutique catalog used it for its whole services section.
+ * A host that can never serve an image must not be offered as allowed.
+ */
+test('[was-red] the retired source.unsplash.com host is not allowed', () => {
+  assert.equal(isAllowedPreviewImageUrl('https://source.unsplash.com/featured/400x300?tailor'), false);
+});
+
+test('the living unsplash CDN host stays allowed', () => {
+  assert.equal(isAllowedPreviewImageUrl('https://images.unsplash.com/photo-1541167760496?w=1200&q=80'), true);
+});
