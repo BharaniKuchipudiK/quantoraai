@@ -157,3 +157,20 @@ test('the far boundary is eleven months, matching when airlines open schedules',
   const now = new Date('2026-09-01T00:00:00.000Z');
   assert.equal(latestSearchableIso(now), '2027-08-01');
 });
+
+test('a wrong year in the RETURN leg is refused too', () => {
+  const soon = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: soon, returnDate: '2099-01-01',
+  });
+  assert.equal(result.status, 'invalid', 'the return leg reaches the provider exactly as the outbound does');
+});
+
+test('an ordinary round trip still runs', () => {
+  const out = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const back = new Date(Date.now() + 44 * 86_400_000).toISOString().slice(0, 10);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: out, returnDate: back,
+  });
+  assert.equal(result.status, 'ok');
+});

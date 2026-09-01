@@ -56,6 +56,10 @@ const NOT_A_PLACE = new Set([
   'us', 'me', 'you', 'mine', 'ours', 'both', 'either', 'destination',
   // Verbs only ever reach a place slot when the phrase was mis-parsed.
   'take', 'find', 'book', 'need', 'want', 'get', 'show', 'give', 'plan',
+  // "going to see Hamilton" matched the going-to cue and captured the whole
+  // tail, reporting a destination of "see Hamilton". A cue says where the
+  // place sits; it does not check that what sits there is one.
+  'see', 'meet', 'meeting', 'catch', 'explore', 'visit', 'visiting',
 ]);
 
 const NOT_AN_AIRPORT = new Set([
@@ -210,8 +214,18 @@ const SENTENCE_OPENER = new Set([
   'sure', 'still', 'now', 'then', 'from', 'to', 'in', 'at', 'on', 'for',
 ]);
 
-/** Words that mark the proper noun after them as where the trip STARTS. */
-const ORIGIN_PREPOSITION = new Set(['from', 'of', 'leaving', 'departing']);
+/**
+ * Words that mark the proper noun after them as where the trip STARTS.
+ *
+ * "of" is NOT here despite "out of Chennai" needing it: on its own it is the
+ * most common preposition in English and reported an origin of "Sarah" from
+ * "I have a photo of Sarah". The two-word construction is matched separately,
+ * against the pair rather than the tail.
+ */
+const ORIGIN_PREPOSITION = new Set(['from', 'leaving', 'departing']);
+
+/** Two-word origin constructions, matched whole so "of" alone proves nothing. */
+const ORIGIN_PHRASE = new Set(['out of', 'departing from', 'leaving from', 'flying from']);
 
 /**
  * Words that mark the proper noun after them as somewhere you GO.
@@ -233,7 +247,11 @@ const ORIGIN_PREPOSITION = new Set(['from', 'of', 'leaving', 'departing']);
 const DESTINATION_PREPOSITION = new Set([
   'to', 'in', 'at', 'into', 'around', 'near', 'toward', 'towards',
   'visit', 'visiting', 'explore', 'exploring', 'reach', 'reaching',
-  'see', 'seeing',
+  // "see" is deliberately absent. It reads as locative in "wanted to see
+  // Petra" and not at all in "plan to see Sarah", which reported Sarah as the
+  // destination with the Stays chip lit. A word that takes people and shows as
+  // readily as it takes places is not evidence of a place, so the Petra-shaped
+  // sentence is a miss we accept rather than a guess we make.
 ]);
 
 /** A capitalised, non-shouting word — "Bali", "Lanka", but not "USD". */
@@ -284,10 +302,12 @@ function properNounPlaces(text) {
   });
   if (current) spans.push(current);
 
+  const word = (index) => (words[index] || '').replace(/[^\p{L}]/gu, '').toLowerCase();
   return spans
     .map((span) => ({
       place: span.words.slice(0, 3).join(' '),
-      lead: (words[span.at - 1] || '').replace(/[^\p{L}]/gu, '').toLowerCase(),
+      lead: word(span.at - 1),
+      leadPair: `${word(span.at - 2)} ${word(span.at - 1)}`.trim(),
     }))
     .filter((span) => isUsablePlace(span.place));
 }
@@ -298,15 +318,36 @@ function properNounPlaces(text) {
  * choosing, and guessing between them is invention with better manners.
  */
 function properNounDestination(text) {
-  const found = properNounPlaces(text).filter((span) => DESTINATION_PREPOSITION.has(span.lead));
+  const found = properNounPlaces(text).filter((span) => DESTINATION_PREPOSITION.has(span.lead)
+    && !ORIGIN_PHRASE.has(span.leadPair));
   return found.length === 1 ? found[0].place : '';
 }
 
 /** The origin a capitalised name implies, only when a from-word introduces it. */
 function properNounOrigin(text) {
-  const found = properNounPlaces(text).filter((span) => ORIGIN_PREPOSITION.has(span.lead));
+  const found = properNounPlaces(text)
+    .filter((span) => ORIGIN_PREPOSITION.has(span.lead) || ORIGIN_PHRASE.has(span.leadPair));
   return found.length === 1 ? found[0].place : '';
 }
+
+/**
+ * Words a traveller says TO the assistant rather than ABOUT a trip.
+ *
+ * "Copenhagen. thoughts?" and "Sure. what next?" are structurally identical —
+ * a capitalised word, sentence punctuation, then a question — so no rule about
+ * shape can separate them. Reading the fragment alone made "Sure", "Great" and
+ * "Ok" destinations with the live Stays chip lit, which is worse than the
+ * deafness the punctuation break was added to fix.
+ *
+ * Since structure cannot decide it, a list must, and this one is deliberately
+ * conservative. "Nice", "Reading", "Bath", "March" and "May" are all real
+ * places and none of them appear here, because refusing a real destination and
+ * inventing a fake one are both failures.
+ */
+const ACKNOWLEDGEMENT = new Set([
+  'great', 'cool', 'perfect', 'awesome', 'excellent', 'brilliant', 'right',
+  'done', 'yeah', 'yep', 'nope', 'sorry', 'wow', 'amazing', 'good', 'super',
+]);
 
 /**
  * True when a short bare reply reads as a name rather than as a sentence.
@@ -331,6 +372,9 @@ function properNounOrigin(text) {
 function looksLikeBareName(place) {
   const tokens = String(place || '').trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return false;
+  // An acknowledgement is never a place, however it is capitalised.
+  const first = tokens[0].toLowerCase();
+  if (ACKNOWLEDGEMENT.has(first) || SENTENCE_OPENER.has(first)) return false;
   if (tokens.length === 1) return /^[\p{L}][\p{L}'’.-]*$/u.test(tokens[0]);
   return tokens.every((token) => /^\p{Lu}/u.test(token));
 }

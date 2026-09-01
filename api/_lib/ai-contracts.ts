@@ -125,6 +125,16 @@ const FlightSearchArgsSchema = z.object({
       message: `Departure date ${value.departureDate} is further out than airlines sell — today is ${todayIso()}, so check the year`,
     });
   }
+  // The return leg reaches the provider exactly as the outbound does, so a
+  // wrong year in it is the same unsearchable date wearing the other half of
+  // the trip. Bounding only the departure left round trips unguarded.
+  if (value.returnDate && value.returnDate > latestSearchableIso()) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['returnDate'],
+      message: `Return date ${value.returnDate} is further out than airlines sell — today is ${todayIso()}, so check the year`,
+    });
+  }
 });
 
 const HotelSearchArgsSchema = z.object({

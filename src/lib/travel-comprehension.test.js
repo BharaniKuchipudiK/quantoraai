@@ -156,6 +156,36 @@ const NOT_PLACES = [
   'we celebrated Diwali last week',
   'reading Lonely Planet for ideas',
   'my flight is on Singapore Airlines',
+
+  // Found in review, after the capitalisation fallback shipped. Each one
+  // reported a destination or origin and lit the live Stays control.
+  'we plan to see Sarah next month',      // "see" takes people as easily as places
+  'I want to see Priya in December',
+  'going to see Hamilton',                // the cue captured the verb: "see Hamilton"
+  'I have a photo of Sarah',              // bare "of" is not "out of"
+  'the capital of France is nice',
+  'a friend of Ravi is coming',
+  'Sure. what next?',                     // punctuation truncation left "Sure"
+  'Great! please continue',
+  'Ok. thanks',
+];
+
+/**
+ * Phrasings we knowingly do not hear, and why.
+ *
+ * Recorded rather than quietly absorbed into the holdout's miss budget: each
+ * is a recall loss accepted to keep precision at 100%, and naming them stops
+ * the budget from hiding a decision. Move one into HOLDOUT_PLACES only when
+ * the parser can read it WITHOUT loosening a rule that guards invention.
+ */
+const KNOWN_UNHEARD = [
+  // "see" is not locative evidence — "plan to see Sarah" proved that.
+  { text: 'ive always wanted to see Petra', would_be: 'Petra' },
+  // "about" introduces topics far more often than destinations.
+  { text: 'do you know anything about Tbilisi', would_be: 'Tbilisi' },
+  // No preposition at all; only a gazetteer could resolve these.
+  { text: 'planning our honeymoon, thinking Maldives', would_be: 'Maldives' },
+  { text: 'family holiday, probably Phuket', would_be: 'Phuket' },
 ];
 
 /**
@@ -166,7 +196,6 @@ const HOLDOUT_PLACES = [
   { text: 'just got back from Rome, want to go to Athens next', dest: 'Athens' },
   { text: 'Vienna or bust', dest: 'Vienna' },
   { text: 'Copenhagen. thoughts?', dest: 'Copenhagen' },
-  { text: 'ive always wanted to see Petra', dest: 'Petra' },
   { text: 'whats good near Zurich', dest: 'Zurich' },
 ];
 
@@ -228,4 +257,11 @@ test('ORIGIN: a stated origin is heard, and never invented from a date range', (
   assert.equal(brief('help me book tickets to Bali from Singapore').originLabel, 'Singapore');
   assert.equal(brief('I can travel from Monday to Friday').originLabel || '', '');
   assert.equal(brief('I am available from May to August').originLabel || '', '');
+});
+
+test('KNOWN_UNHEARD: a phrasing we cannot read is silent, never guessed', () => {
+  const guessed = KNOWN_UNHEARD
+    .map((c) => [c.text, reported(brief(c.text))])
+    .filter(([, got]) => got);
+  assert.deepEqual(guessed, [], `guessed at a phrasing we do not understand: ${JSON.stringify(guessed)}`);
 });
