@@ -48,6 +48,16 @@ test('generated StrictMode entry gets a preview-only React binding without chang
   assert.deepEqual(hiraSilksVfs, before, 'preview compatibility must not rewrite generated content');
 });
 
+test('React namespace shim does not duplicate an existing local runtime binding', () => {
+  const source = "const React = globalThis.React;\nconsole.log(React.StrictMode);";
+  assert.equal(ensureReactNamespaceBinding(source, 'src/main.jsx'), source);
+});
+
+test('React namespace shim recognizes TypeScript import assignment', () => {
+  const source = "import React = require('react');\nconsole.log(React.StrictMode);";
+  assert.equal(ensureReactNamespaceBinding(source, 'src/main.tsx'), source);
+});
+
 test('the compiler bakes the correlation id and live-page probe into the iframe', async () => {
   const result = await compilePreviewVfs(calculatorVfs, { correlationId: 'browser-desk-probe-1' });
   assert.equal(result.correlationId, 'browser-desk-probe-1');
