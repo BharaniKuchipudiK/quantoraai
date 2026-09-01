@@ -31,6 +31,26 @@ test('the deployed golden gate anchors on that hook, never on button copy', () =
   assert.doesNotMatch(code, /getByRole\([^)]*Studio\$/);
 });
 
+test('the desk publishes a durable hook for a terminally failed turn', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  /*
+   * The desk always knew the last turn had failed, but kept it to itself, so
+   * the golden gate waited out its full 150s timeout on a turn that died in
+   * seconds and then reported only that the artifact "never reached the
+   * preview". That message fits a dozen causes and named none of them.
+   */
+  assert.match(studio, /data-quantora-last-turn-failed=/);
+});
+
+test('the golden gate fails fast on that hook rather than on the failure copy', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /\[data-quantora-last-turn-failed="true"\]/);
+  // Anchoring on the words of the failure message would repeat the exact
+  // mistake that made this gate permanently red: copy changes, hooks do not.
+  const code = gate.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /no healthy AI route|died before Preview/);
+});
+
 test('the deterministic readiness gate stays free of browser and model calls', () => {
   const gate = read('scripts/deployed-readiness-gate.mjs');
   // Its whole value is being unambiguous: no browser, no provider spend, so a
