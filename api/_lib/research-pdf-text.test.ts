@@ -1,0 +1,102 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { extractResearchPdfText } from "./research-pdf-text.js";
+import { fetchResearchSourceText } from "./research-source-fetch.js";
+import { verifyResearchClaimEvidence } from "./research-claim-verifier.js";
+
+const SENTENCE = "Utility-scale solar generation cost less per megawatt-hour than newly built nuclear capacity.";
+
+/** A minimal, valid one-page PDF carrying the given ASCII text. */
+function buildMinimalPdf(text: string): Uint8Array {
+  const escaped = text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const stream = `BT /F1 12 Tf 72 720 Td (${escaped}) Tj ET`;
+  objects[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  objects.forEach((obj, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xrefStart = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index <= objects.length; index += 1) {
+    body += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(body, "latin1"));
+}
+
+function pdfResponse(bytes: Uint8Array, headers: Record<string, string> = {}): Response {
+  const map = new Map(Object.entries({ "content-type": "application/pdf", ...headers })
+    .map(([key, value]) => [key.toLowerCase(), value]));
+  return {
+    status: 200,
+    ok: true,
+    headers: { get: (name: string) => map.get(name.toLowerCase()) ?? null },
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    text: async () => { throw new Error("binary body"); },
+  } as unknown as Response;
+}
+
+test("a PDF's text layer extracts into searchable prose", async () => {
+  const result = await extractResearchPdfText(buildMinimalPdf(SENTENCE));
+  assert.equal(result.ok, true);
+  assert.equal(result.pages, 1);
+  assert.match(result.text || "", new RegExp(SENTENCE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("a scanned/empty PDF reports source_pdf_empty rather than guessing; garbage is unreadable", async () => {
+  const empty = await extractResearchPdfText(buildMinimalPdf(""));
+  assert.equal(empty.ok, false);
+  assert.equal(empty.reason, "source_pdf_empty");
+
+  const garbage = await extractResearchPdfText(new Uint8Array(Buffer.from("not a pdf at all")));
+  assert.equal(garbage.ok, false);
+  assert.equal(garbage.reason, "source_pdf_unreadable");
+});
+
+test("END TO END: a quote inside a fetched PDF earns a verified standing", async () => {
+  const url = "https://www.example.com/paper.pdf";
+  const fetched = await fetchResearchSourceText(
+    url,
+    (async () => pdfResponse(buildMinimalPdf(SENTENCE))) as unknown as typeof fetch,
+  );
+  assert.equal(fetched.ok, true);
+
+  const verdict = verifyResearchClaimEvidence({
+    claimId: "pdf-claim",
+    claimText: "Utility solar undercut new nuclear on cost in the surveyed markets.",
+    sourceUrl: url,
+    sourceText: fetched.text || "",
+    proposedExcerpt: SENTENCE,
+    stance: "supports",
+  });
+  assert.equal(verdict.standing, "supported");
+  assert.equal(verdict.reasonCode, "supporting_excerpt_verified_in_source");
+});
+
+test("oversized PDFs are rejected by bytes, before and after reading", async () => {
+  const declared = await fetchResearchSourceText(
+    "https://www.example.com/huge.pdf",
+    (async () => pdfResponse(buildMinimalPdf(SENTENCE), { "content-length": String(20_000_000) })) as unknown as typeof fetch,
+  );
+  assert.equal(declared.ok, false);
+  assert.equal(declared.reason, "source_pdf_too_large");
+});
+
+test("a broken PDF fetched from the web keeps its named reason on the ledger", async () => {
+  const result = await fetchResearchSourceText(
+    "https://www.example.com/broken.pdf",
+    (async () => pdfResponse(new Uint8Array(Buffer.from("%PDF-1.4 truncated garbage")))) as unknown as typeof fetch,
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "source_pdf_unreadable");
+});
