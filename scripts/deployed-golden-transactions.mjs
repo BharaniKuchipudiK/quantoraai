@@ -35,6 +35,27 @@ const health = await healthResponse.json().catch(() => ({}));
 if (!healthResponse.ok || health.ready !== true) {
   throw new Error(`Deployed inference is not executable (${healthResponse.status}): ${JSON.stringify(health)}`);
 }
+/*
+ * Fail in one second with the real cause, not in forty with a false one.
+ *
+ * On 2026-09-01 this gate failed 3/3 on PR previews as "no healthy AI route"
+ * + console 401s. The actual defect was configuration: the canary token env
+ * was scoped to Production, so the deployment did not recognize the header,
+ * mayUseServerKeys stayed false, and every canary chat turn ran keyless. The
+ * health endpoint now answers the exact question ("would this deployment
+ * honor my canary?") before any model turn is spent. Deployments older than
+ * that field cannot reach this check: the workflow checks out the deployed
+ * commit, so script and handler always travel together.
+ */
+if (health.goldenCanaryHonored !== true) {
+  throw new Error(
+    'The deployment did NOT honor the golden canary token'
+    + (health.goldenCanaryConfigured === false
+      ? ' — QUANTORA_GOLDEN_CANARY_TOKEN is not configured on this deployment. On a Vercel preview that means the env var is scoped to Production only; enable it for the Preview environment.'
+      : " — the CI secret does not match this deployment's QUANTORA_GOLDEN_CANARY_TOKEN.")
+    + ' Without it every canary chat turn runs keyless and reports a provider outage that is not real.',
+  );
+}
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
@@ -239,6 +260,95 @@ try {
     rendered: true,
     interacted: true,
     durationMs: Date.now() - websiteStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 3 — GUIDED INTAKE, the flow real users actually run.
+   *
+   * The two transactions above are specified-tool prompts that demand fenced
+   * VFS output, so the platform's #1 real ask — "help me build a website for
+   * my client's business" — was never a golden transaction, which is how the
+   * 2026-09-01 intake contradiction (a first turn ordered to output NO code,
+   * then failed for having no code) shipped and was found by a screenshot.
+   *
+   * The invariant asserted here is the one that is robust to model choice:
+   * the turn must end in EITHER an intake question (the decision modal) OR a
+   * runnable artifact — NEVER a failed turn. No goldenTransaction canary is
+   * set: this is a behavioral invariant, not an artifact-shape one, and an
+   * artifact canary would forbid the intake reply we are here to protect.
+   * Anchored on data-quantora-* hooks only (§6).
+   */
+  const intakeStartedAt = Date.now();
+  markActiveTransaction('guided-intake');
+  await page.evaluate(() => sessionStorage.removeItem('quantora_golden_transaction'));
+  const newChatForIntake = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForIntake, 'New Chat control is missing after the website transaction.', 15_000);
+  await newChatForIntake.click();
+  await prompt.fill('help me build a website for a client who is running a Boutique that is into specialized Indian Sarees like Kanjivaram, Uppada, Gadwal, and also selling ready made dresses for all ages. They also provide services like Blouse Stitching, Saree Draping, Pico and Fall, and Mehndi.');
+  await prompt.press('Enter');
+
+  const intakeModal = page.locator('[data-quantora-decision-modal="true"]').first();
+  const failedTurn = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  const intakePreview = page.locator('[data-quantora-real-project-preview="true"]').first();
+  let intakeOutcome = null;
+  let modalAnswers = 0;
+  const intakeDeadline = Date.now() + TURN_TIMEOUT_MS;
+  while (Date.now() < intakeDeadline) {
+    if (await failedTurn.isVisible().catch(() => false)) {
+      throw new Error(
+        'The guided-intake turn FAILED outright — a website ask must end in an intake question or an artifact, never a dead turn. '
+        + `Page state: ${await describePageState(page, consoleErrors)}`,
+      );
+    }
+    const previewCorrelation = await intakePreview.getAttribute('data-quantora-correlation-id').catch(() => null);
+    if (previewCorrelation && previewCorrelation !== websiteCorrelationId) {
+      intakeOutcome = intakeOutcome === 'intake-answered' ? 'intake-then-artifact' : 'direct-artifact';
+      break;
+    }
+    if (await intakeModal.isVisible().catch(() => false)) {
+      /*
+       * Answer the designer's question and keep going. Real models may need
+       * more than one round to gather the minimum brief; three answered
+       * modals without a build means intake is looping, which is its own
+       * failure worth seeing.
+       */
+      if (modalAnswers >= 3) {
+        throw new Error(
+          `Guided intake asked ${modalAnswers + 1} questions without ever building. `
+          + `Page state: ${await describePageState(page, consoleErrors)}`,
+        );
+      }
+      modalAnswers += 1;
+      intakeOutcome = 'intake-answered';
+      await page.locator('[data-quantora-decision-option]').first().click();
+      await page.waitForTimeout(500);
+      continue;
+    }
+    await page.waitForTimeout(250);
+  }
+  if (!intakeOutcome || intakeOutcome === 'intake-answered') {
+    /*
+     * An intake question that rendered is the invariant HELD, even if the
+     * follow-up build outran the clock — the class this transaction guards
+     * is the dead first turn, not build latency. But NOTHING appearing is a
+     * failure: no question, no artifact, no error is the worst outcome of
+     * all, a silent stall.
+     */
+    if (modalAnswers === 0) {
+      throw new Error(
+        `The guided-intake turn produced neither an intake question nor an artifact within ${Math.round(TURN_TIMEOUT_MS / 1000)}s. `
+        + `Page state: ${await describePageState(page, consoleErrors)}`,
+      );
+    }
+    intakeOutcome = 'intake-rendered';
+  }
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-guided-intake.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'guided-intake',
+    outcome: intakeOutcome,
+    modalAnswers,
+    durationMs: Date.now() - intakeStartedAt,
   });
   delete evidence.activeTransaction;
 
