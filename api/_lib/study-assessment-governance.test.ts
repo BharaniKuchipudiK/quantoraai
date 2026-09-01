@@ -8,6 +8,15 @@ function candidate(overrides: Partial<StudyAssessmentReleaseCandidate> = {}): St
     key: 'motion-graphs-velocity-slope',
     version: '1',
     conceptKey: 'physics.kinematics.motion-graphs',
+    prompt: 'On a displacement-time graph, what does the slope at a point represent?',
+    options: [
+      { id: 'a', text: 'Acceleration' },
+      { id: 'b', text: 'Displacement' },
+      { id: 'c', text: 'Velocity' },
+      { id: 'd', text: 'Distance travelled' },
+    ],
+    correctOptionId: 'c',
+    explanation: 'The slope is change in displacement divided by change in time, which is velocity.',
     reviewStatus: 'approved',
     releaseMode: 'reviewed_static',
     objectiveCode: 'motion-graph-displacement-slope',
@@ -68,4 +77,18 @@ test('approved content cannot issue verified evidence before corpus release', ()
   }));
   assert.equal(result.canIssueVerifiedAttempt, false);
   assert.deepEqual(result.reasonCodes, ['assessment_corpus_item_not_released']);
+});
+
+test('released approved content still fails closed when keyed answer quality is ambiguous', () => {
+  const result = verifyStudyAssessmentRelease(candidate({
+    options: [
+      { id: 'a', text: 'Velocity' },
+      { id: 'b', text: 'Velocity' },
+      { id: 'c', text: 'Acceleration' },
+    ],
+    correctOptionId: 'a',
+  }));
+  assert.equal(result.canIssueVerifiedAttempt, false);
+  assert.ok(result.reasonCodes.includes('quality_duplicate_option_text'));
+  assert.equal(result.verification?.decision, 'verified');
 });
