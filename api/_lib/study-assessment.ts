@@ -257,6 +257,16 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       evidenceConceptId,
       retentionAnchorAt,
     });
+    if (issued.status === 'conflict') {
+      return res.status(409).json({
+        error: issued.reason === 'already_active'
+          ? "This reviewed check is already active from another request. Request the check again after it expires or complete the active one."
+          : "This reviewed item was completed by another request before issuance finished. Request a new check.",
+        code: 'verified_assessment_freshness_changed',
+        reason: issued.reason,
+        retryable: true,
+      });
+    }
     if (issued.status !== "issued") {
       const migrationNeeded = evidenceKind === 'retention_probe' || evidenceKind === 'transfer';
       return res.status(503).json({
