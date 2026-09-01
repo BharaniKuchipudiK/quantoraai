@@ -18,14 +18,14 @@
  *   over.
  */
 
+import { RESEARCH_BOARD_STEERING } from './research-board-actions.js';
+
 const SOURCE_LINE = /^\s*\d+\.\s*\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*$/;
 const SOURCES_HEADING = /^\s*(?:-{3,}\s*)?\*\*Sources\*\*\s*$/;
 const PLAN_HEADING = /^\s*\*\*Plan\*\*\s*$/;
 const MAX_PLAN_ITEMS = 5;
 const MIN_PLAN_ITEM_LENGTH = 12;
 const MAX_PLAN_ITEM_LENGTH = 200;
-/** Prompts the board's own chips send; they steer the desk, they are not the question. */
-const BOARD_PROMPT = /\bthis board\b/i;
 const MAX_SOURCES = 24;
 const MAX_FINDINGS = 8;
 const MAX_FINDINGS_PER_TURN = 3;
@@ -180,7 +180,7 @@ export function deriveResearchBrief({ messages } = {}) {
       const planIndex = plan.findIndex((item) => item.text === clean);
       if (planIndex !== -1) {
         pendingExplored = planIndex;
-      } else if (clean.length >= MIN_QUESTION_LENGTH && !BOARD_PROMPT.test(clean)) {
+      } else if (clean.length >= MIN_QUESTION_LENGTH && !RESEARCH_BOARD_STEERING.test(clean)) {
         question = clampQuestion(clean);
       }
       if (clean) sawUser = true;
