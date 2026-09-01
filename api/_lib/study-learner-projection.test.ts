@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  replayStudyLearnerProjection,
-  studyLearnerProjectionEquivalent,
-} from './study-learner-projection.js';
+import { replayStudyLearnerProjection } from './study-learner-projection.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 function evidence(index: number, observedAt: string): StudyMasteryEvidenceEvent {
@@ -51,18 +48,18 @@ test('H3.1 replay is deterministic for the same admitted ledger and clock', () =
   assert.deepEqual(left, right);
   assert.equal(left.observedThrough, '2026-09-01T00:00:00.000Z');
   assert.deepEqual(left.evidenceKinds, ['teach_back']);
+  assert.ok(left.schemaVersion.startsWith('study-learner-projection-'));
+  assert.ok(left.learnerModelVersion.startsWith('study-learner-model-'));
+  assert.ok(left.estimatorVersion.startsWith('study-mastery-estimator-'));
 });
 
-test('H3.1 equivalence ignores snapshot write time but not learner truth', () => {
+test('H3.1 replay changes when admitted learner truth changes', () => {
   const base = replayStudyLearnerProjection({
     conceptId: 'concept-projection',
     conceptKey: 'physics.kinematics.motion-graphs',
     evidence: [evidence(1, '2026-09-01T00:00:00.000Z')],
-    asOf: '2026-09-02T00:00:00.000Z',
+    asOf: replayAt,
   });
-  const laterWrite = { ...base, projectedAt: '2026-09-02T01:00:00.000Z' };
-  assert.equal(studyLearnerProjectionEquivalent(base, laterWrite), true);
-
   const changed = replayStudyLearnerProjection({
     conceptId: 'concept-projection',
     conceptKey: 'physics.kinematics.motion-graphs',
@@ -70,9 +67,10 @@ test('H3.1 equivalence ignores snapshot write time but not learner truth', () =>
       evidence(1, '2026-09-01T00:00:00.000Z'),
       evidence(2, '2026-09-01T01:00:00.000Z'),
     ],
-    asOf: '2026-09-02T01:00:00.000Z',
+    asOf: replayAt,
   });
-  assert.equal(studyLearnerProjectionEquivalent(base, changed), false);
+  assert.notDeepEqual(base, changed);
+  assert.notEqual(base.evidenceCount, changed.evidenceCount);
 });
 
 test('H3.1 replay rejects an invalid clock instead of silently using wall time', () => {
