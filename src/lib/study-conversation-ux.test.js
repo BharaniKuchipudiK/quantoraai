@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('the lesson never renders a second composer', () => {
   /*
    * This first replaced a vague "Your turn" banner with an embedded input, then
@@ -105,10 +109,15 @@ test('Study keeps exactly three permanent learner moves and moves secondary tool
   assert.match(shell, /:\s*'Check'/);
 
   for (const label of ['Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
-    assert.match(hub, new RegExp(label.replace('?', '\\?')));
+    assert.match(hub, new RegExp(escapeRegExp(label)));
   }
+  /*
+   * Check rendered button copy, not arbitrary comments or implementation prose.
+   * A raw source substring made this gate capable of failing on documentation
+   * even when no permanent secondary control existed.
+   */
   for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
-    assert.doesNotMatch(shell, new RegExp(label.replace('?', '\\?')));
+    assert.doesNotMatch(shell, new RegExp(`${escapeRegExp(label)}\\s*<\\/button>`));
   }
 
   assert.match(hub, /data-quantora-study-hub-launcher="true"/);
