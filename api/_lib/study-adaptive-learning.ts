@@ -1,6 +1,6 @@
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
-import { estimateStudyMastery } from './study-mastery-estimator.js';
-import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
+import type { StudyLearnerModel } from './study-learner-model.js';
+import { replayStudyLearnerProjection } from './study-learner-projection.js';
 import {
   applyStudyPrerequisiteNextBestAction,
   STUDY_NEXT_BEST_ACTION_VERSION,
@@ -58,12 +58,16 @@ export async function loadStudyLearnerModel(input: {
   if (!concept || concept === 'unavailable') return null;
   const evidence = await readVerifiedStudyMasteryEvidence(input.userSub, concept.id, concept.canonicalKey);
   if (!evidence) return null;
-  const estimate = estimateStudyMastery(evidence);
-  const learnerModel = buildStudyLearnerModel({ conceptId: concept.id, conceptKey: concept.canonicalKey, evidence, estimate });
+  const projection = replayStudyLearnerProjection({
+    conceptId: concept.id,
+    conceptKey: concept.canonicalKey,
+    evidence,
+    asOf: new Date().toISOString(),
+  });
   return applyStudyPrerequisiteNextBestAction({
     userSub: input.userSub,
     activeConcept: concept,
-    learnerModel,
+    learnerModel: projection.learnerModel,
   });
 }
 
