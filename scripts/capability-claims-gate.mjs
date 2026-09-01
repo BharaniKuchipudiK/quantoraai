@@ -19,6 +19,11 @@ import {
   newUnbackedClaims,
   resolvedUnbackedClaims,
 } from '../src/lib/capability-claims.js';
+import {
+  describeUnbackedToolClaims,
+  extractPlacesToolClaims,
+  findUnbackedToolClaims,
+} from '../src/lib/tool-claims.js';
 import { STUDIO_DOMAIN, studioDomainPolicy } from '../src/lib/studio-domain-policy.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,6 +32,31 @@ const onDisk = (relative) => fs.existsSync(path.join(repoRoot, relative));
 const policies = Object.fromEntries(
   Object.values(STUDIO_DOMAIN).map((domain) => [domain, studioDomainPolicy(domain)]),
 );
+
+/*
+ * Second surface, same failure: a capability chip promises a human, and a tool
+ * description promises the model. search_hotels advertised photos its field
+ * mask never requested, so the model invented a reason for their absence and
+ * the traveller read it as fact. This half of the gate reads that surface.
+ */
+const TOOL_SOURCE = path.join(repoRoot, 'api/_lib/agent-tools-core.ts');
+const parsedTools = extractPlacesToolClaims(fs.readFileSync(TOOL_SOURCE, 'utf8'));
+if (!parsedTools.ok) {
+  console.error(`\nCapability claims gate FAILED — could not read tool definitions from api/_lib/agent-tools-core.ts.`);
+  console.error(`
+The gate parses that file for tool descriptions and field masks. Finding none
+means the file's shape changed, NOT that every claim is honest — so this fails
+rather than reporting a clean run over nothing. Update extractPlacesToolClaims
+in src/lib/tool-claims.js to match the new shape.
+`);
+  process.exit(1);
+}
+
+const toolFindings = findUnbackedToolClaims(parsedTools.places, parsedTools.fieldMask);
+if (toolFindings.length) {
+  console.error(`\n${describeUnbackedToolClaims(toolFindings)}\n`);
+  process.exit(1);
+}
 
 const unbacked = findUnbackedCapabilities(policies, onDisk);
 const added = newUnbackedClaims(unbacked);
@@ -56,5 +86,6 @@ if (resolved.length) process.exit(1);
 
 console.log(
   `Capability claims gate passed — every advertised capability is answerable`
-  + ` (${KNOWN_UNBACKED_CLAIMS.length} known painted door(s) held at baseline).`,
+  + ` (${KNOWN_UNBACKED_CLAIMS.length} known painted door(s) held at baseline),`
+  + ` and ${parsedTools.places.length} Places-backed tool description(s) promise only fields the request asks for.`,
 );
