@@ -153,7 +153,8 @@ async function decomposeWithGemini(question: string, geminiKey: string): Promise
   }
 }
 
-async function groundedAnswerWithGemini(subQuestion: string, geminiKey: string): Promise<DeepDiveGroundedAnswer> {
+/** One grounded lookup. Shared with the watch sweep, which re-checks standing questions. */
+export async function groundedAnswerWithGemini(subQuestion: string, geminiKey: string): Promise<DeepDiveGroundedAnswer> {
   const client = new GoogleGenAI({ apiKey: geminiKey });
   const model = await pickGeminiFlash(client);
   const result = await client.models.generateContent({

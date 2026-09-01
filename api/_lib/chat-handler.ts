@@ -21,6 +21,14 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
+import {
+  acknowledgeResearchWatch,
+  createResearchWatch,
+  deleteResearchWatch,
+  isResearchWatchStoreConfigured,
+  listResearchWatches,
+  normalizeWatchQuestion,
+} from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -555,9 +563,10 @@ export default async function handler(req: any, res: any) {
     const isVerifyTask = task === "verify-build";
     const isResearchVerifyTask = task === "research-verify";
     const isResearchDeepDiveTask = task === "research-deep-dive";
+    const isResearchWatchTask = task === "research-watch";
     // Tasks that carry code, claims or a bare question instead of a chat
     // message, and so skip the message/session/safety validation below.
-    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask || isResearchDeepDiveTask;
+    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask || isResearchDeepDiveTask || isResearchWatchTask;
 
     if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
@@ -728,6 +737,53 @@ export default async function handler(req: any, res: any) {
       } catch (err: any) {
         console.error("Error in /api/chat research-deep-dive task:", err);
         return res.status(500).json({ error: err?.message || "Deep dive failed." });
+      }
+    }
+
+    if (isResearchWatchTask) {
+      // Standing-question watches are per-account state: signed-in only,
+      // research desk only, and every op is scoped to the caller's sub.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Watches live on the research desk only." });
+      }
+      if (!activeSessionUser?.sub) {
+        return res.status(401).json({ error: "Sign in to watch a question.", requiresAuth: true });
+      }
+      if (!isResearchWatchStoreConfigured()) {
+        return res.status(503).json({ error: "Watches are not available right now." });
+      }
+      const op = req.body?.op;
+      try {
+        if (op === "list") {
+          const watches = await listResearchWatches(activeSessionUser.sub);
+          return res.status(200).json({
+            watches: watches.map((watch) => ({
+              question: watch.question,
+              changed: watch.changed === true,
+              changeNote: watch.change_note || "",
+              lastCheckedAt: watch.last_checked_at,
+            })),
+          });
+        }
+        const question = normalizeWatchQuestion(req.body?.question);
+        if (!question) return res.status(400).json({ error: "A watchable question is required." });
+        if (op === "create") {
+          const created = await createResearchWatch(activeSessionUser.sub, question);
+          if (!created.ok) return res.status(409).json({ error: created.error });
+          return res.status(200).json({ watched: true });
+        }
+        if (op === "delete") {
+          await deleteResearchWatch(activeSessionUser.sub, question);
+          return res.status(200).json({ watched: false });
+        }
+        if (op === "ack") {
+          await acknowledgeResearchWatch(activeSessionUser.sub, question);
+          return res.status(200).json({ acknowledged: true });
+        }
+        return res.status(400).json({ error: "Unknown watch operation." });
+      } catch (err: any) {
+        console.error("Error in /api/chat research-watch task:", err);
+        return res.status(500).json({ error: err?.message || "The watch operation failed." });
       }
     }
 
