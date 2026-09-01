@@ -58,8 +58,24 @@ export function formatTravelPlaceShortlist(places = [], { heading = 'Live stays 
        * that only ever went to Maps.
        */
       const photo = String(place.photoUrl || '').trim();
-      const credit = String(place.photoAttribution || '').trim();
-      const image = photo ? `\n   ![${name}](${photo})${credit ? `\n   *Photo: ${credit}*` : ''}` : '';
+      /*
+       * Places policy requires the photo's author to be credited using the
+       * author resources available, AND that the reader can always reach the
+       * individual source photo on Google Maps. A bare name satisfies neither
+       * half, so the credit links the author where Google gave us a profile
+       * and always offers the Maps source when it gave us one.
+       */
+      const credit = place.photoCredit || null;
+      const author = String(credit?.displayName || '').trim();
+      const authorUri = String(credit?.authorUri || '').trim();
+      const source = String(credit?.googleMapsUri || '').trim();
+      const creditParts = [
+        author ? (authorUri ? `[${author}](${authorUri})` : author) : null,
+        source ? `[source on Google Maps](${source})` : null,
+      ].filter(Boolean);
+      const image = photo && creditParts.length
+        ? `\n   ![${name}](${photo})\n   *Photo: ${creditParts.join(' · ')}*`
+        : '';
       const links = [
         website ? `[Website](${website})` : null,
         maps ? `[Maps](${maps})` : null,
@@ -71,11 +87,18 @@ export function formatTravelPlaceShortlist(places = [], { heading = 'Live stays 
   if (!rows.length) return '';
 
   const numbered = rows.map((row, index) => row.replace(/^1\./, `${index + 1}.`));
+  /*
+   * Places content shown outside a Google map must say where it came from.
+   * The heading already names the provider; this keeps the attribution on the
+   * block itself so it travels with the rows wherever they are pasted.
+   */
   return [
     `**${heading}**`,
     'Google user ratings, not official hotel stars. We do not check room inventory from here.',
     '',
     ...numbered,
+    '',
+    'Places data and photos from Google.',
   ].join('\n');
 }
 

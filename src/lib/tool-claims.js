@@ -40,6 +40,25 @@
  * requires. Keyed on distinctive words rather than phrases, because the
  * descriptions are prose and phrasing drifts.
  */
+/**
+ * The Places-backed tools this gate MUST be able to bind to a call site.
+ *
+ * Declarative on purpose. Discovering Places tools purely by scanning `case`
+ * blocks meant a tool whose dispatch shape changed was simply omitted: switching
+ * search_hotels to double-quoted case labels, or routing it to a shared handler,
+ * dropped THE tool this gate exists to police while `ok` stayed true and
+ * `missing` stayed empty — a clean run over two of three tools.
+ *
+ * Naming them means a tool can no longer leave the gate by accident. Adding a
+ * Places-backed tool is a deliberate line here; failing to bind one is a build
+ * failure rather than a quieter report.
+ */
+export const KNOWN_PLACES_TOOLS = Object.freeze([
+  'search_hotels',
+  'search_attractions',
+  'get_places_routing',
+]);
+
 export const PLACES_CLAIM_FIELDS = Object.freeze({
   photo: 'places.photos',
   photos: 'places.photos',
@@ -186,6 +205,13 @@ export function extractPlacesToolClaims(source = '') {
   }
 
   const missing = [...expected].filter((name) => !tools.some((tool) => tool.name === name));
-  const ok = baseMask.length > 0 && places.length > 0 && missing.length === 0;
-  return { ok, tools, places, missing, baseMask: baseMask.join(',') };
+  /*
+   * A known Places tool that could not be bound to a call site is a hole in the
+   * gate, not a tool that stopped being Places-backed. Reported separately from
+   * `missing` (which is about parsing the declaration) because the remedies
+   * differ: this one means the dispatch shape moved.
+   */
+  const unbound = KNOWN_PLACES_TOOLS.filter((name) => !places.some((tool) => tool.name === name));
+  const ok = baseMask.length > 0 && missing.length === 0 && unbound.length === 0;
+  return { ok, tools, places, missing, unbound, baseMask: baseMask.join(',') };
 }

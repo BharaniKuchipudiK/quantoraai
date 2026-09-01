@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  KNOWN_PLACES_TOOLS,
   describeUnbackedToolClaims,
   extractPlacesToolClaims,
   findUnbackedToolClaims,
@@ -135,4 +136,45 @@ test('a tool the parser cannot read fails loudly rather than passing quietly', (
   const parsed = extractPlacesToolClaims("    name: 'search_hotels',\n    somethingElse: 1,");
   assert.equal(parsed.ok, false, 'an unparsed tool must not report a clean run');
   assert.deepEqual(parsed.missing, ['search_hotels']);
+});
+
+test('WAS RED: a reshaped dispatch cannot silently drop a tool from coverage', () => {
+  /*
+   * Raised in review. Discovering Places tools purely by scanning case blocks
+   * meant a tool whose dispatch shape changed just vanished from `places` —
+   * and `ok` stayed true because the other two still parsed. A clean run over
+   * two of three tools, with the one the gate exists to police missing.
+   *
+   * Both mutations below are ordinary reformats, not sabotage.
+   */
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const source = fs.readFileSync(path.join(repoRoot, 'api/_lib/agent-tools-core.ts'), 'utf8');
+
+  const reshapes = [
+    ['double-quoted case label', source.replace("case 'search_hotels': {", 'case "search_hotels": {')],
+    ['dispatch moved to a shared handler',
+      source.replace("case 'search_hotels': {", "case 'search_hotels':\n      return handleHotels(args);\n    case '__never': {")],
+  ];
+
+  for (const [label, mutated] of reshapes) {
+    assert.notEqual(mutated, source, `${label}: the mutation must actually apply`);
+    const parsed = extractPlacesToolClaims(mutated);
+    assert.ok(
+      !parsed.places.some((tool) => tool.name === 'search_hotels'),
+      `${label}: this reshape is expected to break the binding`,
+    );
+    assert.deepEqual(parsed.unbound, ['search_hotels'], `${label}: the lost tool must be named`);
+    assert.equal(parsed.ok, false, `${label}: losing a known Places tool must fail the gate`);
+  }
+});
+
+test('every known Places tool binds to a call site today', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const parsed = extractPlacesToolClaims(
+    fs.readFileSync(path.join(repoRoot, 'api/_lib/agent-tools-core.ts'), 'utf8'),
+  );
+  assert.deepEqual(parsed.unbound, [], 'a known Places tool that cannot be bound is a hole in the gate');
+  for (const name of KNOWN_PLACES_TOOLS) {
+    assert.ok(parsed.places.some((tool) => tool.name === name), `${name} must be covered`);
+  }
 });

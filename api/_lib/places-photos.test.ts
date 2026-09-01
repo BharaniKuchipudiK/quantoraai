@@ -94,9 +94,9 @@ test('NEVER FATAL: every provider failure yields null rather than throwing', asy
 test('NEVER FATAL: a place whose photo fails is still returned, in place', async () => {
   const places = [{ name: 'Alpha' }, { name: 'Beta' }, { name: 'Gamma' }];
   const raw = [
-    { photos: [{ name: photoName(1) }] },
-    { photos: [{ name: photoName(2) }] },
-    { photos: [{ name: photoName(3) }] },
+    { photos: [{ name: photoName(1), googleMapsUri: 'https://www.google.com/maps/place/?q=1' }] },
+    { photos: [{ name: photoName(2), googleMapsUri: 'https://www.google.com/maps/place/?q=2' }] },
+    { photos: [{ name: photoName(3), googleMapsUri: 'https://www.google.com/maps/place/?q=3' }] },
   ];
   // Only the middle one resolves; the others fail in different ways.
   const fetchFn = (async (url: any) => {
@@ -117,7 +117,7 @@ test('NEVER FATAL: a place whose photo fails is still returned, in place', async
 test('BOUNDED: at most PHOTO_LIMIT photos are resolved, in one round of calls', async () => {
   const count = PHOTO_LIMIT + 5;
   const places = Array.from({ length: count }, (_, i) => ({ name: `Hotel ${i}` }));
-  const raw = Array.from({ length: count }, (_, i) => ({ photos: [{ name: photoName(i) }] }));
+  const raw = Array.from({ length: count }, (_, i) => ({ photos: [{ name: photoName(i), googleMapsUri: `https://www.google.com/maps/place/?q=${i}` }] }));
   const { fetchFn, calls } = recordingFetch({ photoUri: GOOD_URI });
 
   const result = await attachPhotoUrls(places, raw, KEY, { fetchFn });
@@ -245,20 +245,84 @@ test('SECURITY: a fragment is refused rather than normalised away', () => {
   assert.equal(safePhotoUri('https://lh3.googleusercontent.com/p/abc#frag'), null);
 });
 
-test('ATTRIBUTION: a displayed photo carries its author, as the terms require', async () => {
-  const { fetchFn } = recordingFetch({ photoUri: GOOD_URI });
-  const raw = [{ photos: [{ name: photoName(1), authorAttributions: [{ displayName: 'A. Traveller' }] }] }];
-  const result = await attachPhotoUrls([{ name: 'Alpha' }], raw, KEY, { fetchFn });
-  assert.equal(result[0].photoUrl, GOOD_URI);
-  assert.equal(result[0].photoAttribution, 'A. Traveller');
+/** A raw Places result carrying one fully-credited photo. */
+const FULL_PLACE = (n: number) => ({ photos: [FULL_PHOTO(n)] });
+
+const FULL_PHOTO = (n: number) => ({
+  name: photoName(n),
+  googleMapsUri: 'https://www.google.com/maps/place/?q=place_id:X',
+  authorAttributions: [{
+    displayName: 'A. Traveller',
+    uri: 'https://maps.google.com/maps/contrib/1234',
+    photoUri: 'https://lh3.googleusercontent.com/a/avatar',
+  }],
 });
 
-test('ATTRIBUTION: a place with no photo carries no stale attribution', async () => {
-  const fetchFn = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch;
-  const raw = [{ photos: [{ name: photoName(1), authorAttributions: [{ displayName: 'A. Traveller' }] }] }];
+test('ATTRIBUTION: the full credit Places policy requires is preserved', async () => {
+  const { fetchFn } = recordingFetch({ photoUri: GOOD_URI });
+  const result = await attachPhotoUrls([{ name: 'Alpha' }], [FULL_PLACE(1)], KEY, { fetchFn });
+  assert.equal(result[0].photoUrl, GOOD_URI);
+  // A display name alone is not a credit: policy asks for the author resources
+  // available AND direct access to the source photo on Google Maps.
+  assert.equal(result[0].photoCredit?.displayName, 'A. Traveller');
+  assert.equal(result[0].photoCredit?.authorUri, 'https://maps.google.com/maps/contrib/1234');
+  assert.equal(result[0].photoCredit?.authorPhotoUri, 'https://lh3.googleusercontent.com/a/avatar');
+  assert.match(String(result[0].photoCredit?.googleMapsUri), /google\.com\/maps/);
+});
+
+test('ATTRIBUTION: a photo with no usable credit is not displayed at all', async () => {
+  // Shipping an uncredited Places photo is the policy breach. Dropping the
+  // photo is the safe failure; showing it without a source is not.
+  const { fetchFn } = recordingFetch({ photoUri: GOOD_URI });
+  const raw = [{ photos: [{ name: photoName(1) }] }];
   const result = await attachPhotoUrls([{ name: 'Alpha' }], raw, KEY, { fetchFn });
+  assert.equal(result[0].photoUrl, null, 'no credit means no photo');
+  assert.equal(result[0].photoCredit, null);
+});
+
+test('ATTRIBUTION: a credit link on a non-Google host is refused', async () => {
+  const { fetchFn } = recordingFetch({ photoUri: GOOD_URI });
+  const raw = [{
+    photos: [{
+      name: photoName(1),
+      googleMapsUri: 'https://evil.test/maps',
+      authorAttributions: [{ displayName: 'A. Traveller', uri: 'https://evil.test/profile' }],
+    }],
+  }];
+  const result = await attachPhotoUrls([{ name: 'Alpha' }], raw, KEY, { fetchFn });
+  assert.equal(result[0].photoCredit?.authorUri, null, 'a credit link is a URL we emit too');
+  assert.equal(result[0].photoCredit?.googleMapsUri, null);
+});
+
+test('ATTRIBUTION: a place with no photo carries no stale credit', async () => {
+  const fetchFn = (async () => ({ ok: false, status: 500 })) as unknown as typeof fetch;
+  const result = await attachPhotoUrls([{ name: 'Alpha' }], [FULL_PLACE(1)], KEY, { fetchFn });
   assert.equal(result[0].photoUrl, null);
-  assert.equal(result[0].photoAttribution, null);
+  assert.equal(result[0].photoCredit, null);
+});
+
+test('BOUNDED: an oversized limit override cannot exceed PHOTO_LIMIT', async () => {
+  /*
+   * PHOTO_LIMIT used to be a default rather than a ceiling, so limit: 100 took
+   * 30 round trips out of a 30-result shortlist while the module claimed to be
+   * bounded by construction. A bound a caller can raise is a suggestion.
+   */
+  const count = 30;
+  const places = Array.from({ length: count }, (_, i) => ({ name: `Hotel ${i}` }));
+  const raw = Array.from({ length: count }, (_, i) => FULL_PLACE(i));
+  const { fetchFn, calls } = recordingFetch({ photoUri: GOOD_URI });
+
+  await attachPhotoUrls(places, raw, KEY, { fetchFn, limit: 100 });
+
+  assert.equal(calls.length, PHOTO_LIMIT, `limit:100 must still cost only ${PHOTO_LIMIT} round trips`);
+});
+
+test('BOUNDED: a caller may still lower the limit', async () => {
+  const places = Array.from({ length: 10 }, (_, i) => ({ name: `Hotel ${i}` }));
+  const raw = Array.from({ length: 10 }, (_, i) => FULL_PLACE(i));
+  const { fetchFn, calls } = recordingFetch({ photoUri: GOOD_URI });
+  await attachPhotoUrls(places, raw, KEY, { fetchFn, limit: 1 });
+  assert.equal(calls.length, 1, 'the option only ever lowers the ceiling');
 });
 
 test('CIRCUIT: a photo request is recognisable as a photo, not a search', async () => {

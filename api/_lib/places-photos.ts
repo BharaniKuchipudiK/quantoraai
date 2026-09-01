@@ -188,21 +188,64 @@ export function firstPhotoName(place: any): string | null {
   return null;
 }
 
+/** Structured credit for one displayed Places photo. */
+export interface PhotoCredit {
+  /** The contributing author's name, as Google supplies it. */
+  displayName: string | null;
+  /** The author's profile URI, so the credit can link to them. */
+  authorUri: string | null;
+  /** The author's avatar, when Google supplies one. */
+  authorPhotoUri: string | null;
+  /** Direct access to the individual source photo on Google Maps. */
+  googleMapsUri: string | null;
+}
+
+/** Only Google's own hosts may appear in a credit link. */
+const CREDIT_HOSTS = /(^|\.)(google\.com|goo\.gl|googleusercontent\.com|maps\.app\.goo\.gl)$/;
+
+/** A credit link is still a URL we emit, so it gets the same treatment. */
+function safeCreditUri(value: unknown): string | null {
+  const raw = String(value || '').trim();
+  if (!raw || /[\s\u0000-\u001F\u007F]/.test(raw)) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:') return null;
+    if (!CREDIT_HOSTS.test(url.hostname)) return null;
+    if (url.username || url.password) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The attribution Google requires alongside a displayed Places photo.
+ * The attribution Google REQUIRES alongside a displayed Places photo.
  *
- * Not decoration: displaying Places photo content without its attribution
- * breaches the Maps Platform terms, and the key that serves photos also serves
- * Text Search and Routes — so a compliance action takes hotel search,
- * attractions and routing down together, not just pictures.
+ * Not decoration, and not just a name. Places policy requires that photo
+ * authors are credited using the author resources available, and that end users
+ * always have direct access to the individual source photo on Google Maps via
+ * its googleMapsUri. An earlier version kept only authorAttributions[0]
+ * .displayName and dropped the author link, the avatar and the Maps URI —
+ * which is an incomplete credit, not a light one.
+ *
+ * The stakes are not cosmetic: the key that serves photos also serves Text
+ * Search and Routes, so a compliance action takes hotel search, attractions and
+ * routing down together.
  */
-export function firstPhotoAttribution(place: any): string | null {
+export function firstPhotoCredit(place: any): PhotoCredit | null {
   const photos = Array.isArray(place?.photos) ? place.photos : [];
   for (const photo of photos) {
     if (!isValidPhotoName(typeof photo?.name === 'string' ? photo.name.trim() : '')) continue;
-    const authors = Array.isArray(photo?.authorAttributions) ? photo.authorAttributions : [];
-    const name = String(authors[0]?.displayName || '').trim();
-    if (name) return name.slice(0, 120);
+    const author = (Array.isArray(photo?.authorAttributions) ? photo.authorAttributions : [])[0] || {};
+    const displayName = String(author?.displayName || '').trim().slice(0, 120) || null;
+    const googleMapsUri = safeCreditUri(photo?.googleMapsUri);
+    if (!displayName && !googleMapsUri) continue;
+    return {
+      displayName,
+      authorUri: safeCreditUri(author?.uri),
+      authorPhotoUri: safeCreditUri(author?.photoUri),
+      googleMapsUri,
+    };
   }
   return null;
 }
@@ -272,17 +315,24 @@ export async function attachPhotoUrls<T extends Record<string, any>>(
   rawPlaces: any[],
   apiKey: string | null | undefined,
   options: { fetchFn?: typeof fetch; timeoutMs?: number; limit?: number } = {},
-): Promise<Array<T & { photoUrl: string | null; photoAttribution: string | null }>> {
+): Promise<Array<T & { photoUrl: string | null; photoCredit: PhotoCredit | null }>> {
   const list = Array.isArray(places) ? places : [];
   const raw = Array.isArray(rawPlaces) ? rawPlaces : [];
   const withNull = list.map((place) => ({
     ...place,
     photoUrl: null as string | null,
-    photoAttribution: null as string | null,
+    photoCredit: null as PhotoCredit | null,
   }));
   if (!apiKey || !withNull.length) return withNull;
 
-  const limit = Math.max(0, options.limit ?? PHOTO_LIMIT);
+  /*
+   * PHOTO_LIMIT is a CEILING, not a default. It used to be
+   * `Math.max(0, options.limit ?? PHOTO_LIMIT)`, so any caller could pass
+   * limit: 100 and take 30 round trips out of a 30-result shortlist while the
+   * file claimed "bounded by construction". A bound a caller can raise is a
+   * suggestion; the option now only ever lowers it.
+   */
+  const limit = Math.min(PHOTO_LIMIT, Math.max(0, options.limit ?? PHOTO_LIMIT));
   const targets: Array<{ index: number; name: string }> = [];
   for (let index = 0; index < withNull.length && targets.length < limit; index += 1) {
     const name = firstPhotoName(raw[index]);
@@ -298,9 +348,13 @@ export async function attachPhotoUrls<T extends Record<string, any>>(
   let resolvedCount = 0;
   for (const { index, uri } of resolved) {
     if (uri) {
+      // Credit travels with the photo, or the photo does not ship: a displayed
+      // Places photo without its attribution and Maps source link is a policy
+      // breach, so the two are set together and never independently.
+      const credit = firstPhotoCredit(raw[index]);
+      if (!credit) continue;
       withNull[index].photoUrl = uri;
-      // Attribution travels with the photo or the photo does not ship.
-      withNull[index].photoAttribution = firstPhotoAttribution(raw[index]);
+      withNull[index].photoCredit = credit;
       resolvedCount += 1;
     }
   }
