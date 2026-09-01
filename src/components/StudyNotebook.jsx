@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, BookOpenText, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import {
   createStudyNotebookNote,
@@ -7,6 +7,8 @@ import {
   updateStudyNotebookNote,
 } from '../lib/study-notebook-client.js';
 import './study-notebook.css';
+
+const NOTE_LIMIT = 200;
 
 function blankDraft(topic) {
   return {
@@ -43,7 +45,7 @@ function formatUpdated(value) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
 }
 
-export default function StudyNotebook({ topic, onClose }) {
+export default function StudyNotebook({ topic, onClose, registerCloseGuard }) {
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [notes, setNotes] = useState([]);
@@ -52,6 +54,12 @@ export default function StudyNotebook({ topic, onClose }) {
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [saveState, setSaveState] = useState('idle');
   const lastSavedRef = useRef('');
+  const draftRef = useRef(draft);
+  const savePromiseRef = useRef(null);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   const load = async () => {
     setStatus('loading');
@@ -62,10 +70,12 @@ export default function StudyNotebook({ topic, onClose }) {
       if (loaded.length > 0) {
         const first = draftFromNote(loaded[0]);
         setDraft(first);
+        draftRef.current = first;
         lastSavedRef.current = signature(first);
       } else {
         const empty = blankDraft(topic);
         setDraft(empty);
+        draftRef.current = empty;
         lastSavedRef.current = signature(empty);
       }
       setStatus('ready');
@@ -79,6 +89,47 @@ export default function StudyNotebook({ topic, onClose }) {
     load();
   }, []);
 
+  const flushPendingSave = useCallback(async () => {
+    for (let pass = 0; pass < 3; pass += 1) {
+      const current = draftRef.current;
+      const currentSignature = signature(current);
+      if (!current.id || currentSignature === lastSavedRef.current) return true;
+      if (!current.subject.trim() || !current.title.trim()) {
+        setSaveState('needs-fields');
+        setError('Add a subject and title before leaving this note.');
+        return false;
+      }
+
+      if (savePromiseRef.current) {
+        try {
+          await savePromiseRef.current;
+        } catch {
+          return false;
+        }
+        continue;
+      }
+
+      setSaveState('saving');
+      setError('');
+      const requestSignature = currentSignature;
+      const request = updateStudyNotebookNote(current);
+      savePromiseRef.current = request;
+      try {
+        const saved = await request;
+        lastSavedRef.current = requestSignature;
+        setNotes((existing) => [saved, ...existing.filter((note) => note.id !== saved.id)]);
+        setSaveState(signature(draftRef.current) === requestSignature ? 'saved' : 'pending');
+      } catch (saveError) {
+        setError(saveError?.message || 'Your note could not be saved right now.');
+        setSaveState('error');
+        return false;
+      } finally {
+        if (savePromiseRef.current === request) savePromiseRef.current = null;
+      }
+    }
+    return signature(draftRef.current) === lastSavedRef.current;
+  }, []);
+
   useEffect(() => {
     if (status !== 'ready' || !draft.id) return undefined;
     const nextSignature = signature(draft);
@@ -89,21 +140,16 @@ export default function StudyNotebook({ topic, onClose }) {
     }
 
     setSaveState('pending');
-    const timer = window.setTimeout(async () => {
-      const requestSignature = signature(draft);
-      setSaveState('saving');
-      try {
-        const saved = await updateStudyNotebookNote(draft);
-        lastSavedRef.current = requestSignature;
-        setNotes((current) => [saved, ...current.filter((note) => note.id !== saved.id)]);
-        setSaveState(signature(draft) === requestSignature ? 'saved' : 'pending');
-      } catch (saveError) {
-        setError(saveError?.message || 'Your note could not be saved right now.');
-        setSaveState('error');
-      }
+    const timer = window.setTimeout(() => {
+      void flushPendingSave();
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [draft, status]);
+  }, [draft, status, flushPendingSave]);
+
+  useEffect(() => {
+    if (!registerCloseGuard) return undefined;
+    return registerCloseGuard(flushPendingSave);
+  }, [flushPendingSave, registerCloseGuard]);
 
   const subjects = useMemo(
     () => [...new Set(notes.map((note) => String(note.subject || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
@@ -120,17 +166,25 @@ export default function StudyNotebook({ topic, onClose }) {
     });
   }, [notes, search, subjectFilter]);
 
-  const selectNote = (note) => {
+  const selectNote = async (note) => {
+    if (!(await flushPendingSave())) return;
     const next = draftFromNote(note);
     setDraft(next);
+    draftRef.current = next;
     lastSavedRef.current = signature(next);
     setSaveState('idle');
     setError('');
   };
 
-  const startNew = () => {
+  const startNew = async () => {
+    if (notes.length >= NOTE_LIMIT) {
+      setError(`Notebook supports up to ${NOTE_LIMIT} notes. Delete an older note before creating another.`);
+      return;
+    }
+    if (!(await flushPendingSave())) return;
     const next = blankDraft(topic);
     setDraft(next);
+    draftRef.current = next;
     lastSavedRef.current = signature(next);
     setSaveState('idle');
     setError('');
@@ -138,6 +192,10 @@ export default function StudyNotebook({ topic, onClose }) {
 
   const createNote = async () => {
     if (!draft.subject.trim() || !draft.title.trim()) return;
+    if (notes.length >= NOTE_LIMIT) {
+      setError(`Notebook supports up to ${NOTE_LIMIT} notes. Delete an older note before creating another.`);
+      return;
+    }
     setSaveState('saving');
     setError('');
     try {
@@ -145,6 +203,7 @@ export default function StudyNotebook({ topic, onClose }) {
       const next = draftFromNote(created);
       setNotes((current) => [created, ...current]);
       setDraft(next);
+      draftRef.current = next;
       lastSavedRef.current = signature(next);
       setSaveState('saved');
     } catch (createError) {
@@ -155,7 +214,7 @@ export default function StudyNotebook({ topic, onClose }) {
 
   const removeNote = async () => {
     if (!draft.id) {
-      startNew();
+      await startNew();
       return;
     }
     if (!window.confirm('Delete this note?')) return;
@@ -165,13 +224,30 @@ export default function StudyNotebook({ topic, onClose }) {
       await deleteStudyNotebookNote(draft.id);
       const remaining = notes.filter((note) => note.id !== draft.id);
       setNotes(remaining);
-      if (remaining.length > 0) selectNote(remaining[0]);
-      else startNew();
+      if (remaining.length > 0) {
+        const next = draftFromNote(remaining[0]);
+        setDraft(next);
+        draftRef.current = next;
+        lastSavedRef.current = signature(next);
+        setSaveState('idle');
+      } else {
+        const next = blankDraft(topic);
+        setDraft(next);
+        draftRef.current = next;
+        lastSavedRef.current = signature(next);
+        setSaveState('idle');
+      }
     } catch (deleteError) {
       setError(deleteError?.message || 'Your note could not be deleted right now.');
       setSaveState('error');
     }
   };
+
+  const leaveNotebook = async () => {
+    if (await flushPendingSave()) onClose?.();
+  };
+
+  const atNoteLimit = notes.length >= NOTE_LIMIT;
 
   return (
     <section className="study-h1-notebook" aria-labelledby="quantora-study-notebook-title" data-quantora-study-notebook="true">
@@ -180,7 +256,7 @@ export default function StudyNotebook({ topic, onClose }) {
           <div id="quantora-study-notebook-title" className="study-h1-hub__title">Notebook</div>
           <div className="study-h1-hub__topic">Your private Study notes</div>
         </div>
-        <button type="button" className="study-h1-icon-button" aria-label="Back to Study tools" onClick={onClose}>
+        <button type="button" className="study-h1-icon-button" aria-label="Back to Study tools" onClick={() => void leaveNotebook()}>
           <ArrowLeft size={16} />
         </button>
       </div>
@@ -200,9 +276,10 @@ export default function StudyNotebook({ topic, onClose }) {
       {status === 'ready' ? (
         <div className="study-h1-notebook__workspace">
           <aside className="study-h1-notebook__rail" aria-label="Your notes">
-            <button type="button" className="study-h1-action study-h1-notebook__new" onClick={startNew}>
+            <button type="button" className="study-h1-action study-h1-notebook__new" onClick={() => void startNew()} disabled={atNoteLimit}>
               <Plus size={14} aria-hidden="true" /> New note
             </button>
+            {atNoteLimit ? <div className="study-h1-notebook__limit" role="status">{NOTE_LIMIT} note limit reached. Delete a note to add another.</div> : null}
             <label className="study-h1-notebook__search">
               <Search size={14} aria-hidden="true" />
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" aria-label="Search notes" />
@@ -220,7 +297,7 @@ export default function StudyNotebook({ topic, onClose }) {
                   key={note.id}
                   className="study-h1-notebook__note"
                   aria-current={draft.id === note.id ? 'true' : undefined}
-                  onClick={() => selectNote(note)}
+                  onClick={() => void selectNote(note)}
                 >
                   <strong>{note.title}</strong>
                   <span>{note.subject}{note.topic ? ` · ${note.topic}` : ''}</span>
@@ -269,7 +346,7 @@ export default function StudyNotebook({ topic, onClose }) {
                 {draft.id ? (
                   <button type="button" className="study-h1-icon-button" aria-label="Delete note" onClick={removeNote}><Trash2 size={15} /></button>
                 ) : (
-                  <button type="button" className="study-h1-action study-h1-action--primary" disabled={!draft.subject.trim() || !draft.title.trim() || saveState === 'saving'} onClick={createNote}>Create note</button>
+                  <button type="button" className="study-h1-action study-h1-action--primary" disabled={!draft.subject.trim() || !draft.title.trim() || saveState === 'saving' || atNoteLimit} onClick={createNote}>Create note</button>
                 )}
               </div>
             </div>
