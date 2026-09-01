@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { fetchApiGatewayKey } from './autocomplete';
+import { fetchApiGatewayKey } from './autocomplete.js';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
