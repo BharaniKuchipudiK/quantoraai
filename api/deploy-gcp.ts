@@ -6,12 +6,27 @@ import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } 
 import deployStatus from './_lib/handlers/deploy-status.js';
 import { fetchWithTimeout } from './_lib/fetch-timeout.js';
 import { GoogleAuth } from 'google-auth-library';
-import archiver from 'archiver';
+/*
+ * archiver v8 is ESM and exports { Archiver, JsonArchive, TarArchive,
+ * ZipArchive } — there is no default export. This file still used the v6/v7
+ * CJS call form, `import archiver from 'archiver'` + archiver('zip', ...),
+ * so after the v8 upgrade the module failed to LINK:
+ *
+ *   SyntaxError: The requested module 'archiver' does not provide an export
+ *   named 'default'
+ *
+ * That kills the function before its handler runs, so every Cloud Run deploy
+ * from the desk (LivePreviewCanvas posts here) answered
+ * FUNCTION_INVOCATION_FAILED. Found by the deployed readiness gate on its
+ * first run; a typecheck cannot see it because the TS types still describe a
+ * callable default.
+ */
+import { ZipArchive } from 'archiver';
 import { Writable } from 'stream';
 
 const zipVFS = async (vfs: Record<string, { content: string }>): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
     const chunks: Buffer[] = [];
     const stream = new Writable({
       write(chunk, encoding, next) {

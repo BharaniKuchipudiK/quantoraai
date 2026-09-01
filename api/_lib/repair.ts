@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { formatJobCardForRepair } from "../../src/lib/studio-job-card.js";
+import { formatAttemptMemory } from "../../shared/refinement-loop.js";
 import { fetchWithTimeout } from "./fetch-timeout.js";
 import { tokenizeDataUris, restoreDataUris } from "./model-payload.js";
 
@@ -18,7 +19,7 @@ export const MAX_REPAIR_CODE_LENGTH = 200_000;
 // Stable, broadly-available coding model. Overridable per call.
 const DEFAULT_REPAIR_MODEL = "deepseek/deepseek-chat";
 
-export function buildRepairPrompt(code: string, error: string, framework: string, job?: unknown) {
+export function buildRepairPrompt(code: string, error: string, framework: string, job?: unknown, attempts?: unknown) {
   const kind = framework === "react" ? "React component (a single /App.js module)" : "self-contained HTML document";
   const jobBlock = formatJobCardForRepair(job);
   const system =
@@ -31,7 +32,14 @@ export function buildRepairPrompt(code: string, error: string, framework: string
     (framework === "react"
       ? `The module must default-export a React component and must not import anything that is not available.`
       : `The document must remain fully self-contained: all CSS and JS inline, no external build step, no bare module imports.`);
-  const user = `${jobBlock ? `${jobBlock}\n\n` : ""}RUNTIME ERROR:\n${error}\n\nCURRENT CODE:\n${code}`;
+  /*
+   * What earlier rounds already tried. Without it every round re-reads the
+   * same page and the same complaint, so the model proposes the same fix and
+   * the user pays again for the same result — which is why repeated repair
+   * used to be worse than a single attempt.
+   */
+  const memoryBlock = formatAttemptMemory(Array.isArray(attempts) ? attempts : []);
+  const user = `${jobBlock ? `${jobBlock}\n\n` : ""}${memoryBlock ? `${memoryBlock}\n\n` : ""}RUNTIME ERROR:\n${error}\n\nCURRENT CODE:\n${code}`;
   return { system, user };
 }
 
@@ -105,6 +113,8 @@ export async function repairArtifact(opts: {
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
+  /** Verification results so far, oldest first — see shared/refinement-loop.js */
+  attempts?: Array<{ score?: number; passed?: boolean; issues?: string[] }>;
 }): Promise<{ code: string; unchanged: boolean }> {
   const { code, error, job, openRouterKey, geminiKey, model } = opts;
   const framework = opts.framework === "react" ? "react" : "html";
@@ -126,7 +136,7 @@ export async function repairArtifact(opts: {
   // error, and the model is told to preserve images — a token is far easier to
   // return intact than a 100KB blob. We restore the originals from the result.
   const { tokenized, assets } = tokenizeDataUris(code);
-  const { system, user } = buildRepairPrompt(tokenized, errText, framework, job);
+  const { system, user } = buildRepairPrompt(tokenized, errText, framework, job, opts.attempts);
 
   const fixed = openRouterKey
     ? await repairWithOpenRouter(openRouterKey, model || DEFAULT_REPAIR_MODEL, system, user)
