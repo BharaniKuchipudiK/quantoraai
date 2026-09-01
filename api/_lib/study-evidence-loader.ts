@@ -3,10 +3,10 @@ import {
   type StudyAssessmentAttemptReceipt,
 } from './study-evidence-admission.js';
 import { findStudyAssessmentItem } from './study-assessment-items.js';
+import { readStudySupabaseRows } from './study-supabase.js';
 import { readStudyMasteryEvidence } from './store.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-const VALIDATION_TIMEOUT_MS = 4_000;
 const MIN_TRANSFER_CONFIDENCE = 0.8;
 const ATTEMPT_REF = /^attempt:([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const ASSESSMENT_BACKED_KINDS = new Set<StudyEvidenceKind>([
@@ -31,32 +31,6 @@ type AttemptRow = {
   correct: boolean;
   score: number;
 };
-
-function config() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return { url: url.replace(/\/+$/, ''), key };
-}
-
-async function readRows(cfg: { url: string; key: string }, path: string): Promise<any[] | null> {
-  try {
-    const response = await fetch(`${cfg.url}/rest/v1/${path}`, {
-      method: 'GET',
-      headers: {
-        apikey: cfg.key,
-        Authorization: `Bearer ${cfg.key}`,
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(VALIDATION_TIMEOUT_MS),
-    });
-    if (!response.ok) return null;
-    const parsed = await response.json();
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return null;
-  }
-}
 
 function normalizedEvidenceKind(value: unknown): StudyEvidenceKind {
   return typeof value === 'string' && ASSESSMENT_BACKED_KINDS.has(value as StudyEvidenceKind)
@@ -122,7 +96,6 @@ function attemptReceipt(
 }
 
 async function validatedTransferTargets(
-  cfg: { url: string; key: string },
   sourceConceptId: string,
   targetConceptIds: string[],
 ): Promise<Set<string> | null> {
@@ -131,9 +104,9 @@ async function validatedTransferTargets(
   const targetFilter = uniqueTargets.length === 1
     ? `target_concept_id=eq.${encodeURIComponent(uniqueTargets[0])}`
     : `target_concept_id=in.(${uniqueTargets.map((id) => encodeURIComponent(id)).join(',')})`;
-  const rows = await readRows(
-    cfg,
+  const rows = await readStudySupabaseRows(
     `study_concept_edges?select=target_concept_id,confidence&relation=eq.supports_transfer_to&source_concept_id=eq.${encodeURIComponent(sourceConceptId)}&${targetFilter}&confidence=gte.${MIN_TRANSFER_CONFIDENCE}&limit=${uniqueTargets.length}`,
+    { operation: 'transfer_edge_validation' },
   );
   if (rows === null) return null;
   return new Set(rows
@@ -163,17 +136,20 @@ export async function readVerifiedStudyMasteryEvidence(
   const assessmentBackedEvents = events.filter((event) => ASSESSMENT_BACKED_KINDS.has(event.kind));
   if (!assessmentBackedEvents.length) return events;
 
-  const cfg = config();
-  if (!cfg) return null;
-
   // Prefer the V7 receipt shape. If the migration has not landed yet, fall back
   // to the legacy assessment-only shape so ordinary verified checks keep
   // working while retention/transfer remain fail-closed.
   const v7Path = `study_assessment_attempts?select=id,concept_id,evidence_concept_id,evidence_kind,retention_anchor_at,item_key,item_version,submitted_option_id,submitted_at,correct,score&user_sub=eq.${encodeURIComponent(userSub)}&or=(concept_id.eq.${encodeURIComponent(conceptId)},evidence_concept_id.eq.${encodeURIComponent(conceptId)})&submitted_at=not.is.null&order=submitted_at.desc&limit=500`;
-  let rows = await readRows(cfg, v7Path) as AttemptRow[] | null;
+  let rows = await readStudySupabaseRows(
+    v7Path,
+    { operation: 'assessment_receipt_validation_v7' },
+  ) as AttemptRow[] | null;
   if (rows === null) {
     const legacyPath = `study_assessment_attempts?select=id,concept_id,item_key,item_version,submitted_option_id,submitted_at,correct,score&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&submitted_at=not.is.null&order=submitted_at.desc&limit=500`;
-    rows = await readRows(cfg, legacyPath) as AttemptRow[] | null;
+    rows = await readStudySupabaseRows(
+      legacyPath,
+      { operation: 'assessment_receipt_validation_legacy' },
+    ) as AttemptRow[] | null;
     if (rows === null) {
       console.warn('Study assessment receipt validation unavailable.');
       return null;
@@ -191,7 +167,6 @@ export async function readVerifiedStudyMasteryEvidence(
 
   if (transferReceipts.length) {
     const validTargets = await validatedTransferTargets(
-      cfg,
       conceptId,
       transferReceipts
         .map((receipt) => receipt.itemConceptId || '')
