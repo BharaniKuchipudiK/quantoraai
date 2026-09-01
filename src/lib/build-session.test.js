@@ -47,15 +47,15 @@ test('INVARIANT: desk files are not required to stay in a build', () => {
   );
 });
 
-test('an ordinary chat session is not a build session', () => {
+test('an ordinary chat session is not a build session, but a pending build survives before the desk opens', () => {
   assert.equal(
     isBuildSessionActive({ priorUserMessages: ['what do you think of this?'], codingDeskOpen: true, isCodingRequest }),
     false,
   );
   assert.equal(
     isBuildSessionActive({ priorUserMessages: ['build me an app'], codingDeskOpen: false, isCodingRequest }),
-    false,
-    'the desk has to be open',
+    true,
+    'guided intake is intentionally pre-desk; the prior build ask is authoritative',
   );
 });
 
