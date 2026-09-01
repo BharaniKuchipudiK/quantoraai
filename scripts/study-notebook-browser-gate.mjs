@@ -134,13 +134,20 @@ try {
 
   const hub = page.locator('[data-quantora-study-hub-launcher="true"]').first();
   await visible(hub, 'Study Hub launcher is missing after a Study topic is active.', 10_000);
-  await hub.getByRole('button', { name: 'Open Study tools', exact: true }).click();
   const panel = page.locator('#quantora-study-hub-panel').first();
-  await visible(panel, 'Study Hub did not open.');
-  await panel.getByRole('button', { name: 'Notebook', exact: true }).click();
+  const openHub = async () => {
+    await hub.getByRole('button', { name: 'Open Study tools', exact: true }).click();
+    await visible(panel, 'Study Hub did not open.');
+  };
+  const openNotebook = async () => {
+    await panel.getByRole('button', { name: 'Notebook', exact: true }).click();
+    const notebook = page.locator('[data-quantora-study-notebook="true"]').first();
+    await visible(notebook, 'Study Notebook did not open from the Hub.');
+    return notebook;
+  };
 
-  const notebook = page.locator('[data-quantora-study-notebook="true"]').first();
-  await visible(notebook, 'Study Notebook did not open from the Hub.');
+  await openHub();
+  let notebook = await openNotebook();
   await visible(notebook.getByText('Personal notes do not change mastery.', { exact: true }), 'Notebook lost its mastery truth boundary.');
 
   await notebook.getByRole('button', { name: 'New note', exact: true }).click();
@@ -152,19 +159,38 @@ try {
   await visible(notebook.getByText('Saved', { exact: true }), 'Creating a Notebook note did not resolve to Saved.');
   if (writeCount !== 1) throw new Error(`Notebook create produced ${writeCount} writes instead of exactly one.`);
 
+  // P1 regression: leaving the Notebook before the 700 ms debounce expires must
+  // flush the edit rather than silently cancelling the only PATCH.
   const body = notebook.getByRole('textbox', { name: 'Note body' });
   await body.fill('Velocity is the slope of a displacement-time graph. Positive slope means positive velocity.');
-  await page.waitForFunction(() => document.querySelector('[data-quantora-study-notebook="true"]')?.textContent?.includes('Saved'), undefined, { timeout: 5000 });
-  await page.waitForTimeout(850);
-  if (writeCount !== 2) throw new Error(`Notebook autosave did not produce exactly one update (${writeCount} writes).`);
+  await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
+  await visible(panel.getByRole('button', { name: 'Assessment history', exact: true }), 'Notebook did not return to Study tools after flushing the edit.');
+  if (writeCount !== 2 || !notes[0]?.body.includes('positive velocity')) {
+    throw new Error('Notebook navigation discarded an edit inside the autosave debounce window.');
+  }
 
+  notebook = await openNotebook();
   await notebook.getByRole('textbox', { name: 'Search notes' }).fill('positive velocity');
-  await visible(notebook.getByRole('button', { name: /Velocity reminders/ }).first(), 'Notebook search did not find note body text.');
+  await visible(notebook.getByRole('button', { name: /Velocity reminders/ }).first(), 'Notebook search did not find the flushed note body text.');
+
+  // The Hub-level Escape path must honor the same close guard.
+  await notebook.getByRole('textbox', { name: 'Search notes' }).fill('');
+  await notebook.getByRole('textbox', { name: 'Note body' }).fill('Velocity is slope. Negative slope means negative velocity.');
+  await page.keyboard.press('Escape');
+  await panel.waitFor({ state: 'hidden', timeout: 5000 });
+  if (writeCount !== 3 || !notes[0]?.body.includes('negative velocity')) {
+    throw new Error('Closing Study tools with Escape discarded a pending Notebook edit.');
+  }
+
+  await openHub();
+  notebook = await openNotebook();
+  await notebook.getByRole('textbox', { name: 'Search notes' }).fill('negative velocity');
+  await visible(notebook.getByRole('button', { name: /Velocity reminders/ }).first(), 'Notebook did not reload the edit flushed by Escape.');
 
   page.once('dialog', (dialog) => dialog.accept());
   await notebook.getByRole('button', { name: 'Delete note', exact: true }).click();
   await page.waitForTimeout(150);
-  if (writeCount !== 3 || notes.length !== 0) throw new Error('Notebook delete did not remove the learner note exactly once.');
+  if (writeCount !== 4 || notes.length !== 0) throw new Error('Notebook delete did not remove the learner note exactly once.');
 
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
   await visible(panel.getByRole('button', { name: 'Assessment history', exact: true }), 'Notebook did not return to Study tools.');
