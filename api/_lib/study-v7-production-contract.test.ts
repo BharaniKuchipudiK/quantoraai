@@ -10,6 +10,12 @@ function compact(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function firstExecutableSql(value: string): string {
+  return value
+    .replace(/^\s*(?:(?:--[^\n]*(?:\n|$))|(?:\/\*[\s\S]*?\*\/\s*))*/u, '')
+    .trimStart();
+}
+
 function assertContainsAll(value: string, fragments: string[]) {
   const normalized = compact(value);
   for (const fragment of fragments) {
@@ -102,8 +108,9 @@ test('V7 runtime keeps partial-rollout fallback ordinary-only and transfer gover
 test('production canary is rollback-only and proves ordinary, replay, retention, transfer, freshness, and negative constraints', async () => {
   const canary = await repoFile('supabase/canaries/study_v7_production_canary.sql');
   const normalized = compact(canary);
+  const executable = firstExecutableSql(canary);
 
-  assert.match(canary.trim(), /^begin;/i);
+  assert.match(executable, /^begin;/i);
   assert.match(canary.trim(), /rollback;$/i);
   assert.doesNotMatch(canary, /\bcommit\s*;/i);
   assertContainsAll(canary, [
