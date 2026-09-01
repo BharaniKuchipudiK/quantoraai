@@ -56,6 +56,11 @@ create index if not exists study_assessment_attempts_evidence_concept_time_idx
   on public.study_assessment_attempts (user_sub, evidence_concept_id, submitted_at desc)
   where evidence_concept_id is not null;
 
+-- Candidate-scoped freshness reads must stay O(log n) as learner history grows.
+create index if not exists study_assessment_attempts_owner_item_submitted_idx
+  on public.study_assessment_attempts (user_sub, item_key, item_version)
+  where submitted_at is not null;
+
 -- The return shape changes in V7, so PostgreSQL requires a drop/recreate rather
 -- than CREATE OR REPLACE. The migration runs transactionally.
 drop function if exists public.complete_study_assessment_attempt(text, uuid, text, timestamptz);
