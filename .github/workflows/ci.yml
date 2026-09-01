@@ -44,6 +44,13 @@ jobs:
       - name: Lint (no-undef, frontend)
         run: npm run lint:undef
 
+      # Runs before everything: it is instant, and it catches the one class of
+      # defect that typecheck, build AND the whole suite are all blind to —
+      # a relative import with no runtime extension, which resolves fine in
+      # tsc/tsx and dies with ERR_MODULE_NOT_FOUND in production.
+      - name: Runtime import gate (imports that only fail in production)
+        run: npm run test:imports
+
       # Runs before the suite because it takes a second and catches the one
       # thing 1400 passing tests cannot: a feature that is tested and reachable
       # by nothing. Also inside test:all, so it holds locally too.
@@ -260,6 +267,16 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/coding-desk-chrome-browser-gate.mjs
 
+      # Runs early among the desk gates and takes a few seconds: it answers
+      # "is the desk alive at all" before the longer journeys spend minutes
+      # discovering the same thing three steps in.
+      - name: Execute desk rail smoke
+        id: desk_rail_smoke_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/desk-rail-smoke-browser-gate.mjs
+
       - name: Execute Preview ready not stuck (Start with 10 shop act)
         id: preview_ready_gate
         continue-on-error: true
@@ -300,11 +317,12 @@ jobs:
           DESK_CHAT_CLAIM_OUTCOME: ${{ steps.desk_chat_claim_gate.outcome }}
           CODING_DESK_FILES_OUTCOME: ${{ steps.coding_desk_files_gate.outcome }}
           CODING_DESK_CHROME_OUTCOME: ${{ steps.coding_desk_chrome_gate.outcome }}
+          DESK_RAIL_SMOKE_OUTCOME: ${{ steps.desk_rail_smoke_gate.outcome }}
           PREVIEW_READY_OUTCOME: ${{ steps.preview_ready_gate.outcome }}
           PREVIEW_SHELL_MUST_START_OUTCOME: ${{ steps.preview_shell_must_start_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME CODING_DESK_CHROME_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
             outcome="${!gate}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then
