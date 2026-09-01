@@ -6,6 +6,7 @@ import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
 // Commerce intent lives in ONE place — see src/lib/commerce-intent.js for why.
 import { briefWantsOnlineSelling, briefWantsProductCatalog } from "../../src/lib/commerce-intent.js";
 import { inspectBuildTruth } from "../../src/lib/build-truth.js";
+import { isAllowedPreviewImageUrl } from "../../src/lib/preview-images.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -209,6 +210,15 @@ export function heuristicChecks(code: string, brief = "", opts: { files?: string
  * 4xx, or a 2xx that is not an image. Timeouts and 5xx are indeterminate and
  * never fail a build, so this cannot become the next muted gate.
  */
+/** src attributes arrive HTML-encoded; the browser decodes before fetching,
+ *  so the probe must too — `&amp;sig=y` probed literally 4xx'd a URL that
+ *  loads fine in Preview (Codex P2 on PR #442). */
+function decodeHtmlAttribute(value: string): string {
+  return String(value || "").replace(/&(amp|quot|apos|lt|gt|#0*39);/gi, (whole, name) => (
+    { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" }[name.toLowerCase()] ?? "'"
+  ));
+}
+
 export function collectRemoteImageProbes(code: string, limit = 8): string[] {
   const src = String(code || "");
   const out: string[] = [];
@@ -216,7 +226,7 @@ export function collectRemoteImageProbes(code: string, limit = 8): string[] {
   const re = /\bsrc\s*=\s*["']([^"']+)["']/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) && out.length < limit) {
-    let url = m[1].trim();
+    let url = decodeHtmlAttribute(m[1].trim());
     if (url.startsWith("/api/preview-image")) {
       const idx = url.indexOf("u=");
       if (idx === -1) continue;
@@ -227,6 +237,14 @@ export function collectRemoteImageProbes(code: string, limit = 8): string[] {
       }
     }
     if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    /*
+     * SSRF guard (Codex P1 on PR #442): this markup is model/user-controlled
+     * and the probe runs server-side, so an unfiltered GET reaches cloud
+     * metadata and internal services. Only the same https allowlist the
+     * preview proxy enforces may be probed; everything else is simply not
+     * checked (the proxy will refuse to serve it anyway).
+     */
+    if (!isAllowedPreviewImageUrl(url)) continue;
     seen.add(url);
     out.push(url);
   }
@@ -248,7 +266,10 @@ export async function probeImageLiveness(
       let upstream: any;
       try {
         upstream = await fetchFn(url, {
-          redirect: "follow",
+          // Never follow server-side: a redirect could hop off the allowlist
+          // onto an internal address. A 3xx lands in the indeterminate branch
+          // below — no verdict, no request to wherever it pointed.
+          redirect: "manual",
           signal: controller.signal,
           headers: { Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
         });

@@ -312,3 +312,37 @@ test('[was-red] verifyBuild fails a catalog whose photos are dead, naming the UR
   assert.ok(report.issues.some((issue) => /photo-invented/.test(issue)), 'the dead URL reaches the repair loop by name');
   assert.equal(report.passed, false);
 });
+
+/*
+ * Codex review findings on the liveness probe (PR #442), both verified real:
+ * the prober GET any URL the artifact carried — including cloud metadata and
+ * localhost, an SSRF from model-controlled markup — and read src attributes
+ * without decoding HTML entities, so a valid `&amp;` killed signed URLs.
+ */
+
+test('[was-red] the collector refuses private, non-https, and off-allowlist targets', () => {
+  const html = '<img src="http://169.254.169.254/latest/meta-data" alt="a">'
+    + '<img src="http://localhost/x.png" alt="b">'
+    + '<img src="https://evil.example/steal.png" alt="c">'
+    + '<img src="/api/preview-image?u=http://10.0.0.5/internal.png" alt="d">'
+    + '<img src="https://images.unsplash.com/photo-ok?w=1200" alt="e">';
+  assert.deepEqual(collectRemoteImageProbes(html), ['https://images.unsplash.com/photo-ok?w=1200']);
+});
+
+test('[was-red] HTML entities in src are decoded before probing', () => {
+  const html = '<img src="https://images.unsplash.com/photo-1?w=1200&amp;q=80&amp;sig=y" alt="a">';
+  assert.deepEqual(collectRemoteImageProbes(html), ['https://images.unsplash.com/photo-1?w=1200&q=80&sig=y']);
+});
+
+test('[was-red] the probe never follows redirects — a 3xx is indeterminate, not a hop', async () => {
+  const seenOpts: any[] = [];
+  const live = await probeImageLiveness(['https://images.unsplash.com/photo-redir'], {
+    fetchFn: (async (url: string, opts: any) => {
+      seenOpts.push(opts);
+      return { status: 302, ok: false, headers: { get: () => null } };
+    }) as any,
+  });
+  assert.equal(seenOpts[0]?.redirect, 'manual', 'redirects are never followed server-side');
+  assert.equal(live.dead.length, 0);
+  assert.equal(live.indeterminate, 1);
+});
