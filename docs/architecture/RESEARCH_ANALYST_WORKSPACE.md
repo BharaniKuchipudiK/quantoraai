@@ -42,12 +42,16 @@ M unverified") is the product's honesty made legible at a glance.
    fetch cited sources, model proposes verbatim passages, deterministic
    verifier grants supported / contested / unverified standings the board
    renders per finding.
-3. **Contradiction & depth** *(planned)* — cross-source disagreement surfaced
-   as its own finding; decompose → search → synthesize through the agent
-   execution fabric for hard questions.
-4. **Deliverable & continuity** *(planned)* — export the dossier as a
-   document; persist investigations across sessions; watch a standing
-   question and surface when the evidence changes.
+3. **Contradiction & decomposition** *(shipped)* — when verified evidence
+   points both ways, the verification pass returns both passages and the
+   board renders the disagreement side by side (Supports / Disagrees), never
+   a picked winner. Broad questions open with a `**Plan**` block of
+   sub-questions the board tracks: open ones are chips that pursue the item
+   verbatim, explored ones collapse to a quiet line.
+4. **Depth, deliverable & continuity** *(planned)* — decompose → search →
+   synthesize through the agent execution fabric for hard questions; export
+   the dossier as a document; persist investigations across sessions; watch
+   a standing question and surface when the evidence changes.
 
 ## Wiring map
 
