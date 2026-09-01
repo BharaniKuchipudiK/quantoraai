@@ -61,6 +61,66 @@ create index if not exists study_assessment_attempts_owner_item_submitted_idx
   on public.study_assessment_attempts (user_sub, item_key, item_version)
   where submitted_at is not null;
 
+-- Close the read-before-insert race without burning abandoned/expired attempts.
+-- The grading RPC uses the same learner + item/version advisory-lock key below.
+-- A second concurrent issue request therefore cannot create another live copy of
+-- an item, and an item that was submitted while a caller was selecting it cannot
+-- be inserted again. Expired, never-submitted rows intentionally do not block a
+-- later fresh issuance.
+create or replace function public.guard_study_assessment_attempt_issue()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended(
+    new.user_sub || ':' || new.item_key || '@' || new.item_version,
+    0
+  ));
+
+  if exists (
+    select 1
+    from public.study_assessment_attempts
+    where user_sub = new.user_sub
+      and item_key = new.item_key
+      and item_version = new.item_version
+      and submitted_at is not null
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'study_assessment_item_already_submitted';
+  end if;
+
+  if exists (
+    select 1
+    from public.study_assessment_attempts
+    where user_sub = new.user_sub
+      and item_key = new.item_key
+      and item_version = new.item_version
+      and submitted_at is null
+      and expires_at > now()
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'study_assessment_item_already_active';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.guard_study_assessment_attempt_issue()
+  from public, anon, authenticated;
+grant execute on function public.guard_study_assessment_attempt_issue()
+  to service_role;
+
+drop trigger if exists study_assessment_attempts_issue_guard
+  on public.study_assessment_attempts;
+create trigger study_assessment_attempts_issue_guard
+  before insert on public.study_assessment_attempts
+  for each row execute function public.guard_study_assessment_attempt_issue();
+
 -- The return shape changes in V7, so PostgreSQL requires a drop/recreate rather
 -- than CREATE OR REPLACE. The migration runs transactionally.
 drop function if exists public.complete_study_assessment_attempt(text, uuid, text, timestamptz);
@@ -153,7 +213,8 @@ begin
 
   -- One reviewed item/version may contribute independent evidence only once for
   -- this learner, even if a later caller tries to relabel it as another evidence
-  -- kind or point it at another concept.
+  -- kind or point it at another concept. This lock key deliberately matches the
+  -- issuance guard above so issue-vs-grade races serialize on one boundary.
   perform pg_advisory_xact_lock(hashtextextended(
     p_user_sub || ':' || v_attempt.item_key || '@' || v_attempt.item_version,
     0
