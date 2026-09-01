@@ -2,6 +2,7 @@
 import process from 'node:process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { describePageState } from './lib/golden-page-state.mjs';
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -112,7 +113,16 @@ async function correlationForPreview(previous = null) {
     }
     await page.waitForTimeout(250);
   }
-  throw new Error('The generated artifact never reached the deployed project preview.');
+  /*
+   * Say what the page was doing, not just that it did not finish. Without
+   * this the only way to tell a failed chat turn from a slow one was to
+   * download the run artifact, which is why this gate stayed mislabelled
+   * as flaky instead of being diagnosed.
+   */
+  throw new Error(
+    `The generated artifact never reached the deployed project preview after ${Math.round(TURN_TIMEOUT_MS / 1000)}s. `
+    + `Page state at timeout: ${await describePageState(page, consoleErrors)}`,
+  );
 }
 
 async function recordInteraction(correlationId, transaction) {
@@ -140,8 +150,20 @@ function markActiveTransaction(name, correlationId = null) {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation is missing from the deployed application.', 20_000);
+  /*
+   * Anchor on the data hook, not the button's words.
+   *
+   * This used to be getByRole('button', { name: /^(AI )?Studio$/i }). The
+   * landing CTA was later reworded to "Try Quantora", so the locator matched
+   * nothing and this gate failed on EVERY run — which is what "historically
+   * flaky" in the workflow actually meant. It was not flaky; it was stale and
+   * permanently red, and being muted is why the ESM outage of 2026-08-31 went
+   * unseen. data-quantora-enter-studio is the durable contract the landing
+   * page already publishes for exactly this purpose, so copy changes can no
+   * longer silence the deployment's most valuable test.
+   */
+  const studio = page.locator('[data-quantora-enter-studio="true"]').first();
+  await visible(studio, 'The landing page never offered a way into the Studio (looked for [data-quantora-enter-studio]).', 20_000);
   await studio.click();
 
   const prompt = page.locator('.app-shell--studio textarea').first();
@@ -155,7 +177,7 @@ try {
   const calculatorCorrelationId = await correlationForPreview();
   markActiveTransaction('calculator', calculatorCorrelationId);
   const calculatorFrame = await frameWith('[data-testid="calculator-display"]');
-  if (!calculatorFrame) throw new Error('Calculator artifact compiled, but its rendered DOM never appeared.');
+  if (!calculatorFrame) throw new Error(`Calculator artifact compiled, but its rendered DOM never appeared. Page state: ${await describePageState(page, consoleErrors)}`);
   const calculatorDisplay = calculatorFrame.locator('[data-testid="calculator-display"]').first();
   if ((await calculatorDisplay.innerText()).trim() !== '0') throw new Error('Calculator rendered with the wrong initial value.');
   await calculatorFrame.locator('[data-testid="calculator-one"]').first().click();
@@ -185,7 +207,7 @@ try {
   const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   markActiveTransaction('simple-website', websiteCorrelationId);
   const websiteFrame = await frameWith('h1');
-  if (!websiteFrame) throw new Error('Website artifact compiled, but its rendered DOM never appeared.');
+  if (!websiteFrame) throw new Error(`Website artifact compiled, but its rendered DOM never appeared. Page state: ${await describePageState(page, consoleErrors)}`);
   const websiteHeading = await websiteFrame.locator('h1').first().innerText().catch(() => '');
   if (websiteHeading.trim() !== 'Sunrise Bakery') throw new Error(`Website rendered the wrong heading: ${websiteHeading}.`);
   const websiteCta = websiteFrame.locator('[data-testid="website-cta"]').first();
@@ -213,6 +235,8 @@ try {
   writeFileSync(`${ARTIFACT_DIR}/deployed-golden-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);
   await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-failure.png`, fullPage: true }).catch(() => {});
   console.error('Deployed golden transactions FAILED:', error?.stack || error);
+  // Whoever reads a failed run has the log; they may not have the artifact.
+  console.error('Deployed golden evidence:', JSON.stringify(evidence, null, 2));
   process.exitCode = 1;
 } finally {
   await browser.close();
