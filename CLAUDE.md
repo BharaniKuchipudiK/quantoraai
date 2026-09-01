@@ -173,13 +173,36 @@ becomes safely more autonomous.
 | `npm run test:imports` | imports that resolve everywhere except production |
 | `npm run test:wiring` | code that is tested and reachable by nothing |
 | `npm run test:dead-controls` | a `/api/` path the frontend calls that nothing serves |
-| `npm run test:claims` | capability claims with no backing implementation |
+| `npm run test:claims` | capability claims with no backing implementation, and tool descriptions that promise the model a field the request never asks for |
 | `scripts/deployed-readiness-gate.mjs` | a deployed function that dies before its handler runs |
 | `node --test src/lib/refinement-loop.test.js` | a repair loop that burns the user's money without improving |
 | `node --test src/lib/turn-heal-contract.test.js` | a retry identical to the attempt that failed, or terminal copy promising action in a state with no future |
 | `node scripts/guided-intake-browser-gate.mjs` | a platform that punishes the model for obeying it — an intake question flagged as a failed build, or a retry burned on a compliant answer |
 | `node --test src/lib/shop-ui-react-vfs.test.js` | the desk corrupting its own artifact — HTML injected into a React module the model shipped working |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
+
+### A tool description is a promise, and the model passes it on
+
+`search_hotels` told the model it was "REQUIRED for hotels, stays, property
+ratings, websites, Google Maps links, **or photos**" and then, in the same
+sentence, listed what it returns with photos absent. The field mask agreed with
+the second half: twelve fields, no `places.photos`.
+
+The model was instructed to use that tool for photos, got none, and improvised
+an explanation — *"I cannot render embedded photo feeds"* — which was never
+true; the chat renders markdown images fine. **A tool that over-promises does
+not merely fail to deliver: it makes the model invent a reason, and the
+invented reason is what the user reads as fact.**
+
+The capability-claims gate did not see it, because it checks the chips a
+workspace shows a *human*. A promise to the model reaches the user just as
+surely. `test:claims` now reads both surfaces.
+
+Keep that half precise, per §5: it fires only where a Places-backed description
+names a capability and no field mask in the same file requests the field —
+an unambiguous contradiction between two strings, with two stated remedies
+(request the field, or stop making the claim). And when its parse finds
+nothing, it **fails** rather than reporting a clean run over zero tools, per §4.
 
 ### Reachability is not correctness
 

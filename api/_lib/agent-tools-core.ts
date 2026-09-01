@@ -10,6 +10,7 @@ import { Duffel } from '@duffel/api';
 import { describeDoors, doorsBlocking } from '../../src/lib/capability-doors.js';
 import { defaultSerpApiKey, isSerpApiConfigured, resolveFlightProvider, searchSerpApiFlights } from './serpapi-flights.js';
 import { duffelKeyShape } from './duffel-key.js';
+import { attachPhotoUrls } from './places-photos.js';
 
 const defaultDuffelClient = process.env.DUFFEL_API_KEY
   ? new Duffel({ token: process.env.DUFFEL_API_KEY })
@@ -36,6 +37,13 @@ const GOOGLE_PLACES_FIELD_MASK = [
   'places.businessStatus',
   'places.priceLevel',
 ].join(',');
+/*
+ * Photos are requested only by the caller that advertises them. Appending
+ * places.photos to every Places call would widen the billed field set for
+ * attractions and routing lookups that never render one, so the cost is
+ * carried by the feature that uses it.
+ */
+const GOOGLE_PLACES_PHOTO_FIELD_MASK = `${GOOGLE_PLACES_FIELD_MASK},places.photos`;
 const GOOGLE_ROUTES_FIELD_MASK = [
   'routes.distanceMeters',
   'routes.duration',
@@ -83,7 +91,7 @@ export const travelFunctionDeclarations: any[] = [
   },
   {
     name: 'search_hotels',
-    description: 'REQUIRED for hotels, stays, property ratings, websites, Google Maps links, or photos. Uses Google Places API (New). Returns name, address, Google user rating, website and Maps URI. Do not use get_places_routing for hotels. Google Places does not provide date-specific room inventory or bookable rates.',
+    description: 'REQUIRED for hotels, stays, property ratings, websites, Google Maps links, or photos. Uses Google Places API (New). Returns name, address, Google user rating, website, Maps URI, and a photo URL for the first few results. Render a photo with markdown image syntax when photoUrl is present; when it is absent say nothing about photos rather than explaining their absence. Do not use get_places_routing for hotels. Google Places does not provide date-specific room inventory or bookable rates.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -186,6 +194,8 @@ async function searchGooglePlaces(
     includedType?: string;
     strictTypeFiltering?: boolean;
     pageSize?: number;
+    /** Request and resolve one photo per place, up to PHOTO_LIMIT of them. */
+    withPhotos?: boolean;
   },
 ) {
   if (!apiKey) {
@@ -219,7 +229,7 @@ async function searchGooglePlaces(
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': GOOGLE_PLACES_FIELD_MASK,
+        'X-Goog-FieldMask': options.withPhotos ? GOOGLE_PLACES_PHOTO_FIELD_MASK : GOOGLE_PLACES_FIELD_MASK,
       },
       body: JSON.stringify(body),
     });
@@ -241,7 +251,28 @@ async function searchGooglePlaces(
     }
 
     const payload: any = await response.json();
-    const places = Array.isArray(payload?.places) ? payload.places.map(normalizeGooglePlace) : [];
+    const rawPlaces = Array.isArray(payload?.places) ? payload.places : [];
+    let places = rawPlaces.map(normalizeGooglePlace);
+
+    /*
+     * A photo is an enhancement, never a dependency. Resolution runs after the
+     * shortlist already exists and is wrapped so that a timeout, a rejection or
+     * an unexpected body leaves the traveller with the stays they asked for
+     * rather than an error about pictures.
+     */
+    if (options.withPhotos && places.length) {
+      try {
+        places = await attachPhotoUrls(places, rawPlaces, apiKey, { fetchFn });
+      } catch (photoError: any) {
+        // Backstop only. attachPhotoUrls returns on every path and never
+        // throws, so this cannot fire today — the reason a photo failed is
+        // logged inside places-photos.ts, where it is actually reachable.
+        // Kept so a future change that does throw degrades instead of failing
+        // the search, not as the place to look for photo diagnostics.
+        console.error('[Google Places Photos] unexpected throw, continuing without photos:', photoError?.message || photoError);
+      }
+    }
+
     return {
       status: 'success',
       executed: true,
@@ -446,6 +477,8 @@ export async function executeToolCall(
         includedType: 'lodging',
         strictTypeFiltering: false,
         pageSize: 10,
+        // Only this tool advertises photos, so only this tool pays for them.
+        withPhotos: true,
       });
       if (result.status !== 'success') return result;
       return {
