@@ -171,20 +171,6 @@ function tidyPlace(raw) {
   return tokens.join(' ');
 }
 
-/**
- * True when tidyPlace consumed the whole phrase without cutting anything.
- *
- * "tickets to Bali" tidies to "tickets" — a fragment the board reported as the
- * destination and would have sent to Google Places as a city, with the Stays
- * chip lit. Truncation means the sentence had structure the cue list did not
- * understand, and guessing at its head is exactly how a destination gets
- * invented. Understanding none of it is the honest answer.
- */
-function isWholePhrase(raw, tidied) {
-  const rawTokens = String(raw || '').trim().split(/\s+/).filter(Boolean).length;
-  const keptTokens = tidied ? tidied.split(/\s+/).filter(Boolean).length : 0;
-  return rawTokens > 0 && rawTokens === keptTokens;
-}
 
 function isUsablePlace(place) {
   if (!place || place.length < 2) return false;
@@ -335,6 +321,12 @@ function properNounOrigin(text) {
  * without a capital. Beyond one word the phrase must carry capitals on every
  * token, because that is what separates "New York City" from "is Skyscanner
  * cheaper" without needing to know either of them.
+ *
+ * This replaces an earlier whole-phrase check that asked whether tidyPlace had
+ * cut anything. That test was written for "tickets to Bali", which tidies to
+ * the fragment "tickets" — but it also rejected "Copenhagen. thoughts?", where
+ * the cut is the correct reading. Asking what the survivor looks like answers
+ * both; asking only whether a cut happened answers neither well.
  */
 function looksLikeBareName(place) {
   const tokens = String(place || '').trim().split(/\s+/).filter(Boolean);
