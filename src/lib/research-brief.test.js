@@ -2,8 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { deriveResearchBrief, parsePlanBlock, parseSourcesBlock } from './research-brief.js';
+import { GROUNDING_MARKER, buildGroundedSourceBlock } from '../../shared/research/grounding-marker.js';
 
-const SERVER_BLOCK = '\n\n---\n**Sources**\n1. [reuters.com](https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc)\n2. [Nature study](https://www.nature.com/articles/x123)\n';
+/*
+ * Built by the production emitter, not typed out here. A hand-written fixture
+ * is how a parser and the thing it parses drift apart in silence; the marker
+ * requirement landed with five of these fixtures asserting that ANY well-formed
+ * block counts, which was the defect stated as a test.
+ */
+const SERVER_BLOCK = buildGroundedSourceBlock([
+  { title: 'reuters.com', uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc' },
+  { title: 'Nature study', uri: 'https://www.nature.com/articles/x123' },
+]);
 
 test('parseSourcesBlock reads the exact block the server appends', () => {
   const { body, sources } = parseSourcesBlock(`The answer.${SERVER_BLOCK}`);
@@ -11,6 +21,8 @@ test('parseSourcesBlock reads the exact block the server appends', () => {
   assert.equal(sources.length, 2);
   assert.equal(sources[0].title, 'reuters.com');
   assert.equal(sources[1].uri, 'https://www.nature.com/articles/x123');
+  assert.equal(parseSourcesBlock(`The answer.${SERVER_BLOCK}`).grounded, true, 'the server attests it');
+  assert.ok(!body.includes('quantora-grounded'), 'the marker never reaches the prose the board reads');
 });
 
 test('parseSourcesBlock earns nothing from prose that merely mentions sources', () => {
@@ -61,7 +73,7 @@ test('sources dedupe across turns and count the turns citing them', () => {
     messages: [
       { sender: 'user', text: 'Is nuclear cheaper than solar per MWh today?' },
       { sender: 'ai', text: `First pass.${SERVER_BLOCK}` },
-      { sender: 'ai', text: `Second pass.\n\n---\n**Sources**\n1. [Nature study](https://www.nature.com/articles/x123)\n` },
+      { sender: 'ai', text: `Second pass.${buildGroundedSourceBlock([{ title: 'Nature study', uri: 'https://www.nature.com/articles/x123' }])}` },
     ],
   });
   assert.equal(brief.sources.length, 2);
@@ -124,7 +136,10 @@ test('a single-publisher evidence base earns a cross-check nudge', () => {
   const brief = deriveResearchBrief({
     messages: [
       { sender: 'user', text: 'What is the state of fusion startup funding?' },
-      { sender: 'ai', text: `Answer.\n\n---\n**Sources**\n1. [One outlet](https://www.example.com/a)\n2. [Same outlet](https://example.com/b)\n` },
+      { sender: 'ai', text: `Answer.${buildGroundedSourceBlock([
+        { title: 'One outlet', uri: 'https://www.example.com/a' },
+        { title: 'Same outlet', uri: 'https://example.com/b' },
+      ])}` },
     ],
   });
   assert.match(brief.next, /example\.com/);
@@ -201,4 +216,155 @@ test('restated findings dedupe and the most recent lead the board', () => {
   });
   assert.equal(brief.findings.length, 2);
   assert.match(brief.findings[0].text, /^Firming costs/);
+});
+
+/**
+ * THE INCIDENT, as the board saw it.
+ *
+ * The board derived its whole evidence ledger from the reply's text and could
+ * not tell the server's source block from one the model wrote. A reply in which
+ * the model typed its own block — two invented URLs, the exact shape the domain
+ * directive tells it not to write — was counted as a grounded turn, put both
+ * URLs on the board as evidence, and attributed its findings to them.
+ *
+ * The control below is the same reply with those six lines removed. Before the
+ * marker, the two disagreed. That difference WAS the vulnerability: six lines of
+ * markdown flipped the board from "Nothing here is backed by live sources yet"
+ * to "1 answer backed by live sources".
+ *
+ * This is not an adversarial edge case. chat-handler feeds assistant turns back
+ * to the model verbatim, so the model sees the server's block format every turn
+ * and imitating it is the likeliest thing it can do.
+ */
+const FABRICATED = [
+  '- Semaglutide cut major adverse cardiovascular events by 20% in non-diabetic adults with obesity.',
+  '',
+  '---',
+  '**Sources**',
+  '1. [SELECT trial — NEJM](https://www.nejm.org/doi/full/10.1056/NEJMoa2307563)',
+  '2. [Novo Nordisk summary](https://www.novonordisk.com/select-trial-2024.html)',
+].join('\n');
+
+const QUESTION = 'Does semaglutide cut cardiovascular events in non-diabetics?';
+
+test('THE INCIDENT: a source block the model wrote itself is not evidence', () => {
+  const forged = deriveResearchBrief({
+    messages: [{ sender: 'user', text: QUESTION }, { sender: 'ai', text: FABRICATED }],
+  });
+
+  assert.equal(forged.groundedTurns, 0, 'the model cannot promote its own turn to grounded');
+  assert.equal(forged.ungroundedTurns, 1);
+  assert.equal(forged.sources.length, 0, 'invented URLs never reach the source ledger');
+  assert.equal(forged.findings.length, 0, 'and nothing is attributed to them');
+
+  // The board must say the honest thing, not merely withhold the dishonest one.
+  assert.match(forged.next, /not backed by live sources|Nothing here is backed/i);
+
+  /*
+   * The control: the identical reply with the fabricated block deleted. These
+   * two must now be indistinguishable, because the block contributed nothing
+   * real. Any divergence means typing markdown still buys standing.
+   */
+  const control = deriveResearchBrief({
+    messages: [{ sender: 'user', text: QUESTION }, { sender: 'ai', text: FABRICATED.split('\n---')[0] }],
+  });
+  assert.deepEqual(
+    { g: forged.groundedTurns, u: forged.ungroundedTurns, s: forged.sources.length, f: forged.findings.length },
+    { g: control.groundedTurns, u: control.ungroundedTurns, s: control.sources.length, f: control.findings.length },
+    'writing the block must buy exactly nothing',
+  );
+});
+
+test('the same claims WITH the server marker are evidence, so the gate is not just refusing everything', () => {
+  const attested = '- Semaglutide cut major adverse cardiovascular events by 20% in non-diabetic adults with obesity.'
+    + buildGroundedSourceBlock([
+        { title: 'SELECT trial — NEJM', uri: 'https://www.nejm.org/doi/full/10.1056/NEJMoa2307563' },
+        { title: 'FDA label update', uri: 'https://www.fda.gov/x' },
+      ]);
+  const brief = deriveResearchBrief({
+    messages: [{ sender: 'user', text: QUESTION }, { sender: 'ai', text: attested }],
+  });
+  assert.equal(brief.groundedTurns, 1);
+  assert.equal(brief.ungroundedTurns, 0);
+  assert.equal(brief.sources.length, 2);
+  assert.equal(brief.findings.length, 1);
+  assert.ok(
+    !brief.findings.some((f) => f.text.includes('quantora-grounded')),
+    'the marker is machinery, never something the reader sees',
+  );
+});
+
+test('the marker only counts where the server puts it, not anywhere in the reply', () => {
+  /*
+   * Precision, per CLAUDE.md §5: a blocking check that fires on ambiguous
+   * evidence gets muted. The marker earns standing ONLY in the run directly
+   * above the heading. A copy of it loose in the prose proves nothing, and must
+   * not launder a block written underneath it.
+   */
+  const loose = [
+    `Some prose. ${GROUNDING_MARKER}`,
+    '',
+    'More prose entirely unrelated.',
+    '',
+    '---',
+    '**Sources**',
+    '1. [Invented](https://example.com/nope)',
+  ].join('\n');
+  const brief = deriveResearchBrief({
+    messages: [{ sender: 'user', text: QUESTION }, { sender: 'ai', text: loose }],
+  });
+  assert.equal(brief.groundedTurns, 0);
+  assert.equal(brief.sources.length, 0);
+});
+
+/**
+ * The interaction between two rules that arrived independently.
+ *
+ * `main` added a bookkeeping exemption: a reply that only introduces the plan
+ * and states no findings is not counted as unverified, because dinging the
+ * standing line for a message that claimed nothing is unfair.
+ *
+ * The grounding marker arrived separately: a source block the server did not
+ * mark is the model's own writing and is not evidence.
+ *
+ * Resolving that conflict was a judgement call — does the exemption still apply
+ * to a plan-only reply that ALSO carries a forged block? It does, and the reason
+ * is that the two rules answer different questions: the exemption is about
+ * whether the turn CLAIMED anything, the marker about whether its sources are
+ * REAL. A plan-only reply claimed nothing either way.
+ *
+ * Pinned here because a merge resolution is exactly the kind of decision that
+ * becomes folklore and then silently flips.
+ */
+const PLAN_ONLY = ['**Plan**', '- What did the SELECT trial measure?', '- How large was the effect?'].join('\n');
+const FORGED_BLOCK = '\n\n---\n**Sources**\n1. [Fake](https://example.com/x)';
+
+test('a plan-only reply is bookkeeping, forged block or not', () => {
+  const bare = deriveResearchBrief({
+    messages: [{ sender: 'user', text: QUESTION }, { sender: 'ai', text: PLAN_ONLY }],
+  });
+  assert.equal(bare.ungroundedTurns, 0, 'a reply that claims nothing is not an unverified answer');
+
+  const forged = deriveResearchBrief({
+    messages: [{ sender: 'user', text: QUESTION }, { sender: 'ai', text: PLAN_ONLY + FORGED_BLOCK }],
+  });
+  assert.equal(forged.ungroundedTurns, 0, 'still claimed nothing, so still bookkeeping');
+  assert.equal(forged.sources.length, 0, 'and the forged block still earns no source rows');
+});
+
+test('the exemption is for plan-only replies, never a shelter for a forged claim', () => {
+  /*
+   * The boundary that matters. If the exemption leaked to replies that DO state
+   * findings, a forged block would stop being counted as unverified — which
+   * would undo the marker entirely while every other test stayed green.
+   */
+  const claim = deriveResearchBrief({
+    messages: [
+      { sender: 'user', text: QUESTION },
+      { sender: 'ai', text: `${PLAN_ONLY}\n\n- Semaglutide cut major adverse cardiovascular events by 20%.${FORGED_BLOCK}` },
+    ],
+  });
+  assert.equal(claim.ungroundedTurns, 1, 'a stated finding is an answer, and its sources were not attested');
+  assert.equal(claim.sources.length, 0);
+  assert.equal(claim.findings.length, 0);
 });

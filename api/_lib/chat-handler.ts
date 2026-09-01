@@ -30,6 +30,7 @@ import {
   normalizeWatchQuestion,
 } from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
+import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
 import { describeCredentialFailure, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
@@ -596,7 +597,20 @@ export default async function handler(req: any, res: any) {
         });
       }
     }
-    const boundedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS) : history;
+    /*
+     * Strip the grounding marker before ANY of this history reaches a model.
+     *
+     * The marker is what lets the Research board tell the server's source block
+     * from one the model wrote. A model that can see the marker can reproduce
+     * it, and it would see it: assistant turns go back into context verbatim,
+     * so the block format is already something it imitates. One choke point,
+     * because every inference path below reads boundedHistory — Gemini via
+     * buildGeminiContents, OpenRouter via formattedHistory — and a path that
+     * missed the strip would silently hand the marker back.
+     */
+    const boundedHistory = Array.isArray(history)
+      ? history.slice(-MAX_HISTORY_ITEMS).map(stripGroundingMarkerFromMessage)
+      : history;
 
     const auth = sessionUser ? await requireActiveSession(req, res) : null;
     if (auth && !auth.ok) return;
@@ -1502,8 +1516,7 @@ export default async function handler(req: any, res: any) {
 
       if (!usedRoute) throw lastRouteError || new Error('No inference route completed the turn.');
       if (grounding && sources.length) {
-        let sourceBlock = '\n\n---\n**Sources**\n';
-        sources.slice(0, 5).forEach((source, index) => { sourceBlock += `${index + 1}. [${source.title}](${source.uri})\n`; });
+        const sourceBlock = buildGroundedSourceBlock(sources);
         fullReply += sourceBlock;
         sse.text(sourceBlock);
       }
@@ -1745,8 +1758,7 @@ export default async function handler(req: any, res: any) {
       }
 
       if (grounding && sources.length) {
-        let block = `\n\n---\n**Sources**\n`;
-        sources.slice(0, 5).forEach((source, index) => { block += `${index + 1}. [${source.title}](${source.uri})\n`; });
+        const block = buildGroundedSourceBlock(sources);
         fullReply += block;
         sse.text(block);
       }
