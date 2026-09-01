@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from "./fetch-timeout.js";
 import { admitResearchSourceUrl } from "./research-claim-verifier.js";
+import { extractResearchPdfText } from "./research-pdf-text.js";
 
 /**
  * Fetches a cited source for the Research desk's verification pass and turns
@@ -21,7 +22,9 @@ import { admitResearchSourceUrl } from "./research-claim-verifier.js";
 const MAX_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BODY_CHARS = 800_000;
+const MAX_PDF_BYTES = 15_000_000;
 const TEXTUAL_CONTENT = /^(?:text\/(?:html|plain)|application\/xhtml\+xml)\s*(?:;|$)/i;
+const PDF_CONTENT = /^application\/pdf\s*(?:;|$)/i;
 
 export type ResearchSourceFetchResult = {
   ok: boolean;
@@ -96,6 +99,34 @@ export async function fetchResearchSourceText(
     if (!response.ok) return { ok: false, url: admittedUrl, reason: `source_http_${response.status}` };
 
     const contentType = response.headers.get("content-type") || "";
+
+    // PDFs get their text layer extracted — papers, filings and reports are
+    // where the best evidence lives. Byte cap first, extraction second, and
+    // every failure keeps its named reason.
+    if (PDF_CONTENT.test(contentType)) {
+      const declaredPdfLength = Number(response.headers.get("content-length") || 0);
+      if (declaredPdfLength > MAX_PDF_BYTES) {
+        return { ok: false, url: admittedUrl, reason: "source_pdf_too_large" };
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = new Uint8Array(await response.arrayBuffer());
+      } catch {
+        return { ok: false, url: admittedUrl, reason: "source_read_failed" };
+      }
+      if (bytes.byteLength > MAX_PDF_BYTES) {
+        return { ok: false, url: admittedUrl, reason: "source_pdf_too_large" };
+      }
+      const extracted = await extractResearchPdfText(bytes);
+      if (!extracted.ok || !extracted.text) {
+        return { ok: false, url: admittedUrl, reason: extracted.reason || "source_pdf_unreadable" };
+      }
+      if (extracted.text.length > MAX_BODY_CHARS) {
+        return { ok: false, url: admittedUrl, reason: "source_too_large" };
+      }
+      return { ok: true, url: admittedUrl, finalUrl: currentUrl, text: extracted.text };
+    }
+
     if (!TEXTUAL_CONTENT.test(contentType)) {
       return { ok: false, url: admittedUrl, reason: "source_not_textual" };
     }
