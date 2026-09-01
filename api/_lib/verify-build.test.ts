@@ -127,3 +127,69 @@ test("catalog and catalogue spellings are both recognised", () => {
     assert.equal(checkById(checks, "feat-photos")?.critical, true, `"${word}" should be a catalog brief`);
   }
 });
+
+/*
+ * Controls that are wired, not merely present.
+ *
+ * Before build-truth was connected here, this boutique page scored 100/100 and
+ * passed: doctype, lang, title, viewport, styling, header/nav/footer, alt text,
+ * a real <img>, the words "Add to Cart" — every check this file asked was about
+ * the SOURCE. Its nav, its Add to Cart and its Checkout were all dead.
+ */
+const DEAD_SHOP = `<!doctype html><html lang="en"><head><title>Bella Boutique</title><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui;padding:2rem}</style></head><body><header><nav><a href="#">Home</a><a href="#">Shop</a></nav></header><main><h1>Bella Boutique</h1><img src="https://img.example/dress.jpg" alt="Dress"><button class="btn">Add to Cart</button><button class="btn">Checkout</button><a href="#missing-section">See sizing</a></main><footer><p>&copy; Bella</p></footer></body></html>`;
+
+const WIRED_SHOP = `<!doctype html><html lang="en"><head><title>Bella</title><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui;padding:2rem}</style></head><body><header><nav><a href="/shop">Shop</a></nav></header><main><h1>Bella</h1><img src="https://img.example/dress.jpg" alt="Dress"><button onclick="addToCart('dress')">Add to Cart</button><a href="/checkout">Checkout</a></main><footer>&copy; Bella</footer><script>function addToCart(id){window.cart=(window.cart||0)+1}</script></body></html>`;
+
+function scoreOf(checks: ReturnType<typeof heuristicChecks>) {
+  const total = checks.reduce((s, c) => s + c.weight, 0) || 1;
+  const earned = checks.reduce((s, c) => s + (c.ok ? c.weight : 0), 0);
+  const raw = Math.round((earned / total) * 100);
+  return checks.some((c) => c.critical && !c.ok) ? Math.min(raw, 45) : raw;
+}
+
+test("a shop whose Add to Cart does nothing cannot pass", () => {
+  const checks = heuristicChecks(DEAD_SHOP, "an online shop to sell dresses with a product catalog");
+  const wired = checkById(checks, "controls-wired");
+  assert.equal(wired?.ok, false, "four dead controls must be seen");
+  assert.equal(wired?.critical, true, "a dead Add to Cart on a selling brief is the shop not existing");
+  assert.equal(checkById(checks, "links-resolve")?.ok, false, "#missing-section goes nowhere");
+  // The string checks still pass — which is exactly why they were not enough.
+  assert.equal(checkById(checks, "feat-cart")?.ok, true);
+  assert.equal(checkById(checks, "interactive")?.ok, true);
+  assert.ok(scoreOf(checks) <= 45, `dead shop scored ${scoreOf(checks)}, must be capped`);
+});
+
+test("a shop whose Add to Cart is wired still scores full marks", () => {
+  const checks = heuristicChecks(WIRED_SHOP, "an online shop to sell dresses with a product catalog");
+  assert.equal(checkById(checks, "controls-wired")?.ok, true);
+  assert.equal(checkById(checks, "links-resolve")?.ok, true);
+  assert.equal(scoreOf(checks), 100, "wiring the controls must not cost a working page anything");
+});
+
+test("a dead link on a non-selling brief is scored down, never capped", () => {
+  const landing = `<!doctype html><html lang="en"><head><title>Yoga</title><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui}</style></head><body><header><nav><a href="/about">About</a></nav></header><main><h1>Yoga Studio</h1><p>Calm classes daily.</p><img src="https://img.example/y.jpg" alt="Studio"><a href="#">Follow us</a></main><footer>&copy; Yoga</footer></body></html>`;
+  const checks = heuristicChecks(landing, "a landing page for a yoga studio");
+  const wired = checkById(checks, "controls-wired");
+  assert.equal(wired?.ok, false);
+  assert.notEqual(wired?.critical, true, "a dead social link is a defect, not a destroyed build");
+  const score = scoreOf(checks);
+  assert.ok(score > 45 && score < 100, `expected a scored-down but living page, got ${score}`);
+});
+
+test("when the wiring lives in a framework the check is absent, never a green it did not earn", () => {
+  /*
+   * build-truth stands down when a component framework owns the wiring. A
+   * check that reports ok because it never ran buys false confidence at full
+   * price, so nothing may be pushed at all.
+   */
+  const react = `<!doctype html><html lang="en"><head><title>App</title><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui}</style></head><body><div id="root"></div><script type="module">import React from 'react'; import { createRoot } from 'react-dom/client';</script></body></html>`;
+  const ids = heuristicChecks(react, "an online shop to sell dresses").map((c) => c.id);
+  assert.equal(ids.includes("controls-wired"), false, "must not claim to have checked framework wiring");
+});
+
+test("dead-control detail carries the specific controls, not just a count", () => {
+  // The refinement loop feeds these strings back to the repair pass; "some
+  // controls are dead" is not something a repair can act on.
+  const detail = checkById(heuristicChecks(DEAD_SHOP, "an online shop to sell dresses"), "controls-wired")?.detail || "";
+  assert.match(detail, /Add to Cart/, "the failing control must be named");
+});
