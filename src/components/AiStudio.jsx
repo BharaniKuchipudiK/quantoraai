@@ -2523,6 +2523,14 @@ Paused — ${autoPauseRef.current}.`
                               signedIn={Boolean(user)}
                               onAsk={(text) => setInputText(text)}
                               onSend={(text) => handleSendMessage(text)}
+                              onAppendMessages={(items) => updateActiveMessages((prev) => [
+                                ...prev,
+                                ...items.map((item, index) => ({
+                                  id: Date.now() + index,
+                                  sender: item.sender === 'user' ? 'user' : 'ai',
+                                  text: String(item.text || ''),
+                                })),
+                              ])}
                               onRequireAuth={onOpenAuth}
                             />
                           </Suspense>

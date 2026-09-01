@@ -18,14 +18,14 @@
  *   over.
  */
 
+import { RESEARCH_BOARD_STEERING } from './research-board-actions.js';
+
 const SOURCE_LINE = /^\s*\d+\.\s*\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*$/;
 const SOURCES_HEADING = /^\s*(?:-{3,}\s*)?\*\*Sources\*\*\s*$/;
 const PLAN_HEADING = /^\s*\*\*Plan\*\*\s*$/;
 const MAX_PLAN_ITEMS = 5;
 const MIN_PLAN_ITEM_LENGTH = 12;
 const MAX_PLAN_ITEM_LENGTH = 200;
-/** Prompts the board's own chips send; they steer the desk, they are not the question. */
-const BOARD_PROMPT = /\bthis board\b/i;
 const MAX_SOURCES = 24;
 const MAX_FINDINGS = 8;
 const MAX_FINDINGS_PER_TURN = 3;
@@ -114,6 +114,16 @@ export function parsePlanBlock(text) {
   return items;
 }
 
+/** Remove a Plan block (heading + its bullets) from a reply body. */
+function stripPlanBlock(text) {
+  const lines = String(text || '').split('\n');
+  const headingAt = lines.findIndex((line) => PLAN_HEADING.test(line));
+  if (headingAt === -1) return String(text || '');
+  let end = headingAt + 1;
+  while (end < lines.length && (/^\s*(?:[-*+]|\d+\.)\s+/.test(lines[end]) || lines[end].trim() === '')) end += 1;
+  return [...lines.slice(0, headingAt), ...lines.slice(end)].join('\n');
+}
+
 function stripMarkdown(line) {
   return line
     .replace(/^\s*(?:[-*+]|\d+\.)\s+/, '')
@@ -180,7 +190,7 @@ export function deriveResearchBrief({ messages } = {}) {
       const planIndex = plan.findIndex((item) => item.text === clean);
       if (planIndex !== -1) {
         pendingExplored = planIndex;
-      } else if (clean.length >= MIN_QUESTION_LENGTH && !BOARD_PROMPT.test(clean)) {
+      } else if (clean.length >= MIN_QUESTION_LENGTH && !RESEARCH_BOARD_STEERING.test(clean)) {
         question = clampQuestion(clean);
       }
       if (clean) sawUser = true;
@@ -194,13 +204,24 @@ export function deriveResearchBrief({ messages } = {}) {
     }
     // The first plan is the plan; a restated one later would renumber the
     // investigation under the analyst's feet.
+    let planAdoptedHere = false;
     if (plan.length === 0) {
       for (const item of parsePlanBlock(text)) plan.push({ text: item, explored: false });
+      planAdoptedHere = plan.length > 0;
     }
 
     const { body, sources } = parseSourcesBlock(text);
     if (sources.length === 0) {
-      ungroundedTurns += 1;
+      /*
+       * A reply that introduces the plan and states no findings outside it
+       * is bookkeeping, not an answer — counting it as "unverified" would
+       * ding the standing line for a message that claimed nothing. The test
+       * is structural (does anything finding-shaped survive removing the
+       * plan block?), never a length heuristic that a long question defeats.
+       */
+      const bookkeeping = planAdoptedHere
+        && extractFindings(stripPlanBlock(body)).length === 0;
+      if (!bookkeeping) ungroundedTurns += 1;
       return;
     }
     groundedTurns += 1;

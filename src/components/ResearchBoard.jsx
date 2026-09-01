@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { deriveResearchBrief } from '../lib/research-brief.js';
+import { RESEARCH_BOARD_PREFILLS, RESEARCH_BOARD_PROMPTS } from '../lib/research-board-actions.js';
+import { composeResearchBriefMarkdown, researchBriefFileName } from '../lib/research-brief-export.js';
 
 /** Reason codes worth a human sentence; anything else gets the honest default. */
 const UNVERIFIED_REASONS = {
@@ -67,10 +69,14 @@ function EvidenceQuote({ label, excerpt, sourceUrl }) {
  * Monochrome (Quantora design system): tokens flip on [data-theme], hierarchy
  * is type, space and border. No accent colours, no isLight prop.
  */
-export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onRequireAuth }) {
+export default function ResearchBoard({ messages, onAsk, onSend, onAppendMessages, signedIn, onRequireAuth }) {
   const brief = useMemo(() => deriveResearchBrief({ messages }), [messages]);
   const [verifying, setVerifying] = useState(false);
+  const [diving, setDiving] = useState(false);
   const [verifyError, setVerifyError] = useState('');
+  // Watched questions for this account; null until the list answers, so a
+  // slow or failed lookup never renders a wrong watch state.
+  const [watches, setWatches] = useState(null);
   // Keyed by finding text — the finding's identity across brief re-derives.
   const [standings, setStandings] = useState({});
 
@@ -129,6 +135,47 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
     }
   };
 
+  const watchRequest = async (op, question) => {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'research-watch', studioDomain: 'research', op, question }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'The watch service is unavailable right now.');
+    return data;
+  };
+
+  // Hooks stay above the inactive-board return so their order never shifts.
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    let cancelled = false;
+    watchRequest('list')
+      .then((data) => { if (!cancelled) setWatches(Array.isArray(data.watches) ? data.watches : []); })
+      .catch(() => { /* unknown watch state stays unknown — no wrong badges */ });
+    return () => { cancelled = true; };
+  }, [signedIn]);
+
+  const currentWatch = Array.isArray(watches)
+    ? watches.find((watch) => watch.question === brief.question)
+    : null;
+
+  const runWatchOp = async (op) => {
+    if (!signedIn) {
+      onRequireAuth?.();
+      return;
+    }
+    setVerifyError('');
+    try {
+      await watchRequest(op, brief.question);
+      const data = await watchRequest('list');
+      setWatches(Array.isArray(data.watches) ? data.watches : []);
+    } catch (err) {
+      setVerifyError(err?.message || 'The watch service is unavailable right now.');
+    }
+  };
+
   // Nothing to show until the analyst has actually asked something.
   if (!brief.active) return null;
 
@@ -136,11 +183,12 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
   const shownSources = brief.sources.slice(0, 8);
   const hiddenSourceCount = brief.sources.length - shownSources.length;
 
-  const chip = (label, onActivate, { enabled = true, busyLabel = null } = {}) => (
+  const busy = verifying || diving;
+  const chip = (label, onActivate, { enabled = true, busyLabel = null, busyWhen = false } = {}) => (
     <button
       key={label}
       type="button"
-      disabled={!enabled || verifying}
+      disabled={!enabled || busy}
       onClick={onActivate}
       className="q-mono-control q-mono-chip"
       style={{
@@ -151,35 +199,104 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
         padding: '6px 11px',
         fontSize: '0.76rem',
         fontWeight: 700,
-        cursor: enabled && !verifying ? 'pointer' : 'default',
+        cursor: enabled && !busy ? 'pointer' : 'default',
         opacity: enabled ? 1 : 0.4,
       }}
     >
-      {busyLabel && verifying ? busyLabel : label}
+      {busyLabel && busyWhen ? busyLabel : label}
     </button>
   );
   const askChip = (label, prompt) => chip(label, () => onSend?.(prompt));
 
   /*
-   * Every chip prompt names "this board" — deriveResearchBrief uses that
-   * marker to keep chip turns from replacing the research question.
+   * The dossier leaves as a file: deterministic markdown of exactly what the
+   * board shows — findings with their standings and verified quotes, the
+   * plan, the source ledger. No model touches the export.
    */
+  const exportBrief = () => {
+    const markdown = composeResearchBriefMarkdown({ brief, standings });
+    if (!markdown) return;
+    const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = researchBriefFileName(brief.question);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /*
+   * Chip prompts live in research-board-actions.js under a tested contract:
+   * every steering prompt carries the marker deriveResearchBrief filters on,
+   * so a chip turn can never replace the research question.
+   */
+  /*
+   * The dive decomposes the question server-side and comes back as canonical
+   * transcript messages; appending them is all the client does — the board
+   * derives plan, findings and sources through the same machinery as any
+   * hand-typed turn.
+   */
+  const runDeepDive = async () => {
+    if (!signedIn) {
+      onRequireAuth?.();
+      return;
+    }
+    setDiving(true);
+    setVerifyError('');
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: 'research-deep-dive',
+          studioDomain: 'research',
+          question: brief.question,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setVerifyError(data.error || 'The deep dive is unavailable right now.');
+        return;
+      }
+      if (Array.isArray(data.messages) && data.messages.length > 0) {
+        onAppendMessages?.(data.messages);
+      }
+    } catch {
+      setVerifyError('The deep dive could not run. Try again in a moment.');
+    } finally {
+      setDiving(false);
+    }
+  };
+
   const chips = [];
+  if (brief.plan.length === 0 && onAppendMessages) {
+    chips.push(chip('Deep dive', runDeepDive, { busyLabel: 'Diving…', busyWhen: diving }));
+  }
   if (brief.groundedTurns === 0 && answered) {
-    chips.push(askChip('Get sources', 'Re-answer the question on this board using live web sources, and cite them.'));
+    chips.push(askChip('Get sources', RESEARCH_BOARD_PROMPTS.getSources));
   }
   if (brief.findings.length > 0) {
-    chips.push(chip('Verify evidence', runVerify, { busyLabel: 'Verifying…' }));
-    chips.push(askChip('Counter-evidence', 'Find credible counter-evidence to the findings on this board, with live sources.'));
+    chips.push(chip('Verify evidence', runVerify, { busyLabel: 'Verifying…', busyWhen: verifying }));
+    chips.push(askChip('Counter-evidence', RESEARCH_BOARD_PROMPTS.counterEvidence));
   }
   if (brief.sources.length > 0) {
-    chips.push(askChip('Cross-check', 'Cross-check the findings on this board against publishers not already in its source ledger, with live sources.'));
+    chips.push(askChip('Cross-check', RESEARCH_BOARD_PROMPTS.crossCheck));
   }
   if (brief.findings.length > 0) {
-    chips.push(askChip('Draft the brief', 'Draft a concise research brief from the findings and sources on this board, clearly marking anything that is still unverified.'));
+    chips.push(askChip('Draft the brief', RESEARCH_BOARD_PROMPTS.draftBrief));
+    chips.push(chip('Export brief', exportBrief));
+  }
+  /*
+   * Watching is offered only once the list has answered, so the chip can
+   * never contradict the account's real watch state.
+   */
+  if (signedIn && Array.isArray(watches)) {
+    chips.push(currentWatch
+      ? chip('Unwatch', () => runWatchOp('delete'))
+      : chip('Watch this question', () => runWatchOp('create')));
   }
   if (chips.length === 0) {
-    chips.push(askChip('Go deeper', 'Investigate the question on this board using live web sources, and cite them.'));
+    chips.push(askChip('Go deeper', RESEARCH_BOARD_PROMPTS.goDeeper));
   }
 
   return (
@@ -291,6 +408,29 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
           ) : null}
         </div>
       ) : null}
+      {currentWatch?.changed ? (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '8px 10px',
+            borderRadius: '10px',
+            border: '1px solid var(--q-ink)',
+            fontSize: '0.75rem',
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>The evidence moved since your last check</div>
+          {currentWatch.changeNote ? (
+            <div style={{ fontWeight: 400, marginTop: '2px' }}>{currentWatch.changeNote}</div>
+          ) : null}
+          <div style={{ marginTop: '7px' }}>
+            {chip('Dismiss', () => runWatchOp('ack'))}
+          </div>
+        </div>
+      ) : currentWatch ? (
+        <div style={{ marginTop: '9px', fontSize: '0.72rem', opacity: 0.7 }}>
+          Watching — re-checked daily against live sources.
+        </div>
+      ) : null}
       {brief.next ? (
         <div style={{ marginTop: '9px', fontSize: '0.74rem' }}>{brief.next}</div>
       ) : null}
@@ -308,7 +448,7 @@ export default function ResearchBoard({ messages, onAsk, onSend, signedIn, onReq
         }}
       >
         {chips}
-        {onAsk ? chip('Narrow it', () => onAsk('Narrow this down to ')) : null}
+        {onAsk ? chip('Narrow it', () => onAsk(RESEARCH_BOARD_PREFILLS.narrow)) : null}
       </div>
     </div>
   );
