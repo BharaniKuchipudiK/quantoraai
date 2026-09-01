@@ -45,9 +45,12 @@ Verified present:
 
 - `study_assessment_attempts_evidence_concept_time_idx`;
 - `study_assessment_attempts_owner_item_submitted_idx`;
-- `study_assessment_attempts_owner_item_open_idx`.
+- `study_assessment_attempts_owner_item_open_idx`;
+- `study_assessment_attempts_evidence_concept_idx`.
 
-These cover evidence-concept receipt lookup, learner-global item/version freshness and active-attempt conflict lookup.
+The first three cover learner receipt lookup, learner-global item/version freshness and active-attempt conflict lookup. The fourth is deliberately concept-leading: Supabase's performance advisor correctly identified that `(user_sub, evidence_concept_id, submitted_at)` cannot cover referential checks for the `evidence_concept_id` foreign key by concept alone.
+
+The narrow FK-support index was applied in production as migration `study_v7_evidence_concept_fk_index` and recorded in the repository as `20260901075807_study_v7_evidence_concept_fk_index.sql`.
 
 ### Issue/grade functions and trigger
 
@@ -73,9 +76,10 @@ This remains compatible with Supabase's 2026 move toward explicit Data API grant
 Production contains the named V7 migrations for:
 
 - retention/transfer evidence rollout;
-- transfer-constraint drift repair.
+- transfer-constraint drift repair;
+- evidence-concept foreign-key support index.
 
-The production migration-history timestamps differ from the repository filenames because the production rollout recorded generated migration versions. Parity checks therefore compare the named contract and live catalog, not timestamp equality.
+The first two production migration-history timestamps differ from the older repository filenames because the production rollout recorded generated migration versions. Parity checks therefore compare the named contract and live catalog, not timestamp equality. The H0.3 FK-support migration uses the production-recorded version `20260901075807` in the repository as well.
 
 ## Rollback-only production canary
 
@@ -144,6 +148,7 @@ Before declaring a future Study schema-sensitive release production-safe:
 - `npm run test:study` must pass, including `study-v7-production-contract.test.ts`;
 - normal repository type/build/wiring/browser gates must pass;
 - production catalog/function/index/ACL parity must be checked through a privileged server-side channel;
+- Supabase security/performance advisors must be reviewed for new Study findings;
 - the rollback-only V7 canary must pass;
 - no canary data may remain afterward.
 
