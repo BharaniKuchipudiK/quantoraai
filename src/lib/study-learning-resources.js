@@ -68,8 +68,6 @@ export function studyActionVisibleText(action, topic) {
     flashcards: `Make a few flashcards for ${label}.`,
     application: `Show me where ${label} is useful.`,
     'real-world': `Show me ${label} in the real world.`,
-    sketch: `Give me a quick sketch challenge for ${label}.`,
-    trivia: `Tell me one memorable fact about ${label}.`,
     'where-next': `Help me choose where to go next after ${label}.`,
     plan: `Help me plan what to study next for ${label}.`,
     notes: `Turn our work on ${label} into concise notes.`,
@@ -117,16 +115,6 @@ export function studyApplicationAsk(topic) {
 export function studyRealWorldAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return `Show one vivid real-world application of ${label} that fits the learner context already established. Start inside the familiar scene, then connect the observation to the precise idea in natural tutor language. Include a subject-aware picture tag if it teaches something. End on one short question; do not add generic headings or unrelated applications.`;
-}
-
-export function studySketchChallengeAsk(topic) {
-  const label = String(topic || 'this idea').trim();
-  return `Give one quick sketch challenge for ${label} that can be done on paper in under two minutes. State exactly what to draw and label, but hide the finished answer until the learner attempts it. Use the learner's known level and current conversation. Keep it warm and concise; end on the challenge itself.`;
-}
-
-export function studyTriviaAsk(topic) {
-  const label = String(topic || 'this idea').trim();
-  return `Share one memorable “Did you know?” fact connected to ${label}, then explain in one sentence why it helps remember the concept. It must be accurate: never invent an age, date, quote, discovery story, or biographical detail. If a historical fact is not verified in this session, use a surprising scientific fact instead. Keep it to two or three sentences and stop.`;
 }
 
 export function studyWhereNextAsk(topic) {
