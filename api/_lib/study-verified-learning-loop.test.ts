@@ -51,12 +51,10 @@ test('wrong reviewed distractor drives targeted repair, verified correction, and
       attempts.set(row.id, { ...row, submitted_at: null, submitted_option_id: null, correct: null, score: null });
       return new Response(null, { status: 201 });
     }
-    if (target.includes('/rest/v1/study_assessment_attempts?select=id&')) {
+    if (target.includes('/rest/v1/study_assessment_attempts?select=item_key,item_version')) {
       return json([...attempts.values()]
-        .filter((attempt) => attempt.submitted_at
-          && target.includes(`item_key=eq.${attempt.item_key}`)
-          && target.includes(`item_version=eq.${attempt.item_version}`))
-        .map((attempt) => ({ id: attempt.id })));
+        .filter((attempt) => attempt.submitted_at)
+        .map((attempt) => ({ item_key: attempt.item_key, item_version: attempt.item_version })));
     }
     if (target.includes('/rest/v1/study_assessment_attempts?')) {
       return json([...attempts.values()]
