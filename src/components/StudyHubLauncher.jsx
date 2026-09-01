@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpenText,
   BrainCircuit,
@@ -93,21 +93,33 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
   const [surface, setSurface] = useState('tools');
   const rootRef = useRef(null);
   const firstActionRef = useRef(null);
+  const surfaceCloseGuardRef = useRef(null);
   const label = String(topic || 'this topic').trim();
 
-  const closeHub = () => {
+  const registerSurfaceCloseGuard = useCallback((guard) => {
+    surfaceCloseGuardRef.current = typeof guard === 'function' ? guard : null;
+    return () => {
+      if (surfaceCloseGuardRef.current === guard) surfaceCloseGuardRef.current = null;
+    };
+  }, []);
+
+  const closeHub = useCallback(async () => {
+    const guard = surfaceCloseGuardRef.current;
+    if (guard && (await guard()) === false) return false;
+    surfaceCloseGuardRef.current = null;
     setOpen(false);
     setSurface('tools');
-  };
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
 
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') closeHub();
+      if (event.key === 'Escape') void closeHub();
     };
     const handlePointerDown = (event) => {
-      if (!rootRef.current?.contains(event.target)) closeHub();
+      if (!rootRef.current?.contains(event.target)) void closeHub();
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -117,7 +129,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('pointerdown', handlePointerDown);
     };
-  }, [open, surface]);
+  }, [closeHub, open, surface]);
 
   const runAction = (action) => {
     if (action.surface) {
@@ -130,13 +142,13 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
     } else {
       onAsk?.(text);
     }
-    closeHub();
+    void closeHub();
   };
 
   const panelClass = [
     'study-h1-hub__panel',
-    surface === 'history' ? 'study-h1-hub__panel--history' : '',
-    surface === 'notebook' ? 'study-h1-hub__panel--notebook' : '',
+    surface === 'history' ? ' study-h1-hub__panel--history' : '',
+    surface === 'notebook' ? ' study-h1-hub__panel--notebook' : '',
   ].filter(Boolean).join(' ');
 
   const labelledBy = surface === 'history'
@@ -163,7 +175,11 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
           {surface === 'history' ? (
             <StudyAssessmentHistory onClose={() => setSurface('tools')} />
           ) : surface === 'notebook' ? (
-            <StudyNotebook topic={label} onClose={() => setSurface('tools')} />
+            <StudyNotebook
+              topic={label}
+              onClose={() => setSurface('tools')}
+              registerCloseGuard={registerSurfaceCloseGuard}
+            />
           ) : (
             <>
               <div className="study-h1-hub__header">
@@ -175,7 +191,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
                   type="button"
                   className="study-h1-icon-button"
                   aria-label="Close Study tools"
-                  onClick={closeHub}
+                  onClick={() => void closeHub()}
                 >
                   <X size={16} />
                 </button>
@@ -214,7 +230,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
         aria-expanded={open}
         aria-controls="quantora-study-hub-panel"
         onClick={() => {
-          if (open) closeHub();
+          if (open) void closeHub();
           else setOpen(true);
         }}
       >
