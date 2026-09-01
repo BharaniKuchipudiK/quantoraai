@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { verifyStudyAssessmentRelease, type StudyAssessmentReleaseCandidate } from './study-assessment-governance.js';
+import { STUDY_ASSESSMENT_CORPUS_SCHEMA_VERSION } from './study-assessment-corpus.js';
 
 function candidate(overrides: Partial<StudyAssessmentReleaseCandidate> = {}): StudyAssessmentReleaseCandidate {
   return {
@@ -9,6 +10,18 @@ function candidate(overrides: Partial<StudyAssessmentReleaseCandidate> = {}): St
     conceptKey: 'physics.kinematics.motion-graphs',
     reviewStatus: 'approved',
     releaseMode: 'reviewed_static',
+    objectiveCode: 'motion-graph-displacement-slope',
+    difficulty: 0.35,
+    corpus: {
+      schemaVersion: STUDY_ASSESSMENT_CORPUS_SCHEMA_VERSION,
+      subject: 'physics',
+      curriculumRefs: [{ curriculumKey: 'sg.seab.olevel.physics.6091', curriculumVersion: '2026', objectiveCode: '2(e-h)', level: 'O-Level Physics' }],
+      evidencePurpose: 'diagnostic',
+      representation: 'graph_interpretation',
+      prerequisiteConceptKeys: ['physics.kinematics.speed-velocity-acceleration'],
+      provenance: { kind: 'quantora_authored', sourceRef: 'quantora:study-assessment-bank' },
+      lifecycle: { state: 'released', previousState: 'approved', reviewRef: 'quantora:study-assessment-bank:motion-graphs-velocity-slope@1' },
+    },
     ...overrides,
   };
 }
@@ -47,4 +60,12 @@ test('invalid assessment identity fails closed before verification', () => {
   const result = verifyStudyAssessmentRelease(candidate({ key: ' ' }));
   assert.equal(result.canIssueVerifiedAttempt, false);
   assert.deepEqual(result.reasonCodes, ['invalid_assessment_release_identity']);
+});
+
+test('approved content cannot issue verified evidence before corpus release', () => {
+  const result = verifyStudyAssessmentRelease(candidate({
+    corpus: { ...candidate().corpus, lifecycle: { state: 'approved', previousState: 'in_review', reviewRef: 'review:motion-graphs-velocity-slope@1' } },
+  }));
+  assert.equal(result.canIssueVerifiedAttempt, false);
+  assert.deepEqual(result.reasonCodes, ['assessment_corpus_item_not_released']);
 });
