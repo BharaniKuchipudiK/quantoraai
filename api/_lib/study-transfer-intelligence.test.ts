@@ -28,17 +28,14 @@ async function withTransferTarget(
       return json([{ id: TARGET_ID, canonical_key: targetKey, label: 'Governed target' }]);
     }
     if (target.includes('/rest/v1/study_mastery_events?')) return json([]);
-    if (target.includes('/rest/v1/study_assessment_attempts?select=id')) {
+    if (target.includes('/rest/v1/study_assessment_attempts?select=item_key,item_version')) {
       const used = options.usedItemRef;
-      if (used) {
-        const separator = used.lastIndexOf('@');
-        const key = used.slice(0, separator);
-        const version = used.slice(separator + 1);
-        if (target.includes(`item_key=eq.${key}`) && target.includes(`item_version=eq.${version}`)) {
-          return json([{ id: '33333333-3333-4333-8333-333333333333' }]);
-        }
-      }
-      return json([]);
+      if (!used) return json([]);
+      const separator = used.lastIndexOf('@');
+      return json([{
+        item_key: used.slice(0, separator),
+        item_version: used.slice(separator + 1),
+      }]);
     }
     throw new Error(`Unexpected fetch: ${target}`);
   };

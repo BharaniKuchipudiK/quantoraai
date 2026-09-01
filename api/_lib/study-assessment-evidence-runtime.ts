@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { issueStudyAssessmentAttempt } from './store.js';
+import { readStudySupabaseRows, studySupabaseRequest } from './study-supabase.js';
 import type { StudyEvidenceKind } from './study-truth-layer.js';
-
-const REQUEST_TIMEOUT_MS = 4_000;
 
 export type StudyAssessmentEvidenceKind = Extract<StudyEvidenceKind,
   | 'assessment_item'
@@ -22,33 +21,6 @@ const EVIDENCE_KINDS = new Set<StudyAssessmentEvidenceKind>([
   'misconception_probe',
 ]);
 
-function config() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return { url: url.replace(/\/+$/, ''), key };
-}
-
-async function requestRaw(path: string, init: RequestInit & { headers?: Record<string, string> }) {
-  const cfg = config();
-  if (!cfg) return null;
-  try {
-    return await fetch(`${cfg.url}/rest/v1/${path}`, {
-      ...init,
-      headers: {
-        apikey: cfg.key,
-        Authorization: `Bearer ${cfg.key}`,
-        'Content-Type': 'application/json',
-        ...(init.headers || {}),
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error: any) {
-    console.warn(`Study V7 evidence ${init.method || 'GET'} ${path} failed:`, error?.message || error);
-    return null;
-  }
-}
-
 function splitItemRef(itemRef: string): { itemKey: string; itemVersion: string } | null {
   const separator = itemRef.lastIndexOf('@');
   if (separator <= 0 || separator === itemRef.length - 1) return null;
@@ -66,9 +38,10 @@ function splitItemRef(itemRef: string): { itemKey: string; itemVersion: string }
  * the same scope or it can present a "fresh" check that the database later
  * (correctly) refuses to count as independent evidence.
  *
- * Queries are candidate-scoped existence checks instead of a capped history
- * scan, so freshness remains exact as a learner accumulates years of attempts.
- * These columns all predate V7, preserving ordinary-check rollout compatibility.
+ * Freshness remains candidate-scoped rather than scanning a capped learner
+ * history, but all candidate refs are checked in one indexed PostgREST read.
+ * The exact item/version pairs are reconstructed server-side from the returned
+ * rows so an `in` cross-product can never mark an unrelated pair as used.
  */
 export async function readStudyUsedAssessmentItemRefs(
   userSub: string,
@@ -78,28 +51,29 @@ export async function readStudyUsedAssessmentItemRefs(
   const refs = [...new Set(Array.from(candidateItemRefs).filter((value) => typeof value === 'string' && value.length > 0))];
   if (!refs.length) return new Set();
 
-  const checks = await Promise.all(refs.map(async (itemRef) => {
-    const parsed = splitItemRef(itemRef);
-    if (!parsed) return { status: 'invalid' as const, itemRef };
-    const response = await requestRaw(
-      `study_assessment_attempts?select=id&user_sub=eq.${encodeURIComponent(userSub)}&item_key=eq.${encodeURIComponent(parsed.itemKey)}&item_version=eq.${encodeURIComponent(parsed.itemVersion)}&submitted_at=not.is.null&limit=1`,
-      { method: 'GET' },
-    );
-    if (!response?.ok) {
-      if (response) console.warn(`Study V7 used-item validation -> ${response.status}`);
-      return { status: 'unavailable' as const, itemRef };
-    }
-    try {
-      const rows = await response.json();
-      if (!Array.isArray(rows)) return { status: 'unavailable' as const, itemRef };
-      return { status: rows.length > 0 ? 'used' as const : 'fresh' as const, itemRef };
-    } catch {
-      return { status: 'unavailable' as const, itemRef };
-    }
-  }));
+  const parsed = refs.map((itemRef) => ({ itemRef, parsed: splitItemRef(itemRef) }));
+  if (parsed.some((entry) => !entry.parsed)) return null;
 
-  if (checks.some((check) => check.status === 'unavailable' || check.status === 'invalid')) return null;
-  return new Set(checks.filter((check) => check.status === 'used').map((check) => check.itemRef));
+  const itemKeys = [...new Set(parsed.map((entry) => entry.parsed!.itemKey))];
+  const itemVersions = [...new Set(parsed.map((entry) => entry.parsed!.itemVersion))];
+  const keyFilter = itemKeys.map((value) => encodeURIComponent(value)).join(',');
+  const versionFilter = itemVersions.map((value) => encodeURIComponent(value)).join(',');
+  const rows = await readStudySupabaseRows(
+    `study_assessment_attempts?select=item_key,item_version&user_sub=eq.${encodeURIComponent(userSub)}&item_key=in.(${keyFilter})&item_version=in.(${versionFilter})&submitted_at=not.is.null`,
+    { operation: 'assessment_item_freshness' },
+  );
+  if (rows === null) return null;
+
+  const candidates = new Set(refs);
+  const used = new Set<string>();
+  for (const row of rows) {
+    const itemKey = typeof row?.item_key === 'string' ? row.item_key : '';
+    const itemVersion = typeof row?.item_version === 'string' ? row.item_version : '';
+    if (!itemKey || !itemVersion) continue;
+    const itemRef = `${itemKey}@${itemVersion}`;
+    if (candidates.has(itemRef)) used.add(itemRef);
+  }
+  return used;
 }
 
 export type StudyEvidenceAttemptIssueConflict = 'already_submitted' | 'already_active';
@@ -156,7 +130,7 @@ export async function issueStudyEvidenceAttempt(entry: {
   }
 
   const attemptId = randomUUID();
-  const response = await requestRaw('study_assessment_attempts', {
+  const response = await studySupabaseRequest('study_assessment_attempts', {
     method: 'POST',
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify([{
@@ -175,7 +149,7 @@ export async function issueStudyEvidenceAttempt(entry: {
       evidence_concept_id: entry.evidenceConceptId || null,
       retention_anchor_at: entry.retentionAnchorAt || null,
     }]),
-  });
+  }, { operation: 'assessment_attempt_issue' });
   if (response?.ok) {
     return { status: 'issued', attemptId, evidenceKind: entry.evidenceKind, legacyFallback: false };
   }
@@ -237,7 +211,7 @@ export async function completeStudyEvidenceAttempt(entry: {
   optionId: string;
   observedAt: string;
 }): Promise<StudyEvidenceGradeRecord | 'unavailable'> {
-  const response = await requestRaw('rpc/complete_study_assessment_attempt', {
+  const response = await studySupabaseRequest('rpc/complete_study_assessment_attempt', {
     method: 'POST',
     body: JSON.stringify({
       p_user_sub: entry.userSub,
@@ -245,7 +219,7 @@ export async function completeStudyEvidenceAttempt(entry: {
       p_option_id: entry.optionId,
       p_observed_at: entry.observedAt,
     }),
-  });
+  }, { operation: 'assessment_attempt_grade' });
   if (!response?.ok) {
     if (response) console.warn(`Study V7 grade RPC -> ${response.status}`);
     return 'unavailable';
