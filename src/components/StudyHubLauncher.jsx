@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpenText,
   BrainCircuit,
@@ -20,8 +20,16 @@ import {
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import StudyAssessmentHistory from './StudyAssessmentHistory.jsx';
+import StudyNotebook from './StudyNotebook.jsx';
 
 const HUB_ACTIONS = Object.freeze([
+  {
+    id: 'notebook',
+    label: 'Notebook',
+    hint: 'Keep private notes organized by subject and topic.',
+    icon: BookOpenText,
+    surface: 'notebook',
+  },
   {
     id: 'history',
     label: 'Assessment history',
@@ -76,30 +84,42 @@ const HUB_ACTIONS = Object.freeze([
 /**
  * Progressive-disclosure launcher for secondary Study capabilities.
  *
- * The launcher exposes only capabilities with real contracts. Assessment
- * History is the first durable learner surface in the Hub; future Notebook and
- * Progress surfaces join only after their persistence/telemetry contracts land.
+ * Durable learner surfaces live beside conversational tools without becoming
+ * learner truth themselves. Assessment History reads authoritative evidence;
+ * Notebook stores learner-owned study material that never changes mastery.
  */
 export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend }) {
   const [open, setOpen] = useState(false);
   const [surface, setSurface] = useState('tools');
   const rootRef = useRef(null);
   const firstActionRef = useRef(null);
+  const surfaceCloseGuardRef = useRef(null);
   const label = String(topic || 'this topic').trim();
 
-  const closeHub = () => {
+  const registerSurfaceCloseGuard = useCallback((guard) => {
+    surfaceCloseGuardRef.current = typeof guard === 'function' ? guard : null;
+    return () => {
+      if (surfaceCloseGuardRef.current === guard) surfaceCloseGuardRef.current = null;
+    };
+  }, []);
+
+  const closeHub = useCallback(async () => {
+    const guard = surfaceCloseGuardRef.current;
+    if (guard && (await guard()) === false) return false;
+    surfaceCloseGuardRef.current = null;
     setOpen(false);
     setSurface('tools');
-  };
+    return true;
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
 
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') closeHub();
+      if (event.key === 'Escape') void closeHub();
     };
     const handlePointerDown = (event) => {
-      if (!rootRef.current?.contains(event.target)) closeHub();
+      if (!rootRef.current?.contains(event.target)) void closeHub();
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -109,11 +129,11 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('pointerdown', handlePointerDown);
     };
-  }, [open, surface]);
+  }, [closeHub, open, surface]);
 
   const runAction = (action) => {
-    if (action.surface === 'history') {
-      setSurface('history');
+    if (action.surface) {
+      setSurface(action.surface);
       return;
     }
     const text = studyAdaptiveTutorAsk(action.ask(label), learnerModel);
@@ -122,8 +142,20 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
     } else {
       onAsk?.(text);
     }
-    closeHub();
+    void closeHub();
   };
+
+  const panelClass = [
+    'study-h1-hub__panel',
+    surface === 'history' ? ' study-h1-hub__panel--history' : '',
+    surface === 'notebook' ? ' study-h1-hub__panel--notebook' : '',
+  ].filter(Boolean).join(' ');
+
+  const labelledBy = surface === 'history'
+    ? 'quantora-study-history-title'
+    : surface === 'notebook'
+      ? 'quantora-study-notebook-title'
+      : 'quantora-study-hub-title';
 
   return (
     <div
@@ -135,13 +167,19 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
       {open ? (
         <section
           id="quantora-study-hub-panel"
-          className={`study-h1-hub__panel${surface === 'history' ? ' study-h1-hub__panel--history' : ''}`}
+          className={panelClass}
           role="dialog"
           aria-modal="false"
-          aria-labelledby={surface === 'history' ? 'quantora-study-history-title' : 'quantora-study-hub-title'}
+          aria-labelledby={labelledBy}
         >
           {surface === 'history' ? (
             <StudyAssessmentHistory onClose={() => setSurface('tools')} />
+          ) : surface === 'notebook' ? (
+            <StudyNotebook
+              topic={label}
+              onClose={() => setSurface('tools')}
+              registerCloseGuard={registerSurfaceCloseGuard}
+            />
           ) : (
             <>
               <div className="study-h1-hub__header">
@@ -153,7 +191,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
                   type="button"
                   className="study-h1-icon-button"
                   aria-label="Close Study tools"
-                  onClick={closeHub}
+                  onClick={() => void closeHub()}
                 >
                   <X size={16} />
                 </button>
@@ -192,7 +230,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
         aria-expanded={open}
         aria-controls="quantora-study-hub-panel"
         onClick={() => {
-          if (open) closeHub();
+          if (open) void closeHub();
           else setOpen(true);
         }}
       >

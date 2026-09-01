@@ -19,18 +19,18 @@ No engagement metric, notebook entry, completed schedule item, self-report, or t
 
 ---
 
-## 2. Current status after H0
+## 2. Current learner-experience status
 
 | Capability | Status | What remains |
 | --- | --- | --- |
 | Adaptive mastery / next-best-action | **Core implemented** | H3 projection/snapshot scale and broader curriculum coverage |
 | Retention intelligence | **Implemented and production-canary proven** | H2 content breadth so retention probes exist across supported curriculum |
 | Transfer intelligence | **Implemented and production-canary proven** | H2 reviewed application-item breadth on governed transfer targets |
-| Human reinforcement | **Pending — H1** | semantic evidence-triggered micro-interactions and reduced-motion behavior |
-| Unified learner-facing Study surfaces | **In progress — H1.1** | monochrome shell, three primary actions, progressive disclosure Study Hub |
+| Human reinforcement | **Pending — H1.4** | semantic evidence-triggered micro-interactions and reduced-motion behavior |
+| Unified learner-facing Study surfaces | **Complete — H1.1** | three primary actions + progressive-disclosure monochrome Study Hub are live |
 | First-run onboarding | **Pending — H1.4** | short skippable cold-start profile; self-report remains context only |
-| Assessment history | **Pending — H1.2** | authoritative 30-day learner history surface |
-| Learner notebook | **Pending — H1.3** | subject/topic organization, autosave, explicit separation from mastery truth |
+| Assessment history | **Complete — H1.2** | authoritative 30-day learner history is available from the Study Hub |
+| Learner notebook | **In validation — H1.3** | persistent private notes, subject/topic organization, search, autosave and delete |
 | Time / activity trends | **Pending — H3** | privacy-safe active-time telemetry and learner-facing progress view |
 | Native PDF / notes ingestion | **Pending — H4** | provenance, page anchors, file validation, prompt isolation |
 | Classroom / LMS integrations | **Pending — H5** | Google Classroom → Microsoft Education → QTI/LTI/OneRoster/CASE/Caliper |
@@ -57,7 +57,7 @@ Secondary capabilities move behind one bottom-right **Study Hub** launcher.
 - no "coming soon" tiles;
 - no fake dashboard placeholders;
 - opening a tool does not create learner truth;
-- future Assessment History, Notebook and Progress surfaces plug into the same Hub when their data contracts are real.
+- Assessment History and Notebook use the same Hub; future Progress joins only when its telemetry contract is real.
 
 ### Initial Hub actions
 
@@ -136,10 +136,12 @@ updated_at
 Support:
 
 - create / edit / delete;
-- autosave;
-- subject/topic filtering;
-- simple Markdown or structured plain-text editing;
-- one-click "add from conversation" only when the learner explicitly requests it.
+- debounced autosave after a note exists;
+- subject filtering and text search across subject/topic/title/body;
+- structured plain-text editing;
+- private server-owned persistence with no browser-local truth fallback.
+
+An explicit learner-triggered **add from conversation** action may be added later, but it is not part of the first H1.3 release. It must never silently copy a conversation into the Notebook.
 
 ### Truth rule
 
@@ -230,11 +232,11 @@ Self-report is planning context only and never becomes verified learner truth.
 ## 8. Recommended execution sequence
 
 ```text
-H1.1  Monochrome shell + Study Hub
+H1.1  Monochrome shell + Study Hub                  COMPLETE
   ↓
-H1.2  30-day Assessment History
+H1.2  30-day Assessment History                     COMPLETE
   ↓
-H1.3  Learner Notebook
+H1.3  Learner Notebook                              IN VALIDATION
   ↓
 H1.4  Onboarding + semantic reinforcement
   ↓

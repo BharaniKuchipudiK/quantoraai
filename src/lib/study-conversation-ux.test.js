@@ -12,13 +12,6 @@ function escapeRegExp(value) {
 }
 
 test('the lesson never renders a second composer', () => {
-  /*
-   * This first replaced a vague "Your turn" banner with an embedded input, then
-   * the input itself had to go. It was a plain field calling the same send path
-   * as the composer at the bottom of the screen, with none of its capabilities
-   * — no attachment, no voice, no enhance — and two inputs on one screen is an
-   * ambiguity, not a convenience.
-   */
   const markdown = read('src/components/StudyMarkdown.jsx');
   assert.doesNotMatch(markdown, /data-quantora-study-answer-affordance/);
   assert.doesNotMatch(markdown, /<input|<form/);
@@ -103,36 +96,31 @@ test('Study keeps exactly three permanent learner moves and moves secondary tool
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const history = read('src/components/StudyAssessmentHistory.jsx');
+  const notebook = read('src/components/StudyNotebook.jsx');
 
   assert.match(shell, /data-quantora-study-next-choices="true"/);
   assert.match(shell, />\s*Explain\s*</);
   assert.match(shell, />\s*Practice\s*</);
   assert.match(shell, /:\s*'Check'/);
 
-  for (const label of ['Assessment history', 'Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
+  for (const label of ['Notebook', 'Assessment history', 'Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
     assert.match(hub, new RegExp(escapeRegExp(label)));
   }
-  /*
-   * Check rendered button copy, not arbitrary comments or implementation prose.
-   * A raw source substring made this gate capable of failing on documentation
-   * even when no permanent secondary control existed.
-   */
-  for (const label of ['Assessment history', 'Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
+  for (const label of ['Notebook', 'Assessment history', 'Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
     assert.doesNotMatch(shell, new RegExp(`${escapeRegExp(label)}\\s*<\\/button>`));
   }
 
   assert.match(hub, /data-quantora-study-hub-launcher="true"/);
   assert.match(hub, /aria-expanded=\{open\}/);
   assert.match(hub, /<StudyAssessmentHistory/);
+  assert.match(hub, /<StudyNotebook/);
   assert.match(history, /data-quantora-study-assessment-history="true"/);
   assert.match(history, /Last \{state\.data\?\.windowDays \|\| 30\} days/);
-  /*
-   * Future surfaces may be named in design comments. What this gate forbids is
-   * shipping them as live Hub actions or visible placeholder copy before their
-   * real data contracts exist.
-   */
-  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard|Notebook)['"]/i);
-  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard|Notebook)\s*</i);
+  assert.match(notebook, /data-quantora-study-notebook="true"/);
+  assert.match(notebook, /Personal notes do not change mastery/);
+
+  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard)['"]/i);
+  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard)\s*</i);
 });
 
 test('H1 Study controls are monochrome and do not revive the legacy accent palette', () => {
@@ -140,7 +128,8 @@ test('H1 Study controls are monochrome and do not revive the legacy accent palet
   const hub = read('src/components/StudyHubLauncher.jsx');
   const css = read('src/components/study-h1.css');
   const historyCss = read('src/components/study-assessment-history.css');
-  const h1 = `${shell}\n${hub}\n${css}\n${historyCss}`;
+  const notebookCss = read('src/components/study-notebook.css');
+  const h1 = `${shell}\n${hub}\n${css}\n${historyCss}\n${notebookCss}`;
 
   assert.doesNotMatch(h1, /#f97316|#fff7ed|#ecfdf5|#fde68a|#92400e|#6ee7b7|#fcd34d/i);
   assert.match(css, /--study-h1-strong: #111111/);
@@ -151,8 +140,6 @@ test('H1 Study controls are monochrome and do not revive the legacy accent palet
 test('persisted private Study prompts are removed from both rendering and model history', () => {
   const studio = read('src/components/AiStudio.jsx');
   const stream = read('src/hooks/useChatStream.js');
-  // Memoized since the chat-feed identity work; the contract is that the
-  // scrub feeds cleanStudyMessages, whatever wrapper carries it.
   assert.match(studio, /cleanStudyMessages = useMemo\(\s*\(\) => withoutPrivateStudyInstructions\(messages, studioDomain\)/);
   assert.match(studio, /return cleanStudyMessages\.filter/);
   assert.match(stream, /withoutPrivateStudyInstructions\([\s\S]*studioDomain/);
