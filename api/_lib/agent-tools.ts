@@ -9,6 +9,7 @@
 import { Duffel } from '@duffel/api';
 import { validateTravelToolArgs } from './ai-contracts.js';
 import { providerCircuitStore } from './provider-circuit-store.js';
+import { PHOTO_MEDIA_PATH } from './places-photos.js';
 import {
   providerFetch,
   runProviderOperation,
@@ -83,7 +84,18 @@ function providerLabel(input: string | URL | Request): { provider: string; opera
   const raw = input instanceof Request ? input.url : String(input);
   try {
     const url = new URL(raw);
-    if (url.hostname === 'places.googleapis.com') return { provider: 'places', operation: 'search' };
+    /*
+     * Photo media shares a hostname with Text Search but must not share a
+     * circuit. PHOTO_LIMIT is 4 and circuitFailureThreshold is 4, so one
+     * shortlist whose photos time out would open the places:search breaker for
+     * every hotel and attraction lookup in the deployment — a photo failing a
+     * hotel search, which is the precise inverse of the guarantee photos are
+     * built on. Its own operation gives it its own key.
+     */
+    if (url.hostname === 'places.googleapis.com') {
+      const isPhotoMedia = PHOTO_MEDIA_PATH.test(url.pathname);
+      return { provider: 'places', operation: isPhotoMedia ? 'photo' : 'search' };
+    }
     if (url.hostname === 'routes.googleapis.com') return { provider: 'routes', operation: 'compute' };
     return { provider: url.hostname || 'travel-http', operation: url.pathname.slice(0, 80) || 'request' };
   } catch {
@@ -94,12 +106,21 @@ function providerLabel(input: string | URL | Request): { provider: string; opera
 function resilientFetch(rawFetch: typeof fetch, policy?: Partial<ProviderResiliencePolicy>): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const label = providerLabel(input);
+    /*
+     * A photo is decoration and is never retried. Retrying would multiply the
+     * per-photo 2.5s budget by maxAttempts and make a shortlist wait seconds
+     * for pictures nobody blocked on, so the one thing worth spending here is
+     * a single attempt.
+     */
+    const effectivePolicy = label.operation === 'photo'
+      ? { ...(policy || {}), maxAttempts: 1 }
+      : policy;
     return providerFetch({
       ...label,
       input,
       init,
       fetchFn: rawFetch,
-      policy,
+      policy: effectivePolicy,
       circuitStore: providerCircuitStore,
     });
   }) as typeof fetch;

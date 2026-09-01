@@ -8,7 +8,7 @@ import {
   type StudyAssessmentRepresentation,
 } from './study-assessment-corpus.js';
 
-export const STUDY_ASSESSMENT_ITEM_BANK_VERSION = "study-assessment-items-2026-08-31.3";
+export const STUDY_ASSESSMENT_ITEM_BANK_VERSION = "study-assessment-items-2026-09-02.1";
 
 export type StudyAssessmentOption = { id: string; text: string };
 export type StudyAssessmentReviewStatus = "approved" | "draft" | "rejected";
@@ -332,6 +332,10 @@ function cloneItem(item: StudyAssessmentItem): StudyAssessmentItem {
       lifecycle: { ...item.corpus.lifecycle },
     },
   };
+}
+
+export function allStudyAssessmentItems(): StudyAssessmentItem[] {
+  return ITEMS.map(cloneItem);
 }
 
 export function studyAssessmentItemsForConcept(conceptKey: string): StudyAssessmentItem[] {
