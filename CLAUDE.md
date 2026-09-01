@@ -137,8 +137,20 @@ Detect → diagnose → propose → **verify** → apply.
 
 The fourth step is the whole thing. Self-healing without an independent
 verifier is guessing that compounds, and a model cannot repair a module-load
-crash in its own runtime — the process is already dead. So:
+crash in its own runtime — the process is already dead. The operating standard
+— what each phase owes, per level — is
+`docs/engineering/DETECT_DIAGNOSE_VERIFY_APPLY.md`. So:
 
+- **Turn level** (a failed chat/build turn): `src/lib/turn-recovery.js` maps
+  the diagnosis to a repair that DIFFERS from the failed attempt — a
+  behavioral failure retries with a strengthened brief that names what went
+  wrong, a dead route retries on a real fallback engine — and
+  `src/lib/coding-outcome-spine.js` owns the handover when the budget is
+  spent: it reports what the loop actually tried and never promises a retry
+  that will not run. On 2026-09-01 both were violated at once: a retry that
+  changed nothing, then terminal copy promising "retry once on a fallback
+  engine" in the one state where nothing further would ever run.
+  `turn-heal-contract.test.js` closes the class.
 - **Artifact level** (the user's generated site): `api/_lib/repair.ts` +
   `verify-build.ts` close this loop, and `shared/refinement-loop.js` decides
   how many rounds it is worth. Two properties make iteration safe rather than
@@ -164,6 +176,9 @@ becomes safely more autonomous.
 | `npm run test:claims` | capability claims with no backing implementation, and tool descriptions that promise the model a field the request never asks for |
 | `scripts/deployed-readiness-gate.mjs` | a deployed function that dies before its handler runs |
 | `node --test src/lib/refinement-loop.test.js` | a repair loop that burns the user's money without improving |
+| `node --test src/lib/turn-heal-contract.test.js` | a retry identical to the attempt that failed, or terminal copy promising action in a state with no future |
+| `node scripts/guided-intake-browser-gate.mjs` | a platform that punishes the model for obeying it — an intake question flagged as a failed build, or a retry burned on a compliant answer |
+| `node --test src/lib/shop-ui-react-vfs.test.js` | the desk corrupting its own artifact — HTML injected into a React module the model shipped working |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
 
 ### A tool description is a promise, and the model passes it on

@@ -113,3 +113,74 @@ struct ContentView: View { var body: some View { Text("0") } }
     detailCode: 'browser-preview-missing',
   });
 });
+
+/*
+ * THE GUIDED-INTAKE CONTRADICTION (2026-09-01, boutique incident).
+ *
+ * GUIDED_BUILD_DIRECTIVE orders the model, on a first-turn website ask
+ * ("help me build a website for a client who is running a Boutique…"):
+ * "you MUST NOT output HTML or a ```html code block… ask ONE natural
+ * question… append <quantora-modal>… Wait for their answer."
+ *
+ * This contract then failed every reply that obeyed: no code fences →
+ * BUILD_ARTIFACT_CONTRACT → the reply was withheld, the route ladder burned
+ * every provider on the same compliant answer, and the user saw "The model
+ * answered in chat without files" / "no healthy AI route". Deterministic,
+ * not flaky: obedient models failed, only disobedient ones shipped.
+ *
+ * The fix: a guided intake turn owes EITHER a runnable artifact OR a genuine
+ * intake move. Everything below pins both directions.
+ */
+
+const guidedIntakeReply = `Love this — a boutique for Kanjivaram, Uppada and Gadwal sarees, ready-made dresses, plus stitching, draping and mehndi services. One thing before I build: what's the boutique called?
+
+<quantora-modal>
+{"question":"What's it called?","options":[{"id":"type","title":"I'll type the name in chat"},{"id":"placeholder","title":"Use a placeholder name for now"}]}
+</quantora-modal>`;
+
+test('[was-red] a compliant guided first-turn intake passes when the turn allows intake', () => {
+  assert.deepEqual(validateBuildArtifactResponse(guidedIntakeReply, null, { allowIntake: true }), {
+    ok: true,
+    detailCode: 'guided-intake-valid',
+  });
+});
+
+test('the same intake reply still fails a turn that owes an artifact', () => {
+  assert.deepEqual(validateBuildArtifactResponse(guidedIntakeReply, null), {
+    ok: false,
+    detailCode: 'code-fences-missing',
+  });
+});
+
+test('allowIntake is not a free pass: prose that neither asks nor builds still fails', () => {
+  const plan = 'Here is my plan: first I will scaffold the layout, then add the saree catalog, then wire the cart.';
+  assert.deepEqual(validateBuildArtifactResponse(plan, null, { allowIntake: true }), {
+    ok: false,
+    detailCode: 'code-fences-missing',
+  });
+});
+
+test('a guided turn that ships an artifact anyway is validated as an artifact, not waved through', () => {
+  const html = '<!DOCTYPE html><html><body><script>localStorage.getItem("x")</script></body></html>';
+  assert.deepEqual(validateBuildArtifactResponse(html, null, { allowIntake: true }), {
+    ok: false,
+    detailCode: 'opaque-storage-access',
+  });
+});
+
+test('quantora-choices is an intake move too', () => {
+  const reply = 'What vibe should the boutique site have?\n\n<quantora-choices>{"items":[{"id":"warm","label":"Cozy & warm"}]}</quantora-choices>';
+  assert.deepEqual(validateBuildArtifactResponse(reply, null, { allowIntake: true }), {
+    ok: true,
+    detailCode: 'guided-intake-valid',
+  });
+});
+
+test('golden canary turns never allow intake in place of the artifact', () => {
+  // The caller passes a transaction only for golden turns; those turns demand
+  // the artifact contract regardless of intake allowances upstream.
+  assert.deepEqual(validateBuildArtifactResponse(guidedIntakeReply, 'simple-website', { allowIntake: true }), {
+    ok: false,
+    detailCode: 'code-fences-missing',
+  });
+});

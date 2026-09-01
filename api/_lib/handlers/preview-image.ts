@@ -4,15 +4,36 @@ import { isAllowedPreviewImageUrl } from "../../../src/lib/preview-images.js";
 
 const MAX_BYTES = 1_500_000;
 
-function targetUrl(req: { query?: Record<string, unknown>; url?: string }) {
-  const fromQuery = req.query?.u;
-  if (typeof fromQuery === "string" && fromQuery.trim()) return fromQuery.trim();
+/*
+ * CONTRACT: `u` is the LAST query parameter and owns everything after it.
+ *
+ * The system prompt's own example teaches the model to emit
+ * `?u=https://images.unsplash.com/photo-<id>?w=1200&q=80` — UNENCODED. The
+ * old implementation read req.query.u, so the platform's query parser split
+ * on `&` and silently dropped every parameter after the first one; any image
+ * whose required params follow an `&` (full Unsplash URLs carry ixid and
+ * signature params) 404'd upstream and rendered as an empty frame (2026-09-01
+ * boutique catalog). Exported for its gate, preview-image-url.test.ts.
+ */
+export function targetUrl(req: { query?: Record<string, unknown>; url?: string }) {
   try {
-    const parsed = new URL(String(req.url || ""), "http://127.0.0.1");
-    return parsed.searchParams.get("u") || "";
-  } catch {
-    return "";
-  }
+    const rawUrl = String(req.url || "");
+    const q = rawUrl.indexOf("?");
+    if (q !== -1) {
+      const match = rawUrl.slice(q + 1).match(/(?:^|&)u=([\s\S]+)$/);
+      if (match) {
+        const raw = match[1].trim();
+        if (/^https?:\/\//i.test(raw)) return raw;
+        try {
+          const decoded = decodeURIComponent(raw).trim();
+          if (/^https?:\/\//i.test(decoded)) return decoded;
+        } catch { /* fall through to the raw value */ }
+        return raw;
+      }
+    }
+  } catch { /* fall through to the parsed query */ }
+  const fromQuery = req.query?.u;
+  return typeof fromQuery === "string" ? fromQuery.trim() : "";
 }
 
 export default async function handler(req: any, res: any) {

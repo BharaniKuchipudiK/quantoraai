@@ -8,6 +8,7 @@ import {
   publicStudyAssessmentItem,
   studyAssessmentItemsForConcept,
 } from "./study-assessment-items.js";
+import { validateStudyAssessmentCorpusRecord } from './study-assessment-corpus.js';
 import { selectStudyAssessmentItem } from './study-assessment-selector.js';
 import {
   attestStudyAssessmentEvidence,
@@ -30,10 +31,34 @@ test("public Study assessment items never expose grading, diagnosis, or governan
     "objectiveCode",
     "cognitiveOperation",
     "difficulty",
+    "corpus",
   ]) {
     assert.equal(hidden in publicItem, false, `${hidden} must remain server-side`);
   }
   assert.deepEqual(publicItem.options, item.options);
+});
+
+test('every current bank item satisfies the H2.1 corpus architecture contract', () => {
+  const concepts = [
+    'math.trigonometry.functions',
+    'math.trigonometry.identities',
+    'math.vector.scalar-vector',
+    'math.vector.resultant',
+    'math.vector.components',
+    'physics.kinematics.speed-velocity-acceleration',
+    'physics.kinematics.motion-graphs',
+    'physics.kinematics.motion-in-plane',
+    'physics.kinematics.projectile-motion',
+  ];
+  const items = concepts.flatMap(studyAssessmentItemsForConcept);
+  assert.equal(items.length, 10, 'H2.1 records the current baseline without pretending the corpus is broad');
+  for (const item of items) {
+    const validation = validateStudyAssessmentCorpusRecord(item);
+    assert.deepEqual(validation.reasonCodes, [], `${item.key} has invalid corpus metadata`);
+    assert.equal(validation.valid, true);
+    assert.equal(item.corpus.lifecycle.state, 'released');
+    assert.equal(item.corpus.curriculumRefs.length > 0, true);
+  }
 });
 
 test("every reviewed misconception distractor has one bounded taxonomy code", () => {

@@ -1,5 +1,7 @@
 # Quantora Study Workspace — Action Roadmap
 
+> **Historical execution record.** This document captures the earlier P1–P6 workspace plan and Draft PR #359 context. The current authoritative roadmap is `study-learning-intelligence-architecture.md` together with `study-core-pillar-standardization-roadmap.md`. Where they conflict, the current architecture/standardization roadmap wins. In particular, the P3 references to `buildStudyLearningMap` / `buildStudyAdvisorCandidate` are superseded historical guidance and **must not be used to resurrect deleted parallel Study intelligence paths**.
+
 > Isolated Draft PR only. No Main merge, Production deployment, DB migration, environment change, or pricing change is authorised by this branch.
 
 ## North Star
@@ -12,7 +14,7 @@
 |---|---|---|
 | P1 | Conversation-first UX | Compact focus shell, closable activities, compact Study action palette, existing assessment flow passes. |
 | P2 | Attachments + PDF | Clipboard image, image/file hygiene, PDF ingest and print-to-PDF work end-to-end. |
-| P3 | Learning intelligence | Canonical concepts + learning map + advisor candidate wired; Study orphans reduced. |
+| P3 | Learning intelligence | Historical predecessor to the current canonical concept/evidence/learner-graph architecture; do not reintroduce superseded modules. |
 | P4 | Verified assessment | Issue → answer → evidence → mastery → next action passes a real integration test. |
 | P5 | Visual intelligence | Deterministic STEM first; generated visuals only when pedagogically useful and budget-authorised. |
 | P6 | Reliability/security | Durable rate limits, provider failover, media trust and production observability. |
@@ -85,15 +87,19 @@ Do **not** add an unwired Study routing helper. The proper backend change is to 
 | STUDY-PDF-01 | P0 | PDF ingestion | Extracted text/pages become Study context with page references. |
 | STUDY-PDF-02 | P1 | PDF export | Clean print stylesheet supports browser Save as PDF at near-zero platform cost. |
 
-## P3 — Learning intelligence
+## P3 — Learning intelligence — historical / superseded implementation guidance
 
-| ID | Priority | Action |
+The goals in this section were early stepping stones. The current V1–V7 architecture now implements canonical concepts, evidence admission, learner projections, misconception intelligence, prerequisite recovery, retention and transfer through the newer governed path.
+
+The following entries are retained only for historical traceability; they are **not active implementation instructions**:
+
+| ID | Historical action | Current disposition |
 |---|---|---|
-| STUDY-INT-01 | P0 | Resolve known topics to canonical concept IDs. |
-| STUDY-INT-02 | P0 | Wire `buildStudyLearningMap`. |
-| STUDY-INT-03 | P0 | Wire `buildStudyAdvisorCandidate`. |
-| STUDY-INT-04 | P1 | Remove duplicate curriculum seed truth. |
-| STUDY-INT-05 | P1 | Replace string-prefix session state with versioned typed Study state. |
+| STUDY-INT-01 | Resolve known topics to canonical concept IDs. | Superseded by the canonical concept runtime/graph architecture. |
+| STUDY-INT-02 | Wire `buildStudyLearningMap`. | **Retired. Do not resurrect.** |
+| STUDY-INT-03 | Wire `buildStudyAdvisorCandidate`. | **Retired/superseded. Do not create a parallel advisor truth path.** |
+| STUDY-INT-04 | Remove duplicate curriculum seed truth. | Governed by the current one-learner-truth / canonical-concept rules. |
+| STUDY-INT-05 | Replace string-prefix session state with versioned typed Study state. | Continue only where still applicable under the current learner-ledger/projection architecture. |
 
 ## P4 — Verified assessments
 
@@ -117,11 +123,13 @@ Do **not** add an unwired Study routing helper. The proper backend change is to 
 
 ---
 
-## Branch / PR guardrails
+## Branch / PR guardrails — historical
+
+The entries below describe the original Draft #359 execution context and are not current branch instructions:
 
 - Branch: `plan/study-workspace-roadmap-ux-redesign`
 - PR: Draft #359
 - Base: `main`
-- Current authorised code scope: **P1 Study UX only**.
-- Not authorised here: DB/SQL, PDF backend, image generation, model-router backend changes, provider keys, Production deployment or merge.
-- Main and Production remain untouched until CI + preview review + explicit approval.
+- Current authorised code scope at that time: **P1 Study UX only**.
+- Not authorised in that historical branch: DB/SQL, PDF backend, image generation, model-router backend changes, provider keys, Production deployment or merge.
+- Main and Production remained untouched until CI + preview review + explicit approval.

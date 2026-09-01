@@ -18,6 +18,8 @@ import { evaluateSafetyText } from "./safety-policy.js";
 import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-store.js";
 import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
+import { shouldGroundTurn } from './studio-domains.js';
+import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -530,9 +532,11 @@ export default async function handler(req: any, res: any) {
       studioModeExplicit: communicationRequest.studioModeExplicit,
       buildMode: buildMode || isRefine,
     }) || isRefine;
-    // Studio users should not toggle web search. Live search is off until a
-    // product surface needs it (advisors are frozen; BUILD does not use it).
-    const grounding = false;
+    const grounding = shouldGroundTurn({
+      domain: normalizedStudioDomain,
+      buildMode: effectiveBuildMode,
+      task,
+    });
 
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') dynamicTemperature = 0.3;
@@ -548,7 +552,10 @@ export default async function handler(req: any, res: any) {
 
     const isRepairTask = task === "repair";
     const isVerifyTask = task === "verify-build";
-    const isArtifactTask = isRepairTask || isVerifyTask;
+    const isResearchVerifyTask = task === "research-verify";
+    // Tasks that carry code or claims instead of a chat message, and so skip
+    // the message/session/safety validation below.
+    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask;
 
     if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
@@ -647,6 +654,32 @@ export default async function handler(req: any, res: any) {
       } catch (err: any) {
         console.error("Error in /api/chat verify-build task:", err);
         return res.status(500).json({ error: err?.message || "Verification failed." });
+      }
+    }
+
+    if (isResearchVerifyTask) {
+      // The Research desk's evidence check: fetch the cited public sources,
+      // have a model nominate verbatim passages, and let the deterministic
+      // verifier grant or refuse each standing. Research-only — no other desk
+      // pays for this pass.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Verification runs on the research desk only." });
+      }
+      const normalized = normalizeResearchVerifyRequest(req.body);
+      if (!normalized.ok || !normalized.claims || !normalized.sources) {
+        return res.status(400).json({ error: normalized.error || "Invalid verification request." });
+      }
+      try {
+        const report = await runResearchVerification({
+          claims: normalized.claims,
+          sources: normalized.sources,
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
+        return res.status(200).json(report);
+      } catch (err: any) {
+        console.error("Error in /api/chat research-verify task:", err);
+        return res.status(500).json({ error: err?.message || "Evidence verification failed." });
       }
     }
 
@@ -1273,6 +1306,15 @@ export default async function handler(req: any, res: any) {
             const artifactContract = validateBuildArtifactResponse(
               attemptReply,
               goldenCanary ? transaction : null,
+              // A guided first turn is TOLD not to output code (FIRST-TURN
+              // RULE) — failing it for complying burned every route on the
+              // same compliant reply. Artifact canaries (a goldenTransaction
+              // naming calculator/simple-website) still owe files: the
+              // transaction argument forbids intake inside the validator.
+              // Gating on the canary HEADER here as well would re-punish a
+              // canary-driven guided-intake transaction for obeying — the
+              // exact class this option exists to end.
+              { allowIntake: honorGuided },
             );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }

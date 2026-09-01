@@ -139,7 +139,7 @@ test('previewShellIsWarming only for live shell states', () => {
 
 test('studioPreviewRunLabel maps shell states', () => {
   assert.equal(studioPreviewRunLabel('clean'), 'Preview is running');
-  assert.equal(studioPreviewRunLabel('failed'), 'Preview is running with errors');
+  assert.equal(studioPreviewRunLabel('failed'), 'Preview failed to run');
   assert.equal(studioPreviewRunLabel({ kind: 'quality', passed: true }), 'Preview is running');
 });
 

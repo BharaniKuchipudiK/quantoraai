@@ -69,7 +69,14 @@ async function repairWithOpenRouter(apiKey: string, model: string, system: strin
       temperature: 0.1,
       stream: false,
     }),
-  }, 12_000);
+    /*
+     * 12s killed every real repair: regenerating a full 30KB+ document is a
+     * long non-streaming completion, so the Apply step of the artifact loop
+     * died as "DOMException [TimeoutError]" 12 times in 2 hours on 2026-09-01
+     * while the chat claimed fixes were applied. /api/chat's own budget is
+     * 165s; 90s here leaves room for the verify round-trip after it.
+     */
+  }, 90_000);
 
   if (!resp.ok) {
     const errText = await resp.text();

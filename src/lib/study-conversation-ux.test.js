@@ -7,14 +7,11 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('the lesson never renders a second composer', () => {
-  /*
-   * This first replaced a vague "Your turn" banner with an embedded input, then
-   * the input itself had to go. It was a plain field calling the same send path
-   * as the composer at the bottom of the screen, with none of its capabilities
-   * — no attachment, no voice, no enhance — and two inputs on one screen is an
-   * ambiguity, not a convenience.
-   */
   const markdown = read('src/components/StudyMarkdown.jsx');
   assert.doesNotMatch(markdown, /data-quantora-study-answer-affordance/);
   assert.doesNotMatch(markdown, /<input|<form/);
@@ -30,8 +27,8 @@ test('the question is anchored in the composer, and only when one was asked', ()
 test('incorrect resolution offers repair choices without punitive red failure styling', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   assert.match(shell, /Good attempt — here is the key distinction/);
-  assert.match(shell, />Another example</);
-  assert.match(shell, />Useful reference</);
+  assert.match(shell, />\s*Another example\s*</);
+  assert.match(shell, />\s*Useful reference\s*</);
   assert.match(shell, /onRemediation\?\.\('retry'\)/);
   assert.doesNotMatch(shell, /#9f1239|#fb7185/);
 });
@@ -95,19 +92,54 @@ test('Study flashcards are an interactive hidden-answer deck, not a Front/Back t
   assert.match(markdown, /<StudyFlashcards/);
 });
 
-test('Study gives the learner compact next-path choices instead of dumping activities into the lesson', () => {
+test('Study keeps exactly three permanent learner moves and moves secondary tools behind the Hub', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
+  const hub = read('src/components/StudyHubLauncher.jsx');
+  const history = read('src/components/StudyAssessmentHistory.jsx');
+  const notebook = read('src/components/StudyNotebook.jsx');
+
   assert.match(shell, /data-quantora-study-next-choices="true"/);
-  for (const label of ['Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
-    assert.match(shell, new RegExp(label.replace('?', '\\?')));
+  assert.match(shell, />\s*Explain\s*</);
+  assert.match(shell, />\s*Practice\s*</);
+  assert.match(shell, /:\s*'Check'/);
+
+  for (const label of ['Notebook', 'Assessment history', 'Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
+    assert.match(hub, new RegExp(escapeRegExp(label)));
   }
+  for (const label of ['Notebook', 'Assessment history', 'Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
+    assert.doesNotMatch(shell, new RegExp(`${escapeRegExp(label)}\\s*<\\/button>`));
+  }
+
+  assert.match(hub, /data-quantora-study-hub-launcher="true"/);
+  assert.match(hub, /aria-expanded=\{open\}/);
+  assert.match(hub, /<StudyAssessmentHistory/);
+  assert.match(hub, /<StudyNotebook/);
+  assert.match(history, /data-quantora-study-assessment-history="true"/);
+  assert.match(history, /Last \{state\.data\?\.windowDays \|\| 30\} days/);
+  assert.match(notebook, /data-quantora-study-notebook="true"/);
+  assert.match(notebook, /Personal notes do not change mastery/);
+
+  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard)['"]/i);
+  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard)\s*</i);
+});
+
+test('H1 Study controls are monochrome and do not revive the legacy accent palette', () => {
+  const shell = read('src/components/StudyTutorShell.jsx');
+  const hub = read('src/components/StudyHubLauncher.jsx');
+  const css = read('src/components/study-h1.css');
+  const historyCss = read('src/components/study-assessment-history.css');
+  const notebookCss = read('src/components/study-notebook.css');
+  const h1 = `${shell}\n${hub}\n${css}\n${historyCss}\n${notebookCss}`;
+
+  assert.doesNotMatch(h1, /#f97316|#fff7ed|#ecfdf5|#fde68a|#92400e|#6ee7b7|#fcd34d/i);
+  assert.match(css, /--study-h1-strong: #111111/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /focus-visible/);
 });
 
 test('persisted private Study prompts are removed from both rendering and model history', () => {
   const studio = read('src/components/AiStudio.jsx');
   const stream = read('src/hooks/useChatStream.js');
-  // Memoized since the chat-feed identity work; the contract is that the
-  // scrub feeds cleanStudyMessages, whatever wrapper carries it.
   assert.match(studio, /cleanStudyMessages = useMemo\(\s*\(\) => withoutPrivateStudyInstructions\(messages, studioDomain\)/);
   assert.match(studio, /return cleanStudyMessages\.filter/);
   assert.match(stream, /withoutPrivateStudyInstructions\([\s\S]*studioDomain/);

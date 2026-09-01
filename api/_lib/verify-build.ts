@@ -5,6 +5,8 @@ import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFai
 import { formatJobCardForVerify } from "../../src/lib/studio-job-card.js";
 // Commerce intent lives in ONE place — see src/lib/commerce-intent.js for why.
 import { briefWantsOnlineSelling, briefWantsProductCatalog } from "../../src/lib/commerce-intent.js";
+import { inspectBuildTruth } from "../../src/lib/build-truth.js";
+import { isAllowedPreviewImageUrl } from "../../src/lib/preview-images.js";
 
 /*
  * Build Verifier — the keystone of Quantora's outcome-first intelligence.
@@ -57,7 +59,37 @@ function hasRealStyling(src: string): boolean {
  * spine of the verdict. Feature checks activate only when the brief asks for
  * them, so a simple landing page is not penalised for lacking a cart.
  */
-export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
+/*
+ * Controls a person would click that a machine can prove are wired.
+ *
+ * Everything else in this file asks whether a STRING is present. "Add to
+ * Cart" as text passed feat-cart; a <button> existing passed interactive. A
+ * boutique page whose nav, Add to Cart and Checkout were all dead scored
+ * 100/100 and passed, because every question asked was about the source
+ * rather than about the page. The person who asked for that shop finds out by
+ * clicking.
+ *
+ * build-truth.js already answers the harder question and nothing here was
+ * asking it. It is deliberately silent when it cannot be sure — a component
+ * framework owning the wiring, or a delegated listener it cannot follow — so
+ * the checks below are only added for the categories it actually ran. A check
+ * that is green because it never executed is worse than no check.
+ */
+const SELL_CONTROL = /add[\s-]?to[\s-]?(?:cart|bag|basket)|buy\s?now|checkout|place\s+order/i;
+
+/*
+ * A page that loads script it did not inline.
+ *
+ * build-truth reads script BODIES, so `<script src="https://cdn/commerce.js">`
+ * is invisible to it and a storefront that delegates its cart to a commerce SDK
+ * reads as a dead Add to Cart. Capping such a build at 45 asserts knowledge we
+ * do not have — the wiring may be perfectly real in code we cannot see. The
+ * finding is still worth surfacing, so the check stays and only the CAP stands
+ * down. Silent when unsure is the rule; silent about everything is not.
+ */
+const LOADS_EXTERNAL_SCRIPT = /<script\b[^>]*\bsrc\s*=/i;
+
+export function heuristicChecks(code: string, brief = "", opts: { files?: string[] } = {}): BuildCheck[] {
   const src = String(code || "");
   const lower = src.toLowerCase();
   const b = String(brief || "").toLowerCase();
@@ -115,7 +147,148 @@ export function heuristicChecks(code: string, brief = ""): BuildCheck[] {
     checks.push({ id: "feat-gallery", label: "Gallery with multiple images", ok: enough, weight: 2, detail: enough ? undefined : "Brief asks for a gallery, but few/no images were built" });
   }
 
+  const truth = inspectBuildTruth(src, { files: opts.files || [] });
+  const stoodDown = new Set(truth.skipped.map((s: any) => s.check));
+  const say = (findings: any[]) => findings.slice(0, 3).map((f) => f.what).join(" ");
+
+  if (!stoodDown.has("controls")) {
+    const dead = truth.findings.filter((f: any) => f.kind === "dead-control");
+    /*
+     * Critical only when the brief asked to SELL and the dead control is the
+     * one that sells. A dead footer link on a landing page is a defect worth
+     * scoring down; a dead Add to Cart on a shop is the shop not existing.
+     * Same shape as feat-photos above, and for the same reason: a gate that
+     * caps the score on ambiguous evidence is a gate the next person mutes.
+     */
+    /*
+     * Match the control's SOURCE, not just its derived label. build-truth
+     * prefers an accessible name, so `<button aria-label="Add dress">Add to
+     * Cart</button>` stores "Add dress" and a label-only test misses the very
+     * control that sells. data.at locates the exact occurrence, so the element
+     * itself — attributes and visible text alike — is what gets classified.
+     */
+    const deadSellControl = dead.filter((f: any) => {
+      if (SELL_CONTROL.test(String(f.data?.label || ""))) return true;
+      const at = Number(f.data?.at);
+      return Number.isFinite(at) && SELL_CONTROL.test(src.slice(at, at + 200));
+    });
+    checks.push({
+      id: "controls-wired",
+      label: "Buttons and links actually do something",
+      ok: dead.length === 0,
+      weight: 3,
+      critical: briefWantsOnlineSelling(b) && deadSellControl.length > 0 && !LOADS_EXTERNAL_SCRIPT.test(src),
+      detail: dead.length ? `${dead.length} control(s) do nothing when clicked. ${say(dead)}` : undefined,
+    });
+  }
+
+  if (!stoodDown.has("links")) {
+    const broken = truth.findings.filter((f: any) => f.kind === "broken-link");
+    checks.push({
+      id: "links-resolve",
+      label: "Links go where they say",
+      ok: broken.length === 0,
+      weight: 2,
+      detail: broken.length ? `${broken.length} link(s) point nowhere. ${say(broken)}` : undefined,
+    });
+  }
+
   return checks;
+}
+
+/*
+ * IMAGE LIVENESS — the "confidently wrong raises no error" class.
+ *
+ * Every image check above asks about the STRING: src present, src shaped like
+ * a URL. On 2026-09-01 a boutique shipped with cart and checkout working and
+ * every product frame empty — invented Unsplash IDs and the retired
+ * source.unsplash.com — while the model claimed "verified photographs" three
+ * turns running. Whether a URL loads is network truth; this probe asks it and
+ * hands the dead URLs, by name, to the repair loop.
+ *
+ * Precision rule (§5): only a definitive upstream verdict is "dead" — HTTP
+ * 4xx, or a 2xx that is not an image. Timeouts and 5xx are indeterminate and
+ * never fail a build, so this cannot become the next muted gate.
+ */
+/** src attributes arrive HTML-encoded; the browser decodes before fetching,
+ *  so the probe must too — `&amp;sig=y` probed literally 4xx'd a URL that
+ *  loads fine in Preview (Codex P2 on PR #442). */
+function decodeHtmlAttribute(value: string): string {
+  return String(value || "").replace(/&(amp|quot|apos|lt|gt|#0*39);/gi, (whole, name) => (
+    { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" }[name.toLowerCase()] ?? "'"
+  ));
+}
+
+export function collectRemoteImageProbes(code: string, limit = 8): string[] {
+  const src = String(code || "");
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /\bsrc\s*=\s*["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) && out.length < limit) {
+    let url = decodeHtmlAttribute(m[1].trim());
+    if (url.startsWith("/api/preview-image")) {
+      const idx = url.indexOf("u=");
+      if (idx === -1) continue;
+      // Same contract as the proxy: `u` owns everything after it, unencoded.
+      url = url.slice(idx + 2);
+      if (!/^https?:\/\//i.test(url)) {
+        try { url = decodeURIComponent(url); } catch { continue; }
+      }
+    }
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    /*
+     * SSRF guard (Codex P1 on PR #442): this markup is model/user-controlled
+     * and the probe runs server-side, so an unfiltered GET reaches cloud
+     * metadata and internal services. Only the same https allowlist the
+     * preview proxy enforces may be probed; everything else is simply not
+     * checked (the proxy will refuse to serve it anyway).
+     */
+    if (!isAllowedPreviewImageUrl(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
+export async function probeImageLiveness(
+  urls: string[],
+  opts: { fetchFn?: typeof fetch; timeoutMs?: number } = {},
+): Promise<{ checked: number; dead: Array<{ url: string; why: string }>; indeterminate: number }> {
+  const fetchFn = opts.fetchFn || fetch;
+  const timeoutMs = opts.timeoutMs ?? 4_000;
+  const dead: Array<{ url: string; why: string }> = [];
+  let indeterminate = 0;
+  await Promise.all(urls.map(async (url) => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let upstream: any;
+      try {
+        upstream = await fetchFn(url, {
+          // Never follow server-side: a redirect could hop off the allowlist
+          // onto an internal address. A 3xx lands in the indeterminate branch
+          // below — no verdict, no request to wherever it pointed.
+          redirect: "manual",
+          signal: controller.signal,
+          headers: { Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      const type = String(upstream?.headers?.get?.("content-type") || "");
+      if (upstream.status >= 400 && upstream.status < 500) {
+        dead.push({ url, why: `HTTP ${upstream.status}` });
+      } else if (upstream.ok && type && !/^image\//i.test(type)) {
+        dead.push({ url, why: `not an image (${type.split(";")[0]})` });
+      } else if (!upstream.ok) {
+        indeterminate += 1;
+      }
+    } catch {
+      indeterminate += 1;
+    }
+  }));
+  return { checked: urls.length, dead, indeterminate };
 }
 
 function scoreFromChecks(checks: BuildCheck[]): number {
@@ -192,6 +365,8 @@ export async function verifyBuild(opts: {
   openRouterKey?: string;
   geminiKey?: string;
   model?: string;
+  /** Injectable for the liveness gate; defaults to global fetch. */
+  fetchImage?: typeof fetch;
 }): Promise<BuildReport> {
   const { code, vfs = {}, brief = "", job, openRouterKey, geminiKey, model } = opts;
   if (!code || typeof code !== "string" || !code.trim()) {
@@ -200,7 +375,27 @@ export async function verifyBuild(opts: {
 
   const assembled = prepareCodeForPreview(code, vfs);
   const judgedBrief = formatJobCardForVerify(job, brief);
-  const checks = heuristicChecks(assembled, judgedBrief);
+  const checks = heuristicChecks(assembled, judgedBrief, { files: Object.keys(vfs || {}) });
+
+  // Photos that actually load — network truth the string checks cannot see.
+  // Additive and fail-open: a probe crash never blocks verification.
+  try {
+    const probes = collectRemoteImageProbes(assembled);
+    if (probes.length) {
+      const live = await probeImageLiveness(probes, { fetchFn: opts.fetchImage });
+      checks.push({
+        id: "img-live",
+        label: "Photos actually load",
+        ok: live.dead.length === 0,
+        weight: 3,
+        critical: live.dead.length > 0 && briefWantsProductCatalog(judgedBrief.toLowerCase()),
+        detail: live.dead.length
+          ? `${live.dead.length} of ${live.checked} checked photo URL(s) are dead — replace them: ${live.dead.slice(0, 3).map((d) => `${d.url} (${d.why})`).join("; ")}`
+          : undefined,
+      });
+    }
+  } catch { /* liveness is additive; verification proceeds without it */ }
+
   const heuristicScore = scoreFromChecks(checks);
   const heuristicIssues = checks.filter((c) => !c.ok).map((c) => c.detail || `Missing: ${c.label}`);
 

@@ -117,6 +117,8 @@ const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 // holds the desk entry chunk to 300 KB gzipped. Loading it on demand keeps a
 // travel-only surface off every other desk's download.
 const TravelTripBoard = lazy(() => import('./TravelTripBoard.jsx'));
+// Same deal for the research dossier board: research-only, loaded on demand.
+const ResearchBoard = lazy(() => import('./ResearchBoard.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -2451,6 +2453,20 @@ Paused — ${autoPauseRef.current}.`
                                 }),
                               });
                               const chipText = `${item.label || ''} ${item.value || ''}`;
+                              /*
+                               * A chip that pins an engine (outcome spine's
+                               * "Retry on <engine>") sends its turn on that
+                               * model, not on whatever routing re-picks — the
+                               * prose alone was invisible to routing, so a
+                               * tapped retry could re-run the engine that just
+                               * failed. Only a model still present and
+                               * available in the catalog is honored.
+                               */
+                              const overrideModel = item.modelOverrideId
+                                ? (availableModels || []).find(
+                                  (m) => m?.id === item.modelOverrideId && m.available !== false,
+                                ) || null
+                                : null;
                               if (studioDomain === 'education' && wantsStudyLab(chipText)) {
                                 const labKind = /fbd|free-?body/i.test(chipText)
                                   ? 'fbd'
@@ -2468,7 +2484,7 @@ Paused — ${autoPauseRef.current}.`
                                 }]);
                                 return;
                               }
-                              feedHandleSendMessage(item.value);
+                              feedHandleSendMessage(item.value, overrideModel);
                             }}
                             onDismiss={() => {
                               if (studySyllabusSet && msg.id === latestAiId) {
@@ -2496,6 +2512,17 @@ Paused — ${autoPauseRef.current}.`
                               messages={messages}
                               signedIn={Boolean(user)}
                               onAsk={(text) => setInputText(text)}
+                              onRequireAuth={onOpenAuth}
+                            />
+                          </Suspense>
+                        ) : null}
+                        {studioDomain === 'research' && msg.id === latestAiId ? (
+                          <Suspense fallback={null}>
+                            <ResearchBoard
+                              messages={messages}
+                              signedIn={Boolean(user)}
+                              onAsk={(text) => setInputText(text)}
+                              onSend={(text) => handleSendMessage(text)}
                               onRequireAuth={onOpenAuth}
                             />
                           </Suspense>
@@ -2615,7 +2642,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, availableModels, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {

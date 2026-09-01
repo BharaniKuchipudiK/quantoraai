@@ -1,13 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildPreviewSandbox } from '../lib/preview-utils.js';
-import { correlationHeaders, normalizeClientCorrelationId, previewMessageMatchesCompile, recordClientBoundary } from '../lib/transaction-trace.js';
+import { normalizeClientCorrelationId, previewMessageMatchesCompile, recordClientBoundary } from '../lib/transaction-trace.js';
+import { requestPreviewCompilation } from '../lib/preview-compile-client.js';
 
-export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransaction = null, onDeskProbe }) {
+const PREVIEW_RENDER_TIMEOUT_MS = 7_000;
+
+export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransaction = null, onDeskProbe, onStatusChange }) {
   const frameRef = useRef(null);
   const renderedRef = useRef(false);
+  const terminalRef = useRef(false);
+  const generationRef = useRef(0);
   const compiledIdRef = useRef(normalizeClientCorrelationId(correlationId));
   const onDeskProbeRef = useRef(onDeskProbe);
   onDeskProbeRef.current = onDeskProbe;
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
   const [html, setHtml] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -15,32 +22,32 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
 
   useEffect(() => {
     const controller = new AbortController();
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
     let active = true;
+
     setLoading(true);
     setError('');
     setHtml('');
+    // Invalidate the previous iframe immediately. A late message from the old
+    // contentWindow must not certify the generation we are compiling now.
+    frameRef.current = null;
     renderedRef.current = false;
+    terminalRef.current = false;
+    onStatusChangeRef.current?.('compiling');
     compiledIdRef.current = normalizeClientCorrelationId(correlationId);
     // Facts observed on the previous build must not vouch for this one.
     onDeskProbeRef.current?.(null);
 
     (async () => {
       try {
-        const response = await fetch('/api/preview-compile', {
-          method: 'POST',
-          headers: correlationHeaders(correlationId, { 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            vfs: JSON.parse(serializedVfs),
-            correlationId,
-            ...(goldenTransaction ? { goldenTransaction } : {}),
-          }),
+        const payload = await requestPreviewCompilation({
+          vfs: JSON.parse(serializedVfs),
+          correlationId,
+          goldenTransaction,
           signal: controller.signal,
         });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload?.html) {
-          throw new Error(payload?.error || `Preview compilation failed (${response.status}).`);
-        }
-        if (!active) return;
+        if (!active || generation !== generationRef.current || terminalRef.current) return;
         compiledIdRef.current = normalizeClientCorrelationId(payload.correlationId)
           || normalizeClientCorrelationId(correlationId);
         setHtml(payload.html);
@@ -49,14 +56,19 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
           fileCount: Object.keys(JSON.parse(serializedVfs)).length,
         });
       } catch (compileError) {
-        if (!active || controller.signal.aborted) return;
-        setError(compileError?.message || 'Preview compilation failed.');
+        if (!active || generation !== generationRef.current || compileError?.code === 'compile-aborted') return;
+        if (terminalRef.current) return;
+        terminalRef.current = true;
+        const message = compileError?.message || 'Preview compilation failed.';
+        setError(message);
+        onStatusChangeRef.current?.('failed', message);
         void recordClientBoundary(correlationId, 'browser.preview-response', 'failed', {
           transaction: goldenTransaction,
-          detailCode: 'compile-response-failed',
+          detailCode: compileError?.code || 'compile-response-failed',
+          ...(Number.isInteger(compileError?.httpStatus) ? { httpStatus: compileError.httpStatus } : {}),
         });
       } finally {
-        if (active) setLoading(false);
+        if (active && generation === generationRef.current) setLoading(false);
       }
     })();
 
@@ -75,19 +87,33 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
         compiledId: compiledIdRef.current,
         eventId: event.data.correlationId,
       })) return;
+
+      // Desk facts are allowed after the iframe has declared ready. They are
+      // observational, not a terminal-state transition.
+      if (event.data.kind === 'desk-probe') {
+        if (event.data.facts && typeof event.data.facts === 'object') {
+          onDeskProbeRef.current?.(event.data.facts);
+        }
+        return;
+      }
+
+      // ready/error are terminal for one compiled generation. A late ready may
+      // never resurrect a generation that already timed out or crashed.
+      if (terminalRef.current) return;
+
       if (event.data.kind === 'error') {
+        terminalRef.current = true;
         const runtimeMessage = String(event.data.message || 'Preview runtime error.');
         setError(runtimeMessage);
+        onStatusChangeRef.current?.('failed', runtimeMessage);
         void recordClientBoundary(correlationId, 'browser.iframe', 'failed', {
           transaction: goldenTransaction,
           detailCode: runtimeMessage.includes('rendered no content') ? 'runtime-empty-root' : 'runtime-exception',
         });
-      } else if (event.data.kind === 'desk-probe') {
-        if (event.data.facts && typeof event.data.facts === 'object') {
-          onDeskProbeRef.current?.(event.data.facts);
-        }
       } else if (event.data.kind === 'ready' && !renderedRef.current) {
+        terminalRef.current = true;
         renderedRef.current = true;
+        onStatusChangeRef.current?.('ready');
         void recordClientBoundary(correlationId, 'browser.iframe', 'rendered', {
           transaction: goldenTransaction,
         });
@@ -96,6 +122,25 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [correlationId, goldenTransaction]);
+
+  useEffect(() => {
+    if (!html || error || renderedRef.current || terminalRef.current) return undefined;
+    // The compiled iframe itself promises a terminal ready/error event within
+    // five seconds. Give message delivery two extra seconds, then fail visibly
+    // instead of leaving the parent status on “starting” forever.
+    const timer = setTimeout(() => {
+      if (renderedRef.current || terminalRef.current) return;
+      terminalRef.current = true;
+      const message = 'Preview compiled, but the generated application did not report that it rendered.';
+      setError(message);
+      onStatusChangeRef.current?.('failed', message);
+      void recordClientBoundary(correlationId, 'browser.iframe', 'failed', {
+        transaction: goldenTransaction,
+        detailCode: 'runtime-no-ready',
+      });
+    }, PREVIEW_RENDER_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [html, error, correlationId, goldenTransaction]);
 
   return (
     <div

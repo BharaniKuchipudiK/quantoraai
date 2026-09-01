@@ -8,6 +8,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const TUTOR_UI_MODULES = [
   'src/components/StudyTutorShell.jsx',
+  'src/components/StudyHubLauncher.jsx',
   'src/lib/study-tutor-brief.js',
   'src/lib/study-learning-resources.js',
   'src/lib/study-syllabus-overlay.js',
@@ -46,6 +47,7 @@ test('Study tutor focus is a persistent workspace sibling, not mounted under the
     'Study focus must not be keyed to the latest AI message',
   );
   assert.match(workspace, /key=\{`\$\{activeSessionId\}:\$\{brief\.conceptId\}`\}/);
+  assert.match(workspace, /<StudyHubLauncher/);
   assert.match(source, /lazy\(\(\) => import\('\.\/StudyTutorWorkspace\.jsx'\)\)/);
 });
 

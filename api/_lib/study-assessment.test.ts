@@ -69,7 +69,7 @@ test("issue stores the answer server-side but returns only the public item", asy
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
-    if (target.includes("/rest/v1/study_assessment_attempts?select=id")) return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) return json([]);
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       storedAttempt = JSON.parse(init.body)[0];
       return new Response(null, { status: 201 });
@@ -94,6 +94,7 @@ test("issue stores the answer server-side but returns only the public item", asy
 test("issue skips an item already submitted elsewhere in the learner-global evidence history", async () => {
   const originalFetch = global.fetch;
   let storedAttempt: any = null;
+  let freshnessReads = 0;
   global.fetch = async (url: any, init: any = {}) => {
     const target = String(url);
     if (target.includes("/rest/v1/users?select=")) return json([{ google_sub: "learner-1", email: "learner@example.com", blocked_at: null }]);
@@ -101,11 +102,10 @@ test("issue skips an item already submitted elsewhere in the learner-global evid
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
-    if (target.includes("/rest/v1/study_assessment_attempts?select=id")) {
-      if (target.includes("item_key=eq.motion-graphs-velocity-slope") && target.includes("item_version=eq.1")) {
-        return json([{ id: "44444444-4444-4444-8444-444444444444" }]);
-      }
-      return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) {
+      freshnessReads += 1;
+      assert.match(target, /item_key=in\.\(motion-graphs-velocity-slope,motion-graphs-acceleration-slope\)/);
+      return json([{ item_key: "motion-graphs-velocity-slope", item_version: "1" }]);
     }
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       storedAttempt = JSON.parse(init.body)[0];
@@ -117,6 +117,7 @@ test("issue skips an item already submitted elsewhere in the learner-global evid
     const { state, res } = responseHarness();
     await studyAssessmentHandler(authenticatedRequest({ action: "issue", conceptKey: "physics.kinematics.motion-graphs", conceptLabel: "Motion graphs", sessionId: "session-global-freshness" }), res);
     assert.equal(state.status, 201);
+    assert.equal(freshnessReads, 1, "candidate freshness must be checked in one database read");
     assert.equal(storedAttempt.item_key, "motion-graphs-acceleration-slope");
     assert.equal(storedAttempt.correct_option_id, "a");
     assert.equal(state.body.item.itemKey, "motion-graphs-acceleration-slope");
@@ -133,7 +134,7 @@ test("atomic issue guard surfaces a retryable conflict without unsafe legacy fal
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
-    if (target.includes("/rest/v1/study_assessment_attempts?select=id")) return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) return json([]);
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       insertCalls += 1;
       return json({ code: "P0001", message: "study_assessment_item_already_active" }, 400);

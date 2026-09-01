@@ -93,3 +93,36 @@ test('every runtime-import-gate failure is a structured, actionable object', () 
   assert.ok(allPushes.length >= 3, `expected several failure kinds, saw ${allPushes.length}`);
   assert.equal(pushes.length, allPushes.length, 'every failures.push must pass an object literal, never a string');
 });
+
+/*
+ * The guided-intake transaction (2026-09-01). The two artifact transactions
+ * never ran the platform's #1 real flow, so the intake contradiction shipped
+ * unseen. The third transaction's invariant — intake question OR artifact,
+ * never a dead turn — is anchored on the decision modal's durable hooks, and
+ * the same hooks must keep being published by the component that renders it.
+ */
+test('the decision modal publishes durable hooks and the golden gate anchors on them', () => {
+  const modal = read('src/components/StudioDecisionModal.jsx');
+  assert.match(modal, /data-quantora-decision-modal="true"/);
+  assert.match(modal, /data-quantora-decision-option=\{option\.id\}/);
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /\[data-quantora-decision-modal="true"\]/);
+  assert.match(gate, /\[data-quantora-decision-option\]/);
+});
+
+/*
+ * The canary handshake (2026-09-01). The chat golden failed 3/3 on PR
+ * previews as a provider outage; the real cause was the canary token env
+ * being scoped to Production, discovered only by reading three run logs.
+ * Both ends of the one-second answer are pinned here: the health endpoint
+ * must keep answering "would this deployment honor my canary?", and the
+ * gate must keep asking BEFORE spending a model turn.
+ */
+test('the health endpoint and the golden gate keep the canary handshake', () => {
+  const handler = read('api/_lib/handlers/inference-health.ts');
+  assert.match(handler, /goldenCanaryHonored:\s*isGoldenCanaryRequest\(req\)/);
+  assert.match(handler, /goldenCanaryConfigured:\s*Boolean\(process\.env\.QUANTORA_GOLDEN_CANARY_TOKEN\)/);
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /goldenCanaryHonored !== true/);
+  assert.match(gate, /QUANTORA_GOLDEN_CANARY_TOKEN/, 'the failure message names the env var to fix');
+});

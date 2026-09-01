@@ -1,4 +1,5 @@
 import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
+import { isGoldenCanaryRequest } from '../transaction-trace.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
 import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
@@ -181,6 +182,18 @@ export default async function handler(req: any, res: any) {
 
   return res.status(summary.ready ? 200 : 503).json({
     ready: summary.ready,
+    /*
+     * Whether THIS deployment would honor the golden canary, answered where
+     * the env actually lives. On 2026-09-01 the chat golden failed 3/3 on PR
+     * previews as "no healthy AI route" + 401s: QUANTORA_GOLDEN_CANARY_TOKEN
+     * (like the Gemini key above) was scoped to Production, so goldenCanary
+     * was false on previews, mayUseServerKeys was false, and every canary
+     * chat turn ran keyless — a config gap misreported as a provider outage,
+     * for forty seconds per run instead of one line here. Presence is not a
+     * secret; `honored` only says whether the presented header matched.
+     */
+    goldenCanaryConfigured: Boolean(process.env.QUANTORA_GOLDEN_CANARY_TOKEN),
+    goldenCanaryHonored: isGoldenCanaryRequest(req),
     geminiConfigured: summary.geminiConfigured,
     geminiVia: gemini.source,
     openRouterConfigured: summary.openRouterConfigured,

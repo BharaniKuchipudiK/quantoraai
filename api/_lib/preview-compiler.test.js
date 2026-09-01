@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { compilePreviewVfs } from './preview-compiler.js';
+import { compilePreviewVfs, ensureReactNamespaceBinding } from './preview-compiler.js';
 
 // P0 release guard: this test exercises the exact self-hosted compiler used by Studio.
 const calculatorVfs = {
@@ -27,6 +27,35 @@ test('self-hosted preview compiler bundles React, package imports and local CSS 
   assert.doesNotMatch(result.html, /codesandbox/i);
   assert.doesNotMatch(result.html, /cdn\.jsdelivr|unpkg\.com|esm\.sh/i);
   assert.match(result.html, /rendered no content/);
+});
+
+test('generated StrictMode entry gets a preview-only React binding without changing Hira Silks files', async () => {
+  const hiraSilksVfs = {
+    'package.json': { content: JSON.stringify({ dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0' } }) },
+    'src/main.jsx': {
+      content: "import { createRoot } from 'react-dom/client'; import App from './App.jsx'; import './index.css'; createRoot(document.getElementById('root')).render(<React.StrictMode><App /></React.StrictMode>);",
+    },
+    'src/App.jsx': {
+      content: "export default function App(){return <main><h1>Hira Silks</h1><p>Kanjivaram, Uppada and Gadwal sarees</p></main>}",
+    },
+    'src/index.css': { content: '@tailwind base;\n@tailwind components;\n@tailwind utilities;\nbody{margin:0}' },
+  };
+  const before = structuredClone(hiraSilksVfs);
+  const normalized = ensureReactNamespaceBinding(hiraSilksVfs['src/main.jsx'].content, 'src/main.jsx');
+  assert.match(normalized, /^import React from 'react';/);
+  const result = await compilePreviewVfs(hiraSilksVfs);
+  assert.match(result.html, /Hira Silks/);
+  assert.deepEqual(hiraSilksVfs, before, 'preview compatibility must not rewrite generated content');
+});
+
+test('React namespace shim does not duplicate an existing local runtime binding', () => {
+  const source = "const React = globalThis.React;\nconsole.log(React.StrictMode);";
+  assert.equal(ensureReactNamespaceBinding(source, 'src/main.jsx'), source);
+});
+
+test('React namespace shim recognizes TypeScript import assignment', () => {
+  const source = "import React = require('react');\nconsole.log(React.StrictMode);";
+  assert.equal(ensureReactNamespaceBinding(source, 'src/main.tsx'), source);
 });
 
 test('the compiler bakes the correlation id and live-page probe into the iframe', async () => {

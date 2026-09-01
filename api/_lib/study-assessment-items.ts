@@ -1,5 +1,12 @@
 import type { StudyAssessmentReleaseMode } from './study-assessment-governance.js';
 import type { StudyMisconceptionCode } from './study-misconception-taxonomy.js';
+import {
+  STUDY_ASSESSMENT_CORPUS_SCHEMA_VERSION,
+  type StudyAssessmentCorpusMetadata,
+  type StudyAssessmentCurriculumRef,
+  type StudyAssessmentEvidencePurpose,
+  type StudyAssessmentRepresentation,
+} from './study-assessment-corpus.js';
 
 export const STUDY_ASSESSMENT_ITEM_BANK_VERSION = "study-assessment-items-2026-08-31.3";
 
@@ -21,7 +28,72 @@ export type StudyAssessmentItem = {
   misconceptionByOptionId: Partial<Record<string, StudyMisconceptionCode>>;
   reviewStatus: StudyAssessmentReviewStatus;
   releaseMode: StudyAssessmentReleaseMode;
+  corpus: StudyAssessmentCorpusMetadata;
 };
+
+const CURRICULUM_BY_CONCEPT: Record<string, { subject: string; refs: StudyAssessmentCurriculumRef[] }> = {
+  'math.trigonometry.functions': { subject: 'mathematics', refs: [
+    { curriculumKey: 'sg.seab.olevel.additional-mathematics.4049', curriculumVersion: '2026', objectiveCode: 'G1', level: 'O-Level Additional Mathematics' },
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Mathematics Unit 14', level: 'JEE Main Paper 1' },
+  ] },
+  'math.trigonometry.identities': { subject: 'mathematics', refs: [
+    { curriculumKey: 'sg.seab.olevel.additional-mathematics.4049', curriculumVersion: '2026', objectiveCode: 'G1', level: 'O-Level Additional Mathematics' },
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Mathematics Unit 14', level: 'JEE Main Paper 1' },
+  ] },
+  'math.vector.scalar-vector': { subject: 'mathematics', refs: [
+    { curriculumKey: 'sg.seab.olevel.physics.6091', curriculumVersion: '2026', objectiveCode: '1(f)', level: 'O-Level Physics' },
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Mathematics Unit 12', level: 'JEE Main Paper 1' },
+  ] },
+  'math.vector.resultant': { subject: 'mathematics', refs: [
+    { curriculumKey: 'sg.seab.olevel.physics.6091', curriculumVersion: '2026', objectiveCode: '1(g)', level: 'O-Level Physics' },
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Mathematics Unit 12', level: 'JEE Main Paper 1' },
+  ] },
+  'math.vector.components': { subject: 'mathematics', refs: [
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Mathematics Unit 12', level: 'JEE Main Paper 1' },
+  ] },
+  'physics.kinematics.speed-velocity-acceleration': { subject: 'physics', refs: [
+    { curriculumKey: 'sg.seab.olevel.physics.6091', curriculumVersion: '2026', objectiveCode: '2(a-d)', level: 'O-Level Physics' },
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Physics Unit 2', level: 'JEE Main Paper 1' },
+  ] },
+  'physics.kinematics.motion-graphs': { subject: 'physics', refs: [
+    { curriculumKey: 'sg.seab.olevel.physics.6091', curriculumVersion: '2026', objectiveCode: '2(e-h)', level: 'O-Level Physics' },
+  ] },
+  'physics.kinematics.motion-in-plane': { subject: 'physics', refs: [
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Physics Unit 2', level: 'JEE Main Paper 1' },
+  ] },
+  'physics.kinematics.projectile-motion': { subject: 'physics', refs: [
+    { curriculumKey: 'in.nta.jeemain.paper1', curriculumVersion: '2026', objectiveCode: 'Physics Unit 2', level: 'JEE Main Paper 1' },
+  ] },
+};
+
+function corpusMetadata(input: {
+  key: string;
+  version: string;
+  conceptKey: string;
+  evidencePurpose: StudyAssessmentEvidencePurpose;
+  representation: StudyAssessmentRepresentation;
+  prerequisiteConceptKeys?: string[];
+}): StudyAssessmentCorpusMetadata {
+  const mapping = CURRICULUM_BY_CONCEPT[input.conceptKey];
+  if (!mapping) throw new Error(`Missing assessment corpus mapping for ${input.conceptKey}`);
+  return {
+    schemaVersion: STUDY_ASSESSMENT_CORPUS_SCHEMA_VERSION,
+    subject: mapping.subject,
+    curriculumRefs: mapping.refs.map((ref) => ({ ...ref })),
+    evidencePurpose: input.evidencePurpose,
+    representation: input.representation,
+    prerequisiteConceptKeys: [...(input.prerequisiteConceptKeys || [])],
+    provenance: {
+      kind: 'quantora_authored',
+      sourceRef: 'quantora:study-assessment-bank',
+    },
+    lifecycle: {
+      state: 'released',
+      previousState: 'approved',
+      reviewRef: `quantora:study-assessment-bank:${input.key}@${input.version}`,
+    },
+  };
+}
 
 const ITEMS: StudyAssessmentItem[] = [
   {
@@ -44,6 +116,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { b: "sign_error", c: "sign_error", d: "sign_error" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'trig-functions-quadrant-sign', version: '1', conceptKey: 'math.trigonometry.functions', evidencePurpose: 'diagnostic', representation: 'spatial' }),
   },
   {
     key: "trig-identities-unit-circle",
@@ -65,6 +138,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { a: "formula_selection", c: "formula_selection", d: "formula_selection" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'trig-identities-unit-circle', version: '1', conceptKey: 'math.trigonometry.identities', evidencePurpose: 'retrieval', representation: 'symbolic', prerequisiteConceptKeys: ['math.trigonometry.functions'] }),
   },
   {
     key: "scalar-vector-classification",
@@ -86,6 +160,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { a: "conceptual_inversion", b: "conceptual_inversion", d: "conceptual_inversion" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'scalar-vector-classification', version: '1', conceptKey: 'math.vector.scalar-vector', evidencePurpose: 'retrieval', representation: 'text' }),
   },
   {
     key: "vector-resultant-perpendicular",
@@ -107,6 +182,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { c: "rule_outside_domain" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'vector-resultant-perpendicular', version: '1', conceptKey: 'math.vector.resultant', evidencePurpose: 'application', representation: 'quantitative', prerequisiteConceptKeys: ['math.vector.scalar-vector'] }),
   },
   {
     key: "vector-components-angle",
@@ -128,6 +204,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { a: "representation_misread" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'vector-components-angle', version: '1', conceptKey: 'math.vector.components', evidencePurpose: 'diagnostic', representation: 'symbolic', prerequisiteConceptKeys: ['math.trigonometry.functions', 'math.vector.scalar-vector'] }),
   },
   {
     key: "kinematics-acceleration-change",
@@ -149,6 +226,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { b: "formula_selection", c: "rule_outside_domain" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'kinematics-acceleration-change', version: '1', conceptKey: 'physics.kinematics.speed-velocity-acceleration', evidencePurpose: 'application', representation: 'quantitative' }),
   },
   {
     key: "motion-graphs-velocity-slope",
@@ -170,6 +248,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { a: "representation_misread" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'motion-graphs-velocity-slope', version: '1', conceptKey: 'physics.kinematics.motion-graphs', evidencePurpose: 'diagnostic', representation: 'graph_interpretation', prerequisiteConceptKeys: ['physics.kinematics.speed-velocity-acceleration'] }),
   },
   {
     key: "motion-graphs-acceleration-slope",
@@ -191,6 +270,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { b: "representation_misread", c: "representation_misread", d: "representation_misread" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'motion-graphs-acceleration-slope', version: '1', conceptKey: 'physics.kinematics.motion-graphs', evidencePurpose: 'misconception_probe', representation: 'graph_interpretation', prerequisiteConceptKeys: ['physics.kinematics.speed-velocity-acceleration'] }),
   },
   {
     key: "motion-plane-independent-components",
@@ -212,6 +292,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { a: "component_confusion", c: "component_confusion", d: "component_confusion" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'motion-plane-independent-components', version: '1', conceptKey: 'physics.kinematics.motion-in-plane', evidencePurpose: 'diagnostic', representation: 'text', prerequisiteConceptKeys: ['math.vector.components', 'physics.kinematics.speed-velocity-acceleration'] }),
   },
   {
     key: "projectile-horizontal-velocity",
@@ -233,6 +314,7 @@ const ITEMS: StudyAssessmentItem[] = [
     misconceptionByOptionId: { b: "component_confusion", d: "component_confusion" },
     reviewStatus: "approved",
     releaseMode: "reviewed_static",
+    corpus: corpusMetadata({ key: 'projectile-horizontal-velocity', version: '1', conceptKey: 'physics.kinematics.projectile-motion', evidencePurpose: 'diagnostic', representation: 'text', prerequisiteConceptKeys: ['physics.kinematics.motion-in-plane'] }),
   },
 ];
 
@@ -242,6 +324,13 @@ function cloneItem(item: StudyAssessmentItem): StudyAssessmentItem {
     options: item.options.map((option) => ({ ...option })),
     misconceptionOptionIds: [...item.misconceptionOptionIds],
     misconceptionByOptionId: { ...item.misconceptionByOptionId },
+    corpus: {
+      ...item.corpus,
+      curriculumRefs: item.corpus.curriculumRefs.map((ref) => ({ ...ref })),
+      prerequisiteConceptKeys: [...item.corpus.prerequisiteConceptKeys],
+      provenance: { ...item.corpus.provenance },
+      lifecycle: { ...item.corpus.lifecycle },
+    },
   };
 }
 
