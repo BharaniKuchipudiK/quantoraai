@@ -1,3 +1,5 @@
+import { correlationHeaders } from './transaction-trace.js';
+
 export const PREVIEW_COMPILE_TIMEOUT_MS = 20_000;
 
 export class PreviewCompileError extends Error {
@@ -58,7 +60,7 @@ export async function requestPreviewCompilation({
   try {
     const response = await fetchFn('/api/preview-compile', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: correlationHeaders(correlationId, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         vfs: vfs || {},
         correlationId,
