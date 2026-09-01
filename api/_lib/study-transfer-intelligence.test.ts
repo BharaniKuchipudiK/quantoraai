@@ -56,3 +56,14 @@ test('resolver can use an already-reviewed application item on a novel governed 
     assert.equal(result.plan.item.cognitiveOperation, 'application');
   });
 });
+
+test('resolver refuses a globally used application item even when target concept has no local evidence', async () => {
+  await withTransferTarget('math.vector.resultant', async () => {
+    const result = await resolveStudyTransferAttempt({
+      userSub: 'learner-v7',
+      sourceConcept: { id: SOURCE_ID, canonicalKey: 'physics.kinematics.motion-graphs', label: 'Motion graphs' },
+      usedItemRefs: new Set(['vector-resultant-perpendicular@1']),
+    });
+    assert.deepEqual(result, { status: 'none' });
+  });
+});
