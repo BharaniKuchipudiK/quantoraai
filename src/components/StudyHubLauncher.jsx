@@ -147,6 +147,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
                   key={action.id}
                   type="button"
                   className="study-h1-hub__action"
+                  aria-label={action.label}
                   onClick={() => runAction(action)}
                 >
                   <span className="study-h1-hub__action-icon" aria-hidden="true"><Icon size={16} /></span>
