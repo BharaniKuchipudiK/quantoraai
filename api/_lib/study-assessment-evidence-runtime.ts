@@ -102,15 +102,36 @@ export async function readStudyUsedAssessmentItemRefs(
   return new Set(checks.filter((check) => check.status === 'used').map((check) => check.itemRef));
 }
 
+export type StudyEvidenceAttemptIssueConflict = 'already_submitted' | 'already_active';
+
 export type StudyEvidenceAttemptIssueResult =
   | { status: 'issued'; attemptId: string; evidenceKind: StudyAssessmentEvidenceKind; legacyFallback: boolean }
+  | { status: 'conflict'; reason: StudyEvidenceAttemptIssueConflict }
   | { status: 'unavailable' };
+
+function studyIssueConflict(detail: string): StudyEvidenceAttemptIssueConflict | null {
+  if (detail.includes('study_assessment_item_already_submitted')) return 'already_submitted';
+  if (detail.includes('study_assessment_item_already_active')) return 'already_active';
+  return null;
+}
+
+function isMissingStudyV7Schema(response: Response, detail: string): boolean {
+  if (response.status !== 400) return false;
+  return detail.includes('PGRST204')
+    || (/schema cache/i.test(detail) && /evidence_kind|evidence_concept_id|retention_anchor_at/i.test(detail));
+}
 
 /**
  * Issue one server-owned governed assessment attempt with an immutable evidence
- * purpose. A pre-V7 database may safely downgrade ordinary evidence to the
- * legacy assessment path; retention/transfer fail closed because their
- * semantics cannot be represented safely without the V7 migration.
+ * purpose. Once the V7 migration is active, a database trigger serializes issue
+ * and grade on the same learner + item/version advisory-lock key. A concurrent
+ * stale selection is surfaced as a conflict instead of silently creating an
+ * attempt that can never contribute new independent evidence.
+ *
+ * A pre-V7 database may safely downgrade ordinary evidence only when PostgREST
+ * positively reports that the V7 columns are not installed yet. Network errors,
+ * constraint failures, and other database faults fail closed; retention/transfer
+ * always fail closed until V7 schema is present.
  */
 export async function issueStudyEvidenceAttempt(entry: {
   userSub: string;
@@ -158,12 +179,24 @@ export async function issueStudyEvidenceAttempt(entry: {
   if (response?.ok) {
     return { status: 'issued', attemptId, evidenceKind: entry.evidenceKind, legacyFallback: false };
   }
+  if (!response) return { status: 'unavailable' };
+
+  let detail = '';
+  try {
+    detail = await response.text();
+  } catch {
+    detail = '';
+  }
+  const conflict = studyIssueConflict(detail);
+  if (conflict) return { status: 'conflict', reason: conflict };
 
   // During rollout, a code deploy can briefly precede the Supabase migration.
-  // Preserve the old verified-assessment path, but never pretend legacy schema
-  // can encode retention or cross-concept transfer semantics.
-  if (entry.evidenceKind === 'retention_probe' || entry.evidenceKind === 'transfer') {
-    if (response) console.warn(`Study V7 evidence issuance unavailable -> ${response.status}`);
+  // Only a positive missing-schema signal may use the legacy ordinary path.
+  const canUseLegacyFallback = entry.evidenceKind !== 'retention_probe'
+    && entry.evidenceKind !== 'transfer'
+    && isMissingStudyV7Schema(response, detail);
+  if (!canUseLegacyFallback) {
+    console.warn(`Study V7 evidence issuance unavailable -> ${response.status}`);
     return { status: 'unavailable' };
   }
 
