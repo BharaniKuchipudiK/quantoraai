@@ -47,7 +47,7 @@ begin
       check (
         (evidence_kind = 'transfer' and evidence_concept_id is not null and evidence_concept_id <> concept_id)
         or
-        (evidence_kind <> 'transfer')
+        (evidence_kind <> 'transfer' and evidence_concept_id is null)
       );
   end if;
 end $$;
