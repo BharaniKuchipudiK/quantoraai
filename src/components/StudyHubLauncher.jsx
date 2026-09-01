@@ -20,8 +20,16 @@ import {
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import StudyAssessmentHistory from './StudyAssessmentHistory.jsx';
+import StudyNotebook from './StudyNotebook.jsx';
 
 const HUB_ACTIONS = Object.freeze([
+  {
+    id: 'notebook',
+    label: 'Notebook',
+    hint: 'Keep private notes organized by subject and topic.',
+    icon: BookOpenText,
+    surface: 'notebook',
+  },
   {
     id: 'history',
     label: 'Assessment history',
@@ -76,9 +84,9 @@ const HUB_ACTIONS = Object.freeze([
 /**
  * Progressive-disclosure launcher for secondary Study capabilities.
  *
- * The launcher exposes only capabilities with real contracts. Assessment
- * History is the first durable learner surface in the Hub; future Notebook and
- * Progress surfaces join only after their persistence/telemetry contracts land.
+ * Durable learner surfaces live beside conversational tools without becoming
+ * learner truth themselves. Assessment History reads authoritative evidence;
+ * Notebook stores learner-owned study material that never changes mastery.
  */
 export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend }) {
   const [open, setOpen] = useState(false);
@@ -112,8 +120,8 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
   }, [open, surface]);
 
   const runAction = (action) => {
-    if (action.surface === 'history') {
-      setSurface('history');
+    if (action.surface) {
+      setSurface(action.surface);
       return;
     }
     const text = studyAdaptiveTutorAsk(action.ask(label), learnerModel);
@@ -125,6 +133,18 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
     closeHub();
   };
 
+  const panelClass = [
+    'study-h1-hub__panel',
+    surface === 'history' ? 'study-h1-hub__panel--history' : '',
+    surface === 'notebook' ? 'study-h1-hub__panel--notebook' : '',
+  ].filter(Boolean).join(' ');
+
+  const labelledBy = surface === 'history'
+    ? 'quantora-study-history-title'
+    : surface === 'notebook'
+      ? 'quantora-study-notebook-title'
+      : 'quantora-study-hub-title';
+
   return (
     <div
       ref={rootRef}
@@ -135,13 +155,15 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
       {open ? (
         <section
           id="quantora-study-hub-panel"
-          className={`study-h1-hub__panel${surface === 'history' ? ' study-h1-hub__panel--history' : ''}`}
+          className={panelClass}
           role="dialog"
           aria-modal="false"
-          aria-labelledby={surface === 'history' ? 'quantora-study-history-title' : 'quantora-study-hub-title'}
+          aria-labelledby={labelledBy}
         >
           {surface === 'history' ? (
             <StudyAssessmentHistory onClose={() => setSurface('tools')} />
+          ) : surface === 'notebook' ? (
+            <StudyNotebook topic={label} onClose={() => setSurface('tools')} />
           ) : (
             <>
               <div className="study-h1-hub__header">
