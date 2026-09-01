@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, History, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Check, History, RotateCcw } from 'lucide-react';
 import { loadStudyAssessmentHistory } from '../lib/study-assessment-history-client.js';
 import './study-assessment-history.css';
 
@@ -55,10 +55,10 @@ export default function StudyAssessmentHistory({ onClose }) {
         <button
           type="button"
           className="study-h1-icon-button"
-          aria-label="Close assessment history"
+          aria-label="Back to Study tools"
           onClick={onClose}
         >
-          <X size={16} />
+          <ArrowLeft size={16} />
         </button>
       </div>
 
