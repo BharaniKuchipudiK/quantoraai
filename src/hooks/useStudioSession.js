@@ -19,6 +19,13 @@ import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, i
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
+/*
+ * Stable fallbacks. `|| {}` mints a fresh object every render, and these
+ * values sit in downstream memo dependency arrays (AiStudio's chat feed) —
+ * a new identity per render silently voids those memos.
+ */
+const EMPTY_CONVERSATION_CONTEXT = Object.freeze({});
+const EMPTY_LISTENING_SIGNALS = Object.freeze([]);
 export const DEFAULT_PROJECT_ID = 'project-personal';
 
 const PROJECT_LIMITS = Object.freeze({ name: 120, description: 2000, goal: 2000 });
@@ -425,8 +432,8 @@ export function useStudioSession({ user, selectedModel }) {
   const studioMode = activeSession.studioMode || 'ask';
   const studioDomain = normalizeStudioDomain(activeSession.studioDomain);
   const boundRepo = activeSession.boundRepo || null;
-  const conversationContext = activeSession.conversationContext || {};
-  const listeningSignals = activeSession.listeningSignals || [];
+  const conversationContext = activeSession.conversationContext || EMPTY_CONVERSATION_CONTEXT;
+  const listeningSignals = activeSession.listeningSignals || EMPTY_LISTENING_SIGNALS;
   const projectArtifacts = useMemo(() => projectSessions.flatMap((session) => (
     (session.messages || []).filter((message) => message.officeAttachment || message.codeSnippet || message.previewUrl).map((message) => {
       const office = message.officeAttachment;

@@ -124,9 +124,6 @@ const deriveDeckTitle = (messages) => {
   const t = (firstUser?.text || 'Presentation').replace(/\s+/g, ' ').trim();
   return t.length > 60 ? `${t.slice(0, 57)}…` : t;
 };
-const LiveIosCalculator = lazy(() => import('./interactive/LiveIosCalculator'));
-const LiveBeatMaker = lazy(() => import('./interactive/LiveBeatMaker'));
-const LiveQuantumSimulator = lazy(() => import('./interactive/LiveQuantumSimulator'));
 // Graphic Brand Logo Renderer for Tech Stack Pills
 function TechLogo({ name }) {
   switch (name) {
@@ -1514,9 +1511,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     extra: inputText,
     dismissed: dismissedSyllabus,
   });
-  const studySyllabusSet = showStudySyllabus
-    ? studySyllabusContinueSet(conversationContext?.goal || '')
-    : null;
+  // Memoized for identity: a fresh set object every render voids the chat
+  // feed memo below whenever the chips are showing.
+  const studySyllabusSet = useMemo(
+    () => (showStudySyllabus ? studySyllabusContinueSet(conversationContext?.goal || '') : null),
+    [showStudySyllabus, conversationContext?.goal],
+  );
 
   const financeBrief = React.useMemo(
     () => (studioDomain === 'finance' ? deriveFinanceBrief({ messages }) : null),
@@ -1767,17 +1767,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const awaitingStudyAnswer = studioDomain === 'education'
     && !isGenerating
     && studyAwaitsAnswer(lastAiMessage?.text || '');
-  const cleanStudyMessages = withoutPrivateStudyInstructions(messages, studioDomain);
-  const lastUserMessage = [...cleanStudyMessages].reverse().find((message) => message.sender === 'user');
-  const previewRunCode = runningPreviewCode(vfs, workspaceCode);
-  const previewAssemblyKey = previewAssemblyFingerprint(vfs);
-  const shellVfs = deskShellVfs(vfs, previewRunCode);
-  const deskPacket = mergeLiveDeskProbe(buildDeskContextPacket({
+  /*
+   * Everything below feeds the renderedChatFeed memo's dependency array. A
+   * dependency whose IDENTITY changes every render voids that memo every
+   * render — the ~800-line feed then rebuilds on each keystroke in the
+   * composer. So each derived object here is memoized on its real inputs;
+   * this is identity stabilization, not a speed-up of the derivations.
+   */
+  const cleanStudyMessages = useMemo(
+    () => withoutPrivateStudyInstructions(messages, studioDomain),
+    [messages, studioDomain],
+  );
+  const lastUserMessage = useMemo(
+    () => [...cleanStudyMessages].reverse().find((message) => message.sender === 'user'),
+    [cleanStudyMessages],
+  );
+  const previewRunCode = useMemo(() => runningPreviewCode(vfs, workspaceCode), [vfs, workspaceCode]);
+  const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
+  const shellVfs = useMemo(() => deskShellVfs(vfs, previewRunCode), [vfs, previewRunCode]);
+  const deskPacket = useMemo(() => mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,
     job: deskJob,
     html: previewRunCode,
     studioDomain,
-  }), liveDeskProbe);
+  }), liveDeskProbe), [vfs, deskJob, previewRunCode, studioDomain, liveDeskProbe]);
   const photosMissing = Boolean(previewRunCode)
     && deskPacket?.facts?.shop
     && (!deskPacket.facts.hasPhotos || deskPacket.facts.hasDistinctPhotos === false);
@@ -1791,7 +1804,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   // Same shell gate as partner strip: warming/running/healing = not past embedReady/verify.
   const previewWarming = previewShellIsWarming(previewRunStatus);
-  const claimFilterOpts = { previewWarming };
+  const claimFilterOpts = useMemo(() => ({ previewWarming }), [previewWarming]);
+
+  /*
+   * Stable identities for the feed's click handlers. The functions themselves
+   * are recreated per render (they close over live state); the feed only needs
+   * a constant reference that calls the LATEST one at click time. A ref does
+   * exactly that with no stale-closure risk — nothing here runs during render.
+   */
+  const chatFeedHandlersRef = useRef({});
+  chatFeedHandlersRef.current = { openCanvasWithCode, handleSendMessage, commitStudySyllabusChip };
+  const feedOpenCanvasWithCode = useCallback((...args) => chatFeedHandlersRef.current.openCanvasWithCode(...args), []);
+  const feedHandleSendMessage = useCallback((...args) => chatFeedHandlersRef.current.handleSendMessage(...args), []);
+  const feedCommitStudySyllabusChip = useCallback((...args) => chatFeedHandlersRef.current.commitStudySyllabusChip(...args), []);
 
   const renderedChatFeed = React.useMemo(() => {
     return cleanStudyMessages.filter((msg) => msg.type !== 'greeting').map(msg => {
@@ -2165,7 +2190,7 @@ Paused — ${autoPauseRef.current}.`
                             updateActiveMessages((prev) => prev.map((item) => (
                               item.id === msg.id ? { ...item, choiceUsed: true } : item
                             )));
-                            handleSendMessage(choiceText);
+                            feedHandleSendMessage(choiceText);
                           }}
                           onSkip={() => {
                             updateActiveMessages((prev) => prev.map((item) => (
@@ -2219,7 +2244,7 @@ Paused — ${autoPauseRef.current}.`
                           {/* Preview (code / presentation / app) — only when previewable */}
                           {actions.preview && runnableCode && canExplicitlyPreviewCode(studioDomain) && (
                             <button
-                              onClick={() => openCanvasWithCode(msg.text)}
+                              onClick={() => feedOpenCanvasWithCode(msg.text)}
                               style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
                               onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
                               onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
@@ -2243,7 +2268,7 @@ Paused — ${autoPauseRef.current}.`
 
                           {/* Summarize — only for long replies (not one-liners) */}
                           {actions.summarize && (
-                            <button onClick={() => handleSendMessage('Please summarize this.')} title="Summarize" style={{ ...iconBtn, color: subtextColor }}><List size={14} /></button>
+                            <button onClick={() => feedHandleSendMessage('Please summarize this.')} title="Summarize" style={{ ...iconBtn, color: subtextColor }}><List size={14} /></button>
                           )}
 
                           <button onClick={() => handleRegenerateMessage(msg.id)} title="Regenerate" style={{ ...iconBtn, color: subtextColor }}><RefreshCw size={14} /></button>
@@ -2415,7 +2440,7 @@ Paused — ${autoPauseRef.current}.`
                             isLight={isLight}
                             onSelectContinue={(item) => {
                               if (STUDY_SYLLABUS_CHIPS.some((chip) => chip.id === item.id)) {
-                                commitStudySyllabusChip(item);
+                                feedCommitStudySyllabusChip(item);
                                 return;
                               }
                               updateActiveSession({
@@ -2433,7 +2458,7 @@ Paused — ${autoPauseRef.current}.`
                                     ? 'newton'
                                     : null;
                                 if (!labKind) {
-                                  handleSendMessage(item.value);
+                                  feedHandleSendMessage(item.value);
                                   return;
                                 }
                                 updateActiveMessages((prev) => [...prev, {
@@ -2443,7 +2468,7 @@ Paused — ${autoPauseRef.current}.`
                                 }]);
                                 return;
                               }
-                              handleSendMessage(item.value);
+                              feedHandleSendMessage(item.value);
                             }}
                             onDismiss={() => {
                               if (studySyllabusSet && msg.id === latestAiId) {
@@ -2462,7 +2487,7 @@ Paused — ${autoPauseRef.current}.`
                           <FinanceBoard
                             brief={financeBrief}
                             onAsk={(text) => setInputText(text)}
-                            onSend={(text) => handleSendMessage(text)}
+                            onSend={(text) => feedHandleSendMessage(text)}
                           />
                         ) : null}
                         {studioDomain === 'travel' && msg.id === latestAiId ? (
@@ -2559,11 +2584,6 @@ Paused — ${autoPauseRef.current}.`
 
 
 
-                  {/* Render Interactive Live Component Sandboxes Directly in Chat */}
-                  {msg.componentType === 'calculator' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading Calculator...</div>}><LiveIosCalculator /></Suspense>}
-                  {msg.componentType === 'beat' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading BeatMaker...</div>}><LiveBeatMaker /></Suspense>}
-                  {msg.componentType === 'quantum' && <Suspense fallback={<div style={{padding: 20, color: '#888'}}>Loading Quantum Simulator...</div>}><LiveQuantumSimulator /></Suspense>}
-
                   {/* Source Code Toggle Button — developer-only, never shown for Office artifacts */}
                   {msg.codeSnippet && !msg.officeAttachment && canExplicitlyPreviewCode(studioDomain) && (
                     <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2595,7 +2615,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, openCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, handleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, commitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
 
   
   useEffect(() => {

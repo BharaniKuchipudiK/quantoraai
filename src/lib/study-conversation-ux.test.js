@@ -106,7 +106,9 @@ test('Study gives the learner compact next-path choices instead of dumping activ
 test('persisted private Study prompts are removed from both rendering and model history', () => {
   const studio = read('src/components/AiStudio.jsx');
   const stream = read('src/hooks/useChatStream.js');
-  assert.match(studio, /cleanStudyMessages = withoutPrivateStudyInstructions\(messages, studioDomain\)/);
+  // Memoized since the chat-feed identity work; the contract is that the
+  // scrub feeds cleanStudyMessages, whatever wrapper carries it.
+  assert.match(studio, /cleanStudyMessages = useMemo\(\s*\(\) => withoutPrivateStudyInstructions\(messages, studioDomain\)/);
   assert.match(studio, /return cleanStudyMessages\.filter/);
   assert.match(stream, /withoutPrivateStudyInstructions\([\s\S]*studioDomain/);
 });

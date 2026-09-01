@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { fetchApiGatewayKey } from './autocomplete';
+import { fetchApiGatewayKey } from './autocomplete.js';
 import { applyCors, clientIp, isRateLimited } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchWithTimeout } from "./_lib/fetch-timeout.js";
