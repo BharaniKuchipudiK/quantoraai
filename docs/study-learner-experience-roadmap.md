@@ -26,9 +26,9 @@ No engagement metric, notebook entry, completed schedule item, self-report, or t
 | Adaptive mastery / next-best-action | **Core implemented** | H3 projection/snapshot scale and broader curriculum coverage |
 | Retention intelligence | **Implemented and production-canary proven** | H2 content breadth so retention probes exist across supported curriculum |
 | Transfer intelligence | **Implemented and production-canary proven** | H2 reviewed application-item breadth on governed transfer targets |
-| Human reinforcement | **In validation — H1.4** | evidence-triggered repair/retention/transfer recognition + reduced-motion browser proof |
+| Human reinforcement | **Complete — H1.4** | expand only when a new authoritative evidence event warrants it |
 | Unified learner-facing Study surfaces | **Complete — H1.1** | three primary actions + progressive-disclosure monochrome Study Hub are live |
-| First-run onboarding | **In validation — H1.4** | private cold-start context, skip persistence and four-step learner setup |
+| First-run onboarding | **Complete — H1.4** | private cold-start context may later inform planning, never mastery |
 | Assessment history | **Complete — H1.2** | authoritative 30-day learner history is available from the Study Hub |
 | Learner notebook | **Complete — H1.3** | persistent private notes, subject/topic organization, search, autosave and delete |
 | Time / activity trends | **Pending — H3** | privacy-safe active-time telemetry and learner-facing progress view |
@@ -236,9 +236,15 @@ H1.2  30-day Assessment History                     COMPLETE
   ↓
 H1.3  Learner Notebook                              COMPLETE
   ↓
-H1.4  Onboarding + semantic reinforcement           IN VALIDATION
+H1.4  Onboarding + semantic reinforcement           COMPLETE
   ↓
-H2    Assessment corpus / diagnostic breadth
+H2.1  Assessment corpus architecture                IN PROGRESS
+  ↓
+H2.2  Corpus quality and release gates
+  ↓
+H2.3  Reviewed corpus expansion
+  ↓
+H2.4  Multi-concept diagnostic breadth
   ↓
 H3    Durable learner projection + observability + active-time trends
   ↓
