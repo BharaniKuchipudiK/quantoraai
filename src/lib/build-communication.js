@@ -41,8 +41,8 @@ export function getChatDisplayText(rawText = '', { artifactHtml = '' } = {}) {
     // The reply was pure artifact — surface a short, kind-aware pointer instead.
     const isDeck = /\b(slide|deck|presentation|powerpoint|pptx)\b/i.test(`${rawText} ${artifactHtml}`);
     return isDeck
-      ? 'Your presentation is ready in the preview panel →'
-      : 'Your generated result is ready in the preview panel →';
+      ? 'Your presentation files are in the preview panel →'
+      : 'Your generated files are on the Coding desk →';
   }
   return rawText;
 }

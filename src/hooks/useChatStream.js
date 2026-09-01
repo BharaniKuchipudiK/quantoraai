@@ -88,10 +88,10 @@ const MIN_ATTEMPT_BUDGET_MS = 20_000;
 /**
  * Success copy with what does not work on the page appended to it.
  *
- * "Preview is proved" means a runnable page exists. It does not mean anything
- * on that page works, and there are four separate branches that can declare it
+ * A structural proof means runnable-looking files exist. It does not mean the
+ * page rendered, and there are four separate branches that can report it
  * — the normal completion, a skills-seeded desk, and two error-recovery paths
- * where the desk was already proved. Three of them originally skipped the
+ * where files were already present. Three of them originally skipped the
  * build-truth note, so on exactly the turns where the platform was most eager
  * to report success, it was quietest about the dead controls.
  *
@@ -1454,9 +1454,9 @@ export function useChatStream({
                       missingImports.length
                         ? `${why}. ${describeMissingImports(missingImports)} Ask me to finish `
                           + `${missingImports.length === 1 ? 'that file' : 'those files'} and the rest of the build stays as it is.`
-                        : `${why}, but Preview is already proved on the desk`
+                        : `${why}, but generated files are already on the Coding desk`
                           + `${describeDeskEvidence(deskProof.evidence)}. `
-                          + 'Open Coding desk — the page is there.',
+                          + 'Open Coding desk to see whether Preview can run them.',
                       deskProof,
                     ),
                     isError: false,
@@ -1610,11 +1610,12 @@ export function useChatStream({
                 }
                 const okCopy = shopOwned
                   ? (
-                    `Preview is proved on the desk `
+                    `Generated shop files remain on the Coding desk `
                     + `(${seededProof.evidence.photos} catalog photos`
-                    + `${seededProof.evidence.hasCart ? ', Add to Cart' : ''}).`
+                    + `${seededProof.evidence.hasCart ? ', Add to Cart' : ''}); `
+                    + 'Preview still needs to run them.'
                   )
-                  : 'Preview is proved on the desk — open Coding desk to run it.';
+                  : 'Generated files remain on the Coding desk; Preview still needs to run them.';
                 const okCopyWithTruth = withBuildTruth(okCopy, seededProof);
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
@@ -1889,9 +1890,9 @@ export function useChatStream({
                   ...m,
                   text: withBuildTruth(
                     deskCanStart(deskProof.vfs || {})
-                      ? `${why}, but Preview is already proved on the desk`
+                      ? `${why}, but generated files are already on the Coding desk`
                         + `${describeDeskEvidence(deskProof.evidence)}. `
-                        + 'Open Coding desk — the page is there.'
+                        + 'Open Coding desk to see whether Preview can run them.'
                       : `${why}. ${describeMissingImports(findMissingLocalImports(deskProof.vfs || {}))}`,
                     deskProof,
                   ),

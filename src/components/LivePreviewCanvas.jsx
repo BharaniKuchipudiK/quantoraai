@@ -895,6 +895,20 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     [currentCode, vfs],
   );
   const projectRuntimeActive = Boolean(projectRuntimeVfs);
+  const handleProjectRuntimeStatus = useCallback((next, message = '') => {
+    if (next === 'ready') {
+      setLastError(null);
+      setStatus('clean');
+      return;
+    }
+    if (next === 'failed') {
+      setLastError(message || 'Preview could not run.');
+      setStatus('failed');
+      return;
+    }
+    setLastError(null);
+    setStatus('running');
+  }, []);
   const goldenRuntimeContractError = goldenTransaction && Object.keys(vfs || {}).length > 0 && !projectRuntimeActive
     ? 'Generated files did not satisfy the React/VFS project runtime contract.'
     : null;
@@ -1150,6 +1164,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       correlationId={correlationId}
       goldenTransaction={goldenTransaction}
       onDeskProbe={publishLiveDeskProbe}
+      onStatusChange={handleProjectRuntimeStatus}
     />
   ) : ((currentCode && embedSrc) || wcUrl ? (
     <div style={{ width: '100%', height: '100%', minHeight: headless ? '480px' : viewportStyles[viewport].height, position: 'relative' }}>

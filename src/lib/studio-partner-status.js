@@ -188,7 +188,7 @@ export function studioPreviewRunLabel(status) {
   if (value === 'healing') return 'Preview is fixing a crash…';
   if (value === 'clean') return 'Preview is running';
   if (value === 'degraded') return 'Preview is running — styling may be incomplete';
-  if (value === 'failed') return 'Preview is running with errors';
+  if (value === 'failed') return 'Preview failed to run';
   return '';
 }
 

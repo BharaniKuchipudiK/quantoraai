@@ -28,7 +28,7 @@ test('strips multiple fenced blocks, keeps the prose brief', () => {
 
 test('deck-only reply gets a presentation-aware brief', () => {
   const raw = '```html\n<!DOCTYPE html><html><body><section class="slide"></section></body></html>\n```';
-  assert.match(getChatDisplayText(raw, { artifactHtml: '<section class="slide">' }), /presentation is ready/i);
+  assert.match(getChatDisplayText(raw, { artifactHtml: '<section class="slide">' }), /presentation files are in/i);
 });
 
 test('getChatDisplayText never truncates a normal (long) reply', () => {
@@ -40,5 +40,7 @@ test('getChatDisplayText never truncates a normal (long) reply', () => {
 
 test('getChatDisplayText falls back when only html returned', () => {
   const raw = '```html\n<!DOCTYPE html><html></html>\n```';
-  assert.match(getChatDisplayText(raw, { artifactHtml: '<html></html>' }), /preview panel/i);
+  const display = getChatDisplayText(raw, { artifactHtml: '<html></html>' });
+  assert.match(display, /generated files are on the Coding desk/i);
+  assert.doesNotMatch(display, /\bready\b/i);
 });

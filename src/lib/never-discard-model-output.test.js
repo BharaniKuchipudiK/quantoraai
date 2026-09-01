@@ -104,23 +104,14 @@ test('INVARIANT: the build-truth note is appended, never assigned as the turn te
   assert.doesNotMatch(source, /text:\s*truthNote/, 'and it may never become the message text');
 });
 
-test('INVARIANT: no success branch may declare a proved Preview without the truth note', () => {
+test('INVARIANT: structural file checks never claim that Preview rendered', () => {
   /*
-   * "Preview is proved" means a runnable page exists. It does not mean anything
-   * on that page works — and four separate branches can declare it: the normal
-   * completion, a skills-seeded desk, and two error-recovery paths where the
-   * desk was already proved. Three of them originally skipped the note, so on
-   * exactly the turns where the platform was most eager to report success it
-   * was quietest about the dead controls.
-   *
-   * Every claim of a proved Preview must therefore pass through withBuildTruth.
+   * The proof plane only inspected files here; render proof arrives later from
+   * the iframe. Copy in these branches may say files exist, never that Preview
+   * is proved before the runtime has answered.
    */
   const source = hookSource();
-  const claims = [...source.matchAll(/Preview is (?:already )?proved on the desk/g)];
-  assert.ok(claims.length >= 3, `expected the known success branches; found ${claims.length}`);
-  const wrapped = [...source.matchAll(/withBuildTruth\(/g)];
-  assert.ok(
-    wrapped.length >= claims.length,
-    `each proved-Preview claim needs a withBuildTruth wrapper; ${claims.length} claims, ${wrapped.length} wrappers`,
-  );
+  assert.doesNotMatch(source, /Preview is (?:already )?proved on the desk/);
+  assert.match(source, /generated files are already on the Coding desk/);
+  assert.match(source, /Preview still needs to run them/);
 });
