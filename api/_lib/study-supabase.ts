@@ -1,10 +1,10 @@
-export const STUDY_SUPABASE_TIMEOUT_MS = 4_000;
+const STUDY_SUPABASE_TIMEOUT_MS = 4_000;
 
 type StudySupabaseRequestInit = RequestInit & {
   headers?: Record<string, string>;
 };
 
-export function studySupabaseConfig() {
+function studySupabaseConfig() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
