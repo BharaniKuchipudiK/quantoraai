@@ -4,9 +4,9 @@ import { readStudySupabaseRows, studySupabaseRequest } from './study-supabase.js
 
 const NOTE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NOTE_SELECT = 'id,subject,topic,title,body,created_at,updated_at';
-const NOTE_LIMIT = 200;
+export const STUDY_NOTEBOOK_MAX_NOTES = 200;
 
-export type StudyNotebookNote = {
+type StudyNotebookNote = {
   id: string;
   subject: string;
   topic: string | null;
@@ -76,7 +76,7 @@ async function parseRows(response: Response | null): Promise<any[] | null> {
 
 export async function readStudyNotebookNotes(userSub: string): Promise<StudyNotebookNote[] | null> {
   const rows = await readStudySupabaseRows(
-    `study_notebook_notes?select=${NOTE_SELECT}&user_sub=eq.${encodeURIComponent(userSub)}&order=updated_at.desc,id.desc&limit=${NOTE_LIMIT}`,
+    `study_notebook_notes?select=${NOTE_SELECT}&user_sub=eq.${encodeURIComponent(userSub)}&order=updated_at.desc,id.desc&limit=${STUDY_NOTEBOOK_MAX_NOTES}`,
     { operation: 'study_notebook_list' },
   );
   return rows === null ? null : publicNotes(rows);
@@ -167,6 +167,13 @@ export default async function studyNotebookHandler(req: any, res: any) {
   if (req.method === 'POST') {
     const input = normalizeStudyNotebookNoteInput(req.body);
     if (!input) return res.status(400).json({ error: 'A subject and note title are required.' });
+    const existing = await readStudyNotebookNotes(userSub);
+    if (existing === null) return res.status(503).json({ error: 'Your Study notebook is temporarily unavailable.' });
+    if (existing.length >= STUDY_NOTEBOOK_MAX_NOTES) {
+      return res.status(409).json({
+        error: `Notebook supports up to ${STUDY_NOTEBOOK_MAX_NOTES} notes. Delete an older note before creating another.`,
+      });
+    }
     const note = await createStudyNotebookNote(userSub, input);
     if (!note) return res.status(503).json({ error: 'Your note could not be created right now.' });
     return res.status(201).json({ note });
