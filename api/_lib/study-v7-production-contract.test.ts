@@ -47,9 +47,9 @@ test('V7 migration owns the production evidence schema, race guard, atomic grade
     "p_user_sub || ':' || v_attempt.item_key || '@' || v_attempt.item_version",
     "item_ref = v_attempt.item_key || '@' || v_attempt.item_version",
     "when v_attempt.evidence_kind = 'retention_probe' and v_attempt.retention_anchor_at is not null",
-    "insert into public.study_mastery_events",
-    "grant execute on function public.guard_study_assessment_attempt_issue() to service_role",
-    "grant execute on function public.complete_study_assessment_attempt(text, uuid, text, timestamptz) to service_role",
+    'insert into public.study_mastery_events',
+    'grant execute on function public.guard_study_assessment_attempt_issue() to service_role',
+    'grant execute on function public.complete_study_assessment_attempt(text, uuid, text, timestamptz) to service_role',
   ]);
 
   assert.match(migration, /revoke all on function public\.guard_study_assessment_attempt_issue\(\)[\s\S]*from public, anon, authenticated/i);
@@ -66,6 +66,16 @@ test('V7 drift repair cannot regress the non-transfer null-target invariant', as
     "evidence_kind <> 'transfer' and evidence_concept_id is null",
     'not valid',
     'validate constraint study_assessment_attempts_transfer_concept_check',
+  ]);
+});
+
+test('V7 evidence-concept foreign key keeps a concept-leading support index', async () => {
+  const migration = await repoFile('supabase/migrations/20260901075807_study_v7_evidence_concept_fk_index.sql');
+
+  assertContainsAll(migration, [
+    'create index if not exists study_assessment_attempts_evidence_concept_idx',
+    'on public.study_assessment_attempts (evidence_concept_id)',
+    'where evidence_concept_id is not null',
   ]);
 });
 
