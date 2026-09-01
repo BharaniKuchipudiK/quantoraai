@@ -26,11 +26,11 @@ No engagement metric, notebook entry, completed schedule item, self-report, or t
 | Adaptive mastery / next-best-action | **Core implemented** | H3 projection/snapshot scale and broader curriculum coverage |
 | Retention intelligence | **Implemented and production-canary proven** | H2 content breadth so retention probes exist across supported curriculum |
 | Transfer intelligence | **Implemented and production-canary proven** | H2 reviewed application-item breadth on governed transfer targets |
-| Human reinforcement | **Pending — H1.4** | semantic evidence-triggered micro-interactions and reduced-motion behavior |
+| Human reinforcement | **In validation — H1.4** | evidence-triggered repair/retention/transfer recognition + reduced-motion browser proof |
 | Unified learner-facing Study surfaces | **Complete — H1.1** | three primary actions + progressive-disclosure monochrome Study Hub are live |
-| First-run onboarding | **Pending — H1.4** | short skippable cold-start profile; self-report remains context only |
+| First-run onboarding | **In validation — H1.4** | private cold-start context, skip persistence and four-step learner setup |
 | Assessment history | **Complete — H1.2** | authoritative 30-day learner history is available from the Study Hub |
-| Learner notebook | **In validation — H1.3** | persistent private notes, subject/topic organization, search, autosave and delete |
+| Learner notebook | **Complete — H1.3** | persistent private notes, subject/topic organization, search, autosave and delete |
 | Time / activity trends | **Pending — H3** | privacy-safe active-time telemetry and learner-facing progress view |
 | Native PDF / notes ingestion | **Pending — H4** | provenance, page anchors, file validation, prompt isolation |
 | Classroom / LMS integrations | **Pending — H5** | Google Classroom → Microsoft Education → QTI/LTI/OneRoster/CASE/Caliper |
@@ -206,26 +206,24 @@ The H3 observability wave already owns privacy-safe telemetry, event definitions
 
 Trigger feedback from evidence significance, not generic message completion.
 
-Examples:
+Initial learner-facing triggers are deliberately narrow:
 
 - repaired a prior misconception;
-- solved independently after scaffolding;
-- completed a delayed retention check;
-- succeeded on a genuine transfer task.
+- completed a delayed retention check successfully;
+- succeeded on a genuine governed transfer task.
 
-Never use failure shakes, red punishment, confetti or praise after every answer.
+Ordinary correctness does not trigger praise. Duplicate/replayed grades do not trigger reinforcement. Never use failure shakes, red punishment, confetti or praise after every answer. Reinforcement is transient, has no achievement ledger, never modifies mastery, and respects reduced-motion preferences.
 
 ### Onboarding
 
-Keep first-run Study onboarding to 4–5 skippable steps:
+Keep first-run Study onboarding to four short, skippable steps:
 
-1. study context;
-2. curriculum / level / subjects;
-3. current goal;
-4. optional exam/date/availability;
-5. optional quick diagnostic.
+1. welcome + explicit self-report truth boundary;
+2. study context + optional curriculum / level / subjects;
+3. current goal + optional exam / date;
+4. optional availability / explanation preference / quick diagnostic opt-in.
 
-Self-report is planning context only and never becomes verified learner truth.
+Skipping is persisted so Quantora does not repeatedly nag the learner. The profile is private server-owned cold-start context only; it may guide tutor phrasing/planning but never writes assessment evidence, mastery, misconception, retention or transfer state.
 
 ---
 
@@ -236,9 +234,9 @@ H1.1  Monochrome shell + Study Hub                  COMPLETE
   ↓
 H1.2  30-day Assessment History                     COMPLETE
   ↓
-H1.3  Learner Notebook                              IN VALIDATION
+H1.3  Learner Notebook                              COMPLETE
   ↓
-H1.4  Onboarding + semantic reinforcement
+H1.4  Onboarding + semantic reinforcement           IN VALIDATION
   ↓
 H2    Assessment corpus / diagnostic breadth
   ↓

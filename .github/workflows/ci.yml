@@ -190,6 +190,13 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/study-notebook-browser-gate.mjs
 
+      - name: Execute Study onboarding and reinforcement journey
+        id: study_h14_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/study-onboarding-reinforcement-browser-gate.mjs
+
       - name: Execute Finance browser journey
         id: finance_gate
         continue-on-error: true
@@ -323,6 +330,7 @@ jobs:
           TRAVEL_OUTCOME: ${{ steps.travel_gate.outcome }}
           STUDY_OUTCOME: ${{ steps.study_gate.outcome }}
           STUDY_NOTEBOOK_OUTCOME: ${{ steps.study_notebook_gate.outcome }}
+          STUDY_H14_OUTCOME: ${{ steps.study_h14_gate.outcome }}
           FINANCE_OUTCOME: ${{ steps.finance_gate.outcome }}
           MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
           STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
@@ -341,7 +349,7 @@ jobs:
           PREVIEW_SHELL_MUST_START_OUTCOME: ${{ steps.preview_shell_must_start_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME STUDY_NOTEBOOK_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME STUDY_NOTEBOOK_OUTCOME STUDY_H14_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
             outcome="${!gate}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import StudyHubLauncher from './StudyHubLauncher.jsx';
+import StudyReinforcement from './StudyReinforcement.jsx';
 import StudyTutorShell from './StudyTutorShell.jsx';
 import './study-h1.css';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
@@ -7,6 +8,7 @@ import {
   gradeStudyAssessment,
   requestStudyAssessment,
 } from '../lib/study-evidence-client.js';
+import { loadStudyOnboarding } from '../lib/study-onboarding-client.js';
 import {
   createStudyLoopState,
   isStudyQuestionCompleted,
@@ -22,6 +24,22 @@ import {
 
 const EMPTY_ASSESSMENT = Object.freeze({ status: 'idle', item: null, attemptId: '', selectedOptionId: '', result: null, error: '' });
 
+function coldStartContext(profile) {
+  if (!profile || profile.skipped) return '';
+  const parts = [];
+  if (profile.studyContext) parts.push(`context=${profile.studyContext}`);
+  if (profile.curriculum) parts.push(`curriculum=${profile.curriculum}`);
+  if (profile.level) parts.push(`level=${profile.level}`);
+  if (Array.isArray(profile.subjects) && profile.subjects.length) parts.push(`subjects=${profile.subjects.join(', ')}`);
+  if (profile.goal) parts.push(`goal=${profile.goal}`);
+  if (profile.targetExam) parts.push(`target exam=${profile.targetExam}`);
+  if (profile.examDate) parts.push(`exam date=${profile.examDate}`);
+  if (Number.isFinite(profile.weeklyMinutes)) parts.push(`weekly study minutes=${profile.weeklyMinutes}`);
+  if (profile.preferredModality) parts.push(`preferred explanation=${profile.preferredModality}`);
+  if (!parts.length) return '';
+  return `\n\nCold-start learner context (self-reported; planning context only, never mastery evidence): ${parts.join('; ')}.`;
+}
+
 /**
  * Persistent Study feature boundary. It is intentionally a sibling of the chat
  * feed, so streaming a new message cannot unmount an in-progress learner task.
@@ -36,6 +54,7 @@ export default function StudyTutorWorkspace({
   onSend,
 }) {
   const [assessment, setAssessment] = useState(EMPTY_ASSESSMENT);
+  const [onboarding, setOnboarding] = useState({ status: 'loading', profile: null });
   const [loop, dispatchLoop] = useReducer(
     (state, event) => transitionStudyLoop(state, event, 'education'),
     undefined,
@@ -46,6 +65,30 @@ export default function StudyTutorWorkspace({
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
   );
+  const onboardingSuffix = useMemo(() => coldStartContext(onboarding.profile), [onboarding.profile]);
+  const contextualSend = useCallback((text, options) => {
+    onSend?.(`${text}${onboardingSuffix}`, options);
+  }, [onSend, onboardingSuffix]);
+
+  useEffect(() => {
+    let active = true;
+    const handleOnboardingUpdated = (event) => {
+      if (!active) return;
+      setOnboarding({ status: 'done', profile: event?.detail || null });
+    };
+    window.addEventListener('quantora:study-onboarding-updated', handleOnboardingUpdated);
+    loadStudyOnboarding()
+      .then(({ profile }) => {
+        if (active) setOnboarding({ status: 'done', profile });
+      })
+      .catch(() => {
+        if (active) setOnboarding({ status: 'unavailable', profile: null });
+      });
+    return () => {
+      active = false;
+      window.removeEventListener('quantora:study-onboarding-updated', handleOnboardingUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     assessmentGeneration.current += 1;
@@ -105,10 +148,10 @@ export default function StudyTutorWorkspace({
   const handleAdvance = useCallback(() => {
     dispatchLoop({ type: 'ADVANCE' });
     setAssessment(EMPTY_ASSESSMENT);
-    onSend?.(studyNextQuestionAsk(brief?.label), {
+    contextualSend(studyNextQuestionAsk(brief?.label), {
       visibleUserText: studyActionVisibleText('next', brief?.label),
     });
-  }, [brief?.label, onSend]);
+  }, [brief?.label, contextualSend]);
 
   const handleRemediation = useCallback((kind) => {
     if (kind === 'retry') {
@@ -116,11 +159,12 @@ export default function StudyTutorWorkspace({
       return;
     }
     const ask = kind === 'example' ? studyAnotherExampleAsk(brief?.label) : studyUsefulReferenceAsk(brief?.label);
-    onSend?.(ask, {
+    contextualSend(ask, {
       visibleUserText: studyActionVisibleText(kind === 'example' ? 'example' : 'reference', brief?.label),
     });
-  }, [brief?.label, handleRequestAssessment, onSend]);
+  }, [brief?.label, contextualSend, handleRequestAssessment]);
 
+  if (onboarding.status === 'loading') return null;
   if (!brief?.active) return null;
   return (
     <>
@@ -128,7 +172,7 @@ export default function StudyTutorWorkspace({
         key={`${activeSessionId}:${brief.conceptId}`}
         brief={brief}
         onAsk={onAsk}
-        onSend={onSend}
+        onSend={contextualSend}
         assessment={assessment}
         loop={loop}
         onRequestAssessment={handleRequestAssessment}
@@ -141,8 +185,9 @@ export default function StudyTutorWorkspace({
         topic={brief.label}
         learnerModel={assessment?.result?.learnerModel || null}
         onAsk={onAsk}
-        onSend={onSend}
+        onSend={contextualSend}
       />
+      <StudyReinforcement result={assessment.result} />
     </>
   );
 }
