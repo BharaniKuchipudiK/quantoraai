@@ -10,19 +10,20 @@
  * engine that OBEYED failed ("The model answered in chat without files" →
  * "no healthy AI route"), deterministically, on every attempt.
  *
- * Both deployed golden transactions are specified-tool prompts that demand
- * fenced VFS output, so this whole flow was never a synthetic transaction —
- * the corpus contained only the cases that motivated it (CLAUDE.md: "The
- * corpus cannot only contain the cases that motivated the fix"). This gate
- * adds the flow, deterministically: the mock model COMPLIES with the intake
- * directive, and the platform must reward compliance, not execute it.
+ * A second production failure appeared after that first fix: the intake
+ * question rendered correctly, but the user's typed answer arrived before a
+ * Coding Desk or VFS existed. Build-session detection required the desk to be
+ * open, so "Boutique showcase + service booking" was reclassified as ordinary
+ * conversation. A free route then consumed essentially the entire 165s turn
+ * budget and every fallback got ~0ms. This gate therefore types the answer in
+ * chat (rather than clicking the modal) and requires the SECOND request to
+ * carry buildMode=true before accepting the artifact.
  *
  * What only this gate can catch:
- *   1. an intake question flagged as a failed build turn (the incident);
- *   2. a burned retry on a compliant intake reply (the money the user paid
- *      twice for the same right answer);
- *   3. the intake modal not rendering or its answer not flowing into a build
- *      turn that lands the artifact.
+ *   1. an intake question flagged as a failed build turn;
+ *   2. a burned retry on a compliant intake reply;
+ *   3. a typed intake answer losing build context before the desk/files exist;
+ *   4. the typed answer not flowing into a build turn that lands the artifact.
  */
 import process from 'node:process';
 import { mkdirSync } from 'node:fs';
@@ -31,6 +32,7 @@ import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const BOUTIQUE_PROMPT = 'help me build a website for a client who is running a Boutique that is into specialized Indian Sarees like Kanjivaram, Uppada, Gadwal, etc. and also selling ready made dresses for all ages. They are also into providing services like Blouse Stitching, Saree Draping, Pico and Fall, Mehndi etc.';
+const BOUTIQUE_ANSWER = 'Boutique showcase + service booking';
 
 /* Copy the incident produced — none of it may appear on a compliant intake. */
 const FAILURE_COPY = /answered in chat without files|Preview cannot run|no healthy AI route|The connection to the model died|did not finish writing files/i;
@@ -41,6 +43,8 @@ const page = await context.newPage();
 
 let chatCalls = 0;
 const guidedFlags = [];
+const buildFlags = [];
+const modelMessages = [];
 
 function sseBody(text) {
   return [
@@ -62,7 +66,7 @@ const compliantIntakeReply = [
 ].join('\n');
 
 const boutiqueSiteReply = [
-  'Building the boutique site with a placeholder name now.',
+  'Building the boutique showcase and service-booking site now.',
   '',
   '```html filepath="index.html"',
   '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Saree Boutique</title>',
@@ -108,6 +112,8 @@ await page.route('**/api/**', async (route) => {
     chatCalls += 1;
     const body = request.postDataJSON?.() || {};
     guidedFlags.push(body.guidedBuild === true);
+    buildFlags.push(body.buildMode === true);
+    modelMessages.push(String(body.message || ''));
     const reply = chatCalls === 1 ? compliantIntakeReply : boutiqueSiteReply;
     return route.fulfill({
       status: 200,
@@ -156,32 +162,40 @@ try {
     throw new Error('The boutique ask was not sent as a guided intake turn (guidedBuild flag missing).');
   }
 
-  // 3. The answer flows into a build turn that lands the artifact.
-  await page.locator('[data-quantora-decision-option="placeholder"]').click();
+  // 3. Reproduce the production screenshot exactly: answer in the composer,
+  //    before any Coding Desk or VFS exists. This second request MUST remain a
+  //    build. The bug sent it as conversation and let one free provider consume
+  //    the whole turn budget.
+  await prompt.fill(BOUTIQUE_ANSWER);
+  await prompt.press('Enter');
   await page.waitForFunction(
-    () => /The Silk Thread Boutique|Building the boutique site/i.test(document.body.innerText || ''),
+    () => /The Silk Thread Boutique|Building the boutique showcase/i.test(document.body.innerText || ''),
     null,
     { timeout: 25_000 },
   );
   if (chatCalls !== 2) {
-    throw new Error(`Expected the modal answer to start exactly one build turn; total chat calls: ${chatCalls}.`);
+    throw new Error(`Expected the typed intake answer to start exactly one build turn; total chat calls: ${chatCalls}.`);
   }
+  if (buildFlags[1] !== true) {
+    throw new Error(`Typed intake answer lost build context: second /api/chat buildMode=${String(buildFlags[1])}; messages=${JSON.stringify(modelMessages)}.`);
+  }
+
   const finalTranscript = await assistantTranscript();
   const finalFailure = finalTranscript.match(FAILURE_COPY);
   if (finalFailure) {
-    throw new Error(`The build turn after intake was reported as a failure: "${finalFailure[0]}".`);
+    throw new Error(`The build turn after typed intake answer was reported as a failure: "${finalFailure[0]}".`);
   }
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/guided-intake.png', fullPage: true });
-  console.log('guided-intake browser gate passed — intake question rendered, no false failure, no burned retry, answer landed a build.');
+  console.log('guided-intake browser gate passed — intake rendered, typed answer stayed buildMode=true, and the artifact landed.');
   await browser.close();
   process.exit(0);
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/guided-intake-failure.png', fullPage: true }).catch(() => {});
   console.error('guided-intake browser gate FAILED:', error?.stack || error);
-  console.error(`Evidence: chatCalls=${chatCalls}, guidedFlags=${JSON.stringify(guidedFlags)}`);
+  console.error(`Evidence: chatCalls=${chatCalls}, guidedFlags=${JSON.stringify(guidedFlags)}, buildFlags=${JSON.stringify(buildFlags)}, modelMessages=${JSON.stringify(modelMessages)}`);
   await browser.close().catch(() => {});
   process.exit(1);
 }
