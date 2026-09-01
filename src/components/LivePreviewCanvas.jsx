@@ -14,6 +14,7 @@ import {
   buildPreviewSandbox,
   previewVerdict,
 } from '../lib/preview-utils.js';
+import { describeRefinementStop, planRefinementRound } from '../../shared/refinement-loop.js';
 import { shouldShowPreviewShellTombstone } from '../lib/preview-shell-warming.js';
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { rewritePreviewImageUrls } from '../lib/preview-images.js';
@@ -174,7 +175,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     liveDeskFactsRef.current = { ...(liveDeskFactsRef.current || {}), ...partial };
     onLiveDeskProbeRef.current?.({ ...liveDeskFactsRef.current });
   }, []);
-  const autoJobHealRef = useRef(false);
+  // Verification results for the CURRENT build, oldest first. This is the
+  // loop's memory: it decides whether another round is worth the user's
+  // money, and it is what makes round three differ from round one.
+  const refinementHistoryRef = useRef([]);
   const attemptRef = useRef(0);
   const healingRef = useRef(false);
   const errorSeenRef = useRef(false);
@@ -357,7 +361,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       healingRef.current = false;
       errorSeenRef.current = false;
       stylingFailedRef.current = false;
-      autoJobHealRef.current = false;
+      refinementHistoryRef.current = [];
       verifiedCodeRef.current = null;
       // The score belongs to the build that produced it. Leaving it behind
       // showed a stale "· 65/100" against a completely different product.
@@ -373,7 +377,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     healingRef.current = false;
     errorSeenRef.current = false;
     stylingFailedRef.current = false;
-    autoJobHealRef.current = false;
+    refinementHistoryRef.current = [];
     verifiedCodeRef.current = null;
     // Drop the previous build's score until this one is actually verified.
     setQualityReport(null);
@@ -392,7 +396,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     pushHtmlToEmbed(currentCode);
   }, [currentCode, embedReady, pushHtmlToEmbed, assemblyKey]);
 
-  const requestRepair = useCallback(async (brokenCode, message) => {
+  const requestRepair = useCallback(async (brokenCode, message, attempts) => {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: byokRequestHeaders({ 'Content-Type': 'application/json' }),
@@ -402,6 +406,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         error: message,
         framework: 'html',
         job: jobCardRef.current,
+        attempts: Array.isArray(attempts) ? attempts : undefined,
         modelId,
       })
     });
@@ -438,13 +443,31 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           styledCheckOk: !styledFailed,
           errorSeen: errorSeenRef.current,
         });
-        if (!verifyOnly && data.passed === false && Array.isArray(data.issues) && data.issues.length && jobCardRef.current && !autoJobHealRef.current) {
-          autoJobHealRef.current = true;
+        /*
+         * The refinement loop.
+         *
+         * This used to be a one-shot latch: a build that merely came out
+         * mediocre was improved exactly once and then left alone, so "it
+         * broke" was handled and "it works but is not good" was not. Every
+         * verification is now recorded and shared/refinement-loop.js decides
+         * whether another round is justified — it stops on a pass, a plateau,
+         * an unchanged repair, or the budget, never merely because it tried.
+         *
+         * Re-verification is automatic: accepting a repair sets currentCode,
+         * which re-runs this check with the history one entry longer.
+         */
+        refinementHistoryRef.current = [
+          ...refinementHistoryRef.current,
+          { score: data.score, passed: data.passed, issues: Array.isArray(data.issues) ? data.issues : [] },
+        ];
+        const plan = planRefinementRound(refinementHistoryRef.current);
+        if (!verifyOnly && plan.proceed && jobCardRef.current) {
           // A failing shop desk is repaired by the MODEL, honestly — never by
           // injecting fabricated stock photos over the user's real page.
           const instruction = `Improve this page for the JOB. Fix ONLY these issues, preserving the product:\n- ${data.issues.join('\n- ')}`;
+          setStatus('healing');
           try {
-            const repaired = await requestRepair(codeToCheck, instruction);
+            const repaired = await requestRepair(codeToCheck, instruction, refinementHistoryRef.current);
             const original = currentCodeRef.current || '';
             const fixed = repaired?.code || '';
             const hadStyle = /<style[\s>]/i.test(original) || /\bstyle\s*=\s*["'][^"']{8,}/i.test(original);
@@ -456,7 +479,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
               setCurrentCode(fixed);
               return;
             }
+            // The repair came back unchanged or unusable. Record that so the
+            // next decision stops instead of asking again with identical input.
+            const stalled = planRefinementRound(refinementHistoryRef.current, { lastRepairChangedNothing: true });
+            const note = describeRefinementStop(stalled.reason, refinementHistoryRef.current);
+            if (note) setLastError(note);
           } catch { /* keep the running page */ }
+        } else if (!verifyOnly && plan.reason && plan.reason !== 'passed' && plan.reason !== 'no_verification_yet') {
+          // The loop stopped for a reason the user deserves in words.
+          const note = describeRefinementStop(plan.reason, refinementHistoryRef.current);
+          if (note) setLastError(note);
         }
         if (trust === 'degraded') {
           stylingFailedRef.current = true;
