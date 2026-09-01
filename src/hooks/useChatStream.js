@@ -946,6 +946,23 @@ export function useChatStream({
       ? nextStepBrief(buildJob)
       : (text.trim() || 'I have attached an image. Describe what you see and help me with it.');
 
+    /*
+     * Whether THIS turn is a guided website intake — the designer question
+     * before a thousand lines. One flag, shared by the request body and every
+     * enforcement path below: on 2026-09-01 the server told the model to ask
+     * one question with NO code (FIRST-TURN RULE) while the artifact contract
+     * and this hook's own no-preview enforcement both punished exactly that
+     * reply — so a boutique-website ask failed deterministically on every
+     * engine that complied. An intake turn owes a question, not files.
+     */
+    const guidedIntakeTurn = shouldStartGuidedBuild({
+      text: visibleUserText,
+      hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
+      isWorkspace: hasCodingWorkspace,
+      studioMode: refineDesk ? 'build' : 'ask',
+      isVisionQuestion: attachedImages.length > 0,
+    });
+
     const requestBodyFor = (model) => ({
       message: messageForRequest,
       attachedImages,
@@ -974,13 +991,7 @@ export function useChatStream({
        * and the shipping terms were assumed. One question first is cheaper
        * than a rebuild, for the user and for the credit meter.
        */
-      guidedBuild: shouldStartGuidedBuild({
-        text: visibleUserText,
-        hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
-        isWorkspace: hasCodingWorkspace,
-        studioMode: refineDesk ? 'build' : 'ask',
-        isVisionQuestion: attachedImages.length > 0,
-      }),
+      guidedBuild: guidedIntakeTurn,
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,
@@ -1567,9 +1578,13 @@ export function useChatStream({
 
           // Coding Desk build turns must land files OR already-proved skills on the desk.
           // Advisor domains (Study flashcards, Travel, etc.) intentionally stay chat.
+          // A guided intake turn is exempt: its deliverable is the designer's one
+          // question (see guidedIntakeTurn above), and demanding files from it is
+          // the contradiction that burned the 2026-09-01 boutique build.
           if (
             isCodingRequest
             && !advisorBlocksPreviewBuild(turnDomain)
+            && !guidedIntakeTurn
             && !assembleStudioPreview(currentText).code
           ) {
             const shopOwned = Boolean(
@@ -1667,7 +1682,9 @@ export function useChatStream({
           // A failed proof annotates the turn; it never replaces it. See below.
           let proofNote = '';
           let proofChips = [];
-          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain)) {
+          // An intake turn owes a question, not files — proving it would re-note
+          // the same false failure the no-preview exemption above just removed.
+          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain) && !guidedIntakeTurn) {
             const assembled = assembleStudioPreview(currentText, vfs || {});
             const seedVfs = {
               ...(vfs || {}),
