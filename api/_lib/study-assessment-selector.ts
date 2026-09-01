@@ -5,7 +5,7 @@ import type { StudyLearnerModel } from './study-learner-model.js';
 import type { StudyMisconceptionCode } from './study-misconception-taxonomy.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-08-31.3';
+export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-09-01.1';
 
 function coversMisconception(item: StudyAssessmentItem, code: StudyMisconceptionCode): boolean {
   return Object.values(item.misconceptionByOptionId).includes(code);
@@ -32,6 +32,8 @@ export function studyEvidenceKindForAssessmentItem(item: StudyAssessmentItem): E
  * choose an answer key, evidence purpose or diagnosis.
  *
  * - Unreleased candidates are never eligible.
+ * - Freshness follows the grading RPC's learner-global item/version boundary,
+ *   with concept-local admitted evidence retained as a second defensive source.
  * - An active diagnosis may receive only a fresh item that explicitly tests
  *   that misconception; an unrelated or repeated item cannot masquerade as a
  *   confirmation probe.
@@ -44,16 +46,16 @@ export function selectStudyAssessmentItem(input: {
   items: StudyAssessmentItem[];
   evidence?: StudyMasteryEvidenceEvent[] | null;
   learnerModel?: StudyLearnerModel | null;
+  usedItemRefs?: ReadonlySet<string> | null;
 }): StudyAssessmentItem | null {
   const releasedItems = (Array.isArray(input.items) ? input.items : []).filter(isReleased);
   if (!releasedItems.length) return null;
 
   const admitted = admittedStudyMasteryEvidence(input.evidence || []);
-  const usedItemRefs = new Set(
-    admitted
-      .map((event) => event.itemRef)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0),
-  );
+  const usedItemRefs = new Set<string>(input.usedItemRefs || []);
+  for (const event of admitted) {
+    if (typeof event.itemRef === 'string' && event.itemRef.length > 0) usedItemRefs.add(event.itemRef);
+  }
   const isFresh = (item: StudyAssessmentItem) => !usedItemRefs.has(`${item.key}@${item.version}`);
   const activeCode = input.learnerModel?.misconception.code || null;
 
