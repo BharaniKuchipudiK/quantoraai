@@ -49,6 +49,43 @@ async function requestRaw(path: string, init: RequestInit & { headers?: Record<s
   }
 }
 
+/**
+ * Return every reviewed item/version this learner has already submitted through
+ * the authoritative assessment-attempt boundary, regardless of which concept
+ * ultimately received the evidence. V7's grading RPC enforces independence at
+ * this same learner + item/version scope, so issuance must use the same scope or
+ * it can present a "fresh" check that the database later (correctly) refuses to
+ * count as independent evidence.
+ *
+ * This query uses only pre-V7 columns, so ordinary verified checks remain
+ * rollout-compatible before the V7 migration. Store unavailability is null and
+ * callers must fail closed rather than knowingly issue potentially stale work.
+ */
+export async function readStudyUsedAssessmentItemRefs(userSub: string): Promise<Set<string> | null> {
+  if (!userSub) return null;
+  const response = await requestRaw(
+    `study_assessment_attempts?select=item_key,item_version&user_sub=eq.${encodeURIComponent(userSub)}&submitted_at=not.is.null&order=submitted_at.desc&limit=2000`,
+    { method: 'GET' },
+  );
+  if (!response?.ok) {
+    if (response) console.warn(`Study V7 used-item validation -> ${response.status}`);
+    return null;
+  }
+  try {
+    const rows = await response.json();
+    if (!Array.isArray(rows)) return null;
+    const refs = new Set<string>();
+    for (const row of rows) {
+      const itemKey = typeof row?.item_key === 'string' ? row.item_key : '';
+      const itemVersion = typeof row?.item_version === 'string' ? row.item_version : '';
+      if (itemKey && itemVersion) refs.add(`${itemKey}@${itemVersion}`);
+    }
+    return refs;
+  } catch {
+    return null;
+  }
+}
+
 export type StudyEvidenceAttemptIssueResult =
   | { status: 'issued'; attemptId: string; evidenceKind: StudyAssessmentEvidenceKind; legacyFallback: boolean }
   | { status: 'unavailable' };
