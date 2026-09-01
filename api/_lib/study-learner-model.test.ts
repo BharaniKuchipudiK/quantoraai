@@ -17,6 +17,9 @@ function assessmentEvidence(input: {
   optionId: string;
   observedAt?: string;
   independent?: boolean;
+  kind?: Extract<StudyEvidenceKind, 'assessment_item' | 'retrieval' | 'application' | 'retention_probe'>;
+  delayDays?: number | null;
+  retentionAnchorAt?: string | null;
 }): StudyMasteryEvidenceEvent {
   const itemKey = input.itemKey || 'motion-graphs-velocity-slope';
   const item = findStudyAssessmentItem(itemKey, '1');
@@ -26,7 +29,7 @@ function assessmentEvidence(input: {
   const row: StudyMasteryEvidenceEvent = {
     id: `study.assessment.${attemptId}`,
     conceptId: 'concept-1',
-    kind: 'assessment_item',
+    kind: input.kind || 'assessment_item',
     correct,
     score: correct ? 1 : 0,
     difficulty: item.difficulty,
@@ -34,8 +37,10 @@ function assessmentEvidence(input: {
     responseMs: 1000,
     selfConfidence: null,
     independent: input.independent !== false,
-    misconceptionSignal: !correct && item.misconceptionOptionIds.includes(input.optionId),
-    delayDays: null,
+    misconceptionSignal: input.kind === 'retention_probe'
+      ? false
+      : !correct && item.misconceptionOptionIds.includes(input.optionId),
+    delayDays: input.delayDays ?? null,
     provenance: 'quantora_authored',
     sourceRef: 'quantora:study-assessment-bank',
     assessmentRef: `attempt:${attemptId}`,
@@ -46,12 +51,18 @@ function assessmentEvidence(input: {
     attemptId,
     conceptId: row.conceptId,
     conceptKey: CONCEPT_KEY,
+    evidenceKind: input.kind || 'assessment_item',
+    evidenceConceptId: row.conceptId,
+    itemConceptId: row.conceptId,
+    itemConceptKey: CONCEPT_KEY,
     itemKey: item.key,
     itemVersion: item.version,
     submittedOptionId: input.optionId,
     correct,
     score: row.score as number,
     submittedAt: row.observedAt,
+    retentionAnchorAt: input.retentionAnchorAt || null,
+    delayDays: input.delayDays ?? null,
   };
   attestStudyAssessmentEvidence(row, receipt);
   return row;
@@ -186,4 +197,54 @@ test('mastery estimate and learner projection cannot disagree on repeated assess
   assert.equal(estimate.evidenceCount, 1);
   assert.equal(result.understanding.evidenceCount, 1);
   assert.equal(result.nextLearningMove.type, 'diagnose_misconception');
+});
+
+test('receipt-backed delayed retention advances the schedule from seven to thirty days', () => {
+  const events = [
+    assessmentEvidence({ index: 0, optionId: 'c', observedAt: '2026-08-01T00:00:00.000Z' }),
+    assessmentEvidence({
+      index: 1,
+      itemKey: 'motion-graphs-acceleration-slope',
+      optionId: 'a',
+      kind: 'retention_probe',
+      observedAt: '2026-08-08T00:00:00.000Z',
+      retentionAnchorAt: '2026-08-01T00:00:00.000Z',
+      delayDays: 7,
+    }),
+  ];
+  const result = buildStudyLearnerModel({
+    conceptId: 'concept-1',
+    conceptKey: CONCEPT_KEY,
+    evidence: events,
+    estimate: estimateStudyMastery(events),
+    asOf: '2026-08-20T00:00:00.000Z',
+  });
+  assert.equal(result.retention.state, 'supported');
+  assert.equal(result.retention.evidenceCount, 1);
+  assert.equal(result.retention.anchorAt, '2026-08-08T00:00:00.000Z');
+  assert.equal(result.retention.targetDelayDays, 30);
+  assert.equal(result.retention.dueAt, '2026-09-07T00:00:00.000Z');
+  assert.equal(result.retention.due, false);
+});
+
+test('a failed retention probe requests support without creating a misconception diagnosis', () => {
+  const retention = assessmentEvidence({
+    index: 0,
+    optionId: 'a',
+    kind: 'retention_probe',
+    observedAt: '2026-08-08T00:00:00.000Z',
+    retentionAnchorAt: '2026-08-01T00:00:00.000Z',
+    delayDays: 7,
+  });
+  const result = buildStudyLearnerModel({
+    conceptId: 'concept-1',
+    conceptKey: CONCEPT_KEY,
+    evidence: [retention],
+    estimate: estimateStudyMastery([retention]),
+    asOf: '2026-08-09T00:00:00.000Z',
+  });
+  assert.equal(result.retention.state, 'needs_support');
+  assert.equal(result.misconception.state, 'none_observed');
+  assert.equal(result.misconception.code, null);
+  assert.equal(result.nextLearningMove.type, 'guided_repair');
 });
