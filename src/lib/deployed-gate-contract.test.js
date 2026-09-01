@@ -39,3 +39,16 @@ test('the deterministic readiness gate stays free of browser and model calls', (
   assert.match(gate, /\/api\/inference-health/);
   assert.match(gate, /FUNCTION_INVOCATION_FAILED/);
 });
+
+test('every runtime-import-gate failure is a structured, actionable object', () => {
+  const gate = read('scripts/runtime-import-gate.mjs');
+  // The reporter prints failure.file/.line/.specifier/.why, so a failure pushed
+  // as a bare string renders "undefined:undefined 'undefined'". The gate still
+  // fails, but tells nobody what to fix — and an unactionable gate is one
+  // someone mutes. Found by review after the default-export rule shipped
+  // exactly that bug, so the shape is pinned here.
+  const pushes = gate.match(/failures\.push\(\s*\{/g) || [];
+  const allPushes = gate.match(/failures\.push\(/g) || [];
+  assert.ok(allPushes.length >= 3, `expected several failure kinds, saw ${allPushes.length}`);
+  assert.equal(pushes.length, allPushes.length, 'every failures.push must pass an object literal, never a string');
+});

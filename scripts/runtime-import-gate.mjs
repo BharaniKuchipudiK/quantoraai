@@ -96,7 +96,7 @@ for (const file of files) {
 // Verified in real Node ESM, because that is the only thing that agrees with
 // production. Only a hard link failure counts, which keeps this unambiguous.
 const { execFileSync } = await import('node:child_process');
-const defaultImports = new Map(); // specifier -> "file:line"
+const defaultImports = new Map(); // specifier -> { file, line }
 const DEFAULT_IMPORT = /^\s*import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s*['"]([^.'"][^'"]*)['"]/;
 for (const file of files) {
   readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
@@ -104,11 +104,11 @@ for (const file of files) {
     if (!match) return;
     const specifier = match[2];
     if (specifier.startsWith('node:')) return;
-    if (!defaultImports.has(specifier)) defaultImports.set(specifier, `${file}:${index + 1}`);
+    if (!defaultImports.has(specifier)) defaultImports.set(specifier, { file, line: index + 1 });
   });
 }
 
-for (const [specifier, where] of defaultImports) {
+for (const [specifier, site] of defaultImports) {
   try {
     execFileSync(process.execPath, ['--input-type=module', '-e', `import d from ${JSON.stringify(specifier)};`], {
       stdio: 'pipe',
@@ -117,7 +117,15 @@ for (const [specifier, where] of defaultImports) {
   } catch (error) {
     const detail = String(error?.stderr || error?.message || '').replace(/\s+/g, ' ');
     if (/does not provide an export named 'default'/.test(detail)) {
-      failures.push(`${where}  default import of '${specifier}' — the package provides no default export in Node ESM (import its named exports instead)`);
+      // Same shape as the rules above. A failure that prints "undefined"
+      // names neither the package nor the file, and a gate you cannot act on
+      // is a gate someone mutes.
+      failures.push({
+        file: site.file,
+        line: site.line,
+        specifier,
+        why: 'the package provides no default export in Node ESM — import its named exports instead',
+      });
     }
     // Anything else (a package that needs config to evaluate, a native build)
     // is not this gate's business; staying narrow is what keeps it trusted.
@@ -131,7 +139,8 @@ if (failures.length) {
     console.error(`      ${f.why}\n`);
   }
   console.error("These pass typecheck, build and tests, and fail only in production.");
-  console.error("Fix: give each specifier its runtime extension (usually '.js').\n");
+  console.error("Fix: give a relative specifier its runtime extension (usually '.js'),");
+  console.error("and import named exports from a package that has no default.\n");
   process.exit(1);
 }
 
