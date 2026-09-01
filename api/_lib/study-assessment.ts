@@ -157,15 +157,6 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       priorEvidence = [];
     }
 
-    // The V7 grading RPC treats one learner + item/version as the independence
-    // boundary across all evidence kinds and concepts. Enforce the same boundary
-    // before issuance so a learner is never offered a supposedly fresh check
-    // that the database will later refuse to count as independent evidence.
-    const usedItemRefs = await readStudyUsedAssessmentItemRefs(userSub);
-    if (usedItemRefs === null) {
-      return res.status(503).json({ error: "Verified Study item freshness could not be checked right now." });
-    }
-
     let item: StudyAssessmentItem | null = null;
     let attemptConcept = concept;
     let evidenceKind: StudyAssessmentEvidenceKind = 'assessment_item';
@@ -177,7 +168,6 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       const transfer = await resolveStudyTransferAttempt({
         userSub,
         sourceConcept: concept,
-        usedItemRefs,
       });
       if (transfer.status === 'unavailable') {
         return res.status(503).json({ error: "Verified transfer checks are temporarily unavailable." });
@@ -210,6 +200,18 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         }
         evidenceKind = 'retention_probe';
         retentionAnchorAt = priorLearnerModel.retention.anchorAt;
+      }
+
+      // The V7 grading RPC treats one learner + item/version as the independence
+      // boundary across all evidence kinds and concepts. Ask only about the
+      // governed candidates we might issue; this stays exact without a history
+      // scan or a correctness-breaking pagination cap.
+      const usedItemRefs = await readStudyUsedAssessmentItemRefs(
+        userSub,
+        candidates.map((candidate) => `${candidate.key}@${candidate.version}`),
+      );
+      if (usedItemRefs === null) {
+        return res.status(503).json({ error: "Verified Study item freshness could not be checked right now." });
       }
 
       item = selectStudyAssessmentItem({
