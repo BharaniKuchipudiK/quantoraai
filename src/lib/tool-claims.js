@@ -126,45 +126,66 @@ export function describeUnbackedToolClaims(findings = []) {
 }
 
 /**
- * Pull the Places tool descriptions and field-mask entries out of source text.
+ * Pull each Places-backed tool and THE MASK ITS OWN CALL SITE SENDS.
  *
- * Reading source rather than importing it: the tool definitions live in a
- * TypeScript module that the gate runner cannot import directly, and adding a
- * build step to run a gate is how gates stop being run.
+ * The first version of this unioned every mask in the file. That made the gate
+ * decorative for the one regression it exists to stop: deleting
+ * `withPhotos: true` restored the original incident verbatim — photos still
+ * advertised, no longer requested, the model improvising again — and the gate
+ * reported a clean pass, because GOOGLE_PLACES_PHOTO_FIELD_MASK still existed
+ * somewhere in the file. CLAUDE.md §4 asks what a gate does when the bug is
+ * present; the honest answer was "nothing", which means it was not yet a gate.
  *
- * The parse is deliberately strict and its failure mode is deliberately loud.
- * `parsed.ok` is false when the file no longer looks the way this expects, and
- * the gate FAILS on that rather than reporting a clean run over zero tools —
- * a check that silently examines nothing is worse than no check, because it
- * costs the same and buys false confidence.
+ * So a tool is now bound to its call site: the `case '<name>':` block decides
+ * whether the photo fields are in play, and a tool counts as Places-backed
+ * because it CALLS the Places search, not because its prose happens to contain
+ * the words "Google Places" — get_places_routing says only "via Places" and was
+ * silently outside the check.
  *
- * KNOWN LIMIT, STATED RATHER THAN IMPLIED: masks are unioned. A claim is
- * considered backed if the field appears in ANY Places mask in the file, not
- * necessarily the one that specific tool sends. That is enough to catch a field
- * nothing requests — the actual incident — and it keeps every finding an
- * unambiguous contradiction. Narrowing it to per-tool masks would need call-site
- * analysis, and a gate that guesses gets muted.
+ * Every parse failure is loud. If the tool count does not match the number of
+ * name: keys in the definitions array, or no Places tool is found, `ok` is
+ * false and the gate fails rather than reporting a clean run over nothing.
  */
 export function extractPlacesToolClaims(source = '') {
   const text = String(source || '');
 
-  // Every quoted entry inside a *_FIELD_MASK array, plus any appended literal.
-  const maskFields = new Set();
-  for (const block of text.matchAll(/FIELD_MASK\s*=\s*\[([\s\S]*?)\]/g)) {
-    for (const entry of block[1].matchAll(/['"`]([a-zA-Z][\w.]*)['"`]/g)) maskFields.add(entry[1]);
-  }
-  // A mask built by extending another: `${BASE},places.photos`
-  for (const extra of text.matchAll(/FIELD_MASK\s*=\s*`[^`]*`/g)) {
-    for (const entry of extra[0].matchAll(/,\s*([a-z][\w]*\.[\w.]+)/g)) maskFields.add(entry[1]);
+  const arrayFields = (constName) => {
+    const match = text.match(new RegExp(`${constName}\\s*=\\s*\\[([\\s\\S]*?)\\]`));
+    if (!match) return [];
+    return [...match[1].matchAll(/['"`]([a-zA-Z][\w.]*)['"`]/g)].map((entry) => entry[1]);
+  };
+
+  const baseMask = arrayFields('GOOGLE_PLACES_FIELD_MASK');
+  // A mask that extends another: `${BASE},places.photos`
+  const photoExtra = [...text.matchAll(/GOOGLE_PLACES_PHOTO_FIELD_MASK\s*=\s*`[^`]*`/g)]
+    .flatMap((m) => [...m[0].matchAll(/,\s*([a-z][\w]*\.[\w.]+)/g)].map((e) => e[1]));
+
+  // Tool entries. The description may sit on the same line or the next one, so
+  // a reformat cannot quietly drop a tool out of the check.
+  const tools = [...text.matchAll(/name:\s*'([a-z_]+)',\s*description:\s*'((?:[^'\\]|\\.)*)'/gs)]
+    .map((m) => ({ name: m[1], description: m[2] }));
+
+  // Every declared tool must have been parsed. A description that stops
+  // matching is a gate that stops looking, and that must fail loudly.
+  const declared = [...text.matchAll(/^\s{4}name:\s*'([a-z_]+)',\s*$/gm)].map((m) => m[1]);
+  const declaredInline = [...text.matchAll(/^\s{4}name:\s*'([a-z_]+)',\s+description:/gm)].map((m) => m[1]);
+  const expected = new Set([...declared, ...declaredInline]);
+
+  const places = [];
+  for (const tool of tools) {
+    // Does this tool's own case block reach the Places search?
+    const block = text.match(new RegExp(`case '${tool.name}':([\\s\\S]*?)\\n    case |case '${tool.name}':([\\s\\S]*?)\\n  \\}`));
+    const body = block ? (block[1] || block[2] || '') : '';
+    if (!/searchGooglePlaces\s*\(/.test(body)) continue;
+    const withPhotos = /withPhotos:\s*true/.test(body);
+    places.push({
+      ...tool,
+      withPhotos,
+      fieldMask: [...baseMask, ...(withPhotos ? photoExtra : [])].join(','),
+    });
   }
 
-  // Tool entries: a name followed by its description in the same object.
-  const tools = [];
-  for (const match of text.matchAll(/name:\s*'([a-z_]+)',\s*\n\s*description:\s*'((?:[^'\\]|\\.)*)'/g)) {
-    tools.push({ name: match[1], description: match[2] });
-  }
-
-  const places = tools.filter((tool) => /Google Places/i.test(tool.description));
-  const ok = maskFields.size > 0 && places.length > 0;
-  return { ok, tools, places, fieldMask: [...maskFields].join(',') };
+  const missing = [...expected].filter((name) => !tools.some((tool) => tool.name === name));
+  const ok = baseMask.length > 0 && places.length > 0 && missing.length === 0;
+  return { ok, tools, places, missing, baseMask: baseMask.join(',') };
 }

@@ -52,11 +52,15 @@ in src/lib/tool-claims.js to match the new shape.
   process.exit(1);
 }
 
-const toolFindings = findUnbackedToolClaims(parsedTools.places, parsedTools.fieldMask);
-if (toolFindings.length) {
-  console.error(`\n${describeUnbackedToolClaims(toolFindings)}\n`);
+if (parsedTools.missing.length) {
+  console.error(`\nCapability claims gate FAILED — tool(s) declared but not parsed: ${parsedTools.missing.join(', ')}.`);
+  console.error('A tool the gate cannot read is a tool it is not checking. Update extractPlacesToolClaims.\n');
   process.exit(1);
 }
+
+// Each tool is checked against the mask ITS OWN call site sends, not a union.
+const toolFindings = parsedTools.places
+  .flatMap((tool) => findUnbackedToolClaims([tool], tool.fieldMask));
 
 const unbacked = findUnbackedCapabilities(policies, onDisk);
 const added = newUnbackedClaims(unbacked);
@@ -66,6 +70,10 @@ if (resolved.length) {
   console.log(`Capability claims improved — ${resolved.length} claim(s) are now answerable:`);
   for (const claim of resolved) console.log(`  - ${claim}`);
   console.log('Remove them from KNOWN_UNBACKED_CLAIMS in src/lib/capability-claims.js.\n');
+}
+
+if (toolFindings.length) {
+  console.error(`\n${describeUnbackedToolClaims(toolFindings)}\n`);
 }
 
 if (added.length) {
@@ -82,7 +90,9 @@ the claim. Do not add it to KNOWN_UNBACKED_CLAIMS — that list only shrinks.
   process.exit(1);
 }
 
-if (resolved.length) process.exit(1);
+// Exit once, after both halves have had their say: a branch that breaks both
+// should not cost two CI cycles to learn about.
+if (toolFindings.length || resolved.length) process.exit(1);
 
 console.log(
   `Capability claims gate passed — every advertised capability is answerable`

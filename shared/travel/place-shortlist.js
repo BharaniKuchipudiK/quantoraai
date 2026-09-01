@@ -47,11 +47,24 @@ export function formatTravelPlaceShortlist(places = [], { heading = 'Live stays 
         : 'Rating not supplied by Google';
       const area = String(place.address || '').trim();
       const title = href ? `[${name}](${href})` : `**${name}**`;
+      /*
+       * The photo is rendered HERE, not left to the model.
+       *
+       * Three separate paths instruct the model to paste this shortlist
+       * verbatim, so a photo the tool resolved but this renderer ignored would
+       * simply never appear — four billed lookups discarded, and the promised
+       * capability left to model discretion, which is the failure the photo
+       * work exists to end. The label also stops claiming "photos" for a link
+       * that only ever went to Maps.
+       */
+      const photo = String(place.photoUrl || '').trim();
+      const credit = String(place.photoAttribution || '').trim();
+      const image = photo ? `\n   ![${name}](${photo})${credit ? `\n   *Photo: ${credit}*` : ''}` : '';
       const links = [
         website ? `[Website](${website})` : null,
-        maps ? `[Maps / photos](${maps})` : null,
+        maps ? `[Maps](${maps})` : null,
       ].filter(Boolean).join(' · ');
-      return `1. ${title} — ${rating}${area ? ` — ${area}` : ''}${links ? `\n   ${links}` : ''}`;
+      return `1. ${title} — ${rating}${area ? ` — ${area}` : ''}${links ? `\n   ${links}` : ''}${image}`;
     })
     .filter(Boolean);
 

@@ -264,7 +264,12 @@ async function searchGooglePlaces(
       try {
         places = await attachPhotoUrls(places, rawPlaces, apiKey, { fetchFn });
       } catch (photoError: any) {
-        console.error('[Google Places Photos] resolution failed, continuing without photos:', photoError?.message || photoError);
+        // Backstop only. attachPhotoUrls returns on every path and never
+        // throws, so this cannot fire today — the reason a photo failed is
+        // logged inside places-photos.ts, where it is actually reachable.
+        // Kept so a future change that does throw degrades instead of failing
+        // the search, not as the place to look for photo diagnostics.
+        console.error('[Google Places Photos] unexpected throw, continuing without photos:', photoError?.message || photoError);
       }
     }
 

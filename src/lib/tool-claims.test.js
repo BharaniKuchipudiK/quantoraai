@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   describeUnbackedToolClaims,
@@ -92,16 +93,46 @@ test('a parse that finds nothing reports NOT ok, so the gate fails loudly', () =
 });
 
 test('LIVE: the real tool definitions parse and are currently honest', () => {
-  const source = fs.readFileSync(
-    path.join(process.cwd(), 'api/_lib/agent-tools-core.ts'),
-    'utf8',
-  );
+  // Resolved from this file, not from cwd: every other test in src/lib is
+  // cwd-independent, and an ENOENT here would read as a gate regression.
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const source = fs.readFileSync(path.join(repoRoot, 'api/_lib/agent-tools-core.ts'), 'utf8');
   const parsed = extractPlacesToolClaims(source);
   assert.ok(parsed.ok, 'agent-tools-core.ts must still be parseable by the gate');
-  assert.ok(parsed.places.length >= 1, 'at least one Places-backed tool is expected');
+  assert.deepEqual(parsed.missing, [], 'every declared tool must be parsed');
+  // Named explicitly: "at least one" let a reformat drop search_hotels — the
+  // one tool this gate exists to police — while still reporting a pass.
+  for (const expected of ['search_hotels', 'search_attractions', 'get_places_routing']) {
+    assert.ok(
+      parsed.places.some((tool) => tool.name === expected),
+      `${expected} must be inside the gate`,
+    );
+  }
   assert.deepEqual(
-    findUnbackedToolClaims(parsed.places, parsed.fieldMask),
+    parsed.places.flatMap((tool) => findUnbackedToolClaims([tool], tool.fieldMask)),
     [],
     'a shipped tool description must not promise a field the request never asks for',
   );
+});
+
+test('THE REGRESSION: removing withPhotos from the call site is caught', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const source = fs.readFileSync(path.join(repoRoot, 'api/_lib/agent-tools-core.ts'), 'utf8');
+  // Exactly the edit that restores the production incident. An earlier version
+  // of this gate returned no findings for it, because it unioned masks across
+  // the file instead of reading the call site.
+  const broken = source.replace(/\n\s*\/\/ Only this tool advertises photos[^\n]*\n\s*withPhotos: true,/, '');
+  assert.notEqual(broken, source, 'the withPhotos call site must still be findable');
+
+  const parsed = extractPlacesToolClaims(broken);
+  const findings = parsed.places.flatMap((tool) => findUnbackedToolClaims([tool], tool.fieldMask));
+  assert.equal(findings.length, 1, 'the gate must catch the incident it exists for');
+  assert.equal(findings[0].tool, 'search_hotels');
+  assert.equal(findings[0].requiredField, 'places.photos');
+});
+
+test('a tool the parser cannot read fails loudly rather than passing quietly', () => {
+  const parsed = extractPlacesToolClaims("    name: 'search_hotels',\n    somethingElse: 1,");
+  assert.equal(parsed.ok, false, 'an unparsed tool must not report a clean run');
+  assert.deepEqual(parsed.missing, ['search_hotels']);
 });
