@@ -2,6 +2,15 @@ function clean(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+const GRADED_EVIDENCE_KINDS = new Set([
+  'assessment_item',
+  'retrieval',
+  'application',
+  'transfer',
+  'retention_probe',
+  'misconception_probe',
+]);
+
 async function studyAssessmentRequest(body) {
   const response = await fetch('/api/study-assessment', {
     method: 'POST',
@@ -40,7 +49,7 @@ export async function gradeStudyAssessment({ attemptId, optionId } = {}) {
     attemptId: clean(attemptId, 64),
     optionId: clean(optionId, 40),
   });
-  if (typeof data?.correct !== 'boolean' || data?.evidenceKind !== 'assessment_item') {
+  if (typeof data?.correct !== 'boolean' || !GRADED_EVIDENCE_KINDS.has(data?.evidenceKind)) {
     throw new Error('The verified Study check returned an invalid grade.');
   }
   return data;

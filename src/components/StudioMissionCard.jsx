@@ -1,8 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { isCannedProjectDescription } from '../lib/studio-mission.js';
+import { loadStudyOnboarding } from '../lib/study-onboarding-client.js';
+
+const StudyOnboarding = React.lazy(() => import('./StudyOnboarding.jsx'));
 
 /**
  * Visible world model — what this session is building. Not an IDE, not notes chrome.
+ *
+ * Study uniquely passes hideGoal=true. This component lives outside AiStudio's
+ * empty-thread/active-thread split, so it also owns first-run Study onboarding:
+ * onboarding must not require a learner to send a message before it can exist.
+ * The onboarding panel itself stays lazy so Study's first-run UI does not tax the
+ * main AiStudio entry chunk for every workspace.
  */
 export default function StudioMissionCard({
   mission,
@@ -18,6 +27,34 @@ export default function StudioMissionCard({
    */
   hideGoal = false,
 }) {
+  const [studyOnboarding, setStudyOnboarding] = useState({ status: hideGoal ? 'loading' : 'off', profile: null });
+
+  useEffect(() => {
+    if (!hideGoal) {
+      setStudyOnboarding({ status: 'off', profile: null });
+      return undefined;
+    }
+    let active = true;
+    loadStudyOnboarding()
+      .then(({ profile, needsOnboarding }) => {
+        if (active) setStudyOnboarding({ status: needsOnboarding ? 'needed' : 'done', profile });
+      })
+      .catch(() => {
+        if (active) setStudyOnboarding({ status: 'unavailable', profile: null });
+      });
+    return () => { active = false; };
+  }, [hideGoal]);
+
+  if (studyOnboarding.status === 'needed') {
+    return (
+      <React.Suspense fallback={null}>
+        <StudyOnboarding
+          onComplete={(profile) => setStudyOnboarding({ status: 'done', profile })}
+        />
+      </React.Suspense>
+    );
+  }
+
   const showGoal = Boolean(mission?.goal) && !hideGoal;
   if (!showGoal && !mission?.next) return null;
 
