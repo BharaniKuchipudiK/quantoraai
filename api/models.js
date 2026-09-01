@@ -23,6 +23,9 @@ import { overallOutcomeSignals } from '../shared/model-outcome-routing.js';
 import { rankAdminDashboardModels } from '../shared/model-dashboard-ranking.js';
 import { isAuthorizedModelScan, scanModelCatalog } from './_lib/model-scanner.js';
 import { purgeOldTelemetry } from './_lib/store.js';
+import { isResearchWatchStoreConfigured, sweepResearchWatches } from './_lib/research-watch.js';
+import { groundedAnswerWithGemini } from './_lib/research-deep-dive.js';
+import { fetchApiGatewayKey } from './autocomplete.js';
 
 const NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -66,12 +69,34 @@ export default async function handler(req, res) {
   // GET requests continue to receive the read-only dashboard response below.
   if (isAuthorizedModelScan(req)) {
     res.setHeader('Cache-Control', 'no-store');
-    // Piggyback the daily retention sweep on the same scheduled run.
-    const [result, retention] = await Promise.all([
+    // Piggyback the daily retention sweep on the same scheduled run, and the
+    // research watch sweep with it: each due watched question gets one
+    // grounded re-check, and deterministic evidence changes are flagged for
+    // the person's next visit. Fail-soft — a sweep failure must never break
+    // the model scan this run exists for.
+    const [result, retention, watchSweep] = await Promise.all([
       scanModelCatalog(),
       purgeOldTelemetry(TELEMETRY_RETENTION_DAYS),
+      (async () => {
+        try {
+          if (!isResearchWatchStoreConfigured()) return { checked: 0, changed: 0 };
+          const geminiKey = process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI');
+          if (!geminiKey) return { checked: 0, changed: 0 };
+          return await sweepResearchWatches({
+            groundedAnswer: (question) => groundedAnswerWithGemini(question, geminiKey),
+          });
+        } catch (err) {
+          console.warn('Research watch sweep failed:', err?.message || err);
+          return { checked: 0, changed: 0 };
+        }
+      })(),
     ]);
-    return res.status(result.status).json({ ...result.body, telemetryPurged: retention.ok });
+    return res.status(result.status).json({
+      ...result.body,
+      telemetryPurged: retention.ok,
+      researchWatchesChecked: watchSweep.checked,
+      researchWatchesChanged: watchSweep.changed,
+    });
   }
 
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
