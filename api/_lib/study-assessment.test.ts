@@ -69,7 +69,7 @@ test("issue stores the answer server-side but returns only the public item", asy
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
-    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) return json([]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=id")) return json([]);
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       storedAttempt = JSON.parse(init.body)[0];
       return new Response(null, { status: 201 });
@@ -101,8 +101,11 @@ test("issue skips an item already submitted elsewhere in the learner-global evid
       return json([{ id: CONCEPT_ID, canonical_key: "physics.kinematics.motion-graphs", label: "Motion graphs" }]);
     }
     if (target.includes("/rest/v1/study_mastery_events?")) return json([]);
-    if (target.includes("/rest/v1/study_assessment_attempts?select=item_key,item_version")) {
-      return json([{ item_key: "motion-graphs-velocity-slope", item_version: "1" }]);
+    if (target.includes("/rest/v1/study_assessment_attempts?select=id")) {
+      if (target.includes("item_key=eq.motion-graphs-velocity-slope") && target.includes("item_version=eq.1")) {
+        return json([{ id: "44444444-4444-4444-8444-444444444444" }]);
+      }
+      return json([]);
     }
     if (target.endsWith("/rest/v1/study_assessment_attempts") && init.method === "POST") {
       storedAttempt = JSON.parse(init.body)[0];
