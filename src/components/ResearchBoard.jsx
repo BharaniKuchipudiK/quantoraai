@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { deriveResearchBrief } from '../lib/research-brief.js';
 import { RESEARCH_BOARD_PREFILLS, RESEARCH_BOARD_PROMPTS } from '../lib/research-board-actions.js';
@@ -74,6 +74,9 @@ export default function ResearchBoard({ messages, onAsk, onSend, onAppendMessage
   const [verifying, setVerifying] = useState(false);
   const [diving, setDiving] = useState(false);
   const [verifyError, setVerifyError] = useState('');
+  // Watched questions for this account; null until the list answers, so a
+  // slow or failed lookup never renders a wrong watch state.
+  const [watches, setWatches] = useState(null);
   // Keyed by finding text — the finding's identity across brief re-derives.
   const [standings, setStandings] = useState({});
 
@@ -129,6 +132,47 @@ export default function ResearchBoard({ messages, onAsk, onSend, onAppendMessage
       setVerifyError('The evidence check could not run. Try again in a moment.');
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const watchRequest = async (op, question) => {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'research-watch', studioDomain: 'research', op, question }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'The watch service is unavailable right now.');
+    return data;
+  };
+
+  // Hooks stay above the inactive-board return so their order never shifts.
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    let cancelled = false;
+    watchRequest('list')
+      .then((data) => { if (!cancelled) setWatches(Array.isArray(data.watches) ? data.watches : []); })
+      .catch(() => { /* unknown watch state stays unknown — no wrong badges */ });
+    return () => { cancelled = true; };
+  }, [signedIn]);
+
+  const currentWatch = Array.isArray(watches)
+    ? watches.find((watch) => watch.question === brief.question)
+    : null;
+
+  const runWatchOp = async (op) => {
+    if (!signedIn) {
+      onRequireAuth?.();
+      return;
+    }
+    setVerifyError('');
+    try {
+      await watchRequest(op, brief.question);
+      const data = await watchRequest('list');
+      setWatches(Array.isArray(data.watches) ? data.watches : []);
+    } catch (err) {
+      setVerifyError(err?.message || 'The watch service is unavailable right now.');
     }
   };
 
@@ -242,6 +286,15 @@ export default function ResearchBoard({ messages, onAsk, onSend, onAppendMessage
     chips.push(askChip('Draft the brief', RESEARCH_BOARD_PROMPTS.draftBrief));
     chips.push(chip('Export brief', exportBrief));
   }
+  /*
+   * Watching is offered only once the list has answered, so the chip can
+   * never contradict the account's real watch state.
+   */
+  if (signedIn && Array.isArray(watches)) {
+    chips.push(currentWatch
+      ? chip('Unwatch', () => runWatchOp('delete'))
+      : chip('Watch this question', () => runWatchOp('create')));
+  }
   if (chips.length === 0) {
     chips.push(askChip('Go deeper', RESEARCH_BOARD_PROMPTS.goDeeper));
   }
@@ -353,6 +406,29 @@ export default function ResearchBoard({ messages, onAsk, onSend, onAppendMessage
               {`+${hiddenSourceCount} more source${hiddenSourceCount === 1 ? '' : 's'} in the conversation`}
             </div>
           ) : null}
+        </div>
+      ) : null}
+      {currentWatch?.changed ? (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '8px 10px',
+            borderRadius: '10px',
+            border: '1px solid var(--q-ink)',
+            fontSize: '0.75rem',
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>The evidence moved since your last check</div>
+          {currentWatch.changeNote ? (
+            <div style={{ fontWeight: 400, marginTop: '2px' }}>{currentWatch.changeNote}</div>
+          ) : null}
+          <div style={{ marginTop: '7px' }}>
+            {chip('Dismiss', () => runWatchOp('ack'))}
+          </div>
+        </div>
+      ) : currentWatch ? (
+        <div style={{ marginTop: '9px', fontSize: '0.72rem', opacity: 0.7 }}>
+          Watching — re-checked daily against live sources.
         </div>
       ) : null}
       {brief.next ? (

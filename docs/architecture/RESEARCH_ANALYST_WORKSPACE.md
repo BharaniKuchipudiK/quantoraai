@@ -67,8 +67,20 @@ M unverified") is the product's honesty made legible at a glance.
    an error, not an empty success.
 6. **Continuity** — investigations already persist per device: sessions live
    in localStorage and the board re-derives from the transcript on load.
-   Cross-device persistence and watched questions (surface when the evidence
-   changes) remain *planned*.
+   Cross-device persistence remains *planned*.
+7. **Watched questions** *(shipped)* — "Watch this question" stores a
+   standing question (≤3 per account, `research_watches` table, service-role
+   only). The daily scheduled run (`/api/models`, where the retention sweep
+   already piggybacks) re-checks due watches with one grounded lookup each,
+   bounded per run. Change detection is DETERMINISTIC — no model judges "did
+   it change": each sweep reduces the reply to a snapshot (publishers +
+   finding-shaped bullet count) and compares snapshots. The baseline is set
+   by the first sweep, never by the dossier at watch time, so comparisons
+   stay like-for-like. A flagged change stays flagged, with its note, until
+   the person dismisses it — a later quiet sweep cannot silently retract
+   news — and a failed lookup leaves the row untouched for tomorrow. The
+   board surfaces "the evidence moved" with the deterministic note on the
+   watcher's next visit (`api/_lib/research-watch.ts`).
 
 ## Wiring map
 
