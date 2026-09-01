@@ -20,6 +20,15 @@ import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRou
 import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
 import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
+import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
+import {
+  acknowledgeResearchWatch,
+  createResearchWatch,
+  deleteResearchWatch,
+  isResearchWatchStoreConfigured,
+  listResearchWatches,
+  normalizeWatchQuestion,
+} from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -553,9 +562,11 @@ export default async function handler(req: any, res: any) {
     const isRepairTask = task === "repair";
     const isVerifyTask = task === "verify-build";
     const isResearchVerifyTask = task === "research-verify";
-    // Tasks that carry code or claims instead of a chat message, and so skip
-    // the message/session/safety validation below.
-    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask;
+    const isResearchDeepDiveTask = task === "research-deep-dive";
+    const isResearchWatchTask = task === "research-watch";
+    // Tasks that carry code, claims or a bare question instead of a chat
+    // message, and so skip the message/session/safety validation below.
+    const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask || isResearchDeepDiveTask || isResearchWatchTask;
 
     if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
       return res.status(400).json({ error: "Message string is required" });
@@ -680,6 +691,99 @@ export default async function handler(req: any, res: any) {
       } catch (err: any) {
         console.error("Error in /api/chat research-verify task:", err);
         return res.status(500).json({ error: err?.message || "Evidence verification failed." });
+      }
+    }
+
+    if (isResearchDeepDiveTask) {
+      // Decompose → search → synthesize, returned as canonical transcript
+      // messages the dossier brief already parses. Research desk only.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Deep dive runs on the research desk only." });
+      }
+      const normalized = normalizeResearchDeepDiveRequest(req.body);
+      if (!normalized.ok || !normalized.question) {
+        return res.status(400).json({ error: normalized.error || "Invalid deep-dive request." });
+      }
+      // The question is user-authored text bound for the model and live web
+      // search — it gets the same safety policy as an ordinary research turn,
+      // which the artifact-task exemption above skipped.
+      {
+        const requestGeo = getRequestGeo(req);
+        const safety = evaluateSafetyText(normalized.question, requestGeo?.countryCode);
+        if (safety.action !== "allow") {
+          return res.status(422).json({
+            error: safety.userMessage,
+            safety: {
+              action: safety.action,
+              category: safety.category,
+              severity: safety.severity,
+              reasonCode: safety.reasonCode,
+              policyVersion: safety.policyVersion,
+              crisisResource: safety.crisisResource,
+            },
+            requestId,
+          });
+        }
+      }
+      if (!effectiveGeminiKey) {
+        // Grounded search for the dive currently rides the Gemini tool path;
+        // saying so beats a silent generic failure.
+        return res.status(503).json({ error: "Deep dive needs the Gemini search path, which is not configured right now." });
+      }
+      try {
+        const result = await runResearchDeepDive({ question: normalized.question, geminiKey: effectiveGeminiKey });
+        if (!result.ok) return res.status(502).json({ error: result.error });
+        return res.status(200).json(result);
+      } catch (err: any) {
+        console.error("Error in /api/chat research-deep-dive task:", err);
+        return res.status(500).json({ error: err?.message || "Deep dive failed." });
+      }
+    }
+
+    if (isResearchWatchTask) {
+      // Standing-question watches are per-account state: signed-in only,
+      // research desk only, and every op is scoped to the caller's sub.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Watches live on the research desk only." });
+      }
+      if (!activeSessionUser?.sub) {
+        return res.status(401).json({ error: "Sign in to watch a question.", requiresAuth: true });
+      }
+      if (!isResearchWatchStoreConfigured()) {
+        return res.status(503).json({ error: "Watches are not available right now." });
+      }
+      const op = req.body?.op;
+      try {
+        if (op === "list") {
+          const watches = await listResearchWatches(activeSessionUser.sub);
+          return res.status(200).json({
+            watches: watches.map((watch) => ({
+              question: watch.question,
+              changed: watch.changed === true,
+              changeNote: watch.change_note || "",
+              lastCheckedAt: watch.last_checked_at,
+            })),
+          });
+        }
+        const question = normalizeWatchQuestion(req.body?.question);
+        if (!question) return res.status(400).json({ error: "A watchable question is required." });
+        if (op === "create") {
+          const created = await createResearchWatch(activeSessionUser.sub, question);
+          if (!created.ok) return res.status(409).json({ error: created.error });
+          return res.status(200).json({ watched: true });
+        }
+        if (op === "delete") {
+          await deleteResearchWatch(activeSessionUser.sub, question);
+          return res.status(200).json({ watched: false });
+        }
+        if (op === "ack") {
+          await acknowledgeResearchWatch(activeSessionUser.sub, question);
+          return res.status(200).json({ acknowledged: true });
+        }
+        return res.status(400).json({ error: "Unknown watch operation." });
+      } catch (err: any) {
+        console.error("Error in /api/chat research-watch task:", err);
+        return res.status(500).json({ error: err?.message || "The watch operation failed." });
       }
     }
 
