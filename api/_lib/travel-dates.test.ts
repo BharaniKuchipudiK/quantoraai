@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { todayIso, validateTravelToolArgs } from './ai-contracts.js';
+import { earliestSearchableIso, todayIso, validateTravelToolArgs } from './ai-contracts.js';
 import { buildTodayDirective } from './studio-domains.js';
 import { flightInvalidArgsAsk, resolveFlightToolRecovery } from '../../shared/travel/flight-resilience.js';
 
@@ -90,4 +90,34 @@ test('the model is told today, and told to resolve relative dates from it', () =
   assert.match(directive, /next month|2-4 weeks/i, 'relative phrasings are named');
   assert.match(directive, /never.*earlier than 2026-08-31/i);
   assert.match(directive, /ask rather than guess/i);
+});
+
+/*
+ * Codex, on review: a bare UTC "today" refuses same-day travel for everyone
+ * west of UTC. At 2026-09-01T00:30Z it is still 31 August across the Americas,
+ * so a traveller in New York booking their own today was rejected as past —
+ * a working booking refused for up to half of every day, which is the worse
+ * failure of the two this guard sits between.
+ */
+test('a traveller west of UTC can still book their own today', () => {
+  const yesterdayUtc = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'JFK', destination: 'LAX', departureDate: yesterdayUtc,
+  });
+  assert.equal(result.status, 'ok');
+});
+
+test('the boundary is exactly one day of slack, which covers every offset', () => {
+  const now = new Date('2026-09-01T00:30:00.000Z');
+  assert.equal(todayIso(now), '2026-09-01');
+  // UTC-12 is the westernmost offset, so a local date is never more than one
+  // day behind the UTC one. One day is exact, not a guess.
+  assert.equal(earliestSearchableIso(now), '2026-08-31');
+});
+
+test('slack does not let a genuinely old date through', () => {
+  const result = validateTravelToolArgs('search_flights', {
+    origin: 'SIN', destination: 'DPS', departureDate: '2025-05-08',
+  });
+  assert.equal(result.status, 'invalid', 'sixteen months is not a timezone');
 });

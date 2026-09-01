@@ -17,9 +17,21 @@ import { hotelLocationNeedsCity, inferStayLocation } from './travel-hotel-locati
 const IATA = /^[A-Z]{3}$/;
 const ISO_DATE = /^20\d{2}-\d{2}-\d{2}$/;
 
-/** Today in UTC, comparable against a zero-padded ISO date without parsing. */
-function todayIso(now = new Date()) {
-  return now.toISOString().slice(0, 10);
+/**
+ * The earliest date still worth searching, in UTC, with a day of slack.
+ *
+ * A bare UTC "today" rejects legitimate same-day travel for anyone west of UTC:
+ * at 2026-09-01T00:30Z it is still 31 August across the Americas, so a New
+ * Yorker booking a flight for their own today was refused as a past date. The
+ * offsets run from UTC-12 to UTC+14, so a local date is never more than one day
+ * BEHIND the UTC one — one day of slack is exact, not a guess.
+ *
+ * This guard exists to catch a date that is obviously wrong (the model
+ * resolving "next 2-4 weeks" to sixteen months ago), not to police same-day
+ * precision. Refusing a real booking is the worse failure of the two.
+ */
+function earliestSearchableIso(now = new Date()) {
+  return new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
 }
 const ISO_DATE_SCAN = /\b20\d{2}-\d{2}-\d{2}\b/g;
 
@@ -85,6 +97,38 @@ const DESTINATION_CUE = /\b(?:trips?\s+to|travel(?:ling|ing)?\s+to|going\s+to|go
  * looking like it heard nothing.
  */
 const FROM_PLACE = /\b(?:from|out\s+of|departing\s+from|leaving\s+from|starting\s+(?:from|in))\s+([\p{L}][\p{L}\s'’.-]{1,40})/iu;
+
+/**
+ * Words that make "from X to Y" a DATE RANGE rather than a route.
+ *
+ * ROUTE_PLACES was added to read "from Kuala Lumpur to Tokyo" and promptly read
+ * "I can travel from Monday to Friday" as a trip from Monday to Friday, with
+ * the Stays chip lit over a fabricated destination — the exact invention this
+ * module exists to prevent, reintroduced by the fix for it.
+ *
+ * Checked ONLY on the route pattern, never globally: March and May are real
+ * towns, and "trip to March" arrives through the destination cue where the
+ * sentence structure says it is a place. Here, where the only evidence is the
+ * word "from", a month is overwhelmingly a date.
+ */
+const TEMPORAL_WORD = new Set([
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'mon', 'tue', 'tues', 'wed', 'thu', 'thurs', 'fri', 'sat', 'sun',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+  'today', 'tomorrow', 'tonight', 'yesterday', 'weekend', 'weekday', 'week',
+  'month', 'year', 'morning', 'afternoon', 'evening', 'night', 'noon', 'midnight',
+  'summer', 'winter', 'spring', 'autumn', 'fall', 'easter', 'christmas', 'newyear',
+]);
+
+/** True when either end of a route pair reads as a time rather than a place. */
+function looksTemporal(...places) {
+  return places.some((place) => String(place || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .some((token) => TEMPORAL_WORD.has(token)));
+}
 
 /**
  * "from Kuala Lumpur to Tokyo" names both ends in one breath. The cue list
@@ -160,8 +204,11 @@ function readPlace(text) {
 
   const routed = value.match(ROUTE_PLACES);
   if (routed) {
+    const from = tidyPlace(routed[1]);
     const place = tidyPlace(routed[2]);
-    if (isUsablePlace(place)) return place;
+    // Both ends must read as places. One temporal word makes the whole pattern
+    // a date range, and half of a date range is not a destination.
+    if (!looksTemporal(from, place) && isUsablePlace(place)) return place;
   }
 
   const cued = value.match(DESTINATION_CUE);
@@ -199,12 +246,15 @@ function readOriginLabel(texts) {
     const routed = text.match(ROUTE_PLACES);
     if (routed) {
       const both = tidyPlace(routed[1]);
-      if (isUsablePlace(both)) return both;
+      const other = tidyPlace(routed[2]);
+      if (!looksTemporal(both, other) && isUsablePlace(both)) return both;
     }
     const match = text.match(FROM_PLACE);
     if (!match) continue;
     const place = tidyPlace(match[1]);
-    if (isUsablePlace(place)) return place;
+    // "from Monday", "from next week": a bare from-phrase is a date at least as
+    // often as it is a city, and an origin nobody named is still an invention.
+    if (!looksTemporal(place) && isUsablePlace(place)) return place;
   }
   return '';
 }
@@ -258,7 +308,7 @@ function describeMissing({ destinationLabel, origin, destination, departureDate 
   if (!destinationLabel && !destination) missing.push('place');
   if (!origin) missing.push('origin');
   if (!destination) missing.push('destination');
-  if (!ISO_DATE.test(departureDate) || departureDate < todayIso()) missing.push('departureDate');
+  if (!ISO_DATE.test(departureDate) || departureDate < earliestSearchableIso()) missing.push('departureDate');
   return missing;
 }
 
@@ -329,7 +379,7 @@ export function deriveTravelBrief({ messages = [] } = {}) {
    * resolved against the wrong year offered a search that could only fail — the
    * same dead control as a chip with no provider behind it.
    */
-  const departureInFuture = ISO_DATE.test(departureDate) && departureDate >= todayIso();
+  const departureInFuture = ISO_DATE.test(departureDate) && departureDate >= earliestSearchableIso();
   const canSearchFlights = IATA.test(origin) && IATA.test(destination) && departureInFuture;
   const canSearchHotels = isUsablePlace(destinationLabel);
 

@@ -33,6 +33,27 @@ export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
+/**
+ * The earliest date still worth searching — UTC today, minus a day of slack.
+ *
+ * A bare UTC "today" refuses legitimate same-day travel for everyone west of
+ * UTC. At 2026-09-01T00:30Z it is still 31 August across the Americas, so a
+ * traveller in New York booking a flight for their own today had it rejected as
+ * a past date: a working booking refused for up to half of every day.
+ *
+ * Offsets run from UTC-12 to UTC+14, so a local date is never more than one day
+ * BEHIND the UTC one. One day of slack is therefore exact rather than a
+ * guess, and it needs no timezone from the traveller — which we do not have.
+ *
+ * This guard exists to catch a date that is obviously wrong (a model with no
+ * clock resolving "next 2-4 weeks" to sixteen months ago), not to police
+ * same-day precision. Refusing a real booking is the worse failure of the two,
+ * so the boundary errs toward letting a search run.
+ */
+export function earliestSearchableIso(now: Date = new Date()): string {
+  return new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+}
+
 /*
  * A DATE IN THE PAST IS NOT A SEARCH.
  *
@@ -47,7 +68,7 @@ export function todayIso(now: Date = new Date()): string {
  * comparison is exact for zero-padded ISO dates, so no parsing is needed.
  */
 const notInThePast = (label: string) => (value: string, ctx: z.RefinementCtx) => {
-  if (value < todayIso()) {
+  if (value < earliestSearchableIso()) {
     ctx.addIssue({
       code: 'custom',
       message: `${label} ${value} is in the past — today is ${todayIso()}`,
@@ -65,7 +86,7 @@ const FlightSearchArgsSchema = z.object({
   if (value.returnDate && value.returnDate < value.departureDate) {
     ctx.addIssue({ code: 'custom', path: ['returnDate'], message: 'Return date must not precede departure date' });
   }
-  if (value.departureDate < todayIso()) {
+  if (value.departureDate < earliestSearchableIso()) {
     ctx.addIssue({
       code: 'custom',
       path: ['departureDate'],

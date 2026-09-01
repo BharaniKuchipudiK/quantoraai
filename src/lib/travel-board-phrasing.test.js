@@ -87,6 +87,18 @@ const MUST_NOT_INVENT = [
   'convert 2000 USD to SGD',
   'find me a nice hotel',
   'flying out of the airport',
+  /*
+   * Date ranges. ROUTE_PLACES was added to read "from Kuala Lumpur to Tokyo"
+   * and read these as routes too — "Monday -> Friday", with the Stays chip lit
+   * over a fabricated destination. Codex caught it on review; this corpus had
+   * no availability phrasings in it, which is why it did not.
+   */
+  'I can travel from Monday to Friday',
+  'I am available from May to August',
+  'flexible from June to September',
+  'free from Tuesday to Thursday',
+  'I am off from December to January',
+  'anytime from tomorrow to next weekend',
 ];
 
 for (const text of MUST_NOT_INVENT) {
@@ -129,4 +141,38 @@ test('an origin city never unlocks a flight search on its own', () => {
   assert.equal(b.origin, '', 'origin stays the IATA field');
   assert.equal(b.canSearchFlights, false);
   assert.equal(b.missing.includes('origin'), true, 'the airport code is still owed');
+});
+
+/*
+ * A real route must still survive the temporal guard — blocking every "from X
+ * to Y" would trade one failure for the opposite one.
+ */
+test('a real route is not mistaken for a date range', () => {
+  for (const [text, from, to] of [
+    ['book me a flight from Kuala Lumpur to Tokyo', 'Kuala Lumpur', 'Tokyo'],
+    ['flying from Singapore to Bali', 'Singapore', 'Bali'],
+    ['from Lisbon to Porto', 'Lisbon', 'Porto'],
+  ]) {
+    const b = brief(text);
+    assert.equal(b.originLabel, from, text);
+    assert.equal(b.destinationLabel, to, text);
+  }
+});
+
+/*
+ * The past-date guard must not refuse a traveller west of UTC their own today.
+ * Offsets span UTC-12 to UTC+14, so a local date is at most one day behind the
+ * UTC one; the board's boundary carries exactly that much slack.
+ */
+test('same-day travel west of UTC still searches', () => {
+  const yesterdayUtc = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const b = deriveTravelBrief(say('SIN to DPS', `departing ${yesterdayUtc}`));
+  assert.equal(b.canSearchFlights, true, 'a New Yorker booking their own today is not in the past');
+  assert.equal(b.missing.includes('departureDate'), false);
+});
+
+test('a date that is genuinely long gone is still refused', () => {
+  const b = deriveTravelBrief(say('SIN to DPS on 2025-05-08'));
+  assert.equal(b.canSearchFlights, false);
+  assert.equal(b.missing.includes('departureDate'), true, 'and the board asks for a usable date');
 });
