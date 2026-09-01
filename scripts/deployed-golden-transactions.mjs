@@ -140,8 +140,20 @@ function markActiveTransaction(name, correlationId = null) {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  const studio = page.getByRole('button', { name: /^(AI )?Studio$/i }).first();
-  await visible(studio, 'Studio navigation is missing from the deployed application.', 20_000);
+  /*
+   * Anchor on the data hook, not the button's words.
+   *
+   * This used to be getByRole('button', { name: /^(AI )?Studio$/i }). The
+   * landing CTA was later reworded to "Try Quantora", so the locator matched
+   * nothing and this gate failed on EVERY run — which is what "historically
+   * flaky" in the workflow actually meant. It was not flaky; it was stale and
+   * permanently red, and being muted is why the ESM outage of 2026-08-31 went
+   * unseen. data-quantora-enter-studio is the durable contract the landing
+   * page already publishes for exactly this purpose, so copy changes can no
+   * longer silence the deployment's most valuable test.
+   */
+  const studio = page.locator('[data-quantora-enter-studio="true"]').first();
+  await visible(studio, 'The landing page never offered a way into the Studio (looked for [data-quantora-enter-studio]).', 20_000);
   await studio.click();
 
   const prompt = page.locator('.app-shell--studio textarea').first();

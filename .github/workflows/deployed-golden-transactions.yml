@@ -103,6 +103,23 @@ jobs:
       - name: Install browser binary
         run: npx playwright install chromium
 
+      # BLOCKING, and deliberately first. Deterministic assertions only — no
+      # browser, no model, no provider spend — so a failure here has exactly
+      # one meaning: the deployment is broken. That precision is the point.
+      # It is what makes this gate safe to block on, and it is why the muting
+      # below can never swallow it again. See the header of the script.
+      - name: Deployed readiness (inference ready, every function boots)
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/deployed-readiness-gate.mjs
+
+      # Still non-blocking, but for a stated reason with an end date rather than
+      # a shrug: its Studio locator was stale (see the script), so it failed on
+      # every run and nobody could tell a real regression from the noise. The
+      # locator is fixed here; once a run proves it green this becomes blocking
+      # and continue-on-error comes out.
       - name: Prove prompt to rendered calculator and website
         id: golden_chat
         continue-on-error: true
@@ -138,5 +155,5 @@ jobs:
         run: |
           echo "deployed calculator/website golden outcome=$GOLDEN_CHAT_OUTCOME"
           if [ "$GOLDEN_CHAT_OUTCOME" != "success" ]; then
-            echo "::warning::Deployed calculator/website goldens failed (historically flaky; shop act above is the shop scorecard gate)."
+            echo "::warning::Deployed calculator/website golden failed. This is NOT 'just flaky' — read the log before dismissing it. Deployment executability is proven separately by the blocking readiness gate above."
           fi
