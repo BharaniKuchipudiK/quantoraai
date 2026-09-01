@@ -39,6 +39,22 @@ function loaderFor(filePath = '') {
   return 'js';
 }
 
+/**
+ * The automatic JSX transform removes the need to import React for JSX, but
+ * generated entry files still need a real binding when they explicitly use
+ * React.StrictMode (or another React.* API). Keep the authored VFS untouched;
+ * this is a compile-time compatibility shim for the preview only.
+ */
+export function ensureReactNamespaceBinding(source = '', filePath = '') {
+  const content = String(source || '');
+  if (!/\.(?:jsx?|tsx?)$/i.test(String(filePath || ''))) return content;
+  if (!/\bReact\s*\./.test(content)) return content;
+  const hasBinding = /\bimport\s+React(?:\s*,\s*\{[\s\S]*?\})?\s+from\s+['"]react['"]/.test(content)
+    || /\bimport\s+\*\s+as\s+React\s+from\s+['"]react['"]/.test(content)
+    || /\bimport\s*\{[^}]*\bdefault\s+as\s+React\b[^}]*\}\s+from\s+['"]react['"]/.test(content);
+  return hasBinding ? content : `import React from 'react';\n${content}`;
+}
+
 function packageRoot(specifier = '') {
   const source = String(specifier || '').trim();
   if (!source || source.startsWith('.') || source.startsWith('/')) return null;
@@ -160,7 +176,7 @@ export async function compilePreviewVfs(vfs = {}, options = {}) {
         });
 
         builder.onLoad({ filter: /.*/, namespace: VFS_NAMESPACE }, (args) => ({
-          contents: files.get(args.path) || '',
+          contents: ensureReactNamespaceBinding(files.get(args.path) || '', args.path),
           loader: loaderFor(args.path),
           resolveDir: process.cwd(),
         }));
