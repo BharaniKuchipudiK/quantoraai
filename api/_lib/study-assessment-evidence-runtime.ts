@@ -49,41 +49,57 @@ async function requestRaw(path: string, init: RequestInit & { headers?: Record<s
   }
 }
 
+function splitItemRef(itemRef: string): { itemKey: string; itemVersion: string } | null {
+  const separator = itemRef.lastIndexOf('@');
+  if (separator <= 0 || separator === itemRef.length - 1) return null;
+  return {
+    itemKey: itemRef.slice(0, separator),
+    itemVersion: itemRef.slice(separator + 1),
+  };
+}
+
 /**
- * Return every reviewed item/version this learner has already submitted through
- * the authoritative assessment-attempt boundary, regardless of which concept
- * ultimately received the evidence. V7's grading RPC enforces independence at
- * this same learner + item/version scope, so issuance must use the same scope or
- * it can present a "fresh" check that the database later (correctly) refuses to
- * count as independent evidence.
+ * Return which candidate item/version refs this learner has already submitted
+ * through the authoritative assessment-attempt boundary, regardless of which
+ * concept ultimately received the evidence. V7's grading RPC enforces
+ * independence at this same learner + item/version scope, so issuance must use
+ * the same scope or it can present a "fresh" check that the database later
+ * (correctly) refuses to count as independent evidence.
  *
- * This query uses only pre-V7 columns, so ordinary verified checks remain
- * rollout-compatible before the V7 migration. Store unavailability is null and
- * callers must fail closed rather than knowingly issue potentially stale work.
+ * Queries are candidate-scoped existence checks instead of a capped history
+ * scan, so freshness remains exact as a learner accumulates years of attempts.
+ * These columns all predate V7, preserving ordinary-check rollout compatibility.
  */
-export async function readStudyUsedAssessmentItemRefs(userSub: string): Promise<Set<string> | null> {
+export async function readStudyUsedAssessmentItemRefs(
+  userSub: string,
+  candidateItemRefs: Iterable<string>,
+): Promise<Set<string> | null> {
   if (!userSub) return null;
-  const response = await requestRaw(
-    `study_assessment_attempts?select=item_key,item_version&user_sub=eq.${encodeURIComponent(userSub)}&submitted_at=not.is.null&order=submitted_at.desc&limit=2000`,
-    { method: 'GET' },
-  );
-  if (!response?.ok) {
-    if (response) console.warn(`Study V7 used-item validation -> ${response.status}`);
-    return null;
-  }
-  try {
-    const rows = await response.json();
-    if (!Array.isArray(rows)) return null;
-    const refs = new Set<string>();
-    for (const row of rows) {
-      const itemKey = typeof row?.item_key === 'string' ? row.item_key : '';
-      const itemVersion = typeof row?.item_version === 'string' ? row.item_version : '';
-      if (itemKey && itemVersion) refs.add(`${itemKey}@${itemVersion}`);
+  const refs = [...new Set(Array.from(candidateItemRefs).filter((value) => typeof value === 'string' && value.length > 0))];
+  if (!refs.length) return new Set();
+
+  const checks = await Promise.all(refs.map(async (itemRef) => {
+    const parsed = splitItemRef(itemRef);
+    if (!parsed) return { status: 'invalid' as const, itemRef };
+    const response = await requestRaw(
+      `study_assessment_attempts?select=id&user_sub=eq.${encodeURIComponent(userSub)}&item_key=eq.${encodeURIComponent(parsed.itemKey)}&item_version=eq.${encodeURIComponent(parsed.itemVersion)}&submitted_at=not.is.null&limit=1`,
+      { method: 'GET' },
+    );
+    if (!response?.ok) {
+      if (response) console.warn(`Study V7 used-item validation -> ${response.status}`);
+      return { status: 'unavailable' as const, itemRef };
     }
-    return refs;
-  } catch {
-    return null;
-  }
+    try {
+      const rows = await response.json();
+      if (!Array.isArray(rows)) return { status: 'unavailable' as const, itemRef };
+      return { status: rows.length > 0 ? 'used' as const : 'fresh' as const, itemRef };
+    } catch {
+      return { status: 'unavailable' as const, itemRef };
+    }
+  }));
+
+  if (checks.some((check) => check.status === 'unavailable' || check.status === 'invalid')) return null;
+  return new Set(checks.filter((check) => check.status === 'used').map((check) => check.itemRef));
 }
 
 export type StudyEvidenceAttemptIssueResult =
