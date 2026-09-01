@@ -10,7 +10,9 @@ export const PREVIEW_IMAGE_PROXY_PATH = '/api/preview-image';
 const ALLOWED_HOSTS = new Set([
   'images.unsplash.com',
   'plus.unsplash.com',
-  'source.unsplash.com',
+  // source.unsplash.com is NOT here: the service was shut down in 2023, so
+  // allowing it hands models a guaranteed dead frame that passes every shape
+  // check (2026-09-01 boutique services section).
   'images.pexels.com',
   'images.pixabay.com',
   'cdn.pixabay.com',
@@ -71,6 +73,9 @@ export function isAllowedPreviewImageUrl(href) {
   if (parsed.username || parsed.password) return false;
   if (isBlockedPreviewImageHost(parsed.hostname)) return false;
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  // The wildcard let the retired source.unsplash.com back in past the
+  // allowlist edit above — a host that can never serve an image again.
+  if (host === 'source.unsplash.com') return false;
   return ALLOWED_HOSTS.has(host)
     || host.endsWith('.unsplash.com')
     || host.endsWith('.pexels.com')

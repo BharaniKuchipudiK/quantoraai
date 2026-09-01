@@ -403,7 +403,17 @@ export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
   if (!vfsLooksLikeShop(withPhotos.vfs, job)) return withPhotos;
   const next = { ...withPhotos.vfs };
   const htmlPath = pickPreviewEntryPath(next);
-  if (!htmlPath || !next[htmlPath] || typeof next[htmlPath].content !== 'string') {
+  /*
+   * pickPreviewEntryPath returns the RUNTIME entry — for a React project that
+   * is src/main.jsx, not a page. Injecting the HTML commerce bar there
+   * prepends markup above `import React` and kills the build the model
+   * shipped working (2026-09-01: `Expected ";" but found "import"` on a valid
+   * boutique VFS). The bar is only ever injected into an HTML document; a
+   * React shop gets its commerce UI at render time from the compiled preview,
+   * never by rewriting source. "React source is not overwritten with HTML."
+   * Gate: src/lib/shop-ui-react-vfs.test.js.
+   */
+  if (!htmlPath || !/\.html$/i.test(htmlPath) || !next[htmlPath] || typeof next[htmlPath].content !== 'string') {
     return { ...withPhotos, scaleNote: shopCatalogScaleNote(brief) };
   }
   const ui = injectShopCommerceUi(next[htmlPath].content);

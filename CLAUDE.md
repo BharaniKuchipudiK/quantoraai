@@ -178,6 +178,7 @@ becomes safely more autonomous.
 | `node --test src/lib/refinement-loop.test.js` | a repair loop that burns the user's money without improving |
 | `node --test src/lib/turn-heal-contract.test.js` | a retry identical to the attempt that failed, or terminal copy promising action in a state with no future |
 | `node scripts/guided-intake-browser-gate.mjs` | a platform that punishes the model for obeying it — an intake question flagged as a failed build, or a retry burned on a compliant answer |
+| `node --test src/lib/shop-ui-react-vfs.test.js` | the desk corrupting its own artifact — HTML injected into a React module the model shipped working |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
 
 ### Reachability is not correctness

@@ -1308,8 +1308,13 @@ export default async function handler(req: any, res: any) {
               goldenCanary ? transaction : null,
               // A guided first turn is TOLD not to output code (FIRST-TURN
               // RULE) — failing it for complying burned every route on the
-              // same compliant reply. Golden canary turns still owe files.
-              { allowIntake: honorGuided && !goldenCanary },
+              // same compliant reply. Artifact canaries (a goldenTransaction
+              // naming calculator/simple-website) still owe files: the
+              // transaction argument forbids intake inside the validator.
+              // Gating on the canary HEADER here as well would re-punish a
+              // canary-driven guided-intake transaction for obeying — the
+              // exact class this option exists to end.
+              { allowIntake: honorGuided },
             );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
