@@ -122,7 +122,13 @@ test('Study keeps exactly three permanent learner moves and moves secondary tool
 
   assert.match(hub, /data-quantora-study-hub-launcher="true"/);
   assert.match(hub, /aria-expanded=\{open\}/);
-  assert.doesNotMatch(hub, /Coming soon|Dashboard|Assessment History|Notebook/i);
+  /*
+   * Future surfaces may be named in design comments. What this gate forbids is
+   * shipping them as live Hub actions or visible placeholder copy before their
+   * real data contracts exist.
+   */
+  assert.doesNotMatch(hub, /label:\s*['"](?:Coming soon|Dashboard|Assessment History|Notebook)['"]/i);
+  assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard|Assessment History|Notebook)\s*</i);
 });
 
 test('H1 Study controls are monochrome and do not revive the legacy accent palette', () => {
