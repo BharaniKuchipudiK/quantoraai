@@ -1,6 +1,10 @@
 import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
-import { estimateStudyMastery, type StudyMasteryEstimate } from './study-mastery-estimator.js';
+import {
+  estimateStudyMastery,
+  STUDY_MASTERY_ESTIMATOR_VERSION,
+  type StudyMasteryEstimate,
+} from './study-mastery-estimator.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 export const STUDY_LEARNER_PROJECTION_SCHEMA_VERSION = 'study-learner-projection-2026-09-02.1';
@@ -61,7 +65,7 @@ export function replayStudyLearnerProjection(input: {
   return {
     schemaVersion: STUDY_LEARNER_PROJECTION_SCHEMA_VERSION,
     learnerModelVersion: learnerModel.version,
-    estimatorVersion: estimate.version,
+    estimatorVersion: STUDY_MASTERY_ESTIMATOR_VERSION,
     conceptId: input.conceptId,
     conceptKey: input.conceptKey || null,
     evidenceCount: admitted.length,
