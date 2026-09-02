@@ -70,6 +70,30 @@ test('H3.3 bounded full replay fails closed instead of returning a truncated pre
   });
 });
 
+test('H3.3 invalid paging options fall back to safe finite defaults', async () => {
+  await withStudyStore(async () => {
+    const oldFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      calls.push(url);
+      return new Response(JSON.stringify([]), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const result = await readStudySupabaseRowsPaged(
+        'study_mastery_events?select=id&order=created_at.asc,id.asc',
+        { operation: 'h3_3_invalid_bounds_test', pageSize: Number.NaN, maxRows: Number.POSITIVE_INFINITY },
+      );
+      assert.equal(result?.status, 'complete');
+      assert.equal(result?.rows.length, 0);
+      assert.equal(calls.length, 1);
+      assert.match(calls[0], /limit=500&offset=0/);
+    } finally {
+      globalThis.fetch = oldFetch;
+    }
+  });
+});
+
 test('H3.3 verified evidence loader replays 501 non-assessment rows without truncation', async () => {
   await withStudyStore(async () => {
     const oldFetch = globalThis.fetch;
@@ -108,7 +132,7 @@ test('H3.3 verified evidence loader replays 501 non-assessment rows without trun
         'physics.kinematics.motion-graphs',
       );
       assert.equal(events?.length, 501);
-      assert.equal(calls.length, 3);
+      assert.equal(calls.length, 2);
       assert.equal(events?.[500]?.id, 'self-confidence-500');
     } finally {
       globalThis.fetch = oldFetch;
