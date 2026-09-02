@@ -3136,6 +3136,7 @@ Paused — ${autoPauseRef.current}.`
             Where a new chat lands is tooltip detail, not a paragraph in the nav. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px', marginBottom: '10px', flexShrink: 0 }}>
           <button
+            data-quantora-new-chat="true"
             onClick={startNewChat}
             title={studioSidebarMembershipCopy(activeProject?.name)}
             style={{
