@@ -10,6 +10,17 @@ import { preloadPath } from "./config.js";
  */
 
 let mainWindow: BrowserWindow | null = null;
+let closeToBackground = false;
+let quitting = false;
+
+/** With a tray present, closing the window hides it instead of ending the host. */
+export function setCloseToBackground(enabled: boolean): void {
+  closeToBackground = enabled;
+}
+
+export function markQuitting(): void {
+  quitting = true;
+}
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
@@ -46,6 +57,13 @@ export function createMainWindow(): BrowserWindow {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  win.on("close", (event) => {
+    if (closeToBackground && !quitting) {
+      event.preventDefault();
+      win.hide();
+    }
   });
 
   win.on("closed", () => {

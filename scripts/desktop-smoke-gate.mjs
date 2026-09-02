@@ -195,10 +195,24 @@ try {
   const status = await window.evaluate(() => window.quantoraDesktop.auth.status());
   check(status.signedIn === true && status.user?.email === USER.email, 'bridge reports signed in');
 
+  // 4c. the persistent host reports its capabilities honestly and polls without inventing news
+  const hostAfter = await window.evaluate(() => window.quantoraDesktop.host());
+  check(
+    typeof hostAfter.capabilities.notifications === 'boolean' && typeof hostAfter.capabilities.background === 'boolean',
+    `host reports notification/background support as booleans (notifications=${hostAfter.capabilities.notifications}, background=${hostAfter.capabilities.background})`,
+  );
+  const poll = await app.evaluate(() => globalThis.__quantoraSmoke.pollWatches());
+  check(
+    poll.ok === false && poll.reason === 'unavailable' && poll.status === 503 && poll.notified === 0,
+    `watch poll reports the mirror's 503 honestly and raises nothing (${JSON.stringify(poll)})`,
+  );
+
   // 5. sign-out drops the token everywhere
   await window.evaluate(() => window.quantoraDesktop.auth.signOut());
   const after = await window.evaluate(() => fetch('/api/auth/session').then((r) => r.json()));
   check(after.user === null, 'sign-out leaves no session behind');
+  const pollSignedOut = await app.evaluate(() => globalThis.__quantoraSmoke.pollWatches());
+  check(pollSignedOut.reason === 'signed-out', 'the watch loop does nothing once signed out');
 
   // 6. the local runtime: a real folder, a real shell, real git (design §6.2)
   const beforeAttach = await window.evaluate(() => window.quantoraDesktop.runtime.info());

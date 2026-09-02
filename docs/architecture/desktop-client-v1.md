@@ -1,6 +1,7 @@
 # Quantora Desktop Client — v1 design
 
-**Status:** D0, D1 and D2 built (2026-09-02); D3–D4 designed. Answers ROADMAP
+**Status:** D0–D3 built and D4's packaging/release pipeline written
+(2026-09-02); signing and notarisation wait on accounts (§12). Answers ROADMAP
 Phase 4.1 ("Tauri/Electron shell — the body the cognitive layer needs"). Every
 claim about the platform below was read from the code and cites the file; §11
 records what each phase was accepted by.
@@ -381,16 +382,34 @@ into `task: "repair"`. Also open: the desk currently syncs to the folder on
 every command; a folder-first mode where the folder is read back into the
 desk needs the watcher.
 
-**D3 — Persistent host.** Tray-resident background, notifications under the
-restraint policy, watch loop, local recall cache.
-*Accept:* a `research_watches` hit raises exactly one notification, opens the
-right outcome, and quiet hours suppress it.
+**D3 — Persistent host. Built (first loop).** Tray-resident background
+(`desktop/main/tray.ts`; closing the window hides it, Quit in the tray
+really quits, and a session where no tray can be created falls back to
+close-means-quit), native notifications, and the watch loop
+(`desktop/main/watch-loop.ts`) that asks the existing `research-watch list`
+task hourly while signed in and raises at most one notification per flagged
+question until it is acknowledged on the desk. Restraint
+(`desktop/main/watch-policy.ts`): quiet hours 22:00–08:00 local, three per
+rolling hour, a suppressed question is retried next pass, never dropped.
+*Accepted by:* `watch-policy.test.ts` (diff, dedupe-until-acknowledged,
+quiet hours across midnight, rolling budget, copy) and the smoke gate:
+capabilities reported as booleans from the real `Notification.isSupported()`
+and tray state, a poll against a mirror without the watch store reporting
+its 503 and raising nothing, and no poll at all once signed out.
+*Still open:* the local recall cache; a notification click opens the studio
+tab, not yet the specific research question; the restraint policy is not
+yet a user preference.
 
-**D4 — Distribution.** `electron-builder` targets (dmg/zip, nsis, AppImage/deb),
-Apple notarisation, Windows signing, `electron-updater` against GitHub
-Releases, `.github/workflows/desktop-release.yml` on tags, crash reporting.
-*Accept:* an update from N to N+1 installs unattended and the smoke gate
-passes on the updated build.
+**D4 — Distribution. Pipeline written, signing pending.**
+`desktop/build/electron-builder.json` (dmg/zip, nsis, AppImage/deb; the web
+bundle and vercel.json ship as resources; `quantora://` registered as a
+protocol) and `.github/workflows/desktop-release.yml` on `desktop-v*` tags,
+publishing to GitHub Releases as the `electron-updater` feed. Signing and
+notarisation are opt-in by secret and are the founder's step (§12); until
+then the workflow produces unsigned builds and says so.
+*Still open:* wiring `electron-updater` into the main process, a real icon
+set, crash reporting, and the accept criterion — an update from N to N+1
+installing unattended with the smoke gate green on the updated build.
 
 ## 12. Infrastructure and accounts needed
 

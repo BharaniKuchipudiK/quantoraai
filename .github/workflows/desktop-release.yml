@@ -1,0 +1,89 @@
+name: Desktop release
+
+# D4 of docs/architecture/desktop-client-v1.md. Builds installers for the
+# three platforms from a `desktop-v*` tag and publishes them as a GitHub
+# release draft, which is also the electron-updater feed.
+#
+# Signing is opt-in by secret: with no certificates configured the workflow
+# still produces unsigned artifacts (useful for a first internal try), and
+# electron-builder prints exactly which step it skipped. Nothing here can
+# sign or notarise without the accounts listed in the design doc §12.
+#
+#   macOS   CSC_LINK / CSC_KEY_PASSWORD (Developer ID .p12, base64)
+#           APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID (notarisation)
+#   Windows WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
+#
+# The smoke gate must already be green on the tagged commit (ci.yml); this
+# workflow does not repeat it, it packages what CI proved.
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Install locked application dependencies
+        run: npm ci
+
+      - name: Build production frontend (bundled into the app as resources/web)
+        run: npm run build
+
+      - name: Install locked desktop dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Typecheck and bundle the desktop shell
+        run: npm run typecheck && npm run build
+        working-directory: desktop
+
+      - name: Package and publish installers
+        run: npx electron-builder --config build/electron-builder.json --publish always
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Keep the artifacts on the run as well
+        uses: actions/upload-artifact@v4
+        with:
+          name: quantora-desktop-${{ matrix.os }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.yml
+          if-no-files-found: error

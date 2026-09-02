@@ -6,7 +6,10 @@ import { completeSignIn } from "./auth-broker.js";
 import { deepLinkFromArgv } from "./auth-flow.js";
 import { notifyAuthChanged, registerIpc } from "./ipc.js";
 import { installQuantoraProtocol, registerQuantoraScheme } from "./protocol.js";
-import { createMainWindow, focusMainWindow, loadPostAuth } from "./window.js";
+import { createMainWindow, focusMainWindow, loadPostAuth, markQuitting } from "./window.js";
+import { installTray } from "./tray.js";
+import { pollWatches, startWatchLoop, stopWatchLoop } from "./watch-loop.js";
+import { readSessionToken } from "./session-store.js";
 
 /*
  * Quantora Desktop — main process entry (design §3, §4, §9).
@@ -48,7 +51,13 @@ if (!isPrimary) {
     void handleDeepLink(url);
   });
 
+  app.on("before-quit", () => {
+    markQuitting();
+    stopWatchLoop();
+  });
+
   app.on("window-all-closed", () => {
+    // With a tray the host stays resident (the window is hidden, not closed).
     if (process.platform !== "darwin") app.quit();
   });
 
@@ -87,6 +96,13 @@ if (!isPrimary) {
       installQuantoraProtocol({ apiOrigin: apiOrigin(), distDir: webDistDir(), vercelConfigFile: vercelConfigPath() });
       registerIpc();
       createMainWindow();
+      // Background presence is opt-out via the tray's own Quit; the smoke
+      // gate runs without a tray so the window close ends the process.
+      if (!isSmokeMode()) installTray();
+      if (readSessionToken()) startWatchLoop();
+      if (isSmokeMode()) {
+        (globalThis as any).__quantoraSmoke = { pollWatches };
+      }
     } catch (error) {
       console.error("[quantora-desktop] startup failed:", error);
       app.exit(3);
@@ -103,6 +119,7 @@ async function handleDeepLink(url: string): Promise<void> {
   focusMainWindow();
   if (outcome.ok === true) {
     notifyAuthChanged({ signedIn: true });
+    startWatchLoop();
     loadPostAuth();
     return;
   }

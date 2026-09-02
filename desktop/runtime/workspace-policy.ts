@@ -19,7 +19,7 @@ export function resolveInsideRoot(root: string, relativePath: string): string | 
 /** Terminal escape sequences add nothing to a plain-text log. */
 export function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\][^]*/g, "");
+  return text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\u001b\][^\u0007]*\u0007/g, "");
 }
 
 /** Cap collected output, keeping the tail — the end is where the error is. */

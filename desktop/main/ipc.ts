@@ -7,6 +7,8 @@ import { getMainWindow } from "./window.js";
 import { attachWorkspace, detachWorkspace, syncWorkspaceFiles, workspaceInfo, workspaceRoot } from "../runtime/workspace.js";
 import { runCollected } from "../runtime/shell.js";
 import { runDeskGitOnDisk } from "../runtime/git.js";
+import { notificationsSupported, stopWatchLoop, watchLoopRunning } from "./watch-loop.js";
+import { trayActive } from "./tray.js";
 
 /*
  * The enumerated bridge surface (design §9). Every channel name comes from
@@ -20,8 +22,10 @@ function capabilities() {
     folder: true,
     shell: attached,
     git: attached,
-    devServer: false,     // D2b
-    notifications: false, // D3
+    devServer: false, // D2b
+    notifications: notificationsSupported(),
+    background: trayActive(),
+    watchLoop: watchLoopRunning(),
   };
 }
 
@@ -37,6 +41,7 @@ export function registerIpc(): void {
   ipcMain.handle(DESKTOP_IPC.authSignIn, () => beginSignIn());
   ipcMain.handle(DESKTOP_IPC.authSignOut, async () => {
     await signOut();
+    stopWatchLoop();
     notifyAuthChanged({ signedIn: false });
     return { ok: true };
   });
