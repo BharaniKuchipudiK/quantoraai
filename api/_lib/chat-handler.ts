@@ -22,6 +22,7 @@ import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
 import { UserFacingError } from './gemini-flash.js';
+import { extractOpenRouterAnnotationSources } from './openrouter-citations.js';
 import {
   acknowledgeResearchWatch,
   createResearchWatch,
@@ -1242,8 +1243,8 @@ export default async function handler(req: any, res: any) {
           : refineUserMessage,
       });
       const geminiContents = buildGeminiContents(boundedHistory, refineUserMessage, visionImages);
-      const sources: Array<{ uri: string; title: string }> = [];
-      const seenSources = new Set<string>();
+      // Committed only from the attempt that actually answered — see below.
+      let sources: Array<{ uri: string; title: string }> = [];
       let fullReply = '';
       let usedRoute: InferenceRoute | null = null;
       let lastRouteError: any = null;
@@ -1296,6 +1297,12 @@ export default async function handler(req: any, res: any) {
 
         try {
           let attemptReply = '';
+          // Citations are evidence for THIS attempt's reply only. Collected
+          // per attempt and committed with it: a failed attempt's citations
+          // appended to a fallback attempt's answer would be forged
+          // provenance — a Sources block backing prose its model never saw.
+          const attemptSources: Array<{ uri: string; title: string }> = [];
+          const attemptSeenSources = new Set<string>();
           const buildBeat = { t: 0 };
           const attemptSystemPrompt = recoverHtmlPreview
             ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}`
@@ -1354,9 +1361,9 @@ export default async function handler(req: any, res: any) {
               if (Array.isArray(groundingChunks)) {
                 for (const groundingChunk of groundingChunks) {
                   const uri = groundingChunk?.web?.uri;
-                  if (uri && !seenSources.has(uri)) {
-                    seenSources.add(uri);
-                    sources.push({ uri, title: groundingChunk?.web?.title || uri });
+                  if (uri && !attemptSeenSources.has(uri)) {
+                    attemptSeenSources.add(uri);
+                    attemptSources.push({ uri, title: groundingChunk?.web?.title || uri });
                   }
                 }
               }
@@ -1412,6 +1419,20 @@ export default async function handler(req: any, res: any) {
                     emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                     if (!effectiveBuildMode) sse.text(token);
                   }
+                  // The web plugin's citations arrive as url_citation
+                  // ANNOTATIONS, not content — dropping them left grounded
+                  // replies with inline links the board could not credit
+                  // (see openrouter-citations.ts). An event that carries a
+                  // provider failure contributes nothing: its attempt is
+                  // about to be thrown away.
+                  if (!midStreamFailure) {
+                    for (const source of extractOpenRouterAnnotationSources(parsed)) {
+                      if (!attemptSeenSources.has(source.uri)) {
+                        attemptSeenSources.add(source.uri);
+                        attemptSources.push(source);
+                      }
+                    }
+                  }
                 } catch { /* malformed upstream events do not satisfy the route contract */ }
                 // Thrown outside the try: the catch above deliberately swallows
                 // malformed events, and a real provider failure is not one.
@@ -1440,6 +1461,7 @@ export default async function handler(req: any, res: any) {
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
           fullReply = attemptReply;
+          sources = attemptSources; // the answering attempt's evidence, and only its
           usedRoute = route;
           await recordInferenceRouteSuccess(providerCircuitStore, route);
           traceBoundary({

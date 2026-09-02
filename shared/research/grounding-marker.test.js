@@ -101,3 +101,23 @@ test('the marker line pattern matches the machine form and not loose prose', () 
   assert.ok(!GROUNDING_MARKER_LINE.test(`text ${GROUNDING_MARKER}`), 'not when embedded in a sentence');
   assert.ok(!GROUNDING_MARKER_LINE.test('[//]: # (quantora-grounded) trailing'), 'nor with anything after it');
 });
+
+test('a paren URL and a newline title still land on the board ledger', async () => {
+  // OpenRouter's web plugin returns raw web URLs; a ')' inside one closes the
+  // markdown link early and the board's row regex silently drops a real
+  // source. The builder percent-encodes parens and collapses title
+  // whitespace, so this asserts through the REAL parser, not a copied regex.
+  const { deriveResearchBrief } = await import('../../src/lib/research-brief.js');
+  const block = buildGroundedSourceBlock([
+    { title: 'Mercury\n(planet)  overview', uri: 'https://en.wikipedia.org/wiki/Mercury_(planet)' },
+  ]);
+  const brief = deriveResearchBrief({
+    messages: [
+      { id: 'u1', sender: 'user', text: 'What do we know about Mercury?' },
+      { id: 'a1', sender: 'ai', text: `Mercury is the smallest planet.${block}` },
+    ],
+  });
+  assert.equal(brief.sources.length, 1, 'the row must survive into the ledger');
+  assert.equal(brief.sources[0].uri, 'https://en.wikipedia.org/wiki/Mercury_%28planet%29');
+  assert.equal(brief.sources[0].title, 'Mercury (planet) overview');
+});

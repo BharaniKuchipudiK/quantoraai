@@ -351,6 +351,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const domainPolicy = studioDomainPolicy(studioDomain);
 
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
+  // Per-desk decision, so it lives in the policy table with the others —
+  // research is the advisor desk that shows the picker (see the table's note).
+  const showEngineControls = domainPolicy.showModelControls === true;
 
   /*
    * Tell the ambient background to step back once there is work on screen.
@@ -4565,7 +4568,7 @@ Paused — ${autoPauseRef.current}.`
                   onClick={() => setShowInBarModelDropdown(!showInBarModelDropdown)}
                   title="Select AI Engine"
                   style={{
-                    display: isAdvisorWorkspace ? 'none' : 'flex',
+                    display: showEngineControls ? 'flex' : 'none',
                     alignItems: 'center',
                     gap: '6px',
                     background: showInBarModelDropdown ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
