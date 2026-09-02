@@ -1,4 +1,6 @@
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-02.3';
+import { evaluateStudyLearningIntervention } from './study-learning-intervention.js';
+
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-02.4';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -12,7 +14,8 @@ export type StudyTeachingRepresentation =
   | 'story_analogy'
   | 'interactive_probe'
   | 'governed_assessment'
-  | 'simulation_or_lab';
+  | 'simulation_or_lab'
+  | 'reference';
 
 export type StudyTeachingRepresentationFallback =
   | 'none'
@@ -86,9 +89,6 @@ export function planStudyTeachingRepresentation(input: {
   const requested = requestedMode(message);
 
   if (requested === 'graph') {
-    // The word "graph" in a request is not evidence that a graph is a valid
-    // representation for the concept. Require graph semantics from established
-    // context or from concept-bearing words in the current request.
     const graphAvailable = EXPLICIT_GRAPH.test(contextText) || GRAPH_SEMANTICS.test(message);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
@@ -162,14 +162,55 @@ export function planStudyTeachingRepresentation(input: {
     };
   }
 
-  if (STRUGGLE.test(message)) {
+  const intervention = evaluateStudyLearningIntervention({
+    message,
+    history: contextText.split('\n').filter(Boolean).map((text) => ({ text })),
+  });
+
+  if (intervention.action === 'guided_reconstruction') {
+    return {
+      version: STUDY_TEACHING_REPRESENTATION_VERSION,
+      requestedMode: null,
+      primaryRepresentation: 'interactive_probe',
+      learnerAction: 'predict',
+      rendererRequired: false,
+      fallback: 'none',
+      reason: 'struggle_repair',
+    };
+  }
+
+  if (intervention.action === 'change_representation') {
     const visual = supportedVisual(context);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: null,
       primaryRepresentation: visual || 'worked_example',
-      learnerAction: visual ? 'predict' : 'explain',
+      learnerAction: visual ? 'predict' : 'calculate',
       rendererRequired: Boolean(visual),
+      fallback: 'none',
+      reason: 'struggle_repair',
+    };
+  }
+
+  if (intervention.action === 'offer_reference') {
+    return {
+      version: STUDY_TEACHING_REPRESENTATION_VERSION,
+      requestedMode: null,
+      primaryRepresentation: 'reference',
+      learnerAction: 'retrieve',
+      rendererRequired: false,
+      fallback: 'none',
+      reason: 'struggle_repair',
+    };
+  }
+
+  if (intervention.action === 'compress' || STRUGGLE.test(message)) {
+    return {
+      version: STUDY_TEACHING_REPRESENTATION_VERSION,
+      requestedMode: null,
+      primaryRepresentation: 'concise_text',
+      learnerAction: 'explain',
+      rendererRequired: false,
       fallback: 'none',
       reason: 'struggle_repair',
     };

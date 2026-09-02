@@ -59,22 +59,42 @@ test('make it easy requests concise teaching', () => {
   assert.equal(plan.reason, 'explicit_request');
 });
 
-test('learner struggle changes representation instead of lengthening prose by default', () => {
-  const visualRepair = planStudyTeachingRepresentation({
+test('first struggle compresses rather than forcing a visual everywhere', () => {
+  const plan = planStudyTeachingRepresentation({
     message: "I still don't understand",
     contextText: 'algebra equation x + 3 = 5',
+  });
+  assert.equal(plan.reason, 'struggle_repair');
+  assert.equal(plan.primaryRepresentation, 'concise_text');
+  assert.equal(plan.rendererRequired, false);
+});
+
+test('repeated struggle changes representation and chooses a visual only when the concept supports one', () => {
+  const visualRepair = planStudyTeachingRepresentation({
+    message: "I still don't understand",
+    contextText: 'Newtonian motion and friction\nMake it easier for me',
   });
   assert.equal(visualRepair.reason, 'struggle_repair');
   assert.equal(visualRepair.primaryRepresentation, 'annotated_diagram');
   assert.equal(visualRepair.rendererRequired, true);
 
   const nonVisualRepair = planStudyTeachingRepresentation({
-    message: "I'm confused",
-    contextText: 'a concept with no current renderer family',
+    message: "I still don't understand",
+    contextText: 'a concept with no current renderer family\nMake it easier for me',
   });
   assert.equal(nonVisualRepair.reason, 'struggle_repair');
   assert.equal(nonVisualRepair.primaryRepresentation, 'worked_example');
   assert.equal(nonVisualRepair.rendererRequired, false);
+});
+
+test('repeated failed modality changes trigger guided reconstruction instead of another explanation', () => {
+  const plan = planStudyTeachingRepresentation({
+    message: "I still don't understand",
+    contextText: 'Explain it with a story\nI am confused\nShow me an example',
+  });
+  assert.equal(plan.reason, 'struggle_repair');
+  assert.equal(plan.primaryRepresentation, 'interactive_probe');
+  assert.equal(plan.learnerAction, 'predict');
 });
 
 test('ordinary Study turn has a stable conservative default and does not invent a renderer', () => {
