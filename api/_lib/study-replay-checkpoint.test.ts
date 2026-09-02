@@ -9,7 +9,6 @@ import { replayStudyLearnerProjection } from './study-learner-projection.js';
 import {
   buildStudyReplayCheckpoint,
   replayStudyLearnerProjectionFromCheckpoint,
-  studyLearnerProjectionSemanticallyEqual,
 } from './study-replay-checkpoint.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
@@ -103,7 +102,6 @@ function assertParity(base: StudyMasteryEvidenceEvent[], delta: StudyMasteryEvid
   assert.equal(replayed.status, 'replayed');
   if (replayed.status !== 'replayed') return;
   assert.deepEqual(replayed.projection, full);
-  assert.equal(studyLearnerProjectionSemanticallyEqual(replayed.projection, full), true);
 }
 
 test('H3.3 checkpoint + delta matches full replay for misconception repair', () => {
