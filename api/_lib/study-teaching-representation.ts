@@ -1,7 +1,7 @@
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { resolveStudyRepresentationCapability } from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-02.6';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-02.7';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -78,7 +78,11 @@ export function planStudyTeachingRepresentation(input: {
   const capability = resolveStudyRepresentationCapability(context);
 
   if (requested === 'graph') {
-    const graphCapability = capability?.representation === 'graph' ? capability : null;
+    // The request word "graph" is not evidence that a graph is semantically
+    // appropriate. Require graph semantics from established lesson context or
+    // from additional semantic words in the current learner message.
+    const contextCapability = resolveStudyRepresentationCapability(contextText);
+    const graphCapability = contextCapability?.representation === 'graph' ? contextCapability : null;
     const graphAvailable = Boolean(graphCapability) || GRAPH_SEMANTICS.test(message);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
