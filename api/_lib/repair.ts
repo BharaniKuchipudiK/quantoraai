@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { listGeminiModelIds, withNewestGeminiFlash, UserFacingError } from "./gemini-flash.js";
 import { formatJobCardForRepair } from "../../src/lib/studio-job-card.js";
 import { formatAttemptMemory } from "../../shared/refinement-loop.js";
 import { fetchWithTimeout } from "./fetch-timeout.js";
@@ -82,11 +83,11 @@ async function repairWithOpenRouter(apiKey: string, model: string, system: strin
     const errText = await resp.text();
     let detail = "";
     try { detail = JSON.parse(errText)?.error?.message || ""; } catch { detail = errText?.slice(0, 200) || ""; }
-    throw new Error(`Repair model request failed (${resp.status})${detail ? `: ${detail}` : ""}`);
+    throw new UserFacingError(`Repair model request failed (${resp.status})${detail ? `: ${detail}` : ""}`);
   }
   const json = await resp.json();
   const content = json?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") throw new Error("Repair model returned an empty response.");
+  if (!content || typeof content !== "string") throw new UserFacingError("Repair model returned an empty response.");
   return stripFences(content);
 }
 
@@ -94,21 +95,22 @@ async function repairWithGemini(apiKey: string, system: string, user: string): P
   const client = new GoogleGenAI({ apiKey });
   let models: string[] = [];
   try {
-    const list = await client.models.list();
-    for await (const m of list) if (m?.name) models.push(m.name.replace(/^models\//, ""));
+    models = await listGeminiModelIds(client);
   } catch (err: any) {
-    throw new Error(`Gemini key rejected: ${err?.message || err}`);
+    // Never embed err.message: the Gemini SDK's message is the raw JSON
+    // response body, and this string reaches the client via the route catch.
+    console.warn("Gemini model listing failed for repair:", err?.message || err);
+    throw new UserFacingError("The Gemini key was rejected while listing models.");
   }
-  const flash = models.filter((m) => m.includes("gemini") && m.includes("flash"));
-  const pick = flash[0] || models[0];
-  if (!pick) throw new Error("No Gemini model available for this key.");
-  const res = await client.models.generateContent({
-    model: pick,
+  // A listed id can be retired for serving (see gemini-flash.ts); advance
+  // past retired candidates instead of failing on the first.
+  const res = await withNewestGeminiFlash(models, (model) => client.models.generateContent({
+    model,
     contents: [{ role: "user", parts: [{ text: user }] }],
     config: { systemInstruction: system, temperature: 0.1 },
-  });
+  }));
   const text = (res as any)?.text;
-  if (!text) throw new Error("Gemini returned an empty response.");
+  if (!text) throw new UserFacingError("Gemini returned an empty response.");
   return stripFences(text);
 }
 
@@ -127,13 +129,13 @@ export async function repairArtifact(opts: {
   const framework = opts.framework === "react" ? "react" : "html";
 
   if (!code || typeof code !== "string" || !code.trim()) {
-    throw new Error("No code provided to repair.");
+    throw new UserFacingError("No code provided to repair.");
   }
   if (code.length > MAX_REPAIR_CODE_LENGTH) {
-    throw new Error("Code is too large to auto-repair.");
+    throw new UserFacingError("Code is too large to auto-repair.");
   }
   if (!openRouterKey && !geminiKey) {
-    throw new Error("No API key available for auto-repair.");
+    throw new UserFacingError("No API key available for auto-repair.");
   }
 
   const errText = typeof error === "string" && error.trim() ? error.trim().slice(0, 4000) : "Unknown runtime error.";
@@ -149,7 +151,7 @@ export async function repairArtifact(opts: {
     ? await repairWithOpenRouter(openRouterKey, model || DEFAULT_REPAIR_MODEL, system, user)
     : await repairWithGemini(geminiKey as string, system, user);
 
-  if (!fixed || !fixed.trim()) throw new Error("The repair model returned nothing usable.");
+  if (!fixed || !fixed.trim()) throw new UserFacingError("The repair model returned nothing usable.");
 
   const restored = restoreDataUris(fixed, assets);
   return { code: restored, unchanged: restored.trim() === code.trim() };

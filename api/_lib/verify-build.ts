@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { listGeminiModelIds, withNewestGeminiFlash, UserFacingError } from "./gemini-flash.js";
 import { fetchWithTimeout } from "./fetch-timeout.js";
 import { stripDataUris } from "./model-payload.js";
 import { assembledPreviewHasUsableCss, prepareCodeForPreview, isHonestPreviewFailurePage } from "../../src/lib/preview-utils.js";
@@ -329,19 +330,21 @@ async function critiqueWithGemini(apiKey: string, code: string, brief: string) {
   const client = new GoogleGenAI({ apiKey });
   let models: string[] = [];
   try {
-    const list = await client.models.list();
-    for await (const m of list) if (m?.name) models.push(m.name.replace(/^models\//, ""));
+    models = await listGeminiModelIds(client);
   } catch (err: any) {
-    throw new Error(`Gemini key rejected: ${err?.message || err}`);
+    // Never embed err.message — the Gemini SDK's message is the raw JSON
+    // response body (see gemini-flash.ts).
+    console.warn("Gemini model listing failed for critic:", err?.message || err);
+    throw new Error("The Gemini key was rejected while listing models.");
   }
-  const pick = models.filter((m) => m.includes("gemini") && m.includes("flash"))[0] || models[0];
-  if (!pick) throw new Error("No Gemini model available.");
   const system = `You are a senior design + QA reviewer for shipped websites. Judge the HTML against professional standards and the user's brief. Reply with ONLY compact JSON: {"score": <0-100 integer>, "issues": ["short concrete fixable problem", ...], "summary": "one sentence"}.`;
-  const res = await client.models.generateContent({
-    model: pick,
+  // A listed id can be retired for serving (see gemini-flash.ts); advance
+  // past retired candidates instead of failing on the first.
+  const res = await withNewestGeminiFlash(models, (model) => client.models.generateContent({
+    model,
     contents: [{ role: "user", parts: [{ text: `USER BRIEF:\n${brief || "(none)"}\n\nHTML:\n${code.slice(0, 60_000)}` }] }],
     config: { systemInstruction: system, temperature: 0.2 },
-  });
+  }));
   return stripJsonFence((res as any)?.text || "");
 }
 
@@ -370,7 +373,7 @@ export async function verifyBuild(opts: {
 }): Promise<BuildReport> {
   const { code, vfs = {}, brief = "", job, openRouterKey, geminiKey, model } = opts;
   if (!code || typeof code !== "string" || !code.trim()) {
-    throw new Error("No code provided to verify.");
+    throw new UserFacingError("No code provided to verify.");
   }
 
   const assembled = prepareCodeForPreview(code, vfs);
