@@ -3,8 +3,10 @@ import {
   type StudyAssessmentAttemptReceipt,
 } from './study-evidence-admission.js';
 import { findStudyAssessmentItem } from './study-assessment-items.js';
-import { readStudySupabaseRows } from './study-supabase.js';
-import { readStudyMasteryEvidence } from './store.js';
+import {
+  readStudySupabaseRows,
+  readStudySupabaseRowsPaged,
+} from './study-supabase.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 const MIN_TRANSFER_CONFIDENCE = 0.8;
@@ -95,6 +97,44 @@ function attemptReceipt(
   };
 }
 
+function masteryEvent(row: any, conceptId: string): StudyMasteryEvidenceEvent {
+  return {
+    id: String(row.event_key || ''),
+    conceptId,
+    kind: row.event_kind,
+    correct: typeof row.correct === 'boolean' ? row.correct : null,
+    score: typeof row.score === 'number' ? row.score : null,
+    difficulty: typeof row.difficulty === 'number' ? row.difficulty : null,
+    hintsUsed: Number(row.hints_used) || 0,
+    responseMs: typeof row.response_ms === 'number' ? row.response_ms : null,
+    selfConfidence: typeof row.self_confidence === 'number' ? row.self_confidence : null,
+    independent: row.independent === true,
+    misconceptionSignal: row.misconception_signal === true,
+    delayDays: typeof row.delay_days === 'number' ? row.delay_days : null,
+    provenance: row.provenance,
+    sourceRef: row.source_ref,
+    assessmentRef: row.assessment_ref,
+    itemRef: row.item_ref,
+    observedAt: String(row.observed_at || ''),
+  } as StudyMasteryEvidenceEvent;
+}
+
+async function readCompleteMasteryEvidence(
+  userSub: string,
+  conceptId: string,
+): Promise<StudyMasteryEvidenceEvent[] | null> {
+  const result = await readStudySupabaseRowsPaged(
+    `study_mastery_events?select=id,event_key,event_kind,correct,score,difficulty,hints_used,response_ms,self_confidence,independent,misconception_signal,delay_days,provenance,source_ref,assessment_ref,item_ref,observed_at,created_at&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&order=created_at.asc,id.asc`,
+    { operation: 'mastery_evidence_full_replay' },
+  );
+  if (!result) return null;
+  if (result.status === 'overflow') {
+    console.warn('Study full replay exceeded bounded history ceiling.', { operation: 'mastery_evidence_full_replay' });
+    return null;
+  }
+  return result.rows.map((row) => masteryEvent(row, conceptId));
+}
+
 async function validatedTransferTargets(
   sourceConceptId: string,
   targetConceptIds: string[],
@@ -117,21 +157,21 @@ async function validatedTransferTargets(
 }
 
 /**
- * Read learner evidence and cross-check every assessment-backed event against
- * the authoritative submitted-attempt table before it can carry the private
- * admission attestation. V7 also validates transfer against the canonical
- * supports_transfer_to graph and recomputes delayed-retention timing from the
- * server-owned attempt receipt.
+ * Read the complete bounded learner ledger and cross-check every assessment-
+ * backed event against the authoritative submitted-attempt table before it can
+ * carry the private admission attestation.
  *
- * Validation-store unavailability returns null: callers must not overwrite a
- * prior learner projection with an artificial zero-evidence state.
+ * H3.3 removes the old silent 500-row truncation. Both evidence and receipt
+ * history are append-ordered and paged. If the bounded full-replay ceiling is
+ * exceeded or validation storage is unavailable, this function returns null so
+ * callers preserve prior learner truth rather than projecting from a prefix.
  */
 export async function readVerifiedStudyMasteryEvidence(
   userSub: string,
   conceptId: string,
   conceptKey: string,
 ): Promise<StudyMasteryEvidenceEvent[] | null> {
-  const events = await readStudyMasteryEvidence(userSub, conceptId);
+  const events = await readCompleteMasteryEvidence(userSub, conceptId);
   if (!events) return null;
   const assessmentBackedEvents = events.filter((event) => ASSESSMENT_BACKED_KINDS.has(event.kind));
   if (!assessmentBackedEvents.length) return events;
@@ -139,26 +179,37 @@ export async function readVerifiedStudyMasteryEvidence(
   // Prefer the V7 receipt shape. If the migration has not landed yet, fall back
   // to the legacy assessment-only shape so ordinary verified checks keep
   // working while retention/transfer remain fail-closed.
-  const v7Path = `study_assessment_attempts?select=id,concept_id,evidence_concept_id,evidence_kind,retention_anchor_at,item_key,item_version,submitted_option_id,submitted_at,correct,score&user_sub=eq.${encodeURIComponent(userSub)}&or=(concept_id.eq.${encodeURIComponent(conceptId)},evidence_concept_id.eq.${encodeURIComponent(conceptId)})&submitted_at=not.is.null&order=submitted_at.desc&limit=500`;
-  let rows = await readStudySupabaseRows(
+  const v7Path = `study_assessment_attempts?select=id,concept_id,evidence_concept_id,evidence_kind,retention_anchor_at,item_key,item_version,submitted_option_id,submitted_at,correct,score,issued_at&user_sub=eq.${encodeURIComponent(userSub)}&or=(concept_id.eq.${encodeURIComponent(conceptId)},evidence_concept_id.eq.${encodeURIComponent(conceptId)})&submitted_at=not.is.null&order=issued_at.asc,id.asc`;
+  let pagedRows = await readStudySupabaseRowsPaged(
     v7Path,
     { operation: 'assessment_receipt_validation_v7' },
-  ) as AttemptRow[] | null;
-  if (rows === null) {
-    const legacyPath = `study_assessment_attempts?select=id,concept_id,item_key,item_version,submitted_option_id,submitted_at,correct,score&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&submitted_at=not.is.null&order=submitted_at.desc&limit=500`;
-    rows = await readStudySupabaseRows(
+  );
+  if (pagedRows?.status === 'overflow') {
+    console.warn('Study full replay exceeded bounded history ceiling.', { operation: 'assessment_receipt_validation_v7' });
+    return null;
+  }
+
+  let rows = pagedRows?.rows as AttemptRow[] | undefined;
+  if (!pagedRows) {
+    const legacyPath = `study_assessment_attempts?select=id,concept_id,item_key,item_version,submitted_option_id,submitted_at,correct,score,issued_at&user_sub=eq.${encodeURIComponent(userSub)}&concept_id=eq.${encodeURIComponent(conceptId)}&submitted_at=not.is.null&order=issued_at.asc,id.asc`;
+    pagedRows = await readStudySupabaseRowsPaged(
       legacyPath,
       { operation: 'assessment_receipt_validation_legacy' },
-    ) as AttemptRow[] | null;
-    if (rows === null) {
+    );
+    if (!pagedRows) {
       console.warn('Study assessment receipt validation unavailable.');
       return null;
     }
+    if (pagedRows.status === 'overflow') {
+      console.warn('Study full replay exceeded bounded history ceiling.', { operation: 'assessment_receipt_validation_legacy' });
+      return null;
+    }
+    rows = pagedRows.rows as AttemptRow[];
   }
 
   const receipts = new Map<string, StudyAssessmentAttemptReceipt>();
   const transferReceipts: StudyAssessmentAttemptReceipt[] = [];
-  for (const row of rows) {
+  for (const row of rows || []) {
     const receipt = attemptReceipt(row, conceptId, conceptKey);
     if (!receipt) continue;
     if (receipt.evidenceKind === 'transfer') transferReceipts.push(receipt);
