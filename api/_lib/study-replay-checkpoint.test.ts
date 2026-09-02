@@ -107,26 +107,13 @@ function assertParity(base: StudyMasteryEvidenceEvent[], delta: StudyMasteryEvid
 }
 
 test('H3.3 checkpoint + delta matches full replay for misconception repair', () => {
-  const signal = assessment({
-    index: 1,
-    itemKey: 'motion-graphs-velocity-slope',
-    observedAt: '2026-08-01T00:00:00.000Z',
-    correct: false,
-  });
-  const repair = assessment({
-    index: 2,
-    itemKey: 'motion-graphs-acceleration-slope',
-    observedAt: '2026-08-02T00:00:00.000Z',
-  });
+  const signal = assessment({ index: 1, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-01T00:00:00.000Z', correct: false });
+  const repair = assessment({ index: 2, itemKey: 'motion-graphs-acceleration-slope', observedAt: '2026-08-02T00:00:00.000Z' });
   assertParity([signal], [repair], '2026-08-03T00:00:00.000Z');
 });
 
 test('H3.3 checkpoint + delta matches full replay for delayed retention', () => {
-  const learned = assessment({
-    index: 3,
-    itemKey: 'motion-graphs-velocity-slope',
-    observedAt: '2026-08-01T00:00:00.000Z',
-  });
+  const learned = assessment({ index: 3, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-01T00:00:00.000Z' });
   const retained = assessment({
     index: 4,
     itemKey: 'motion-graphs-acceleration-slope',
@@ -139,43 +126,34 @@ test('H3.3 checkpoint + delta matches full replay for delayed retention', () => 
 });
 
 test('H3.3 checkpoint + delta matches full replay for governed transfer', () => {
-  const learned = assessment({
-    index: 5,
-    itemKey: 'motion-graphs-velocity-slope',
-    observedAt: '2026-08-01T00:00:00.000Z',
-  });
-  const transfer = assessment({
-    index: 6,
-    itemKey: 'vector-resultant-perpendicular',
-    kind: 'transfer',
-    observedAt: '2026-08-10T00:00:00.000Z',
-  });
+  const learned = assessment({ index: 5, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-01T00:00:00.000Z' });
+  const transfer = assessment({ index: 6, itemKey: 'vector-resultant-perpendicular', kind: 'transfer', observedAt: '2026-08-10T00:00:00.000Z' });
   assertParity([learned], [transfer], '2026-08-11T00:00:00.000Z');
 });
 
 test('H3.3 checkpoint preserves item/version dedupe across the cursor boundary', () => {
-  const first = assessment({
-    index: 7,
-    itemKey: 'motion-graphs-velocity-slope',
-    observedAt: '2026-08-01T00:00:00.000Z',
-  });
-  const repeated = assessment({
-    index: 8,
-    itemKey: 'motion-graphs-velocity-slope',
-    kind: 'retrieval',
-    observedAt: '2026-08-02T00:00:00.000Z',
-  });
+  const first = assessment({ index: 7, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-01T00:00:00.000Z' });
+  const repeated = assessment({ index: 8, itemKey: 'motion-graphs-velocity-slope', kind: 'retrieval', observedAt: '2026-08-02T00:00:00.000Z' });
   assertParity([first], [repeated], '2026-08-03T00:00:00.000Z');
 });
 
 test('H3.3 checkpoint replay recomputes time-sensitive retention from injected asOf', () => {
-  const learned = assessment({
-    index: 9,
-    itemKey: 'motion-graphs-velocity-slope',
-    observedAt: '2026-08-01T00:00:00.000Z',
-  });
+  const learned = assessment({ index: 9, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-01T00:00:00.000Z' });
   assertParity([learned], [], '2026-08-03T00:00:00.000Z');
   assertParity([learned], [], '2026-08-20T00:00:00.000Z');
+});
+
+test('H3.3 late-appended backdated evidence requires authoritative full replay', () => {
+  const newer = assessment({ index: 11, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-10T00:00:00.000Z' });
+  const backdated = assessment({ index: 12, itemKey: 'motion-graphs-acceleration-slope', observedAt: '2026-08-05T00:00:00.000Z' });
+  const result = replayStudyLearnerProjectionFromCheckpoint({
+    checkpoint: checkpoint([newer]),
+    conceptId: CONCEPT_ID,
+    conceptKey: CONCEPT_KEY,
+    deltaEvidence: [backdated],
+    asOf: '2026-08-11T00:00:00.000Z',
+  });
+  assert.deepEqual(result, { status: 'incompatible', reasonCode: 'backdated_delta_requires_full_replay' });
 });
 
 test('H3.3 checkpoint refuses incompatible versions instead of guessing', () => {
@@ -191,11 +169,7 @@ test('H3.3 checkpoint refuses incompatible versions instead of guessing', () => 
 });
 
 test('H3.3 checkpoint carries derived replay state, not raw evidence rows', () => {
-  const base = assessment({
-    index: 10,
-    itemKey: 'motion-graphs-velocity-slope',
-    observedAt: '2026-08-01T00:00:00.000Z',
-  });
+  const base = assessment({ index: 10, itemKey: 'motion-graphs-velocity-slope', observedAt: '2026-08-01T00:00:00.000Z' });
   const serialized = JSON.stringify(checkpoint([base]));
   assert.doesNotMatch(serialized, /assessmentRef|sourceRef|responseMs|selfConfidence/);
   assert.match(serialized, /seenAssessmentItemRefs/);
