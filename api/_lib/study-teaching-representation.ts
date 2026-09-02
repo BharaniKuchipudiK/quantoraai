@@ -1,7 +1,10 @@
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
-import { resolveStudyRepresentationCapability } from './study-representation-capabilities.js';
+import {
+  resolveStudyRepresentationCapability,
+  type StudyRepresentationRendererKind,
+} from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-02.7';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-03.8';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -39,7 +42,7 @@ export type StudyTeachingRepresentationPlan = {
   primaryRepresentation: StudyTeachingRepresentation;
   learnerAction: 'predict' | 'calculate' | 'explain' | 'compare' | 'retrieve';
   rendererRequired: boolean;
-  rendererKind: string | null;
+  rendererKind: StudyRepresentationRendererKind | null;
   fallback: StudyTeachingRepresentationFallback;
   reason: 'explicit_request' | 'struggle_repair' | 'default_teaching';
 };
