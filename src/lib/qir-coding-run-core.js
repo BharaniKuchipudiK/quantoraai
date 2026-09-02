@@ -67,6 +67,15 @@ function queuedRun(runId, goal) {
   };
 }
 
+export function qirCodingRunCanStart(run, artifactRef, code) {
+  return Boolean(
+    run
+    && run.status === 'QUEUED'
+    && String(artifactRef || '').trim()
+    && String(code || '').trim(),
+  );
+}
+
 function currentArtifact(run) {
   return run?.artifacts?.find((artifact) => artifact.artifactId === 'coding-desk-vfs') || null;
 }
@@ -139,9 +148,14 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     return next;
   };
 
+  /*
+   * Boot owns only goal durability. It intentionally does NOT require files.
+   * The first worker may time out before producing any artifact; that must not
+   * erase the mission or prevent another worker from finding the same runId.
+   */
   const boot = async () => {
-    const { enabled, sessionId, goal, artifactRef, code } = readOptions();
-    if (!enabled || !sessionId || !artifactRef) return null;
+    const { enabled, sessionId, goal } = readOptions();
+    if (!enabled || !sessionId) return null;
     if (bootPromise) return bootPromise;
     bootPromise = (async () => {
       const existingId = readPointer(sessionId);
@@ -154,21 +168,35 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
       }
 
       const runId = id('coding-run');
-      await requestQir({ run: queuedRun(runId, goal) });
+      const created = await requestQir({ run: queuedRun(runId, goal) });
       writePointer(sessionId, runId);
-      return accept(await requestQir({ action: 'coding.start', runId, artifactRef, code }));
+      return accept(created);
     })().finally(() => { bootPromise = null; });
     return bootPromise;
   };
 
-  /* Boot or resume, then bring an interrupted repair onto the shown candidate. */
+  /*
+   * Boot/resume first. Only once runnable candidate bytes exist do we begin the
+   * Coding execution step. This makes artifact creation a step result rather
+   * than a prerequisite for the Run to exist.
+   */
   const sync = () => enqueue(async () => {
-    const current = await boot();
+    let current = await boot();
     if (!current) return null;
     const { artifactRef, code } = readOptions();
+
+    if (qirCodingRunCanStart(current, artifactRef, code)) {
+      current = accept(await requestQir({
+        action: 'coding.start',
+        runId: current.runId,
+        artifactRef,
+        code,
+      }));
+    }
+
     const artifact = currentArtifact(current);
     const sameCandidate = artifact?.ref?.startsWith(`${artifactRef}#sha256=`) || artifact?.ref === artifactRef;
-    if (['REPAIRING', 'REPLANNING'].includes(current.status) && !sameCandidate && code) {
+    if (['REPAIRING', 'REPLANNING'].includes(current.status) && artifactRef && !sameCandidate && code) {
       return accept(await requestQir({
         action: 'coding.recover',
         runId: current.runId,
