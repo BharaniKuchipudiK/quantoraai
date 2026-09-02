@@ -80,17 +80,19 @@ test("redirects are followed with each hop re-admitted; an internal target is re
 });
 
 test("non-textual, oversized, failing and looping sources report reasons instead of throwing", async () => {
-  const pdf = await fetchResearchSourceText(
-    "https://www.example.com/file.pdf",
+  // PDFs are supported now (see research-pdf-text.test.ts); an image is the
+  // honest non-textual case.
+  const image = await fetchResearchSourceText(
+    "https://www.example.com/chart.png",
     fakeFetch({
-      "https://www.example.com/file.pdf": () => fakeResponse({
-        headers: { "content-type": "application/pdf" },
-        body: "%PDF",
+      "https://www.example.com/chart.png": () => fakeResponse({
+        headers: { "content-type": "image/png" },
+        body: "\x89PNG",
       }),
     }),
   );
-  assert.equal(pdf.ok, false);
-  if (!pdf.ok) assert.equal(pdf.reason, "source_not_textual");
+  assert.equal(image.ok, false);
+  if (!image.ok) assert.equal(image.reason, "source_not_textual");
 
   const huge = await fetchResearchSourceText(
     "https://www.example.com/huge",

@@ -21,6 +21,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
+import { UserFacingError } from './gemini-flash.js';
 import {
   acknowledgeResearchWatch,
   createResearchWatch,
@@ -659,7 +660,9 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(result);
       } catch (err: any) {
         console.error("Error in /api/chat repair task:", err);
-        return res.status(500).json({ error: err?.message || "Auto-repair failed." });
+        // Provider SDK errors carry the raw JSON response body as .message
+        // (the 2026-09-02 Research-board leak). Echo only sentences we wrote.
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Auto-repair failed. Please try again." });
       }
     }
 
@@ -678,7 +681,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(report);
       } catch (err: any) {
         console.error("Error in /api/chat verify-build task:", err);
-        return res.status(500).json({ error: err?.message || "Verification failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Verification failed. Please try again." });
       }
     }
 
@@ -704,7 +707,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(report);
       } catch (err: any) {
         console.error("Error in /api/chat research-verify task:", err);
-        return res.status(500).json({ error: err?.message || "Evidence verification failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Evidence verification failed. Please try again." });
       }
     }
 
@@ -750,7 +753,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(result);
       } catch (err: any) {
         console.error("Error in /api/chat research-deep-dive task:", err);
-        return res.status(500).json({ error: err?.message || "Deep dive failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Deep dive failed. Please try again." });
       }
     }
 
@@ -797,7 +800,7 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ error: "Unknown watch operation." });
       } catch (err: any) {
         console.error("Error in /api/chat research-watch task:", err);
-        return res.status(500).json({ error: err?.message || "The watch operation failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "The watch operation failed. Please try again." });
       }
     }
 

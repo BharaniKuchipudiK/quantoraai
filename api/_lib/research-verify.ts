@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { listGeminiModelIds, withNewestGeminiFlash, UserFacingError } from "./gemini-flash.js";
 import { fetchWithTimeout } from "./fetch-timeout.js";
 import {
   admitResearchSourceUrl,
@@ -172,31 +173,27 @@ export async function proposeResearchEvidence(input: {
         stream: false,
       }),
     }, MODEL_TIMEOUT_MS);
-    if (!resp.ok) throw new Error(`Evidence proposer failed (${resp.status})`);
+    if (!resp.ok) throw new UserFacingError(`Evidence proposer failed (${resp.status})`);
     const json = await resp.json();
     return parseProposals(json?.choices?.[0]?.message?.content || "");
   }
 
   if (input.geminiKey) {
-    // Never pin a Gemini version id (see no-retired-gemini-ids invariant):
-    // discover what the key can actually serve and prefer a flash tier.
+    // Never pin a Gemini version id (see no-retired-gemini-ids invariant) —
+    // and never trust the list either: a listed id can be retired for
+    // serving (gemini-flash.ts has the incident). Newest flash, advancing
+    // past retired candidates.
     const client = new GoogleGenAI({ apiKey: input.geminiKey });
-    const models: string[] = [];
-    const list = await client.models.list();
-    for await (const model of list) {
-      if (model?.name) models.push(model.name.replace(/^models\//, ""));
-    }
-    const pick = models.filter((id) => id.includes("gemini") && id.includes("flash"))[0] || models[0];
-    if (!pick) throw new Error("No Gemini model available for evidence proposal.");
-    const result = await client.models.generateContent({
-      model: pick,
+    const ids = await listGeminiModelIds(client);
+    const result = await withNewestGeminiFlash(ids, (model) => client.models.generateContent({
+      model,
       contents: [{ role: "user", parts: [{ text: user }] }],
       config: { systemInstruction: system, temperature: 0 },
-    });
+    }));
     return parseProposals((result as any)?.text || "");
   }
 
-  throw new Error("No model key available for evidence proposal.");
+  throw new UserFacingError("No model key available for evidence proposal.");
 }
 
 export async function runResearchVerification(input: {
