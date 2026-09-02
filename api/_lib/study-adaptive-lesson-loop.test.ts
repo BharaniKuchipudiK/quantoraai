@@ -65,6 +65,14 @@ test('practice and verification never dump the next answer after asking', () => 
   assert.equal(verify.mustWaitForLearner, true);
 });
 
+test('generic continuation defers to the authoritative Study teaching-turn policy', () => {
+  const result = plan({ message: 'Continue', intent: 'continue' });
+  assert.deepEqual(result.beats, []);
+  assert.equal(result.mustWaitForLearner, false);
+  assert.equal(result.maxLearnerQuestions, 0);
+  assert.equal(result.reason, 'continuation_policy');
+});
+
 test('ordinary direct explanation is not forced into a fake scripted wait', () => {
   const result = plan({ message: 'What is potential difference?' });
   assert.deepEqual(result.beats, ['EXPLAIN']);
