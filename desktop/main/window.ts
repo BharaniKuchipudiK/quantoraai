@@ -59,6 +59,13 @@ export function createMainWindow(): BrowserWindow {
     return { action: "deny" };
   });
 
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`[quantora-desktop] renderer gone: ${details.reason} (exit ${details.exitCode})`);
+  });
+  win.webContents.on("did-fail-load", (_event, code, description, url) => {
+    if (code !== -3) console.error(`[quantora-desktop] load failed: ${code} ${description} ${url}`);
+  });
+
   win.on("close", (event) => {
     if (closeToBackground && !quitting) {
       event.preventDefault();

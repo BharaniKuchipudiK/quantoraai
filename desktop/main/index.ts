@@ -22,6 +22,9 @@ import { readSessionToken } from "./session-store.js";
 
 registerQuantoraScheme();
 
+// Headless gates run without a GPU; asking for one only adds a crash path.
+if (isSmokeMode()) app.disableHardwareAcceleration();
+
 // The smoke gate points the keychain file at a throwaway directory so a CI
 // run never reads or writes a developer's real session. Smoke mode only.
 if (isSmokeMode() && process.env.QUANTORA_USER_DATA_DIR) {

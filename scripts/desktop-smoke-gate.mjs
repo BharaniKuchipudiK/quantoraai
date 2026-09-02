@@ -35,6 +35,7 @@ const SESSION_SECRET = 'desktop-smoke-gate-secret-that-is-long-enough-0000';
 const USER = { sub: 'smoke-sub', email: 'smoke@example.com', name: 'Smoke', picture: '' };
 
 const failures = [];
+const diagnostics = [];
 function check(condition, message) {
   console.log(`${condition ? 'ok  ' : 'FAIL'} - ${message}`);
   if (!condition) failures.push(message);
@@ -100,7 +101,9 @@ let app = null;
 try {
   app = await electron.launch({
     executablePath: electronBinary,
-    args: [join(ROOT, 'desktop', 'dist', 'main.cjs'), '--no-sandbox'],
+    // --no-sandbox: GitHub runners restrict user namespaces. --disable-dev-shm-usage:
+    // a small /dev/shm silently kills the renderer on some CI images.
+    args: [join(ROOT, 'desktop', 'dist', 'main.cjs'), '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
     env: {
       ...process.env,
       QUANTORA_API_ORIGIN: API_ORIGIN,
@@ -116,14 +119,27 @@ try {
     timeout: 60_000,
   });
   app.process().stderr?.on('data', (chunk) => process.stderr.write(`[electron] ${chunk}`));
+  app.process().stdout?.on('data', (chunk) => process.stdout.write(`[electron] ${chunk}`));
 
   const window = await app.firstWindow({ timeout: 60_000 });
+  // Everything the renderer says is kept and printed on failure, so a red
+  // run names its cause instead of a selector (CLAUDE.md §8).
+  window.on('console', (m) => diagnostics.push(`console.${m.type()}: ${m.text().slice(0, 300)}`));
+  window.on('pageerror', (e) => diagnostics.push(`pageerror: ${e.message}`));
+  window.on('requestfailed', (r) => diagnostics.push(`requestfailed: ${r.url().slice(0, 140)} ${r.failure()?.errorText || ''}`));
+  window.on('crash', () => diagnostics.push('renderer crashed'));
   await window.waitForLoadState('domcontentloaded');
 
   // 1. the shell serves the app on its own origin. The app shell carries
   // this hook on every route once React has mounted.
-  await window.waitForSelector('.app-shell[data-quantora-isolated-desk]', { timeout: 30_000 });
-  check(true, 'web app mounted from the bundled dist');
+  try {
+    await window.waitForSelector('.app-shell[data-quantora-isolated-desk]', { timeout: 60_000 });
+    check(true, 'web app mounted from the bundled dist');
+  } catch (error) {
+    const dom = await window.evaluate(() => document.documentElement.outerHTML.slice(0, 2000)).catch((e) => `evaluate failed: ${e.message}`);
+    diagnostics.push(`DOM at timeout:\n${dom}`);
+    throw error;
+  }
   check(window.url().startsWith('quantora://app/'), `window is on quantora://app (got ${window.url()})`);
 
   const policy = await window.evaluate(async () => {
@@ -262,6 +278,10 @@ try {
 if (failures.length) {
   console.error(`\ndesktop-smoke-gate FAILED — ${failures.length} check(s):`);
   for (const failure of failures) console.error(`  - ${failure}`);
+  if (diagnostics.length) {
+    console.error(`\nRenderer diagnostics (${diagnostics.length}):`);
+    for (const line of diagnostics.slice(-80)) console.error(`  ${line}`);
+  }
   process.exit(1);
 }
 console.log('\ndesktop-smoke-gate passed.');
