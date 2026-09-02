@@ -27,6 +27,7 @@ test('transient gateway statuses retry, credential failures never do', () => {
 test('recovery is bounded, so a broken route cannot loop', () => {
   assert.equal(resolveTurnRecovery({ attempt: MAX_TURN_ATTEMPTS, retryable: true }).retry, false);
   assert.equal(resolveTurnRecovery({ attempt: MAX_TURN_ATTEMPTS, code: 'BUILD_ARTIFACT_CONTRACT' }).retry, false);
+  assert.equal(resolveTurnRecovery({ attempt: MAX_TURN_ATTEMPTS, timedOut: true }).retry, false);
 });
 
 test('a half-written answer is never restarted under the reader', () => {
@@ -45,15 +46,33 @@ test('a chat-only build plan still rebuilds even after partial prose rendered', 
   assert.equal(decision.reason, 'build-contract');
 });
 
-test('stopping and timing out stay the user\'s decision and the turn budget', () => {
+test('user stop remains terminal for the turn, but a step deadline auto-replans once', () => {
   assert.equal(resolveTurnRecovery({ attempt: 1, retryable: true, stoppedByUser: true }).retry, false);
-  assert.equal(resolveTurnRecovery({ attempt: 1, networkError: true, timedOut: true }).retry, false);
+
+  const timedOut = resolveTurnRecovery({
+    attempt: 1,
+    networkError: true,
+    timedOut: true,
+    fallbackEngineName: 'Gemini Flash',
+    failureDetail: '175s step deadline',
+  });
+  assert.equal(timedOut.retry, true);
+  assert.equal(timedOut.switchModel, true);
+  assert.equal(timedOut.reason, 'step-deadline');
+  assert.match(timedOut.retryBrief, /smaller independently useful runnable slice/i);
+  assert.match(timedOut.notice, /Gemini Flash/);
 });
 
-test('a dropped connection retries once', () => {
-  const decision = resolveTurnRecovery({ attempt: 1, networkError: true });
+test('a dropped connection retries once on a different engine when available', () => {
+  const decision = resolveTurnRecovery({
+    attempt: 1,
+    networkError: true,
+    fallbackEngineName: 'Gemini Flash',
+  });
   assert.equal(decision.retry, true);
+  assert.equal(decision.switchModel, true);
   assert.equal(decision.reason, 'network');
+  assert.match(decision.notice, /Gemini Flash/);
 });
 
 test('travel flight provider failures auto-retry with a flight-specific notice', () => {
