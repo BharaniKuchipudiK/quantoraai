@@ -1,4 +1,6 @@
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-08-30.1';
+import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
+
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-02.2';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -13,6 +15,7 @@ export type StudyCognitiveInterpretation = {
   responseMode: 'direct' | 'guided' | 'diagnostic' | 'evaluative' | 'sequenced';
   requiresVerification: boolean;
   temperatureCeiling: number;
+  representation: StudyTeachingRepresentationPlan;
 };
 
 type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
@@ -83,6 +86,10 @@ export function interpretStudyTurn(input: { studioDomain?: string | null; messag
     : intent === 'diagnose' ? 'diagnostic'
       : intent === 'practice' || intent === 'continue' ? 'guided'
         : intent === 'plan' ? 'sequenced' : 'direct';
+  const representation = planStudyTeachingRepresentation({
+    message,
+    contextText: history.slice(-6).map(textOf).filter(Boolean).join('\n'),
+  });
   return {
     version: STUDY_COGNITIVE_ROUTING_VERSION,
     intent,
@@ -92,11 +99,15 @@ export function interpretStudyTurn(input: { studioDomain?: string | null; messag
     responseMode,
     requiresVerification,
     temperatureCeiling: requiresVerification ? 0.2 : difficulty === 'advanced' ? 0.3 : 0.5,
+    representation,
   };
 }
 
 export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInterpretation | null): string {
   if (!interpretation) return '';
+  const representationFallback = interpretation.representation.fallback === 'none'
+    ? 'none'
+    : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
   return `\n\nSTUDY COGNITIVE ROUTE (${interpretation.version})
 This directive applies only because the active workspace is Study Tutor.
 - Learner intent: ${interpretation.intent}
@@ -104,8 +115,13 @@ This directive applies only because the active workspace is Study Tutor.
 - Continuity: ${interpretation.continuity}; preserve the current lesson context and resolve references from the supplied history. Do not restart discovery when the reference is clear.
 - Response mode: ${interpretation.responseMode}
 - Required teaching capabilities: ${interpretation.capabilities.join(', ')}
+- Teaching representation: ${interpretation.representation.primaryRepresentation}
+- Representation reason: ${interpretation.representation.reason}
+- Learner action: ${interpretation.representation.learnerAction}
+- Renderer required: ${interpretation.representation.rendererRequired ? 'yes — the response must use the supported representation rather than silently falling back to prose' : 'no'}
+- Representation fallback: ${representationFallback}
 - Verification: ${interpretation.requiresVerification ? 'required — check the learner\'s reasoning before agreeing, distinguish verified facts from inference, and explain the first material error' : 'not mandatory — remain accurate and do not invent learner understanding'}
-Answer the current learning move directly. Match explanation depth to the inferred difficulty. Do not claim mastery or persistent learner knowledge from this routing signal.`;
+Honor the representation inside the existing Study teaching-turn policy. Keep one concept and one learner action in the turn. Do not expose routing or representation labels to the learner. Do not claim mastery or persistent learner knowledge from this routing signal.`;
 }
 
 function isUnmeteredFreeEndpoint(model: ModelLike): boolean {

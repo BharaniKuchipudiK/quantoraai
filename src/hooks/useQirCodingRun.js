@@ -7,6 +7,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * qir-coding-run-core.js behind a dynamic import: the Desk entry chunk has a
  * 300 KB payload budget (scripts/code-highlight-browser-gate.mjs) and none of
  * the machinery is needed until a durable Run actually starts.
+ *
+ * A Coding goal is durable BEFORE Preview exists. That distinction is critical:
+ * the common was-red failure is a model timing out before it writes even one
+ * runnable file. Requiring artifactRef here made that exact failure invisible to
+ * QIR, so the 175s step deadline still behaved like mission lifetime.
  */
 const loadCore = () => import('../lib/qir-coding-run-core.js');
 
@@ -47,7 +52,9 @@ export function useQirCodingRun(options) {
       setRun(null);
       setError(null);
     }
-    if (!enabled || !sessionId || !artifactRef) return;
+    // Do not wait for artifactRef/code. QIR must own the user's Coding goal even
+    // when the first worker dies before producing files.
+    if (!enabled || !sessionId) return;
     void withClient((client) => client.sync());
   }, [enabled, sessionId, artifactRef, code, withClient]);
 
