@@ -202,12 +202,17 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
     }
   };
 
-  const navBg = isLight ? '#f1f5f9' : 'rgba(18, 24, 48, 0.8)';
-  const navBorder = isLight ? '#e2e8f0' : 'var(--border-color)';
-  const textColor = isLight ? '#0f172a' : '#ffffff';
-  const subtextColor = isLight ? '#475569' : '#94a3b8';
-  const dropdownBg = isLight ? '#ffffff' : '#0d1127';
-  const dropdownBorder = isLight ? '#e2e8f0' : 'rgba(249, 115, 22, 0.3)';
+  // Flat homepage palette: white / near-black surfaces, hairline borders,
+  // emphasis by inversion — no gradients, no glow.
+  const navBg = isLight ? '#f5f5f5' : '#171717';
+  const navBorder = isLight ? '#e5e5e5' : '#262626';
+  const textColor = isLight ? '#0a0a0a' : '#ffffff';
+  const subtextColor = isLight ? '#737373' : '#a3a3a3';
+  const dropdownBg = isLight ? '#ffffff' : '#0a0a0a';
+  const dropdownBorder = navBorder;
+  const inverseBg = isLight ? '#0a0a0a' : '#ffffff';
+  const inverseText = isLight ? '#ffffff' : '#0a0a0a';
+  const rowBg = isLight ? '#f5f5f5' : '#171717';
 
   return (
     <>
@@ -215,9 +220,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
       position: 'relative',
       top: 0,
       zIndex: 100,
-      background: isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(7, 9, 19, 0.88)',
-      backdropFilter: 'blur(20px)',
-      borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(249, 115, 22, 0.2)',
+      background: isLight ? '#ffffff' : '#0a0a0a',
+      borderBottom: `1px solid ${navBorder}`,
       padding: compact ? '6px 16px' : '12px 24px',
       transition: 'all 0.3s ease'
     }}>
@@ -243,19 +247,18 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               style={{
                 padding: compact ? '6px 12px' : '8px 18px',
                 borderRadius: '8px',
-                background: activeTab === 'studio' ? (isLight ? '#ffffff' : 'linear-gradient(135deg, rgba(249, 115, 22, 0.3) 0%, rgba(139, 92, 246, 0.2) 100%)') : 'transparent',
-                color: activeTab === 'studio' ? (isLight ? '#f97316' : '#ffffff') : subtextColor,
+                background: activeTab === 'studio' ? inverseBg : 'transparent',
+                color: activeTab === 'studio' ? inverseText : subtextColor,
                 fontWeight: activeTab === 'studio' ? '700' : '500',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 transition: 'all 0.2s ease',
-                border: activeTab === 'studio' ? '1px solid rgba(249, 115, 22, 0.5)' : '1px solid transparent',
-                boxShadow: (activeTab === 'studio' && isLight) ? '0 2px 8px rgba(0,0,0,0.06)' : 'none'
+                border: '1px solid transparent'
               }}
             >
-              <Sparkles size={16} color="#f97316" />
+              <Sparkles size={16} />
               {compact ? 'Studio' : 'AI Studio'}
             </button>
 
@@ -264,19 +267,18 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               style={{
                 padding: compact ? '6px 12px' : '8px 18px',
                 borderRadius: '8px',
-                background: activeTab === 'canvas' ? (isLight ? '#ffffff' : 'linear-gradient(135deg, rgba(249, 115, 22, 0.3) 0%, rgba(6, 182, 212, 0.2) 100%)') : 'transparent',
-                color: activeTab === 'canvas' ? (isLight ? '#0284c7' : '#ffffff') : subtextColor,
+                background: activeTab === 'canvas' ? inverseBg : 'transparent',
+                color: activeTab === 'canvas' ? inverseText : subtextColor,
                 fontWeight: activeTab === 'canvas' ? '700' : '500',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 transition: 'all 0.2s ease',
-                border: activeTab === 'canvas' ? '1px solid rgba(249, 115, 22, 0.5)' : '1px solid transparent',
-                boxShadow: (activeTab === 'canvas' && isLight) ? '0 2px 8px rgba(0,0,0,0.06)' : 'none'
+                border: '1px solid transparent'
               }}
             >
-              <Workflow size={16} color="#0284c7" />
+              <Workflow size={16} />
               {compact ? 'Journey' : 'Dream-to-Action Canvas'}
             </button>
 
@@ -285,24 +287,23 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               style={{
                 padding: compact ? '6px 12px' : '8px 18px',
                 borderRadius: '8px',
-                background: activeTab === 'quantum' ? (isLight ? '#ffffff' : 'linear-gradient(135deg, rgba(6, 182, 212, 0.3) 0%, rgba(16, 185, 129, 0.2) 100%)') : 'transparent',
-                color: activeTab === 'quantum' ? (isLight ? '#059669' : '#ffffff') : subtextColor,
+                background: activeTab === 'quantum' ? inverseBg : 'transparent',
+                color: activeTab === 'quantum' ? inverseText : subtextColor,
                 fontWeight: activeTab === 'quantum' ? '700' : '500',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 transition: 'all 0.2s ease',
-                border: activeTab === 'quantum' ? '1px solid rgba(6, 182, 212, 0.4)' : '1px solid transparent',
-                boxShadow: (activeTab === 'quantum' && isLight) ? '0 2px 8px rgba(0,0,0,0.06)' : 'none'
+                border: '1px solid transparent'
               }}
             >
-              <Cpu size={16} color="#059669" />
+              <Cpu size={16} />
               {compact ? 'Quantum' : 'Quantum Playground'}
             </button>
           </nav>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#f97316', background: 'rgba(249, 115, 22, 0.12)', border: '1px solid rgba(249, 115, 22, 0.3)', padding: '6px 14px', borderRadius: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: subtextColor, background: navBg, border: `1px solid ${navBorder}`, padding: '6px 14px', borderRadius: '20px' }}>
             <Lock size={14} /> Security Guard Active: Google Auth Required
           </div>
         )}
@@ -327,8 +328,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   display: 'flex',
                   alignItems: 'center',
                   gap: '10px',
-                  background: isLight ? '#f8fafc' : 'linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
+                  background: navBg,
+                  border: `1px solid ${navBorder}`,
                   padding: compact ? '4px 8px 4px 4px' : '5px 14px 5px 6px',
                   borderRadius: '20px',
                   cursor: 'pointer'
@@ -349,8 +350,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   width: '28px',
                   height: '28px',
                   borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)',
-                  color: '#fff',
+                  background: inverseBg,
+                  color: inverseText,
                   fontWeight: 'bold',
                   fontSize: '0.8rem'
                 }}>
@@ -360,8 +361,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   <span style={{ fontSize: '0.82rem', fontWeight: '700', color: textColor, lineHeight: 1.2 }}>
                     Signed in as {(user?.name || 'User').split(' ')[0]}
                   </span>
-                  <span style={{ fontSize: '0.65rem', color: '#059669', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <CheckCircle2 size={10} color="#059669" /> Google OAuth Verified
+                  <span style={{ fontSize: '0.65rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <CheckCircle2 size={10} /> Google OAuth Verified
                   </span>
                 </div>
                 {!compact && <ChevronDown size={14} color={subtextColor} />}
@@ -391,7 +392,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   color: textColor
                 }}>
                   {/* Profile Info Header */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '14px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '14px', borderBottom: `1px solid ${navBorder}`, marginBottom: '12px' }}>
                     {avatarSrc ? (
                       <img
                         src={user.avatar}
@@ -407,8 +408,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       width: '42px',
                       height: '42px',
                       borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #f97316 0%, #8b5cf6 100%)',
-                      color: '#fff',
+                      background: inverseBg,
+                      color: inverseText,
                       fontWeight: 'bold',
                       fontSize: '1.2rem'
                     }}>
@@ -417,7 +418,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
                       <span style={{ fontSize: '0.95rem', fontWeight: '700', color: textColor }}>{user?.name || 'User'}</span>
                       <span style={{ fontSize: '0.78rem', color: subtextColor }}>{user?.email || ''}</span>
-                      <span style={{ fontSize: '0.68rem', color: '#f97316', fontWeight: '600', marginTop: '2px' }}>
+                      <span style={{ fontSize: '0.68rem', color: subtextColor, fontWeight: '600', marginTop: '2px' }}>
                         Free Creator Tier ($0/mo)
                       </span>
                     </div>
@@ -427,22 +428,22 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     type="button"
                     data-quantora-profile-picture-entry="true"
                     onClick={() => { setShowProfilePictureEditor(true); setShowProfileMenu(false); }}
-                    style={{ width: '100%', margin: '0 0 12px 0', padding: '9px 10px', borderRadius: '9px', border: '1px solid rgba(249,115,22,0.42)', background: 'rgba(249,115,22,0.10)', color: '#f97316', fontSize: '0.8rem', fontWeight: 750, cursor: 'pointer' }}
+                    style={{ width: '100%', margin: '0 0 12px 0', padding: '9px 10px', borderRadius: '9px', border: `1px solid ${navBorder}`, background: 'transparent', color: textColor, fontSize: '0.8rem', fontWeight: 750, cursor: 'pointer' }}
                   >
                     Change profile picture
                   </button>
 
                   {/* Theme Mode Preference Selector */}
-                  <div style={{ marginBottom: '14px', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '12px' }}>
+                  <div style={{ marginBottom: '14px', borderBottom: `1px solid ${navBorder}`, paddingBottom: '12px' }}>
                     <div style={{ fontSize: '0.72rem', fontWeight: '700', color: subtextColor, letterSpacing: '0.05em', marginBottom: '8px', textTransform: 'uppercase' }}>
                       Appearance Theme
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', padding: '4px', borderRadius: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', background: navBg, padding: '4px', borderRadius: '10px' }}>
                       <button
                         onClick={() => setThemeMode && setThemeMode('light')}
                         style={{
-                          background: themeMode === 'light' ? '#f97316' : 'transparent',
-                          color: themeMode === 'light' ? '#ffffff' : subtextColor,
+                          background: themeMode === 'light' ? inverseBg : 'transparent',
+                          color: themeMode === 'light' ? inverseText : subtextColor,
                           border: 'none',
                           padding: '6px 0',
                           borderRadius: '8px',
@@ -461,8 +462,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       <button
                         onClick={() => setThemeMode && setThemeMode('dark')}
                         style={{
-                          background: themeMode === 'dark' ? '#8b5cf6' : 'transparent',
-                          color: themeMode === 'dark' ? '#ffffff' : subtextColor,
+                          background: themeMode === 'dark' ? inverseBg : 'transparent',
+                          color: themeMode === 'dark' ? inverseText : subtextColor,
                           border: 'none',
                           padding: '6px 0',
                           borderRadius: '8px',
@@ -481,8 +482,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       <button
                         onClick={() => setThemeMode && setThemeMode('system')}
                         style={{
-                          background: themeMode === 'system' ? '#06b6d4' : 'transparent',
-                          color: themeMode === 'system' ? '#ffffff' : subtextColor,
+                          background: themeMode === 'system' ? inverseBg : 'transparent',
+                          color: themeMode === 'system' ? inverseText : subtextColor,
                           border: 'none',
                           padding: '6px 0',
                           borderRadius: '8px',
@@ -515,8 +516,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     style={{
                       padding: '10px',
                       borderRadius: '10px',
-                      background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.04)',
-                      border: isLight ? '1px solid #e2e8f0' : 'none',
+                      background: rowBg,
+                      border: `1px solid ${navBorder}`,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -525,7 +526,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       fontSize: '0.85rem'
                     }}
                   >
-                    <ShieldCheck size={16} color="#0284c7" />
+                    <ShieldCheck size={16} />
                     <span>Privacy Vault & Encryption Status</span>
                   </div>
 
@@ -538,8 +539,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       style={{
                         padding: '10px',
                         borderRadius: '10px',
-                        background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.04)',
-                        border: isLight ? '1px solid #e2e8f0' : 'none',
+                        background: rowBg,
+                        border: `1px solid ${navBorder}`,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -548,7 +549,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                         fontSize: '0.85rem'
                       }}
                     >
-                      <Cpu size={16} color="#8b5cf6" />
+                      <Cpu size={16} />
                       <span>Model Dashboard</span>
                     </div>
                   )}
@@ -564,8 +565,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       style={{
                         padding: '10px',
                         borderRadius: '10px',
-                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%)',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        background: rowBg,
+                        border: `1px solid ${navBorder}`,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -576,7 +577,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                         fontWeight: '600'
                       }}
                     >
-                      <Activity size={16} color="#10b981" />
+                      <Activity size={16} />
                       <span>Admin Dashboard</span>
                     </div>
                   )}
@@ -592,8 +593,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     style={{
                       padding: '10px',
                       borderRadius: '10px',
-                      background: isLight ? '#f0f9ff' : 'rgba(255, 255, 255, 0.03)',
-                      border: isLight ? '1px solid #e0f2fe' : 'none',
+                      background: rowBg,
+                      border: `1px solid ${navBorder}`,
                       cursor: dataActionBusy ? 'wait' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -601,10 +602,10 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                       marginBottom: '6px',
                       fontSize: '0.85rem',
                       opacity: dataActionBusy ? 0.6 : 1,
-                      color: isLight ? '#0369a1' : '#cbd5e1'
+                      color: textColor
                     }}
                   >
-                    <Download size={16} color="#0284c7" />
+                    <Download size={16} />
                     <span>{dataActionBusy ? 'Preparing…' : 'Export My Data'}</span>
                   </div>
 
@@ -614,18 +615,18 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     style={{
                       padding: '10px',
                       borderRadius: '10px',
-                      background: isLight ? '#fff7ed' : 'rgba(255, 255, 255, 0.03)',
-                      border: isLight ? '1px solid #ffedd5' : 'none',
+                      background: rowBg,
+                      border: `1px solid ${navBorder}`,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
                       marginBottom: '6px',
                       fontSize: '0.85rem',
-                      color: isLight ? '#c2410c' : '#cbd5e1'
+                      color: textColor
                     }}
                   >
-                    <Trash2 size={16} color="#ea580c" />
+                    <Trash2 size={16} />
                     <span>Clear Cached Local Data</span>
                   </div>
 
@@ -635,18 +636,19 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                     style={{
                       padding: '10px',
                       borderRadius: '10px',
-                      background: 'rgba(249, 115, 22, 0.12)',
+                      background: rowBg,
+                      border: `1px solid ${navBorder}`,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
                       marginBottom: '6px',
                       fontSize: '0.85rem',
-                      color: '#ea580c',
+                      color: textColor,
                       fontWeight: '600'
                     }}
                   >
-                    <LogOut size={16} color="#ea580c" />
+                    <LogOut size={16} />
                     <span>Sign Out</span>
                   </div>
 
@@ -676,8 +678,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
             <button
               onClick={onOpenAuth}
               style={{
-                background: 'linear-gradient(135deg, #f97316 0%, #ec4899 50%, #8b5cf6 100%)',
-                color: '#ffffff',
+                background: inverseBg,
+                color: inverseText,
                 border: 'none',
                 padding: '9px 20px',
                 borderRadius: '20px',
@@ -686,8 +688,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 0 20px rgba(249, 115, 22, 0.4)'
+                gap: '8px'
               }}
             >
               <LogIn size={15} /> Sign in with Google
@@ -724,8 +725,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
           padding: '20px'
         }}>
           <div style={{
-            background: isLight ? '#ffffff' : '#0d1127',
-            border: confirmModalType === 'delete_account' ? '1px solid #ef4444' : '1px solid #f97316',
+            background: dropdownBg,
+            border: confirmModalType === 'delete_account' ? '1px solid #ef4444' : `1px solid ${navBorder}`,
             borderRadius: '20px',
             maxWidth: '420px',
             width: '100%',
@@ -738,13 +739,13 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               width: '54px',
               height: '54px',
               borderRadius: '16px',
-              background: confirmModalType === 'delete_account' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(249, 115, 22, 0.15)',
+              background: confirmModalType === 'delete_account' ? 'rgba(239, 68, 68, 0.15)' : rowBg,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 16px auto'
             }}>
-              <ShieldAlert size={28} color={confirmModalType === 'delete_account' ? '#ef4444' : '#f97316'} />
+              <ShieldAlert size={28} color={confirmModalType === 'delete_account' ? '#ef4444' : textColor} />
             </div>
 
             <h3 style={{ fontSize: '1.3rem', margin: '0 0 8px 0' }}>
@@ -764,8 +765,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                 width: '100%',
                 padding: '12px 16px',
                 borderRadius: '10px',
-                border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)',
+                border: `1px solid ${navBorder}`,
+                background: navBg,
                 color: textColor,
                 fontSize: '0.95rem',
                 outline: 'none',
@@ -786,8 +787,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   flex: 1,
                   padding: '12px',
                   borderRadius: '10px',
-                  background: isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)',
-                  border: 'none',
+                  background: navBg,
+                  border: `1px solid ${navBorder}`,
                   color: textColor,
                   fontWeight: '600',
                   cursor: 'pointer'
@@ -804,10 +805,12 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                   padding: '12px',
                   borderRadius: '10px',
                   background: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy
-                    ? (confirmModalType === 'delete_account' ? '#ef4444' : '#f97316')
-                    : (isLight ? '#cbd5e1' : '#334155'),
+                    ? (confirmModalType === 'delete_account' ? '#ef4444' : inverseBg)
+                    : navBg,
                   border: 'none',
-                  color: '#ffffff',
+                  color: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy
+                    ? (confirmModalType === 'delete_account' ? '#ffffff' : inverseText)
+                    : subtextColor,
                   fontWeight: '700',
                   cursor: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy ? 'pointer' : 'not-allowed',
                   opacity: confirmInputValue.trim().toUpperCase() === requiredConfirmationText && !dataActionBusy ? 1 : 0.5,

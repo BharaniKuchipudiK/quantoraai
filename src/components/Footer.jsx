@@ -2,7 +2,7 @@ import React from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 
 export default function Footer({ isLight = false }) {
-  const footerBg = isLight ? '#ffffff' : '#070913';
+  const footerBg = isLight ? '#ffffff' : '#0a0a0a';
   const textColor = isLight ? '#525252' : '#a3a3a3';
 
   const legalLinks = ['Privacy Statement', 'Terms & Conditions', 'Cookie Policy'];
