@@ -119,7 +119,7 @@ for consequential actions.
 since serverless can't hold a loop) · a notification channel · a **restraint
 policy** so it's proactive, not noisy.
 
-## Phase 4 — Desktop App (the persistent host)
+## Phase 4 — Native clients (the persistent host, and the consent surface)
 
 - ⏳ **4.1 Tauri/Electron shell** — the body the cognitive layer needs:
   background presence, local notifications, optional file access. **Gated on
@@ -128,6 +128,21 @@ policy** so it's proactive, not noisy.
   Electron shell, bundled renderer on `quantora://app`, bearer carrier for the
   existing HMAC session, a `DeskRuntime` seam so the Coding Desk gets a real
   shell/git/folder, and the gate extensions each phase must ship with.
+
+- ⏳ **4.2 Mobile app (iOS + Android)** — the phone is not a small desktop and
+  not a second builder: it is the **consent surface** 6.3 needs (an approval
+  gate has to reach a human who is not at a computer) and the **continuity
+  surface** for outcomes that run without you. Study review and camera capture
+  (7.4) are the two desks the phone does *better*, not merely also.
+  → **Designed** (2026-09-02): `docs/architecture/mobile-client-v1.md` —
+  React Native + Expo, verified-link PKCE onto the same HMAC session, a
+  **durable turn journal with resume + correlation-id idempotency** (today a
+  dropped socket keeps truncated text and a retry can bill twice —
+  `src/lib/turn-recovery.js:112`), SQLite + outbox over the `expectedVersion`
+  CAS that `/api/outcomes` already implements, and the store-review gates this
+  repo has never faced.
+  **The server half (M1) is the highest-value work in it and is not mobile
+  code** — web gains reload-survives-a-turn from the same change.
 
 ## Phase 5 — Architecture hygiene (continuous)
 
