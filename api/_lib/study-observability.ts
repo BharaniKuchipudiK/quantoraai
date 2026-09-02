@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { evaluateStudyProjectionSlo, STUDY_SLO_VERSION } from './study-slos.js';
 
-export const STUDY_OBSERVABILITY_VERSION = 'study-observability-2026-09-02.2';
+export const STUDY_OBSERVABILITY_VERSION = 'study-observability-2026-09-02.3';
 
 export type StudyReplaySource = 'checkpoint_delta' | 'full_replay';
 export type StudyReplayFallbackReason =
@@ -15,7 +15,8 @@ export type StudyReplayFallbackReason =
 
 export type StudyTelemetryOperation =
   | 'adaptive_learner_model'
-  | 'learner_projection_load';
+  | 'learner_projection_load'
+  | 'study_assessment';
 
 type StudyTraceState = {
   traceId: string;
